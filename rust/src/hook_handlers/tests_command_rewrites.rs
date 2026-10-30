@@ -206,14 +206,16 @@ fn rewrite_candidate_passes_through_heredoc_compound() {
 
 #[test]
 fn codex_rewrite_output_uses_native_updated_input_contract() {
-    let output = codex_rewrite_output("lean-ctx -c 'git status'");
+    // Codex applies updatedInput only with "allow", so the Codex hook emits
+    // this shape for read-only rewrites only (see `handle_codex_pretooluse`).
+    let output = codex_rewrite_output("lean-ctx read src/main.rs");
     let parsed: serde_json::Value = serde_json::from_str(&output).expect("valid hook JSON");
 
     assert_eq!(parsed["hookSpecificOutput"]["hookEventName"], "PreToolUse");
     assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "allow");
     assert_eq!(
         parsed["hookSpecificOutput"]["updatedInput"]["command"],
-        "lean-ctx -c 'git status'"
+        "lean-ctx read src/main.rs"
     );
 }
 
@@ -252,8 +254,10 @@ fn dual_rewrite_output_carries_claude_cursor_and_copilot_fields() {
     // #551: one JSON object must satisfy Claude (hookSpecificOutput.updatedInput),
     // Cursor (updated_input) AND Copilot CLI (top-level permissionDecision +
     // modifiedArgs). Copilot reads modifiedArgs; without it the rewrite no-ops.
+    // Only a read-only rewrite may carry Cursor's/Copilot's approving fields.
     let tool_input = serde_json::json!({ "command": "cat foo.txt", "cwd": "/repo" });
-    let out = build_dual_rewrite_output(Some(&tool_input), "lean-ctx read foo.txt");
+    let rewrite = file_rewrite::Rewrite::read_only("lean-ctx read foo.txt".to_string());
+    let out = build_dual_rewrite_output(Some(&tool_input), &rewrite);
     let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
 
     // #1264: Claude validates the deprecated top-level `decision` field when
@@ -270,23 +274,117 @@ fn dual_rewrite_output_carries_claude_cursor_and_copilot_fields() {
         p["modifiedArgs"]["cwd"], "/repo",
         "modifiedArgs must preserve the other original args"
     );
-    // Claude / CodeBuddy contract.
-    assert_eq!(p["hookSpecificOutput"]["permissionDecision"], "allow");
+    // Claude / CodeBuddy contract: the rewrite applies, the decision stays
+    // with Claude's permission flow.
+    assert!(p["hookSpecificOutput"].get("permissionDecision").is_none());
     assert_eq!(
         p["hookSpecificOutput"]["updatedInput"]["command"],
         "lean-ctx read foo.txt"
     );
     // Cursor contract.
+    assert_eq!(p["permission"], "allow");
     assert_eq!(p["updated_input"]["command"], "lean-ctx read foo.txt");
 }
 
+/// A rewrite that a shell runs (`lean-ctx -c '…'`) can carry any command, so
+/// no dialect may receive an approval for it: Claude keeps its permission
+/// flow, Cursor and Copilot get no rewrite fields and run the original command
+/// under their own approval.
 #[test]
-fn claude_allow_output_omits_deprecated_top_level_decision() {
-    let parsed: serde_json::Value =
-        serde_json::from_str(&build_dual_allow_output()).expect("valid hook JSON");
+fn arbitrary_rewrite_output_grants_no_permission_in_any_dialect() {
+    let tool_input = serde_json::json!({ "command": "rm -rf build" });
+    let rewrite = file_rewrite::Rewrite::arbitrary("lean-ctx -c 'rm -rf build'".to_string());
+    let out = build_dual_rewrite_output(Some(&tool_input), &rewrite);
+    let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
 
-    assert!(parsed.get("decision").is_none());
-    assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "allow");
+    assert!(!out.contains("allow"), "{out}");
+    assert_eq!(
+        p,
+        serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "updatedInput": { "command": "lean-ctx -c 'rm -rf build'" }
+            }
+        })
+    );
+}
+
+/// Only direct `lean-ctx read|grep|ls` mappings are read-only; every
+/// `-c` wrap or rewritten compound is arbitrary.
+#[test]
+fn rewrite_safety_follows_the_original_command() {
+    with_test_allowlist(|| {
+        // In the side-effect-free set: approvable, whatever form the rewrite
+        // takes (`git status` becomes a `-c` wrap of the same text).
+        for cmd in [
+            "cat src/main.rs",
+            "head -n 5 src/main.rs",
+            "ls src",
+            "grep -rn foo src",
+            "git status",
+            "git status && git diff",
+        ] {
+            let r = file_rewrite::classify_rewrite(cmd, "lean-ctx").expect(cmd);
+            assert_eq!(r.safety, RewriteSafety::ReadOnly, "{cmd} -> {}", r.command);
+        }
+        // Writers, builds and tests are never approved by the hook.
+        for cmd in [
+            "git push --force",
+            "cargo build",
+            "cargo test",
+            "git status && cargo test",
+        ] {
+            let r = file_rewrite::classify_rewrite(cmd, "lean-ctx").expect(cmd);
+            assert_eq!(r.safety, RewriteSafety::Arbitrary, "{cmd} -> {}", r.command);
+        }
+    });
+}
+
+/// Cursor/Copilot payloads: a rewrite is delivered (with the approving
+/// fields) only for a command in the safe set; anything else is not
+/// delivered, so the hook prints the neutral pass-through.
+#[test]
+fn approving_hosts_get_a_rewrite_only_for_safe_commands() {
+    with_test_allowlist(|| {
+        let cursor = serde_json::json!({ "hook_event_name": "preToolUse", "command": "x" });
+        let input = serde_json::json!({ "command": "git status" });
+        let safe = file_rewrite::classify_rewrite("git status", "lean-ctx").expect("rewrite");
+        let out = deliver_rewrite("Shell", "git status", Some(&input), &safe, &cursor)
+            .expect("delivered");
+        let p: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+        assert_eq!(p["permission"], "allow");
+        assert_eq!(p["permissionDecision"], "allow");
+        assert_eq!(p["updated_input"]["command"], safe.command);
+        assert!(p["hookSpecificOutput"].get("permissionDecision").is_none());
+
+        let risky = file_rewrite::classify_rewrite("cargo build", "lean-ctx").expect("rewrite");
+        assert!(deliver_rewrite("Shell", "cargo build", None, &risky, &cursor).is_none());
+    });
+}
+
+#[test]
+fn claude_rewrite_output_allows_only_when_asked() {
+    let input = serde_json::json!({ "command": "lean-ctx -c 'cargo test'", "timeout": 5 });
+    let p: serde_json::Value =
+        serde_json::from_str(&build_claude_rewrite_output(&input, false)).expect("JSON");
+    assert_eq!(
+        p,
+        serde_json::json!({ "hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "updatedInput": input } })
+    );
+    let p: serde_json::Value =
+        serde_json::from_str(&build_claude_rewrite_output(&input, true)).expect("JSON");
+    assert_eq!(p.as_object().map(serde_json::Map::len), Some(1));
+    assert_eq!(p["hookSpecificOutput"]["permissionDecision"], "allow");
+    assert_eq!(p["hookSpecificOutput"]["updatedInput"], input);
+}
+
+#[test]
+fn passthrough_output_carries_no_permission_decision() {
+    let out = build_passthrough_output();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
+    assert_eq!(parsed, serde_json::json!({}));
+    assert!(!out.contains("allow"));
 }
 
 /// Claude Code 2.1.25x+ discarded the multi-dialect deny (top-level
@@ -326,12 +424,63 @@ fn redirect_output_carries_copilot_modified_args() {
 
     assert!(p.get("decision").is_none());
     assert_eq!(p["permissionDecision"], "allow");
+    // Claude keeps its own permission flow for the redirected read.
+    assert!(p["hookSpecificOutput"].get("permissionDecision").is_none());
     assert_eq!(p["modifiedArgs"]["path"], "/tmp/x.lctx");
     assert_eq!(
         p["hookSpecificOutput"]["updatedInput"]["path"],
         "/tmp/x.lctx"
     );
     assert_eq!(p["updated_input"]["path"], "/tmp/x.lctx");
+}
+
+/// Gemini CLI reads only `hookSpecificOutput.tool_input` and approves nothing
+/// on a hook decision: each rewrite becomes exactly that field, with none of
+/// the other hosts' (approving) fields.
+#[test]
+fn gemini_output_carries_tool_input_only() {
+    let tool_input = serde_json::json!({ "command": "cat foo.txt", "dir_path": "/repo" });
+    for rewrite in [
+        file_rewrite::Rewrite::read_only("lean-ctx read foo.txt".to_string()),
+        file_rewrite::Rewrite::arbitrary("lean-ctx -c 'cat foo.txt'".to_string()),
+    ] {
+        let out = gemini_output(&build_dual_rewrite_output(Some(&tool_input), &rewrite));
+        assert!(!out.contains("allow"), "{out}");
+        let p: serde_json::Value = serde_json::from_str(&out).expect("valid hook JSON");
+        assert_eq!(
+            p,
+            serde_json::json!({
+                "hookSpecificOutput": {
+                    "hookEventName": "BeforeTool",
+                    "tool_input": { "command": rewrite.command, "dir_path": "/repo" }
+                }
+            })
+        );
+    }
+}
+
+/// Deny and pass-through outputs reach Gemini unchanged: it blocks on the
+/// shared top-level `decision: "deny"` + `reason`, and `{}` decides nothing.
+#[test]
+fn gemini_output_keeps_deny_and_passthrough() {
+    let gemini =
+        serde_json::json!({ "hook_event_name": "BeforeTool", "tool_name": "run_shell_command" });
+    assert!(is_gemini_beforetool_payload(&gemini));
+    assert!(!is_claude_pretooluse_payload(&gemini));
+    let deny = build_deny_output("blocked", &gemini);
+    assert_eq!(gemini_output(&deny), deny);
+    let p: serde_json::Value = serde_json::from_str(&deny).expect("valid JSON");
+    assert_eq!(p["decision"], "deny");
+    assert_eq!(p["reason"], "blocked");
+    assert_eq!(gemini_output(&build_passthrough_output()), "{}");
+
+    for other in [
+        serde_json::json!({ "hook_event_name": "PreToolUse", "transcript_path": "/t" }),
+        serde_json::json!({ "hook_event_name": "preToolUse" }),
+        serde_json::json!({ "toolName": "bash" }),
+    ] {
+        assert!(!is_gemini_beforetool_payload(&other), "{other}");
+    }
 }
 
 #[test]

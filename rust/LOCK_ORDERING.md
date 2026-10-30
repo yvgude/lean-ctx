@@ -189,6 +189,7 @@ All `std::sync::Mutex` unless noted otherwise.
 | L134 | `.maintenance.lock` (receipt store) | `core/context_admission/receipt_store/retention.rs:186` | `fs2` exclusive file lock on `<data>/gateway/.maintenance.lock` | One maintenance pass of the gateway evidence store at a time, across processes. Try-only, never waited for: a holder elsewhere means the pass is skipped. Taken before the capacity ledger lock (`.usage.lock`, taken and released per booking batch) and never while that lock is held. |
 | L135 | `CANDIDATES` | `core/providers/credentials.rs:83` | `RwLock<Option<BTreeMap<String, String>>>` | Candidate provider settings a `check --stdin` installs for the duration of the check (`set_candidates`, `clear_candidates`); read by `var`/`is_set`. Held only to copy a value or replace the map, no I/O while held; independent leaf lock, never nested. Poison is recovered. |
 | L136 | `INDEXES` | `core/dashboard_pro/ledger.rs:632` | `OnceLock<Mutex<HashMap<PathBuf, LedgerIndex>>>` | The cockpit Ledger page's per-file savings index. Held across one `refresh` (an append-only read of that ledger file) and the caller's closure on it (`browse`, `report`, `proxy_days`, `recorded_price`, and `export_entries`, whose callback builds the export in memory); takes no other static lock and performs no network or write I/O while held. Poison is recovered. |
+| L137 | `RING` | `tools/ctx_edit/applied_edits.rs:54` | `OnceLock<Mutex<Ring>>` | The last 64 edits `ctx_edit` applied in this process (path, old and new string digests), so a repeat of one answers "No change". Held only to push or look up one entry; no I/O while held (paths are canonicalized before); independent leaf lock, never nested. A poisoned lock only skips the record or the check. |
 
 ### CLI cache transaction file lock
 
@@ -205,7 +206,9 @@ resolver and content read finish before this file lock is acquired.
 ### Config file lock
 
 `config_io::ConfigWriteGuard` is an RAII hold on the existing bounded
-`core::migration_lock` OS file lock, `<resolved config>.v4-migration.lock`.
+`core::migration_lock` OS file lock, `<data dir>/locks/<blake3(resolved path)>.<file>.v4-migration.lock`
+(beside the target only when no data dir resolves, so project files never get a
+lock sibling).
 No new lock is introduced; despite the migration-era filename, ordinary
 setters take this same lock. Acquisition waits at most **5 s** and then fails
 rather than writing unlocked. The guard owns both the `MigrationLock` and the
@@ -228,8 +231,8 @@ as one:
   read-modify-write race. Out of LR-TEL-01 scope; fixing them means moving
   them onto a guard.
 - The same `write_atomic_with_backup` writer backs many **non-config** files
-  (editor configs, ledgers, skills, hook files), each getting its own
-  `.v4-migration.lock` sibling.
+  (editor configs, ledgers, skills, hook files), each getting its own lock file
+  under `<data dir>/locks/`.
 
 What LR-TEL-01 changed is the **span** for the guarded paths:
 `Config::try_update_global_at` takes the guard, loads the global file fresh

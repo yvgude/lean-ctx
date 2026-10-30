@@ -143,7 +143,11 @@ fn test_full_pipeline() {
     let parent = capsule();
     let transport = LocalSignedCapsuleTransport::default();
     let delivery = transport
-        .deliver(&signed(&parent), "integration-child")
+        .deliver(
+            &signed(&parent),
+            "integration-child",
+            &SigningKey::from_bytes(&[7; 32]).verifying_key(),
+        )
         .expect("capsule registration");
     assert_eq!(delivery.capsule_ref, parent.capsule_id);
 

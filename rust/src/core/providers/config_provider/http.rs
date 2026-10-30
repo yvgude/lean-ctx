@@ -208,65 +208,49 @@ fn status_to_u16(status: ureq::http::StatusCode) -> u16 {
 
 /// Execute an HTTP request to the external API.
 ///
-/// Handles GET/DELETE (no body) and POST/PUT/PATCH (with empty body) separately
-/// because ureq 3 uses different types for body vs bodyless requests.
+/// Only the read methods of [`super::schema::READ_METHODS`] are sent: GET, and
+/// POST with an empty body (ureq 3 uses different types for body vs bodyless
+/// requests). Any other method is refused before a request exists, even if
+/// validation was bypassed.
 pub fn execute_request(
     base_url: &str,
     resource: &ResourceConfig,
     auth: &ResolvedAuth,
     interp_params: &HashMap<String, String>,
 ) -> Result<serde_json::Value, String> {
+    let method = resource.method.to_uppercase();
+    if !super::schema::READ_METHODS.contains(&method.as_str()) {
+        return Err(format!(
+            "method '{}' is not a read method; connectors are read-only",
+            resource.method
+        ));
+    }
     let url = build_url(base_url, resource, interp_params, auth);
     let headers = collect_headers(auth, &resource.headers);
-    let method = resource.method.to_uppercase();
     let agent = crate::core::providers::hardened_http::hardened_agent();
 
-    let (status, body) = match method.as_str() {
-        "POST" | "PUT" | "PATCH" => {
-            let mut req = match method.as_str() {
-                "PUT" => agent.put(&url),
-                "PATCH" => agent.patch(&url),
-                _ => agent.post(&url),
-            };
-            for (k, v) in &headers {
-                req = req.header(k, v);
-            }
-            let res = req
-                .send_empty()
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
-            let st = status_to_u16(res.status());
-            if !(200..300).contains(&st) {
-                return Err(format!("API returned status {st}"));
-            }
-            let b = res
-                .into_body()
-                .read_to_string()
-                .map_err(|e| format!("Failed to read response body: {e}"))?;
-            (st, b)
+    let res = if method == "POST" {
+        let mut req = agent.post(&url);
+        for (k, v) in &headers {
+            req = req.header(k, v);
         }
-        _ => {
-            let mut req = if method == "DELETE" {
-                agent.delete(&url)
-            } else {
-                agent.get(&url)
-            };
-            for (k, v) in &headers {
-                req = req.header(k, v);
-            }
-            let res = req
-                .call()
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
-            let st = status_to_u16(res.status());
-            if !(200..300).contains(&st) {
-                return Err(format!("API returned status {st}"));
-            }
-            let b = res
-                .into_body()
-                .read_to_string()
-                .map_err(|e| format!("Failed to read response body: {e}"))?;
-            (st, b)
+        req.send_empty()
+    } else {
+        let mut req = agent.get(&url);
+        for (k, v) in &headers {
+            req = req.header(k, v);
         }
-    };
+        req.call()
+    }
+    .map_err(|e| format!("HTTP request failed: {e}"))?;
+    let status = status_to_u16(res.status());
+    if !(200..300).contains(&status) {
+        return Err(format!("API returned status {status}"));
+    }
+    let body = res
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("Failed to read response body: {e}"))?;
 
     parse_response(status, &body, &url)
 }
@@ -336,6 +320,43 @@ mod tests {
         assert!(url.starts_with("https://api.example.com/issues?"));
         assert!(url.contains("state=open"));
         assert!(url.contains("per_page=25"));
+    }
+
+    /// A write method never becomes a request, even on a config that skipped
+    /// validation: the refusal comes before any URL is built or sent (the
+    /// unroutable host would otherwise give a transport error).
+    #[test]
+    fn write_methods_are_refused_before_any_request() {
+        for method in ["PUT", "PATCH", "DELETE", "delete"] {
+            let resource = ResourceConfig {
+                method: method.into(),
+                path: "/items".into(),
+                query_params: HashMap::new(),
+                headers: HashMap::new(),
+                response: super::super::schema::ResponseConfig {
+                    root: None,
+                    mapping: super::super::schema::FieldMapping {
+                        id: "id".into(),
+                        title: "title".into(),
+                        body: None,
+                        state: None,
+                        author: None,
+                        url: None,
+                        labels: None,
+                        created_at: None,
+                        updated_at: None,
+                    },
+                },
+            };
+            let err = execute_request(
+                "https://unroutable.invalid",
+                &resource,
+                &ResolvedAuth::None,
+                &HashMap::new(),
+            )
+            .unwrap_err();
+            assert!(err.contains("connectors are read-only"), "{method}: {err}");
+        }
     }
 
     #[test]

@@ -10,7 +10,6 @@
 //! | knowledge | `core::knowledge` (`KnowledgeStore`) |
 //! | relations | `core::property_graph` |
 //! | per-task runtime signals (bounce, expand, edit failure) | `task_signals` |
-//! | promoted read-strategy policies | `policy_store` |
 //!
 //! Search, graph and vector indexes are derived from these and rebuildable.
 //! Modules here read and join; they never become a second copy of that state.
@@ -20,7 +19,6 @@
 use lean_ctx_protocol::{ProjectId, TenantId};
 
 pub(crate) mod lineage;
-pub(crate) mod policy_store;
 pub(crate) mod task_signals;
 
 /// The tenant/project scope a task belongs to, as one opaque key. Task-keyed

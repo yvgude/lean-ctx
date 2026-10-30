@@ -336,6 +336,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
             failed_roots += 1;
             continue;
         };
+        note_secret_paths_withheld(outcome.secret_paths_withheld);
         let failed = outcome.failed;
         let result = outcome.text;
 
@@ -619,6 +620,15 @@ fn semantic_output(text: String) -> ToolOutput {
     }
 }
 
+/// Notes the files the secret-path boundary kept out of this call's search:
+/// one `content_withheld:<n>|reason=secret_path` entry per call, never a path.
+fn note_secret_paths_withheld(n: usize) {
+    crate::core::security_events::note_refusals(
+        crate::core::security_events::RefusalClass::SecretPath,
+        n,
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cached_or_search(
     pattern: &str,
@@ -656,6 +666,8 @@ fn cached_or_search(
             modeled_baseline: entry.token_count as usize,
             observed_tokens: entry.token_count as usize,
             failed: false,
+            // The stub delivers no scan: the first delivery recorded it.
+            secret_paths_withheld: 0,
         };
     }
 
@@ -842,6 +854,7 @@ fn search_single(
             ));
         }
     };
+    note_secret_paths_withheld(outcome.secret_paths_withheld);
     let failed = outcome.failed;
     let result = outcome.text;
     // Observed tokens only — the modeled native-grep baseline stays out of
@@ -1007,6 +1020,9 @@ fn handle_batch_queries(
     // matches"). A call in which every query failed is a failed call.
     let mut failed_queries: usize = 0;
     let mut answered_queries: usize = 0;
+    // Queries usually share one root and so the same withheld files: the
+    // largest count is recorded, never the sum.
+    let mut secret_paths_withheld: usize = 0;
 
     for (idx, q) in queries.iter().enumerate() {
         let Some(obj) = q.as_object() else {
@@ -1087,6 +1103,7 @@ fn handle_batch_queries(
             continue;
         };
 
+        secret_paths_withheld = secret_paths_withheld.max(outcome.secret_paths_withheld);
         if outcome.failed {
             failed_queries += 1;
         } else {
@@ -1099,6 +1116,7 @@ fn handle_batch_queries(
         }
     }
 
+    note_secret_paths_withheld(secret_paths_withheld);
     if combined.is_empty() {
         combined = "No matches found for any query.".to_string();
     }

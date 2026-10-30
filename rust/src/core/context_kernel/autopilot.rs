@@ -326,29 +326,6 @@ pub struct AutopilotInput {
     pub local_providers: BTreeSet<String>,
     pub cached_preloads: BTreeSet<String>,
     pub preload_budget: PreloadBudget,
-    /// The scope's promoted read-strategy policy, if a runtime promoted one.
-    pub context_policy: Option<ScopeContextPolicy>,
-}
-
-/// A promoted policy (`context_store::policy_store`) as planning sees it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScopeContextPolicy {
-    pub policy: lean_ctx_protocol::context_policy_evidence::ContextPolicyV1,
-    /// Use the policy as the learned mode; otherwise it is only recorded.
-    pub apply: bool,
-}
-
-impl ScopeContextPolicy {
-    /// The active policy of `scope` and the user's apply switch.
-    pub(crate) fn load(scope: &str) -> Option<Self> {
-        let policy = crate::core::context_store::policy_store::load(scope)
-            .active?
-            .policy;
-        let apply = crate::core::config::Config::load_global()
-            .intelligence_runtime
-            .context_policy_apply;
-        Some(Self { policy, apply })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -742,35 +719,7 @@ impl AutopilotDecision {
                 "autopilot shadow comparison disagrees with the authoritative plan"
             );
         }
-        let mut projection = project_context_plan(task_id, &self.context_plan)?;
-        if let Some(selection) = self.reasons.iter().find(|reason| {
-            matches!(
-                reason.code.as_str(),
-                "private_context_budget_relevance" | "private_context_unavailable"
-            )
-        }) {
-            projection
-                .extensions
-                .insert(
-                    "adaptive_context_v1",
-                    serde_json::json!({
-                            "schema_version": 1, "decision_id": self.decision_id,
-                            "status": selection.code, "explanation": selection.detail,
-                    "context_prepared": true, "model_transferred": false,
-                    "learned_personalization": false,
-                    "outcome_learning_eligible": self.tier == PlannerTier::AdaptivePro
-                        }),
-                )
-                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-            projection.projection_digest = Some(
-                projection
-                    .compute_projection_digest()
-                    .map_err(|error| anyhow::anyhow!(error.to_string()))?,
-            );
-            projection
-                .validate()
-                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-        }
+        let projection = project_context_plan(task_id, &self.context_plan)?;
         Ok(TaskAutopilotDecision {
             decision: self,
             projection,
@@ -880,8 +829,7 @@ impl CommunityContextPlanner {
 
     fn plan(&self, input: &AutopilotInput) -> Result<AutopilotDecision, KernelPlanError> {
         let enforced = read_kernel_plan(&self.kernel, input)?;
-        let (policy_mode, policy_reason) = context_policy_mode(input, &enforced.plan);
-        let mode = resolve_mode(input, policy_mode);
+        let mode = resolve_mode(input, None);
         let explicit_override = has_explicit_mode(input);
         let economics = break_even(&input.economics);
         let mut reasons = vec![reason(
@@ -891,15 +839,7 @@ impl CommunityContextPlanner {
         if explicit_override {
             reasons.push(reason("explicit_override", "explicit read policy applied"));
         }
-        reasons.extend(policy_reason);
-        if let Some(selection) = enforced.selection {
-            reasons.push(reason(selection, if selection == "private_context_budget_relevance" {
-                "Installed private runtime scored admitted context for query relevance and budget; no learned quality claim"
-            } else {
-                "Private context selection unavailable; authorized public context retained"
-            }));
-        }
-        let mut result = decision(
+        Ok(decision(
             PlannerTier::Community,
             PlanningStrategy::Deterministic,
             enforced.plan,
@@ -911,16 +851,7 @@ impl CommunityContextPlanner {
             economics,
             None,
             enforced.observations,
-        );
-        // Keep the Community/Deterministic tier: AdaptivePro also enables the
-        // learned-mode outcome handoff. Context-only scoring grants none of it.
-        if enforced.selection == Some("private_context_budget_relevance") {
-            result
-                .reasons
-                .retain(|reason| reason.code != "community_reference");
-            result.decision_id = decision_id(&result);
-        }
-        Ok(result)
+        ))
     }
 }
 
@@ -940,21 +871,16 @@ impl AdaptiveContextPlanner {
         bandit: Option<&mut ProviderBandit>,
     ) -> Result<AutopilotDecision, KernelPlanError> {
         let enforced = read_kernel_plan(&self.kernel, input)?;
-        let (policy_mode, policy_reason) = context_policy_mode(input, &enforced.plan);
-        let mode = resolve_mode(
-            input,
-            policy_mode.or_else(|| input.learning.learned_mode.clone()),
-        );
+        let mode = resolve_mode(input, input.learning.learned_mode.clone());
         let economics = break_even(&input.economics);
         let preloads = bandit.map_or_else(Vec::new, |bandit| planned_preloads(input, bandit));
-        let mut reasons = vec![
-            reason("adaptive_entitlement", "Adaptive Pro planner selected"),
+        let reasons = vec![
+            reason("adaptive_entitlement", "adaptive planner selected"),
             reason(
                 "positive_expected_value",
                 "candidate clears break-even gate",
             ),
         ];
-        reasons.extend(policy_reason);
         let shadow = Some(ShadowComparison {
             authoritative: false,
             counterfactual_plan_id: baseline.context_plan.plan_id.clone(),
@@ -1004,8 +930,7 @@ impl AutopilotController {
         let community_kernel = ContextKernel::with_field(
             super::providers::default_providers(project_root),
             ContextField::with_weights(FieldWeights::default()),
-        )
-        .with_private_selection();
+        );
         let adaptive_kernel = ContextKernel::with_field(
             super::providers::default_providers(project_root),
             ContextField::with_weights(crate::core::context_field::active_weights()),
@@ -1033,18 +958,11 @@ impl AutopilotController {
         bandit: Option<&mut ProviderBandit>,
     ) -> Result<AutopilotDecision, KernelPlanError> {
         let baseline = self.community.plan(input)?;
-        if baseline
-            .reasons
-            .iter()
-            .any(|reason| reason.code == "private_context_budget_relevance")
-        {
-            return Ok(baseline);
-        }
         if !input.entitled_to_adaptive {
             return Ok(with_fallback_reason(
                 baseline,
                 "not_entitled",
-                "Community fallback: no Pro entitlement",
+                "Community fallback: adaptive planning not enabled",
             ));
         }
         if input.confidence_milli < self.confidence_threshold_milli {
@@ -1091,33 +1009,6 @@ fn resolve_mode(input: &AutopilotInput, learned: Option<String>) -> String {
         learned,
         &input.default_mode,
     )
-}
-
-/// The promoted policy's strategy for this plan's workload. It enters the
-/// precedence as the learned mode only when the user switched it to apply,
-/// so security, explicit and configured modes still win; otherwise it is
-/// recorded next to the decision and changes nothing.
-fn context_policy_mode(
-    input: &AutopilotInput,
-    plan: &ContextPlan,
-) -> (Option<String>, Option<DecisionReason>) {
-    let Some(scope) = &input.context_policy else {
-        return (None, None);
-    };
-    let workload = learning_store::workload_of(input.task_class, plan);
-    let Some(strategy) = scope.policy.strategy_for(&workload) else {
-        return (None, None);
-    };
-    let mode = strategy.as_str().to_owned();
-    let version = scope.policy.version;
-    let outranked = has_explicit_mode(input) || input.configured_mode.is_some();
-    if scope.apply && !outranked {
-        let detail = format!("promoted policy v{version} applied: {mode}");
-        (Some(mode), Some(reason("context_policy_applied", &detail)))
-    } else {
-        let detail = format!("promoted policy v{version} recommends {mode}; not applied");
-        (None, Some(reason("context_policy_shadow", &detail)))
-    }
 }
 
 fn has_explicit_mode(input: &AutopilotInput) -> bool {
@@ -1191,21 +1082,19 @@ fn planned_preloads(input: &AutopilotInput, bandit: &mut ProviderBandit) -> Vec<
 struct EnforcedPlan {
     plan: ContextPlan,
     observations: Vec<PolicyObservation>,
-    selection: Option<&'static str>,
 }
 
 fn read_kernel_plan(
     kernel: &ContextKernel,
     input: &AutopilotInput,
 ) -> Result<EnforcedPlan, KernelPlanError> {
-    let (plan, blocked, selection) = kernel.plan_with_selection_at(
+    let (plan, blocked) = kernel.plan_with_policy_at(
         &input.retrieval,
         &input.policy,
         input.evaluation_time.as_ref(),
     )?;
     Ok(EnforcedPlan {
         plan,
-        selection,
         observations: blocked
             .into_iter()
             .map(|entry| PolicyObservation {

@@ -189,8 +189,8 @@ pub(crate) fn cmd_cockpit(rest: &[String], view: Option<&str>) {
                 cockpit_start::Outcome::Failed(message) => install_hint = Some(message),
             }
         }
-        let output = explicit_output.unwrap_or("lean-ctx-report.html");
-        crate::cli::cmd_visualize(&[format!("--output={output}")]);
+        let output = explicit_output.unwrap_or(crate::cli::report_export::DEFAULT_OUTPUT);
+        crate::cli::report_export::write_report(output);
         if let Some(line) = install_hint {
             eprintln!("\x1b[2m{line}\x1b[0m");
         }

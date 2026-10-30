@@ -1349,6 +1349,8 @@ mod engine;
 mod image;
 #[path = "ctx_read_schema.rs"]
 mod schema;
+#[path = "ctx_read_symbol.rs"]
+mod symbol;
 use image::read_image_file;
 // #660 LOC gate: leaf helpers live in their own module.
 #[path = "ctx_read_helpers.rs"]

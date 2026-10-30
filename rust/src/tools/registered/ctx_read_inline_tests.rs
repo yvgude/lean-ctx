@@ -190,6 +190,45 @@ async fn mcp_ctx_read_withholds_content_free_cross_agent_stub() {
     }
 }
 
+/// `symbol=` serves exactly one definition through the MCP handler, and an
+/// unknown name answers with the outline in the same call.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mcp_symbol_read_returns_exactly_the_symbol() {
+    let _data_dir = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("ledger.py");
+    std::fs::write(
+        &file,
+        "def helper(x):\n    return x + 1\n\n\nclass Ledger:\n    def add(self, amount):\n        \
+         return helper(amount)\n\n    def remove(self, amount):\n        return -amount\n",
+    )
+    .unwrap();
+    let ctx = engine_test_context(dir.path(), &file);
+    let read = |symbol: &str| {
+        let args = json!({ "path": file.to_string_lossy(), "symbol": symbol, "mode": "full" });
+        tokio::task::block_in_place(|| CtxReadTool.handle(args.as_object().unwrap(), &ctx))
+            .expect("symbol read")
+            .text
+    };
+    let text = read("Ledger.add");
+    assert!(text.contains("def add(self, amount)") && text.contains("return helper(amount)"));
+    assert!(
+        !text.contains("def remove") && !text.contains("def helper"),
+        "{text}"
+    );
+    assert_eq!(text, read("Ledger.add"), "byte-stable (#498)");
+
+    let missing = read("nope");
+    assert!(
+        missing.contains("symbol `nope` not in this file"),
+        "{missing}"
+    );
+    assert!(
+        missing.contains("remove"),
+        "outline lists the names: {missing}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_aggressive_read_records_deterministic_engine_receipt() {
     use crate::core::cache::SessionCache;

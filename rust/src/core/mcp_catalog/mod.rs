@@ -157,7 +157,8 @@ where
 /// Redact secrets in downstream MCP output before it reaches the model
 /// (GHSA-gvg8-285q-m62g). Same layers as `ctx_shell` output: the role-aware
 /// redaction pass, then the configured secret scanner, with a security event
-/// for every hit. Applied to success *and* error text.
+/// for every hit. Applied to success *and* error text of [`proxy`], and to
+/// the answer of a compression addon (`adapters::compression`).
 fn redact_downstream_output(server_name: &str, text: &str) -> String {
     let cfg = crate::core::config::Config::load();
     redact_downstream_output_with(server_name, text, &cfg.secret_detection)

@@ -13,6 +13,7 @@ mod enforcement;
 mod heredoc;
 mod lexer;
 mod mode;
+mod partial;
 mod powershell;
 mod ps_statements;
 mod self_config;
@@ -48,6 +49,7 @@ pub use heredoc::strip_all_heredoc_bodies;
 #[cfg(test)]
 pub(crate) use heredoc::{strip_comments, strip_quoted_heredoc_bodies};
 pub use mode::ShellSecurity;
+pub use partial::{PartialRun, partial_run};
 pub(crate) use substitution::check_substitution_in_args;
 #[cfg(test)]
 pub(crate) use substitution::has_expanding_substitution_in_args;

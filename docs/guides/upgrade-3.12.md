@@ -91,6 +91,20 @@ account.
 - **OKF paths resolve against the project root.** `ctx_knowledge` OKF export and import take
   a relative `path` from the project root, not from the server's working directory, and a
   path outside the project is refused.
+- **Context packages from other publishers need a pinned key (3.12.1).** `lean-ctx pack
+  import`, `pack install --file` and `pack receive` refuse a package whose signer is not
+  pinned in `trusted-signers.toml`, a local identity or this machine. Pin the publisher's key,
+  or pass `--allow-untrusted-signer` to accept a validly signed package from an unknown key.
+- **`compliance verify` can exit with 3 (3.12.1).** A report signed by a key other than this
+  installation's is reported as `SELF-SIGNED / UNPINNED` with exit code 3. Scripts that verify
+  reports from another machine pass that machine's key with `--pubkey <hex>`.
+- **Writes outside the active project need an allow entry (3.12.1).** The default
+  `path_jail_scope` is `projects`: tools still read every project below `~`, but write only
+  in the session's project and in paths you allowed. A write into another project is refused
+  with the command that admits it: `lean-ctx allow-path <dir>` for one directory, or
+  `lean-ctx config set path_jail_scope home` to read and write all of `~` as in 3.11.3 to
+  3.12.0. Loose files outside a project (`~/Documents`, `~/Downloads`) are no longer readable
+  under the default either. If you set `path_jail_scope` yourself, nothing changes.
 
 ## Going back to 3.11
 

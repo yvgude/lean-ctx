@@ -21,6 +21,10 @@ pub struct SearchHistory {
 pub struct AutonomyState {
     /// Set once the session's wake-up briefing was delivered.
     pub session_briefed: AtomicBool,
+    /// Set once the auto-load context packages were applied (first call).
+    pub packages_applied: AtomicBool,
+    /// Packages a silent first call applied, named by the briefing later.
+    pub packages_loaded: Mutex<Vec<String>>,
     pub last_consolidation_unix: AtomicU64,
     pub config: AutonomyConfig,
     /// Repeated `pattern|path` keys for search tools (see [`AutonomyState::track_search`]).
@@ -40,6 +44,8 @@ impl AutonomyState {
     pub fn new() -> Self {
         Self {
             session_briefed: AtomicBool::new(false),
+            packages_applied: AtomicBool::new(false),
+            packages_loaded: Mutex::new(Vec::new()),
             last_consolidation_unix: AtomicU64::new(0),
             config: AutonomyConfig::load(),
             search_repetition: Mutex::new(HashMap::new()),

@@ -24,9 +24,9 @@ use std::time::Duration;
 /// doesn't break the smoke while the contract (anchor vs full skeleton) holds.
 const ANCHOR_PREFIX: &str = "lean-ctx active —";
 /// A line only the FULL canonical skeleton carries. Shadow mode uses
-/// "auto-route" instead of "MANDATORY MAPPING", so we check for either.
+/// "auto-route" instead of "lean-ctx routing", so we check for either.
 fn has_skeleton(text: &str) -> bool {
-    text.contains("MANDATORY MAPPING") || text.contains("auto-route")
+    text.contains("lean-ctx routing") || text.contains("auto-route")
 }
 
 struct TestEnv {
@@ -259,26 +259,26 @@ fn cursor_covered_client_gets_anchor_and_lazy_core() {
     windows,
     ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
 )]
-fn claude_uncovered_client_gets_full_skeleton() {
+fn claude_covered_client_gets_anchor() {
     let bin = env!("CARGO_BIN_EXE_lean-ctx");
     let env = test_env();
 
     run_init(bin, &env, "claude");
 
-    // CLAUDE.md carries the compact block — deliberately NOT the canonical
-    // rules (rules_channel: Claude never counts as covered).
+    // A3 (one rules channel per host): the CLAUDE.md block is Claude's rules
+    // channel, so the MCP instructions collapse to the anchor.
     let claude_md = std::fs::read_to_string(env.home.join(".claude/CLAUDE.md")).expect("CLAUDE.md");
     assert!(claude_md.contains("<!-- lean-ctx -->"));
 
     let (instructions, tools) = mcp_handshake(bin, &env, "claude-code");
 
     assert!(
-        has_skeleton(&instructions),
-        "claude is NOT rules-file covered → instructions must carry the full skeleton.\n{instructions}"
+        instructions.contains(ANCHOR_PREFIX),
+        "claude with the CLAUDE.md block must get the anchor.\n{instructions}"
     );
     assert!(
-        !instructions.contains(ANCHOR_PREFIX),
-        "claude must not get the covered-client anchor.\n{instructions}"
+        !has_skeleton(&instructions),
+        "claude must not pay for the skeleton a second time.\n{instructions}"
     );
     assert_lazy_core_surface(&tools, "claude");
 }

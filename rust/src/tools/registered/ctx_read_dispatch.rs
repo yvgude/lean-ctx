@@ -79,6 +79,26 @@ impl McpTool for CtxReadTool {
             None => (path, None),
         };
 
+        // `symbol=` narrows the read to one definition's lines; the content then
+        // flows through the ordinary `lines:`/`anchored:` path.
+        let symbol_args;
+        let mut symbol_note = None;
+        let args = match get_str(args, "symbol").filter(|s| !s.trim().is_empty()) {
+            None => args,
+            Some(symbol) => {
+                if byte_exact {
+                    return Err(ErrorData::invalid_params(
+                        "symbol= cannot combine with raw or engine_interface",
+                        None,
+                    ));
+                }
+                let (rewritten, note) = symbol_request(args, &path, &symbol)?;
+                symbol_args = rewritten;
+                symbol_note = note;
+                &symbol_args
+            }
+        };
+
         let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.handle_inner(args, ctx, &path, engine_interface_v1)
         })) {
@@ -98,6 +118,9 @@ impl McpTool for CtxReadTool {
                     "{}\n[lean-ctx: {requested} does not exist — read {path} instead]",
                     output.text.trim_end_matches('\n')
                 );
+            }
+            if let Some(note) = &symbol_note {
+                output.text = format!("{}\n{note}", output.text.trim_end_matches('\n'));
             }
             output
         });
@@ -127,4 +150,35 @@ impl McpTool for CtxReadTool {
     fn publishes_every_source(&self, _args: Option<&Map<String, Value>>) -> bool {
         true
     }
+}
+
+/// Rewrite a `symbol=` request into the window read that serves it. Under an
+/// active context policy the lookup is refused: resolving names before
+/// admission would answer "does this symbol exist" for a withheld file.
+fn symbol_request(
+    args: &Map<String, Value>,
+    path: &str,
+    symbol: &str,
+) -> Result<(Map<String, Value>, Option<String>), ErrorData> {
+    if crate::core::policy::runtime::is_active() {
+        return Err(ErrorData::invalid_params(
+            "symbol= is unavailable under an active context policy; use mode=\"lines:N-M\"",
+            None,
+        ));
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| ErrorData::invalid_params(format!("cannot read {path}: {e}"), None))?;
+    let anchored = get_str(args, "mode").is_some_and(|m| m.starts_with("anchored"));
+    let (mode, note) = match super::symbol::resolve(&content, path, symbol, anchored)
+        .map_err(|e| ErrorData::invalid_params(e, None))?
+    {
+        super::symbol::SymbolRead::Window { mode, note } => (mode, note),
+        super::symbol::SymbolRead::NotFound(note) => ("signatures".to_string(), Some(note)),
+    };
+    let mut rewritten = args.clone();
+    for key in ["symbol", "start_line", "offset", "limit"] {
+        rewritten.remove(key);
+    }
+    rewritten.insert("mode".into(), Value::String(mode));
+    Ok((rewritten, note))
 }

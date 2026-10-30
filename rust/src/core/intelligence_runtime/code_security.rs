@@ -68,24 +68,28 @@ pub(crate) fn note(path: &str, source: &str) -> Option<String> {
         || source.contains('\0')
     {
         return Some(
-            "Pro code hints: not analyzed (source exceeds the supported text bounds).".into(),
+            "LeanCTX Hive code hints: not analyzed (source exceeds the supported text bounds)."
+                .into(),
         );
     }
     Some(match invoke(&config, language, source) {
         Ok(hints) => render(&hints),
-        Err(_) => "Pro code hints unavailable; existing read protections are unchanged.".into(),
+        Err(_) => {
+            "LeanCTX Hive code hints unavailable; existing read protections are unchanged.".into()
+        }
     })
 }
 
 fn render(hints: &Hints) -> String {
     if !hints.supported {
-        return "Pro code hints: no checks available for this language.".into();
+        return "LeanCTX Hive code hints: no checks available for this language.".into();
     }
     if hints.findings.is_empty() {
-        return "Pro code hints: no matching patterns in inspected source (limited static checks)."
+        return "LeanCTX Hive code hints: no matching patterns in inspected source (limited static checks)."
             .into();
     }
-    let mut text = String::from("Pro code hints (limited static checks; review required):");
+    let mut text =
+        String::from("LeanCTX Hive code hints (limited static checks; review required):");
     for finding in &hints.findings {
         let message = match finding.rule_id {
             Rule::TlsVerificationDisabled => {

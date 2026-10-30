@@ -457,6 +457,7 @@ fn active_relaxations_empty_when_jail_intact() {
         "LCTX_ALLOW_PATH",
         "LEAN_CTX_EXTRA_ROOTS",
         "LEAN_CTX_ALLOW_IDE_DIRS",
+        "LEAN_CTX_PATH_JAIL_SCOPE",
     ] {
         crate::test_env::remove_var(var);
     }
@@ -578,6 +579,9 @@ fn extra_roots_permit_paths_outside_jail() {
 fn harness_auto_memory_path_is_allowed_without_extra_roots() {
     let _iso = crate::core::data_dir::isolated_data_dir();
     let tmp = tempfile::tempdir().unwrap();
+    let old_home = std::env::var_os("HOME");
+    crate::test_env::set_var("HOME", tmp.path());
+    crate::test_env::remove_var("CLAUDE_CONFIG_DIR");
     let root = tmp.path().join("project");
     let memory = tmp
         .path()
@@ -604,6 +608,28 @@ fn harness_auto_memory_path_is_allowed_without_extra_roots() {
         jail_path_with_roots(&mem_file, &root, &[]).is_ok(),
         "auto-memory file must pass PathJail without extra_roots"
     );
+
+    // A look-alike `.claude/projects/<slug>/memory` outside the harness home
+    // (a cloned repo, /tmp) is an ordinary path, not auto memory.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let fake = elsewhere
+        .path()
+        .join(".claude/projects/-x/memory/MEMORY.md");
+    std::fs::create_dir_all(fake.parent().unwrap()).unwrap();
+    std::fs::write(&fake, "x").unwrap();
+    assert!(!is_harness_auto_memory_path(&fake));
+    assert!(
+        jail_path_with_roots(&fake, &root, &[]).is_err(),
+        "look-alike memory dir outside ~ must stay jailed"
+    );
+    assert!(!is_harness_auto_memory_path(
+        &memory.join("../../../../.ssh/id_ed25519")
+    ));
+
+    match old_home {
+        Some(h) => crate::test_env::set_var("HOME", h),
+        None => crate::test_env::remove_var("HOME"),
+    }
 }
 
 /// #820: lean-ctx state dir (tee files) is implicitly allowed by the jail.

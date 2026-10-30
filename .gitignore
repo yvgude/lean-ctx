@@ -72,6 +72,9 @@ website/
 # counted as "changed files" by preflight's change classification.
 .ctarget/
 target-wt*/
+# Machine-local build tuning (rust/scripts/setup-fast-build.sh: linker, sccache).
+# The shared `cargo fast` alias is tracked in rust/.cargo/config.toml.
+/.cargo/config.toml
 AGENTS.md.lean-ctx.*.bak
 docs/gpt/
 

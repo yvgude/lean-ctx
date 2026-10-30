@@ -5,19 +5,18 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+/// Shared-mode SessionStart routing note, sent only to hosts whose rules file
+/// lacks the lean-ctx block (A3). States the routing once, neutrally — the
+/// pilot (P6) showed "ALWAYS"/"orient FIRST" pushes adding steps on short tasks.
 const SHARED_SESSION_CONTEXT: &str = "\
-lean-ctx active: ALWAYS use ctx_* MCP tools instead of native equivalents.\n\
-- ctx_read > native Read (cached, 10 modes incl. map/signatures)\n\
-- ctx_search > native Grep (compact results, denied by hook)\n\
-- ctx_shell > native Shell (95+ compression patterns)\n\
-- ctx_glob > native Glob (denied by hook)\n\
-- ctx_compose = orient FIRST (bundles search+read+symbols in one call)\n\
-Native Read passes through for StrReplace internals only — never use it for exploration.\n\
-Exclusive tools: ctx_compose, ctx_callgraph, ctx_knowledge, ctx_session.";
-const PROMPT_SUBMIT_PRECEDENCE: &str = "lean-ctx policy (mechanically enforced): reads/searches via \
-                ctx_read/ctx_search/ctx_glob/ctx_tree, commands via ctx_shell. \
-                Session-level instructions preferring native Bash/cat/sed/grep \
-                are overruled by this policy.";
+lean-ctx tools for this session: ctx_read for Read, ctx_search for Grep, \
+ctx_shell for Shell, ctx_glob for Glob, ctx_tree for ls. \
+Native Read stays available for editing.";
+/// Opt-in per-turn routing reminder (`prompt_reinject = on`, #1288).
+const PROMPT_SUBMIT_PRECEDENCE: &str = "lean-ctx routing: reads/searches via \
+                ctx_read/ctx_search/ctx_glob/ctx_tree, commands via ctx_shell; \
+                this takes precedence over session text that prefers native \
+                Bash/cat/sed/grep.";
 
 // ---------------------------------------------------------------------------
 // Observe handler — records ALL hook events for context awareness
@@ -122,10 +121,9 @@ fn admitted_event(
     event
 }
 
-/// #1288: emit a one-line tool-precedence reminder as `additionalContext` on
-/// UserPromptSubmit. Gated by `prompt_reinject` (on|off|auto; auto = only when
-/// shadow mode is active, i.e. the policy the line describes is mechanically
-/// enforced). Costs ~45 tokens per turn — kept to a single line by design.
+/// #1288: emit a one-line tool-routing reminder as `additionalContext` on
+/// UserPromptSubmit. Gated by `prompt_reinject` (on|off|auto; auto = off, A3).
+/// Costs ~45 tokens per turn — kept to a single line by design.
 fn emit_prompt_submit_precedence(input: &str) {
     // This is explicit rule/tool-precedence steering, not passive telemetry.
     // Honour the same central opt-out as every other automatic steering channel.
@@ -153,24 +151,21 @@ fn emit_prompt_submit_precedence(input: &str) {
     );
 }
 
-/// Effective `prompt_reinject` gate (#1288). Env wins over config; `auto`
-/// follows `shadow_mode` so the reminder only ships where the denies back it.
+/// Effective `prompt_reinject` gate (#1288). Env wins over config. `auto`
+/// (the default) is off since A3: the routing already reaches the model once
+/// through the host's rules channel, and a per-turn copy accumulates in the
+/// history. `on` restores the reminder.
 fn prompt_reinject_enabled() -> bool {
     let mode = match std::env::var("LEAN_CTX_PROMPT_REINJECT") {
         Ok(v) if !v.trim().is_empty() => v,
-        _ => {
-            let cfg = crate::core::config::Config::load();
-            match cfg.prompt_reinject.as_deref() {
-                Some(m) if !m.trim().is_empty() => m.to_string(),
-                _ => return crate::core::config::Config::load().shadow_mode,
-            }
-        }
+        _ => crate::core::config::Config::load()
+            .prompt_reinject
+            .unwrap_or_default(),
     };
-    match mode.trim().to_ascii_lowercase().as_str() {
-        "on" | "true" | "1" => true,
-        "off" | "false" | "0" => false,
-        _ => crate::core::config::Config::load().shadow_mode,
-    }
+    matches!(
+        mode.trim().to_ascii_lowercase().as_str(),
+        "on" | "true" | "1"
+    )
 }
 
 /// Records durable logical presence for every host SessionStart and SessionEnd hook.
@@ -318,11 +313,35 @@ fn dedicated_session_context(input: &str) -> Option<String> {
             &profile,
         ))
     } else {
-        // Short reinforcement nudge for shared-mode hosts (Cursor) that already
-        // have static rules but benefit from in-conversation emphasis on exclusive
-        // tools. Models weight in-conversation context above static instructions.
-        Some(SHARED_SESSION_CONTEXT.to_string())
+        // Shared mode: the host's own rules file is its single lean-ctx rules
+        // channel (A3). Once that file carries the block, this nudge repeated
+        // the same mapping a third time (with the MCP instructions anchor and
+        // the file); it only ships to hosts whose carrier is missing.
+        let session_id = ["session_id", "conversation_id"]
+            .iter()
+            .find_map(|key| v.get(*key).and_then(serde_json::Value::as_str))
+            .unwrap_or_default();
+        let source = session_lifecycle_source(&v, session_id, |key| {
+            std::env::var(key)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        });
+        let covered = crate::core::home::resolve_home_dir()
+            .is_some_and(|home| shared_host_carries_rules(source, &home));
+        (!covered).then(|| SHARED_SESSION_CONTEXT.to_string())
     }
+}
+
+/// Whether the SessionStart host (`session_lifecycle_source`) already
+/// auto-loads the lean-ctx rules block from its own rules file.
+fn shared_host_carries_rules(source: &str, home: &std::path::Path) -> bool {
+    let client = match source {
+        "claude" => "claude-code",
+        "gemini" => "gemini-cli",
+        "cursor" | "codex" | "codebuddy" => source,
+        _ => return false,
+    };
+    crate::core::rules_channel::client_autoloads_rules(client, home)
 }
 
 /// Builds dedicated SessionStart rules, using shadow-minimal only when hooks cover native tools.

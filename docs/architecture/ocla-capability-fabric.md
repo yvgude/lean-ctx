@@ -196,8 +196,8 @@ Eine vollständige V4-Nutzerabnahme folgt daraus nicht.
   Registrierung ist nicht als vollständiger technischer Katalog abgenommen.
 - OCP-Upstream-Pin, Driftprüfung und kanonische Beziehungs-ADR fehlen als
   abgeschlossener Release-Nachweis.
-- Community/Pro/Team/Enterprise-Entitlements sowie adaptive Lern- und
-  Privacy-Gates sind nicht als unveränderter Gesamtpfad bewiesen.
+- Die OSS/Hive-Grenze (lokal frei, Hive Team/Enterprise nur für geteilte und
+  gesteuerte Capabilities) sowie adaptive Lern- und Privacy-Gates sind nicht als unveränderter Gesamtpfad bewiesen.
 - Conformance-, Manipulations-, Health-/Recovery-, Fallback- und echte
   Multi-Provider-/Connector-E2E-Tests fehlen als integrierte V4-Abnahme.
 

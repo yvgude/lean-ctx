@@ -436,7 +436,6 @@ new_paths = [
   # protocol types and C0 hive/hive-v2 fixtures, engine metrics v2, consent helper,
   # shell approval, tasks, knowledge import and their tests: own work under Apache-2.0.
   # PROPOSED by the release rehearsal: the owner confirms this list before the export.
-  "docs/architecture/gateway-no-lockout.md",
   "rust/crates/lean-ctx-protocol/src/hive/anchor.rs",
   "rust/crates/lean-ctx-protocol/src/hive/automerge.rs",
   "rust/crates/lean-ctx-protocol/src/hive/codegraph.rs",
@@ -1457,6 +1456,34 @@ new_paths = [
   "rust/src/cli/dispatch/cockpit_hint.rs",
   "rust/src/cli/dispatch/network/cockpit_start.rs",
   "rust/src/dashboard/launch.rs",
+  # 3.12.1: failure-template scrubber, ctx_edit repeats, withheld audit and
+  # report export, hook permission mirroring (engine/engine-fix).
+  "rust/examples/retemplate_failure_messages.rs",
+  "rust/src/cli/report_export.rs",
+  "rust/src/core/failure_template_tests.rs",
+  "rust/src/core/failure_vocabulary.rs",
+  "rust/src/hook_handlers/claude_permissions.rs",
+  "rust/src/hook_handlers/claude_permissions_tests.rs",
+  "rust/src/hook_handlers/gemini_permissions.rs",
+  "rust/src/hook_handlers/safe_commands.rs",
+  "rust/src/hook_handlers/safe_commands_tests.rs",
+  "rust/src/tools/ctx_edit/applied_edits.rs",
+  # 3.12.1 optplan: governor hook, partial shell runs, lossless collapse,
+  # secret gate, ctx_read symbol (lean-ctx-af, integration/optplan).
+  "rust/src/core/patterns/lossless_collapse.rs",
+  "rust/src/core/shell_allowlist/partial.rs",
+  "rust/src/hook_handlers/govern/bash.rs",
+  "rust/src/hook_handlers/govern/diagnostics.rs",
+  "rust/src/hook_handlers/govern/enforce.rs",
+  "rust/src/hook_handlers/govern/mod.rs",
+  "rust/src/hook_handlers/govern/tests.rs",
+  "rust/src/hook_handlers/secret_gate.rs",
+  "rust/src/hooks/agents/claude_governor.rs",
+  "rust/src/tools/registered/ctx_read_symbol.rs",
+  # 3.12.1: the shared `cargo fast` alias (only the alias, no [build] job budget),
+  # so fresh clones can run `make build`; the root .cargo/config.toml stays private.
+  "rust/.cargo/config.toml",
+  "tests/build/test_cargo_alias.py",
 ]
 
 # Public paths the export no longer carries: each one is a feature sunset with
@@ -1879,6 +1906,18 @@ removed_paths = [
   "rust/src/setup/agent_select.rs",
   # 3.12.0 PROPOSED (owner confirms): the proxy /dashboard page now points to `lean-ctx cockpit`.
   "rust/src/proxy/web_app/dashboard.html",
+  # 3.12.1: the Visualizer page, unused since `visualize` was removed in 3.12.0;
+  # `cockpit --export` writes the Cockpit report (cli/report_export.rs).
+  "rust/src/assets/visualizer.html",
+  "rust/src/cli/visualize_cmd.rs",
+  "rust/src/core/visualizer.rs",
+  # 3.12.1 optplan: no Pro paths in the open engine; context ranking, memory
+  # selection and read strategy are local and free (2c38e03e05, 4f3ecaa5f1).
+  "rust/src/core/context_store/policy_store.rs",
+  "rust/src/core/intelligence_runtime/context_policy.rs",
+  "rust/src/core/intelligence_runtime/context_selection.rs",
+  "rust/src/core/intelligence_runtime/memory_curation.rs",
+  "rust/src/tools/ctx_compose_selection.rs",
 ]
 
 include = [
@@ -1957,7 +1996,7 @@ forbidden_prefixes = [
 # the canonical registry changes (scripts/check-capabilities.py checks the pin).
 [[generated]]
 path = "product/capabilities.toml"
-sha256 = "c241ccc39d56dd29db7c70805d73912052ff9b2cd32286a8e2e714f06135db0b"
+sha256 = "1fed7ac3a656c34351259279ef22897c47ae5fd88efd92956e9140be0cfdae38"
 required = true
 
 # The public source layout: `scripts/check-source-layout.py --project
@@ -1966,7 +2005,7 @@ required = true
 # product/source-layout.json changes.
 [[generated]]
 path = "docs/reference/generated/product-capabilities.md"
-sha256 = "aabdc717811e7d8ed694d6b471cff5b9e7a92befcc0f2602e9ccfc2f2c3df7f3"
+sha256 = "64b36affde791d759d115766fdd93433994cc03a366ffad4865757b8806f30c0"
 required = true
 
 [[generated]]

@@ -189,7 +189,7 @@ fn handle_policy(value: Option<&str>) -> String {
 
             format!(
                 "Knowledge policy (effective, profile={profile}):\n\
-                 - memory.knowledge.max_facts={}\n\
+                 - memory.knowledge facts: no limit (max_facts is ignored)\n\
                  - memory.knowledge.contradiction_threshold={}\n\
                  - memory.knowledge.recall_facts_limit={}\n\
                  - memory.knowledge.rooms_limit={}\n\
@@ -198,7 +198,6 @@ fn handle_policy(value: Option<&str>) -> String {
                  - memory.lifecycle.decay_rate={}\n\
                  - memory.lifecycle.stale_days={}\n\
                  \nConfig: {cfg_path}",
-                policy.knowledge.max_facts,
                 policy.knowledge.contradiction_threshold,
                 policy.knowledge.recall_facts_limit,
                 policy.knowledge.rooms_limit,
@@ -490,12 +489,10 @@ fn handle_lifecycle_report(project_root: &str) -> String {
         Some(k) => {
             let active = k.facts.iter().filter(|f| f.is_current()).count();
             let archived = k.facts.len() - active;
-            let cap = policy.knowledge.max_facts;
-            let fill_pct = (active * 100).checked_div(cap).unwrap_or(0);
             out.push_str(&format!(
-                "knowledge   {active} active / {archived} archived (cap {cap}, {fill_pct}% full)\n\
+                "knowledge   {active} active / {archived} archived (no fact limit)\n\
                  \x20           decay {}/day, stale >{}d, consolidate-sim {:.2}\n\
-                 \x20           GC: self-limiting on remember when >{cap}; eviction archives, never deletes\n",
+                 \x20           GC: by quality only (decay, near-duplicate merge, low-confidence/stale); eviction archives, never deletes\n",
                 policy.lifecycle.decay_rate,
                 policy.lifecycle.stale_days,
                 policy.lifecycle.similarity_threshold,
@@ -630,17 +627,9 @@ fn handle_health(project_root: &str) -> String {
         .memory_policy_effective()
         .unwrap_or_default();
     out.push_str(&format!(
-        "\nPolicy: max {} facts, max {} patterns\n",
-        policy.knowledge.max_facts, policy.knowledge.max_patterns
+        "\nPolicy: no fact limit, max {} patterns\n",
+        policy.knowledge.max_patterns
     ));
-
-    if current.len() > policy.knowledge.max_facts {
-        out.push_str(&format!(
-            "WARNING: Active facts ({}) exceed policy max ({})\n",
-            current.len(),
-            policy.knowledge.max_facts
-        ));
-    }
 
     out
 }

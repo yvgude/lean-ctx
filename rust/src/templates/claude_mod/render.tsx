@@ -9,7 +9,7 @@
 // The formats read here are lean-ctx's own output contract: the ```diff fence
 // of ctx_patch, the `name NL` header with `  N| ` or `N:hash|` rows of
 // ctx_read, and `path:line text` hits of ctx_search.
-import type { Elements as SurfaceElements, On, RenderElement } from "claude-code";
+import type { Elements as SurfaceElements, EngineInterface, On, RenderElement } from "claude-code";
 
 const TOOLS = [
   "mcp__lean-ctx__ctx_patch",
@@ -35,6 +35,8 @@ type Drawing = { summary: string; blocks: Block[] };
 const MAX_CODE_CHARS = 100_000;
 const DIFF_FENCE = /^```diff[ \t]*\n([\s\S]*?)\n?^```[ \t]*$/gm;
 const NEW_FILE = /^\+\+\+ (?:b\/)?(\S+)/m;
+// A ctx_patch receipt's pointer to the diff lean-ctx archived for this mod.
+const DIFF_TRAILER = /^\[diff:([0-9a-f]{16})\]$/gm;
 const READ_HEADER = /^(\S+) \d+L\b/;
 const LINES_ROW = /^ *(\d+)\| ?(.*)$/;
 const ANCHOR_ROW = /^(\d+):[0-9a-f]{2,8}\|(.*)$/;
@@ -50,6 +52,7 @@ export function registerResultRendering(on: On): void {
     },
     async ($, event, next) => {
       const props = event.props;
+      await loadArtifacts($, props.tool, props.output);
       const drawing = drawingFor(props.tool, props.tool_use_id, props.output, props.input);
       if (!drawing) return next(event);
       // The engine keeps the call row; only its result text shrinks to the summary.
@@ -75,6 +78,7 @@ export function registerResultRendering(on: On): void {
     async ($, event, next) => {
       const props = event.props;
       // A standalone result has no call input: headerless full reads stay plain.
+      await loadArtifacts($, props.tool, props.output);
       const drawing = drawingFor(props.tool, `result:${props.tool_use_id}`, props.output, undefined);
       if (!drawing) return next(event);
       const els = $.ui.resolve(event);
@@ -104,14 +108,31 @@ export function resultText(output: unknown): string {
   return "";
 }
 
-/** ctx_patch: every ```diff fence becomes a diff block; the `✓` line is the summary. */
-export function drawPatch(text: string): Drawing | null {
+/** The ids of the `[diff:<id>]` trailers a ctx_patch receipt names. */
+export function diffArtifactIds(text: string): string[] {
+  return [...text.matchAll(DIFF_TRAILER)].map((match) => match[1] ?? "").filter((id) => id);
+}
+
+/**
+ * ctx_patch: every ```diff fence becomes a diff block (`evidence=true`, and
+ * receipts before 3.12.1); a `[diff:<id>]` trailer becomes the archived diff
+ * from `artifacts`, which the model never reads. The `patched …`/`created …`
+ * (or legacy `✓`) line is the summary.
+ */
+export function drawPatch(text: string, artifacts: ReadonlyMap<string, string> = new Map()): Drawing | null {
   const blocks: Block[] = [];
   let summary = "";
   let cursor = 0;
+  let drawn = false;
   const pushNotes = (chunk: string) => {
     for (const line of chunk.split("\n")) {
-      if (!summary && line.startsWith("✓")) summary = line;
+      const trailer = /^\[diff:([0-9a-f]{16})\]$/.exec(line);
+      if (trailer) {
+        const source = artifacts.get(trailer[1] ?? "");
+        if (source === undefined || source.length > MAX_CODE_CHARS) continue;
+        blocks.push({ kind: "diff", source, path: NEW_FILE.exec(source)?.[1] });
+        drawn = true;
+      } else if (!summary && /^(?:patched |created |✓)/.test(line)) summary = line;
       else if (line.trim()) blocks.push({ kind: "note", text: line });
     }
   };
@@ -120,10 +141,11 @@ export function drawPatch(text: string): Drawing | null {
     const source = match[1] ?? "";
     if (source.length > MAX_CODE_CHARS) return null;
     blocks.push({ kind: "diff", source, path: NEW_FILE.exec(source)?.[1] });
+    drawn = true;
     cursor = (match.index ?? 0) + match[0].length;
   }
-  if (cursor === 0) return null;
   pushNotes(text.slice(cursor));
+  if (!drawn) return null;
   return { summary: summary || "✓ patched", blocks: mergeNotes(blocks) };
 }
 
@@ -244,20 +266,58 @@ type Elements = Pick<SurfaceElements[keyof SurfaceElements], "Box" | "Text" | "C
 
 // Finished results never change, but rows redraw on scroll and resize.
 const CACHE_LIMIT = 200;
-const drawings = new Map<string, { text: string; drawing: Drawing | null }>();
+const drawings = new Map<string, { text: string; loaded: number; drawing: Drawing | null }>();
+
+// Archived ctx_patch diffs by id (content-addressed, so never stale), and the
+// lean-ctx data directory they live under, as lean-ctx reports it.
+const artifacts = new Map<string, string>();
+let archiveRoot: Promise<string | undefined> | undefined;
+
+function locateArchive($: EngineInterface): Promise<string | undefined> {
+  archiveRoot ??= $.process
+    .run(["lean-ctx", "prompt-segment", "--json"], { timeoutMs: 15_000 })
+    .then(({ exitCode, stdout }) => {
+      if (exitCode !== 0) return undefined;
+      const parsed: unknown = JSON.parse(stdout);
+      const watch = parsed && typeof parsed === "object" ? (parsed as { watch?: unknown }).watch : undefined;
+      // `<data>/value/projects` → `<data>/archives`
+      return typeof watch === "string" ? `${watch.replace(/[\\/]value[\\/]projects[\\/]?$/, "")}/archives` : undefined;
+    })
+    .catch(() => undefined);
+  return archiveRoot;
+}
+
+/** Reads each archived diff a ctx_patch receipt names; a missing one is left out. */
+async function loadArtifacts($: EngineInterface, tool: LeanTool, output: unknown): Promise<void> {
+  if (!tool.endsWith("__ctx_patch")) return;
+  const ids = diffArtifactIds(resultText(output)).filter((id) => !artifacts.has(id));
+  if (!ids.length) return;
+  const root = await locateArchive($);
+  if (!root) return;
+  for (const id of ids) {
+    // The archive's own layout: `<archives>/<first 2 hex>/<id>.txt`.
+    const diff = await $.fs.read(`${root}/${id.slice(0, 2)}/${id}.txt`).catch(() => undefined);
+    if (typeof diff === "string") artifacts.set(id, diff);
+  }
+}
 
 function drawingFor(tool: LeanTool, key: string, output: unknown, input: unknown): Drawing | null {
   const text = resultText(output);
   const cached = drawings.get(key);
-  if (cached && cached.text === text) return cached.drawing;
+  const loaded = diffArtifactIds(text).filter((id) => artifacts.has(id)).length;
+  if (cached && cached.text === text && cached.loaded === loaded) return cached.drawing;
   const name = tool.slice(tool.lastIndexOf("__") + 2);
   const drawing =
-    name === "ctx_patch" ? drawPatch(text) : name === "ctx_read" ? drawRead(text, input) : drawSearch(text);
+    name === "ctx_patch"
+      ? drawPatch(text, artifacts)
+      : name === "ctx_read"
+        ? drawRead(text, input)
+        : drawSearch(text);
   if (drawings.size >= CACHE_LIMIT) {
     const oldest = drawings.keys().next();
     if (!oldest.done) drawings.delete(oldest.value);
   }
-  drawings.set(key, { text, drawing });
+  drawings.set(key, { text, loaded, drawing });
   return drawing;
 }
 

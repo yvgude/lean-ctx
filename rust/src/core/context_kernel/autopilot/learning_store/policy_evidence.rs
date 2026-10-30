@@ -107,8 +107,7 @@ fn language_of(extension: &str) -> WorkloadLanguageV1 {
     }
 }
 
-/// The workload a plan belongs to: the same key evidence is recorded under
-/// and a promoted policy is looked up by.
+/// The workload a plan belongs to: the key evidence is recorded under.
 pub(crate) fn workload_of(class: TaskClass, plan: &ContextPlanV1) -> WorkloadV1 {
     WorkloadV1 {
         task_class: task_class(class),

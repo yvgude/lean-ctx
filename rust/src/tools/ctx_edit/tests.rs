@@ -23,6 +23,7 @@ mod tests {
             backup: false,
             backup_path: None,
             evidence: false,
+            diff_artifact: false,
             diff_max_lines: 200,
             allow_lossy_utf8: false,
         }
@@ -103,6 +104,97 @@ mod tests {
             !ro.join("sub").exists(),
             "no directory may be created in a read-only root"
         );
+    }
+
+    #[test]
+    fn empty_old_string_creates_a_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sub/new_file.txt");
+        let (text, effect) = run_io(&mk_params(&path, "", "one\ntwo\n", false, false), "");
+        assert!(text.starts_with("✓ created new_file.txt: 2 lines"), "{text}");
+        assert!(matches!(effect, CacheEffect::Invalidate));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "one\ntwo\n");
+    }
+
+    #[test]
+    fn empty_old_string_fills_an_empty_file() {
+        let f = make_temp("");
+        let mut cache = SessionCache::new();
+        let text = handle(&mut cache, &mk_params(f.path(), "", "filled\n", false, false));
+        assert!(text.starts_with('✓'), "{text}");
+        assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "filled\n");
+    }
+
+    #[test]
+    fn empty_old_string_keeps_refusing_a_file_with_content() {
+        let f = make_temp("precious\n");
+        let (text, effect) = run_io(&mk_params(f.path(), "", "overwritten", false, false), "");
+        assert_eq!(
+            text,
+            "ERROR: old_string must not be empty for a non-empty file (an empty old_string \
+             only creates a missing or empty file; use create=true to replace the whole file)"
+        );
+        assert!(matches!(effect, CacheEffect::None));
+        assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "precious\n");
+        // A directory is not an empty file either.
+        let dir = tempfile::tempdir().unwrap();
+        let (text, _) = run_io(&mk_params(dir.path(), "", "x", false, false), "");
+        assert!(text.starts_with("ERROR: old_string must not be empty"), "{text}");
+    }
+
+    #[test]
+    fn empty_old_string_honours_the_preimage_guards() {
+        let f = make_temp("");
+        let mut params = mk_params(f.path(), "", "x", false, false);
+        params.expected_size = Some(7);
+        let (text, _) = run_io(&params, "");
+        assert!(text.contains("preimage mismatch"), "{text}");
+        assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn empty_old_string_never_writes_through_a_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("victim.txt");
+        std::fs::write(&real, "").unwrap();
+        let link = dir.path().join("innocent.txt");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let (text, _) = run_io(&mk_params(&link, "", "overwritten", false, false), "");
+        assert!(text.starts_with("ERROR"), "{text}");
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "");
+
+        // A dangling link: nothing exists, the create rules still refuse it.
+        let target = dir.path().join("missing.txt");
+        let dangling = dir.path().join("dangling.txt");
+        std::os::unix::fs::symlink(&target, &dangling).unwrap();
+        let (text, _) = run_io(&mk_params(&dangling, "", "planted", false, false), "");
+        assert!(text.starts_with("ERROR"), "{text}");
+        assert!(!target.exists(), "no file may appear behind a dangling link");
+    }
+
+    /// The read-only-root guard of create=true (#475) holds for an empty
+    /// old_string too.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn empty_old_string_create_is_denied_in_read_only_root() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let ro = dir.path().join("refrepo");
+        std::fs::create_dir_all(&ro).unwrap();
+        let path = ro.join("sub/new_file.txt");
+
+        let ro_canon = crate::core::pathjail::canonicalize_or_self(&ro);
+        crate::test_env::set_var(
+            "LEAN_CTX_READ_ONLY_ROOTS",
+            ro_canon.to_string_lossy().as_ref(),
+        );
+        let (text, _) = run_io(&mk_params(&path, "", "x\n", false, false), "");
+        crate::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
+
+        assert!(text.contains("read-only"), "{text}");
+        assert!(!path.exists());
+        assert!(!ro.join("sub").exists());
     }
 
     /// #475: editing an existing file inside a read-only root is refused at the
@@ -288,7 +380,7 @@ mod tests {
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
 
         assert!(
-            result.contains('✓'),
+            result.contains("patched "),
             "edit should succeed via in-place fallback: {result}"
         );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "goodbye world\n");
@@ -302,8 +394,11 @@ mod tests {
             &mut cache,
             &mk_params(f.path(), "let x = 42", "let x = 99", false, false),
         );
-        assert!(result.contains("✓"));
-        assert!(result.contains("1 replacement"));
+        assert!(result.contains("patched "));
+        assert!(result.contains("(+1 -1)"), "{result}");
+        // ctx_edit's own receipt is one line: no diff trailer (the mod draws
+        // ctx_patch results only).
+        assert_eq!(result.lines().count(), 1, "{result}");
         let content = std::fs::read_to_string(f.path()).unwrap();
         assert!(content.contains("let x = 99"));
     }
@@ -316,7 +411,7 @@ mod tests {
             &mut cache,
             &mk_params(f.path(), "line1\nline2", "changed1\nchanged2", false, false),
         );
-        assert!(result.contains("✓"), "CRLF fallback should work: {result}");
+        assert!(result.contains("patched "), "CRLF fallback should work: {result}");
         let content = std::fs::read_to_string(f.path()).unwrap();
         assert!(
             content.contains("changed1\r\nchanged2"),
@@ -336,7 +431,7 @@ mod tests {
             &mut cache,
             &mk_params(f.path(), "line1\r\nline2", "a\r\nb", false, false),
         );
-        assert!(result.contains("✓"), "LF fallback should work: {result}");
+        assert!(result.contains("patched "), "LF fallback should work: {result}");
         let content = std::fs::read_to_string(f.path()).unwrap();
         assert!(
             content.contains("a\nb"),
@@ -359,7 +454,7 @@ mod tests {
             ),
         );
         assert!(
-            result.contains("✓"),
+            result.contains("patched "),
             "trailing whitespace tolerance should work: {result}"
         );
         let content = std::fs::read_to_string(f.path()).unwrap();
@@ -382,7 +477,7 @@ mod tests {
             ),
         );
         assert!(
-            result.contains("✓"),
+            result.contains("patched "),
             "CRLF + trailing whitespace should work: {result}"
         );
         let content = std::fs::read_to_string(f.path()).unwrap();
@@ -439,7 +534,9 @@ mod tests {
     fn receipt_labels_the_digest_by_its_actual_algorithm() {
         let f = make_temp("aaa\n");
         let mut cache = SessionCache::new();
-        let out = handle(&mut cache, &mk_params(f.path(), "aaa", "bbb", false, false));
+        let mut with_evidence = mk_params(f.path(), "aaa", "bbb", false, false);
+        with_evidence.evidence = true;
+        let out = handle(&mut cache, &with_evidence);
 
         assert!(out.contains("blake3="), "receipt must name BLAKE3: {out}");
         assert!(
@@ -514,7 +611,7 @@ mod tests {
             &mk_params(f.path(), "let x = 42", "let x = 99", false, false),
             "",
         );
-        assert!(text.contains("✓"), "expected success: {text}");
+        assert!(text.contains("patched "), "expected success: {text}");
         assert!(
             matches!(effect, CacheEffect::Invalidate),
             "successful edit must invalidate the cache entry"
@@ -564,7 +661,7 @@ mod tests {
                     ),
                     "",
                 );
-                assert!(text.contains("✓"), "edit {i} failed: {text}");
+                assert!(text.contains("patched "), "edit {i} failed: {text}");
                 assert!(matches!(effect, CacheEffect::Invalidate));
                 (p, i)
             }));
@@ -681,6 +778,103 @@ mod tests {
     }
 
     #[test]
+    fn ambiguous_match_names_the_lines_of_its_occurrences() {
+        let f = make_temp("x = 1;\nfoo();\n\nfoo();\nbar(); foo();\n");
+        let (text, effect) = run_io(&mk_params(f.path(), "foo();", "baz();", false, false), "");
+        assert_eq!(
+            text,
+            format!(
+                "ERROR: old_string found 3 times in {} (lines 2, 4, 5). Use replace_all=true \
+                 to replace every occurrence, or add surrounding lines to old_string until it \
+                 matches exactly one.",
+                f.path().display()
+            )
+        );
+        assert!(matches!(effect, CacheEffect::None));
+        assert_eq!(
+            std::fs::read_to_string(f.path()).unwrap(),
+            "x = 1;\nfoo();\n\nfoo();\nbar(); foo();\n"
+        );
+    }
+
+    #[test]
+    fn ambiguous_match_lists_at_most_five_lines() {
+        let f = make_temp(&"hit\n".repeat(8));
+        let (text, _) = run_io(&mk_params(f.path(), "hit", "miss", false, false), "");
+        assert!(
+            text.contains("found 8 times") && text.contains("(lines 1, 2, 3, 4, 5 and 3 more)."),
+            "{text}"
+        );
+        // Multi-line needles are located by their first line, CRLF files too.
+        let crlf = make_temp("a\r\nb\r\nc\r\na\r\nb\r\n");
+        let (text, _) = run_io(&mk_params(crlf.path(), "a\nb", "z", false, false), "");
+        assert!(text.contains("(lines 1, 4)."), "{text}");
+    }
+
+    #[test]
+    fn a_proven_repeat_of_an_applied_edit_is_a_no_op() {
+        let f = make_temp("fn alpha() {}\nfn beta() {}\n");
+        let params = mk_params(f.path(), "fn alpha() {}", "fn gamma() {}", false, false);
+        let (first, effect) = run_io(&params, "");
+        assert!(first.starts_with("patched "), "{first}");
+        assert!(matches!(effect, CacheEffect::Invalidate));
+
+        let (repeat, effect) = run_io(&params, "");
+        assert_eq!(
+            repeat,
+            format!(
+                "No change: {} — this exact edit was already applied by an earlier ctx_edit \
+                 call (old_string is absent, new_string is present).",
+                f.path().display()
+            )
+        );
+        assert!(repeat.starts_with(NO_CHANGE_PREFIX));
+        assert!(matches!(effect, CacheEffect::None));
+        assert_eq!(
+            std::fs::read_to_string(f.path()).unwrap(),
+            "fn gamma() {}\nfn beta() {}\n"
+        );
+    }
+
+    #[test]
+    fn a_repeat_is_not_served_without_proof() {
+        // Same pair, but new_string has since been removed: a real miss.
+        let f = make_temp("fn alpha() {}\n");
+        let params = mk_params(f.path(), "fn alpha() {}", "fn gamma() {}", false, false);
+        assert!(run_io(&params, "").0.starts_with("patched "));
+        std::fs::write(f.path(), "fn delta() {}\n").unwrap();
+        let (text, _) = run_io(&params, "");
+        assert!(text.starts_with("ERROR: old_string not found"), "{text}");
+
+        // new_string present, but this pair was never applied here (#2143).
+        let other = make_temp("fn gamma() {}\n");
+        let (text, _) = run_io(
+            &mk_params(other.path(), "fn alpha() {}", "fn gamma() {}", false, false),
+            "",
+        );
+        assert!(text.starts_with("ERROR: old_string not found"), "{text}");
+        assert!(text.contains("does not establish"), "{text}");
+
+        // A different pair on the edited file is no proof either.
+        std::fs::write(f.path(), "fn gamma() {}\n").unwrap();
+        let (text, _) = run_io(
+            &mk_params(f.path(), "fn alpha2() {}", "fn gamma() {}", false, false),
+            "",
+        );
+        assert!(text.starts_with("ERROR: old_string not found"), "{text}");
+    }
+
+    #[test]
+    fn a_proven_repeat_is_a_success_through_the_tool() {
+        let f = make_temp("let a = 1;\n");
+        let mut cache = SessionCache::new();
+        let params = mk_params(f.path(), "let a = 1;", "let a = 2;", false, false);
+        assert!(handle(&mut cache, &params).starts_with("patched "));
+        let repeat = handle(&mut cache, &params);
+        assert!(repeat.starts_with(NO_CHANGE_PREFIX), "{repeat}");
+    }
+
+    #[test]
     fn closest_line_hint_shown() {
         let f = make_temp("  fn hello() {\n    println!(\"hi\");\n  }\n");
         let (text, _) = run_io(
@@ -794,6 +988,49 @@ mod tests {
         );
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "fn new() {}\n");
     }
+
+    /// F13: after a lossy read, an old_string that only matches approximately
+    /// (trailing whitespace, indentation) is refused with a re-read hint and
+    /// nothing is written; after a full read the same edit applies.
+    #[test]
+    fn approximate_match_after_a_lossy_read_is_refused() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let cases = [
+            ("trailing.rs", "fn a() {   \n}\n", "fn a() {\n}"),
+            ("indent.rs", "    let x = 1;\n    let y = 2;\n", "let x = 1;\nlet y = 2;"),
+        ];
+        for (name, original, old) in cases {
+            let file = dir.path().join(name);
+            for mode in ["map", "signatures", "aggressive", "density:0.40", "reference"] {
+                std::fs::write(&file, original).unwrap();
+                let (text, effect) = run_io(&mk_params(&file, old, "CHANGED", false, false), mode);
+                assert!(text.starts_with("ERROR"), "{name} {mode}: {text}");
+                assert!(text.contains("lossy view"), "{name} {mode}: {text}");
+                assert!(text.contains("mode=\"full\""), "{name} {mode}: {text}");
+                assert!(!matches!(effect, CacheEffect::Invalidate));
+                assert_eq!(std::fs::read_to_string(&file).unwrap(), original);
+            }
+            for mode in ["", "full", "full-compact", "lines:1-2"] {
+                std::fs::write(&file, original).unwrap();
+                let (text, effect) = run_io(&mk_params(&file, old, "CHANGED", false, false), mode);
+                assert!(!text.starts_with("ERROR"), "{name} {mode}: {text}");
+                assert!(matches!(effect, CacheEffect::Invalidate));
+            }
+        }
+    }
+
+    /// An exact match is still applied after a lossy read: the text is on disk.
+    #[test]
+    fn exact_match_after_a_lossy_read_still_applies() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("exact.rs");
+        std::fs::write(&file, "fn old() {}\n").unwrap();
+        let (text, _) = run_io(&mk_params(&file, "fn old() {}", "fn new() {}", false, false), "map");
+        assert!(!text.starts_with("ERROR"), "{text}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "fn new() {}\n");
+    }
 }
 
 /// A failed edit quotes the file back to the model (closest line, full
@@ -823,6 +1060,7 @@ mod admitted_reread_tests {
             backup: false,
             backup_path: None,
             evidence: false,
+            diff_artifact: false,
             diff_max_lines: 200,
             allow_lossy_utf8: false,
         }

@@ -5,9 +5,10 @@
 //! subcommand for compression, caching, and (in shadow/harden mode) telemetry.
 
 use super::{
-    HOOK_STDIN_TIMEOUT, build_dual_allow_output, dedup, is_disabled, is_harden_active,
-    is_shadow_mode_active, is_shadow_surface_active, log_shadow_intercept, payload,
-    read_stdin_with_timeout, resolve_binary,
+    HOOK_STDIN_TIMEOUT, RewriteSafety, build_passthrough_output, build_substitute_output, dedup,
+    is_disabled, is_gemini_beforetool_payload, is_harden_active, is_shadow_mode_active,
+    is_shadow_surface_active, log_shadow_intercept, payload, read_stdin_with_timeout,
+    resolve_binary,
 };
 use crate::core::debug_log::{self, Route};
 use std::io::Read;
@@ -37,62 +38,121 @@ pub(super) fn classify_redirect(tool_name: &str) -> RedirectKind {
     }
 }
 
-/// Decide the redirect hook's stdout (a redirect or an allow-passthrough) without
+/// Decide the redirect hook's stdout (a redirect or a neutral pass-through) without
 /// printing, so `handle_redirect` can run it under the fail-open timeout (#1035).
 pub(super) fn compute_redirect() -> String {
     if is_disabled() {
         let _ = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT);
-        return build_dual_allow_output();
-    }
-
-    // Shadow-only tool surface: native Read/Grep/Glob work transparently
-    // without redirect compression. The hooks only observe for metrics.
-    if is_shadow_surface_active() {
-        let _ = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT);
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
         tracing::warn!("[hook redirect] invalid JSON payload, allowing passthrough");
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     // Normalise host payload shapes (snake_case vs Copilot CLI camelCase, #551).
     let tool_name = payload::resolve_tool_name(&v).unwrap_or_default();
     let tool_args = payload::resolve_tool_args(&v);
-
-    let kind = classify_redirect(&tool_name);
-    if matches!(kind, RedirectKind::None) {
-        return build_dual_allow_output();
+    if matches!(classify_redirect(&tool_name), RedirectKind::None)
+        && !super::secret_gate::inspects(&tool_name)
+    {
+        return build_passthrough_output();
     }
 
     // #1032: Cursor fires preToolUse twice (two processes, identical payload), so a
     // naive redirect runs the lean-ctx subprocess and logs twice. Dedup on a
     // PID-independent key (tool + args) so the second fire replays the first's
-    // response — one subprocess, one log entry.
+    // response — one subprocess, one log entry, one policy event.
     let args_json = tool_args
         .as_ref()
         .map(ToString::to_string)
         .unwrap_or_default();
     let key_material = format!("{tool_name}\u{0}{args_json}");
-    dedup::deduped("redirect", &key_material, || {
-        produce_redirect_output(kind, tool_args.as_ref())
-    })
+    dedup::deduped("redirect", &key_material, || decide(&v))
+}
+
+/// The redirect hook's verdict for one parsed payload.
+fn decide(v: &serde_json::Value) -> String {
+    let tool_name = payload::resolve_tool_name(v).unwrap_or_default();
+    let tool_args = payload::resolve_tool_args(v);
+
+    // The secret-path rule of `ctx_read`/`ctx_search` also holds for the native
+    // call, on every surface: secret defense is independent of compression.
+    if let Some(msg) = super::secret_gate::refusal(&tool_name, tool_args.as_ref()) {
+        debug_log::log_hook_decision("redirect", &tool_name, Route::Native, "<secret>", &msg);
+        return super::build_deny_output(&msg, v);
+    }
+
+    // Gemini CLI applies `hookSpecificOutput.tool_input` (see `gemini_output`),
+    // but its file tools reject a path outside the workspace
+    // (`validatePathAccess`, `PATH_NOT_IN_WORKSPACE`), and the redirect points
+    // at a temp file there. Delivering it would turn every redirected read into
+    // a tool error, so Gemini keeps its native file tools.
+    if is_gemini_beforetool_payload(v) {
+        return build_passthrough_output();
+    }
+
+    // Shadow-only tool surface: native Read/Grep/Glob work transparently
+    // without redirect compression. The hooks only observe for metrics.
+    if is_shadow_surface_active() {
+        return build_passthrough_output();
+    }
+
+    produce_redirect_output(classify_redirect(&tool_name), tool_args.as_ref())
+}
+
+#[cfg(test)]
+mod secret_gate_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// A Claude Code PreToolUse payload for a native Read of `.env` is denied in
+    /// Claude's own shape — with the Read redirect off (the Claude default) and
+    /// on the shadow surface, where every native call used to pass untouched.
+    #[test]
+    fn native_read_of_env_is_denied_before_any_passthrough() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("LEAN_CTX_IO_BOUNDARY_MODE");
+        let coder = crate::core::roles::load_role("coder").expect("builtin coder role");
+        let payload = json!({
+            "hook_event_name": "PreToolUse",
+            "transcript_path": "/tmp/t.jsonl",
+            "tool_name": "Read",
+            "tool_input": { "file_path": "/p/.env" }
+        });
+        for surface in [None, Some("shadow")] {
+            if let Some(s) = surface {
+                crate::test_env::set_var("LEAN_CTX_TOOL_SURFACE", s);
+            }
+            let out = crate::core::roles::with_test_active_role(coder.clone(), || decide(&payload));
+            crate::test_env::remove_var("LEAN_CTX_TOOL_SURFACE");
+            let v: serde_json::Value = serde_json::from_str(&out).expect("json verdict");
+            assert_eq!(
+                v["hookSpecificOutput"]["permissionDecision"], "deny",
+                "{surface:?}: {out}"
+            );
+            assert!(
+                v.get("decision").is_none(),
+                "Claude rejects a top-level decision: {out}"
+            );
+        }
+    }
 }
 
 /// Build the redirect stdout for a classified tool call. Returns the full hook
-/// response (redirect or allow-passthrough) so `handle_redirect` can route it
+/// response (redirect or neutral pass-through) so `handle_redirect` can route it
 /// through the double-fire dedup before printing exactly once.
 fn produce_redirect_output(kind: RedirectKind, tool_args: Option<&serde_json::Value>) -> String {
     match kind {
         RedirectKind::Read => redirect_read(tool_args),
         RedirectKind::Grep => redirect_grep(tool_args),
         RedirectKind::Glob => redirect_glob(tool_args),
-        RedirectKind::None => build_dual_allow_output(),
+        RedirectKind::None => build_passthrough_output(),
     }
 }
 
@@ -178,7 +238,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
             "<none>",
             "no path in tool input",
         );
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
     // #637: on hosts with a native read-before-write guard (Claude Code /
     // CodeBuddy), rewriting the Read to a temp `.lctx` copy makes the guard track
@@ -198,7 +258,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
             &path,
             "read redirect disabled (host guard/config)",
         );
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
     if should_passthrough(&path) {
         debug_log::log_hook_decision(
@@ -208,7 +268,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
             &path,
             "passthrough path (sensitive/binary/excluded)",
         );
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     let shadow = is_shadow_mode_active();
@@ -278,7 +338,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
                         "re-read passthrough (guard host, edit-safe)",
                     );
                     let _ = std::fs::remove_file(&marker);
-                    return build_dual_allow_output();
+                    return build_passthrough_output();
                 }
             } else {
                 debug_log::log_hook_decision(
@@ -366,7 +426,7 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
         &path,
         "lean-ctx read produced no output",
     );
-    build_dual_allow_output()
+    build_passthrough_output()
 }
 
 /// Redirect Grep through lean-ctx for compressed results.
@@ -408,7 +468,7 @@ pub(super) fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
             "<none>",
             "no pattern in tool input",
         );
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     if !grep_content_mode(tool_input) {
@@ -422,7 +482,7 @@ pub(super) fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
         if is_shadow_mode_active() {
             log_shadow_intercept("Grep", &format!("{pattern} in {search_path}"));
         }
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     let shadow = is_shadow_mode_active();
@@ -476,7 +536,7 @@ pub(super) fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
         &format!("{pattern} in {search_path}"),
         "lean-ctx grep produced no output",
     );
-    build_dual_allow_output()
+    build_passthrough_output()
 }
 
 /// Redirect Glob through lean-ctx in shadow/harden mode (#556).
@@ -490,14 +550,14 @@ pub(super) fn redirect_grep(tool_input: Option<&serde_json::Value>) -> String {
 /// directly and never re-reads a file we could substitute, so there is no
 /// redirectable result to rewrite. We therefore only act when shadow or harden
 /// mode is active — warm lean-ctx's own glob path (parity with `ctx_glob`) and
-/// record the intercept in shadow.log — then allow the native call through
+/// record the intercept in shadow.log — then let the native call through
 /// unchanged. Outside those modes there is nothing to gain, so we pass through
 /// immediately without spawning a subprocess.
 pub(super) fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
-    let allow = build_dual_allow_output();
+    let passthrough = build_passthrough_output();
     let shadow = is_shadow_mode_active();
     if !shadow && !is_harden_active() {
-        return allow;
+        return passthrough;
     }
 
     let pattern = tool_input
@@ -512,7 +572,7 @@ pub(super) fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
             "<none>",
             "no pattern in tool input",
         );
-        return allow;
+        return passthrough;
     }
 
     let search_path = tool_input
@@ -542,7 +602,7 @@ pub(super) fn redirect_glob(tool_input: Option<&serde_json::Value>) -> String {
         "shadow/harden warm — native passthrough",
     );
     log_shadow_intercept("Glob", &format!("{pattern} in {search_path}"));
-    allow
+    passthrough
 }
 
 const REDIRECT_SUBPROCESS_TIMEOUT: Duration = Duration::from_secs(10);
@@ -677,31 +737,16 @@ pub(super) fn build_redirect_output(
         serde_json::json!({ field: temp_path })
     };
 
-    // Claude Code / CodeBuddy hook output format (other hosts ignore it).
-    let mut hook_specific = serde_json::json!({
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "allow",
-        "updatedInput": updated_input.clone(),
-    });
-    // #1019: the shadow nudge travels here, not inside the file content. Hosts
-    // that honor it (Claude Code / Codex) surface it as model-visible context;
-    // others ignore it. Either way the temp file the host reads stays faithful.
-    if let Some(note) = shadow_note {
-        hook_specific["additionalContext"] = serde_json::Value::String(note.to_string());
-    }
-
-    serde_json::json!({
-        // Cursor hook output format.
-        "permission": "allow",
-        "updated_input": updated_input.clone(),
-        // GitHub Copilot CLI preToolUse format: top-level `permissionDecision`
-        // + `modifiedArgs` (full substitute args) so the read/grep redirect to
-        // the lean-ctx temp file actually takes effect on Copilot (#551).
-        "permissionDecision": "allow",
-        "modifiedArgs": updated_input.clone(),
-        "hookSpecificOutput": hook_specific
-    })
-    .to_string()
+    // #1019: the shadow nudge travels in `additionalContext`, not inside the
+    // file content. Hosts that honor it (Claude Code / Codex) surface it as
+    // model-visible context; others ignore it. Either way the temp file the
+    // host reads stays faithful.
+    //
+    // A Read/Grep redirect only swaps the path for a LeanCTX-produced copy of
+    // content the native tool would have read, so it is read-only: Cursor and
+    // Copilot (#551) get their approving rewrite fields, Claude Code gets
+    // `updatedInput` without a decision and keeps its own permission flow.
+    build_substitute_output(&updated_input, RewriteSafety::ReadOnly, shadow_note)
 }
 
 const PASSTHROUGH_SUBSTRINGS: &[&str] = &[

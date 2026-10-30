@@ -35,11 +35,16 @@ pub struct SolutionConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
     pub intensity: SolutionIntensity,
-    #[serde(default = "default_true")]
+    /// Inject the efficiency ladder into the per-turn channels (MCP
+    /// instructions and the rules files). Off by default since A3: it is
+    /// coding advice, not context routing, and it rode every turn (pilot P6:
+    /// part of the ~8% instructions share). The on-demand `LEAN-CTX.md` keeps it.
+    #[serde(default)]
     pub inject_in_instructions: bool,
     #[serde(default = "default_true")]
     pub inject_in_compose: bool,
-    #[serde(default = "default_true")]
+    /// Same as `inject_in_instructions`, for sub-agent sessions. Off by default.
+    #[serde(default)]
     pub inject_in_subagents: bool,
     #[serde(default = "default_true")]
     pub track_decisions: bool,
@@ -58,9 +63,9 @@ impl Default for SolutionConfig {
         Self {
             enabled: true,
             intensity: SolutionIntensity::Balanced,
-            inject_in_instructions: true,
+            inject_in_instructions: false,
             inject_in_compose: true,
-            inject_in_subagents: true,
+            inject_in_subagents: false,
             track_decisions: true,
             track_loc: true,
             platform_hints: true,

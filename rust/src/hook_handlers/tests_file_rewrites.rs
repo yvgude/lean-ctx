@@ -562,16 +562,21 @@ fn should_passthrough_rules_files() {
 
 #[test]
 fn should_passthrough_claude_auto_memory() {
-    assert!(should_passthrough(
-        "/home/jules/.claude/projects/-home-jules-Projects-blockposters/memory/MEMORY.md"
-    ));
-    assert!(should_passthrough(
-        "/home/jules/.claude/projects/-home-jules-Projects-blockposters/memory/debugging.md"
-    ));
+    // The exception is anchored to the harness under this user's home.
+    let projects = dirs::home_dir()
+        .expect("home dir")
+        .join(".claude/projects/-home-jules-Projects-blockposters");
+    let path = |rel: &str| projects.join(rel).to_string_lossy().into_owned();
+    assert!(should_passthrough(&path("memory/MEMORY.md")));
+    assert!(should_passthrough(&path("memory/debugging.md")));
+    assert!(
+        !should_passthrough(&path("abc.jsonl")),
+        "session transcripts must not passthrough as memory"
+    );
     assert!(
         !should_passthrough(
-            "/home/jules/.claude/projects/-home-jules-Projects-blockposters/abc.jsonl"
+            "/srv/copy/.claude/projects/-home-jules-Projects-blockposters/memory/MEMORY.md"
         ),
-        "session transcripts must not passthrough as memory"
+        "a look-alike memory directory outside the harness home is not passed through"
     );
 }

@@ -11,7 +11,7 @@
 //! * `trust <pubkey> [--org <name>]` — pin a trusted org key (`--list` to show)
 //! * `untrust <pubkey>`              — remove a pinned key
 //! * `install <artifact.json>`       — verify + trust-check + install for runtime
-//! * `uninstall`                     — remove the installed artifact
+//! * `uninstall`                     — remove the installed artifact + its org's pins
 //! * `status` / `show`               — active org policy + effective floor
 
 use std::path::{Path, PathBuf};
@@ -58,8 +58,9 @@ Pin a trusted org public key on this endpoint.\n  \
 lean-ctx policy org untrust <pubkey-hex>\n  \
 lean-ctx policy org install <artifact.json> [--trust]\n      \
 Verify + check trust, then install for the runtime to pick up.\n  \
-lean-ctx policy org uninstall\n  \
-lean-ctx policy org status            Show the active org policy + effective floor\n\n\
+lean-ctx policy org uninstall\n      \
+Remove the installed artifact and the trust pins of its organization.\n  \
+lean-ctx policy org status           Show the active org policy + effective floor\n\n\
 A signed org policy is folded in as an un-bypassable FLOOR beneath the local\n\
 {PROJECT_PACK_PATH}: the local pack can only tighten it, never weaken it.\n\n\
 Docs: docs/contracts/org-policy-v1.md · docs/guides/policy-packs.md"
@@ -382,15 +383,34 @@ fn cmd_install(args: &[String]) {
 }
 
 fn cmd_uninstall() {
-    match org::store::uninstall() {
-        Ok(true) => {
-            crate::core::policy::runtime::reload();
-            println!("Removed the installed org policy.");
+    let outcome = org::uninstall().unwrap_or_else(|e| {
+        eprintln!("policy org uninstall: {e}");
+        std::process::exit(1);
+    });
+    crate::core::policy::runtime::reload();
+    if outcome.artifact {
+        println!("Removed the installed org policy.");
+    } else {
+        println!("No org policy is installed.");
+    }
+    if let Some(org) = &outcome.org
+        && !outcome.unpinned.is_empty()
+    {
+        println!("Removed the trust pin(s) for '{org}':");
+        for key in &outcome.unpinned {
+            println!("  {key}");
         }
-        Ok(false) => println!("No org policy is installed."),
-        Err(e) => {
-            eprintln!("policy org uninstall: {e}");
-            std::process::exit(1);
+    }
+    if !outcome.remaining.is_empty() {
+        println!(
+            "\nStill pinned without an installed policy — governed calls are refused until \
+             each is removed (or a policy for it is installed):"
+        );
+        for key in &outcome.remaining {
+            println!(
+                "  lean-ctx policy org untrust {}   # org '{}'",
+                key.public_key, key.org
+            );
         }
     }
 }

@@ -40,9 +40,8 @@ inside the product. Other deeper lifecycles must not replace the primary story.
 | **LeanCTX Engine** | The runtime implementing context capabilities |
 | **LeanCTX SDK** | The integration surface for embedding supported Engine capabilities |
 | **Context Intelligence** | Context selection and preparation capabilities inside LeanCTX |
-| **Community** | The open-source Engine and its supported local paths, under Apache-2.0 |
-| **Pro** | The released personal hosted-services plan, including Personal Cloud sync/backup and hosted index capacity within the selected plan's limits |
-| **Enterprise** | Commercial organization controls and deployment, scoped to the licensed release and agreement |
+| **LeanCTX OSS** | The open-source Engine, free and complete on its supported local paths, under Apache-2.0 (formerly "Community") |
+| **LeanCTX Hive** | The paid version (Personal · Team · Enterprise): control and proof on top of OSS — filter packs, org policy, compliance, Cockpit across engines, shared context and team coordination — scoped to the licensed release and agreement |
 | **SDK / OEM** | Embedding and distribution scope under the applicable SDK/runtime licenses and commercial agreement |
 
 Keep the customer's application, agent loop, model choice and UI. Coding agents
@@ -67,8 +66,9 @@ Local context-only use does not require hosted services. Provider/execution
 controls apply only to supported calls routed through the configured runtime.
 Enterprise identity, organization policy, retention, connector coverage and
 operations must be described against that edition's supported release.
-Pro availability does not establish that every newer adaptive-context or
-intelligence feature is included in the current public release.
+No local context behaviour (ranking, memory selection, read strategy, planning)
+has a paid-better variant; LeanCTX Hive adds governance, not better local
+results.
 
 ## Evidence and security claims
 

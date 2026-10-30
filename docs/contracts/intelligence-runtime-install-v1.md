@@ -18,7 +18,7 @@ The production installation profile below is distinct from the explicit staging
 operator commands. Synthetic authority used in qualification is not a rollout or
 publication grant.
 
-## Normal Pro installation
+## Normal LeanCTX Hive runtime installation
 
 A trusted host build may carry a production channel using the three build inputs
 `LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL`,
@@ -31,8 +31,8 @@ invalid inputs fail the host build.
 The release workflow reads repository Actions variables with these same three
 names after its existing release/provenance gates. Set all three to the selected
 customer catalog URL, detached signature URL and public trust root before tagging
-a Pro-capable host. The workflow exports only a complete, bounded HTTPS tuple to
-Cargo; unset variables preserve a Community build without production discovery.
+a Hive-capable host. The workflow exports only a complete, bounded HTTPS tuple to
+Cargo; unset variables preserve an OSS build without production discovery.
 No private signing key belongs in these variables. This wiring does not create
 catalogs, publish packages, authorize release, or qualify a native platform.
 
@@ -135,7 +135,7 @@ row. Tokens are never logged. Unavailability is `not_installed`,
 
 ### Signing a production Cockpit (owner)
 
-Two keys are involved, exactly as for a Pro release:
+Two keys are involved, exactly as for a Hive runtime release:
 
 - the **artifact key** (Ed25519, owner-only PEM): signs the package manifest. A
   dedicated Cockpit artifact key is recommended; its public half is what the
@@ -370,7 +370,7 @@ provided by the package. Unreadable global config is not overwritten.
 prompt in a terminal, without changing shell/editor/daemon configuration; a
 non-terminal invocation is rejected instead of inferring consent.
 
-These explicit staging examples retain their semantics. Normal Pro commands
+These explicit staging examples retain their semantics. Normal Hive runtime commands
 omit `--staging` and use only the compiled production policy described above.
 Published channels and native Windows delivery remain separate release gates;
 staging artifacts are not production releases.

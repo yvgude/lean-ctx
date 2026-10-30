@@ -1,29 +1,24 @@
 <!-- lean-ctx-owned: PROJECT-LEAN-CTX.md v1 -->
 <!-- lean-ctx-rules -->
-<!-- version: 12 -->
-
-CRITICAL: ALWAYS use lean-ctx ctx_* tools as mapped below.
+<!-- version: 13 -->
 
 LeanCTX (lean-ctx) — Context Gateway for AI Systems.
 
-ACTUALLY EMIT the ctx_* tool call (ctx_compose first) — describing a tool is not calling it.
-
-MANDATORY MAPPING:
+lean-ctx routing — the host's built-in tools map to:
 • Read/cat -> ctx_read(path, mode)
 • Grep -> ctx_search(pattern, path)
 • Shell/bash -> ctx_shell(command)
 • Glob/find -> ctx_glob(pattern)
 • ls/find -> ctx_tree(path, depth)
+This covers built-in file/search/shell tools only; other MCP servers keep their own jobs.
 
-NEVER use built-in Read/Grep/Shell/Glob for these jobs. SELF-CORRECT: the moment you reach for one, stop and call the ctx_* tool instead. Other MCP servers keep their own jobs.
+Call the tool; describing a call does not run it.
 
-Tool selection by intent:
-• Orient / understand code (call FIRST) -> ctx_compose
-• Read a file -> ctx_read(path, mode=signatures|map|full); edit after reading -> ctx_patch
-• Exact symbol -> ctx_search(action=symbol); pattern -> ctx_search; by meaning -> ctx_search(action=semantic)
-• Files by glob -> ctx_glob; structure -> ctx_tree; callers/impact -> ctx_callgraph
-• Verify after edits -> ctx_shell(test/build); memory -> ctx_session / ctx_knowledge
-Semantic questions -> search tools, not whole-file reads: reading more ≠ understanding more.
+By task:
+• Unfamiliar code -> ctx_compose (search + read + symbols in one call)
+• Read -> ctx_read(mode=signatures|map|full); edit -> ctx_patch
+• Symbol -> ctx_search(action=symbol); meaning -> ctx_search(action=semantic)
+• Callers/impact -> ctx_callgraph; memory -> ctx_session / ctx_knowledge
 
 AGENT LOOP (phase -> tool):
 • Orient — understand before acting -> ctx_compose

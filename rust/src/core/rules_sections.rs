@@ -26,85 +26,58 @@ fn memory_tools(p: &ToolProfile) -> Option<&'static str> {
 }
 
 /// Intent-to-tool playbook — only advertises tools the profile exposes.
+/// v13 (A3): neutral, no "call FIRST"; glob/tree/shell live in the mapping.
 pub(crate) fn intent_section(p: &ToolProfile) -> String {
-    let mut lines = vec!["Tool selection by intent:".to_string()];
+    let mut lines = vec!["By task:".to_string()];
 
     if has(p, "ctx_compose") {
-        lines.push("• Orient / understand code (call FIRST) -> ctx_compose".into());
+        lines.push("• Unfamiliar code -> ctx_compose (search + read + symbols in one call)".into());
     }
 
     let read_line = if has(p, "ctx_patch") {
-        "• Read a file -> ctx_read(path, mode=signatures|map|full); edit after reading -> ctx_patch"
+        "• Read -> ctx_read(mode=signatures|map|full); edit -> ctx_patch"
     } else {
-        "• Read a file -> ctx_read(path, mode=signatures|map|full)"
+        "• Read -> ctx_read(mode=signatures|map|full)"
     };
     lines.push(read_line.into());
 
     // #509: ctx_symbol and ctx_semantic_search are folded into ctx_search actions.
-    let mut search_parts = vec!["• Exact symbol -> ctx_search(action=symbol)"];
-    search_parts.push("pattern -> ctx_search");
-    search_parts.push("by meaning -> ctx_search(action=semantic)");
-    lines.push(search_parts.join("; "));
-
-    let mut nav = String::from("• Files by glob -> ctx_glob; structure -> ctx_tree");
-    if has(p, "ctx_callgraph") {
-        nav.push_str("; callers/impact -> ctx_callgraph");
-    }
-    lines.push(nav);
-
-    let mut verify = String::from("• Verify after edits -> ctx_shell(test/build)");
-    if let Some(memory) = memory_tools(p) {
-        verify.push_str(&format!("; memory -> {memory}"));
-    }
-    lines.push(verify);
-
     lines.push(
-        "Semantic questions -> search tools, not whole-file reads: \
-         reading more ≠ understanding more."
-            .into(),
+        "• Symbol -> ctx_search(action=symbol); meaning -> ctx_search(action=semantic)".into(),
     );
+
+    let mut tail = Vec::new();
+    if has(p, "ctx_callgraph") {
+        tail.push("Callers/impact -> ctx_callgraph".to_string());
+    }
+    if let Some(memory) = memory_tools(p) {
+        tail.push(format!("memory -> {memory}"));
+    }
+    if !tail.is_empty() {
+        lines.push(format!("• {}", tail.join("; ")));
+    }
     lines.join("\n")
 }
 
-/// Mandatory tool mapping on hook-covered hosts (Cursor with hooks).
-/// v8: strict mode — always prefer ctx_* even when hooks would cover native tools.
+/// Tool list on hook-covered hosts (Cursor with hooks). v13 (A3): neutral.
 pub(crate) fn hook_covered_tools_section(p: &ToolProfile) -> String {
-    let mut lines = vec!["MANDATORY MAPPING (always use ctx_* instead of native):".to_string()];
+    let mut lines = vec!["lean-ctx tools:".to_string()];
 
-    lines.push(
-        "• Read/cat -> ctx_read(path, mode) — structural views, caching, source references".into(),
-    );
-    lines.push(
-        "• Grep/search -> ctx_search(pattern, path) — also action=symbol|semantic \
-         for definitions/meaning"
-            .into(),
-    );
-    lines.push("• Shell/bash -> ctx_shell(command) — command-specific output shaping".into());
+    lines.push("• Read/cat -> ctx_read(path, mode) — structural views, cached re-reads".into());
+    lines.push("• Grep/search -> ctx_search(pattern, path) — also action=symbol|semantic".into());
+    lines.push("• Shell/bash -> ctx_shell(command) — shaped command output".into());
 
     if has(p, "ctx_compose") {
-        lines.push(
-            "• ctx_compose — orient in code FIRST (bundles search + read + symbols) \
-             — call before editing/debugging"
-                .into(),
-        );
+        lines.push("• ctx_compose — search + read + symbols in one call".into());
     }
-
     if has(p, "ctx_callgraph") {
-        lines.push(
-            "• ctx_callgraph — callers, callees, blast radius — use instead of manual \
-             file reading"
-                .into(),
-        );
+        lines.push("• ctx_callgraph — callers, callees, blast radius".into());
     }
-
     if let Some(memory) = memory_tools(p) {
-        lines.push(format!(
-            "• {memory} — persistent memory — record decisions & progress after milestones"
-        ));
+        lines.push(format!("• {memory} — persistent memory"));
     }
-
     if has(p, "ctx_expand") {
-        lines.push("• ctx_expand — recover full text from [Archived]/compressed output".into());
+        lines.push("• ctx_expand — full text of [Archived]/compressed output".into());
     }
 
     lines.join("\n")
@@ -115,7 +88,7 @@ pub(crate) fn shadow_minimal_section(p: &ToolProfile) -> String {
     let mut exclusives = Vec::new();
 
     if has(p, "ctx_compose") {
-        exclusives.push("ctx_compose (understand code, call first)");
+        exclusives.push("ctx_compose (search + read + symbols)");
     }
 
     // #509: always ctx_search actions, not standalone tools
@@ -186,13 +159,9 @@ pub(crate) fn anti_section(p: &ToolProfile) -> String {
     lines.join("\n")
 }
 
-/// Invocation nudge — "ctx_compose first" only where the profile has it (#1849).
-pub(crate) fn must_invoke_section(p: &ToolProfile) -> String {
-    if has(p, "ctx_compose") {
-        super::rules_canonical::MUST_INVOKE.to_string()
-    } else {
-        "ACTUALLY EMIT the ctx_* tool call — describing a tool is not calling it.".to_string()
-    }
+/// Invocation nudge (#1067). v13 (A3): neutral and profile-independent.
+pub(crate) fn must_invoke_section(_p: &ToolProfile) -> String {
+    super::rules_canonical::MUST_INVOKE.to_string()
 }
 
 /// Parallel-calls nudge — the ctx_compose aside only where the profile has it (#1849).
@@ -330,14 +299,14 @@ mod tests {
         // on every profile, including Minimal, which does not expose it.
         use crate::core::rules_canonical::{MUST_INVOKE, PARALLEL};
         assert_eq!(parallel_section(&ToolProfile::Power), PARALLEL);
-        assert_eq!(must_invoke_section(&ToolProfile::Power), MUST_INVOKE);
-        for text in [
-            parallel_section(&ToolProfile::Minimal),
-            must_invoke_section(&ToolProfile::Minimal),
-        ] {
-            assert!(text.starts_with("PARALLEL") || text.starts_with("ACTUALLY EMIT"));
-            assert!(!text.contains("ctx_compose"), "{text}");
+        let minimal = parallel_section(&ToolProfile::Minimal);
+        assert!(minimal.starts_with("PARALLEL"));
+        assert!(!minimal.contains("ctx_compose"), "{minimal}");
+        // v13 (A3): the invocation nudge names no tool on any profile.
+        for p in [ToolProfile::Minimal, ToolProfile::Power] {
+            assert_eq!(must_invoke_section(&p), MUST_INVOKE);
         }
+        assert!(!MUST_INVOKE.contains("ctx_compose"));
     }
 
     #[test]

@@ -176,6 +176,41 @@ fn drift_entries_require_a_valid_local_signature() {
     assert_eq!(chain.first_invalid_at, Some(0));
 }
 
+/// Ordinary entries carry a signature whenever the local key is available;
+/// a forged one must fail verification just like a forged drift signature,
+/// while an honest signed entry and a legacy unsigned entry still verify.
+#[test]
+fn ordinary_entry_signatures_are_verified_when_present() {
+    let iso = crate::core::data_dir::isolated_data_dir();
+    let tool_call = || AuditEntryData {
+        event_type: AuditEventType::ToolCall,
+        tool: "ctx_read".to_string(),
+        action: None,
+        ..drift_data()
+    };
+    let signed = try_record(tool_call()).expect("append signed tool call");
+    assert!(signed.signature.is_some());
+    let path = iso.path().join("audit").join("trail.jsonl");
+    append_generated(&path, 1);
+    let chain = verify_chain_full();
+    assert!(chain.valid, "signed and legacy unsigned entries verify");
+    assert_eq!(chain.total_entries, 2);
+
+    let text = std::fs::read_to_string(&path).expect("trail");
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    let mut value: serde_json::Value = serde_json::from_str(&lines[0]).expect("entry JSON");
+    value["signature"] = serde_json::Value::String("00".repeat(64));
+    lines[0] = serde_json::to_string(&value).expect("JSON");
+    std::fs::write(&path, format!("{}\n", lines.join("\n"))).expect("forge signature");
+
+    let chain = verify_chain_full();
+    assert!(
+        !chain.valid,
+        "a forged signature on an ordinary entry must fail authentication"
+    );
+    assert_eq!(chain.first_invalid_at, Some(0));
+}
+
 /// A blocked sink must surface as an error rather than being swallowed —
 /// that is the whole reason `try_record` exists. `record` keeps the
 /// historical fire-and-forget contract on the same failure.

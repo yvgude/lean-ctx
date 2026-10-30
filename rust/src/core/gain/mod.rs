@@ -169,6 +169,7 @@ impl GainEngine {
             first_inject,
             reread,
             injected_overhead_tokens_per_turn,
+            crate::core::context_overhead::native_baseline_tokens_per_turn(),
             turns,
             bounce_tokens,
             quote.cost,

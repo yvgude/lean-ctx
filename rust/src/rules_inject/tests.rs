@@ -36,8 +36,8 @@ fn shared_rules_have_markers() {
     assert!(s.contains(START_MARK));
     assert!(s.contains(END_MARK));
     assert!(s.contains(&format!("<!-- version: {RULES_VERSION} -->")));
-    assert!(s.contains("MANDATORY MAPPING"));
-    assert!(s.contains("NEVER"));
+    assert!(s.contains("lean-ctx routing"));
+    assert!(s.contains("other MCP servers keep their own jobs"));
 }
 
 #[test]
@@ -46,8 +46,8 @@ fn dedicated_rules_have_markers() {
     assert!(d.contains(START_MARK));
     assert!(d.contains(END_MARK));
     assert!(d.contains(&format!("<!-- version: {RULES_VERSION} -->")));
-    assert!(d.contains("CRITICAL"));
-    assert!(d.contains("intent"));
+    assert!(d.contains("lean-ctx routing"));
+    assert!(d.contains("By task:"));
 }
 
 // ── Shadow mode ──────────────────────────────────────────────
@@ -65,7 +65,7 @@ fn shadow_dedicated_omits_mapping() {
         "shadow must not include tool mapping"
     );
     assert!(
-        !rules.contains("NEVER use native"),
+        !rules.contains("lean-ctx routing"),
         "shadow must not include native tool admonition"
     );
     assert!(rules.contains(START_MARK), "shadow keeps markers");
@@ -81,7 +81,7 @@ fn shadow_shared_omits_mapping() {
         &power(),
     );
     assert!(
-        !rules.contains("MANDATORY MAPPING"),
+        !rules.contains("lean-ctx routing"),
         "shadow shared must not include mapping header"
     );
     assert!(rules.contains(START_MARK), "shadow shared keeps markers");
@@ -266,7 +266,7 @@ fn inject_cursor_switches_profile_when_hooks_appear() {
     let mdc_path = home.join(".cursor/rules/lean-ctx.mdc");
     let before = std::fs::read_to_string(&mdc_path).unwrap();
     assert!(
-        before.contains("auto-route") || before.contains("MANDATORY MAPPING"),
+        before.contains("auto-route") || before.contains("lean-ctx routing"),
         "initial rules must contain shadow nudge or full mapping"
     );
 
@@ -283,8 +283,8 @@ fn inject_cursor_switches_profile_when_hooks_appear() {
     let after = std::fs::read_to_string(&mdc_path).unwrap();
     assert!(
         after.contains("auto-route")
-            || (after.contains("ALWAYS prefer lean-ctx")
-                && after.contains("Hooks compress native")),
+            || (after.contains("lean-ctx hooks compress native")
+                && after.contains("lean-ctx tools:")),
         "with hooks the mdc carries shadow block or HookCovered profile"
     );
     assert!(
@@ -852,5 +852,203 @@ fn rules_selection_filter_skips_unselected_tools() {
     assert!(
         result.injected.is_empty() && result.updated.is_empty() && result.already.is_empty(),
         "an empty selection writes no rules: {result:?}"
+    );
+}
+
+// ── One rules channel per host (A3) ──────────────────────────
+
+/// Points HOME at `home` (and clears the host dir overrides) for one closure,
+/// so channel detection and the instructions builder see the temp install.
+fn with_temp_home<T>(home: &std::path::Path, f: impl FnOnce() -> T) -> T {
+    let keys = [
+        "HOME",
+        "CLAUDE_CONFIG_DIR",
+        "CODEX_HOME",
+        "LEAN_CTX_MINIMAL",
+    ];
+    let saved: Vec<_> = keys.iter().map(|k| (*k, std::env::var_os(k))).collect();
+    crate::test_env::set_var("HOME", home);
+    crate::test_env::remove_var("CLAUDE_CONFIG_DIR");
+    crate::test_env::remove_var("CODEX_HOME");
+    crate::test_env::set_var("LEAN_CTX_MINIMAL", "1");
+    let out = f();
+    for (k, v) in saved {
+        match v {
+            Some(v) => crate::test_env::set_var(k, v),
+            None => crate::test_env::remove_var(k),
+        }
+    }
+    out
+}
+
+const ANCHOR: &str = "your auto-loaded lean-ctx rules apply";
+
+/// Each host's rules file is its single lean-ctx rules channel: once the file
+/// carries the block, the MCP instructions collapse to the one-line anchor and
+/// doctor sees exactly one channel. Before, the host gets the full skeleton.
+#[test]
+fn each_host_gets_exactly_one_rules_channel() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    // (MCP client name, rules target written by the injector, path under HOME)
+    let hosts: &[(&str, Option<&str>, &str)] = &[
+        ("claude-code", None, ".claude/CLAUDE.md"),
+        (
+            "cursor-vscode",
+            Some("Cursor"),
+            ".cursor/rules/lean-ctx.mdc",
+        ),
+        (
+            "codex-mcp-client",
+            Some("Codex CLI"),
+            ".codex/instructions.md",
+        ),
+        (
+            "gemini-cli-mcp-client",
+            Some("Gemini CLI"),
+            ".gemini/GEMINI.md",
+        ),
+        ("opencode", Some("OpenCode"), ".config/opencode/AGENTS.md"),
+    ];
+    for &(client, target, rel) in hosts {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        with_temp_home(home, || {
+            let before = crate::instructions::build_instructions_with_client(
+                crate::tools::CrpMode::Off,
+                client,
+            );
+            assert!(
+                !before.contains(ANCHOR),
+                "{client}: no carrier yet:\n{before}"
+            );
+
+            let path = home.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            match target {
+                None => {
+                    crate::hooks::agents::sync_claude_global_rules_block(
+                        home,
+                        crate::hooks::recommend_hook_mode("claude"),
+                    )
+                    .unwrap();
+                }
+                Some(name) => {
+                    let block = expected_blocks_by_target(home).remove(name).unwrap();
+                    std::fs::write(&path, block).unwrap();
+                }
+            }
+
+            let after = crate::instructions::build_instructions_with_client(
+                crate::tools::CrpMode::Off,
+                client,
+            );
+            assert!(
+                after.contains(ANCHOR),
+                "{client}: carrier → anchor:\n{after}"
+            );
+            assert!(
+                crate::core::tokens::count_tokens(&after)
+                    < crate::core::tokens::count_tokens(&before),
+                "{client}: one channel must be cheaper than two"
+            );
+            let files = crate::core::rules_overhead::collect_rules_files(home, home);
+            let dups = crate::core::rules_overhead::duplicate_channels(home, &files, &|_| 400);
+            assert!(dups.is_empty(), "{client}: one channel only: {dups:?}");
+        });
+    }
+}
+
+/// The owner's field case: the CLAUDE.md block plus stale legacy
+/// `.claude/rules/lean-ctx.md` copies (global and project) that someone
+/// extended below the lean-ctx markers. Doctor flags the duplicate; sync and
+/// dedup remove only the lean-ctx regions and keep the user's text.
+#[test]
+fn claude_duplicate_rules_channels_are_detected_and_removed_keeping_user_text() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let project = home.join("work/app");
+    let legacy = "# lean-ctx — Context Engineering Layer\n\
+                  <!-- lean-ctx-rules-v9 -->\n\n\
+                  PREFER lean-ctx MCP tools.\n\
+                  Write, Delete, Glob → use normally.\n\
+                  <!-- /lean-ctx -->\n\n";
+    let global_rules = home.join(".claude/rules/lean-ctx.md");
+    let project_rules = project.join(".claude/rules/lean-ctx.md");
+
+    with_temp_home(home, || {
+        let mode = crate::hooks::recommend_hook_mode("claude");
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        std::fs::write(home.join(".claude/CLAUDE.md"), "# my notes\n").unwrap();
+        crate::hooks::agents::sync_claude_global_rules_block(home, mode).unwrap();
+        // Stale copies an older install left behind, extended by a user.
+        for (path, user) in [
+            (&global_rules, "## My global precedence\nkeep global\n"),
+            (&project_rules, "## Tool precedence\nkeep project\n"),
+        ] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, format!("{legacy}{user}")).unwrap();
+        }
+
+        let files = crate::core::rules_overhead::collect_rules_files(home, &project);
+        let dups = crate::core::rules_overhead::duplicate_channels(home, &files, &|_| 400);
+        let claude = dups
+            .iter()
+            .find(|d| d.client == "claude")
+            .expect("claude dup");
+        assert_eq!(claude.channel_count(), 3, "{claude:?}");
+        assert_eq!(claude.instruction_tokens, 0, "block present → anchor only");
+
+        // Sync (setup/update) retires the global copy, dedup the project one.
+        crate::hooks::agents::sync_claude_global_rules_block(home, mode).unwrap();
+        crate::cli::rules_dedup::auto_apply(home, &project);
+
+        let global = std::fs::read_to_string(&global_rules).unwrap();
+        let local = std::fs::read_to_string(&project_rules).unwrap();
+        assert_eq!(global, "## My global precedence\nkeep global\n");
+        assert_eq!(local, "## Tool precedence\nkeep project\n");
+        assert!(global_rules.with_extension("bak").exists(), "backup kept");
+        let claude_md = std::fs::read_to_string(home.join(".claude/CLAUDE.md")).unwrap();
+        assert!(
+            claude_md.starts_with("# my notes\n"),
+            "user text kept:\n{claude_md}"
+        );
+
+        let files = crate::core::rules_overhead::collect_rules_files(home, &project);
+        let dups = crate::core::rules_overhead::duplicate_channels(home, &files, &|_| 400);
+        assert!(dups.is_empty(), "one channel left: {dups:?}");
+    });
+}
+
+/// Dedicated mode (#343, A3): no rules file; the SessionStart `hook observe`
+/// carries the rules. With that hook installed it is the single channel and
+/// the MCP instructions anchor; without it the skeleton stays.
+#[test]
+fn dedicated_session_hook_is_the_single_rules_channel() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    crate::test_env::set_var("LEAN_CTX_RULES_INJECTION", "dedicated");
+    let (without, with) = with_temp_home(home, || {
+        let build = || {
+            crate::instructions::build_instructions_with_client(
+                crate::tools::CrpMode::Off,
+                "claude-code",
+            )
+        };
+        let without = build();
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        std::fs::write(
+            home.join(".claude/settings.json"),
+            r#"{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"lean-ctx hook observe"}]}]}}"#,
+        )
+        .unwrap();
+        (without, build())
+    });
+    crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+    assert!(!without.contains(ANCHOR), "no hook → skeleton:\n{without}");
+    assert!(
+        with.contains(ANCHOR),
+        "hook carries the rules → anchor:\n{with}"
     );
 }

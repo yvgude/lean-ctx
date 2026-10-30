@@ -368,16 +368,26 @@ pub(super) fn cmd_pack_remove(args: &[String]) {
     }
 }
 
-/// Local file imports require a signature unless the caller passes
-/// `--allow-unsigned` (GHSA-gvg8-285q-m62g).
+/// Local file imports require a signature from a trusted publisher key
+/// (pinned in `trusted-signers.toml`, a local identity, or this machine's
+/// publisher key). `--allow-untrusted-signer` accepts any valid signature
+/// (the pre-3.12.1 default) and `--allow-unsigned` also unsigned files
+/// (GHSA-gvg8-285q-m62g).
 pub(super) fn local_signature_policy(
     args: &[String],
 ) -> crate::core::context_package::registry::SignaturePolicy<'static> {
+    use crate::core::context_package::registry::SignaturePolicy;
     if args.iter().any(|a| a == "--allow-unsigned") {
         eprintln!("WARNING: --allow-unsigned: an unsigned package's origin cannot be verified.");
-        crate::core::context_package::registry::SignaturePolicy::AllowUnsigned
+        SignaturePolicy::AllowUnsigned
+    } else if args.iter().any(|a| a == "--allow-untrusted-signer") {
+        eprintln!(
+            "WARNING: --allow-untrusted-signer: a signature from an unpinned key proves \
+             integrity, not the publisher."
+        );
+        SignaturePolicy::RequireSigned
     } else {
-        crate::core::context_package::registry::SignaturePolicy::RequireSigned
+        SignaturePolicy::RequireTrustedPublisher
     }
 }
 
@@ -386,7 +396,10 @@ pub(super) fn cmd_pack_import(args: &[String], project_root: &str) {
     let apply = args.iter().any(|a| a == "--apply");
 
     let Some(file_path) = file_path else {
-        eprintln!("Usage: lean-ctx pack import <file.ctxpkg> [--apply] [--allow-unsigned]");
+        eprintln!(
+            "Usage: lean-ctx pack import <file.ctxpkg> [--apply] [--allow-untrusted-signer] \
+             [--allow-unsigned]"
+        );
         return;
     };
 

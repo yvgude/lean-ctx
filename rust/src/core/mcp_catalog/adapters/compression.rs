@@ -68,6 +68,7 @@ pub fn ensure_registered(cfg: &GatewayConfig) {
 /// it exposes no usable tool, or the call fails.
 fn try_compress(server: &str, input: &str) -> Option<String> {
     let cfg = Config::load();
+    let secret_cfg = cfg.secret_detection;
     let gw = cfg.gateway;
     if !gw.enabled_effective() {
         return None;
@@ -108,17 +109,36 @@ fn try_compress(server: &str, input: &str) -> Option<String> {
         )
         .await
         .ok()?;
-        // The addon's answer is foreign content: admitted before it replaces
-        // the input. A withheld answer keeps the input.
-        crate::core::context_admission::admit_source(
+        admitted_answer(
+            &server,
+            &tool.name,
             &client::result_to_text(&result),
-            &format!("mcp://{server}::{}", tool.name),
-            false,
+            &secret_cfg,
         )
-        .ok()
     })
     .ok()
     .flatten()
+}
+
+/// The addon's answer is foreign content: admitted before it replaces the
+/// input, then redacted like every other downstream MCP output
+/// (GHSA-gvg8-285q-m62g, `redact_downstream_output`). A withheld answer keeps
+/// the input.
+fn admitted_answer(
+    server: &str,
+    tool: &str,
+    text: &str,
+    secret_cfg: &crate::core::config::SecretDetectionConfig,
+) -> Option<String> {
+    let admitted = crate::core::context_admission::admit_source(
+        text,
+        &format!("mcp://{server}::{tool}"),
+        false,
+    )
+    .ok()?;
+    Some(super::super::redact_downstream_output_with(
+        server, &admitted, secret_cfg,
+    ))
 }
 
 /// The input-text parameter of a compression tool: a known text-ish name if
@@ -157,6 +177,28 @@ mod tests {
         let c = GatewayCompressor::new("nonexistent-server");
         let input = "some text to compress";
         assert_eq!(c.compress(input, None), input);
+    }
+
+    /// GHSA-gvg8-285q-m62g on the compression path: the addon's answer goes
+    /// through the configured secret scanner, as the proxy's output does. Old
+    /// code only admitted it, so a secret the scanner knows (here a custom
+    /// pattern) came back verbatim in place of the compressed input.
+    #[test]
+    fn addon_answer_secrets_are_redacted() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let secret_cfg = crate::core::config::SecretDetectionConfig {
+            enabled: true,
+            redact: true,
+            custom_patterns: vec![r"ACME-TOKEN-[0-9]{8}".into()],
+            exclude_patterns: Vec::new(),
+        };
+        let secret = concat!("ACME-TOKEN-", "31415926");
+        let answer = format!("compressed: deploy with {secret} (kept)");
+        let out = admitted_answer("headroom", "compress", &answer, &secret_cfg)
+            .expect("an admitted answer");
+        assert!(!out.contains(secret), "secret leaked: {out}");
+        assert!(out.contains("(kept)"), "redaction must be surgical: {out}");
     }
 
     #[test]

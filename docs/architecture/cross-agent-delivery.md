@@ -1,16 +1,16 @@
 # Cross-Agent Context Delivery
 
 Status: V4-Zielvertrag mit vorhandenen lokalen Teilprimitiven. Dieses Dokument
-ist weder Release- noch Pro-Verfügbarkeitsnachweis.
+ist kein Release- oder Verfügbarkeitsnachweis.
 
 ## Zweck und Produktgrenze
 
 Cross-Agent Context Delivery verhindert, dass ein Agent denselben unveränderten
 Kontext erneut materialisiert, den ein anderer berechtigter Agent bereits
 erhalten hat. Das Ergebnis ist eine überprüfbare Referenz auf die ursprüngliche
-Auslieferung, nicht bloss ein anonymer Cache-Treffer. Die Funktion gehört zum
-Pro-Wertversprechen; Team erweitert den Scope auf autorisierte gemeinsame
-Workspaces, ohne die Isolationsregeln abzuschwächen.
+Auslieferung, nicht bloss ein anonymer Cache-Treffer. Auf einem Rechner gehört
+die Funktion zu LeanCTX OSS (frei, lokal); LeanCTX Hive Team erweitert den Scope
+auf autorisierte gemeinsame Workspaces, ohne die Isolationsregeln abzuschwächen.
 
 Nicht Teil dieses Vertrags sind Agent-Bus-Nachrichten, Task-Delegation,
 Checkpoint-Synchronisierung oder ein allgemeiner Content-Store.
@@ -92,8 +92,9 @@ Receipts unterscheiden `original_agent_id` vom tatsächlich bedienenden
 bei Proxy oder Team-Dienst sind sie verschieden. Gemessen werden mindestens
 Referenzen, Expansionen, Validierungsfehler, Invalidierungen und vermiedene
 Tokens. Einsparung ist `max(original_tokens - reference_tokens, 0)` und wird
-nur nach erfolgreich bedienter Referenz gezählt. Pro-Reporting aggregiert diese
-Werte ohne Content, Pfade oder Agentenkennungen offenzulegen.
+nur nach erfolgreich bedienter Referenz gezählt. Das Reporting (lokales Cockpit,
+in LeanCTX Hive über Engines hinweg) aggregiert diese Werte, ohne Content, Pfade
+oder Agentenkennungen offenzulegen.
 
 ## Vorhandene Implementierung
 
@@ -119,7 +120,7 @@ Die Engine besitzt zwei Generationen von Teilprimitiven:
 
 ## Offene Abnahme-Gates
 
-Der bestehende Stand ist kein vollständiges V4-/Pro-Gate:
+Der bestehende Stand ist kein vollständiges V4-Gate:
 
 - `DeliveryEntryV2` enthält keine autoritative Account-, Workspace- oder
   Project-ID und keine Privacy-Klassifikation.
@@ -143,8 +144,8 @@ Der bestehende Stand ist kein vollständiges V4-/Pro-Gate:
   vergleicht zudem Token mit Byte-Limit.
 - Eine explizite Invalidierungs-API fehlt. V1 ignoriert beim Check den
   übergebenen `mtime`; Key-Drift/TTL ersetzen keine Content-Invalidierung.
-- Es gibt kein Pro-Entitlement-Gate: Delivery ist über Konfiguration
-  standardmäßig aktiv. Pro-Value-Reporting ist nicht implementiert; vorhandene
+- Delivery ist über Konfiguration standardmäßig aktiv und an keinen Plan
+  gebunden (lokal frei). Ein Wert-Reporting ist nicht implementiert; vorhandene
   Stats werden lediglich geloggt.
 - Klassifikations-, Invalidierungs-, Restart-, Manipulations- und echte
   Zwei-Agenten-E2E-Tests fehlen als integrierter Release-Nachweis.
@@ -160,8 +161,9 @@ Der bestehende Stand ist kein vollständiges V4-/Pro-Gate:
 - manipulierter Handle/Digest → typisierter Fehler, keine Einsparungsbuchung;
 - TTL, Capacity und explizite Invalidierung → keine veraltete Expansion;
 - Daemon-Restart und konkurrierende Agenten → deterministisches Ergebnis;
-- Pro deaktiviert/abgelaufen → keine bezahlte Capability;
+- Hive-Lizenz abgelaufen → lokale Auslieferung unverändert, kein
+  Team-Workspace-Scope;
 - Telemetrie/Reporting → korrekte Aggregate ohne Content- oder ID-Leak.
 
 Erst wenn diese Gates gemeinsam mit den allgemeinen V4-Hard-Gates bestanden
-sind, darf Cross-Agent Context Delivery als Pro-fertig oder umsatzbereit gelten.
+sind, darf Cross-Agent Context Delivery als release-fertig gelten.

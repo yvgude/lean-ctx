@@ -157,7 +157,6 @@ fn plan_at_in_view(
             vec![Box::new(provider.clone())],
             ContextField::with_weights(FieldWeights::default()),
         )
-        .with_private_selection()
         .with_relevance_floor(),
         ContextKernel::with_field(
             vec![Box::new(provider)],

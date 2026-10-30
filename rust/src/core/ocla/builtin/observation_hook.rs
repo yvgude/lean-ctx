@@ -295,6 +295,7 @@ mod tests {
             is_first_inject: None,
             cache_read_per_m_usd: None,
             cache_write_per_m_usd: None,
+            governor: None,
         };
 
         BuiltinObservationHook::apply_quality_signal(&mut event, 0.5);

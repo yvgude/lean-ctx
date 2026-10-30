@@ -975,7 +975,7 @@ Usage:
     generated section of AGENTS.md (printed; --write updates the file in place)
   lean-ctx knowledge remove --category <cat> --key <key>
   lean-ctx knowledge consolidate [--all] [--dry-run] [--adaptive] [--session <id>]
-    --adaptive uses scheduled budgets and optional Pro memory selection.
+    --adaptive uses the scheduled (budgeted) import.
     --session imports that session's findings and decisions; without it only
     project facts are consolidated.
   lean-ctx knowledge restore [--store facts|history|procedures|patterns] [--query <text>] [--limit N]

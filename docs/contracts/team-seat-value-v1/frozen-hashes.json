@@ -3,7 +3,7 @@
   "sha256": {
     ".github/workflows/ci.yml": "81242ea9046de08bc95eb4ec4e59edda0684dc97e636894cfca13fc30a0aaaef",
     "ci/gitlab-ci.yml": "5a1251f812a03c6ab97df01feda26942dc22d406b0e79374e4ff97c5c279178b",
-    "docs/contracts/README.md": "3bcdddc0fd629d4ba812cbf751317a1288d18983d32629ca251e81ac30b5273d",
+    "docs/contracts/README.md": "e021b92ddf588fd77d6383a040e3ee8f532ff5f174c39daadf0af7e7f0d078b5",
     "docs/contracts/team-seat-value-v1/README.md": "caecd3e67f1e9c0adacc272a9dae892ac0cddef42c5e17066c069d17a83505d6",
     "docs/contracts/team-seat-value-v1/common.schema.json": "ed7778ce53b4d17922f8d8b1c1fb36837bd0bee62d195c2c074bf849d78542a4",
     "docs/contracts/team-seat-value-v1/fixtures/cross-record/histories.json": "81ee94400fb3a7ebcd6b4a94829356b32ea2bde71957772d0225ba3339e70071",

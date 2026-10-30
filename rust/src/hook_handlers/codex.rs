@@ -6,21 +6,29 @@
 //! handlers stay self-contained here rather than reusing the Cursor/Claude
 //! output builders in the parent module.
 
-use super::file_rewrite::rewrite_candidate;
-use super::{HOOK_STDIN_TIMEOUT, is_disabled, is_quiet, read_stdin_with_timeout, resolve_binary};
+use super::file_rewrite::classify_rewrite;
+use super::{
+    HOOK_STDIN_TIMEOUT, RewriteSafety, is_disabled, is_quiet, read_stdin_with_timeout,
+    resolve_binary,
+};
 
 /// Preserve only the Codex dialect from a cross-host redirect decision.
 ///
 /// The shared redirect builder also emits Cursor, Claude, and Copilot fields.
-/// Codex rejects a bare `permissionDecision: allow`, but accepts its own
-/// `hookSpecificOutput` form when it contains `updatedInput`; an empty result
-/// therefore remains the correct pass-through signal for Codex.
+/// Codex rejects a bare `permissionDecision: allow`, and accepts `updatedInput`
+/// only together with `"allow"` ("Return `updatedInput` only with
+/// `permissionDecision: "allow"`", developers.openai.com/codex/hooks). A
+/// Read/Grep redirect is read-only, so it may carry that approval; an empty
+/// result remains the correct pass-through signal for Codex.
 fn codex_redirect_output(shared_output: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(&shared_output)
+    serde_json::from_str::<serde_json::Value>(shared_output)
         .ok()
         .and_then(|output| output.get("hookSpecificOutput").cloned())
         .filter(|hook_output| hook_output.get("updatedInput").is_some())
-        .map(|hook_output| serde_json::json!({ "hookSpecificOutput": hook_output }).to_string())
+        .map(|mut hook_output| {
+            hook_output["permissionDecision"] = serde_json::json!("allow");
+            serde_json::json!({ "hookSpecificOutput": hook_output }).to_string()
+        })
         .unwrap_or_default()
 }
 
@@ -139,9 +147,19 @@ pub fn handle_codex_pretooluse() {
     let cwd = parsed.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
     let note_edits = || crate::core::bounce_tracker::note_host_shell_edits(cmd, cwd);
 
-    if let Some(rewritten) = rewrite_candidate(cmd, &binary) {
+    // Codex applies `updatedInput` only with `permissionDecision: "allow"`
+    // and rejects `"ask"`, so a Codex rewrite is always an approval. Only a
+    // rewrite of a command in the side-effect-free set (`git status`, `cat`,
+    // `ls`, …; see `safe_commands`) may carry it; any other command is not
+    // rewritten and passes through to Codex's own approval and sandbox
+    // policy unchanged.
+    if let Some(rewrite) = classify_rewrite(cmd, &binary) {
         note_edits();
-        print!("{}", codex_rewrite_output(&rewritten));
+        if rewrite.safety == RewriteSafety::ReadOnly {
+            print!("{}", codex_rewrite_output(&rewrite.command));
+        } else {
+            print!("{}", codex_allow_output());
+        }
         return;
     }
 
@@ -259,8 +277,8 @@ pub(crate) fn emit_session_start_additional_context(additional_context: &str) {
 
 /// Codex SessionStart guidance for the shell-hook surface (GH #625).
 ///
-/// The Codex `PreToolUse` hook already rewrites every rewritable Bash command to
-/// `lean-ctx -c "<cmd>"` automatically (`codex_rewrite_output`: `allow` +
+/// The Codex `PreToolUse` hook rewrites read-only Bash commands to
+/// `lean-ctx read|grep|ls` automatically (`codex_rewrite_output`: `allow` +
 /// `updatedInput`), so the old "prefer `lean-ctx -c`" line was redundant *and*
 /// taught nothing about getting raw output back — the one thing an agent cannot
 /// reach on its own once a command is auto-compressed. That gap is the shell-side
@@ -286,9 +304,11 @@ exact command the hook suggests.
 Rule of thumb: back every exact claim with `lean-ctx raw` output."#;
 
 /// Full session briefing injected at Codex SessionStart. When hooks cover
-/// native tools, uses transparent wording so the model prefers native
-/// Read/Grep/Glob (hooks compress automatically). Otherwise falls back
-/// to explicit MCP tool guidance.
+/// native tools, it tells the model to use native Read/Grep/Glob/Shell and
+/// states what the hooks compress: Read/Grep redirects and read-only shell
+/// rewrites. Codex applies a rewrite only as an approval, so any other shell
+/// command is not rewritten and runs as written under Codex's own approval.
+/// Otherwise falls back to explicit MCP tool guidance.
 pub(crate) fn codex_session_briefing() -> String {
     let home = dirs::home_dir().unwrap_or_default();
     if crate::core::rules_channel::client_hook_covered("codex", &home) {
@@ -300,12 +320,15 @@ pub(crate) fn codex_session_briefing() -> String {
 fn codex_session_briefing_hook_covered() -> String {
     r#"lean-ctx SESSION BRIEFING
 
-lean-ctx is active — hooks compress all native tool output transparently.
-Use native Read, Grep, Glob, and Shell normally; lean-ctx optimizes context automatically.
+lean-ctx is active — hooks compress native Read and Grep output, and shell
+commands that only read (file reads, searches, listings), without approving
+anything for you. Every other shell command runs unchanged and uncompressed
+under your Codex approval policy.
+Use native Read, Grep, Glob, and Shell normally.
 Glob may fall back to ctx_glob if the hook cannot safely redirect.
 
 Exclusive tools (no native equivalent — call these via MCP):
-  ctx_compose (understand code, call FIRST), ctx_callgraph (callers/impact),
+  ctx_compose (search + read + symbols), ctx_callgraph (callers/impact),
   ctx_search(action=symbol | semantic), ctx_knowledge, ctx_session.
 
 CHECKPOINT: after 20+ tool calls, document progress with ctx_session(action="task", value="<status>")."#
@@ -318,9 +341,9 @@ fn codex_session_briefing_explicit() -> String {
     format!(
         r#"lean-ctx SESSION BRIEFING
 
-You have lean-ctx MCP tools available. Use them INSTEAD of native equivalents.
+lean-ctx MCP tools are available for file, search and shell work.
 
-FILE TOOL RULE: use `ctx_read` instead of Read, `ctx_search` instead of Grep,
+File tools: use `ctx_read` instead of Read, `ctx_search` instead of Grep,
 and `ctx_glob`/`ctx_tree` instead of Glob. The hook redirects only safe native
 Read/Grep calls; it cannot turn an unsafe native call (or Glob) into an MCP call.
 
@@ -346,7 +369,7 @@ fn is_codex_exec_session() -> bool {
 pub(crate) fn codex_exec_preamble() -> String {
     let never = crate::core::rules_canonical::NEVER;
     format!(
-        "lean-ctx active. MCP tools: ctx_read, ctx_shell, ctx_search, ctx_compose, ctx_glob.\n         RULE: use ctx_read/ctx_search/ctx_glob instead of Read/Grep/Glob or cat/grep/find/bash. ctx_compose FIRST to orient.\n         RECOVER: lean-ctx raw for verbatim output.\n         {never}",
+        "lean-ctx active. MCP tools: ctx_read, ctx_shell, ctx_search, ctx_compose, ctx_glob.\n         Routing: use ctx_read/ctx_search/ctx_glob instead of Read/Grep/Glob or cat/grep/find/bash; ctx_compose bundles search + read + symbols.\n         RECOVER: lean-ctx raw for verbatim output.\n         {never}",
     )
 }
 
@@ -437,9 +460,12 @@ mod tests {
     }
 
     #[test]
-    fn session_briefing_hook_covered_is_fully_transparent() {
+    fn session_briefing_hook_covered_states_what_is_compressed() {
         let briefing = codex_session_briefing_hook_covered();
-        assert!(briefing.contains("hooks compress all native tool output transparently"));
+        assert!(!briefing.contains("transparent"));
+        assert!(!briefing.contains("all native tool output"));
+        assert!(briefing.contains("hooks compress native Read and Grep output"));
+        assert!(briefing.contains("runs unchanged and uncompressed"));
         assert!(briefing.contains("Use native Read, Grep, Glob, and Shell normally"));
         assert!(briefing.contains("ctx_compose"));
         assert!(!briefing.contains("instead of Read"));

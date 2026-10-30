@@ -43,8 +43,6 @@ pub(crate) const GUARD_KINDS: [&str; 7] = [
     "content_withheld",
     "coverage_incomplete",
 ];
-/// The engine's default `knowledge.max_facts`.
-pub(crate) const DEFAULT_MAX_FACTS: usize = 200;
 /// Upper bound of any JSON state file this module reads.
 const STATE_FILE_LIMIT: u64 = 4 << 20;
 
@@ -311,32 +309,32 @@ pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> ProResult<()> {
         .ok_or_else(|| ProError::internal("state path has no parent"))?;
     create_private_dir(parent)?;
     let mut temporary = tempfile::NamedTempFile::new_in(parent)
-        .map_err(|_| ProError::internal("Pro state could not be written"))?;
+        .map_err(|_| ProError::internal("Cockpit state could not be written"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(temporary.path(), std::fs::Permissions::from_mode(0o600))
-            .map_err(|_| ProError::internal("Pro state could not be written"))?;
+            .map_err(|_| ProError::internal("Cockpit state could not be written"))?;
     }
     temporary
         .write_all(bytes)
         .and_then(|()| temporary.as_file().sync_all())
-        .map_err(|_| ProError::internal("Pro state could not be written"))?;
+        .map_err(|_| ProError::internal("Cockpit state could not be written"))?;
     temporary
         .persist(path)
-        .map_err(|_| ProError::internal("Pro state could not be written"))?;
+        .map_err(|_| ProError::internal("Cockpit state could not be written"))?;
     Ok(())
 }
 
 pub(crate) fn write_json(path: &Path, value: &impl serde::Serialize) -> ProResult<()> {
     let bytes =
-        serde_json::to_vec(value).map_err(|_| ProError::internal("Pro state is not JSON"))?;
+        serde_json::to_vec(value).map_err(|_| ProError::internal("Cockpit state is not JSON"))?;
     write_private(path, &bytes)
 }
 
 pub(crate) fn create_private_dir(dir: &Path) -> ProResult<()> {
     if std::fs::symlink_metadata(dir).is_ok_and(|m| m.file_type().is_symlink()) {
-        return Err(ProError::internal("Pro state directory is a symlink"));
+        return Err(ProError::internal("Cockpit state directory is a symlink"));
     }
     #[cfg(unix)]
     {
@@ -345,12 +343,12 @@ pub(crate) fn create_private_dir(dir: &Path) -> ProResult<()> {
             .recursive(true)
             .mode(0o700)
             .create(dir)
-            .map_err(|_| ProError::internal("Pro state directory could not be created"))
+            .map_err(|_| ProError::internal("Cockpit state directory could not be created"))
     }
     #[cfg(not(unix))]
     {
         std::fs::create_dir_all(dir)
-            .map_err(|_| ProError::internal("Pro state directory could not be created"))
+            .map_err(|_| ProError::internal("Cockpit state directory could not be created"))
     }
 }
 

@@ -9,48 +9,49 @@
 use super::powershell_rewrite::{self, PowerShellDecision, is_powershell_tool};
 use super::search_rewrite::{rewrite_dir_list_command, rewrite_search_command};
 use super::{
-    HOOK_STDIN_TIMEOUT, build_deny_output, build_dual_allow_output, build_dual_rewrite_output,
-    dedup, is_claude_pretooluse_payload, is_disabled, is_shell_tool, payload,
-    read_stdin_with_timeout, resolve_binary, shell_quote, shell_tokenize,
+    HOOK_STDIN_TIMEOUT, RewriteSafety, build_deny_output, build_passthrough_output, dedup,
+    deliver_rewrite, is_claude_pretooluse_payload, is_disabled, is_gemini_beforetool_payload,
+    is_shell_tool, payload, read_stdin_with_timeout, resolve_binary, safe_commands, shell_quote,
+    shell_tokenize,
 };
 use crate::compound_lexer;
 use crate::core::debug_log::{self, Route};
 use crate::rewrite_registry;
 
-/// Decide the rewrite hook's stdout (a rewrite or an allow-passthrough) without
+/// Decide the rewrite hook's stdout (a rewrite, a deny or a neutral pass-through) without
 /// printing, so `handle_rewrite` can run it under the fail-open timeout (#1035).
 pub(super) fn compute_rewrite() -> String {
     if is_disabled() {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
     // Shadow-only surface: native Shell passes through without rewrite
     if super::is_shadow_surface_active() {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
     let binary = resolve_binary();
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
         tracing::warn!("[hook rewrite] invalid JSON payload, allowing passthrough");
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     // Resolve across host shapes: Claude/Cursor send snake_case `tool_name` +
     // `tool_input`; Copilot CLI sends camelCase `toolName` + `toolArgs` (a
     // JSON-encoded string). Before #551 only the snake_case path was read.
     let Some(tool_name) = payload::resolve_tool_name(&v) else {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     if !is_shell_tool(&tool_name) {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     }
 
     let tool_args = payload::resolve_tool_args(&v);
     let Some(cmd) = payload::resolve_command(&v, tool_args.as_ref()) else {
-        return build_dual_allow_output();
+        return build_passthrough_output();
     };
 
     // Native shell edits (`sed -i`, `>`, `tee`, `cp`/`mv`) never reach the MCP
@@ -68,34 +69,55 @@ pub(super) fn compute_rewrite() -> String {
     // The output dialect is part of the key: a replayed Cursor-shaped deny is
     // invalid for Claude Code.
     let claude = is_claude_pretooluse_payload(&v);
-    let key_material = format!("{tool_name}\u{0}{cmd}\u{0}{claude}");
+    let gemini = is_gemini_beforetool_payload(&v);
+    let key_material = format!("{tool_name}\u{0}{cmd}\u{0}{claude}\u{0}{gemini}");
     dedup::deduped("rewrite", &key_material, || {
         if is_powershell_tool(&tool_name) {
             return powershell_output(&cmd, &binary, &tool_name, tool_args.as_ref(), &v);
         }
-        if let Some(rewritten) = rewrite_candidate(&cmd, &binary) {
+        // #1408: Commands that bypass compression-routing but violate the shell
+        // allowlist must still be wrapped for enforcement. Without this,
+        // compound commands (`true && docker --version`) and
+        // unconditionally-blocked builtins (`eval ...`) skip the allowlist when
+        // the hook passes them through to the native shell.
+        let rewrite = classify_rewrite(&cmd, &binary).map(|r| (r, "rewritable command"));
+        let rewrite = rewrite.or_else(|| {
+            needs_enforcement_wrap(&cmd, &binary).then(|| {
+                (
+                    Rewrite::arbitrary(wrap_single_command(&cmd, &binary)),
+                    "enforcement wrap (allowlist violation)",
+                )
+            })
+        });
+        if let Some((rewrite, reason)) = rewrite {
+            // "Mirror, don't grant": each host gets the rewrite only where it
+            // neither grants nor adds a prompt (see `deliver_rewrite`).
+            if let Some(out) = deliver_rewrite(&tool_name, &cmd, tool_args.as_ref(), &rewrite, &v) {
+                debug_log::log_hook_decision("rewrite", &tool_name, Route::LeanCtx, &cmd, reason);
+                return out;
+            }
+            // Not delivered: the original runs natively under the host's own
+            // approval. The allowlist the wrap would have enforced at run time
+            // is enforced here instead, as the PowerShell path does.
+            if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(&cmd) {
+                debug_log::log_hook_decision(
+                    "rewrite",
+                    &tool_name,
+                    Route::Native,
+                    &cmd,
+                    "denied by the shell allowlist (rewrite left to the host)",
+                );
+                return build_deny_output(&msg.to_string(), &v);
+            }
             debug_log::log_hook_decision(
                 "rewrite",
                 &tool_name,
-                Route::LeanCtx,
+                Route::Native,
                 &cmd,
-                "rewritable command",
+                "left to the host's own approval (not provably prompt-free)",
             );
-            build_dual_rewrite_output(tool_args.as_ref(), &rewritten)
-        } else if needs_enforcement_wrap(&cmd, &binary) {
-            // #1408: Commands that bypass compression-routing but violate the
-            // shell allowlist must still be wrapped for enforcement. Without
-            // this, compound commands (`true && docker --version`) and
-            // unconditionally-blocked builtins (`eval ...`) skip the allowlist
-            // when the hook passes them through to the native shell.
-            debug_log::log_hook_decision(
-                "rewrite",
-                &tool_name,
-                Route::LeanCtx,
-                &cmd,
-                "enforcement wrap (allowlist violation)",
-            );
-            build_dual_rewrite_output(tool_args.as_ref(), &wrap_single_command(&cmd, &binary))
+            record_native_passthrough();
+            build_passthrough_output()
         } else {
             debug_log::log_hook_decision(
                 "rewrite",
@@ -110,7 +132,7 @@ pub(super) fn compute_rewrite() -> String {
             // passthrough (token volumes are unknown pre-exec, so zeros) so
             // the dashboard's per-tool table shows the leak as a call count.
             record_native_passthrough();
-            build_dual_allow_output()
+            build_passthrough_output()
         }
     })
 }
@@ -126,14 +148,26 @@ fn powershell_output(
 ) -> String {
     match powershell_rewrite::decide(cmd, binary) {
         PowerShellDecision::Rewrite(rewritten) => {
+            let rewrite = Rewrite::for_original(cmd, rewritten);
+            if let Some(out) = deliver_rewrite(tool_name, cmd, tool_args, &rewrite, payload) {
+                debug_log::log_hook_decision(
+                    "rewrite",
+                    tool_name,
+                    Route::LeanCtx,
+                    cmd,
+                    "rewritable command (PowerShell)",
+                );
+                return out;
+            }
             debug_log::log_hook_decision(
                 "rewrite",
                 tool_name,
-                Route::LeanCtx,
+                Route::Native,
                 cmd,
-                "rewritable command (PowerShell)",
+                "left to the host's own approval (PowerShell)",
             );
-            build_dual_rewrite_output(tool_args, &rewritten)
+            record_native_passthrough();
+            build_passthrough_output()
         }
         PowerShellDecision::Deny(msg) => {
             debug_log::log_hook_decision(
@@ -154,7 +188,7 @@ fn powershell_output(
                 "not a single read/search/list command (PowerShell)",
             );
             record_native_passthrough();
-            build_dual_allow_output()
+            build_passthrough_output()
         }
     }
 }
@@ -203,7 +237,7 @@ pub(super) fn is_rewritable(cmd: &str) -> bool {
 /// allowlist itself. Wrapping it again nests one more `-c` layer every time the
 /// hook sees it, and the nested POSIX quoting falls apart in the inner shell
 /// (#2088).
-fn needs_enforcement_wrap(cmd: &str, binary: &str) -> bool {
+pub(super) fn needs_enforcement_wrap(cmd: &str, binary: &str) -> bool {
     use crate::core::shell_allowlist::{ShellSecurity, passes_enforced};
 
     if ShellSecurity::resolve() == ShellSecurity::Off {
@@ -296,7 +330,50 @@ fn has_stdout_file_redirect(cmd: &str) -> bool {
     false
 }
 
+/// A rewritten command and whether hosts that only rewrite while approving
+/// may receive it ([`RewriteSafety`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Rewrite {
+    pub(super) command: String,
+    pub(super) safety: RewriteSafety,
+}
+
+impl Rewrite {
+    /// The rewrite `command` of `original`: approvable exactly when the
+    /// original is in the side-effect-free set, whatever form the rewrite
+    /// takes (a direct mapping or a `lean-ctx -c` wrap of the same text).
+    pub(super) fn for_original(original: &str, command: String) -> Self {
+        if safe_commands::is_side_effect_free(original) {
+            Self::read_only(command)
+        } else {
+            Self::arbitrary(command)
+        }
+    }
+
+    /// A substitution that may carry an approval.
+    pub(super) fn read_only(command: String) -> Self {
+        Self {
+            command,
+            safety: RewriteSafety::ReadOnly,
+        }
+    }
+
+    /// A substitution that may not carry an approval.
+    pub(super) fn arbitrary(command: String) -> Self {
+        Self {
+            command,
+            safety: RewriteSafety::Arbitrary,
+        }
+    }
+}
+
 pub(super) fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
+    classify_rewrite(cmd, binary).map(|rewrite| rewrite.command)
+}
+
+/// [`rewrite_candidate`] plus the rewrite's [`RewriteSafety`], which decides
+/// whether hosts that only accept a rewrite as an approval may receive it.
+pub(super) fn classify_rewrite(cmd: &str, binary: &str) -> Option<Rewrite> {
     if !passes_rewrite_guards(cmd, binary) {
         return None;
     }
@@ -304,11 +381,11 @@ pub(super) fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
     // The direct rewrites splice the binary into a Bash command line as-is: a
     // path with a space (`C:/Users/First Last/…`) must arrive quoted (#1865).
     if let Some(rewritten) = direct_rewrite(cmd, &shell_quote(binary)) {
-        return Some(rewritten);
+        return Some(Rewrite::for_original(cmd, rewritten));
     }
 
     if let Some(rewritten) = build_rewrite_compound(cmd, binary) {
-        return Some(rewritten);
+        return Some(Rewrite::for_original(cmd, rewritten));
     }
 
     // Single-command fallback only. A compound that `build_rewrite_compound`
@@ -317,7 +394,7 @@ pub(super) fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
     // subject its sink to the allowlist gate and could block a command the
     // agent's shell ran fine before (#589). Compounds are authoritative above.
     if !is_compound(cmd) && is_rewritable(cmd) {
-        return Some(wrap_single_command(cmd, binary));
+        return Some(Rewrite::for_original(cmd, wrap_single_command(cmd, binary)));
     }
 
     None

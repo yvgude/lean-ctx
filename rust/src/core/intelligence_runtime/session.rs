@@ -134,11 +134,7 @@ pub(super) fn admit_invocation(
     let verifier = operation.capability_id.as_str() == "enterprise.runtime.org_policy_verifier";
     let supported = (matches!(
         operation.capability_id.as_str(),
-        "pro.runtime.adaptive_context"
-            | "pro.runtime.memory_curation"
-            | "pro.runtime.personal_protection"
-            | "pro.runtime.code_security"
-            | "pro.runtime.context_policy"
+        "pro.runtime.personal_protection" | "pro.runtime.code_security"
     ) || (verifier && health::supports_org_policy_verifier(package))
         || (operation.capability_id.as_str() == super::compliance_frameworks::CAPABILITY_ID
             && health::supports_compliance_frameworks(package)))

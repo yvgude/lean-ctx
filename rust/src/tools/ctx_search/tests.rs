@@ -917,7 +917,7 @@ fn result_cap_is_announced_instead_of_looking_exhaustive() {
     let capped = search(&capped_dir, "CAPPED_ENDPOINT", 10);
 
     assert!(
-        capped.contains("stopped at the max_results=10 cap"),
+        capped.contains("stopped at max_results=10:"),
         "hitting the cap must be stated, not inferred: {capped}"
     );
     assert!(
@@ -938,7 +938,7 @@ fn result_cap_is_announced_instead_of_looking_exhaustive() {
         "the uncapped search must find every match: {complete}"
     );
     assert!(
-        !complete.contains("stopped at the max_results"),
+        !complete.contains("stopped at max_results"),
         "an exhaustive search must not warn about a cap it never reached: {complete}"
     );
 }

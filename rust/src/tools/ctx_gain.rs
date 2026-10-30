@@ -619,10 +619,11 @@ fn format_injection_methodology(t: &crate::core::theme::Theme, out: &mut Vec<Str
     let ss = t.box_side_square();
     let row = |s: &str| -> String { format!("  {ss}{}{ss}", pad_right(s, w)) };
 
-    let overhead = crate::core::context_overhead::ContextOverhead::cached();
-    let cache_rate = crate::core::config::Config::load()
-        .dashboard_cache_hit_rate()
-        .unwrap_or(0.75);
+    use crate::core::context_overhead as co;
+    let overhead = co::ContextOverhead::cached();
+    let cache_rate = co::provider_cache_hit_rate();
+    let baseline = co::native_baseline_tokens_per_turn();
+    let delta = (overhead.total_tokens() as u64).saturating_sub(baseline);
 
     out.push(String::new());
     out.push(format!(
@@ -637,23 +638,26 @@ fn format_injection_methodology(t: &crate::core::theme::Theme, out: &mut Vec<Str
         " {dim}instructions + rules). The net-of-injection figure corrects{rst}"
     )));
     out.push(row(&format!(
-        " {dim}for two factors that the gross overhead overstates:{rst}"
+        " {dim}for the native tools it replaces and for provider caching:{rst}"
     )));
     out.push(row(""));
     out.push(row(&format!(
-        " {dim}1. Baseline: native IDE tools (Read/Grep/Shell/Glob/Write){rst}"
+        " {dim}1. Baseline: in Replace mode the denied native tools{rst}"
     )));
     out.push(row(&format!(
-        " {dim}   also inject ~2,400 tok/turn. Only the delta above that{rst}"
+        " {dim}   (Read/Grep/Shell/Glob/Write, ~2,400 tok/turn) leave the{rst}"
     )));
     out.push(row(&format!(
-        " {dim}   baseline is lean-ctx overhead.{rst}"
+        " {dim}   prefix. Hybrid/MCP keep them, so nothing is subtracted.{rst}"
     )));
     out.push(row(&format!(
-        " {dim}2. Cache: providers cache stable prefixes (Anthropic ~90%,{rst}"
+        " {dim}2. Cache: a cached prefix token reads at 0.1x input, a miss{rst}"
     )));
     out.push(row(&format!(
-        " {dim}   OpenAI ~50%). Effective cost = delta × (1 − cache_rate).{rst}"
+        " {dim}   writes at 1.25x (Anthropic, OpenAI GPT-5.6+, 5 min TTL).{rst}"
+    )));
+    out.push(row(&format!(
+        " {dim}   Cost = delta x (hit x 0.1 + miss x 1.25).{rst}"
     )));
     out.push(row(""));
     out.push(row(&format!(" {dim}Current config:{rst}")));
@@ -663,11 +667,10 @@ fn format_injection_methodology(t: &crate::core::theme::Theme, out: &mut Vec<Str
         overhead.tool_count
     )));
     out.push(row(&format!(
-        " {dim}  Native baseline: 2,400 tok/turn{rst}"
+        " {dim}  Native baseline: {baseline} tok/turn{rst}"
     )));
     out.push(row(&format!(
-        " {dim}  Delta:           {} tok/turn{rst}",
-        (overhead.total_tokens() as u64).saturating_sub(2400)
+        " {dim}  Delta:           {delta} tok/turn{rst}"
     )));
     out.push(row(&format!(
         " {dim}  Cache hit rate:  {:.0}% (config: dashboard_cache_hit_rate){rst}",
@@ -675,7 +678,7 @@ fn format_injection_methodology(t: &crate::core::theme::Theme, out: &mut Vec<Str
     )));
     out.push(row(&format!(
         " {dim}  Effective cost:  {} tok/turn{rst}",
-        ((overhead.total_tokens() as u64).saturating_sub(2400) as f64 * (1.0 - cache_rate)) as u64
+        (delta as f64 * co::prefix_cost_factor()) as u64
     )));
     out.push(row(""));
     out.push(row(&format!(

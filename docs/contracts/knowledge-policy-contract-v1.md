@@ -31,7 +31,7 @@ Minimaler TOML-Ausschnitt:
 
 ```toml
 [memory.knowledge]
-max_facts = 200
+# max_facts: veraltet und ignoriert seit 3.12.1 — Knowledge hat kein Fakten-Limit
 max_patterns = 50
 max_history = 100
 contradiction_threshold = 0.5
@@ -90,12 +90,18 @@ Ordering ist deterministisch (stable sort tie-breaks), danach erfolgt Truncation
 
 - Confidence decay + consolidation + compaction laufen deterministisch und bounded:
   - Runtime: `rust/src/core/memory_lifecycle.rs`
-  - Parameter: `decay_rate`, `low_confidence_threshold`, `stale_days`, `similarity_threshold`, `max_facts`
+  - Parameter: `decay_rate`, `low_confidence_threshold`, `stale_days`, `similarity_threshold`
+- **Kein Fakten-Limit (Owner-Entscheid 2026-10-24, 3.12.1).** Facts verlassen den
+  aktiven Store nur nach Qualität (Decay, Near-Duplicate-Merge, Archivierung
+  low-confidence/stale), nie nach Anzahl. `max_facts` und
+  `LEAN_CTX_KNOWLEDGE_MAX_FACTS` werden noch geparst, aber ignoriert.
+- Relations-Kanten sind dichte-begrenzt, nicht fakten-begrenzt:
+  `knowledge_relations::edge_bound(current_facts)` = `max(8 × current_facts, 1600)`.
 
 ### Verlustfreie Eviction (MUST, #995)
 
-- **Kein Hard-Drop.** Jeder Store (facts/history/procedures/patterns) evictet
-  ausschließlich über den einen Kapazitäts-Manager
+- **Kein Hard-Drop.** Jeder Store mit Kapazitätsgrenze (history/procedures/patterns)
+  evictet ausschließlich über den einen Kapazitäts-Manager
   (`rust/src/core/memory_capacity.rs::reclaim_store`). Der entfernte Tail wird
   **vor** dem Löschen nach `memory/archive/<store>/` archiviert und ist
   wiederherstellbar.
@@ -105,7 +111,7 @@ Ordering ist deterministisch (stable sort tie-breaks), danach erfolgt Truncation
 - **Default-on, gated.** `reclaim_enabled = true` ist Standard; `false` kappt nur
   den Overflow (Daten bleiben in beiden Fällen verlustfrei).
 - **Retention-Ranking** je Store ist deterministisch (stable sort tie-breaks):
-  facts nach `is_current` + Output-Ranking, history/patterns nach Recency,
+  history/patterns nach Recency,
   procedures nach `procedural_memory::retention_cmp`.
 - **Archive-Erreichbarkeit.** `rehydrate_reach` ist an `max_files` gekoppelt
   (`ArchiveConfig`), sodass jedes retainte Archiv für Recall/Restore erreichbar ist.

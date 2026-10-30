@@ -61,13 +61,18 @@ impl Default for LocalSignedCapsuleTransport {
 
 impl LocalSignedCapsuleTransport {
     /// Deliver a signed capsule to a recipient's inbox.
+    ///
+    /// The signature is verified against the caller-pinned `signer` key before
+    /// anything is queued; a capsule whose signature does not verify, or that
+    /// was signed by another key, is rejected.
     pub fn deliver(
         &self,
         signed: &SignedContextCapsuleV1,
         recipient_agent_id: &str,
+        signer: &ed25519_dalek::VerifyingKey,
     ) -> Result<AgentRelayDeliveryV1, TransportError> {
         signed
-            .validate_structure()
+            .verify(signer)
             .map_err(|e| TransportError::Validation(e.to_string()))?;
 
         let envelope = signed
@@ -393,12 +398,47 @@ mod tests {
         SignedContextCapsuleV1::sign(&capsule, &keypair).unwrap()
     }
 
+    fn test_signer() -> ed25519_dalek::VerifyingKey {
+        ed25519_dalek::SigningKey::from_bytes(&[42u8; 32]).verifying_key()
+    }
+
+    #[test]
+    fn rejects_forged_or_foreign_signature_before_queueing() {
+        let transport = LocalSignedCapsuleTransport::default();
+
+        let mut forged = test_signed_capsule();
+        forged.signature = "00".repeat(64);
+        assert!(matches!(
+            transport.deliver(&forged, "recipient-agent", &test_signer()),
+            Err(TransportError::Validation(_))
+        ));
+
+        let mut tampered = test_signed_capsule();
+        tampered.capsule.budget.tokens_remaining = 9_999;
+        tampered.capsule.assign_capsule_id().unwrap();
+        assert!(
+            transport
+                .deliver(&tampered, "recipient-agent", &test_signer())
+                .is_err()
+        );
+
+        let foreign = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]).verifying_key();
+        assert!(
+            transport
+                .deliver(&test_signed_capsule(), "recipient-agent", &foreign)
+                .is_err()
+        );
+        assert_eq!(transport.inbox_depth("recipient-agent"), 0);
+    }
+
     #[test]
     fn deliver_and_receive_roundtrip() {
         let transport = LocalSignedCapsuleTransport::default();
         let signed = test_signed_capsule();
 
-        let delivery = transport.deliver(&signed, "recipient-agent").unwrap();
+        let delivery = transport
+            .deliver(&signed, "recipient-agent", &test_signer())
+            .unwrap();
         assert!(delivery.delivered_bytes > 0);
         assert!(delivery.delivered_tokens > 0);
         assert_eq!(delivery.recipient_agent_id, "recipient-agent");
@@ -420,14 +460,18 @@ mod tests {
     fn rejects_unauthorized_recipient() {
         let transport = LocalSignedCapsuleTransport::default();
         let signed = test_signed_capsule();
-        assert!(transport.deliver(&signed, "unauthorized-agent").is_err());
+        assert!(
+            transport
+                .deliver(&signed, "unauthorized-agent", &test_signer())
+                .is_err()
+        );
     }
 
     #[test]
     fn reservation_is_exclusive_and_ack_is_fenced() {
         let transport = LocalSignedCapsuleTransport::default();
         let delivery = transport
-            .deliver(&test_signed_capsule(), "recipient-agent")
+            .deliver(&test_signed_capsule(), "recipient-agent", &test_signer())
             .unwrap();
         assert!(
             transport
@@ -456,7 +500,7 @@ mod tests {
     fn expired_reservation_is_recoverable_with_a_new_fence() {
         let transport = LocalSignedCapsuleTransport::default();
         let delivery = transport
-            .deliver(&test_signed_capsule(), "recipient-agent")
+            .deliver(&test_signed_capsule(), "recipient-agent", &test_signer())
             .unwrap();
         let now = Instant::now();
         assert!(
@@ -483,7 +527,7 @@ mod tests {
     fn legacy_receive_cannot_steal_a_reserved_capsule() {
         let transport = LocalSignedCapsuleTransport::default();
         let delivery = transport
-            .deliver(&test_signed_capsule(), "recipient-agent")
+            .deliver(&test_signed_capsule(), "recipient-agent", &test_signer())
             .unwrap();
         transport
             .reserve("recipient-agent", "worker:1")
@@ -499,7 +543,7 @@ mod tests {
     fn exhausted_negative_ack_moves_capsule_to_dead_letter_queue() {
         let transport = LocalSignedCapsuleTransport::default();
         let delivery = transport
-            .deliver(&test_signed_capsule(), "recipient-agent")
+            .deliver(&test_signed_capsule(), "recipient-agent", &test_signer())
             .unwrap();
         for attempt in 1..=MAX_DELIVERY_ATTEMPTS {
             let reservation = format!("worker:{attempt}");
@@ -523,7 +567,7 @@ mod tests {
     fn malformed_front_is_quarantined_instead_of_poisoning_inbox() {
         let transport = LocalSignedCapsuleTransport::default();
         transport
-            .deliver(&test_signed_capsule(), "recipient-agent")
+            .deliver(&test_signed_capsule(), "recipient-agent", &test_signer())
             .unwrap();
         transport
             .inboxes
@@ -545,10 +589,12 @@ mod tests {
         let transport = LocalSignedCapsuleTransport::default();
         let signed = test_signed_capsule();
         for _ in 0..MAX_INBOX_SIZE {
-            transport.deliver(&signed, "recipient-agent").unwrap();
+            transport
+                .deliver(&signed, "recipient-agent", &test_signer())
+                .unwrap();
         }
         assert!(matches!(
-            transport.deliver(&signed, "recipient-agent"),
+            transport.deliver(&signed, "recipient-agent", &test_signer()),
             Err(TransportError::Capacity)
         ));
         assert_eq!(transport.inbox_depth("recipient-agent"), MAX_INBOX_SIZE);

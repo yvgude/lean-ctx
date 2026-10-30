@@ -16,8 +16,60 @@ fn autonomy_enabled_effective(state: &AutonomyState) -> bool {
     state.is_enabled() && profile_autonomy().enabled_effective()
 }
 
+/// Whether this call is the one that may carry the session briefing and the
+/// shared-context hint: `ctx_session` with `load`, `status` or `show`, also
+/// through `ctx_call`. Every other tool result stays a deterministic function
+/// of its inputs (#498); the briefing carries per-run peer ids and memory.
+pub fn delivers_session_briefing(
+    name: &str,
+    args: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> bool {
+    let (name, args) = if name == "ctx_call" {
+        (
+            args.and_then(|a| a.get("name"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(""),
+            args.and_then(|a| a.get("arguments"))
+                .and_then(serde_json::Value::as_object),
+        )
+    } else {
+        (name, args)
+    };
+    name == "ctx_session"
+        && matches!(
+            args.and_then(|a| a.get("action"))
+                .and_then(serde_json::Value::as_str),
+            Some("load" | "status" | "show")
+        )
+}
+
+/// Applies the auto-load context packages silently on the first call of a
+/// session that does not deliver the briefing; the result text is unchanged
+/// and the briefing names them later.
+pub fn apply_auto_load_packages_once(state: &AutonomyState, project_root: Option<&str>) {
+    if crate::core::policy::runtime::is_active() || !autonomy_enabled_effective(state) {
+        return;
+    }
+    let Some(root) = project_root.filter(|r| !r.is_empty() && *r != ".") else {
+        return;
+    };
+    if state
+        .packages_applied
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        let loaded = crate::core::context_package::auto_load_packages(root);
+        state
+            .packages_loaded
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(loaded);
+    }
+}
+
 /// The wake-up briefing (last task, recent decisions, project facts, active
-/// peers) for the first tool call of a session, as `--- AUTO CONTEXT ---`.
+/// peers), as `--- AUTO CONTEXT ---`, on the first briefing-delivering call
+/// of a session (see [`delivers_session_briefing`]).
 ///
 /// It used to be appended to a full project overview, which on any real
 /// project exceeded the injection cap, so the briefing was built (2-14 s) and
@@ -46,9 +98,17 @@ pub fn session_wakeup_briefing(
     {
         return None;
     }
-    // Context packages marked auto-load were applied by the retired
-    // session-start overview; they still apply once, on the first call.
-    let loaded = crate::core::context_package::auto_load_packages(root);
+    // Auto-load packages not yet applied by an earlier call are applied here;
+    // both those and the ones a silent first call applied are named.
+    let mut loaded = std::mem::take(
+        &mut *state
+            .packages_loaded
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+    if !state.packages_applied.swap(true, Ordering::SeqCst) {
+        loaded.extend(crate::core::context_package::auto_load_packages(root));
+    }
     let packages = (!loaded.is_empty())
         .then(|| format!("CONTEXT PACKAGES AUTO-LOADED: {}", loaded.join(", ")));
     // Hive tasks (H2): the claims this machine holds here, then open tasks.
@@ -191,6 +251,21 @@ pub fn shell_efficiency_hint(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_ctx_session_load_or_status_delivers_the_briefing() {
+        let args = |v: serde_json::Value| v.as_object().cloned();
+        let status = args(serde_json::json!({"action": "status"}));
+        assert!(delivers_session_briefing("ctx_session", status.as_ref()));
+        let wrapped =
+            args(serde_json::json!({"name": "ctx_session", "arguments": {"action": "load"}}));
+        assert!(delivers_session_briefing("ctx_call", wrapped.as_ref()));
+        let task = args(serde_json::json!({"action": "task", "value": "x"}));
+        assert!(!delivers_session_briefing("ctx_session", task.as_ref()));
+        for tool in ["ctx_compose", "ctx_search", "ctx_read", "ctx_shell"] {
+            assert!(!delivers_session_briefing(tool, status.as_ref()), "{tool}");
+        }
+    }
 
     #[test]
     fn shell_hint_for_grep() {

@@ -17,9 +17,6 @@ use std::time::Duration;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
-#[path = "ctx_compose_selection.rs"]
-pub(crate) mod selection;
-
 /// Wall-time budget for the semantic-ranking stage. The exact-match and symbol
 /// stages are index-backed and cheap; only semantic ranking can hit a cold
 /// `O(corpus)` BM25 build. We never let that block the agent loop: past the

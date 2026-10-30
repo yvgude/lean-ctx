@@ -208,6 +208,9 @@ fn format_callers(
     if let Some(f) = filter {
         callers.retain(|e| index_paths::graph_match_key(&e.caller_file).contains(f));
     }
+    // Several calls from one function render as the same line; show it once.
+    let mut seen = std::collections::HashSet::new();
+    callers.retain(|e| seen.insert((&e.caller_file, &e.caller_symbol, e.caller_line)));
 
     if callers.is_empty() {
         return format!(
@@ -237,6 +240,8 @@ fn format_callees(
     if let Some(f) = filter {
         callees.retain(|e| index_paths::graph_match_key(&e.caller_file).contains(f));
     }
+    let mut seen = std::collections::HashSet::new();
+    callees.retain(|e| seen.insert((&e.callee_name, &e.caller_file, e.caller_line)));
 
     if callees.is_empty() {
         return format!(
@@ -398,6 +403,26 @@ mod tests {
     fn risk_without_symbol_returns_error() {
         let output = super::handle("risk", None, None, "/tmp", 1, None, None);
         assert!(output.contains("symbol is required"));
+    }
+
+    #[test]
+    fn two_calls_from_one_function_render_one_caller_line() {
+        use crate::core::call_graph::{CallEdge, CallGraph};
+        let mut graph = CallGraph::new("/p");
+        for _ in 0..2 {
+            graph.edges.push(CallEdge {
+                caller_file: "vat.py".to_string(),
+                caller_symbol: "gross_from_net".to_string(),
+                caller_line: 16,
+                callee_name: "to_amount".to_string(),
+                ..Default::default()
+            });
+        }
+        let out = super::format_callers("to_amount", &graph, None, |edges| {
+            vec![String::new(); edges.len()]
+        });
+        assert_eq!(out.matches("gross_from_net").count(), 1, "{out}");
+        assert!(out.starts_with("1 caller(s)"), "{out}");
     }
 
     #[test]

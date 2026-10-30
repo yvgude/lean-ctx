@@ -29,6 +29,7 @@ fn params(path: &std::path::Path, ops: Vec<AnchorOp>) -> PatchParams {
         backup: false,
         backup_path: None,
         evidence: false,
+        diff_artifact: false,
         diff_max_lines: 200,
         allow_lossy_utf8: false,
         validate_syntax: true,
@@ -49,12 +50,47 @@ fn set_line_applies_and_invalidates() {
         ),
         "",
     );
-    assert!(text.contains('✓'), "expected success: {text}");
+    // The default receipt is exactly one line; digests and the diff are opt-in.
+    let name = f.path().file_name().unwrap().to_string_lossy().to_string();
+    assert_eq!(text, format!("patched {name}: 3 lines (+1 -1)"));
     assert!(matches!(effect, CacheEffect::Invalidate));
     assert_eq!(
         std::fs::read_to_string(f.path()).unwrap(),
         "fn main() {\n    let x = 2;\n}\n"
     );
+}
+
+/// Owner 2026-10-29: the Claude Code mod draws the diff, the model does not
+/// read it. With `diff_artifact` the receipt gains one short trailer naming a
+/// content-addressed archive that holds the diff.
+#[test]
+fn diff_artifact_is_archived_and_named_by_a_short_trailer() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let f = make_temp("fn main() {\n    let x = 1;\n}\n");
+    let mut p = params(
+        f.path(),
+        vec![AnchorOp::SetLine {
+            line: 2,
+            hash: line_hash("    let x = 1;"),
+            new_text: "    let x = 2;".to_string(),
+        }],
+    );
+    p.diff_artifact = true;
+    let (text, _) = run_io(&p, "");
+    let (summary, trailer) = text.split_once('\n').expect("summary and trailer");
+    assert!(summary.starts_with("patched "), "{text}");
+    let id = trailer
+        .strip_prefix("[diff:")
+        .and_then(|rest| rest.strip_suffix(']'))
+        .expect("trailer shape");
+    // The fixed shape bounds what the model reads: `[diff:` + 16 hex + `]`.
+    assert!(
+        id.len() == 16 && id.chars().all(|c| c.is_ascii_hexdigit()),
+        "{trailer}"
+    );
+    let diff = crate::core::archive::retrieve(id).expect("archived diff");
+    assert!(diff.contains("+    let x = 2;"), "{diff}");
 }
 
 // BOM parity (GH #683 follow-up): `ctx_read` strips the UTF-8 BOM, so the
@@ -76,7 +112,7 @@ fn bom_file_line_one_edit_matches_read_side_hash_and_keeps_bom() {
         ),
         "",
     );
-    assert!(text.contains('✓'), "expected success: {text}");
+    assert!(text.contains("patched "), "expected success: {text}");
     assert!(matches!(effect, CacheEffect::Invalidate));
     assert_eq!(
         std::fs::read_to_string(f.path()).unwrap(),
@@ -128,7 +164,7 @@ fn delete_line_via_empty_new_text() {
         ),
         "",
     );
-    assert!(text.contains('✓'), "{text}");
+    assert!(text.contains("patched "), "{text}");
     assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "keep1\nkeep2\n");
 }
 
@@ -146,7 +182,7 @@ fn insert_after_top_prepends() {
         ),
         "",
     );
-    assert!(text.contains('✓'), "{text}");
+    assert!(text.contains("patched "), "{text}");
     assert_eq!(
         std::fs::read_to_string(f.path()).unwrap(),
         "// header\nfirst\nsecond\n"
@@ -169,7 +205,7 @@ fn replace_lines_range() {
         ),
         "",
     );
-    assert!(text.contains('✓'), "{text}");
+    assert!(text.contains("patched "), "{text}");
     assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "a\nX\nY\nd\n");
 }
 
@@ -229,8 +265,8 @@ fn batch_atomic_applies_all_valid_edits_bottom_up() {
         ),
         "",
     );
-    assert!(text.contains('✓'), "{text}");
-    assert!(text.contains("2 anchored edits"), "{text}");
+    assert!(text.contains("patched "), "{text}");
+    assert!(text.contains("2 edits"), "{text}");
     assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "A\n3\n4\nE\n");
 }
 
@@ -258,7 +294,7 @@ fn batch_receipt_accounts_for_every_op_ahead_of_the_evidence() {
     p.evidence = true;
     let (text, _) = run_io(&p, "");
 
-    assert!(text.contains("10 anchored edits"), "{text}");
+    assert!(text.contains("10 edits"), "{text}");
     assert!(
         text.contains("ops: 10/10 applied"),
         "the count must be stated: {text}"
@@ -313,7 +349,8 @@ fn op_ledger_reports_kind_span_and_produced_lines() {
             },
         ],
     );
-    p.evidence = false;
+    // The ledger is part of the evidence receipt; the default is one line.
+    p.evidence = true;
     let (text, _) = run_io(&p, "");
 
     assert!(text.contains("ops: 3/3 applied"), "{text}");
@@ -349,7 +386,7 @@ fn batch_application_is_byte_deterministic() {
     let f2 = make_temp(original);
     let (t1, _) = run_io(&params(f1.path(), make_ops()), "");
     let (t2, _) = run_io(&params(f2.path(), make_ops()), "");
-    assert!(t1.contains('✓') && t2.contains('✓'));
+    assert!(t1.contains("patched ") && t2.contains("patched "));
     let out1 = std::fs::read(f1.path()).unwrap();
     let out2 = std::fs::read(f2.path()).unwrap();
     assert_eq!(out1, out2, "identical batch must yield identical bytes");
@@ -419,7 +456,7 @@ fn crlf_file_keeps_crlf() {
         ),
         "",
     );
-    assert!(text.contains('✓'), "{text}");
+    assert!(text.contains("patched "), "{text}");
     assert_eq!(
         std::fs::read_to_string(f.path()).unwrap(),
         "a\r\nB\r\nc\r\n",
@@ -499,7 +536,7 @@ fn handle_applies_cache_effect() {
             }],
         ),
     );
-    assert!(out.contains('✓'), "{out}");
+    assert!(out.contains("patched "), "{out}");
     assert!(
         cache.get(&f.path().to_string_lossy()).is_none(),
         "a successful patch must invalidate the cache entry"
@@ -567,7 +604,10 @@ fn validate_syntax_false_overrides_the_gate() {
     );
     p.validate_syntax = false;
     let (text, effect) = run_io(&p, "");
-    assert!(text.contains('✓'), "override must allow the write: {text}");
+    assert!(
+        text.contains("patched "),
+        "override must allow the write: {text}"
+    );
     assert!(matches!(effect, CacheEffect::Invalidate));
     assert_eq!(
         std::fs::read_to_string(f.path()).unwrap(),
@@ -590,7 +630,7 @@ fn syntax_gate_allows_valid_edit() {
         ),
         "",
     );
-    assert!(text.contains('✓'), "{text}");
+    assert!(text.contains("patched "), "{text}");
     assert!(matches!(effect, CacheEffect::Invalidate));
 }
 
@@ -607,8 +647,7 @@ fn create_writes_new_file_and_parent_dirs() {
         ),
         "",
     );
-    assert!(text.contains("✓ created"), "{text}");
-    assert!(text.contains("postimage:"), "{text}");
+    assert_eq!(text, "created new_file.rs: 1 lines");
     assert!(matches!(effect, CacheEffect::Invalidate));
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "fn hello() {}\n");
 }
@@ -675,7 +714,7 @@ fn create_empty_content_makes_empty_file() {
         ),
         "",
     );
-    assert!(text.contains("✓ created"), "{text}");
+    assert!(text.starts_with("created "), "{text}");
     assert!(matches!(effect, CacheEffect::Invalidate));
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "");
 }

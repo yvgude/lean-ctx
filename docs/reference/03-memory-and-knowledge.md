@@ -122,10 +122,14 @@ bundle). `ctx_knowledge action=consolidate` and
 session exists, findings/decisions/history are imported first; if not, session
 import is skipped. Both paths then run the memory lifecycle over all project
 knowledge and report `run_memory_lifecycle` stats: decayed, consolidated,
-archived, compacted, and remaining facts. Every store — facts, history,
-procedures and patterns — is capacity-bounded (`[memory.knowledge] max_facts` /
-`max_history` / `max_patterns` and `[memory.procedural] max_procedures`) and
-reclaimed **losslessly**: when a store reaches its cap, the lowest-value tail is
+archived, compacted, and remaining facts. **Facts have no limit**: they leave
+the active store only by quality — confidence decay, merging near-duplicates,
+and archiving low-confidence or stale facts — never by count. The old
+`[memory.knowledge] max_facts` setting is deprecated and ignored (an existing
+value still loads). The other stores — history, procedures and patterns — are
+capacity-bounded (`[memory.knowledge] max_history` / `max_patterns` and
+`[memory.procedural] max_procedures`) and
+reclaimed **losslessly**: when such a store reaches its cap, the lowest-value tail is
 archived under `memory/archive/<store>/` (restorable) and the store settles at a
 working-room target — 75% by default (`[memory.lifecycle] reclaim_headroom_pct`).
 A reclaim uses hysteresis: it triggers only when a store hits its cap, never on
@@ -162,7 +166,7 @@ what the project knows. OKF is a **local feature, free on every plan**. See the
 
 Three ways bring knowledge back: copying a backup of the data directory,
 `lean-ctx knowledge restore` (from the reclaim archive), and
-`lean-ctx cloud pull` (Pro, from your account). `lean-ctx snapshot restore`
+`lean-ctx cloud pull` (LeanCTX Hive, from your account). `lean-ctx snapshot restore`
 only resumes a saved session slice and, with `--git`, checks out its commit
 (never over a dirty tree); it does not touch knowledge or account access.
 
@@ -234,9 +238,9 @@ code**, which it never sees.
   devices race to create it, the first one the service stores wins; the other
   is told to unlock.
 
-### Cloud Cockpit metrics (Pro)
+### Cloud Cockpit metrics (LeanCTX Hive)
 
-On a signed-in Pro account each device also uploads the numbers its Cockpit
+On a signed-in LeanCTX Hive account each device also uploads the numbers its Cockpit
 shows, per project and UTC day, so the Cloud Dashboard adds up all your
 devices (contract `cloud-cockpit-metrics-v1`). Free accounts upload nothing.
 
@@ -275,10 +279,10 @@ lean-ctx overview --json
 ```
 
 Over MCP, `ctx_compose(task=…)` is the first call: ranked files, symbols and
-structure for the task. The knowledge `wakeup` bundle no longer needs a call: when
-`enable_wakeup_ctx = true` (default) it rides on the first tool reply of a
-session as an `--- AUTO CONTEXT ---` block, so your AI sees relevant prior facts
-immediately.
+structure for the task. The knowledge `wakeup` bundle comes with the first
+`ctx_session(action="status")` or `"load"` of a session when
+`enable_wakeup_ctx = true` (default), as an `--- AUTO CONTEXT ---` block. Other
+tool replies never carry it, so they stay byte-stable for prompt caching.
 
 ---
 

@@ -166,7 +166,7 @@ fn a_second_update_cannot_load_until_the_first_closure_commits() {
             .write(true)
             .create(true)
             .truncate(false)
-            .open(path.with_file_name("config.toml.v4-migration.lock"))
+            .open(crate::config_io::config_migration_lock_path(&path).unwrap())
             .unwrap();
         let exclusion = fs2::FileExt::try_lock_exclusive(&probe);
         if exclusion.is_ok() {

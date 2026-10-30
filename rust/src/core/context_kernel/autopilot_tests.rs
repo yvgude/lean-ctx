@@ -111,7 +111,6 @@ pub(super) fn input() -> AutopilotInput {
             allow_remote_queries: true,
             remote_query_consent: true,
         },
-        context_policy: None,
     }
 }
 
@@ -363,69 +362,6 @@ fn explicit_override_wins_over_learning() {
 
     assert_eq!(decision.read_policy.mode, "lines:10-20");
     assert!(decision.read_policy.explicit_override);
-}
-
-#[test]
-fn promoted_policy_is_shadow_until_applied_and_never_outranks_explicit_modes() {
-    use lean_ctx_protocol::context_policy_evidence::{
-        CONTEXT_POLICY_VERSION, ContextPolicyEntryV1, ContextPolicyV1, ReadStrategyV1,
-    };
-    let reasons = |decision: &AutopilotDecision| {
-        decision
-            .reasons
-            .iter()
-            .map(|reason| reason.code.clone())
-            .collect::<Vec<_>>()
-    };
-    let mut request = input();
-    let unpoliced = controller().plan(&request, None).expect("plan");
-    let workload = learning_store::workload_of(request.task_class, &unpoliced.context_plan);
-    let policy = ContextPolicyV1 {
-        schema_version: CONTEXT_POLICY_VERSION,
-        version: 1,
-        parent_version: None,
-        entries: vec![ContextPolicyEntryV1 {
-            workload,
-            strategy: ReadStrategyV1::Map,
-        }],
-        learner_digest: "d".repeat(64),
-    };
-
-    request.context_policy = Some(ScopeContextPolicy {
-        policy: policy.clone(),
-        apply: false,
-    });
-    let shadow = controller().plan(&request, None).expect("plan");
-    assert_eq!(
-        shadow.read_policy.mode, "signatures",
-        "shadow changes nothing"
-    );
-    assert!(reasons(&shadow).contains(&"context_policy_shadow".to_owned()));
-    assert_ne!(shadow.decision_id, unpoliced.decision_id);
-
-    request.context_policy = Some(ScopeContextPolicy {
-        policy: policy.clone(),
-        apply: true,
-    });
-    let applied = controller().plan(&request, None).expect("plan");
-    assert_eq!(applied.read_policy.mode, "map");
-    assert!(!applied.read_policy.explicit_override);
-    assert!(reasons(&applied).contains(&"context_policy_applied".to_owned()));
-    request.entitled_to_adaptive = false;
-    let community = controller().plan(&request, None).expect("plan");
-    assert_eq!(
-        community.read_policy.mode, "map",
-        "the user's switch, any tier"
-    );
-
-    request.overrides.read_mode = Some("full".to_owned());
-    let explicit = controller().plan(&request, None).expect("plan");
-    assert_eq!(explicit.read_policy.mode, "full");
-    assert!(reasons(&explicit).contains(&"context_policy_shadow".to_owned()));
-    request.overrides.read_mode = None;
-    request.security_forced_mode = Some("signatures".to_owned());
-    let forced = controller().plan(&request, None).expect("plan");
-    assert_eq!(forced.read_policy.mode, "signatures");
 }
 
 #[test]

@@ -1,3 +1,4 @@
+mod applied_edits;
 mod implementation;
 mod reindent;
 

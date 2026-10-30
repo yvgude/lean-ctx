@@ -15,7 +15,10 @@ const REASON: &str = "LeanCTX policy requires an inspected output path. Use the 
 enum Admission {
     Unprotected,
     InspectedRoute,
-    Deny,
+    /// Carries the parsed payload when there is one, so the verdict can take
+    /// the dialect the host validates (Claude Code discards the multi-dialect
+    /// object, see `build_deny_output`).
+    Deny(Option<Value>),
 }
 
 /// Returns true after producing the complete protected decision. In the absence
@@ -24,6 +27,7 @@ pub(crate) fn handle_protected_gate(action: &str) -> bool {
     if !matches!(
         action,
         "rewrite"
+            | "rewrite-enforce"
             | "redirect"
             | "deny"
             | "copilot"
@@ -39,7 +43,7 @@ pub(crate) fn handle_protected_gate(action: &str) -> bool {
             return Admission::Unprotected;
         }
         if inline {
-            return Admission::Deny;
+            return Admission::Deny(None);
         }
         inspect_payload(std::io::stdin())
     });
@@ -53,11 +57,19 @@ pub(crate) fn handle_protected_gate(action: &str) -> bool {
         eprintln!("{REASON}");
         std::process::exit(2);
     }
-    println!(
-        "{}",
-        decision_output(action, admission == Admission::InspectedRoute)
-    );
-    if action == "deny" && admission == Admission::Deny {
+    if admission == Admission::InspectedRoute {
+        // Admission is not approval: an inspected LeanCTX route (which
+        // includes `ctx_shell`) still goes through the host's own permission
+        // flow, so the gate emits no decision for it.
+        print!("{}", admitted_output(action));
+        return true;
+    }
+    let payload = match &admission {
+        Admission::Deny(payload) => payload.as_ref(),
+        _ => None,
+    };
+    println!("{}", decision_output(action, payload));
+    if action == "deny" {
         // The generic deny adapter also serves exit-code based hosts (Devin /
         // Windsurf). Preserve their blocking exit; Claude also blocks on exit 2
         // and uses this static stderr reason instead of treating it as a crash.
@@ -77,7 +89,7 @@ where
     });
     // A stalled policy filesystem, stdin, panic or disconnected worker cannot
     // turn into the legacy allow-on-error fallback. Only this thread prints.
-    rx.recv_timeout(budget).unwrap_or(Admission::Deny)
+    rx.recv_timeout(budget).unwrap_or(Admission::Deny(None))
 }
 
 fn policy_required() -> bool {
@@ -105,16 +117,17 @@ fn inspect_payload(reader: impl Read) -> Admission {
         .is_err()
         || input.len() as u64 > MAX_PAYLOAD
     {
-        return Admission::Deny;
+        return Admission::Deny(None);
     }
     // serde_json::Value alone keeps the last duplicate key. Reject ambiguous
     // identities before interpreting the payload's supported host dialects.
     if serde_json::from_str::<IdentityFields>(&input).is_err() {
-        return Admission::Deny;
+        return Admission::Deny(None);
     }
     match serde_json::from_str::<Value>(&input) {
         Ok(payload) if inspected_route(&payload) => Admission::InspectedRoute,
-        _ => Admission::Deny,
+        Ok(payload) => Admission::Deny(Some(payload)),
+        Err(_) => Admission::Deny(None),
     }
 }
 
@@ -203,19 +216,28 @@ fn inspected_route(payload: &Value) -> bool {
     resolved.is_some()
 }
 
-fn decision_output(action: &str, allow: bool) -> Value {
-    let decision = if allow { "allow" } else { "deny" };
-    let hook = json!({"hookEventName": "PreToolUse", "permissionDecision": decision,
-        "permissionDecisionReason": if allow { "LeanCTX inspected MCP route" } else { REASON }});
+/// The no-decision output for an admitted call in each adapter's dialect:
+/// Codex and Vibe document empty stdout as the pass-through, every other
+/// adapter takes the empty object (see `build_passthrough_output`).
+fn admitted_output(action: &str) -> &'static str {
     match action {
-        "codex-pretooluse" => json!({"hookSpecificOutput": hook}),
-        "vibe-pre-tool" => {
-            json!({"decision": decision, "reason": if allow { "LeanCTX inspected MCP route" } else { REASON }})
-        }
-        _ => json!({"decision": decision, "permission": decision,
-            "permissionDecision": decision, "reason": if allow { "LeanCTX inspected MCP route" } else { REASON },
-            "user_message": if allow { "LeanCTX inspected MCP route" } else { REASON },
-            "hookSpecificOutput": hook}),
+        "codex-pretooluse" | "vibe-pre-tool" => "",
+        _ => "{}",
+    }
+}
+
+/// The deny verdict in each adapter's dialect. The shared adapters go through
+/// [`super::build_deny_output`]: Claude Code validates hook output strictly and
+/// discards an object whose top-level `decision` is not `approve|block`, so a
+/// Claude PreToolUse payload gets `hookSpecificOutput` only; every other host
+/// (or an unparsable payload) keeps the multi-dialect object.
+fn decision_output(action: &str, payload: Option<&Value>) -> String {
+    match action {
+        "codex-pretooluse" => json!({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+            "permissionDecision": "deny", "permissionDecisionReason": REASON}})
+        .to_string(),
+        "vibe-pre-tool" => json!({"decision": "deny", "reason": REASON}).to_string(),
+        _ => super::build_deny_output(REASON, payload.unwrap_or(&Value::Null)),
     }
 }
 
@@ -255,17 +277,17 @@ mod tests {
     #[test]
     fn malformed_oversized_and_invalid_unicode_input_is_denied() {
         for input in [b"".as_slice(), b"{", b"null", b"\xff"] {
-            assert_eq!(inspect_payload(input), Admission::Deny);
+            assert_eq!(inspect_payload(input), Admission::Deny(None));
         }
         assert_eq!(
             inspect_payload(vec![b' '; MAX_PAYLOAD as usize + 1].as_slice()),
-            Admission::Deny
+            Admission::Deny(None)
         );
         for input in [
             r#"{"tool_name":"Read","tool_name":"mcp__lean-ctx__ctx_read"}"#,
             r#"{"tool_info":{"server":"foreign","server":"lean-ctx","mcp_tool_name":"ctx_read"}}"#,
         ] {
-            assert_eq!(inspect_payload(input.as_bytes()), Admission::Deny);
+            assert_eq!(inspect_payload(input.as_bytes()), Admission::Deny(None));
         }
     }
 
@@ -276,11 +298,11 @@ mod tests {
                 std::thread::sleep(Duration::from_millis(30));
                 Admission::InspectedRoute
             }),
-            Admission::Deny
+            Admission::Deny(None)
         );
         assert_eq!(
             bounded_admission(Duration::from_secs(1), || panic!("fixture")),
-            Admission::Deny
+            Admission::Deny(None)
         );
         assert_eq!(
             bounded_admission(Duration::from_secs(1), || Admission::Unprotected),
@@ -290,11 +312,67 @@ mod tests {
 
     #[test]
     fn codex_denial_is_not_lost_in_rewrite_only_adapter() {
-        let output = decision_output("codex-pretooluse", false);
+        let output = parse(&decision_output("codex-pretooluse", None));
         assert_eq!(output["hookSpecificOutput"]["permissionDecision"], "deny");
         assert!(output.get("updatedInput").is_none());
         for action in ["rewrite", "redirect", "deny", "copilot", "vibe-pre-tool"] {
-            assert_eq!(decision_output(action, false)["decision"], "deny");
+            assert_eq!(parse(&decision_output(action, None))["decision"], "deny");
+        }
+    }
+
+    fn parse(out: &str) -> Value {
+        serde_json::from_str(out).unwrap()
+    }
+
+    /// Claude Code discards an object whose top-level `decision` is not
+    /// `approve|block`, so a Claude PreToolUse payload must get the gate's deny
+    /// as `hookSpecificOutput` only, from every shared adapter.
+    #[test]
+    fn claude_payload_gets_a_deny_claude_honours() {
+        let claude = json!({"hook_event_name": "PreToolUse", "transcript_path": "/t",
+            "tool_name": "Bash", "tool_input": {"command": "cat x"}});
+        for action in ["rewrite", "redirect", "deny", "copilot"] {
+            let out = parse(&decision_output(action, Some(&claude)));
+            assert_eq!(out.as_object().unwrap().len(), 1, "{action}: {out}");
+            let hook = &out["hookSpecificOutput"];
+            assert_eq!(hook["hookEventName"], "PreToolUse");
+            assert_eq!(hook["permissionDecision"], "deny");
+            assert_eq!(hook["permissionDecisionReason"], REASON);
+        }
+        // Other hosts (here Gemini) keep the multi-dialect object.
+        let gemini = json!({"hook_event_name": "BeforeTool", "tool_name": "run_shell_command"});
+        let out = parse(&decision_output("rewrite", Some(&gemini)));
+        assert_eq!(out["decision"], "deny");
+        assert_eq!(out["permission"], "deny");
+        assert_eq!(out["permissionDecision"], "deny");
+    }
+
+    #[test]
+    fn denied_payload_is_kept_for_the_verdict() {
+        let input = r#"{"hook_event_name":"PreToolUse","transcript_path":"/t","tool_name":"Bash"}"#;
+        assert!(matches!(
+            inspect_payload(input.as_bytes()),
+            Admission::Deny(Some(p)) if p["tool_name"] == "Bash"
+        ));
+    }
+
+    /// An admitted LeanCTX route is not an approval: no adapter may emit an
+    /// allow that skips the host's permission prompt (e.g. for `ctx_shell`).
+    #[test]
+    fn admitted_route_emits_no_permission_decision() {
+        for action in [
+            "rewrite",
+            "redirect",
+            "deny",
+            "copilot",
+            "codex-pretooluse",
+            "vibe-pre-tool",
+        ] {
+            let out = admitted_output(action);
+            assert!(!out.contains("allow"), "{action}: {out}");
+            if !out.is_empty() {
+                assert_eq!(serde_json::from_str::<Value>(out).unwrap(), json!({}));
+            }
         }
     }
 }

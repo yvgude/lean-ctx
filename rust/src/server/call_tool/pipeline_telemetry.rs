@@ -79,6 +79,30 @@ pub(in crate::server) fn error_failure(
     failure
 }
 
+/// Category of an operation a tool ran and refused (`TOOL_EXECUTION_ERROR`),
+/// from the failure class of its message. A refusal of the request (stale
+/// edit, bad argument, missing file, size limit, jail or policy) is the
+/// caller's input being rejected, not a LeanCTX fault; a timeout keeps its
+/// own category; only an unexplained failure or a missing dependency stays
+/// `Internal`.
+pub(super) fn tool_execution_error_category(
+    kind: crate::core::telemetry_failure::FailureKind,
+) -> crate::core::telemetry_v2::ErrorCategory {
+    use crate::core::telemetry_failure::FailureKind;
+    use crate::core::telemetry_v2::ErrorCategory;
+
+    match kind {
+        FailureKind::Conflict
+        | FailureKind::InvalidInput
+        | FailureKind::NotFound
+        | FailureKind::Permission
+        | FailureKind::PolicyBlocked
+        | FailureKind::TooLarge => ErrorCategory::Validation,
+        FailureKind::Timeout => ErrorCategory::Timeout,
+        FailureKind::Unavailable | FailureKind::Other => ErrorCategory::Internal,
+    }
+}
+
 pub(super) fn mcp_error_category(
     code: rmcp::model::ErrorCode,
 ) -> crate::core::telemetry_v2::ErrorCategory {

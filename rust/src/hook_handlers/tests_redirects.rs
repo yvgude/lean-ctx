@@ -198,7 +198,7 @@ fn redirect_output_omits_additional_context_without_shadow() {
 #[test]
 fn redirect_read_passes_through_when_disabled_by_config() {
     // #637: read_redirect=off must make a native Read fall through untouched —
-    // the exact dual-allow response, with no path-swap to a temp copy — so the
+    // the neutral pass-through (no permission decision), with no path-swap to a temp copy — so the
     // host's read-before-write guard tracks the real file and Write/Edit works.
     let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
@@ -213,8 +213,8 @@ fn redirect_read_passes_through_when_disabled_by_config() {
 
     assert_eq!(
         out,
-        build_dual_allow_output(),
-        "disabled Read redirect must emit the plain dual-allow passthrough"
+        build_passthrough_output(),
+        "disabled Read redirect must emit the neutral passthrough"
     );
     assert!(
         !out.contains(".lctx") && !out.contains("updatedInput") && !out.contains("modifiedArgs"),
@@ -242,7 +242,7 @@ fn redirect_read_auto_passes_through_under_claude_code() {
 
     assert_eq!(
         out,
-        build_dual_allow_output(),
+        build_passthrough_output(),
         "auto must disable the Read redirect under Claude Code hooks (#637)"
     );
     assert!(
@@ -280,6 +280,23 @@ fn gating_decision_fails_open_on_timeout() {
         start.elapsed() < std::time::Duration::from_secs(2),
         "fail-open must not wait for the hung work"
     );
+}
+
+/// The fail-open fallback the gating hooks actually print is the neutral
+/// pass-through: a timeout leaves the host's permission flow in charge and
+/// never approves the call (a hook "allow" skips the user's prompt).
+#[test]
+fn gating_timeout_fallback_grants_no_permission() {
+    let out = decide_with_timeout(
+        std::time::Duration::from_millis(20),
+        build_passthrough_output(),
+        || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            "WORK".to_string()
+        },
+    );
+    assert_eq!(out, "{}");
+    assert!(!out.contains("allow"), "{out}");
 }
 
 // --- GH #760: non-allowlisted binaries must pass through, not block ---

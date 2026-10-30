@@ -144,6 +144,7 @@ fn edit_params(path: &Path, old: &str, new: &str) -> EditParams {
         backup: false,
         backup_path: None,
         evidence: false,
+        diff_artifact: false,
         diff_max_lines: 0,
         allow_lossy_utf8: false,
     }
@@ -157,6 +158,7 @@ fn patch_params(path: &Path, ops: Vec<AnchorOp>) -> PatchParams {
         backup: false,
         backup_path: None,
         evidence: false,
+        diff_artifact: false,
         diff_max_lines: 0,
         allow_lossy_utf8: false,
         validate_syntax: true,

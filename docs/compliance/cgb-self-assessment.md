@@ -41,7 +41,7 @@ Policy packs: named TOML patterns, versioned in-repo, built-ins
 Sensitivity classes in the Community PII filter (IBAN, payment cards,
 e-mail, phone, US SSN, Swiss AHV; checksummed where the format allows) plus
 user-defined pack patterns. Evidence: `rust/src/core/input_filters/pii.rs`
-and its tests. Curated domain packs are LeanCTX Pro.
+and its tests. Curated domain packs are LeanCTX Hive.
 
 **CGB-1.4 (Hardened) Fail-closed coverage of content paths — Partial.**
 Read/shell/search share the redaction pipeline, but there is no structural

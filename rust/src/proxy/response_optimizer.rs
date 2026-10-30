@@ -477,6 +477,7 @@ fn record_response_measurement(request: &ResponseOptimizationRequest, delivered_
         is_first_inject: None,
         cache_read_per_m_usd: Some(quote.cost.cache_read_per_m),
         cache_write_per_m_usd: Some(quote.cost.cache_write_per_m),
+        governor: None,
         solution_decision: None,
         loc_added: None,
         loc_removed: None,

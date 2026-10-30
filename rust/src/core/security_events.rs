@@ -215,8 +215,82 @@ impl SecurityCounts {
     }
 }
 
+/// Why the I/O boundary refused a path a call asked for. The trail records
+/// this class only: like every other entry, never the path, a digest of it
+/// or any content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefusalClass {
+    /// A secret-like path (`.env`, key material, credential files): withheld.
+    SecretPath,
+    /// Outside the project root, its trusted roots or the Workspace.
+    OutsideRoot,
+    /// lean-ctx's own runtime context, or a symlink inside the jail.
+    ProtectedPath,
+}
+
+impl RefusalClass {
+    /// Stable identifier committed as `reason=` into the trail's `action`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SecretPath => "secret_path",
+            Self::OutsideRoot => "outside_root",
+            Self::ProtectedPath => "protected_path",
+        }
+    }
+
+    /// The counted kind: a secret path is withheld content; every other class
+    /// is the path jail's existing `path_blocked`.
+    pub const fn kind(self) -> SecurityKind {
+        match self {
+            Self::SecretPath => SecurityKind::ContentWithheld,
+            Self::OutsideRoot | Self::ProtectedPath => SecurityKind::PathBlocked,
+        }
+    }
+
+    /// The class of a path-jail refusal. A path that simply does not exist
+    /// (or a malformed one) is no boundary decision and has none.
+    pub fn of_jail_error(error: &crate::core::error::PathJailError) -> Option<Self> {
+        use crate::core::error::PathJailError;
+        match error {
+            PathJailError::EscapesRoot { .. }
+            | PathJailError::PostCanonicalizeEscape { .. }
+            | PathJailError::OutsideWorkspace { .. }
+            | PathJailError::WorkspaceUnavailable { .. } => Some(Self::OutsideRoot),
+            PathJailError::ProtectedContext { .. } | PathJailError::Symlink { .. } => {
+                Some(Self::ProtectedPath)
+            }
+            PathJailError::NullByte | PathJailError::NoExistingAncestor { .. } => None,
+        }
+    }
+
+    const ALL: [Self; 3] = [Self::SecretPath, Self::OutsideRoot, Self::ProtectedPath];
+}
+
+/// What one tool call noted: the per-kind counts and the boundary refusals,
+/// which are recorded with their [`RefusalClass`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CallTally {
+    pub counts: SecurityCounts,
+    refusals: [u64; RefusalClass::ALL.len()],
+}
+
+impl CallTally {
+    fn merge(&mut self, other: &Self) {
+        self.counts.merge(&other.counts);
+        for (mine, theirs) in self.refusals.iter_mut().zip(other.refusals) {
+            *mine = mine.saturating_add(theirs);
+        }
+    }
+
+    /// Refusals noted for `class`.
+    #[must_use]
+    pub fn refusals(&self, class: RefusalClass) -> u64 {
+        self.refusals[class as usize]
+    }
+}
+
 thread_local! {
-    static COLLECTOR: RefCell<Option<SecurityCounts>> = const { RefCell::new(None) };
+    static COLLECTOR: RefCell<Option<CallTally>> = const { RefCell::new(None) };
 }
 
 /// Notes `n` firings of `kind` into the collector of the tool call running on
@@ -226,8 +300,23 @@ pub fn note(kind: SecurityKind, n: usize) {
         return;
     }
     COLLECTOR.with(|c| {
-        if let Some(counts) = c.borrow_mut().as_mut() {
-            counts.add(kind, n as u64);
+        if let Some(tally) = c.borrow_mut().as_mut() {
+            tally.counts.add(kind, n as u64);
+        }
+    });
+}
+
+/// Notes `n` boundary refusals of `class` into the running call's collector,
+/// like [`note`] (a no-op outside one). A call that refuses several paths of
+/// one class gets one trail entry carrying the count.
+pub fn note_refusals(class: RefusalClass, n: usize) {
+    if n == 0 {
+        return;
+    }
+    COLLECTOR.with(|c| {
+        if let Some(tally) = c.borrow_mut().as_mut() {
+            let slot = &mut tally.refusals[class as usize];
+            *slot = slot.saturating_add(n as u64);
         }
     });
 }
@@ -235,7 +324,13 @@ pub fn note(kind: SecurityKind, n: usize) {
 /// Runs `f` (one synchronous tool handler) with a fresh collector and returns
 /// what it noted. Nested calls keep the outer collector's tally intact.
 pub fn collect<T>(f: impl FnOnce() -> T) -> (T, SecurityCounts) {
-    let outer = COLLECTOR.with(|c| c.borrow_mut().replace(SecurityCounts::default()));
+    let (value, tally) = collect_call(f);
+    (value, tally.counts)
+}
+
+/// [`collect`], including the call's boundary refusals ([`record_call`]).
+pub fn collect_call<T>(f: impl FnOnce() -> T) -> (T, CallTally) {
+    let outer = COLLECTOR.with(|c| c.borrow_mut().replace(CallTally::default()));
     let value = f();
     let tally = COLLECTOR
         .with(|c| std::mem::replace(&mut *c.borrow_mut(), outer))
@@ -250,6 +345,55 @@ pub fn collect<T>(f: impl FnOnce() -> T) -> (T, SecurityCounts) {
 /// Counts recorded since the MCP server last drained them into its session.
 static PENDING: Mutex<SecurityCounts> = Mutex::new(SecurityCounts::ZERO);
 
+/// The session suffix of a trail `action`. The session id rides in the hashed
+/// `action` field (the trail's timestamp is not hashed), so per-session
+/// security claims are chain-backed.
+fn session_suffix() -> String {
+    crate::core::value::current_session()
+        .map(|id| format!("|session={id}"))
+        .unwrap_or_default()
+}
+
+/// The audit `action` of `n` refusals: the count first (older readers parse
+/// `<kind>:<n>` up to the session), then the reason class, then the session.
+fn refusal_action(class: RefusalClass, n: u64, session: &str) -> String {
+    format!(
+        "{}:{n}|reason={}{session}",
+        class.kind().as_str(),
+        class.as_str()
+    )
+}
+
+/// Records `n` boundary refusals of `class` for one tool call: one trail
+/// entry with the reason class (never the path) plus the session counter.
+pub fn record_refusals(tool: &str, agent_id: &str, class: RefusalClass, n: u64) {
+    if n == 0 {
+        return;
+    }
+    let kind = class.kind();
+    crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
+        agent_id: agent_id.to_string(),
+        tool: tool.to_string(),
+        action: Some(refusal_action(class, n, &session_suffix())),
+        input_hash: String::new(),
+        output_tokens: 0,
+        role: crate::core::roles::active_role_name(),
+        event_type: kind.audit_event_type(),
+    });
+    if let Ok(mut pending) = PENDING.lock() {
+        pending.add(kind, n);
+    }
+}
+
+/// Records one tool call's [`CallTally`]: the counted kinds ([`record`]) and
+/// one entry per refusal class.
+pub fn record_call(tool: &str, agent_id: &str, tally: &CallTally) {
+    record(tool, agent_id, &tally.counts);
+    for class in RefusalClass::ALL {
+        record_refusals(tool, agent_id, class, tally.refusals(class));
+    }
+}
+
 /// Records one tool result's security tally: one audit-trail entry per kind
 /// (the proof) plus the pending session counters (the display).
 pub fn record(tool: &str, agent_id: &str, counts: &SecurityCounts) {
@@ -257,11 +401,7 @@ pub fn record(tool: &str, agent_id: &str, counts: &SecurityCounts) {
         return;
     }
     let role = crate::core::roles::active_role_name();
-    // The session id rides in the hashed `action` field (the trail's timestamp
-    // is not hashed), so per-session security claims are chain-backed.
-    let session = crate::core::value::current_session()
-        .map(|id| format!("|session={id}"))
-        .unwrap_or_default();
+    let session = session_suffix();
     for (kind, n) in counts.iter() {
         crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
             agent_id: agent_id.to_string(),
@@ -494,6 +634,71 @@ mod tests {
             parse_action(&injection_action(&flag, "")),
             Some((SecurityKind::InjectionFlagged, 1, None))
         );
+    }
+
+    #[test]
+    fn refusal_action_carries_the_class_only_and_parses() {
+        let action = refusal_action(RefusalClass::SecretPath, 1, "|session=s1");
+        assert_eq!(action, "content_withheld:1|reason=secret_path|session=s1");
+        assert_eq!(
+            parse_action(&action),
+            Some((SecurityKind::ContentWithheld, 1, Some("s1")))
+        );
+        let action = refusal_action(RefusalClass::OutsideRoot, 2, "");
+        assert_eq!(action, "path_blocked:2|reason=outside_root");
+        assert_eq!(
+            parse_action(&action),
+            Some((SecurityKind::PathBlocked, 2, None))
+        );
+    }
+
+    #[test]
+    fn refusals_are_collected_per_class_and_kept_apart_from_counts() {
+        let ((), tally) = collect_call(|| {
+            note_refusals(RefusalClass::SecretPath, 2);
+            let ((), inner) = collect_call(|| note_refusals(RefusalClass::OutsideRoot, 1));
+            assert_eq!(inner.refusals(RefusalClass::OutsideRoot), 1);
+            note(SecurityKind::SecretRedacted, 1);
+        });
+        assert_eq!(tally.refusals(RefusalClass::SecretPath), 2);
+        assert_eq!(tally.refusals(RefusalClass::OutsideRoot), 1);
+        assert_eq!(tally.refusals(RefusalClass::ProtectedPath), 0);
+        assert_eq!(
+            tally.counts.total(),
+            1,
+            "a refusal is recorded once, not as a count too"
+        );
+
+        note_refusals(RefusalClass::SecretPath, 1);
+        let ((), next) = collect_call(|| {});
+        assert_eq!(
+            next,
+            CallTally::default(),
+            "outside a collector it is dropped"
+        );
+    }
+
+    #[test]
+    fn a_missing_path_is_no_boundary_refusal() {
+        use crate::core::error::PathJailError;
+        let escape = PathJailError::EscapesRoot {
+            path: "/etc/passwd".into(),
+            root: "/p".into(),
+            hint: String::new(),
+        };
+        assert_eq!(
+            RefusalClass::of_jail_error(&escape),
+            Some(RefusalClass::OutsideRoot)
+        );
+        let symlink = PathJailError::Symlink {
+            path: "/p/l".into(),
+        };
+        assert_eq!(
+            RefusalClass::of_jail_error(&symlink),
+            Some(RefusalClass::ProtectedPath)
+        );
+        let missing = PathJailError::NoExistingAncestor { path: "/x".into() };
+        assert_eq!(RefusalClass::of_jail_error(&missing), None);
     }
 
     #[test]

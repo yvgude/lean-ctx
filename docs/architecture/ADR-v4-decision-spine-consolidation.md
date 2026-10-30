@@ -369,16 +369,19 @@ outcome from unknown to accepted, or drop unknown forward-compatible fields.
 The Decision Spine is architecture, not a tier. Individual capabilities are
 classified separately.
 
-- Community and Trust Core provide deterministic, explicitly classified local
-  capabilities and open protocols.
-- Pro adds personal adaptive Context/Execution Autopilot and bounded local
-  Agent Bus/Work Graph capabilities.
-- Team adds tenant-scoped durable Workspace Bus and distributed Work Graph.
-- Enterprise adds governed identity, policy, fleet control, audit, and
-  deployment choices.
+Amended 2026-10-29 (owner decision: nothing in the open engine is a paid tier):
 
-Physical locality does not determine price or license. Existing Apache code
-remains Apache; new private service intelligence remains behind explicit
+- LeanCTX OSS provides the complete local engine, free: Trust Core, the
+  deterministic and local adaptive Context/Execution Autopilot, local context
+  ranking and memory selection, the bounded local Agent Bus/Work Graph and the
+  open protocols. No licensed runtime changes a local decision.
+- LeanCTX Hive Team adds tenant-scoped durable Workspace Bus and distributed
+  Work Graph.
+- LeanCTX Hive (Personal, Team, Enterprise) adds control and proof: filter
+  packs, governed identity, org policy, compliance, fleet control, audit,
+  Cockpit across engines and deployment choices.
+
+Existing Apache code remains Apache; new private service intelligence remains behind explicit
 interfaces. Unknown capability classification fails closed.
 
 

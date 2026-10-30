@@ -2,7 +2,7 @@
 
 use super::{
     apply_task_triage_filter, compression_tracker_tokens, mcp_error_category, shell_error_category,
-    triage_bypass_requested, verbatim_requested,
+    tool_execution_error_category, triage_bypass_requested, verbatim_requested,
 };
 
 #[test]
@@ -185,6 +185,53 @@ fn mcp_error_categories_use_protocol_codes() {
         mcp_error_category(rmcp::model::ErrorCode::INTERNAL_ERROR),
         ErrorCategory::Internal
     );
+}
+
+/// A tool's refusal (`TOOL_EXECUTION_ERROR`) is classified by its failure
+/// class: rejected requests are `Validation`, never a LeanCTX `Internal`.
+#[test]
+fn tool_execution_errors_are_categorised_by_failure_class() {
+    use crate::core::telemetry_failure::{FAILURE_KINDS, FailureKind, classify};
+    use crate::core::telemetry_v2::ErrorCategory;
+
+    for kind in FAILURE_KINDS {
+        let expected = match kind {
+            FailureKind::Unavailable | FailureKind::Other => ErrorCategory::Internal,
+            FailureKind::Timeout => ErrorCategory::Timeout,
+            _ => ErrorCategory::Validation,
+        };
+        assert_eq!(tool_execution_error_category(kind), expected, "{kind:?}");
+    }
+    for (message, expected) in [
+        (
+            "ERROR: old_string not found in src/main.rs",
+            ErrorCategory::Validation,
+        ),
+        (
+            "ERROR: old_string found 3 times in src/main.rs",
+            ErrorCategory::Validation,
+        ),
+        (
+            "ERROR: path escapes project root: /etc/passwd",
+            ErrorCategory::Validation,
+        ),
+        (
+            "ERROR: cannot read src/gone.rs: No such file or directory (os error 2)",
+            ErrorCategory::Validation,
+        ),
+        (
+            "[POLICY BLOCKED] write denied by policy",
+            ErrorCategory::Validation,
+        ),
+        ("daemon not running", ErrorCategory::Internal),
+        ("something unexpected happened", ErrorCategory::Internal),
+    ] {
+        assert_eq!(
+            tool_execution_error_category(classify(message)),
+            expected,
+            "{message}"
+        );
+    }
 }
 
 /// #1812: `inline` is the same request as `raw` — verbatim command output.

@@ -303,6 +303,57 @@ Every modification of an existing file goes through `config_io::write_atomic`,
 which writes a `.lean-ctx.bak` backup first. Rules injection only ever rewrites
 the content **between** `<!-- lean-ctx -->` markers, preserving everything else.
 
+### One rules channel per host
+
+A host pays for every file it loads, on every turn. lean-ctx therefore sends
+its rules (the tool mapping) through **one** channel per host. The MCP server
+`instructions` shrink to a one-line anchor whenever the host's own rules file
+already carries the block:
+
+| Host | What lean-ctx writes | What the host also loads in a session | The single rules channel | MCP instructions |
+|------|----------------------|----------------------------------------|--------------------------|------------------|
+| Claude Code | `~/.claude/CLAUDE.md` block (`lean-ctx-claude-vN`), on-demand skill | project `CLAUDE.md` + its `@` imports (e.g. `@AGENTS.md`), every `~/.claude/rules/*.md` and `.claude/rules/*.md` | `CLAUDE.md` block | anchor |
+| Codex CLI | `$CODEX_HOME/instructions.md` block, `AGENTS.md` compression block | project `AGENTS.md` | `instructions.md` | anchor |
+| Cursor | `~/.cursor/rules/lean-ctx.mdc` | project `.cursorrules`, `.cursor/rules/*.mdc`, `AGENTS.md` | `lean-ctx.mdc` | anchor |
+| Gemini CLI | `~/.gemini/GEMINI.md` block (dedicated: `~/.gemini/LEANCTX.md`) | project `GEMINI.md` | `GEMINI.md` | anchor |
+| OpenCode | `~/.config/opencode/AGENTS.md` block (dedicated: `rules/lean-ctx.md`) | project `AGENTS.md` | that file | anchor |
+
+The rules file carries the rules, not the instructions, for two reasons. First,
+it holds host-specific guidance that the instructions cannot hold. Claude Code
+cuts `instructions` at 2048 characters, and the generic skeleton already uses
+about 1900 of them. Second, the file is a static prefix that the provider
+caches. With no rules file present (for
+example `rules_injection = "off"`), the host gets the full skeleton instead, so
+the guidance still arrives exactly once.
+
+Project `AGENTS.md` carries only the short `<!-- lean-ctx -->` pointer. Claude
+Code reads it only when a `CLAUDE.md` imports it.
+
+Hosts with lifecycle hooks (Claude Code, Codex, CodeBuddy, Cursor) can also
+receive text from the `hook observe` handler:
+
+- **SessionStart, shared mode (the default).** A short mapping nudge goes out
+  only while the host's rules file lacks the block. Once the file carries it,
+  the nudge is dropped, because it would be a third copy.
+- **SessionStart, dedicated mode** (`rules_injection = "dedicated"`). The hook
+  carries the rules instead of a file, and the MCP instructions shrink to the
+  anchor.
+- **UserPromptSubmit** (opt-in with `prompt_reinject = "on"`; the default
+  `auto` is off). A one-line routing reminder of about 45 tokens is sent on
+  every turn. It is a recency guard against session instructions that prefer
+  native shell tools (#1288), and it adds a second copy of the routing, so it
+  is off unless you turn it on.
+
+Older installs left copies behind, such as `~/.claude/rules/lean-ctx.md`,
+`.claude/rules/lean-ctx.md` and `rules-v9` files. `lean-ctx doctor` lists each
+host that loads the rules more than once ("Rules channels", with files and
+estimated tokens), and so does `lean-ctx doctor overhead`.
+`lean-ctx rules dedup --apply` repairs them, and `lean-ctx setup` and
+`lean-ctx doctor --fix` run the same repair. The repair deletes a copy that
+lean-ctx wrote in full. In a copy that someone extended, it removes only the
+lean-ctx region and keeps a `.bak` backup. Text outside the lean-ctx markers is
+never touched.
+
 ---
 
 ## UX notes captured during this walkthrough

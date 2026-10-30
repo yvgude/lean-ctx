@@ -2,7 +2,7 @@
 import type { On } from "claude-code";
 import { describe, expect, test } from "claude-code/testing";
 
-import { drawPatch, drawRead, drawSearch, resultText } from "../hooks/render";
+import { diffArtifactIds, drawPatch, drawRead, drawSearch, resultText } from "../hooks/render";
 
 // Real lean-ctx results, captured from 3.11.4.
 const PATCH = [
@@ -42,6 +42,17 @@ describe("parsing", () => {
     expect(diff && "source" in diff ? diff.source : "").toContain("@@ -1,2 +1,2 @@\n a = 1\n-b = 2\n+b = 3");
     expect(drawing?.blocks.some((b) => b.kind === "note" && b.text.includes("preimage"))).toBe(true);
     expect(drawPatch("✓ created a.py")).toBeNull();
+  });
+
+  test("ctx_patch: a [diff:<id>] trailer draws the archived diff the model never read", () => {
+    const receipt = "patched probe.py: 2 lines (+1 -1)\n[diff:0123456789abcdef]";
+    expect(diffArtifactIds(receipt)).toEqual(["0123456789abcdef"]);
+    const source = "--- probe.py\n+++ probe.py\n@@ -1,2 +1,2 @@\n a = 1\n-b = 2\n+b = 3";
+    const drawing = drawPatch(receipt, new Map([["0123456789abcdef", source]]));
+    expect(drawing?.summary).toBe("patched probe.py: 2 lines (+1 -1)");
+    expect(drawing?.blocks).toEqual([{ kind: "diff", source, path: "probe.py" }]);
+    // Not archived (or not readable): the engine draws the receipt as text.
+    expect(drawPatch(receipt)).toBeNull();
   });
 
   test("ctx_read anchored: hashes leave the screen, numbering stays", () => {

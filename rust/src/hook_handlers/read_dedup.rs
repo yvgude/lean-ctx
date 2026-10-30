@@ -58,25 +58,72 @@ pub fn handle_read_dedup() {
     }
 }
 
+/// A re-read the dedup would replace: the hook's stdout plus the measured
+/// sizes, so the caller (legacy `read-dedup` or the governor's R1.read) decides
+/// whether to emit it and records the saving exactly once.
+#[derive(Debug)]
+pub(super) struct DedupHit {
+    /// The PostToolUse `hookSpecificOutput` JSON.
+    pub output: String,
+    pub original_tokens: usize,
+    pub stub_tokens: usize,
+    /// `cli_read_dedup` (native Read) or `ctx_read_dedup`.
+    pub stat_key: &'static str,
+}
+
+impl DedupHit {
+    /// Track the saving in stats.json so CEP/dashboard can report it. The hook
+    /// subprocess is short-lived, so flush immediately.
+    pub(super) fn record_stats(&self) {
+        crate::core::stats::record(self.stat_key, self.original_tokens, self.stub_tokens);
+        crate::core::stats::record_reread(self.original_tokens.saturating_sub(self.stub_tokens));
+        crate::core::stats::flush();
+    }
+}
+
 /// Decide the read-dedup hook's stdout. `None` = emit nothing (passthrough, the
 /// documented PostToolUse no-op). Split from [`handle_read_dedup`] for tests.
 fn compute_read_dedup(input: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(input).ok()?;
+    let hit = dedup_hit(&v)?;
+    hit.record_stats();
+    Some(hit.output)
+}
+
+/// The dedup decision for one parsed PostToolUse payload, without side effects
+/// beyond the per-session read record.
+pub(super) fn dedup_hit(v: &serde_json::Value) -> Option<DedupHit> {
     if !crate::core::config::ReadDedup::read_dedup_enabled(&crate::core::config::Config::load()) {
         return None;
     }
+    dedup_hit_unchecked(v)
+}
 
-    let v: serde_json::Value = serde_json::from_str(input).ok()?;
+/// The governor's R1.read: the governor hook is only ever installed on Claude
+/// Code, so `read_dedup = auto` needs no host sniffing there (the env markers
+/// `auto` relies on are not reliably present in hook processes). Only an
+/// explicit `read_dedup = off` / `LEAN_CTX_READ_DEDUP=off` turns it off.
+pub(super) fn dedup_hit_governed(v: &serde_json::Value) -> Option<DedupHit> {
+    use crate::core::config::{Config, ReadDedup};
+    if ReadDedup::effective(&Config::load()) == ReadDedup::Off {
+        return None;
+    }
+    dedup_hit_unchecked(v)
+}
 
+fn dedup_hit_unchecked(v: &serde_json::Value) -> Option<DedupHit> {
     // Only native Read and lean-ctx `ctx_read` results are dedupable; other
     // tools have shapes we must not touch (the installer's matcher already
     // scopes to these, this is the in-process seatbelt).
-    match payload::resolve_tool_name(&v).as_deref() {
-        Some("Read") => {}
-        Some(name) if CTX_READ_TOOLS.contains(&name) => return compute_ctx_read_dedup(&v),
-        _ => return None,
+    match payload::resolve_tool_name(v).as_deref() {
+        Some("Read") => native_read_hit(v),
+        Some(name) if CTX_READ_TOOLS.contains(&name) => compute_ctx_read_dedup(v),
+        _ => None,
     }
+}
 
-    let tool_input = payload::resolve_tool_args(&v);
+fn native_read_hit(v: &serde_json::Value) -> Option<DedupHit> {
+    let tool_input = payload::resolve_tool_args(v);
     let (_, path) = payload::resolve_path_field(tool_input.as_ref(), payload::READ_PATH_FIELDS)?;
     let session_id = v.get("session_id").and_then(|s| s.as_str())?.to_string();
     // Claude Code runs subagents under the parent's `session_id` and tells them
@@ -138,14 +185,6 @@ fn compute_read_dedup(input: &str) -> Option<String> {
     }
     let updated = replace_slot(tool_response, &slot, &stub)?;
 
-    // Track dedup savings in stats.json so CEP/dashboard can report them.
-    // The hook subprocess is short-lived, so flush immediately.
-    let original_tokens = crate::core::tokens::count_tokens(original);
-    let stub_tokens = crate::core::tokens::count_tokens(&stub);
-    crate::core::stats::record("cli_read_dedup", original_tokens, stub_tokens);
-    crate::core::stats::record_reread(original_tokens.saturating_sub(stub_tokens));
-    crate::core::stats::flush();
-
     debug_log::log_hook_decision(
         "read-dedup",
         "Read",
@@ -153,15 +192,23 @@ fn compute_read_dedup(input: &str) -> Option<String> {
         &path,
         "re-read of unchanged file → dedup stub",
     );
-    Some(
-        serde_json::json!({
-            "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
-                "updatedToolOutput": updated,
-            }
-        })
-        .to_string(),
-    )
+    Some(DedupHit {
+        output: post_tool_use_output(&updated),
+        original_tokens: crate::core::tokens::count_tokens(original),
+        stub_tokens: crate::core::tokens::count_tokens(&stub),
+        stat_key: "cli_read_dedup",
+    })
+}
+
+/// The documented PostToolUse replacement envelope.
+pub(super) fn post_tool_use_output(updated: &serde_json::Value) -> String {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "updatedToolOutput": updated,
+        }
+    })
+    .to_string()
 }
 
 /// lean-ctx's `ctx_read` as Claude Code / CodeBuddy name it (server `lean-ctx`,
@@ -184,7 +231,7 @@ pub(crate) const CTX_READ_TOOLS: [&str; 2] = ["mcp__lean-ctx__ctx_read", "mcp__l
 /// left out of the comparison, and a new suffix still reaches the model after
 /// the stub. A re-read whose rendering differs (file changed, `auto` resolving
 /// another mode) passes through. `fresh=true` / `raw=true` always pass through.
-fn compute_ctx_read_dedup(v: &serde_json::Value) -> Option<String> {
+fn compute_ctx_read_dedup(v: &serde_json::Value) -> Option<DedupHit> {
     let tool_input = payload::resolve_tool_args(v)?;
     let forced = |key: &str| {
         tool_input
@@ -248,12 +295,6 @@ fn compute_ctx_read_dedup(v: &serde_json::Value) -> Option<String> {
     }
     let updated = replace_slot(tool_response, &slot, &stub)?;
 
-    let original_tokens = crate::core::tokens::count_tokens(original);
-    let stub_tokens = crate::core::tokens::count_tokens(&stub);
-    crate::core::stats::record("ctx_read_dedup", original_tokens, stub_tokens);
-    crate::core::stats::record_reread(original_tokens.saturating_sub(stub_tokens));
-    crate::core::stats::flush();
-
     debug_log::log_hook_decision(
         "read-dedup",
         "ctx_read",
@@ -261,15 +302,12 @@ fn compute_ctx_read_dedup(v: &serde_json::Value) -> Option<String> {
         &label,
         "identical ctx_read result already delivered to this context → dedup stub",
     );
-    Some(
-        serde_json::json!({
-            "hookSpecificOutput": {
-                "hookEventName": "PostToolUse",
-                "updatedToolOutput": updated,
-            }
-        })
-        .to_string(),
-    )
+    Some(DedupHit {
+        output: post_tool_use_output(&updated),
+        original_tokens: crate::core::tokens::count_tokens(original),
+        stub_tokens: crate::core::tokens::count_tokens(&stub),
+        stat_key: "ctx_read_dedup",
+    })
 }
 
 /// Line heads of the state-triggered suffixes lean-ctx appends to a tool
@@ -465,15 +503,26 @@ fn record_path(
     offset: i64,
     limit: i64,
 ) -> Option<std::path::PathBuf> {
-    let root = read_dedup_root()?;
-    sweep_stale_sessions(&root);
-    let sess = blake3::hash(session_id.as_bytes()).to_hex()[..16].to_string();
-    let dir = root.join(sess);
-    std::fs::create_dir_all(&dir).ok()?;
+    let dir = session_dir(session_id)?;
     let key = blake3::hash(format!("{agent_id}\u{0}{path}\u{0}{offset}\u{0}{limit}").as_bytes())
         .to_hex()[..16]
         .to_string();
     Some(dir.join(format!("{key}.rdx")))
+}
+
+/// The per-session record dir (created, TTL-swept). The governor keeps its
+/// Bash records here too, so [`purge_session`] clears every rule at once.
+pub(super) fn session_dir(session_id: &str) -> Option<std::path::PathBuf> {
+    let root = read_dedup_root()?;
+    sweep_stale_sessions(&root);
+    let dir = root.join(session_hash(session_id));
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// Truncated BLAKE3 of a host session id: the dir name and the receipt key.
+pub(super) fn session_hash(session_id: &str) -> String {
+    blake3::hash(session_id.as_bytes()).to_hex()[..16].to_string()
 }
 
 fn read_dedup_root() -> Option<std::path::PathBuf> {
@@ -488,7 +537,7 @@ fn read_dedup_root() -> Option<std::path::PathBuf> {
 }
 
 /// Record format: `<blake3-hex> <tool_use_id>` on a single line.
-fn parse_record(raw: &str) -> Option<(String, String)> {
+pub(super) fn parse_record(raw: &str) -> Option<(String, String)> {
     let mut parts = raw.trim().splitn(2, ' ');
     let hash = parts.next()?.to_string();
     let tool_use = parts.next().unwrap_or_default().to_string();
@@ -496,7 +545,25 @@ fn parse_record(raw: &str) -> Option<(String, String)> {
 }
 
 fn write_record(store: &std::path::Path, hash: &str, tool_use_id: &str) {
-    let _ = std::fs::write(store, format!("{hash} {tool_use_id}"));
+    let _ = write_atomic(store, format!("{hash} {tool_use_id}").as_bytes());
+}
+
+/// Replace `path` atomically (unique temp in the same dir, then rename).
+/// Parallel PostToolUse hooks run concurrently, and a plain `fs::write`
+/// truncates first: a concurrent reader could see an empty or mixed record.
+/// No fsync: these are tmp-dir caches, a crash only costs a stub opportunity.
+pub(super) fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = path.with_file_name(format!(".{name}.{}.{seq}.tmp", std::process::id()));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
 }
 
 /// Drop every read record of `session_id` — called when the host compacts its
@@ -506,8 +573,7 @@ pub(super) fn purge_session(session_id: &str) {
     let Some(root) = read_dedup_root() else {
         return;
     };
-    let sess = blake3::hash(session_id.as_bytes()).to_hex()[..16].to_string();
-    let _ = std::fs::remove_dir_all(root.join(sess));
+    let _ = std::fs::remove_dir_all(root.join(session_hash(session_id)));
 }
 
 /// Opportunistic TTL sweep of whole session dirs (no background process; runs

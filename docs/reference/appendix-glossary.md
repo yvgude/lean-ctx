@@ -44,8 +44,8 @@ sessions; recallable by exact, semantic, or hybrid search.
 isn't repeated. Project-scoped or universal (cross-project).
 
 **Wakeup** — the bundle of relevant prior knowledge injected at session start
-(as an `--- AUTO CONTEXT ---` block on the first tool reply when
-`enable_wakeup_ctx` is on).
+(as an `--- AUTO CONTEXT ---` block on the first `ctx_session` load/status reply
+when `enable_wakeup_ctx` is on; other tool replies never carry it).
 
 ## Read modes
 
@@ -123,9 +123,9 @@ internal `post_update_rewire`), so a new version's tool list reaches your editor
 
 ## Safety
 
-**PathJail** — restricts file access. Default scope `home`: read and write
-everything below `~`, never dot dirs like `~/.ssh` or `~/Library`;
-`path_jail_scope = "projects"` for read-only access to other projects,
+**PathJail** — restricts file access. Default scope `projects`: read every
+project below `~`, write only the active one, never dot dirs like `~/.ssh` or
+`~/Library`; `path_jail_scope = "home"` to read and write everything below `~`,
 `"project"` for the active project only. Admit more with
 `lean-ctx allow-path <dir>`.
 

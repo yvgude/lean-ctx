@@ -1074,23 +1074,31 @@ mod shell_outcome_tests {
         }
         let root = own.path().to_string_lossy().into_owned();
         let server = crate::tools::LeanCtxServer::new_with_project_root(Some(&root));
-        let mut args = serde_json::Map::new();
-        args.insert("path".to_string(), serde_json::json!(root));
-        let result = crate::server::call_tool::dispatch_and_post_process(
-            &server,
-            "ctx_tree",
-            Some(&args),
-            false,
-            crate::core::config::Config::load_arc(),
-            false,
-            None,
-            None,
-            "ap05_hint".to_string(),
-            None,
-        )
-        .await
-        .expect("tree pipeline");
-        let text = text_of(&result);
+        let call = |name: &'static str, args: serde_json::Value| {
+            let server = &server;
+            async move {
+                let result = crate::server::call_tool::dispatch_and_post_process(
+                    server,
+                    name,
+                    args.as_object(),
+                    false,
+                    crate::core::config::Config::load_arc(),
+                    false,
+                    None,
+                    None,
+                    "ap05_hint".to_string(),
+                    None,
+                )
+                .await
+                .expect("pipeline");
+                text_of(&result)
+            }
+        };
+        // Other results stay free of session text (#498); the hint comes
+        // only with ctx_session load/status/show.
+        let tree = call("ctx_tree", serde_json::json!({ "path": root })).await;
+        assert!(!tree.contains("hint-marker"), "{tree}");
+        let text = call("ctx_session", serde_json::json!({ "action": "status" })).await;
         assert!(text.contains("own-hint-marker"), "{text}");
         assert!(!text.contains("foreign-hint-marker"), "{text}");
     }

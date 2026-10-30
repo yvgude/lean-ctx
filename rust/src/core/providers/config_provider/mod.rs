@@ -227,7 +227,8 @@ pub(crate) fn descriptor(writes: bool) -> super::provider_trait::ConnectorDescri
         delete_event: L::Partial,
         content_trust: C::UNTRUSTED,
         write_surface: if writes {
-            "declared non-GET resources (explicit configuration); never re-checked or reused"
+            "declared POST query resources (explicit configuration, empty body; write methods are refused); \
+             never re-checked or reused"
         } else {
             C::NO_WRITES
         },

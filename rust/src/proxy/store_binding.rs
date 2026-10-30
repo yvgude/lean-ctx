@@ -651,13 +651,32 @@ mod tests {
             .stderr(Stdio::null())
             .spawn()
             .expect("process starts");
-        let identity = crate::ipc::process::identity(child.id()).expect("child identity");
+        // The identity names the executable; read it once the child runs
+        // `sleep`, not the test binary it was forked from (Linux reads
+        // /proc/<pid>/exe, which changes at exec; under load that is later).
+        let own = std::env::current_exe().expect("test binary");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let identity = loop {
+            let identity = crate::ipc::process::identity(child.id()).expect("child identity");
+            if std::path::Path::new(&identity.executable) != own
+                || std::time::Instant::now() >= deadline
+            {
+                break identity;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
         engine_on_record(child.id(), identity, &root);
-        let live = AgentRegistry::load()
-            .expect("registry")
-            .list_active(None)
-            .iter()
-            .any(|agent| agent.pid == child.id());
+        let live = (0..250).any(|_| {
+            let live = AgentRegistry::load()
+                .expect("registry")
+                .list_active(None)
+                .iter()
+                .any(|agent| agent.pid == child.id());
+            if !live {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            live
+        });
         let bound_while_live = engine_live_for(&root);
         child.kill().expect("child killed");
         child.wait().expect("child reaped");

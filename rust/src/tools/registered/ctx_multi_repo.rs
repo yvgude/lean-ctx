@@ -3,7 +3,7 @@ use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
-    McpTool, ToolContext, ToolOutput, get_str, get_str_array, get_usize,
+    McpTool, ToolContext, ToolOutput, get_str, get_str_array, get_usize, require_resolved_path,
 };
 use crate::tool_defs::tool_def;
 
@@ -83,12 +83,20 @@ impl McpTool for CtxMultiRepoTool {
     fn handle(
         &self,
         args: &Map<String, Value>,
-        _ctx: &ToolContext,
+        ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
         let action = get_str(args, "action")
             .ok_or_else(|| ErrorData::invalid_params("action is required", None))?;
 
-        let path = get_str(args, "path");
+        // A registered root is searched and read through `repo=<alias>`, which
+        // jails only against that root: the root itself must pass PathJail like
+        // every other path argument, or `add_root /` would open the whole disk.
+        // `remove_root` takes an alias or a registered path and opens nothing.
+        let path = if action == "add_root" {
+            Some(require_resolved_path(ctx, args, "path")?)
+        } else {
+            get_str(args, "path")
+        };
         let alias = get_str(args, "alias");
         let query = get_str(args, "query");
         let roots_filter = get_str_array(args, "roots");
@@ -122,5 +130,73 @@ impl McpTool for CtxMultiRepoTool {
             shell_outcome: None,
             content_blocks: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(path: &str) -> Map<String, Value> {
+        json!({ "action": "add_root", "path": path })
+            .as_object()
+            .cloned()
+            .unwrap()
+    }
+
+    /// `add_root` registers only the jailed path the dispatcher resolved; a raw
+    /// path the jail refused (or never resolved) is not registered.
+    #[test]
+    fn add_root_uses_the_jailed_path_only() {
+        let tool = CtxMultiRepoTool;
+        let root_count = || {
+            crate::core::multi_repo::global_manager()
+                .lock()
+                .unwrap()
+                .root_count()
+        };
+        let before = root_count();
+
+        // No resolution at all (raw argument only): refused.
+        let Err(err) = tool.handle(&args("/"), &ToolContext::default()) else {
+            panic!("an unresolved root must be refused");
+        };
+        assert!(err.message.contains("path"), "{}", err.message);
+
+        // The jail refused the argument: its refusal is returned.
+        let mut ctx = ToolContext::default();
+        ctx.path_errors
+            .insert("path".into(), "path escapes project root".into());
+        let Err(err) = tool.handle(&args("/"), &ctx) else {
+            panic!("a jail-refused root must be refused");
+        };
+        assert!(
+            err.message.contains("escapes project root"),
+            "{}",
+            err.message
+        );
+        assert_eq!(root_count(), before, "a refused root is never registered");
+
+        // The resolved path is what gets registered, not the raw argument.
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ctx = ToolContext::default();
+        ctx.resolved_paths
+            .insert("path".into(), tmp.path().to_string_lossy().into_owned());
+        let alias = "jailed-root-test";
+        let mut a = args("/");
+        a.insert("alias".into(), json!(alias));
+        let Ok(out) = tool.handle(&a, &ctx) else {
+            panic!("the resolved root is added");
+        };
+        assert!(
+            out.text.contains(&*tmp.path().to_string_lossy()),
+            "{}",
+            out.text
+        );
+        crate::core::multi_repo::global_manager()
+            .lock()
+            .unwrap()
+            .remove_root(&tmp.path().to_string_lossy())
+            .unwrap();
     }
 }

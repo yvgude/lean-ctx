@@ -22,6 +22,7 @@ fn params_for(path: &str, old_string: &str) -> EditParams {
         backup: false,
         backup_path: None,
         evidence: false,
+        diff_artifact: false,
         diff_max_lines: 50,
         allow_lossy_utf8: false,
     }

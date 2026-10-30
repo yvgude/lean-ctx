@@ -842,7 +842,12 @@ pub fn run() {
                         hook_handlers::arm_fail_open_watchdog(hook_handlers::OBSERVE_HOOK_BUDGET);
                     }
                     // Gating hooks self-bound and fail open inside their handlers.
-                    "rewrite" | "redirect" | "deny" | "vibe-pre-tool" => {}
+                    "rewrite" | "redirect" | "deny" | "vibe-pre-tool" | "rewrite-enforce" => {}
+                    // The governor self-bounds at 1.5 s and fails open; the
+                    // watchdog only guards a wedged receipt write afterwards.
+                    "govern" => {
+                        hook_handlers::arm_fail_open_watchdog(std::time::Duration::from_secs(4));
+                    }
                     _ => hook_handlers::arm_watchdog(std::time::Duration::from_secs(5)),
                 }
                 match action {
@@ -850,6 +855,8 @@ pub fn run() {
                     "redirect" => hook_handlers::handle_redirect(),
                     "deny" => hook_handlers::handle_deny(),
                     "read-dedup" => hook_handlers::handle_read_dedup(),
+                    "govern" => hook_handlers::handle_govern(),
+                    "rewrite-enforce" => hook_handlers::handle_rewrite_enforce(),
                     "observe" => {
                         let lifecycle = external_lifecycle_guard(
                             "hook_observe",
@@ -886,7 +893,7 @@ pub fn run() {
                     "vibe-pre-tool" => hook_handlers::handle_vibe_pre_tool(),
                     _ => {
                         eprintln!(
-                            "Usage: lean-ctx hook <rewrite|redirect|deny|read-dedup|observe|post-commit|copilot|codex-pretooluse|codex-session-start|rewrite-inline|vibe-pre-tool>"
+                            "Usage: lean-ctx hook <rewrite|redirect|deny|read-dedup|govern|rewrite-enforce|observe|post-commit|copilot|codex-pretooluse|codex-session-start|rewrite-inline|vibe-pre-tool>"
                         );
                         eprintln!(
                             "  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)"

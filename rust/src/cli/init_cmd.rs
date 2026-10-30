@@ -43,17 +43,22 @@ pub fn cmd_init(args: &[String]) {
         .windows(2)
         .find(|w| w[0] == "--mode")
         .and_then(|w| crate::hooks::HookMode::from_str_loose(&w[1]));
+    let governor_arm = args
+        .windows(2)
+        .find(|w| w[0] == "--mode")
+        .and_then(|w| crate::hooks::agents::claude_governor::GovernorArm::from_mode(&w[1]));
 
     if args.windows(2).any(|w| w[0] == "--mode")
-        && !args
-            .windows(2)
-            .any(|w| w[0] == "--mode" && crate::hooks::HookMode::from_str_loose(&w[1]).is_some())
+        && explicit_mode.is_none()
+        && governor_arm.is_none()
     {
         let bad = args
             .windows(2)
             .find(|w| w[0] == "--mode")
             .map_or("?", |w| w[1].as_str());
-        eprintln!("Unknown hook mode: '{bad}'. Valid: mcp, hybrid, replace");
+        eprintln!(
+            "Unknown hook mode: '{bad}'. Valid: mcp, hybrid, replace, governor, governor-mcp"
+        );
         std::process::exit(1);
     }
 
@@ -62,6 +67,19 @@ pub fn cmd_init(args: &[String]) {
         .filter(|w| w[0] == "--agent")
         .map(|w| w[1].as_str())
         .collect();
+
+    if let Some(arm) = governor_arm {
+        init_governor(&agents, arm);
+        return;
+    }
+    // An explicit standard mode switches a governor install back first.
+    if explicit_mode.is_some()
+        && agents.iter().any(|a| is_claude_agent(a))
+        && let Some(home) = crate::core::home::resolve_home_dir()
+        && crate::hooks::agents::claude_governor::revert(&home)
+    {
+        qprintln!("  ✓ governor setup reverted for Claude Code");
+    }
 
     if !agents.is_empty() {
         let cwd = std::env::current_dir().unwrap_or_default();
@@ -237,6 +255,37 @@ fn opt_in_flag(args: &[String], flag: &str) -> Option<bool> {
     Some(!matches!(value, Some("off" | "false" | "0")))
 }
 
+fn is_claude_agent(agent: &str) -> bool {
+    matches!(
+        agent.to_ascii_lowercase().as_str(),
+        "claude" | "claude-code"
+    )
+}
+
+/// `init --agent claude --mode governor|governor-mcp`: the opt-in
+/// zero-overhead governor profile (Claude Code only in v1).
+fn init_governor(agents: &[&str], arm: crate::hooks::agents::claude_governor::GovernorArm) {
+    let Some(home) = crate::core::home::resolve_home_dir() else {
+        eprintln!("  ✗ cannot resolve the home directory");
+        std::process::exit(1);
+    };
+    if agents.is_empty() {
+        eprintln!("  ✗ --mode governor needs --agent claude");
+        std::process::exit(1);
+    }
+    for agent in agents {
+        if !is_claude_agent(agent) {
+            eprintln!("  • {agent}: the governor setup is Claude Code only in v1, skipped");
+            continue;
+        }
+        crate::hooks::agents::claude_governor::install(&home, arm);
+        qprintln!("  ✓ Claude Code governor setup installed (revert: --mode hybrid)");
+        if let Err(e) = crate::setup::agent_selection::remember_connected_agent(agent) {
+            eprintln!("  ✗ {agent}: {e}");
+        }
+    }
+}
+
 /// Help for `lean-ctx init`. Printed for `--help`/`-h`, whatever else is on
 /// the line, and never followed by an init.
 fn print_init_help() {
@@ -250,7 +299,8 @@ fn print_init_help() {
     println!("  --global, -g        Install the shell aliases into your shell profile");
     println!("  --agent <tool>      Configure an AI tool: MCP, hooks and rules (repeatable)");
     println!("  --mode <mode>       Hook mode for --agent: mcp, hybrid or replace");
-    println!("                      (auto-detected per agent when omitted)");
+    println!("                      (auto-detected per agent when omitted). Opt-in for");
+    println!("                      Claude Code: governor (no MCP) or governor-mcp");
     println!("  --project           With --agent: also install project-local hooks");
     println!("  --no-shell-hook     Skip the shell aliases; MCP tools stay active");
     println!("  --dry-run           Show what the shell setup would change, change nothing");

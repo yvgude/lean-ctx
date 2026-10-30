@@ -29,9 +29,12 @@ fn solution_config_defaults_are_sane() {
 
     assert!(config.enabled);
     assert!(matches!(config.intensity, SolutionIntensity::Balanced));
-    assert!(config.inject_in_instructions);
+    assert!(
+        !config.inject_in_instructions,
+        "A3: per-turn ladder is opt-in"
+    );
     assert!(config.inject_in_compose);
-    assert!(config.inject_in_subagents);
+    assert!(!config.inject_in_subagents, "A3: per-turn ladder is opt-in");
     assert!(config.track_decisions);
     assert!(config.track_loc);
     assert!(config.platform_hints);

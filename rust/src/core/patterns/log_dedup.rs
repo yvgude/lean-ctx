@@ -15,7 +15,7 @@ fn timestamp_re() -> &'static regex::Regex {
 /// like `pending_errors` (commit subjects, code symbols) as error lines; `\b`
 /// keeps real signals (`ERROR:`, `panic`, `1 error`) while ignoring tokens where
 /// the word is glued to other word characters (incl. `_`).
-fn error_re() -> &'static regex::Regex {
+pub(crate) fn error_re() -> &'static regex::Regex {
     static_regex!(r"(?i)\b(errors?|critical|fatal|panic|exception)\b")
 }
 

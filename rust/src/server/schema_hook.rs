@@ -26,13 +26,21 @@ pub fn optimize_tools(tools: Vec<rmcp::model::Tool>, client_name: &str) -> Vec<r
             )
         })
         .collect();
-    let optimized = list_tools_opt::optimize_descriptions(tuples, client_name);
+    // The optimizer re-sorts its entries and may drop some to meet the budget,
+    // so its descriptions are matched back by tool name; a tool it dropped
+    // keeps its own description and stays in the list.
+    let mut optimized: std::collections::HashMap<String, String> =
+        list_tools_opt::optimize_descriptions(tuples, client_name)
+            .into_iter()
+            .map(|(name, description, _)| (name, description))
+            .collect();
 
     tools
         .into_iter()
-        .zip(optimized)
-        .map(|(mut tool, (_, description, _))| {
-            tool.description = Some(Cow::Owned(description));
+        .map(|mut tool| {
+            if let Some(description) = optimized.remove(tool.name.as_ref()) {
+                tool.description = Some(Cow::Owned(description));
+            }
             tool
         })
         .collect()
@@ -84,6 +92,39 @@ mod tests {
         assert_eq!(summary.optimizations_applied, 0);
         assert_eq!(summary.total_tokens_saved, 0);
         assert_eq!(summary.avg_reduction_percent, 0.0);
+    }
+
+    /// F7: the optimizer sorts by size and drops entries over budget; every
+    /// tool must survive and keep a description that belongs to it.
+    #[test]
+    fn descriptions_are_paired_by_name_and_no_tool_is_lost() {
+        let _guard = setup();
+        let tools: Vec<rmcp::model::Tool> = (0..40)
+            .map(|i| {
+                // Descending size, so the optimizer's ascending sort reverses
+                // the order, and large enough that the budget drops some.
+                let description = format!("tool-{i}: {}", "x".repeat(8_000 - i * 100));
+                rmcp::model::Tool::new(
+                    format!("tool_{i}"),
+                    description,
+                    std::sync::Arc::new(serde_json::Map::new()),
+                )
+            })
+            .collect();
+
+        let optimized = super::optimize_tools(tools, "cursor");
+
+        assert_eq!(optimized.len(), 40, "no tool may be dropped from the list");
+        for (i, tool) in optimized.iter().enumerate() {
+            assert_eq!(tool.name, format!("tool_{i}"));
+            let description = tool.description.as_deref().unwrap_or("");
+            assert!(
+                description.starts_with(&format!("tool-{i}: ")),
+                "{} got a foreign description: {}",
+                tool.name,
+                &description[..description.len().min(20)]
+            );
+        }
     }
 
     #[test]

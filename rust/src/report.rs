@@ -80,7 +80,11 @@ fn build_report_body(_title: &str, description: &str, include_tee: bool) -> Stri
     sections.push(section_project_context());
 
     let body = sections.join("\n\n---\n\n");
-    anonymize_report(&body)
+    // The report can become a public GitHub issue: every section, the raw
+    // `--include-tee` excerpt included, goes through the engine's always-on
+    // persistence redaction (the same pass the shell tee log uses), regardless
+    // of role or `[secret_detection]` settings.
+    crate::core::redaction::redact_text(&anonymize_report(&body))
 }
 
 // ── Section Builders ──────────────────────────────────────────────────────
@@ -507,8 +511,9 @@ fn try_ureq_api(title: &str, body: &str) {
     println!("Enter a GitHub Personal Access Token (needs 'repo' scope):");
     println!("{DIM}Create one at: https://github.com/settings/tokens/new{RST}");
 
-    let mut token = String::new();
-    let _ = std::io::stdin().read_line(&mut token);
+    // Read without echo so the token never appears on screen or in a
+    // terminal recording; no TTY means no token (the report is saved).
+    let token = rpassword::prompt_password("Token (input hidden): ").unwrap_or_default();
     let token = token.trim();
 
     if token.is_empty() {
@@ -649,4 +654,20 @@ fn prompt_input(label: &str) -> String {
     let mut input = String::new();
     let _ = std::io::stdin().read_line(&mut input);
     input.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_body_redacts_secrets_before_submission() {
+        let github = format!("ghp_{}", "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8");
+        let aws = format!("AKIA{}", "IOSFODNN7EXAMPLE");
+        let description = format!("tee showed GITHUB_TOKEN={github}\naws {aws}");
+        let body = build_report_body("t", &description, true);
+        assert!(!body.contains(&github), "GitHub token leaked into report");
+        assert!(!body.contains(&aws), "AWS key leaked into report");
+        assert!(body.contains("[REDACTED"), "no redaction marker in report");
+    }
 }

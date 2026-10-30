@@ -34,8 +34,38 @@ pub const AGENTS_MD_READERS: &[&str] = &["cursor", "codex", "opencode", "codewha
 /// "the full rules live in the canonical file") does not duplicate guidance and
 /// must not be counted as a second source for its client.
 pub fn carries_full_rules(content: &str) -> bool {
+    carries_rules_block(content) || content.contains(COMPRESSION_BLOCK_START)
+}
+
+/// Version marker of the Claude Code `CLAUDE.md` block
+/// (`<!-- lean-ctx-claude-vN -->`, `hooks/agents/claude.rs`). The block sits
+/// between the pointer markers but carries the full Claude tool mapping, so
+/// it is a rules channel, not a pointer.
+pub const CLAUDE_BLOCK_MARKER_PREFIX: &str = "<!-- lean-ctx-claude-v";
+
+fn has_marker_line_with_prefix(content: &str, prefix: &str) -> bool {
+    content
+        .lines()
+        .any(|line| line.trim_start().starts_with(prefix))
+}
+
+/// True when `content` carries a lean-ctx *rules* block (tool mapping), as
+/// opposed to only the compression payload or the pointer: the canonical
+/// block, a legacy versioned block (`<!-- lean-ctx-rules-v9 -->`, #1289) or
+/// the Claude Code `CLAUDE.md` block. These are the payloads the MCP
+/// instructions skeleton repeats, so two of them in one host session are a
+/// duplicate rules channel.
+pub fn carries_rules_block(content: &str) -> bool {
     content.contains(crate::core::rules_canonical::START_MARK)
-        || content.contains(COMPRESSION_BLOCK_START)
+        || has_marker_line_with_prefix(content, crate::core::rules_canonical::RULES_MARKER_PREFIX)
+        || has_marker_line_with_prefix(content, CLAUDE_BLOCK_MARKER_PREFIX)
+}
+
+/// Claude Code auto-loads `CLAUDE.md` from its state dir (`~/.claude`, or
+/// `$CLAUDE_CONFIG_DIR`); covered once that file carries the lean-ctx block.
+pub fn claude_md_carries_block(home: &Path) -> bool {
+    std::fs::read_to_string(crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md"))
+        .is_ok_and(|c| has_marker_line_with_prefix(&c, CLAUDE_BLOCK_MARKER_PREFIX))
 }
 
 /// True when `content` contains a lean-ctx block but only the lightweight
@@ -247,9 +277,16 @@ fn file_has_canonical_rules(path: &Path) -> bool {
 ///   * OpenCode → `~/.config/opencode/rules/lean-ctx.md` (dedicated) or
 ///     `~/.config/opencode/AGENTS.md` (shared)
 ///
-/// Claude Code deliberately does NOT count: its `CLAUDE.md` block is the
-/// custom tool-mapping summary (`hooks/agents/claude.rs`), not the canonical
-/// set — dropping the skeleton there would lose the intent playbook.
+///   * Claude Code → `CLAUDE.md` in its state dir (the `lean-ctx-claude-vN`
+///     block, `hooks/agents/claude.rs`)
+///   * Gemini CLI → `~/.gemini/GEMINI.md` (shared) or the dedicated file
+///
+/// Claude Code (A3, one rules channel per host): the `CLAUDE.md` block is the
+/// single channel. It carries the Claude-specific guidance (Replace-mode
+/// denials, the native-Read edit gate, auto memory) that cannot move into
+/// the instructions — Claude Code cuts initialize `instructions` at 2048
+/// chars, and the skeleton alone already fills ~1900. Repeating the mapping
+/// there billed it twice per turn (instructions 468 tok → anchor path 112).
 ///
 /// Conservative by construction: only clients whose auto-loaded carrier holds
 /// the canonical block *right now* count. Any stale/removed file falls back to
@@ -258,6 +295,21 @@ pub fn client_autoloads_rules(client_name: &str, home: &Path) -> bool {
     let lower = client_name.to_lowercase();
     if lower.is_empty() {
         return false;
+    }
+    let client_id =
+        crate::core::client_capabilities::ClientMcpCapabilities::detect(client_name).client_id;
+    if dedicated_session_hook_carries_rules(&client_id, home) {
+        return true;
+    }
+    match client_id.as_str() {
+        "claude-code" => return claude_md_carries_block(home),
+        "gemini-cli" => {
+            return file_has_canonical_rules(&home.join(".gemini/GEMINI.md"))
+                || file_has_canonical_rules(&crate::rules_inject::gemini_dedicated_rules_path(
+                    home,
+                ));
+        }
+        _ => {}
     }
     if lower.contains("cursor") {
         return file_has_canonical_rules(&home.join(".cursor/rules/lean-ctx.mdc"));
@@ -276,6 +328,51 @@ pub fn client_autoloads_rules(client_name: &str, home: &Path) -> bool {
         return file_has_canonical_rules(&dedicated) || file_has_canonical_rules(&shared);
     }
     false
+}
+
+/// Dedicated mode (#343, A3): no rules file is written; the SessionStart
+/// `hook observe` injects the rules instead. When that hook is installed for
+/// the host, it is the single rules channel and the MCP instructions anchor.
+fn dedicated_session_hook_carries_rules(client_id: &str, home: &Path) -> bool {
+    let cfg = crate::core::config::Config::load();
+    if !cfg.dedicated_session_context_active() || cfg.declines_rule_steering() {
+        return false;
+    }
+    let settings = match client_id {
+        "claude-code" => crate::core::editor_registry::claude_state_dir(home).join("settings.json"),
+        "codex" => codex_dir(home).join("hooks.json"),
+        "codebuddy" => {
+            crate::core::editor_registry::codebuddy_state_dir(home).join("settings.json")
+        }
+        _ => return false,
+    };
+    session_start_runs_observe(&settings)
+}
+
+/// True when the host's hook config runs `lean-ctx hook observe` on SessionStart
+/// (`{"hooks": {"SessionStart": [{"hooks": [{"command": …}]}]}}`).
+fn session_start_runs_observe(settings: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(settings) else {
+        return false;
+    };
+    let Ok(v) = crate::core::jsonc::parse_jsonc(&content) else {
+        return false;
+    };
+    let Some(groups) = v.pointer("/hooks/SessionStart").and_then(|g| g.as_array()) else {
+        return false;
+    };
+    groups.iter().any(|group| {
+        group
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .is_some_and(|hooks| {
+                hooks.iter().any(|hook| {
+                    hook.get("command")
+                        .and_then(|c| c.as_str())
+                        .is_some_and(|c| c.contains("hook observe"))
+                })
+            })
+    })
 }
 
 #[cfg(test)]

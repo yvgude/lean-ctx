@@ -15,7 +15,9 @@
 use std::path::PathBuf;
 
 use crate::core::context_overhead::tool_tokens;
-use crate::core::rules_overhead::{RulesFileCost, collect_rules_files, duplicate_clients};
+use crate::core::rules_overhead::{
+    DuplicateChannel, RulesFileCost, collect_rules_files, duplicate_channels, duplicate_clients,
+};
 use crate::core::tokens::count_tokens;
 
 const DIM: &str = "\x1b[2m";
@@ -40,10 +42,18 @@ pub(super) struct OverheadReport {
     pub wakeup_tokens: usize,
     pub rules_files: Vec<RulesFileCost>,
     pub duplicate_clients: Vec<(String, usize)>,
+    /// Hosts that receive the lean-ctx rules block through more than one
+    /// channel (rules files and/or the full MCP instructions skeleton, A3).
+    pub duplicate_channels: Vec<DuplicateChannel>,
     /// Configured budget (`[context] budget_tokens`); 0 disables the check (#964).
     pub budget_tokens: usize,
     /// Whether `total_tokens` exceeds a non-zero `budget_tokens` (#964).
     pub over_budget: bool,
+    /// `default`, or the installed Claude Code governor arm (`governor`,
+    /// `governor-mcp`), whose prefix is measured instead of the default one.
+    pub setup: String,
+    /// Governor arms: the managed rule block (the only rules text they add).
+    pub governor_rules_tokens: usize,
 }
 
 impl OverheadReport {
@@ -56,12 +66,52 @@ impl OverheadReport {
             + self.instruction_tokens
             + self.wakeup_tokens
             + self.rules_tokens_total()
+            + self.governor_rules_tokens
     }
+}
+
+/// The installed governor setup's prefix: rule block only (`governor`), or
+/// rule block plus deferred tool names (`governor-mcp`). No instructions, no
+/// wakeup briefing (its hooks emit no session text), no other rules files.
+fn governor_report(
+    arm: crate::hooks::agents::claude_governor::GovernorArm,
+    budget_tokens: usize,
+) -> OverheadReport {
+    let o = crate::core::context_overhead::ContextOverhead::measure_governor(arm);
+    let lean_default = crate::tool_defs::lazy_tool_defs();
+    let mut report = OverheadReport {
+        tool_count: o.tool_count,
+        tool_schema_tokens: o.tool_schema_tokens,
+        lean_default_tool_count: lean_default.len(),
+        lean_default_tool_tokens: lean_default.iter().map(tool_tokens).sum(),
+        tool_profile: match arm {
+            crate::hooks::agents::claude_governor::GovernorArm::NoMcp => "governor (no MCP server)",
+            crate::hooks::agents::claude_governor::GovernorArm::McpDeferred => {
+                "governor-mcp (deferred names only)"
+            }
+        }
+        .to_string(),
+        instruction_tokens: o.instruction_tokens,
+        wakeup_tokens: 0,
+        rules_files: Vec::new(),
+        duplicate_clients: Vec::new(),
+        // The governor block is the arm's only rules channel by construction.
+        duplicate_channels: Vec::new(),
+        budget_tokens,
+        over_budget: false,
+        setup: arm.label().to_string(),
+        governor_rules_tokens: o.rules_block_tokens,
+    };
+    report.over_budget = budget_tokens > 0 && report.total_tokens() > budget_tokens;
+    report
 }
 
 #[must_use]
 pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> OverheadReport {
     let cfg = crate::core::config::Config::load();
+    if let Some(arm) = crate::hooks::agents::claude_governor::installed_arm(home) {
+        return governor_report(arm, cfg.context_budget_tokens_effective());
+    }
     let advertised = crate::server::tool_visibility::advertised_tool_defs_default();
     let lean_default = crate::tool_defs::lazy_tool_defs();
 
@@ -69,6 +119,7 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
 
     let rules_files = collect_rules_files(home, project);
     let duplicates = duplicate_clients(&rules_files);
+    let channels = duplicate_channels(home, &rules_files, &|c| client_instruction_tokens(home, c));
 
     let pinned = crate::server::tool_visibility::explicit_profile(&cfg);
     let tool_profile = if pinned {
@@ -95,8 +146,11 @@ pub(super) fn measure(home: &std::path::Path, project: &std::path::Path) -> Over
         wakeup_tokens: count_tokens(&wakeup),
         rules_files,
         duplicate_clients: duplicates,
+        duplicate_channels: channels,
         budget_tokens,
         over_budget: false,
+        setup: "default".to_string(),
+        governor_rules_tokens: 0,
     };
     report.over_budget = budget_tokens > 0 && report.total_tokens() > budget_tokens;
     report
@@ -152,6 +206,13 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
         report.wakeup_tokens
     );
 
+    if report.governor_rules_tokens > 0 {
+        println!(
+            "  {BOLD}Governor rule block{RST}   {:>6} tok  {DIM}(setup: {}){RST}",
+            report.governor_rules_tokens, report.setup
+        );
+    }
+
     // 4. Rules files
     println!(
         "  {BOLD}Rules files{RST}           {:>6} tok  {DIM}({} auto-loaded files){RST}",
@@ -173,6 +234,14 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
             f.clients.join("+"),
             ours
         );
+    }
+
+    if !report.duplicate_channels.is_empty() {
+        println!();
+        for line in duplicate_channel_lines(&report.duplicate_channels) {
+            println!("  {YELLOW}{line}{RST}");
+        }
+        println!("  {DIM}{CHANNEL_FIX_HINT}{RST}");
     }
 
     if !report.duplicate_clients.is_empty() {
@@ -212,6 +281,85 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
     exit_code
 }
 
+/// Tokens of the MCP instructions the named client receives right now; 0 for
+/// a host without a lean-ctx MCP entry, which receives no instructions at all.
+fn client_instruction_tokens(home: &std::path::Path, client_name: &str) -> usize {
+    let location = match client_name {
+        "claude-code" => "Claude Code",
+        "cursor" => "Cursor",
+        "codex" => "Codex",
+        "gemini-cli" => "Gemini CLI",
+        "opencode" => "OpenCode",
+        "codebuddy" => "CodeBuddy",
+        _ => return 0,
+    };
+    if !super::common::lean_ctx_mcp_location_names(home).contains(location) {
+        return 0;
+    }
+    count_tokens(&crate::instructions::build_instructions_with_client(
+        crate::tools::CrpMode::effective(),
+        client_name,
+    ))
+}
+
+/// Repair command for duplicate rules channels. `setup` and `doctor --fix`
+/// run the same dedup automatically.
+const CHANNEL_FIX_HINT: &str =
+    "fix: `lean-ctx rules dedup --apply` (also run by `lean-ctx setup` / `lean-ctx doctor --fix`)";
+
+fn duplicate_channel_lines(dups: &[DuplicateChannel]) -> Vec<String> {
+    dups.iter()
+        .map(|d| {
+            let mut sources: Vec<String> = d
+                .files
+                .iter()
+                .map(|(path, tok)| format!("{} (~{tok} tok)", tildify(path)))
+                .collect();
+            if d.instruction_tokens > 0 {
+                sources.push(format!("MCP instructions (~{} tok)", d.instruction_tokens));
+            }
+            format!(
+                "⚠ {}: lean-ctx rules arrive via {} channels — {}; ~{} tok/session duplicated",
+                d.client,
+                d.channel_count(),
+                sources.join(", "),
+                d.excess_tokens()
+            )
+        })
+        .collect()
+}
+
+fn tildify(path: &str) -> String {
+    match dirs::home_dir() {
+        Some(home) => {
+            let home = home.to_string_lossy();
+            path.strip_prefix(home.as_ref())
+                .map_or_else(|| path.to_string(), |rest| format!("~{rest}"))
+        }
+        None => path.to_string(),
+    }
+}
+
+/// `lean-ctx doctor` board line (A3): exactly one lean-ctx rules channel per
+/// host. Advisory (never fails the gate) — duplicates cost tokens, they do not
+/// break anything.
+pub(super) fn rules_channels_outcome() -> super::Outcome {
+    use super::{BOLD, DIM, GREEN, RST, YELLOW};
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    let project = std::env::current_dir().unwrap_or_else(|_| home.clone());
+    let files = collect_rules_files(&home, &project);
+    let dups = duplicate_channels(&home, &files, &|c| client_instruction_tokens(&home, c));
+    let line = if dups.is_empty() {
+        format!("{BOLD}Rules channels{RST}  {GREEN}one lean-ctx rules channel per host{RST}")
+    } else {
+        format!(
+            "{BOLD}Rules channels{RST}  {YELLOW}{}{RST}  {DIM}({CHANNEL_FIX_HINT}; details: lean-ctx doctor overhead){RST}",
+            duplicate_channel_lines(&dups).join("; ")
+        )
+    };
+    super::Outcome { ok: true, line }
+}
+
 fn shorten(path: &str, max: usize) -> String {
     if path.len() <= max {
         return path.to_string();
@@ -242,8 +390,39 @@ mod tests {
             wakeup_tokens: wakeup,
             rules_files: Vec::new(),
             duplicate_clients: Vec::new(),
+            duplicate_channels: Vec::new(),
             budget_tokens: budget,
             over_budget: false,
+            setup: "default".into(),
+            governor_rules_tokens: 0,
+        }
+    }
+
+    #[test]
+    fn governor_install_reports_its_own_prefix() {
+        use crate::hooks::agents::claude_governor::{GovernorArm, install};
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::remove_var("CLAUDE_CONFIG_DIR");
+        let default_total = {
+            let home = tempfile::tempdir().unwrap();
+            measure(home.path(), home.path()).total_tokens()
+        };
+        for (arm, label, tools) in [
+            (GovernorArm::NoMcp, "governor", false),
+            (GovernorArm::McpDeferred, "governor-mcp", true),
+        ] {
+            let home = tempfile::tempdir().unwrap();
+            install(home.path(), arm);
+            let r = measure(home.path(), home.path());
+            let expected = crate::core::context_overhead::ContextOverhead::measure_governor(arm);
+            assert_eq!(r.setup, label);
+            assert_eq!(r.instruction_tokens, 0, "{label}: no instructions");
+            assert_eq!(r.wakeup_tokens, 0);
+            assert!(r.rules_files.is_empty());
+            assert_eq!(r.governor_rules_tokens, expected.rules_block_tokens);
+            assert_eq!(r.tool_count > 0, tools, "{label}: deferred tool names");
+            assert_eq!(r.total_tokens(), expected.total_tokens());
+            assert!(r.total_tokens() * 10 < default_total, "{label} ≪ default");
         }
     }
 
@@ -269,5 +448,22 @@ mod tests {
         disabled.over_budget =
             disabled.budget_tokens > 0 && disabled.total_tokens() > disabled.budget_tokens;
         assert!(!disabled.over_budget, "budget 0 disables the check");
+    }
+
+    /// A3: a host without a lean-ctx MCP entry receives no instructions, so a
+    /// stale rules file there must not count as a second (instructions) channel.
+    #[test]
+    fn instructions_channel_needs_a_lean_ctx_mcp_entry() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        assert_eq!(client_instruction_tokens(home, "cursor"), 0);
+        std::fs::create_dir_all(home.join(".cursor")).unwrap();
+        std::fs::write(
+            home.join(".cursor/mcp.json"),
+            r#"{"mcpServers":{"lean-ctx":{"command":"lean-ctx"}}}"#,
+        )
+        .unwrap();
+        assert!(client_instruction_tokens(home, "cursor") > 0);
     }
 }

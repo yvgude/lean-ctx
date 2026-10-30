@@ -98,7 +98,14 @@ pub struct RetentionSection {
 /// Outcome of verifying a [`ComplianceReportV1`] signature — offline.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReportVerifyResult {
+    /// The signature verifies against the key embedded in the report. On its
+    /// own this proves integrity only: anyone can re-sign an edited report
+    /// with a key of their own.
     pub signature_valid: bool,
+    /// The embedded key is the signer the verifier expected (an out-of-band
+    /// or installation key). `false` with a valid signature means
+    /// "self-signed / unpinned", never "verified".
+    pub signer_pinned: bool,
     pub signer_public_key: Option<String>,
     pub error: Option<String>,
 }
@@ -161,12 +168,34 @@ impl ComplianceReportV1 {
         Ok(())
     }
 
+    /// Verifies the signature and that it was made by `expected_signer` (hex
+    /// public key the verifier already knows: the installation or org key, or
+    /// one received out of band). A valid signature by any other key fails:
+    /// a self-attested key proves nothing about who produced the report.
+    pub fn verify_signer(&self, expected_signer: &str) -> ReportVerifyResult {
+        let mut result = self.verify();
+        if !result.signature_valid {
+            return result;
+        }
+        let embedded = self.signer_public_key.as_deref().unwrap_or_default();
+        if embedded.eq_ignore_ascii_case(expected_signer.trim()) {
+            result.signer_pinned = true;
+        } else {
+            result.signature_valid = false;
+            result.error =
+                Some("report is signed by a different key than the expected signer".into());
+        }
+        result
+    }
+
     /// Verifies the embedded signature against the embedded public key —
     /// offline, no audit trail needed. A failure means the artifact was altered
-    /// or was never validly signed.
+    /// or was never validly signed; success is integrity only
+    /// (`signer_pinned == false`), see [`Self::verify_signer`].
     pub fn verify(&self) -> ReportVerifyResult {
         let fail = |msg: &str| ReportVerifyResult {
             signature_valid: false,
+            signer_pinned: false,
             signer_public_key: self.signer_public_key.clone(),
             error: Some(msg.to_string()),
         };
@@ -186,6 +215,7 @@ impl ComplianceReportV1 {
         if crate::core::agent_identity::verify_signature(&pk_bytes, &canonical, &sig_bytes) {
             ReportVerifyResult {
                 signature_valid: true,
+                signer_pinned: false,
                 signer_public_key: Some(pk_hex.clone()),
                 error: None,
             }
@@ -301,6 +331,27 @@ pub(crate) mod tests {
             !r.verify().signature_valid,
             "rewriting the chain head must fail"
         );
+    }
+
+    /// F11: a report edited and re-signed with another key still passes the
+    /// self-check, but never as pinned, and fails against the expected signer.
+    #[test]
+    fn a_re_signed_report_is_unpinned_and_fails_the_expected_signer() {
+        let producer = key();
+        let producer_pk =
+            crate::core::agent_identity::hex_encode(&producer.verifying_key().to_bytes());
+        let mut r = sample();
+        r.sign_with_key(&producer).unwrap();
+        let pinned = r.verify_signer(&producer_pk);
+        assert!(pinned.signature_valid && pinned.signer_pinned, "{pinned:?}");
+
+        r.enforcement.blocked = 0;
+        r.sign_with_key(&key()).unwrap();
+        let self_check = r.verify();
+        assert!(self_check.signature_valid && !self_check.signer_pinned);
+        let against = r.verify_signer(&producer_pk);
+        assert!(!against.signature_valid && !against.signer_pinned);
+        assert!(against.error.unwrap().contains("different key"));
     }
 
     #[test]

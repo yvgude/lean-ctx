@@ -518,6 +518,44 @@ pub(crate) fn resolve_checked(
     Ok(artifact.enforced.then_some(resolved))
 }
 
+/// What `policy org uninstall` removed, and what it left.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Uninstalled {
+    /// An installed artifact was removed.
+    pub artifact: bool,
+    /// The organization of the removed artifact, when it could be read.
+    pub org: Option<String>,
+    /// Public keys that were pinned for that organization and are removed.
+    pub unpinned: Vec<String>,
+    /// Keys still pinned (for other organizations). With no policy installed
+    /// they make every governed call refuse (a pinned organization never
+    /// disappears silently), so the caller names them.
+    pub remaining: Vec<TrustedKey>,
+}
+
+/// Remove the installed artifact together with the trust pins of its
+/// organization, so the endpoint is back where it was before
+/// `policy org install --trust`. Removing the artifact alone would leave a
+/// pinned organization without a policy, which enforcement reads as tampering
+/// and answers with deny-all. Pins for other organizations and a recorded
+/// requirement (Hive) are left alone; they are not this artifact's to lift.
+pub fn uninstall() -> Result<Uninstalled, String> {
+    let path = store::installed_path()?;
+    let mut outcome = Uninstalled::default();
+    if path.exists() {
+        // Read before removing: the organization says which pins go with it.
+        // A damaged artifact is still removed; its pins then stay and are
+        // reported as remaining.
+        outcome.org = store::read(&path).ok().map(|artifact| artifact.org);
+        outcome.artifact = store::uninstall()?;
+    }
+    if let Some(org) = &outcome.org {
+        outcome.unpinned = trust::remove_org(org)?;
+    }
+    outcome.remaining = trust::load()?.keys;
+    Ok(outcome)
+}
+
 /// Status and the captured-authority path against real files in an isolated
 /// data directory: what the status reports must be what enforcement decides.
 #[cfg(test)]

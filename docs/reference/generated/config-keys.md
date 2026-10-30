@@ -60,7 +60,7 @@ Top-level configuration keys
 - `output_density` (enum: normal | terse | ultra, default `normal` — env `LEAN_CTX_OUTPUT_DENSITY`) — Controls how dense/compact MCP tool output is formatted
 - `passthrough_urls` (string[], default `[]`) — URLs to pass through without proxy interception
 - `path_jail` (bool?, default `null`) — Filesystem path jail. null/true = enforced (what it admits is set by path_jail_scope). false = the blanket "any path" opt-out — every tool path is allowed (for containers/sandboxes where the boundary is external). Compression and secret redaction are unaffected. Flip both planes at once with `lean-ctx yolo` / `lean-ctx secure`
-- `path_jail_scope` (string?, default `null` — env `LEAN_CTX_PATH_JAIL_SCOPE`) — What the enforced path jail admits. null/"home" (default since 3.11.3) = everything below your home directory, read and write, except protected zones: top-level dot entries (~/.ssh, ~/.aws, ~/.config, other agents' dirs), ~/Library, ~/AppData, ~/snap. "projects" (the default of 3.11.1–3.11.2) = every project below ~ is readable (a path counts when a folder between it and ~ holds .git, Cargo.toml, package.json, …; loose personal files do not); writes stay in the session's project + allow entries. "project" = only the active project + allow_paths/extra_roots/read_only_roots. Open one more dir with `lean-ctx allow-path <dir>`. Falls back to "project" for an implausible $HOME. Global-only
+- `path_jail_scope` (string?, default `null` — env `LEAN_CTX_PATH_JAIL_SCOPE`) — What the enforced path jail admits. null/"projects" (default since 3.12.1) = every project below ~ is readable (a path counts when a folder between it and ~ holds .git, Cargo.toml, package.json, …; loose personal files do not); writes stay in the session's project + allow entries. "home" (the default of 3.11.3–3.12.0, reported as a jail relaxation) = everything below your home directory, read and write, except protected zones: top-level dot entries (~/.ssh, ~/.aws, ~/.config, other agents' dirs), ~/Library, ~/AppData, ~/snap. "project" = only the active project + allow_paths/extra_roots/read_only_roots. Open one more dir with `lean-ctx allow-path <dir>`. Falls back to "project" for an implausible $HOME. Global-only
 - `permission_inheritance` (enum: off | on, default `on` — env `LEAN_CTX_PERMISSION_INHERITANCE`) — Mirror the host IDE's permission rules onto lean-ctx tools (v1: OpenCode). When on, ctx_shell honors your bash/rm * rules instead of bypassing them
 - `persona` (string, default `coding` — env `LEAN_CTX_PERSONA`) — Active context persona (persona-spec-v1): selects the domain bundle — tool surface, read-mode/compressor/chunker defaults, intent taxonomy, sensitivity floor. Built-ins: coding (default), research, lead-gen, support, data-analysis; or a custom <name>.toml from the personas dir. Override via LEAN_CTX_PERSONA
 - `prefer_native_editor` (bool, default `false`) — Disable lean-ctx edit tools (ctx_edit, ctx_patch) so the host's native editor handles edits (#454)
@@ -68,7 +68,7 @@ Top-level configuration keys
 - `profile` (string, default `""`) — Persistent profile name. Checked after LEAN_CTX_PROFILE env var. Set via: lean-ctx config set profile passthrough
 - `profiles` (table, default `{}`) — Named partial configuration overlays; nested tables merge recursively over base settings
 - `project_root` (string?, default `null` — env `LEAN_CTX_PROJECT_ROOT`) — Explicit project root directory. Prevents accidental home-directory scans
-- `prompt_reinject` (enum: auto | on | off, default `auto` — env `LEAN_CTX_PROMPT_REINJECT`) — Per-turn tool-precedence reinjection (#1288): the UserPromptSubmit hook emits a one-line additionalContext reminder that ctx_* tools are the mandated path, so it always post-dates session-level harness instructions preferring native Bash. auto (default): active only while shadow_mode is on. Costs ~45 tokens per turn when active
+- `prompt_reinject` (enum: auto | on | off, default `auto` — env `LEAN_CTX_PROMPT_REINJECT`) — Per-turn tool-routing reinjection (#1288): the UserPromptSubmit hook emits a one-line additionalContext reminder of the ctx_* routing, so it post-dates session-level harness instructions preferring native Bash. auto (default): off — the rules channel already carries the routing once (A3); on: every turn. Costs ~45 tokens per turn when active
 - `proxy_enabled` (bool?, default `null`) — Enable/disable the proxy layer. null = auto-detect, true = force on, false = force off
 - `proxy_loopback_open` (bool, default `false`) — Skip ALL proxy authentication on loopback binds. MCP/HTTP clients work without tokens. Ignored on non-loopback (gateway mode)
 - `proxy_port` (u16?, default `null`) — Custom proxy port (default: 4444). Useful for multi-user systems. Env: LEAN_CTX_PROXY_PORT
@@ -297,7 +297,7 @@ Global-only optional runtime consent and independent staging pins; project overr
 - `channel_root_key_hex` (string, default `""`) — Independently provisioned catalog root; never learned from a download
 - `channel_signature_url` (string, default `""`) — Detached staging catalog signature URL
 - `channel_url` (string, default `""`) — Explicit staging catalog URL; fetched only after consent
-- `context_policy_apply` (bool, default `false`) — Apply the promoted read-strategy policy in planning instead of recording it in shadow; security and explicit choices still win
+- `context_policy_apply` (bool, default `false`) — No effect (kept so existing configs load): read-strategy policies are no longer learned by a runtime; planning always uses the local modes
 - `enabled` (bool, default `false`) — Opt in to the verified local runtime
 - `license_configuration` (string, default `""`) — Explicit user-global path to private license configuration; saved after installed device provisioning
 - `manifest_sha256` (string, default `""`) — Independently selected manifest digest
@@ -340,7 +340,7 @@ LSP server binary overrides. Map language name to custom binary path
 
 Embeddings memory settings for semantic search
 
-- `max_facts` (usize, default `2000`) — Maximum number of embedding facts stored
+- `max_facts` (usize, default `2000`) — Maximum number of facts with a semantic-search vector (index budget; it never removes or archives a fact, the others stay recallable by text)
 
 ## `[memory.episodic]`
 
@@ -361,7 +361,7 @@ Gotcha memory settings (project-specific warnings and pitfalls)
 Knowledge memory budgets (facts, patterns, gotchas)
 
 - `contradiction_threshold` (f32, default `0.5`) — Confidence threshold for contradiction detection
-- `max_facts` (usize, default `200`) — Maximum number of knowledge facts stored per project
+- `max_facts` (usize, default `null`) — Deprecated and ignored since 3.12.1: knowledge has no fact limit. An existing value still loads; facts are archived only by quality (decay, near-duplicate merge, low confidence, staleness), never by count
 - `max_history` (usize, default `100`) — Maximum history entries retained
 - `max_patterns` (usize, default `50`) — Maximum number of patterns stored
 - `recall_facts_limit` (usize, default `10`) — Maximum facts returned per recall query
@@ -522,8 +522,8 @@ Solution Intelligence guidance and decision tracking
 
 - `enabled` (bool, default `true`) — Enable solution-efficiency guidance
 - `inject_in_compose` (bool, default `true`) — Inject solution-efficiency guidance into composed context
-- `inject_in_instructions` (bool, default `true`) — Inject solution-efficiency guidance into MCP instructions
-- `inject_in_subagents` (bool, default `true`) — Inject solution-efficiency guidance into subagent prompts
+- `inject_in_instructions` (bool, default `false`) — Inject solution-efficiency guidance into MCP instructions and rules files (off by default: per-turn coding advice, not routing)
+- `inject_in_subagents` (bool, default `false`) — Inject solution-efficiency guidance into subagent prompts
 - `intensity` (enum: off | minimal | balanced | aggressive, default `balanced`) — How strongly solution-efficiency guidance is applied
 - `platform_hints` (bool, default `true`) — Include platform-native solution hints
 - `track_decisions` (bool, default `true`) — Track solution decisions for efficiency guidance

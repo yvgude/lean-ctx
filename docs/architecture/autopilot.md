@@ -1,8 +1,7 @@
 # Context Autopilot
 
 Status: Kernprimitive implementiert (`core::context_kernel::autopilot`), als
-Produktstufe nicht abgenommen. Kein Release-, Team- oder Pro-Verfügbarkeits-
-nachweis.
+Produktstufe nicht abgenommen. Kein Release- oder Verfügbarkeitsnachweis.
 
 ## Aufgabe und Produktstufen
 
@@ -12,14 +11,20 @@ Execution Autopilot (Wahl von Agent, Modell und Ausführungspfad — siehe
 [execution-autopilot.md](execution-autopilot.md)) und nicht der Decision Spine,
 der beide einbettet.
 
-- Community erhält einen statischen, deterministischen Planer. Er lernt nichts
-  Personalisiertes.
-- Pro erhält den adaptiven Planer, der aus tatsächlichen Ergebnissen lernt.
-- Team und Enterprise ergänzen Governance und geteilte Policy, keine
+- LeanCTX OSS enthält den ganzen Planer, frei und lokal: den deterministischen
+  Referenzplaner und den adaptiven Planer, der aus lokalen, durch Receipts
+  belegten Ergebnissen lernt. Der adaptive Planer ist aus
+  (`entitled_to_adaptive = false`), bis ein A/B-Ergebnis gegen den
+  deterministischen Planer ihn rechtfertigt; er ist keine bezahlte Stufe.
+- Keine lizenzierte Laufzeit bewertet, ordnet oder wählt Kontext, Gedächtnis
+  oder Lesestrategien; Ranking, Memory-Auswahl und Lesestrategie bleiben lokal.
+- LeanCTX Hive (Personal · Team · Enterprise) ergänzt Kontrolle und Nachweis —
+  Filter-Packs, Org-Policy, Compliance, Cockpit, Team-Koordination —, keine
   konkurrierende Planerarchitektur.
 
-Die Trennung ist im Code als `PlannerTier` materialisiert; beide Planer teilen
-denselben `ContextPlan`-Vertrag.
+Die Trennung ist im Code als `PlannerTier` materialisiert (der Wire-Wert
+`adaptive_pro` bleibt aus Kompatibilitätsgründen); beide Planer teilen denselben
+`ContextPlan`-Vertrag.
 
 ## Kanonische Objekte
 
@@ -103,7 +108,8 @@ Verlustbehaftet wirkende Reduktion braucht einen deterministischen
 Wiederherstellungspfad, solange die Quelle existiert; dafür dienen die
 bestehenden Archiv- und CCR-Mechanismen. Für wesentliche adaptive
 Entscheidungen wird eine kontrafaktische Baseline als `ShadowComparison`
-mitgeführt, um beantworten zu können, ob Pro geholfen oder geschadet hat.
+mitgeführt, um beantworten zu können, ob der adaptive Planer geholfen oder
+geschadet hat.
 
 `ContextKernel::plan_with_policy` prüft die übergebene Policy vor
 Content-Deduplizierung und Auswahl. Abgewiesene Kandidaten verbrauchen kein
@@ -212,8 +218,8 @@ die validierte Ausführungs- und Outcome-Kette; Tool-Erfolg genügt dafür nicht
 - Personalisierter, geräteübergreifender Lernzustand, verschlüsselte Kontinuität
   und gehosteter persönlicher Index sind nicht abgenommen.
 - Predictive Preload ist implementiert, aber nicht als Produktnutzen gemessen.
-- Die Kopplung an einen Plan (Pro schaltet den adaptiven Planer frei) ist nicht
-  Ende-zu-Ende nachgewiesen; Pläne verwaltet LeanCTX Hive.
+- Der adaptive Planer ist ohne A/B-Nachweis gegen den deterministischen Planer
+  nicht eingeschaltet; er hängt an keinem Plan.
 - Aktive Inferenz und Provider-Bandit sind angebunden, aber nicht als bewährter
   Produktivpfad belegt.
 

@@ -97,9 +97,9 @@ symbol's exact line span — so `map` and `signatures` convey both the file's
 *shape* and *where each symbol lives* in ~5 lines instead of 66, letting an agent
 jump straight to a function instead of issuing a follow-up search. The line-range
 suffix is emitted only in these navigation modes; compression-first modes
-(`aggressive`, `entropy`, full reads) stay byte-identical. The first read in a
-session may also prepend an `--- AUTO CONTEXT ---` block with the wake-up
-briefing: last task, recent decisions, project facts and active peers.
+(`aggressive`, `entropy`, full reads) stay byte-identical. Reads never carry the
+session's wake-up briefing (last task, recent decisions, project facts, active
+peers); it comes with `ctx_session(action="status")` or `"load"`.
 
 ### `lean-ctx diff <a> <b>` / `ctx_delta`
 

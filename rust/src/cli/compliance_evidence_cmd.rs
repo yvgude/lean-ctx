@@ -35,10 +35,12 @@ lean-ctx compliance report --from <rfc3339> --to <rfc3339> \\\n    \
 [--framework <id>]... [--pack <name|path>] \\\n    \
 [--format json|csv|pdf|text] [--out <file>]\n  \
 lean-ctx compliance facts [--framework <id>]... [--pack <name|path>]\n  \
-lean-ctx compliance verify <report.json>\n\n\
+lean-ctx compliance verify <report.json> [--pubkey <hex>]\n\n\
 Framework coverage (EU AI Act, ISO 42001, SOC 2) is LeanCTX Enterprise: the\n\
 licensed runtime assesses the facts `compliance facts` prints — nothing else\n\
-leaves the engine. `verify` checks a report offline and needs no license.\n\n\
+leaves the engine. `verify` checks a report offline and needs no license; it\n\
+checks the signer against --pubkey or this installation's key and reports a\n\
+report signed by any other key as SELF-SIGNED / UNPINNED (exit 3).\n\n\
 The signed JSON artifact is always written and is the verifiable deliverable.\n\
 --format csv|pdf additionally writes that human-readable rendering.\n\n\
 EXAMPLES:\n  \
@@ -212,12 +214,43 @@ fn cmd_facts(args: &[String]) {
     }
 }
 
+/// The signer `verify` expects: `--pubkey <hex>` received out of band, else
+/// this installation's own report key (the key `report` signs with).
+fn expected_signer(args: &[String]) -> Option<(String, &'static str)> {
+    if let Some(pk) = args
+        .iter()
+        .position(|a| a == "--pubkey")
+        .and_then(|pos| args.get(pos + 1))
+    {
+        return Some((pk.clone(), "--pubkey"));
+    }
+    let agent_id = crate::core::agent_identity::current_agent_id();
+    crate::core::agent_identity::get_stored_public_key(agent_id)
+        .ok()
+        .map(|key| {
+            (
+                crate::core::agent_identity::hex_encode(&key.to_bytes()),
+                "this installation",
+            )
+        })
+}
+
 fn cmd_verify(args: &[String]) {
-    let Some(path) = args.first() else {
+    let pubkey_value = args.iter().position(|a| a == "--pubkey").map(|pos| pos + 1);
+    let Some(path) = args
+        .iter()
+        .enumerate()
+        .find(|(i, a)| !a.starts_with("--") && Some(*i) != pubkey_value)
+        .map(|(_, a)| a)
+    else {
         eprintln!("compliance verify: a report JSON path is required\n");
         print_help();
         std::process::exit(2);
     };
+    if pubkey_value.is_some_and(|i| args.get(i).is_none()) {
+        eprintln!("compliance verify: --pubkey needs a hex public key");
+        std::process::exit(2);
+    }
     let report = match compliance_report::load_artifact(Path::new(path)) {
         Ok(r) => r,
         Err(e) => {
@@ -225,9 +258,36 @@ fn cmd_verify(args: &[String]) {
             std::process::exit(1);
         }
     };
-    let result = report.verify();
+    let expected = expected_signer(args);
+    let explicit = expected.as_ref().is_some_and(|(_, src)| *src == "--pubkey");
+    let mut result = match &expected {
+        Some((pk, _)) => report.verify_signer(pk),
+        None => report.verify(),
+    };
+    // A report from another installation is not invalid, only unpinned:
+    // only an explicit --pubkey makes a different signer a failure.
+    if !explicit && !result.signature_valid && expected.is_some() {
+        let self_check = report.verify();
+        if self_check.signature_valid {
+            result = self_check;
+        }
+    }
+    if result.signature_valid && !result.signer_pinned {
+        println!(
+            "SELF-SIGNED / UNPINNED — the signature matches the key embedded in the report, \
+             which proves integrity only: anyone can re-sign an edited report"
+        );
+        if let Some(pk) = &result.signer_public_key {
+            println!("  Signer key: {pk}");
+        }
+        println!("  Pass --pubkey <hex> with the producer's key to verify who signed it.");
+        std::process::exit(3);
+    }
     if result.signature_valid {
-        println!("VALID — signature verifies (Ed25519, offline)");
+        let source = expected.as_ref().map_or("", |(_, src)| *src);
+        println!(
+            "VALID — signature verifies against the expected signer ({source}; Ed25519, offline)"
+        );
         if let Some(pk) = &result.signer_public_key {
             println!("  Signer key: {pk}");
         }

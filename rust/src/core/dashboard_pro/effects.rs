@@ -116,8 +116,6 @@ pub(crate) struct RestorePlan {
     now: HashMap<String, KnowledgeFact>,
     pub(crate) missing: Vec<String>,
     pub(crate) changed: Vec<String>,
-    pub(crate) projected: usize,
-    pub(crate) max_facts: usize,
 }
 
 pub(crate) fn restore_plan(scope: &ProjectScope, id: &str) -> ProResult<RestorePlan> {
@@ -136,9 +134,9 @@ pub(crate) fn restore_plan(scope: &ProjectScope, id: &str) -> ProResult<RestoreP
         .collect();
     missing.sort();
     changed.sort();
+    // No room check: knowledge has no fact limit, so a restore never pushes
+    // other facts out.
     Ok(RestorePlan {
-        projected: records.len() + missing.len() + changed.len(),
-        max_facts: collect::max_facts(),
         snapshot,
         now,
         missing,
@@ -291,16 +289,7 @@ pub(crate) fn validate(ctx: &Ctx<'_>, plan: &Plan) -> ProResult<()> {
             ensure(
                 same_set(missing, &plan.missing) && same_set(changed, &plan.changed),
                 "Memory changed; compare the snapshot again",
-            )?;
-            if plan.projected > plan.max_facts {
-                return Err(ProError::conflict(format!(
-                    "Restoring needs room for {} insights, but memory would go {} over its limit of {} records. Run consolidation or remove insights first.",
-                    plan.missing.len() + plan.changed.len(),
-                    plan.projected - plan.max_facts,
-                    plan.max_facts
-                )));
-            }
-            Ok(())
+            )
         }
         Plan::MemoryForget { refs, reason } => {
             let asked: Vec<String> = request

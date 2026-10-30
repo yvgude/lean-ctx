@@ -224,9 +224,10 @@ fn print_usage() {
          \x20      lean-ctx allow-path --list             Show the jail scope + extra directories\n\
          \x20      lean-ctx allow-path --remove <dir>     Remove a directory you added\n\
          \n\
-         With the default `path_jail_scope = home`, everything below your home directory\n\
-         is readable and writable except protected locations (~/.ssh, ~/.config and\n\
-         other dot dirs, ~/Library). Use this for directories outside ~ (/opt/src,\n\
+         With the default `path_jail_scope = projects`, every project below your home\n\
+         directory is readable and only the active project is writable; protected\n\
+         locations (~/.ssh, ~/.config and other dot dirs, ~/Library) stay closed. Use\n\
+         this to write in another project, for directories outside ~ (/opt/src,\n\
          /srv/repo) or for one protected\n\
          location (~/.config/myapp). Read + write; takes effect immediately, no restart.\n\
          Example: lean-ctx allow-path /opt/src/vendor-sdk"

@@ -451,7 +451,7 @@ fn host_started_child_gets_scoped_delivery_until_the_receipt() {
     let signed =
         crate::core::context_capsule::SignedContextCapsuleV1::sign(&capsule, &host_key).unwrap();
     crate::core::a2a::health::local_transport()
-        .deliver(&signed, E2E_CHILD)
+        .deliver(&signed, E2E_CHILD, &host_key.verifying_key())
         .unwrap();
     let started = start(&Request {
         timeout_ms: Some(60_000),

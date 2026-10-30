@@ -45,6 +45,20 @@ impl McpTool for CtxEditTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
+        // The mod draws ctx_patch results only; a direct ctx_edit carries no
+        // diff trailer.
+        handle_edit(args, ctx, false)
+    }
+}
+
+/// `ctx_edit`'s write path; `ctx_patch replace_unique` delegates here with
+/// `diff_artifact` set for a host that draws the diff.
+pub(crate) fn handle_edit(
+    args: &Map<String, Value>,
+    ctx: &ToolContext,
+    diff_artifact: bool,
+) -> Result<ToolOutput, ErrorData> {
+    {
         let path = require_resolved_path(ctx, args, "path")?;
 
         let old_string = get_str(args, "old_string").unwrap_or_default();
@@ -65,7 +79,8 @@ impl McpTool for CtxEditTool {
             .map(|p| crate::core::workspace_authority::confine(&p, &ctx.project_root, true))
             .transpose()
             .map_err(|error| ErrorData::invalid_params(error, None))?;
-        let evidence = get_bool(args, "evidence").unwrap_or(true);
+        // The diff and digests are opt-in: the default receipt is one line.
+        let evidence = get_bool(args, "evidence").unwrap_or(false);
         let diff_max_lines = get_int(args, "diff_max_lines")
             .and_then(|v| usize::try_from(v.max(0)).ok())
             .unwrap_or(200);
@@ -83,6 +98,7 @@ impl McpTool for CtxEditTool {
             backup,
             backup_path,
             evidence,
+            diff_artifact,
             diff_max_lines,
             allow_lossy_utf8,
         };

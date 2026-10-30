@@ -82,7 +82,7 @@ Built-ins are embedded at compile time (`include_str!`) and covered by tests:
 every pack must parse, validate, resolve and retain the baseline secret
 coverage.
 
-**Paid packs (2026-10-16).** `healthcare` and `finance-eu` (LeanCTX Pro) and
+**Paid packs (2026-10-16).** `healthcare` and `finance-eu` (LeanCTX Hive) and
 `soc2-context`, `iso42001-aligned`, `eu-ai-act-deployer` (LeanCTX Enterprise)
 were built-ins up to 3.11.x. `extends` naming one of them now fails with
 `PolicyError::UnknownParent`, whose message names the tier instead of listing

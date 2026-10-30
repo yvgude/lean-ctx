@@ -28,8 +28,11 @@ pub struct EditParams {
     /// Optional backup before writing.
     pub backup: bool,
     pub backup_path: Option<String>,
-    /// Emit bounded diff evidence (redacted) by default.
+    /// Emit the digests and the bounded, redacted diff in the result.
     pub evidence: bool,
+    /// Without `evidence`: archive the diff for a host renderer and name it
+    /// in a short `[diff:<id>]` trailer (see `diff_artifact_trailer`).
+    pub diff_artifact: bool,
     pub diff_max_lines: usize,
     /// Reject invalid UTF-8 by default; allow lossy reads only when explicitly enabled.
     pub allow_lossy_utf8: bool,
@@ -41,8 +44,6 @@ struct ReplaceArgs<'a> {
     new_str: &'a str,
     occurrences: usize,
     replace_all: bool,
-    old_tokens: usize,
-    new_tokens: usize,
 }
 
 fn verify_expected_preimage(pre: &FilePreimage, params: &EditParams) -> Result<(), String> {
@@ -137,7 +138,8 @@ pub fn handle(cache: &mut SessionCache, params: &EditParams) -> String {
 /// mistakes (empty/identical strings, preimage mismatch, missing file) and
 /// already-applied edits say nothing about the read mode and are skipped.
 pub fn record_outcome(params: &EditParams, last_mode: &str, text: &str, effect: &CacheEffect) {
-    if params.create {
+    // A create (explicit, or by an empty old_string) quoted no old text.
+    if params.create || params.old_string.is_empty() {
         return;
     }
     let success = matches!(effect, CacheEffect::Invalidate);
@@ -189,6 +191,21 @@ pub fn apply_cache_effect(cache: &mut SessionCache, path: &str, effect: CacheEff
 /// written, and the call is a success, not an error.
 pub const NO_CHANGE_PREFIX: &str = "No change:";
 
+/// An empty old_string on a file with content: there is no place to put
+/// new_string, and replacing the file is what create=true says explicitly.
+const EMPTY_OLD_STRING_REFUSAL: &str = "ERROR: old_string must not be empty for a non-empty \
+     file (an empty old_string only creates a missing or empty file; use create=true to \
+     replace the whole file)";
+
+/// No file at `path` (a dangling symlink included, which the create rules
+/// then refuse), or an empty regular file.
+fn is_missing_or_empty(path: &Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(meta) => meta.is_file() && meta.len() == 0,
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+    }
+}
+
 /// Performs the full edit on disk **without** touching the session cache, and
 /// reports back the [`CacheEffect`] the caller should apply afterwards.
 ///
@@ -198,11 +215,21 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
     let file_path = &params.path;
 
     if params.create {
-        return handle_create(file_path, &params.new_string, params);
+        return handle_create(file_path, &params.new_string, params, false);
     }
 
     let cap = crate::core::limits::max_read_bytes();
     let path = Path::new(file_path);
+
+    // An empty old_string replaces nothing, so it can only mean "write
+    // new_string here". Where nothing would be lost — no file yet, or an empty
+    // one — that is a create, under exactly the rules of create=true.
+    if params.old_string.is_empty() {
+        if is_missing_or_empty(path) {
+            return handle_create(file_path, &params.new_string, params, true);
+        }
+        return (EMPTY_OLD_STRING_REFUSAL.into(), CacheEffect::None);
+    }
     let pre = match read_preimage(path, cap, params.allow_lossy_utf8) {
         Ok(p) => p,
         Err(e) => {
@@ -219,13 +246,6 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
         return (e, CacheEffect::None);
     }
     let content = &pre.text;
-
-    if params.old_string.is_empty() {
-        return (
-            "ERROR: old_string must not be empty (use create=true to create a new file)".into(),
-            CacheEffect::None,
-        );
-    }
 
     if params.old_string == params.new_string {
         // The requested end state already holds: report a no-op, not a
@@ -258,8 +278,6 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
             new_str,
             occurrences,
             replace_all: params.replace_all,
-            old_tokens: count_tokens(&params.old_string),
-            new_tokens: count_tokens(&params.new_string),
         };
         return do_replace(path, &pre, params, cap, &args);
     }
@@ -275,8 +293,6 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
                 new_str: &new_crlf,
                 occurrences: occ,
                 replace_all: params.replace_all,
-                old_tokens: count_tokens(&params.old_string),
-                new_tokens: count_tokens(&params.new_string),
             };
             return do_replace(path, &pre, params, cap, &args);
         }
@@ -291,16 +307,20 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
                 new_str: &new_lf,
                 occurrences: occ,
                 replace_all: params.replace_all,
-                old_tokens: count_tokens(&params.old_string),
-                new_tokens: count_tokens(&params.new_string),
             };
             return do_replace(path, &pre, params, cap, &args);
         }
     }
 
+    // Lossy-read guard: after a compressed or mode-reduced read, old_string
+    // was quoted from a view that differs from the file, so only an exact
+    // match against the on-disk text may be written; the approximate matchers
+    // below are skipped and the miss asks for a full re-read.
+    let lossy_read = last_read_was_lossy(last_mode);
+
     let normalized_content = trim_trailing_per_line(content);
     let normalized_old = trim_trailing_per_line(old_str);
-    if !normalized_old.is_empty() && normalized_content.contains(&normalized_old) {
+    if !lossy_read && !normalized_old.is_empty() && normalized_content.contains(&normalized_old) {
         let line_sep = if uses_crlf { "\r\n" } else { "\n" };
         let adapted_new = adapt_new_string_to_line_sep(new_str, line_sep);
         let adapted_old = find_original_span(content, &normalized_old);
@@ -312,15 +332,13 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
                 new_str: &adapted_new,
                 occurrences: occ,
                 replace_all: params.replace_all,
-                old_tokens: count_tokens(&params.old_string),
-                new_tokens: count_tokens(&params.new_string),
             };
             return do_replace(path, &pre, params, cap, &args);
         }
     }
 
     // Same block at a uniformly different indentation, in exactly one place.
-    if let Some(found) = super::reindent::find(content, old_str, new_str) {
+    if !lossy_read && let Some(found) = super::reindent::find(content, old_str, new_str) {
         let line_sep = if uses_crlf { "\r\n" } else { "\n" };
         let replacement = adapt_new_string_to_line_sep(&found.replacement, line_sep);
         let args = ReplaceArgs {
@@ -329,8 +347,6 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
             new_str: &replacement,
             occurrences: content.matches(found.span.as_str()).count(),
             replace_all: params.replace_all,
-            old_tokens: count_tokens(&params.old_string),
-            new_tokens: count_tokens(&params.new_string),
         };
         let (out, effect) = do_replace(path, &pre, params, cap, &args);
         if out.starts_with("ERROR") {
@@ -342,6 +358,21 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
                  file's indentation.\n{out}"
             ),
             effect,
+        );
+    }
+
+    // old_string is absent in every form tried above. A repeat of an edit this
+    // process applied to this file is proven, not guessed: the exact pair is
+    // on record and new_string is in the file, so the end state holds.
+    let new_present = content.contains(new_str.as_str())
+        || (uses_crlf && content.contains(&new_str.replace('\n', "\r\n")));
+    if new_present && super::applied_edits::contains(path, old_str, new_str) {
+        return (
+            format!(
+                "{NO_CHANGE_PREFIX} {file_path} — this exact edit was already applied by an \
+                 earlier ctx_edit call (old_string is absent, new_string is present)."
+            ),
+            CacheEffect::None,
         );
     }
 
@@ -376,15 +407,36 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
     let cross_file = crate::tools::edit_recovery::cross_file_hint(path, old_str);
 
     let (escalation, effect) = auto_escalate_reread(last_mode, admitted);
+    let lossy_note = if lossy_read {
+        format!(
+            "\nRefused: the last read of this file used mode=\"{last_mode}\", a lossy view, \
+             and old_string does not match the full file content exactly. Re-read the file \
+             with ctx_read mode=\"full\" (or \"anchored\") and retry with the exact text."
+        )
+    } else {
+        String::new()
+    };
 
     (
         format!(
             "ERROR: old_string not found in {file_path}{hint}. \
              Make sure it matches exactly (including whitespace/indentation).\n\
-             Searched for: {preview}{present_note}{closest_hint}{cross_file}{escalation}"
+             Searched for: {preview}{present_note}{closest_hint}{cross_file}{lossy_note}{escalation}"
         ),
         effect,
     )
+}
+
+/// Whether the session's last read of the file was a lossy view (a
+/// compressed summary, a density cut or a one-line reference), whose text an
+/// edit must not be matched against approximately. Verbatim modes (`full`,
+/// `full-compact`, `anchored`, `raw`, line windows, `diff`) and an unknown or
+/// empty mode are not lossy.
+fn last_read_was_lossy(last_mode: &str) -> bool {
+    use crate::tools::ctx_read::ReadMode;
+    last_mode.parse::<ReadMode>().is_ok_and(|mode| {
+        mode.is_lossy_summary() || matches!(mode, ReadMode::Density(_) | ReadMode::Reference)
+    })
 }
 
 /// Finds the closest matching line in the file content to help the agent
@@ -489,6 +541,27 @@ fn auto_escalate_reread(
     )
 }
 
+/// Occurrences named by line in an ambiguous-match error.
+const LISTED_OCCURRENCES: usize = 5;
+
+/// `lines 4, 9, 17` — the 1-based lines where the first matches of `needle`
+/// start (non-overlapping, as `str::matches` counts them), with `and N more`
+/// beyond [`LISTED_OCCURRENCES`].
+fn occurrence_lines(content: &str, needle: &str, occurrences: usize) -> String {
+    let mut lines = Vec::with_capacity(LISTED_OCCURRENCES);
+    let (mut line, mut scanned) = (1, 0);
+    for (offset, _) in content.match_indices(needle).take(LISTED_OCCURRENCES) {
+        line += content[scanned..offset].matches('\n').count();
+        scanned = offset;
+        lines.push(line.to_string());
+    }
+    let mut out = format!("lines {}", lines.join(", "));
+    if occurrences > lines.len() {
+        out.push_str(&format!(" and {} more", occurrences - lines.len()));
+    }
+    out
+}
+
 fn do_replace(
     path: &Path,
     pre: &FilePreimage,
@@ -499,10 +572,12 @@ fn do_replace(
     if args.occurrences > 1 && !args.replace_all {
         return (
             format!(
-                "ERROR: old_string found {} times in {}. \
-                 Use replace_all=true to replace all, or provide more context to make old_string unique.",
+                "ERROR: old_string found {} times in {} ({}). \
+                 Use replace_all=true to replace every occurrence, or add surrounding \
+                 lines to old_string until it matches exactly one.",
                 args.occurrences,
-                path.display()
+                path.display(),
+                occurrence_lines(args.content, args.old_str, args.occurrences)
             ),
             CacheEffect::None,
         );
@@ -563,6 +638,8 @@ fn do_replace(
     {
         return (e, CacheEffect::None);
     }
+    // The pair as the caller sent it: a repeat sends the same pair.
+    super::applied_edits::record(path, &params.old_string, &params.new_string);
 
     let replacements = if args.replace_all {
         args.occurrences
@@ -582,53 +659,55 @@ fn do_replace(
         bt.record_edit(&params.path);
     }
 
-    let old_lines = args.content.lines().count();
     let new_lines = new_content.lines().count();
-    let line_delta = new_lines as i64 - old_lines as i64;
-    let delta_str = if line_delta > 0 {
-        format!("+{line_delta}")
-    } else {
-        format!("{line_delta}")
-    };
-
-    let old_tokens = args.old_tokens;
-    let new_tokens = args.new_tokens;
-
-    let replaced_str = if args.replace_all && args.occurrences > 1 {
-        format!("{} replacements", args.occurrences)
-    } else {
-        "1 replacement".into()
-    };
+    let detail = (args.replace_all && args.occurrences > 1)
+        .then(|| format!("{} replacements", args.occurrences));
 
     let short = path.file_name().map_or_else(
         || path.to_string_lossy().to_string(),
         |f| f.to_string_lossy().to_string(),
     );
 
-    let post_mtime_ms = std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .map_or(0, system_time_to_millis);
-    let post_fp = FileFingerprint {
-        size: new_content.len() as u64,
-        mtime_ms: post_mtime_ms,
-        blake3: crate::core::hasher::hash_hex(new_content.as_bytes()),
-    };
-
-    let mut out = format!(
-        "✓ {short}: {replaced_str}, {delta_str} lines ({old_tokens}→{new_tokens} tok)\n\
-preimage: bytes={}, mtime_ms={}, blake3={}\n\
-postimage: bytes={}, mtime_ms={}, blake3={}",
-        pre.fp.size, pre.fp.mtime_ms, pre.fp.blake3, post_fp.size, post_fp.mtime_ms, post_fp.blake3
+    let mut out = edit_summary_line(
+        &short,
+        new_lines,
+        lines_added,
+        lines_removed,
+        detail.as_deref(),
     );
     if let Some(bp) = backup_path {
         out.push_str(&format!("\nbackup: {bp}"));
     }
     if params.evidence {
+        let post_mtime_ms = std::fs::metadata(path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .map_or(0, system_time_to_millis);
+        let post_fp = FileFingerprint {
+            size: new_content.len() as u64,
+            mtime_ms: post_mtime_ms,
+            blake3: crate::core::hasher::hash_hex(new_content.as_bytes()),
+        };
+        out.push_str(&format!(
+            "\npreimage: bytes={}, mtime_ms={}, blake3={}\n\
+postimage: bytes={}, mtime_ms={}, blake3={}",
+            pre.fp.size,
+            pre.fp.mtime_ms,
+            pre.fp.blake3,
+            post_fp.size,
+            post_fp.mtime_ms,
+            post_fp.blake3
+        ));
         let diff = build_diff_evidence(args.content, &new_content, &short, params.diff_max_lines);
         out.push_str("\n\nevidence (diff, redacted, bounded):\n```diff\n");
         out.push_str(&diff);
         out.push_str("\n```");
+    } else if params.diff_artifact
+        && let Some(trailer) =
+            diff_artifact_trailer(args.content, &new_content, &short, params.diff_max_lines)
+    {
+        out.push('\n');
+        out.push_str(&trailer);
     }
     if let Some(notice) = health_notice {
         out.push_str("\n\n");
@@ -637,7 +716,64 @@ postimage: bytes={}, mtime_ms={}, blake3={}",
     (out, CacheEffect::Invalidate)
 }
 
-fn handle_create(file_path: &str, content: &str, params: &EditParams) -> (String, CacheEffect) {
+/// The edit's diff for a host renderer (the Claude Code mod draws it), kept
+/// out of the model's view: the bounded, redacted diff goes to the
+/// content-addressed tool archive (private files, the archive's retention;
+/// like every archive entry it is also found by archive search and
+/// `ctx_expand`) and the result names it as `[diff:<16-hex id>]`, about 13 tokens,
+/// the mod reading exactly that file. `None` when the archive may not hold it
+/// (archive off, policy, minimal escape hatch).
+pub(crate) fn diff_artifact_trailer(
+    old: &str,
+    new: &str,
+    short: &str,
+    max_lines: usize,
+) -> Option<String> {
+    let id = diff_artifact_id(old, new, short, max_lines)?;
+    Some(format!("[diff:{id}]"))
+}
+
+/// Archives the bounded, redacted diff of an edit; its archive id.
+pub(crate) fn diff_artifact_id(
+    old: &str,
+    new: &str,
+    short: &str,
+    max_lines: usize,
+) -> Option<String> {
+    if crate::core::config::Config::minimal_escape_hatch() {
+        return None;
+    }
+    let diff = build_diff_evidence(old, new, short, max_lines);
+    crate::core::archive::store("ctx_patch", &format!("diff {short}"), &diff, None)
+}
+
+/// The one-line success receipt shared by `ctx_edit` and `ctx_patch`:
+/// `patched <file>: <lines now> lines (+added -removed)[, detail]`. The
+/// pre/postimage digests and the diff follow only when `evidence` is asked.
+pub(crate) fn edit_summary_line(
+    short: &str,
+    lines_after: usize,
+    added: u64,
+    removed: u64,
+    detail: Option<&str>,
+) -> String {
+    let mut line = format!("patched {short}: {lines_after} lines (+{added} -{removed})");
+    if let Some(detail) = detail {
+        line.push_str(", ");
+        line.push_str(detail);
+    }
+    line
+}
+
+/// Writes `content` as the whole file. With `only_if_empty` (an empty
+/// old_string), a file that has content by the time it is read is refused
+/// rather than replaced.
+fn handle_create(
+    file_path: &str,
+    content: &str,
+    params: &EditParams,
+    only_if_empty: bool,
+) -> (String, CacheEffect) {
     let path = Path::new(file_path);
     let cap = crate::core::limits::max_read_bytes();
 
@@ -654,6 +790,9 @@ fn handle_create(file_path: &str, content: &str, params: &EditParams) -> (String
             Ok(p) => p,
             Err(e) => return (e, CacheEffect::None),
         };
+        if only_if_empty && !pre.bytes.is_empty() {
+            return (EMPTY_OLD_STRING_REFUSAL.into(), CacheEffect::None);
+        }
         if let Err(e) = verify_expected_preimage(&pre, params) {
             return (e, CacheEffect::None);
         }

@@ -151,6 +151,55 @@ async fn successful_error_like_content_and_dry_run_remain_successful() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "prefix\nedited\n");
 }
 
+/// An empty old_string creates a missing file through the whole pipeline,
+/// and a path that escapes the project root is refused before it is touched.
+#[cfg(not(feature = "no-jail"))]
+#[tokio::test(flavor = "multi_thread")]
+async fn empty_old_string_creates_inside_the_root_and_never_escapes_it() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let outer = tempfile::tempdir().unwrap();
+    let project = outer.path().join("project");
+    std::fs::create_dir_all(project.join(".git")).unwrap();
+    let root = project.to_str().unwrap();
+
+    let created = project.join("src/new.rs");
+    let result = call(
+        root,
+        "ctx_edit",
+        json!({"path":created,"old_string":"","new_string":"fn new() {}\n"}),
+    )
+    .await;
+    assert_ne!(result.is_error, Some(true), "{}", text(&result));
+    assert_eq!(std::fs::read_to_string(&created).unwrap(), "fn new() {}\n");
+
+    let full = project.join("full.txt");
+    std::fs::write(&full, "keep\n").unwrap();
+    let result = call(
+        root,
+        "ctx_edit",
+        json!({"path":full,"old_string":"","new_string":"lost\n"}),
+    )
+    .await;
+    assert_eq!(result.is_error, Some(true), "{}", text(&result));
+    assert_eq!(std::fs::read_to_string(&full).unwrap(), "keep\n");
+
+    let escaped = outer.path().join("escaped.txt");
+    for path in [
+        escaped.clone(),
+        project.join("..").join("escaped.txt"),
+        std::path::PathBuf::from("../escaped.txt"),
+    ] {
+        let result = call(
+            root,
+            "ctx_edit",
+            json!({"path":path,"old_string":"","new_string":"planted\n"}),
+        )
+        .await;
+        assert_eq!(result.is_error, Some(true), "{path:?}: {}", text(&result));
+        assert!(!escaped.exists(), "{path:?} escaped the project root");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn failed_cross_file_batch_keeps_completed_file_and_receipt() {
     let _data = crate::core::data_dir::isolated_data_dir();

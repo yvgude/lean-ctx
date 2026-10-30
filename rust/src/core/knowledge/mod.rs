@@ -353,7 +353,7 @@ mod tests {
         // `max_facts` keeps every fact, whether remembered or imported; only
         // the quality lifecycle archives, and writes do not run it.
         let mut policy = default_policy();
-        policy.knowledge.max_facts = 5;
+        policy.knowledge.max_facts = Some(5);
         let mut k = ProjectKnowledge::new(root.path().to_str().unwrap());
         for i in 0..40 {
             k.remember(
@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(imported.facts.len(), 40);
 
         let report = k.run_memory_lifecycle(&policy).expect("lifecycle");
-        assert_eq!(report.capacity_archived, 0);
+        assert_eq!(report.archived_count, 0);
         assert_eq!(k.facts.len(), 40, "healthy facts stay over max_facts");
     }
 

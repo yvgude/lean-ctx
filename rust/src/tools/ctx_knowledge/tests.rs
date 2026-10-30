@@ -66,12 +66,9 @@ fn report(session_id: Option<String>, session_items: usize) -> KnowledgeConsolid
         session_items,
         imported_decisions: session_items / 2,
         imported_findings: session_items - session_items / 2,
-        curation: None,
         facts: 7,
         active_facts: 5,
         archived_facts: 2,
-        fact_capacity_target: 6,
-        fact_capacity_archived: 1,
         patterns: 2,
         patterns_capacity_target: 6,
         patterns_compacted: 0,
@@ -86,7 +83,6 @@ fn report(session_id: Option<String>, session_items: usize) -> KnowledgeConsolid
             consolidated_count: 2,
             archived_count: 3,
             compacted_count: 4,
-            capacity_archived: 1,
             remaining_facts: 5,
         },
         dry_run: false,
@@ -106,9 +102,8 @@ fn consolidation_report_includes_session_and_lifecycle_stats() {
     let out = format_consolidation_report(&report(Some("s1".to_string()), 6));
 
     assert!(out.contains("Session import: s1 (6 item(s))"));
-    assert!(
-        out.contains("Facts: 5 active, 2 archived, 7 total (target <= 6, archived-to-target 1)")
-    );
+    assert!(out.contains("Facts: 5 active, 2 archived, 7 total (no limit)"));
+    assert!(!out.contains("archived-to-target"));
     assert!(
         out.contains(
             "Patterns: 2 (target <= 6, compacted 0), History: 3 (target <= 6, compacted 1)"
@@ -238,12 +233,65 @@ fn consolidation_does_not_capacity_compact_at_twenty_five_percent_free() {
     let reloaded = ProjectKnowledge::load(&root).unwrap();
     let reloaded_procedures = ProceduralStore::load(&knowledge.project_hash).unwrap();
 
-    assert_eq!(report.fact_capacity_archived, 0);
+    assert_eq!(report.lifecycle.archived_count, 0);
     assert_eq!(report.history_compacted, 0);
     assert_eq!(report.procedures_compacted, 0);
     assert_eq!(reloaded.facts.len(), 150);
     assert_eq!(reloaded.history.len(), 75);
     assert_eq!(reloaded_procedures.procedures.len(), 75);
+}
+
+/// Knowledge has no fact limit (owner decision 2026-10-24): a project with
+/// more healthy facts than the old default cap (200), and a legacy
+/// `LEAN_CTX_KNOWLEDGE_MAX_FACTS` far below that, keeps every fact through a
+/// real consolidation, and the dry run previews no fact archival either.
+#[test]
+fn consolidation_keeps_every_fact_past_the_old_cap() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
+    let data_dir = tempfile::tempdir().unwrap();
+    let _data_dir = DataDirGuard::set(data_dir.path());
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().to_string();
+    let policy = MemoryPolicy::default();
+    let mut knowledge = ProjectKnowledge::new(&root);
+    for i in 0..450 {
+        knowledge.remember(
+            &format!("category-{i}"),
+            &format!("k{i}"),
+            &format!("unique stable fact value {i}"),
+            "s1",
+            0.8,
+            &policy,
+        );
+    }
+    knowledge.save().unwrap();
+    let previous = std::env::var("LEAN_CTX_KNOWLEDGE_MAX_FACTS").ok();
+    crate::test_env::set_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS", "10");
+
+    let preview =
+        consolidate_project_knowledge_with(&root, &ConsolidateOptions::manual().into_dry_run());
+    let real = consolidate_project_knowledge(&root);
+    match previous {
+        Some(value) => crate::test_env::set_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS", &value),
+        None => crate::test_env::remove_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS"),
+    }
+    let (preview, real) = (preview.unwrap(), real.unwrap());
+
+    for report in [&preview, &real] {
+        assert_eq!(
+            report.lifecycle.archived_count, 0,
+            "dry_run={}",
+            report.dry_run
+        );
+        assert_eq!(report.lifecycle.remaining_facts, 450);
+        assert_eq!(report.active_facts, 450);
+        assert!(format_consolidation_report(report).contains("450 total (no limit)"));
+    }
+    let reloaded = ProjectKnowledge::load(&root).unwrap();
+    assert_eq!(
+        reloaded.facts.iter().filter(|f| f.is_current()).count(),
+        450
+    );
 }
 
 #[test]

@@ -23,10 +23,45 @@ impl LeanCtxServer {
     /// Absolute paths and "." are returned as-is. Relative paths like "src/main.rs"
     /// are joined with project_root so tools work regardless of the server's cwd.
     pub async fn resolve_path(&self, path: &str) -> Result<String, String> {
+        self.resolve_path_refusing(path)
+            .await
+            .map_err(|refusal| refusal.message)
+    }
+
+    /// Records a classified boundary refusal once, with the calling `tool`:
+    /// its class only, never the path.
+    pub(crate) async fn record_path_refusal(
+        &self,
+        tool: &str,
+        refusal: &crate::core::path_resolve::PathRefusal,
+    ) {
+        let Some(class) = refusal.class else {
+            return;
+        };
+        let agent_id = self
+            .agent_id
+            .read()
+            .await
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
+        crate::core::security_events::record_refusals(tool, &agent_id, class, 1);
+    }
+
+    /// [`Self::resolve_path`], saying which boundary refused the path. The
+    /// dispatch layer records a classified refusal once, with the calling
+    /// tool (the same path may be resolved again for planning).
+    pub(crate) async fn resolve_path_refusing(
+        &self,
+        path: &str,
+    ) -> Result<String, crate::core::path_resolve::PathRefusal> {
+        use crate::core::path_resolve::PathRefusal;
         let normalized = crate::core::pathutil::normalize_tool_path(path);
         if normalized.is_empty() || normalized == "." {
             let root = self.session.read().await.project_root.clone();
-            return crate::core::workspace_authority::project_dot(&normalized, root.as_deref());
+            return Ok(crate::core::workspace_authority::project_dot(
+                &normalized,
+                root.as_deref(),
+            )?);
         }
         let p = std::path::Path::new(&normalized);
 
@@ -84,7 +119,7 @@ impl LeanCtxServer {
                 && let Some(error) =
                     crate::core::path_resolve::unbound_relative_path(path, &resolved, &jail_root)
             {
-                return Err(error);
+                return Err(error.into());
             }
             (resolved, jail_root, session.extra_roots.clone())
         };
@@ -113,15 +148,10 @@ impl LeanCtxServer {
                     ) {
                         Ok(jailed) => jailed,
                         Err(retry) => {
-                            crate::core::security_events::record_one(
-                                "resolve_path",
-                                "unknown",
-                                crate::core::security_events::SecurityKind::PathBlocked,
-                            );
                             crate::core::hive::metrics_v2::signals::blocked(
                                 &crate::core::hive::metrics_v2::signals::path_jail_rule(),
                             );
-                            return Err(retry.to_string());
+                            return Err(PathRefusal::jail(&retry));
                         }
                     }
                 } else if let Some(jailed) = self
@@ -130,22 +160,16 @@ impl LeanCtxServer {
                 {
                     jailed
                 } else {
-                    // Resolution runs on the async side, outside the handler's
-                    // collector, so the refusal is recorded directly.
-                    crate::core::security_events::record_one(
-                        "resolve_path",
-                        "unknown",
-                        crate::core::security_events::SecurityKind::PathBlocked,
-                    );
                     crate::core::hive::metrics_v2::signals::blocked(
                         &crate::core::hive::metrics_v2::signals::path_jail_rule(),
                     );
-                    return Err(e.to_string());
+                    return Err(PathRefusal::jail(&e));
                 }
             }
         };
 
-        crate::core::io_boundary::check_secret_path_for_tool("resolve_path", &jailed)?;
+        crate::core::io_boundary::check_secret_path_for_tool("resolve_path", &jailed)
+            .map_err(PathRefusal::secret_path)?;
 
         Ok(crate::core::pathutil::normalize_tool_path(
             &jailed.to_string_lossy().replace('\\', "/"),

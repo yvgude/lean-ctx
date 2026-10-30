@@ -8,9 +8,9 @@ fn default_solution_config_is_enabled_and_balanced() {
     let cfg = SolutionConfig::default();
     assert!(cfg.enabled);
     assert_eq!(cfg.intensity.label(), "balanced");
-    assert!(cfg.inject_in_instructions);
+    assert!(!cfg.inject_in_instructions, "A3: per-turn ladder is opt-in");
     assert!(cfg.inject_in_compose);
-    assert!(cfg.inject_in_subagents);
+    assert!(!cfg.inject_in_subagents, "A3: per-turn ladder is opt-in");
     assert!(cfg.track_decisions);
     assert!(cfg.track_loc);
     assert!(cfg.platform_hints);

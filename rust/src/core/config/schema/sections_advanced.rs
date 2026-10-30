@@ -301,7 +301,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.knowledge.max_facts),
-            "Maximum number of knowledge facts stored per project",
+            "Deprecated and ignored since 3.12.1: knowledge has no fact limit. An existing value still loads; facts are archived only by quality (decay, near-duplicate merge, low confidence, staleness), never by count",
         ),
     );
     mem_knowledge.insert(
@@ -548,7 +548,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.embeddings.max_facts),
-            "Maximum number of embedding facts stored",
+            "Maximum number of facts with a semantic-search vector (index budget; it never removes or archives a fact, the others stay recallable by text)",
         ),
     );
     sections.insert(

@@ -130,6 +130,19 @@ pub fn remove(public_key: &str) -> Result<bool, String> {
     }
 }
 
+/// Remove every key pinned for exactly `org`, returning the removed public
+/// keys. Pins for other organizations stay.
+pub fn remove_org(org: &str) -> Result<Vec<String>, String> {
+    let mut store = load()?;
+    let (removed, kept): (Vec<TrustedKey>, Vec<TrustedKey>) =
+        store.keys.into_iter().partition(|k| k.org == org);
+    store.keys = kept;
+    if !removed.is_empty() {
+        save(&store)?;
+    }
+    Ok(removed.into_iter().map(|k| k.public_key).collect())
+}
+
 pub fn trusted_keys() -> Vec<TrustedKey> {
     load().unwrap_or_default().keys
 }

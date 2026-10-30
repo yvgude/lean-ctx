@@ -153,6 +153,10 @@ fn is_broken_connection(err: &str) -> bool {
 /// Flatten a downstream [`CallToolResult`] into plain text. Text blocks are
 /// concatenated; non-text blocks (images/resources) are summarized so the proxy
 /// never returns binary blobs into the model context.
+///
+/// The text is raw downstream output. This client does not redact it: every
+/// caller admits it and passes it through `redact_downstream_output` in
+/// [`super`] (GHSA-gvg8-285q-m62g) before it can reach the model.
 pub fn result_to_text(result: &CallToolResult) -> String {
     let mut parts: Vec<String> = Vec::new();
     for c in &result.content {

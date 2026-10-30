@@ -250,7 +250,7 @@ impl LeanCtxServer {
             for key in PATH_LIKE_KEYS {
                 if let Some(val) = args_map.get(*key) {
                     if let Some(raw) = val.as_str() {
-                        match self.resolve_path(raw).await {
+                        match self.resolve_path_refusing(raw).await {
                             Ok(resolved) => {
                                 if !["path", "project_root", "root"].contains(key) {
                                     tracing::trace!(
@@ -259,11 +259,14 @@ impl LeanCtxServer {
                                 }
                                 resolved_paths.insert(key.to_string(), resolved);
                             }
-                            Err(e) => {
+                            Err(refusal) => {
                                 tracing::debug!(
-                                    "[dispatch] path resolution failed for '{key}' = '{raw}': {e}"
+                                    "[dispatch] path resolution failed for '{key}' = '{raw}': {}",
+                                    refusal.message
                                 );
-                                path_errors.insert(key.to_string(), e);
+                                // Recorded once, here, with the calling tool.
+                                self.record_path_refusal(name, &refusal).await;
+                                path_errors.insert(key.to_string(), refusal.message);
                             }
                         }
                     } else {
@@ -707,8 +710,8 @@ impl LeanCtxServer {
             // Security events are counted once per tool result: the collector
             // sees exactly this handler, and the tally is recorded (audit trail +
             // session counters) before `record_call` publishes the value snapshot.
-            let (result, tally) = crate::core::security_events::collect(handle);
-            crate::core::security_events::record(&tool_name, &agent_id, &tally);
+            let (result, tally) = crate::core::security_events::collect_call(handle);
+            crate::core::security_events::record_call(&tool_name, &agent_id, &tally);
             result
         });
         Self::watchdog_join(name, join, watchdog).await

@@ -47,6 +47,7 @@ pub mod just;
 pub mod kubectl;
 pub mod linkerd;
 pub mod log_dedup;
+pub mod lossless_collapse;
 pub mod ls;
 pub mod make;
 pub mod maven;

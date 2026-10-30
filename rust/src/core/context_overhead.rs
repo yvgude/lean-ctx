@@ -77,12 +77,22 @@ impl ContextOverhead {
     /// reflects what this install actually advertises (#572).
     #[must_use]
     pub fn measure() -> Self {
+        Self::measure_for_client("")
+    }
+
+    /// [`Self::measure`] with the instructions a named MCP client receives
+    /// (`clientInfo.name`, e.g. `claude-code`): hook-covered clients and
+    /// clients with an instruction cap get a different block.
+    #[must_use]
+    pub fn measure_for_client(client_name: &str) -> Self {
         let tools = crate::server::tool_visibility::advertised_tool_defs_default();
         let tool_count = tools.len();
         let tool_schema_tokens = tools.iter().map(tool_tokens).sum();
 
-        let instructions =
-            crate::instructions::build_instructions(crate::tools::CrpMode::effective());
+        let instructions = crate::instructions::build_instructions_with_client(
+            crate::tools::CrpMode::effective(),
+            client_name,
+        );
         let instruction_tokens = count_tokens(&instructions);
 
         // The rules block only rides every turn when lean-ctx actually injects it
@@ -107,6 +117,40 @@ impl ContextOverhead {
     }
 }
 
+impl ContextOverhead {
+    /// Per-turn prefix of the opt-in Claude Code governor setup (governor
+    /// design v1, slice 1). Its hooks emit no session or per-prompt text, so
+    /// the prefix is the rule block plus, in the MCP arm, one deferred-tool
+    /// name line per tool: initialize instructions are suppressed
+    /// (`LEAN_CTX_RULES_INJECTION=off` on the server) and schemas stay behind
+    /// Tool Search until fetched (`alwaysLoad: false`). The name-line cost
+    /// models Claude Code's deferred-tool listing [inference, bench-verified].
+    #[must_use]
+    pub(crate) fn measure_governor(
+        arm: crate::hooks::agents::claude_governor::GovernorArm,
+    ) -> Self {
+        use crate::hooks::agents::claude_governor::{GovernorArm, rules_block};
+        let rules_block_tokens = count_tokens(rules_block(arm));
+        let (tool_count, tool_schema_tokens) = match arm {
+            GovernorArm::NoMcp => (0, 0),
+            GovernorArm::McpDeferred => {
+                let tools = crate::server::tool_visibility::advertised_tool_defs_default();
+                let names: Vec<String> = tools
+                    .iter()
+                    .map(|t| format!("mcp__lean-ctx__{}", t.name))
+                    .collect();
+                (tools.len(), count_tokens(&names.join("\n")))
+            }
+        };
+        Self {
+            tool_count,
+            tool_schema_tokens,
+            instruction_tokens: 0,
+            rules_block_tokens,
+        }
+    }
+}
+
 /// Description + input-schema tokens for one tool definition — exactly the two
 /// fields a client re-sends in every request's tool list.
 pub fn tool_tokens(t: &rmcp::model::Tool) -> usize {
@@ -119,23 +163,56 @@ pub fn tool_tokens(t: &rmcp::model::Tool) -> usize {
 }
 
 /// Estimated per-turn overhead of native IDE tools (Read, Grep, Shell, Glob,
-/// Write, StrReplace) — lean-ctx replaces these 1:1, so only the delta above
-/// this baseline is attributable lean-ctx overhead.
+/// Write, StrReplace). lean-ctx stands in for them only where they are denied
+/// (Replace mode); see [`native_baseline_tokens_per_turn`].
 pub const NATIVE_BASELINE_TOKENS_PER_TURN: u64 = 2400;
 
-/// Conservative provider prompt-cache hit rate. Anthropic achieves ~90% on
-/// stable prefixes (#498), OpenAI ~50%. Default 75% cross-provider estimate.
-/// Returns 0.0 when `--no-cache-adjust` is active (#1104).
-fn provider_cache_hit_rate() -> f64 {
-    if no_cache_adjust_active() {
-        return 0.0;
+/// The native prefix lean-ctx's own prefix replaces in the active hook mode.
+/// Only Replace denies the native tools; in Hybrid and MCP mode they stay in
+/// the host's tool list and lean-ctx's prefix adds to theirs, so nothing is
+/// subtracted.
+#[must_use]
+pub fn native_baseline_tokens_per_turn() -> u64 {
+    if crate::hooks::replace_mode_chosen() {
+        NATIVE_BASELINE_TOKENS_PER_TURN
+    } else {
+        0
     }
+}
+
+/// Price of a cached prefix token relative to base input: a cache hit reads at
+/// 0.1× and a miss writes at 1.25× (5-minute TTL) on Anthropic and on OpenAI
+/// GPT-5.6+. Not modelled: cheaper reads on some models (0.05× on Claude Opus
+/// and Sonnet 5.5) and longer TTLs (Anthropic 1 h at 2×, OpenAI 12 h at 2.5×).
+const CACHE_READ_MULTIPLIER: f64 = 0.1;
+const CACHE_WRITE_MULTIPLIER: f64 = 1.25;
+
+/// Share of turns whose prefix the provider serves from its cache. An estimate
+/// (default 75%), set with `dashboard_cache_hit_rate`.
+#[must_use]
+pub fn provider_cache_hit_rate() -> f64 {
     crate::core::config::Config::load()
         .dashboard_cache_hit_rate()
         .unwrap_or(0.75)
 }
 
-// #1104: `--no-cache-adjust` forces cache_rate=0 (worst-case view).
+/// What one prefix token costs per turn, in base-input tokens: hits read at
+/// `CACHE_READ_MULTIPLIER`, misses write at `CACHE_WRITE_MULTIPLIER`.
+/// `--no-cache-adjust` prices a provider without caching (1.0, #1104).
+#[must_use]
+pub fn prefix_cost_factor() -> f64 {
+    if no_cache_adjust_active() {
+        return 1.0;
+    }
+    cost_factor_at(provider_cache_hit_rate())
+}
+
+fn cost_factor_at(hit_rate: f64) -> f64 {
+    let hit = hit_rate.clamp(0.0, 1.0);
+    hit * CACHE_READ_MULTIPLIER + (1.0 - hit) * CACHE_WRITE_MULTIPLIER
+}
+
+// #1104: `--no-cache-adjust` prices the prefix without caching (worst-case view).
 std::thread_local! {
     static NO_CACHE_ADJUST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -150,16 +227,31 @@ fn no_cache_adjust_active() -> bool {
 
 /// Net-of-injection reconciliation with baseline + cache corrections (#1104).
 ///
-/// Two fixes over the original `saved - overhead × turns`:
-/// 1. **Baseline**: native tools also inject ~2,400 tok/turn of schemas — only
-///    the delta above that is lean-ctx's fault.
-/// 2. **Cache**: stable prefixes are cached by providers (Anthropic 90%,
-///    OpenAI 50%) — effective cost is `delta × (1 - cache_rate)`.
+/// Two corrections over the original `saved - overhead × turns`:
+/// 1. **Baseline**: in Replace mode the denied native tools' ~2,400 tok/turn of
+///    schemas leave the prefix, so only the delta above them is lean-ctx's.
+/// 2. **Cache**: the prefix bills at [`prefix_cost_factor`] per turn — cache
+///    reads are cheap, not free, and misses carry the write premium.
 #[must_use]
 pub fn net_of_injection(tokens_saved: u64, overhead_per_turn: u64, turns: u64) -> (u64, i64) {
-    let delta = overhead_per_turn.saturating_sub(NATIVE_BASELINE_TOKENS_PER_TURN);
-    let cache_rate = provider_cache_hit_rate();
-    let effective_per_turn = (delta as f64 * (1.0 - cache_rate)) as u64;
+    net_of_injection_with(
+        tokens_saved,
+        overhead_per_turn,
+        turns,
+        native_baseline_tokens_per_turn(),
+        prefix_cost_factor(),
+    )
+}
+
+fn net_of_injection_with(
+    tokens_saved: u64,
+    overhead_per_turn: u64,
+    turns: u64,
+    native_baseline: u64,
+    cost_factor: f64,
+) -> (u64, i64) {
+    let delta = overhead_per_turn.saturating_sub(native_baseline);
+    let effective_per_turn = (delta as f64 * cost_factor) as u64;
     let total = effective_per_turn.saturating_mul(turns);
     let net = tokens_saved as i64 - total as i64;
     (total, net)
@@ -297,22 +389,174 @@ pub mod tests {
     }
 
     #[test]
-    fn net_of_injection_subtracts_delta_above_baseline() {
-        // 3400 tok/turn - 2400 baseline = 1000 delta.
-        // With 75% cache: effective = 1000 * 0.25 = 250/turn.
-        // 8 turns: total = 2000, net = 10000 - 2000 = 8000.
-        let (total, net) = net_of_injection(10000, 3400, 8);
+    fn default_arm_per_turn_prefix_stays_within_budget_per_client() {
+        // The arm users actually get: no pinned profile (lazy core), default
+        // instructions, rules injection on. The minimal-arm guard above never
+        // saw this surface, so the default could grow unnoticed (Optimierungsplan
+        // P1). Budgets are the measured 3.12.0 baseline plus a small margin, on
+        // the largest platform; lowering them is the goal, raising them needs a
+        // reason in the commit.
+        // 3.12.0 baseline: claude-code 2969, codex 2770, cursor 3248 (12 tools,
+        // schemas 2236, rules 248; instructions 468 / 269 / 747), measured
+        // against the developer's real HOME. A3 (one rules channel, each client
+        // with its `setup` carrier in a temp HOME, the anchor path, no per-turn
+        // solution ladder): claude-code 2548, codex 2548, cursor 2499
+        // (instructions 112 / 112 / 63, rules 183).
+        const BUDGETS: &[(&str, usize)] = &[
+            ("claude-code", 2560),
+            ("codex-mcp-client", 2560),
+            ("cursor-vscode", 2510),
+        ];
+
+        let iso = crate::core::data_dir::isolated_data_dir();
+        // A3: what a host is billed depends on its installed rules carrier —
+        // with the carrier holding the block the instructions collapse to an
+        // anchor (one rules channel). Measuring against the developer's real
+        // HOME made the numbers depend on that machine; each client now gets a
+        // temp HOME with exactly the carrier `setup` writes for it.
+        let saved: Vec<_> = ["HOME", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]
+            .iter()
+            .map(|k| (*k, std::env::var_os(k)))
+            .collect();
+        crate::test_env::remove_var("CLAUDE_CONFIG_DIR");
+        crate::test_env::remove_var("CODEX_HOME");
+        let install_carrier = |client: &str, home: &std::path::Path| {
+            let target = match client {
+                "claude-code" => {
+                    crate::hooks::agents::sync_claude_global_rules_block(
+                        home,
+                        crate::hooks::recommend_hook_mode("claude"),
+                    )
+                    .expect("claude block");
+                    return;
+                }
+                "codex-mcp-client" => ("Codex CLI", ".codex/instructions.md"),
+                _ => ("Cursor", ".cursor/rules/lean-ctx.mdc"),
+            };
+            let path = home.join(target.1);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let block = crate::rules_inject::expected_blocks_by_target(home)
+                .remove(target.0)
+                .unwrap();
+            std::fs::write(path, block).unwrap();
+        };
+        let windows_only = if cfg!(windows) {
+            0
+        } else {
+            crate::instructions::max_shell_hint_tokens()
+        };
+        let over: Vec<String> = BUDGETS
+            .iter()
+            .filter_map(|&(client, budget)| {
+                let home = iso.path().join(format!("home-{client}"));
+                std::fs::create_dir_all(&home).unwrap();
+                crate::test_env::set_var("HOME", &home);
+                install_carrier(client, &home);
+                let o = ContextOverhead::measure_for_client(client);
+                let worst_case = o.total_tokens() + windows_only;
+                eprintln!(
+                    "{client}: {worst_case} tok (schemas {} + instr {} + rules {} + {windows_only})",
+                    o.tool_schema_tokens, o.instruction_tokens, o.rules_block_tokens
+                );
+                (worst_case > budget).then(|| {
+                    format!(
+                        "{client}: {worst_case} tok on the largest platform ({} tools: schemas {} \
+                         + instr {} + rules {} + {windows_only} Windows-only), budget {budget}",
+                        o.tool_count,
+                        o.tool_schema_tokens,
+                        o.instruction_tokens,
+                        o.rules_block_tokens,
+                    )
+                })
+            })
+            .collect();
+        for (k, v) in saved {
+            match v {
+                Some(v) => crate::test_env::set_var(k, v),
+                None => crate::test_env::remove_var(k),
+            }
+        }
         assert!(
-            total < 3000,
-            "cache + baseline must reduce tax, got {total}"
+            over.is_empty(),
+            "default-arm per-turn prefix over budget:\n{}",
+            over.join("\n")
         );
-        assert!(net > 7000, "net must reflect reduced tax, got {net}");
     }
 
     #[test]
-    fn net_of_injection_below_baseline_means_zero_tax() {
-        // 2000 tok/turn < 2400 baseline → delta = 0 → no tax at all.
-        assert_eq!(net_of_injection(5000, 2000, 100), (0, 5000));
+    fn governor_arm_per_turn_prefix_stays_within_budget() {
+        // Governor design v1 §3: the opt-in Claude Code governor wins on short
+        // tasks only by costing ~0, so its prefix is guarded like the default
+        // arm above. Measured at introduction (macOS): governor (no MCP) 86 tok
+        // (rules only), governor-mcp 201 tok (12 deferred names 121 + rules 80),
+        // against 2952 for the default claude-code arm. The budgets add a small
+        // margin; raising them needs a reason in the commit.
+        use crate::hooks::agents::claude_governor::GovernorArm;
+        const BUDGETS: &[(GovernorArm, usize)] =
+            &[(GovernorArm::NoMcp, 100), (GovernorArm::McpDeferred, 220)];
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let default_claude = ContextOverhead::measure_for_client("claude-code").total_tokens();
+        for &(arm, budget) in BUDGETS {
+            let o = ContextOverhead::measure_governor(arm);
+            assert_eq!(o.instruction_tokens, 0, "{arm:?}: no instructions");
+            assert!(
+                o.total_tokens() <= budget,
+                "{arm:?}: governor prefix {} tok (schemas/names {} + rules {}), budget {budget}",
+                o.total_tokens(),
+                o.tool_schema_tokens,
+                o.rules_block_tokens,
+            );
+            assert!(
+                o.total_tokens() * 10 < default_claude,
+                "{arm:?} ≪ default arm"
+            );
+        }
+        assert_eq!(
+            ContextOverhead::measure_governor(GovernorArm::NoMcp).tool_count,
+            0
+        );
+    }
+
+    #[test]
+    fn cached_prefix_is_cheap_not_free_and_misses_pay_the_write_premium() {
+        // 75% hits: 0.75 × 0.1 + 0.25 × 1.25 = 0.3875 per prefix token.
+        assert!((cost_factor_at(0.75) - 0.3875).abs() < 1e-12);
+        assert!(cost_factor_at(1.0) > 0.0, "a warm cache still bills reads");
+        assert!(cost_factor_at(0.0) > 1.0, "a cold cache bills the write");
+        // Replace: 3400 − 2400 = 1000 delta → 387/turn → 8 turns = 3096.
+        assert_eq!(
+            net_of_injection_with(10_000, 3400, 8, NATIVE_BASELINE_TOKENS_PER_TURN, 0.3875),
+            (3096, 6904)
+        );
+        // Hybrid/MCP keep the native tools: the whole prefix is lean-ctx's.
+        assert_eq!(
+            net_of_injection_with(10_000, 3400, 8, 0, 0.3875),
+            (10_536, -536)
+        );
+    }
+
+    #[test]
+    fn only_replace_mode_subtracts_the_native_baseline() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let mut seen = Vec::new();
+        for mode in ["", "hybrid", "mcp", "replace"] {
+            if mode.is_empty() {
+                crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+            } else {
+                crate::test_env::set_var("LEAN_CTX_HOOK_MODE", mode);
+            }
+            seen.push((mode, native_baseline_tokens_per_turn()));
+        }
+        crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+        assert_eq!(
+            seen,
+            [
+                ("", 0),
+                ("hybrid", 0),
+                ("mcp", 0),
+                ("replace", NATIVE_BASELINE_TOKENS_PER_TURN)
+            ]
+        );
     }
 
     #[test]
