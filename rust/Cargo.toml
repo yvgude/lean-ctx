@@ -476,6 +476,12 @@ codegen-units = 16
 incremental = true
 strip = false
 
+# Small code units let an incremental rebuild of the engine crate regenerate
+# only what changed: on 30.10. a one-line edit took a median 27 s instead of
+# 37 s (codegen 9 s instead of 19 s) with unchanged runtime.
+[profile.dev-fast.package.lean-ctx]
+codegen-units = 256
+
 [target.'cfg(windows)'.dependencies]
 leanctx-native-storage = { path = "crates/leanctx-native-storage", version = "=0.1.1" }
 windows-sys = { version = "0.61", features = [
