@@ -4,29 +4,23 @@ pub(crate) mod addons;
 pub(crate) mod addons_build;
 pub(crate) mod admission;
 pub(crate) mod auto_load;
-#[allow(dead_code)]
 pub(crate) mod builder;
 pub(crate) mod bundle;
 pub(crate) mod composition;
 pub(crate) mod content;
 pub(crate) mod export;
-#[allow(dead_code)]
 pub(crate) mod graph_model;
 pub(crate) mod import;
 pub(crate) mod integrity;
 pub(crate) mod keys;
 pub(crate) mod loader;
-#[allow(dead_code)]
 pub(crate) mod manifest;
 pub(crate) mod migration;
-#[allow(dead_code)]
 pub(crate) mod registry;
 pub(crate) mod rights;
 pub(crate) mod selection;
 pub(crate) mod signing;
-#[allow(dead_code)]
 pub(crate) mod skills;
-#[allow(dead_code)]
 pub(crate) mod verify;
 
 pub(crate) use auto_load::auto_load_packages;

@@ -369,8 +369,8 @@ mod tests {
 
     #[test]
     fn all_representative_v3_task_spines_migrate_with_source_digests() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../_archive/benchmarks/efficiency/task-spine-v1/tasks");
+        let root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/v3/task-spine-v1/tasks");
         let mut sources: Vec<_> = std::fs::read_dir(root)
             .unwrap()
             .map(|entry| entry.unwrap().path())

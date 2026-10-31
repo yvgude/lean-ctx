@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Governor rules for native Bash results (R1.bash, R2, R3 shadow).
+//! Governor rules for native Bash results (R1.bash, R2, R4, R3 shadow).
 //!
 //! Claude Code's Bash result is `{stdout, stderr, interrupted, isImage}`; a
 //! replacement mirrors that object and swaps only `stdout`. Anything else is
@@ -8,7 +8,7 @@
 
 use super::diagnostics::has_diagnostics;
 use super::{Decision, MIN_SAVED_TOKENS, Policy, RuleMode};
-use crate::core::patterns::lossless_collapse;
+use crate::core::patterns::{lossless_collapse, template_collapse};
 use crate::core::tokens::count_tokens;
 use crate::hook_handlers::read_dedup;
 
@@ -18,6 +18,13 @@ const R1_MIN_BYTES: usize = 512;
 const R2_MIN_TOKENS: usize = 2000;
 const R2_MIN_SAVED_TOKENS: usize = 500;
 const R2_MIN_SAVED_SHARE: f64 = 0.25;
+/// R4 trigger and minimum saving. The model sees a grouped view, not the
+/// bytes, so a replacement must at least halve the output.
+const R4_MIN_TOKENS: usize = 2000;
+const R4_MIN_SAVED_TOKENS: usize = 500;
+const R4_MIN_SAVED_SHARE: f64 = 0.5;
+/// Stand-in archive id (real ids are 16 hex) for shadow measurement.
+const R4_SHADOW_ID: &str = "ffffffffffffffff";
 /// R3: this many consecutive non-blank lines identical to an earlier result.
 const R3_WINDOW: usize = 20;
 /// R3 window store cap per session; past it no new windows are added.
@@ -49,14 +56,14 @@ pub(super) fn decide(v: &serde_json::Value, policy: &Policy, session_id: &str) -
     if flag("interrupted") || flag("isImage") {
         return Decision::default();
     }
-    if has_diagnostics(stdout) || has_diagnostics(stderr) {
-        return Decision::default();
-    }
+    // Whole-output guard for R1–R3. R4 judges line by line instead: it keeps
+    // every error, traceback and test line visible and refuses diffs whole.
+    let diagnostics = has_diagnostics(stdout) || has_diagnostics(stderr);
     let agent_id = v.get("agent_id").and_then(|s| s.as_str()).unwrap_or("");
     let cwd = v.get("cwd").and_then(|s| s.as_str()).unwrap_or("");
     let tool_use_id = v.get("tool_use_id").and_then(|s| s.as_str()).unwrap_or("");
 
-    if viewer && policy.r1_bash != RuleMode::Off {
+    if !diagnostics && viewer && policy.r1_bash != RuleMode::Off {
         let key = R1Key {
             session_id,
             agent_id,
@@ -71,18 +78,305 @@ pub(super) fn decide(v: &serde_json::Value, policy: &Policy, session_id: &str) -
         &cmd,
         &crate::core::config::Config::load().excluded_commands,
     );
-    if class.is_protected() {
+    let protected = class.is_protected();
+    let r4_allowed = policy.r4 != RuleMode::Off && r4_may_collapse(&cmd, class);
+    if protected && !r4_allowed {
         return Decision::default();
     }
-    if policy.r2 != RuleMode::Off
+    // A live replacement beats a shadow observation; among shadow rules the
+    // earlier one keeps the receipt.
+    let mut shadow = None;
+    if !protected
+        && !diagnostics
+        && policy.r2 != RuleMode::Off
         && let Some(d) = r2(v, policy.r2, stdout, session_id)
     {
+        if !d.output.is_empty() {
+            return d;
+        }
+        shadow = Some(d);
+    }
+    if r4_allowed {
+        let ctx = R4Context {
+            cmd: &cmd,
+            cwd,
+            session_id,
+        };
+        if let Some(d) = r4(v, policy.r4, &ctx, stdout) {
+            if !d.output.is_empty() {
+                return d;
+            }
+            shadow.get_or_insert(d);
+        }
+    }
+    if let Some(d) = shadow {
         return d;
     }
-    if policy.r3 != RuleMode::Off {
+    if !protected && !diagnostics && policy.r3 != RuleMode::Off {
         return r3(stdout, session_id);
     }
     Decision::default()
+}
+
+/// R4's command guard (owner decision 2026-10-31). Compressible commands
+/// qualify. Of the verbatim class only file viewers do (`cat`, `head`,
+/// `tail`, `sed`, `awk`, also as a pipe or compound segment), and only
+/// while no file read in the pipeline looks like source code or data: every
+/// segment that is verbatim on its own must be a viewer, and no viewer or
+/// search segment names a code or data file. User-excluded and other
+/// passthrough commands never qualify.
+pub(super) fn r4_may_collapse(cmd: &str, class: crate::shell::output_policy::OutputPolicy) -> bool {
+    use crate::shell::output_policy::OutputPolicy;
+    match class {
+        OutputPolicy::Compressible => true,
+        OutputPolicy::Passthrough => false,
+        OutputPolicy::Verbatim => {
+            let mut any_command = false;
+            for segment in crate::compound_lexer::split_compound(cmd) {
+                let crate::compound_lexer::Segment::Command(c) = segment else {
+                    continue;
+                };
+                any_command = true;
+                let tokens = crate::hook_handlers::shell_tokenize(c.trim());
+                let Some(kind) = tokens.first().map(|t| reader_kind(t, &tokens)) else {
+                    continue;
+                };
+                if kind != ReaderKind::Other && tokens[1..].iter().any(|t| is_code_or_data_path(t))
+                {
+                    return false;
+                }
+                if kind != ReaderKind::Viewer
+                    && crate::shell::compress::is_verbatim_output(c.trim())
+                {
+                    return false;
+                }
+            }
+            any_command
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReaderKind {
+    /// Prints file content as is (no follow mode, no in-place edit).
+    Viewer,
+    /// Prints selected lines of the files it reads.
+    Search,
+    Other,
+}
+
+fn reader_kind(first: &str, tokens: &[String]) -> ReaderKind {
+    let program = first.rsplit('/').next().unwrap_or(first);
+    let has = |flags: &[&str]| tokens.iter().any(|t| flags.contains(&t.as_str()));
+    match program {
+        "cat" | "bat" | "batcat" | "head" => ReaderKind::Viewer,
+        "tail" if !has(&["-f", "-F", "--follow"]) => ReaderKind::Viewer,
+        "sed" | "awk" | "gawk" | "mawk" | "nawk"
+            if !tokens
+                .iter()
+                .any(|t| t.starts_with("-i") || t == "--in-place") =>
+        {
+            ReaderKind::Viewer
+        }
+        "grep" | "egrep" | "fgrep" | "rg" | "ag" | "cut" | "sort" | "uniq" | "nl" | "less"
+        | "more" | "column" => ReaderKind::Search,
+        _ => ReaderKind::Other,
+    }
+}
+
+/// Source code and data files stay verbatim: their numbers and repeated
+/// shapes are content, not noise.
+fn is_code_or_data_path(token: &str) -> bool {
+    const EXTENSIONS: &[&str] = &[
+        // Source code.
+        "rs",
+        "py",
+        "pyi",
+        "ts",
+        "tsx",
+        "js",
+        "jsx",
+        "mjs",
+        "cjs",
+        "go",
+        "java",
+        "kt",
+        "kts",
+        "scala",
+        "c",
+        "h",
+        "cc",
+        "cpp",
+        "cxx",
+        "hpp",
+        "hh",
+        "cs",
+        "rb",
+        "php",
+        "swift",
+        "m",
+        "mm",
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "ps1",
+        "lua",
+        "pl",
+        "pm",
+        "r",
+        "dart",
+        "ex",
+        "exs",
+        "erl",
+        "hs",
+        "ml",
+        "clj",
+        "vue",
+        "svelte",
+        "html",
+        "css",
+        "scss",
+        "less",
+        "proto",
+        "graphql",
+        "gradle",
+        "tf",
+        "hcl",
+        "nix",
+        "zig",
+        "sol",
+        // Data and configuration.
+        "json",
+        "jsonl",
+        "ndjson",
+        "geojson",
+        "csv",
+        "tsv",
+        "psv",
+        "parquet",
+        "avro",
+        "yaml",
+        "yml",
+        "toml",
+        "ini",
+        "cfg",
+        "conf",
+        "properties",
+        "env",
+        "xml",
+        "sql",
+        "lock",
+    ];
+    const NAMES: &[&str] = &[
+        "Makefile",
+        "Dockerfile",
+        "Containerfile",
+        "Jenkinsfile",
+        "Gemfile",
+        "Rakefile",
+        "Justfile",
+        "justfile",
+        "CMakeLists.txt",
+    ];
+    if token.starts_with('-') {
+        return false;
+    }
+    let name = token.rsplit('/').next().unwrap_or(token);
+    if NAMES.contains(&name) {
+        return true;
+    }
+    name.rsplit_once('.').is_some_and(|(stem, ext)| {
+        !stem.is_empty() && EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str())
+    })
+}
+
+struct R4Context<'a> {
+    cmd: &'a str,
+    cwd: &'a str,
+    session_id: &'a str,
+}
+
+/// R4: template collapse. The model gets the grouped view plus the archive
+/// id of the exact original; without a usable archive R4 never fires. In
+/// shadow mode nothing is stored: the receipt measures the view with a
+/// stand-in id of the real id's length.
+fn r4(
+    v: &serde_json::Value,
+    mode: RuleMode,
+    ctx: &R4Context<'_>,
+    stdout: &str,
+) -> Option<Decision> {
+    let baseline = count_tokens(stdout);
+    if baseline < R4_MIN_TOKENS {
+        return None;
+    }
+    let root = r4_archive_root(ctx.cwd)?;
+    let collapsed = template_collapse::collapse(stdout)?;
+    let view = |id: &str| template_collapse::render(&collapsed, &r4_recovery_clause(id));
+    let actual = count_tokens(&view(R4_SHADOW_ID));
+    if !r4_worthwhile(baseline, actual) {
+        return None;
+    }
+    if mode != RuleMode::On {
+        return Some(Decision::from_rule(
+            mode,
+            String::new(),
+            "R4",
+            baseline,
+            actual,
+            ctx.session_id,
+        ));
+    }
+    let id = r4_archive(&root, ctx.cmd, stdout)?;
+    let text = view(&id);
+    let actual = count_tokens(&text);
+    let output = replace_stdout(v, &text)?;
+    Some(Decision::from_rule(
+        mode,
+        output,
+        "R4",
+        baseline,
+        actual,
+        ctx.session_id,
+    ))
+}
+
+/// R4's trigger and minimum saving, from the token counts of the original
+/// and of the grouped view.
+pub(super) fn r4_worthwhile(baseline: usize, actual: usize) -> bool {
+    let saved = baseline.saturating_sub(actual);
+    baseline >= R4_MIN_TOKENS
+        && saved >= R4_MIN_SAVED_TOKENS
+        && (saved as f64) >= baseline as f64 * R4_MIN_SAVED_SHARE
+}
+
+/// The project whose archive partition holds R4 originals, or `None` when
+/// the archive may not hold them (archive off, minimal escape hatch, no cwd).
+fn r4_archive_root(cwd: &str) -> Option<String> {
+    if cwd.is_empty()
+        || crate::core::config::Config::minimal_escape_hatch()
+        || !crate::core::archive::is_enabled()
+    {
+        return None;
+    }
+    Some(crate::core::protocol::detect_project_root(cwd).unwrap_or_else(|| cwd.to_string()))
+}
+
+/// Archive the exact original; `None` unless the stored bytes are exactly
+/// `stdout` (policy redaction, admission refusal or truncation all refuse).
+fn r4_archive(root: &str, cmd: &str, stdout: &str) -> Option<String> {
+    use crate::core::archive;
+    crate::core::policy::runtime::with_project_source_view(root, || {
+        let stored = archive::store_with_result("governor", cmd, stdout, None)?;
+        (!stored.truncated && archive::content_matches_id(&stored.id, stdout)).then_some(stored.id)
+    })
+    .ok()
+    .flatten()
+}
+
+fn r4_recovery_clause(id: &str) -> String {
+    crate::core::recovery::handle_clause(id, Some(&crate::core::archive::content_path_str(id)))
 }
 
 struct R1Key<'a> {

@@ -1,6 +1,0 @@
-{
-  "command": "git diff -- rust/src/core/ocla/mod.rs",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 72,
-  "category": "git"
-}

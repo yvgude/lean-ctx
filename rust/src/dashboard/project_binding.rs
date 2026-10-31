@@ -7,7 +7,9 @@
 //! workspace in the `/api/workspaces` pool — and then answers that one read
 //! inside a request-scoped project ([`crate::core::policy::runtime::REQUEST_PROJECT`]),
 //! never by changing anything process-wide. Two concurrent reads for two
-//! projects therefore cannot see each other's data.
+//! projects therefore cannot see each other's data. A route that can answer
+//! neither for the named project nor from device-wide data refuses the
+//! request ([`project_scope`]) instead of answering for another project.
 //!
 //! Validation follows the MCP root binding: an existing absolute directory,
 //! no traversal, never a broad or unsafe root, compared after
@@ -19,8 +21,11 @@ use std::path::{Component, Path, PathBuf};
 
 const MAX_PROJECT_HEADER: usize = 4096;
 
-/// Reads answered for the project the request names (mirrors the Cockpit's
-/// `READ_ROUTES`).
+/// Reads answered for the project the request names: the Cockpit's
+/// `READ_ROUTES`, plus every other read whose handler finds its project
+/// through `routes::helpers` (`detect_project_root_for_dashboard`,
+/// `request_project`, `request_ledger_scope`) or `SessionState::load_latest`,
+/// which all follow the request-scoped project.
 const PROJECT_READ_ROUTES: &[&str] = &[
     "/api/health",
     "/api/stats",
@@ -36,14 +41,12 @@ const PROJECT_READ_ROUTES: &[&str] = &[
     "/api/context-risk",
     "/api/context-client",
     "/api/context-introspect",
-    "/api/live",
     "/api/events",
     "/api/snapshots",
     "/api/snapshot",
     "/api/settings",
     "/api/doctor",
     "/api/roi",
-    "/api/roi-report",
     "/api/memory",
     "/api/procedures",
     "/api/gotchas",
@@ -73,7 +76,91 @@ const PROJECT_READ_ROUTES: &[&str] = &[
     "/api/kernel",
     "/api/workspace-health",
     "/api/scope",
+    // Reads the Cockpit does not list, answered from the project root.
+    "/api/tree",
+    "/api/architecture",
+    "/api/compression-demo",
+    "/api/tools-health",
+    "/api/search-index",
+    "/api/intent",
+    "/api/hotspots",
+    "/api/communities",
+    "/api/smells",
+    "/api/smells/summary",
+    "/api/gateway/receipts",
+    "/api/gateway/control",
+    "/api/gateway/deliver",
+    "/api/gateway/connect",
 ];
+
+/// Reads whose data is the device's, not any project's: the answer is the
+/// same whichever project the request names, so a valid project header is
+/// accepted and has no effect.
+///
+/// - `/api/telemetry`: this installation's anonymous heartbeat status.
+/// - `/api/context-summary`, `/api/context-history` and the context
+///   diagnostics below: the context ledger (`state_dir`), the context radar,
+///   proxy introspection and the bounce tracker are kept per device and
+///   agent, not per project.
+/// - `/api/context-capabilities`, `/api/context-dynamic-tools`, `/api/mcp`:
+///   the connected client and its tool list.
+/// - `/api/profile`, `/api/theme-tokens`: the active profile and theme.
+/// - `/api/pulse`, `/api/pipeline-stats`: process counters.
+/// - `/api/gateway/detectors`: the detectors this engine ships.
+/// - `/metrics`: the process's Prometheus metrics.
+const GLOBAL_READ_ROUTES: &[&str] = &[
+    "/api/telemetry",
+    "/api/context-summary",
+    "/api/context-history",
+    "/api/context-capabilities",
+    "/api/context-field",
+    "/api/context-pressure",
+    "/api/context-bounce",
+    "/api/context-radar",
+    "/api/context-model",
+    "/api/context-events",
+    "/api/context-dynamic-tools",
+    "/api/mcp",
+    "/api/profile",
+    "/api/theme-tokens",
+    "/api/pulse",
+    "/api/pipeline-stats",
+    "/api/gateway/detectors",
+    "/metrics",
+];
+
+/// Writes made in the project the request names. Their handlers resolve the
+/// project like the reads above; without the request's project they would
+/// write to the dashboard's own project instead of the one the UI selected.
+/// The analysis bridge (`routes::analysis_bridge`) collects and applies one
+/// analysis for the selected project; without it nothing is bound when the
+/// dashboard was started outside a project, and every analysis page fails.
+const PROJECT_WRITE_ROUTES: &[&str] = &[
+    "/api/dashboard-analysis/inputs",
+    "/api/dashboard-analysis/apply",
+    "/api/session/note",
+    "/api/episodes/annotate",
+    "/api/knowledge/edit",
+    "/api/knowledge-relations/edit",
+    "/api/context-overlay",
+    "/api/context-policy",
+];
+
+/// Writes to device-wide state (`config.toml`, the feedback outbox): a valid
+/// project header is accepted and has no effect.
+const GLOBAL_WRITE_ROUTES: &[&str] = &["/api/settings", "/api/feedback"];
+
+/// How a request that names a project (`X-LeanCTX-Project`) is answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProjectScope {
+    /// Answered inside the named project.
+    Project,
+    /// Answered from device-wide data, the same for every project.
+    Global,
+    /// The route cannot answer for a named project: such a request is
+    /// refused rather than answered for another project.
+    Refused,
+}
 
 /// Older names the Cockpit still sends.
 const ROUTE_ALIASES: &[(&str, &str)] = &[("/api/context-overlays", "/api/context-overlay-history")];
@@ -86,21 +173,23 @@ pub(crate) fn canonical_route(path: &str) -> &str {
         .unwrap_or(path)
 }
 
-/// The Cockpit's analysis bridge (`routes::analysis_bridge`): POSTs that
-/// collect and apply one analysis for the project the UI selected. Without
-/// the request's project they bind nothing when the dashboard was started
-/// outside a project, and every analysis page fails.
-const PROJECT_ANALYSIS_ROUTES: &[&str] = &[
-    "/api/dashboard-analysis/inputs",
-    "/api/dashboard-analysis/apply",
-];
-
-/// Whether a request for `route` (already canonical) is answered for the
-/// project it names.
-pub(crate) fn is_project_read(route: &str, method: &str) -> bool {
-    ((method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD"))
-        && PROJECT_READ_ROUTES.contains(&route))
-        || (method.eq_ignore_ascii_case("POST") && PROJECT_ANALYSIS_ROUTES.contains(&route))
+/// How a request for `route` (already canonical) that names a project is
+/// answered. Paths outside `/api/` carry no project data and are global.
+pub(crate) fn project_scope(route: &str, method: &str) -> ProjectScope {
+    let read = method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD");
+    let write = method.eq_ignore_ascii_case("POST");
+    if (read && PROJECT_READ_ROUTES.contains(&route))
+        || (write && PROJECT_WRITE_ROUTES.contains(&route))
+    {
+        ProjectScope::Project
+    } else if (read && GLOBAL_READ_ROUTES.contains(&route))
+        || (write && GLOBAL_WRITE_ROUTES.contains(&route))
+        || !route.starts_with("/api/")
+    {
+        ProjectScope::Global
+    } else {
+        ProjectScope::Refused
+    }
 }
 
 /// The projects this dashboard may show: its own binding and every
@@ -225,20 +314,103 @@ mod tests {
             canonical_route("/api/context-overlays"),
             "/api/context-overlay-history"
         );
-        assert!(is_project_read(
-            canonical_route("/api/context-overlays"),
-            "GET"
-        ));
-        assert!(is_project_read("/api/roi", "GET"));
-        assert!(!is_project_read("/api/roi", "POST"));
-        assert!(!is_project_read("/api/agents/work-graph", "GET"));
+        assert_eq!(
+            project_scope(canonical_route("/api/context-overlays"), "GET"),
+            ProjectScope::Project
+        );
+        assert_eq!(project_scope("/api/roi", "GET"), ProjectScope::Project);
+        assert_eq!(project_scope("/api/roi", "POST"), ProjectScope::Refused);
+        assert_eq!(
+            project_scope("/api/agents/work-graph", "GET"),
+            ProjectScope::Refused
+        );
     }
 
     #[test]
     fn the_analysis_bridge_posts_are_project_scoped() {
-        assert!(is_project_read("/api/dashboard-analysis/inputs", "POST"));
-        assert!(is_project_read("/api/dashboard-analysis/apply", "POST"));
-        assert!(!is_project_read("/api/dashboard-analysis/inputs", "GET"));
-        assert!(!is_project_read("/api/settings", "POST"));
+        for route in [
+            "/api/dashboard-analysis/inputs",
+            "/api/dashboard-analysis/apply",
+        ] {
+            assert_eq!(project_scope(route, "POST"), ProjectScope::Project);
+        }
+        assert_eq!(
+            project_scope("/api/dashboard-analysis/inputs", "GET"),
+            ProjectScope::Refused
+        );
+        assert_eq!(project_scope("/api/settings", "POST"), ProjectScope::Global);
+    }
+
+    /// F12a: reads that answer from the project root follow the named
+    /// project, device-wide reads ignore it, and a route that can do
+    /// neither refuses instead of answering for another project.
+    #[test]
+    fn every_read_with_a_named_project_is_bound_global_or_refused() {
+        for route in [
+            "/api/tree",
+            "/api/architecture",
+            "/api/compression-demo",
+            "/api/tools-health",
+            "/api/intent",
+            "/api/gateway/receipts",
+        ] {
+            assert_eq!(
+                project_scope(route, "GET"),
+                ProjectScope::Project,
+                "{route}"
+            );
+        }
+        for route in [
+            "/api/telemetry",
+            "/api/context-summary",
+            "/api/context-history",
+            "/api/gateway/detectors",
+            "/metrics",
+            "/",
+        ] {
+            assert_eq!(project_scope(route, "GET"), ProjectScope::Global, "{route}");
+        }
+        for (route, method) in [
+            ("/api/live", "GET"),
+            ("/api/roi-report", "GET"),
+            ("/api/doctor/fix", "POST"),
+            ("/api/agents/sessions", "POST"),
+            ("/api/tree", "DELETE"),
+        ] {
+            assert_eq!(
+                project_scope(route, method),
+                ProjectScope::Refused,
+                "{method} {route}"
+            );
+        }
+    }
+
+    /// F12b: project writes follow the named project.
+    #[test]
+    fn project_writes_follow_the_named_project() {
+        for route in [
+            "/api/session/note",
+            "/api/episodes/annotate",
+            "/api/knowledge/edit",
+            "/api/knowledge-relations/edit",
+            "/api/context-overlay",
+        ] {
+            assert_eq!(
+                project_scope(route, "POST"),
+                ProjectScope::Project,
+                "{route}"
+            );
+        }
+    }
+
+    /// No route is listed twice with two different answers.
+    #[test]
+    fn the_route_classes_do_not_overlap() {
+        for route in PROJECT_READ_ROUTES {
+            assert!(!GLOBAL_READ_ROUTES.contains(route), "{route}");
+        }
+        for route in PROJECT_WRITE_ROUTES {
+            assert!(!GLOBAL_WRITE_ROUTES.contains(route), "{route}");
+        }
     }
 }

@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use super::config_provider::ConfigProvider;
 use super::config_provider::discovery::discover_configs;
+use super::emspace::EmspaceProvider;
 use super::github::GitHubProvider;
 use super::gitlab::GitLabProvider;
 use super::jira::JiraProvider;
@@ -50,6 +51,11 @@ pub fn init_with_project_root(project_root: Option<&Path>) {
 
     registry.register(Arc::new(JiraProvider::new()));
     registry.register(Arc::new(PostgresProvider::new()));
+
+    // The space a project is linked to (`.emspace`); needs the project root.
+    if let Some(root) = project_root {
+        registry.register(Arc::new(EmspaceProvider::new(root)));
+    }
 
     // --- MCP Bridge providers (user-defined external MCP servers) ---
     for (name, entry) in &cfg.providers.mcp_bridges {

@@ -26,7 +26,7 @@ class V3FixtureMigrationGateTests(unittest.TestCase):
         fixture.write_text("{}\n", encoding="utf-8")
         active_fixture = (
             self.root
-            / "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-001/execution_receipt.json"
+            / "rust/tests/fixtures/v3/task-spine-v1/tasks/task-001/execution_receipt.json"
         )
         active_fixture.parent.mkdir(parents=True)
         active_fixture.write_text("{}\n", encoding="utf-8")

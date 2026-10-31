@@ -221,7 +221,7 @@ fn dedup_files(results: &[crate::core::bm25_index::SearchResult]) -> Vec<String>
     files
 }
 
-/// Platform-independent suffix match (mirrors `eval_harness` convention).
+/// Platform-independent path suffix match.
 fn path_matches(retrieved: &str, expected: &str) -> bool {
     let r = retrieved.replace('\\', "/");
     let e = expected.replace('\\', "/");

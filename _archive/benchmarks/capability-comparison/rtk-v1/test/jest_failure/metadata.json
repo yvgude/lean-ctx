@@ -1,6 +1,0 @@
-{
-  "command": "npx jest src/ocla/report.test.ts --runInBand",
-  "working_dir": "/workspace/lean-ctx/packages/ocla-fixtures",
-  "expected_tokens": 318,
-  "category": "test"
-}

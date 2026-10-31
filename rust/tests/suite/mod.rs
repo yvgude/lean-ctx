@@ -11,7 +11,6 @@
 //! scope removed — see `hermetic_env`.
 
 mod adversarial_compression;
-mod benchmark_compare_integration;
 mod capabilities_contract_up_to_date;
 mod cli_anti_inflation;
 mod cli_cache_errors;
@@ -42,7 +41,6 @@ mod engine_call;
 mod engine_control_proofs;
 mod entrypoints_wired;
 mod etpao_benchmark_suite;
-mod eval_harness_integration;
 mod evidence_bundle_v2_contract;
 mod execution_receipt_roundtrip;
 mod gateway_e2e;

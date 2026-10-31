@@ -225,7 +225,6 @@ runtime.
 
 ```bash
 lean-ctx benchmark run            # compare read modes on this repo
-lean-ctx benchmark compare        # vs. naive baseline, write a report
 lean-ctx verify --format both
 lean-ctx proof export             # ContextProof artifact for audit
 ```

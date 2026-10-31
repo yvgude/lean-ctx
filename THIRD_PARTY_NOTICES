@@ -2,19 +2,19 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED AND APPROVED
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:e9c5859787a9f0920a2156a01115ae74191fb1307754431f25ff783ba9062a92
+Content-Digest: sha256:1690b2f2ee4eab94e1b2b325034dbd5dbf60952e1ee9f27ca65157abd42711a0
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
-Cargo.lock SHA-256: ab95a1ce51461a272918914edecb4838f362c03b5dd469480667c668dbc8e36a
-Cargo metadata inventory SHA-256: b0504af9ad059d6f4dfba87105dad910660ee265eee16bea5ad9db478802113f
-SBOM.cdx.json SHA-256: fc4645d8027dd03fe57cb4fa1cc7723af906daaffb2d9144378f8ffa542d2dc8
-SBOM components: 556
-Asset manifest SHA-256: 30f965c12dbec317a375d4a37c8ec011b3c278899c3294990e435cb94652bb9d
+Cargo.lock SHA-256: 9113ad325eb7da52ae409fa88874087ddc9605267e01322f7d88780f0a0292ab
+Cargo metadata inventory SHA-256: 63144993b896896dd44b1a5052301410e16c9a0e205f2fb19ddd49540dd3d043
+SBOM.cdx.json SHA-256: 7b82eff76db1e4f365c6340ee77a85eb20bb8bf1edafa0e6cf4f3fe0611045f7
+SBOM components: 552
+Asset manifest SHA-256: 707f322f8b6acee00ae97df3be898e1bc3cfc27a2ef8bdd974ef5c77d9847adc
 npm package-lock.json SHA-256: 2698eb8bcaf09c3ff275826b3be2e28e5fb6044b3245cd6ec23475e06d1744a1
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
-Cargo graph packages: 611
-Third-party Cargo packages: 603
+Cargo graph packages: 607
+Third-party Cargo packages: 599
 
 ## Cargo dependency graph
 ### adler2 2.0.1
@@ -464,14 +464,6 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: chrono[lib], dateutils[test], wasm[test], win_bindings[test]
 Features: __internal_bench, alloc, arbitrary, clock, core-error, default, defmt, iana-time-zone, js-sys, libc, now, oldtime, pure-rust-locales, rkyv, rkyv-16, rkyv-32, rkyv-64, rkyv-validation, serde, std, unstable-locales, wasm-bindgen, wasmbind, winapi, windows-link
 Dependencies: iana-time-zone, js-sys, num-traits, serde, wasm-bindgen, windows-link
-
-### chrono-tz 0.10.4
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/chronotope/chrono-tz
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: build-script-build[custom-build], chrono_tz[lib], codegen[test], numberphile[test], tzfile[test]
-Features: arbitrary, case-insensitive, chrono-tz-build, default, filter-by-regex, serde, std
-Dependencies: chrono, phf
 
 ### ciborium 0.2.2
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -2329,22 +2321,6 @@ Targets: percent_encoding[lib]
 Features: alloc, default, std
 Dependencies: (none)
 
-### phf 0.12.1
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/rust-phf/rust-phf
-SPDX-License-Identifier: MIT
-Targets: phf[lib]
-Features: default, macros, phf_macros, serde, std, uncased, unicase
-Dependencies: phf_shared
-
-### phf_shared 0.12.1
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/rust-phf/rust-phf
-SPDX-License-Identifier: MIT
-Targets: phf_shared[lib]
-Features: default, std, uncased, unicase
-Dependencies: siphasher
-
 ### pin-project-lite 0.2.17
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/taiki-e/pin-project-lite
@@ -3208,14 +3184,6 @@ SPDX-License-Identifier: Apache-2.0
 Targets: similar[lib]
 Features: bstr, bytes, default, hashbrown, inline, serde, std, text, unicode, unicode-segmentation, wasm32_web_time, web-time
 Dependencies: bstr
-
-### siphasher 1.0.4
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/jedisct1/rust-siphash
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: siphasher[lib]
-Features: default, serde, serde_json, serde_no_std, serde_std, std
-Dependencies: (none)
 
 ### slab 0.4.12
 Source: registry+https://github.com/rust-lang/crates.io-index

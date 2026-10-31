@@ -326,22 +326,6 @@ fn cmd_session_legacy() {
     println!("\nRun 'lean-ctx discover' for details on missed commands.");
 }
 
-pub fn cmd_wrapped(args: &[String]) {
-    let period = if args.iter().any(|a| a == "--month") {
-        "month"
-    } else if args.iter().any(|a| a == "--all") {
-        "all"
-    } else {
-        "week"
-    };
-
-    eprintln!("[DEPRECATED] Use `lean-ctx gain --wrapped`.");
-    println!(
-        "{}",
-        crate::tools::ctx_gain::handle("wrapped", Some(period), None, None)
-    );
-}
-
 pub fn cmd_sessions(args: &[String]) {
     use crate::core::session::SessionState;
 

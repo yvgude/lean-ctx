@@ -1,6 +1,0 @@
-{
-  "command": "cargo test --lib core::ocla",
-  "working_dir": "/workspace/lean-ctx/rust",
-  "expected_tokens": 190,
-  "category": "test"
-}

@@ -19,8 +19,6 @@ one for another merely because their paths look similar.
 | HTTP server | `GET /health` | plain-text `ok` | Liveness probe. |
 | HTTP server | `GET /v1/metrics` | JSON; `?format=prometheus` gives Prometheus text | Context OS metrics. |
 | Dashboard | `GET /metrics` | Prometheus text | Dashboard telemetry endpoint. |
-| Proxy | `GET /v1/quality-lab` | JSON report | Empty-input Quality Lab assessment. |
-| Proxy | `POST /v1/quality-lab` | JSON report | Assess supplied `original`, `compressed`, and optional `ext`. |
 
 The HTTP server's stable `/v1` API also includes manifests, capabilities, tool
 listing and calls, SSE events, context summaries, event search, and lineage.
@@ -140,7 +138,6 @@ reference. The most common integration and lifecycle commands are:
 | `status`, `doctor`, `stats`, `dashboard` | Inspect health, diagnose setup, view raw stats, or open the dashboard. |
 | `agent register`, `agent list` | Register an agent and inspect active identities (`agent list --all` shows lifecycle history). |
 | `ledger status`, `ledger reset`, `ledger evict` | Inspect and manage the context ledger. |
-| `quality-lab` | Run a local quality assessment on original and compressed text. |
 
 `start` and `stop` alone are lifecycle commands, but proxy and daemon use their
 own subcommands. `ledger export` and `ledger verify` are not current public CLI

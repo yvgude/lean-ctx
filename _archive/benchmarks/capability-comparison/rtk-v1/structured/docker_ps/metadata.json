@@ -1,6 +1,0 @@
-{
-  "command": "docker ps",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 196,
-  "category": "structured"
-}

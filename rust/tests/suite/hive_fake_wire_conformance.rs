@@ -269,13 +269,7 @@ fn every_query_parameter_the_engine_sends_is_a_contract_parameter() {
             .is_some_and(|n| n.to_string_lossy().starts_with("hive"))
     }));
     let mut sent = Vec::new();
-    let mut frozen_hits: BTreeSet<(&str, &str)> = BTreeSet::new();
     for file in &files {
-        let rel = file
-            .strip_prefix(root())
-            .unwrap_or(file.as_path())
-            .to_string_lossy()
-            .replace('\\', "/");
         for (i, line) in read(file).lines().enumerate() {
             if line.trim_start().starts_with("//") {
                 continue;
@@ -288,13 +282,6 @@ fn every_query_parameter_the_engine_sends_is_a_contract_parameter() {
                     .find_map(|g| c.get(g))
                     .map(|m| m.as_str().to_owned());
                 let Some(name) = name else { continue };
-                if let Some((f, p, _)) = FROZEN_SWARM_QUERY_PARAMETERS
-                    .iter()
-                    .find(|(f, p, _)| *f == rel && *p == name)
-                {
-                    frozen_hits.insert((*f, *p));
-                    continue;
-                }
                 sent.push((name, format!("{}:{}", file.display(), i + 1)));
             }
         }
@@ -302,17 +289,6 @@ fn every_query_parameter_the_engine_sends_is_a_contract_parameter() {
     assert!(
         sent.iter().any(|(n, _)| n == "state"),
         "the scan found no query parameter; it is broken"
-    );
-    // The exclusions stay exact: an entry whose call is gone is removed.
-    let stale: Vec<String> = FROZEN_SWARM_QUERY_PARAMETERS
-        .iter()
-        .filter(|(f, p, _)| !frozen_hits.contains(&(*f, *p)))
-        .map(|(f, p, why)| format!("{f}: `{p}` ({why})"))
-        .collect();
-    assert!(
-        stale.is_empty(),
-        "frozen-swarm exclusions without a matching call:\n{}",
-        stale.join("\n")
     );
     let unknown: Vec<String> = sent
         .iter()
@@ -325,43 +301,6 @@ fn every_query_parameter_the_engine_sends_is_a_contract_parameter() {
         unknown.join("\n")
     );
 }
-
-/// Query parameters of the frozen swarm feature (BAUPLAN v1.1 §1, V2:
-/// public/swarm contracts are frozen and not part of Release A/B), keyed by
-/// the exact file that sends them. They are C0 2.0 swarm parameters the
-/// Hive server documents (docs/API.md E2/E3 `?scope=subtree:g_…`, E22
-/// `?worker_id=&scope=`, E27 `?worker_id=`, E28 `DELETE …/lease?epoch=&
-/// worker_id=`), not 1.9 parameters of the protocol crate, and are only
-/// sent to `/swarms/…` routes or to a `swarm:<id>` place. Excluding them
-/// by file keeps a new non-swarm use of the same name red.
-const FROZEN_SWARM_QUERY_PARAMETERS: &[(&str, &str, &str)] = &[
-    (
-        "src/core/hive/conductor.rs",
-        "worker_id",
-        "E22 goal, E28 lease release",
-    ),
-    (
-        "src/core/hive/swarms/client.rs",
-        "worker_id",
-        "E22 goal, E27 material",
-    ),
-    ("src/core/hive/swarms/client.rs", "scope", "E22 subtree"),
-    (
-        "src/core/hive/sync/driver.rs",
-        "scope",
-        "E2 swarm-place snapshot, only via sync::swarm clone_scoped",
-    ),
-    (
-        "src/core/hive/conductor_tests.rs",
-        "worker_id",
-        "asserts the E28 lease release path above",
-    ),
-    (
-        "src/core/hive/sync/driver_tests.rs",
-        "scope",
-        "asserts the E2/E3 swarm-place clone paths above",
-    ),
-];
 
 #[test]
 fn the_scan_finds_what_it_must() {

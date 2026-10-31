@@ -1,9 +1,0 @@
-diff --git a/rust/src/core/ocla/mod.rs b/rust/src/core/ocla/mod.rs
-index 23ac9e1..e45b9f8 100644
---- a/rust/src/core/ocla/mod.rs
-+++ b/rust/src/core/ocla/mod.rs
-@@ -17,6 +17,7 @@ pub mod invocation;
- pub mod openapi;
- pub mod policy_bundle;
-+pub mod reference_adapters;
- pub mod registry;

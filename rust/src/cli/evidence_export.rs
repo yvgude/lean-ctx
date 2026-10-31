@@ -2,7 +2,6 @@
 use crate::core::{
     savings_tracker::SessionSavings,
     shadow::persistence::{list_reports, load_report},
-    task_benchmark::{config::BenchConfig, fixtures::canonical_suite, runner::run_benchmark},
     triage::validation::validate_against_gold_set,
     value_gate::ValueGateStore,
 };
@@ -66,40 +65,17 @@ fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
             |report| serde_json::to_value(report).unwrap_or(Value::Null),
         );
     let savings = savings();
-    let benchmark = run_benchmark(&canonical_suite(), &BenchConfig::default());
     let gold = validate_against_gold_set();
     let gold_json = json!({"total":gold.total,"correct":gold.correct,"accuracy":gold.accuracy,
         "intent_distribution":gold.per_intent});
-    let benchmark_json = serde_json::to_value(&benchmark).unwrap_or(Value::Null);
     for (name, value) in [
         ("value_assessments.json", &assessments),
         ("shadow_report.json", &shadow),
         ("savings_summary.json", &savings),
-        ("benchmark_results.json", &benchmark_json),
         ("gold_set_stats.json", &gold_json),
     ] {
         write_json(&dir, name, value)?;
     }
-    let profile = benchmark
-        .profiles
-        .iter()
-        .find(|item| item.profile == "aggressive")
-        .or_else(|| {
-            benchmark
-                .profiles
-                .iter()
-                .find(|item| item.profile != "stock")
-        });
-    let (average, peak, tasks) = profile.map_or((0.0, 0.0, 0), |item| {
-        (
-            item.avg_savings_pct,
-            item.runs
-                .iter()
-                .map(|run| run.savings_pct)
-                .fold(0.0, f64::max),
-            item.tasks_total,
-        )
-    });
     let field = |parent, key| shadow.get(parent).and_then(|item| item.get(key));
     let percent = field("savings", "relative_percent")
         .and_then(Value::as_f64)
@@ -110,11 +86,8 @@ fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
     fs::write(
         dir.join("evidence_summary.md"),
         format!(
-            "# LeanCTX Evidence Package\n\nVersion: lean-ctx {}\n\n## Token Reduction\n- Average Reduction: {:.2}% ({} task benchmark)\n- Peak Reduction: {:.2}% (tree operations)\n\n## Value Gate\n- Total Tasks Tracked: {}\n- Accepted Rate: {:.2}%\n- Average CPAO: {}\n- Total Cost Saved: {}\n\n## Shadow Analysis\n- Baseline Cost: {}\n- Treatment Cost: {}\n- Savings: {} ({}%)\n- Outcome Acceptance Not Below Simulated Baseline: {}\n\n## Model Readiness\n- Gold Validation Set: {} tasks\n- Rules Baseline Accuracy: {:.2}%\n",
+            "# LeanCTX Evidence Package\n\nVersion: lean-ctx {}\n\n## Value Gate\n- Total Tasks Tracked: {}\n- Accepted Rate: {:.2}%\n- Average CPAO: {}\n- Total Cost Saved: {}\n\n## Shadow Analysis\n- Baseline Cost: {}\n- Treatment Cost: {}\n- Savings: {} ({}%)\n- Outcome Acceptance Not Below Simulated Baseline: {}\n\n## Model Readiness\n- Gold Validation Set: {} tasks\n- Rules Baseline Accuracy: {:.2}%\n",
             env!("CARGO_PKG_VERSION"),
-            average,
-            tasks,
-            peak,
             aggregate.total,
             aggregate.accepted as f64 * 100.0 / aggregate.total.max(1) as f64,
             money(aggregate.avg_cpao),
@@ -176,7 +149,7 @@ fn parse(args: &[String]) -> io::Result<(PathBuf, String)> {
 }
 fn usage() {
     println!(
-        "Export a portable package of local value, shadow, savings, and benchmark evidence.\n\nUsage: lean-ctx evidence-export [--output DIRECTORY] [--format <markdown|json>]\n\nExamples:\n  lean-ctx evidence-export\n  lean-ctx evidence-export --output evidence\n  lean-ctx evidence-export --output evidence --format json"
+        "Export a portable package of local value, shadow, and savings evidence.\n\nUsage: lean-ctx evidence-export [--output DIRECTORY] [--format <markdown|json>]\n\nExamples:\n  lean-ctx evidence-export\n  lean-ctx evidence-export --output evidence\n  lean-ctx evidence-export --output evidence --format json"
     );
 }
 #[rustfmt::skip]
@@ -189,5 +162,5 @@ mod tests { use super::*; use std::path::Path; fn args(dir: &Path) -> Vec<String
     #[test] fn test_parse_rejects_missing_or_unknown_options() { assert!(parse(&["--output".into()]).is_err()); assert!(parse(&["--unknown".into()]).is_err()); }
     #[test] fn test_export_creates_directory() { let dir = std::env::temp_dir().join("evidence-export-dir"); let _ = fs::remove_dir_all(&dir); export(&args(&dir)).unwrap(); assert!(dir.is_dir()); }
     #[test] fn test_export_creates_summary() { let dir = std::env::temp_dir().join("evidence-export-summary"); export(&args(&dir)).unwrap(); assert!(dir.join("evidence_summary.md").is_file()); }
-    #[test] fn test_export_json_valid() { let dir = std::env::temp_dir().join("evidence-export-json"); export(&args(&dir)).unwrap(); for name in ["value_assessments.json","shadow_report.json","savings_summary.json","benchmark_results.json","gold_set_stats.json"] { assert!(serde_json::from_slice::<Value>(&fs::read(dir.join(name)).unwrap()).is_ok()); } }
+    #[test] fn test_export_json_valid() { let dir = std::env::temp_dir().join("evidence-export-json"); export(&args(&dir)).unwrap(); for name in ["value_assessments.json","shadow_report.json","savings_summary.json","gold_set_stats.json"] { assert!(serde_json::from_slice::<Value>(&fs::read(dir.join(name)).unwrap()).is_ok()); } }
 }

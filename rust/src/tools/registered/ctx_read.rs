@@ -143,21 +143,29 @@ impl CtxReadTool {
         let configured_mode = (!explicit_mode)
             .then(crate::core::auto_mode_resolver::configured_default_mode)
             .flatten();
+        // No range requested: the outline rule decides between the outline of
+        // a large file and the whole small file (owner decision 2026-10-30).
         let learned_mode = if !explicit_mode && configured_mode.is_none() {
             if let Ok(cache) = cache_lock.try_read() {
-                Some(crate::tools::ctx_smart_read::select_mode_with_task(
+                Some(crate::tools::ctx_smart_read::select_unranged_mode(
                     &cache, path, task_ref,
                 ))
             } else {
                 tracing::debug!(
                     "cache lock contested during auto-mode selection for {path}; \
-                     falling back to full"
+                     resolving cold"
                 );
-                None
+                Some(crate::tools::ctx_smart_read::select_unranged_mode(
+                    &crate::core::cache::SessionCache::new(),
+                    path,
+                    task_ref,
+                ))
             }
         } else {
             None
         };
+        let auto_or_no_mode =
+            explicit_mode_arg.as_deref().is_none_or(|m| m == "auto") && configured_mode.is_none();
         let mut mode = crate::core::auto_mode_resolver::resolve_mode_precedence(
             explicit_mode_arg,
             configured_mode,
@@ -248,10 +256,22 @@ impl CtxReadTool {
             path,
         )?;
         let budget_warning = gate_result.budget_warning.clone();
+        // A read without a range (no mode, or `auto`, no window, no density
+        // knob) is answered by the outline rule; only a view the user saved
+        // for this file (overlay) still replaces it, the gate's heuristics do not.
+        let unranged = aggressiveness.is_none()
+            && auto_or_no_mode
+            && !mode.starts_with("lines:")
+            && !mode.starts_with("anchored");
+        let user_view = matches!(
+            gate_result.reason,
+            Some("overlay-set-view" | "pinned" | "excluded")
+        );
         // #513: an explicit raw/verbatim request is never silently downgraded by
         // the budget gate — the caller asked for exact bytes.
         let mut mode_override_note: Option<String> = None;
         if mode != "raw"
+            && (!unranged || user_view)
             && let Some(overridden) = gate_result.overridden_mode
         {
             if explicit_mode {
@@ -763,11 +783,11 @@ impl CtxReadTool {
                         } else if let Some((orig_tok, content_opt)) = snap {
                             let resolved = if mode_eff == "auto" {
                                 tuning.auto_density_mode().unwrap_or_else(|| {
-                                    crate::tools::ctx_read::resolve_auto_mode(
+                                    crate::tools::ctx_read::resolve_unranged_auto_mode(
                                         Some(&cache),
                                         &path_owned,
                                         orig_tok,
-                                        None,
+                                        cache.get(&path_owned).map_or(0, |e| e.line_count),
                                         task_ref,
                                     )
                                 })
@@ -892,11 +912,11 @@ impl CtxReadTool {
                             let sr = cache.store(&path_owned, &raw);
                             let resolved = if mode_eff == "auto" {
                                 tuning.auto_density_mode().unwrap_or_else(|| {
-                                    crate::tools::ctx_read::resolve_auto_mode(
+                                    crate::tools::ctx_read::resolve_unranged_auto_mode(
                                         None,
                                         &path_owned,
                                         sr.original_tokens,
-                                        Some(sr.line_count),
+                                        sr.line_count,
                                         task_ref,
                                     )
                                 })
@@ -1176,7 +1196,7 @@ impl CtxReadTool {
             None
         };
 
-        // Cross-source hints: gated by profile `cross_source_hint` (default off).
+        // Cross-source hints: gated by profile `cross_source_hint` (default on).
         // When enabled, appends issue/PR/schema references from the property
         // graph. Skipped when graph.db doesn't exist (#682).
         // Legacy graph edges carry no source authority for protected reuse.

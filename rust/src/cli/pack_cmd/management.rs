@@ -372,8 +372,8 @@ pub(super) fn cmd_pack_remove(args: &[String]) {
 /// (pinned in `trusted-signers.toml`, a local identity, or this machine's
 /// publisher key). `--allow-untrusted-signer` accepts any valid signature
 /// (the pre-3.12.1 default) and `--allow-unsigned` also unsigned files
-/// (GHSA-gvg8-285q-m62g).
-pub(super) fn local_signature_policy(
+/// (GHSA-gvg8-285q-m62g). `addon add` applies the same policy.
+pub(crate) fn local_signature_policy(
     args: &[String],
 ) -> crate::core::context_package::registry::SignaturePolicy<'static> {
     use crate::core::context_package::registry::SignaturePolicy;

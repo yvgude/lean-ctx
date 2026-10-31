@@ -470,8 +470,15 @@ mod tests {
         );
     }
 
-    fn fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
-        let dir = tempfile::tempdir().unwrap();
+    /// Chains in an isolated data dir, held for the test: the trail's entries
+    /// are signed with this data dir's `lean-ctx` key and verified against
+    /// it, so a parallel test switching the data dir cannot swap the key.
+    fn fixture() -> (
+        crate::core::data_dir::IsolatedDataDir,
+        std::path::PathBuf,
+        std::path::PathBuf,
+    ) {
+        let dir = crate::core::data_dir::isolated_data_dir();
         let ledger = dir.path().join("ledger.jsonl");
         let trail = dir.path().join("trail.jsonl");
         savings_ledger::store::append(&ledger, ledger_event(1_000, Some("s1"))).unwrap();

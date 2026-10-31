@@ -12,9 +12,18 @@ struct CheckpointOptions {
 }
 
 pub(crate) fn cmd_checkpoints(args: &[String]) {
+    let code = run(args);
+    if code != 0 {
+        std::process::exit(code);
+    }
+}
+
+/// Exit status: 0 on success, 2 for a usage error, 1 when the store cannot
+/// be read (F9c: an error never exits 0).
+fn run(args: &[String]) -> i32 {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_help();
-        return;
+        return 0;
     }
 
     let options = match parse_options(args) {
@@ -22,7 +31,7 @@ pub(crate) fn cmd_checkpoints(args: &[String]) {
         Err(error) => {
             eprintln!("checkpoints: {error}");
             eprintln!("Run lean-ctx checkpoints --help for usage.");
-            return;
+            return 2;
         }
     };
 
@@ -30,14 +39,14 @@ pub(crate) fn cmd_checkpoints(args: &[String]) {
         Ok(root) => std::path::PathBuf::from(root),
         Err(error) => {
             eprintln!("checkpoints: {error}");
-            return;
+            return 1;
         }
     };
     let tracker = match ProvenanceTracker::new(&project_root) {
         Ok(tracker) => tracker,
         Err(error) => {
             eprintln!("checkpoints: cannot open provenance store: {error}");
-            return;
+            return 1;
         }
     };
 
@@ -55,7 +64,7 @@ pub(crate) fn cmd_checkpoints(args: &[String]) {
 
     if checkpoints.is_empty() {
         println!("No checkpoints found.");
-        return;
+        return 0;
     }
 
     let mut table = format!(
@@ -81,6 +90,7 @@ pub(crate) fn cmd_checkpoints(args: &[String]) {
     // newline, which the one observed writer adds back (G08).
     let table = table.strip_suffix('\n').unwrap_or(&table).to_owned();
     super::common::print_released(&released_table(&project_root.to_string_lossy(), table));
+    0
 }
 
 /// The checkpoint table lists identifiers, commit hashes and counters — a
@@ -159,5 +169,14 @@ mod tests {
         assert_eq!(lineage(&root, &printed), None);
         let leaked = super::released_table(&root, format!("cp-1 {AWS_KEY}\n"));
         assert!(!leaked.contains(AWS_KEY), "{leaked}");
+    }
+
+    /// F9c: a usage error exits non-zero instead of printing and exiting 0.
+    #[test]
+    fn a_usage_error_exits_non_zero() {
+        let args = |list: &[&str]| list.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert_eq!(super::run(&args(&["--bogus"])), 2);
+        assert_eq!(super::run(&args(&["--session"])), 2);
+        assert_eq!(super::run(&args(&["--help"])), 0);
     }
 }

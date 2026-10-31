@@ -79,6 +79,9 @@ impl McpTool for CtxReadTool {
             None => (path, None),
         };
 
+        let alias_args = super::window::apply_lines_alias(args);
+        let args = alias_args.as_ref().unwrap_or(args);
+
         // `symbol=` narrows the read to one definition's lines; the content then
         // flows through the ordinary `lines:`/`anchored:` path.
         let symbol_args;

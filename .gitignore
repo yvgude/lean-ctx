@@ -119,8 +119,6 @@ markdownai/
 # ── Compiled binaries / build artifacts ──
 packages/lean-ctx-bin/bin/
 *.egg-info/
-_archive/bench/lifecycle/runs/
-_archive/bench/lifecycle/.cache/
 
 # Sprint POC local run dirs
 .sprint-poc/

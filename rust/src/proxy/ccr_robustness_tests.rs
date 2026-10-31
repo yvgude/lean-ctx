@@ -15,7 +15,6 @@ use serde_json::json;
 
 use crate::core::data_dir::test_env_lock;
 use crate::core::hasher::hash_short;
-use crate::core::recovery_verify::{RecoveryOutcome, verify_handle};
 #[cfg(unix)]
 use crate::proxy::ccr::read_tee;
 use crate::proxy::ccr::{
@@ -295,64 +294,6 @@ fn read_stub_bookkeeping_survives_restart_without_storing_content() {
 }
 
 #[test]
-fn recovery_verifier_checks_resolved_bytes_digest_and_expiry() {
-    let _lock = test_env_lock();
-    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
-    let body = big("recovery verification body");
-    let handle = persist(&body).expect("tee handle");
-    let digest = blake3::hash(body.as_bytes()).to_hex().to_string();
-
-    let verified = verify_handle(&handle, Some(&digest));
-    assert_eq!(verified.outcome, RecoveryOutcome::Verified);
-    assert_eq!(verified.byte_len, Some(body.len()));
-    assert_eq!(verified.digest.as_deref(), Some(digest.as_str()));
-    assert!(verified.is_recoverable_for_model());
-
-    let wrong_digest = blake3::hash(b"different content").to_hex().to_string();
-    let mismatch = verify_handle(&handle, Some(&wrong_digest));
-    assert_eq!(mismatch.outcome, RecoveryOutcome::DigestMismatch);
-    assert_eq!(mismatch.byte_len, Some(body.len()));
-    assert_eq!(mismatch.digest.as_deref(), Some(digest.as_str()));
-    assert!(!mismatch.is_recoverable_for_model());
-
-    let missing_seed = "unique missing recovery handle for cq04";
-    let missing_handle = format!("proxy_{}.log", hash_short(missing_seed));
-    if let Some(path) = resolve_tee(&missing_handle) {
-        std::fs::remove_file(path).expect("clear stale test handle");
-    }
-    assert_eq!(
-        verify_handle(&missing_handle, None).outcome,
-        RecoveryOutcome::Missing
-    );
-
-    // Storage is admitted (G5): clean text is stored and yields a handle.
-    let reference = crate::server::reference_store::store("expired reference")
-        .expect("a clean reference is stored");
-    crate::server::reference_store::expire_for_test(&reference);
-    assert_eq!(
-        verify_handle(&reference, None).outcome,
-        RecoveryOutcome::Expired
-    );
-
-    let overlong = "x".repeat(4097);
-    for malformed in [
-        "",
-        "garbage",
-        "wrong_0123456789abcdef.log",
-        "proxy_bad",
-        "/etc/passwd",
-        "%2e%2e/etc/passwd",
-        overlong.as_str(),
-    ] {
-        assert_eq!(
-            verify_handle(malformed, None).outcome,
-            RecoveryOutcome::Malformed,
-            "malformed handle must not resolve: {malformed}"
-        );
-    }
-}
-
-#[test]
 fn recovery_paths_reject_traversal_symlink_escape_and_cross_store_handles() {
     let _lock = test_env_lock();
     let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
@@ -366,10 +307,9 @@ fn recovery_paths_reject_traversal_symlink_escape_and_cross_store_handles() {
 
     assert!(crate::core::archive::retrieve(&ccr_handle).is_none());
     assert!(resolve_tee(&archive_id).is_none());
-    let digest = blake3::hash(body.as_bytes()).to_hex().to_string();
     assert_eq!(
-        verify_handle(&archive_id, Some(&digest)).outcome,
-        RecoveryOutcome::Verified
+        crate::core::archive::retrieve(&archive_id).as_deref(),
+        Some(body.as_str())
     );
 
     let tee_root = crate::core::paths::state_dir()
@@ -434,13 +374,11 @@ fn recovery_paths_reject_traversal_symlink_escape_and_cross_store_handles() {
         let _ = std::fs::remove_file(&link);
         symlink(&target, &link).expect("install outside-store symlink");
 
-        let refused = verify_handle(&symlink_handle, None);
         let ctx_expand_result = crate::tools::ctx_expand::handle(&serde_json::json!({
             "id": symlink_handle
         }));
         std::fs::remove_file(&link).expect("remove outside-store symlink");
 
-        assert!(matches!(refused.outcome, RecoveryOutcome::Refused(_)));
         assert!(resolve_tee(&symlink_handle).is_none());
         assert!(
             !ctx_expand_result.contains("outside symlink sentinel"),
@@ -460,7 +398,6 @@ fn recovery_paths_reject_traversal_symlink_escape_and_cross_store_handles() {
         let archive_expand = crate::tools::ctx_expand::handle(&serde_json::json!({
             "id": planted_id
         }));
-        let archive_verify = verify_handle(&planted_id, None);
         let archive_read = crate::core::archive::retrieve(&planted_id);
         std::fs::remove_file(&content_file).expect("remove planted archive symlink");
         assert!(
@@ -468,10 +405,6 @@ fn recovery_paths_reject_traversal_symlink_escape_and_cross_store_handles() {
             "ctx_expand must not follow an archive link out of the store: {archive_expand}"
         );
         assert!(archive_read.is_none());
-        assert!(matches!(
-            archive_verify.outcome,
-            RecoveryOutcome::Refused(_)
-        ));
     }
 }
 

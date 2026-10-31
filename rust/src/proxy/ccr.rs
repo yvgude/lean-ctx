@@ -315,33 +315,6 @@ pub(crate) fn resolve_tee_checked(id: &str) -> Result<PathBuf, TeeResolveError> 
     Ok(path)
 }
 
-/// Whether `id` uses one of the handle shapes emitted by the tee producers.
-pub(crate) fn is_tee_handle(id: &str) -> bool {
-    let name = Path::new(id)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(id);
-    canonical_tee_name(name).is_some() || is_shell_tee_name(name)
-}
-
-/// Whether the input is a legacy bare 16-hex CCR ID that can also be tried as
-/// an archive ID after the tee store lookup, matching `ctx_expand` precedence.
-pub(crate) fn is_bare_tee_handle(id: &str) -> bool {
-    is_hex(id, TEE_HASH_LEN)
-}
-
-/// Catch malformed IDs that still declare a known tee producer prefix.
-pub(crate) fn looks_like_tee_handle(id: &str) -> bool {
-    let name = Path::new(id)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(id);
-    let stem = name.strip_suffix(".log").unwrap_or(name);
-    TEE_PREFIXES
-        .iter()
-        .any(|prefix| stem.starts_with(&format!("{prefix}_")))
-}
-
 /// Back-compatible resolver used by `ctx_expand`.
 pub(crate) fn resolve_tee(id: &str) -> Option<PathBuf> {
     resolve_tee_checked(id).ok()

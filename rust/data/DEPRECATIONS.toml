@@ -42,3 +42,12 @@ announced_in = "3.13.0"
 earliest_removal = "3.15.0"
 replacement = ""
 note = "Accepted so existing configs keep loading; it has no effect."
+
+[[deprecation]]
+id = "cli-setup-no-auto-approve"
+surface = "cli"
+subject = "lean-ctx setup --no-auto-approve"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "The flag never changed what setup writes. It is accepted, warns on stderr and has no effect."

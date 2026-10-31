@@ -4,7 +4,6 @@ pub struct SetupOptions {
     pub yes: bool,
     pub fix: bool,
     pub json: bool,
-    pub no_auto_approve: bool,
     pub skip_proxy: bool,
     pub skip_rules: bool,
     /// Explicitly request rules injection (overrides config).

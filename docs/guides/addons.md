@@ -195,6 +195,10 @@ command is printed in full before you consent.
 
 - The package signature, re-checked locally rather than trusted from wherever
   it came ("registry compromise ≠ client compromise").
+- The signer: the key travels inside the package, so `addon add` requires a
+  publisher key pinned in `trusted-signers.toml`, a local identity or this
+  machine's own key (your own `addon release` output installs as is). Pass
+  `--allow-untrusted-signer` to accept a valid signature from an unknown key.
 - Each module against its pinned SHA-256, before anything is written.
 - WebAssembly magic bytes, so a mislabelled payload is refused early.
 

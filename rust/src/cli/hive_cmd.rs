@@ -117,35 +117,6 @@ status      --json prints the cockpit shape; --health adds the health figures
             of sealed vaults, computed here and never sent.
 ";
 
-/// `lean-ctx hive swarm --help` only: the swarm product is frozen in this
-/// release (plan v1.1 §12.1), so the main help does not list it.
-const SWARM_HELP: &str = "\
-lean-ctx hive swarm — paused in this release
-
-Swarms are not part of this release; the commands stay for existing data.
-
-  lean-ctx hive swarm <action> …
-  lean-ctx hive replica --swarm ID --goal NODE
-
-swarm       Swarm subtasks within this engine's opt-in, as an agent sees them
-            (everything others wrote is fenced as data): list [--swarm ID]
-            [--topic T] | show SWARM | material SWARM SHA256 | claim SWARM SUBTASK
-            [--minutes N] | renew SUBTASK | release SUBTASK | submit SUBTASK
-            --summary S [--body B] [--value JSON] [--tokens N] [--usd-micros N] |
-            propose SWARM --title T --acceptance A [--expected-kind K] |
-            verifications | commit VID agree|disagree [--value JSON] [--reason R] |
-            reveal VID | report KIND ID REASON [--note N]. Claims and verification
-            commits go through the worker gate (opt-in, daily budget, pause).
-            Private swarms (participants: members and invited users):
-            join SWARM --cli <claude-code|codex|…> [--tasks-per-day N]
-            [--max-sessions N] [--tokens-per-day N] [--usd-cents-per-day N]
-            (asks your approval first: lean-ctx hive consent) | leave SWARM |
-            pledge SWARM [--tasks-per-day N] … (lowering applies at once;
-            raising needs your approval) | goal SWARM [g_…] | claim SWARM g_… |
-            renew SWARM cl_… | release SWARM cl_… | submit SWARM cl_… --summary S
-            [--tokens N] [--usd-cents N].
-";
-
 pub(crate) fn cmd_hive(args: &[String]) {
     let sub = args.first().map(String::as_str).unwrap_or("status");
     let rest = args.get(1..).unwrap_or(&[]);
@@ -163,14 +134,7 @@ pub(crate) fn cmd_hive(args: &[String]) {
         print!("{}", super::hive_consent_cmd::HELP);
         return;
     }
-    if sub == "compute" && (rest.is_empty() || super::hive_compute_cmd::wants_help(rest)) {
-        print!("{}", super::hive_compute_cmd::HELP);
-        return;
-    }
-    // A compute command after `--` may carry its own --help.
-    if matches!(sub, "help" | "--help" | "-h")
-        || (sub != "compute" && rest.iter().any(|a| a == "--help" || a == "-h"))
-    {
+    if matches!(sub, "help" | "--help" | "-h") || rest.iter().any(|a| a == "--help" || a == "-h") {
         print!("{}", help_for(sub, rest));
         return;
     }
@@ -186,9 +150,6 @@ pub(crate) fn cmd_hive(args: &[String]) {
         "sync" => sync(&config),
         "metrics" => metrics(&config, rest),
         "capture" => capture(&config, rest),
-        "replica" if rest.first().map(String::as_str) == Some("--swarm") => {
-            super::hive_swarm_cmd::swarm_replica(&config, rest)
-        }
         "replica" => replica_status(),
         "maintain" => maintain(&config, rest),
         "bus" => bus(&config, rest),
@@ -199,11 +160,16 @@ pub(crate) fn cmd_hive(args: &[String]) {
         "grant" => grant_sealed(&config, super::prompt::wants_yes(rest)),
         "review" => super::hive_review_cmd::review(&config, rest),
         "worker" => worker(&config, rest),
-        "swarm" => super::hive_swarm_cmd::swarm_cmd(&config, rest),
         "graph" if rest.first().map(String::as_str) == Some("publish") => publish_graph(&config),
         "tasks" => super::hive_tasks_cmd::run(rest),
         "consent" => super::hive_consent_cmd::run(&config, rest),
-        "compute" => super::hive_compute_cmd::run(rest),
+        "swarm" | "compute" => {
+            eprintln!(
+                "hive: `{sub}` was retired in 3.12.1 (Hive swarms and Task Compute were \
+                 removed); use `lean-ctx hive tasks` for this vault's tasks"
+            );
+            std::process::exit(2);
+        }
         other => {
             eprintln!("hive: unknown subcommand '{other}'\n");
             eprint!("{HELP}");
@@ -237,9 +203,8 @@ fn connector_open(config: &HiveConfig, sub: &str, rest: &[String]) -> bool {
     }
 }
 
-/// The help a `--help` (or `help <topic>`) asks for: frozen swarms only on
-/// their own, the advanced commands with theirs, everything else the short
-/// start-here help.
+/// The help a `--help` (or `help <topic>`) asks for: the advanced commands
+/// with theirs, everything else the short start-here help.
 fn help_for(sub: &str, rest: &[String]) -> &'static str {
     let topic = if sub == "help" {
         rest.first().map_or("", String::as_str)
@@ -247,8 +212,6 @@ fn help_for(sub: &str, rest: &[String]) -> &'static str {
         sub
     };
     match topic {
-        "swarm" => SWARM_HELP,
-        "replica" if rest.iter().any(|a| a == "--swarm") => SWARM_HELP,
         "advanced" | "all" | "capture" | "replica" | "maintain" | "runtime" | "bus" | "grant"
         | "review" | "worker" | "graph" | "tasks" => ADVANCED_HELP,
         _ => HELP,
@@ -1295,7 +1258,7 @@ fn worker(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
         }
         "register" => {
             // E10 for the workspace worker of (--cli, --role) now, before an
-            // agent session posts (a swarm coordinator must exist first).
+            // agent session posts.
             use crate::core::hive::workers::{attach, card, register};
             let cli = flag_value(args, "--cli")?.ok_or_else(|| {
                 HiveError::Config(
@@ -1384,12 +1347,7 @@ fn worker(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
                 (Some(_), true, false) => "active",
             };
             println!("Worker mode:  {state}");
-            println!(
-                "Opted in:     {} vaults, {} swarms, {} topics",
-                optin.vaults.len(),
-                worker::optin_swarms(&optin).count(),
-                optin.topics.len()
-            );
+            println!("Opted in:     {} vaults", optin.vaults.len());
             if optin.optin_id.is_some() {
                 let budget = optin.daily_budget;
                 let cap = |server: Option<u64>, local: Option<u64>| match (server, local) {

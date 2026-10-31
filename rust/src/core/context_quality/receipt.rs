@@ -7,7 +7,7 @@
 //! content and no timestamp, so the same inputs always render byte-identically (#498).
 //!
 //! The receipt is the quality section of the per-round decision receipt planned in the
-//! Context Gateway (G4); until that lands it is produced by `lean-ctx quality-lab`.
+//! Context Gateway (G4); `lean-ctx quality-lab`, its former producer, was removed.
 
 use serde::{Deserialize, Serialize};
 

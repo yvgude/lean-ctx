@@ -32,6 +32,7 @@ ContextProvider::execute()
 | GitLab | `GITLAB_TOKEN` set | issues, merge_requests, pipelines |
 | Jira | `JIRA_TOKEN` set | issues, sprints, projects |
 | PostgreSQL | `DATABASE_URL` or `PGDATABASE` set | tables, schemas (catalog introspection only) |
+| Emspace | a `.emspace` link at or above the project root and the `emspace` CLI on `PATH` or in `~/.local/bin` | pages, search, tasks |
 
 GitLab list filters (`state`, issue `labels`, and pipeline `status`) are
 percent-encoded as individual query values. Reserved characters, literal plus
@@ -66,6 +67,24 @@ that earlier SQL was rolled back, and no automatic retry is added. Invalid
 search-row diagnostics and configuration Debug output omit database values and
 the connection string. Moving the configured connection string out of argv
 remains open for both adapters; no credential-transport fix is claimed here.
+
+The Emspace provider reads the space a project is linked to through the local
+`emspace` CLI, run from the project root with stdin closed (or holding the
+read program), `EMSPACE_SESSION` removed, a 30-second deadline and 16 MiB
+stdout/16 KiB stderr bounds. `pages` runs one `emspace run --query` program,
+which emspace refuses to let write; `id=<slug>` returns that page whole, a
+listing (default 1000, at most 5000 pages; `state` = draft, canonical, stale or
+noted) indexes the first 6000 characters of each body. A page's `derived`
+`dir:` sources become its `references` when the dir is this repository (the
+same checkout, or a registered checkout with one of this repository's git
+remotes); a glob is expanded against the checkout to the files it selects
+there (at most 256 per pin). `ctx_read` shows the resulting hints only under
+a profile with `output_hints.cross_source_hint = true`, the default in every
+built-in profile since 3.12.1. `search` is
+`emspace search` over pages (`query` required); `tasks` is `emspace task list`
+(`state` = backlog, todo, doing, done or dropped). Without the link or the CLI
+the provider is unavailable and runs nothing. Removed pages keep their indexed
+edges until the stores are rebuilt.
 
 ### Config-based Providers
 
@@ -223,8 +242,14 @@ struct ProviderItem {
     url: Option<String>,
     labels: Vec<String>,
     body: Option<String>,
+    claims: Vec<Claim>,        // omitted when empty
+    references: Vec<String>,   // repository paths declared by the provider; omitted when empty
 }
 ```
+
+`references` are indexed as cross-source references beside the paths found in
+the body. A directory reference also hints the files below it, ranked after a
+hint on the file itself.
 
 ## Caching & Indexing
 
@@ -258,6 +283,7 @@ from reuse. The table is rendered from the code; a test keeps it equal.
 | GitHub | partial | yes | yes | no | yes | yes | partial | yes |
 | Jira | partial | yes | yes | no | yes | yes | partial | yes |
 | MCP bridge | no | yes | yes | no | no | no | no | no |
+| Emspace | yes | yes | yes | no | no | no | no | no |
 | Config provider (GET resources) | no | yes | partial | no | yes | yes | partial | yes |
 | Other providers (default) | no | yes | no | no | no | no | no | no |
 
@@ -266,6 +292,7 @@ from reuse. The table is rendered from the code; a test keeps it equal.
 - **GitHub** — principal: token (GITHUB_TOKEN / GH_TOKEN / LEAN_CTX_GITHUB_TOKEN), bound with API origin and repository; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. search = state filter, no full text; issues and pull requests re-checked per item with the principal's token (404 = no longer accessible, kind checked); actions runs are list-only and never stored with an origin; no response cache
 - **Jira** — principal: API-token user (Basic) or OAuth 3LO data source, bound with site and deployment; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. search = JQL by validated project key only; issues re-checked per item with the principal's identity (404 incl. issue security = no longer accessible, moved key refused); comments and attachments not fetched; sprints are list-only; rich-text bodies are not rendered
 - **MCP bridge** — principal: none: server identity is its HTTPS host (or loopback); no per-user principal; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. no principal, so no ACL to re-check: personal-local use only, withheld from governed reuse; tool listing does not call tools; stdio transport not implemented
+- **Emspace** — principal: none: the local user's emspace daemon, selected by the project's .emspace link; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. no principal, so no ACL to re-check: personal-local use only, withheld from governed reuse; reads run as `emspace run --query`, which refuses writes; optional CLI, unavailable without it
 - **Config provider (GET resources)** — principal: configured auth (none, bearer, basic or header), digest-bound with base URL and resource; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. re-check re-runs the GET resource with the current credential and keeps only the stored id (an item that left the first page reads as no longer accessible); non-GET resources have no binding and are withheld from governed reuse
 - **Other providers (default)** — principal: token or none; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. no item re-check: personal-local use only, withheld from governed reuse
 <!-- connector-capability-matrix:end -->

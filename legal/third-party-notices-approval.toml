@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "314f805c4ab3e4a7ce2425b9594ad6dd9ea140199d3fb5090e40378b28c042f3"
+approved_content_sha256 = "a3b2e0852fdc941ffa3c3a8d51effda51982f11fa9462857a5fcb7695747aa10"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the 3.12.0 release after taking Dependabot #2155 (zip 9.0.4 -> 9.0.5), #2154 and #2156 into the private source; the only notice change is zip 9.0.5 and the input digests. Owner okay in the Hive lead session on 2026-10-29 (answer \"Into 3.12.0\" to the zip bump question naming the notices re-approval)."
-approved_at = "2026-10-29"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.1 after the Hive Swarms/Task Compute removal; the only notice changes are the dropped chrono-tz, iana-time-zone and two dependents (603 -> 599 third-party Cargo packages) and the input digests. Owner okay in the Hive lead session on 2026-10-31 (answer \"Freigeben\" to the notices question naming old 314f805c and new pending 8affad19)."
+approved_at = "2026-10-31"

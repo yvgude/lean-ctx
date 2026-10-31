@@ -40,11 +40,6 @@ fn normalized_handle_ref(id: &str) -> Option<&str> {
     Some(clean)
 }
 
-/// Whether `id` has a handle-reference shape accepted by `ctx_expand`.
-pub(crate) fn is_handle_ref(id: &str) -> bool {
-    normalized_handle_ref(id).is_some()
-}
-
 /// Try to resolve a handle reference (@F1, @K1, etc.) to a file path.
 /// Returns None if the ID is not a handle reference.
 pub fn resolve_handle_ref(id: &str) -> Option<String> {

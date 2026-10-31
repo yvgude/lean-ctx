@@ -13,8 +13,7 @@ const SYNTHETIC_VERIFYING_KEY: [u8; 32] = [
 ];
 
 fn cohort_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../_archive/benchmarks/efficiency/task-spine-v1/tasks")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/v3/task-spine-v1/tasks")
 }
 
 fn read_json(path: &Path) -> Value {

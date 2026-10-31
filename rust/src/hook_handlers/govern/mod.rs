@@ -16,11 +16,18 @@
 //!   `git status` …) with no edit or side-effecting command in between.
 //! - **R2** — strictly lossless repeat collapse of large, non-diagnostic Bash
 //!   output ([`crate::core::patterns::lossless_collapse`]).
+//! - **R4** — template collapse of large Bash output whose lines differ only in
+//!   timestamps, numbers or ids ([`crate::core::patterns::template_collapse`]);
+//!   the full output goes to the archive and the result names its id. Unlike
+//!   R2 it also runs on output with error lines: those stay visible line by
+//!   line, and on file viewers unless they read code or data files
+//!   (`bash::r4_may_collapse`). A live rule beats a shadow one; among
+//!   shadow rules R2 wins.
 //! - **R3** — output already in context; shadow only in v1.
 //!
 //! Every rule runs under a mode: `on` replaces the result, `shadow` writes
-//! only a decision receipt, `off` skips it. Per owner decision (O-3, O-5) R1.bash
-//! and R2 ship as `shadow` until harness A measures them; R1.read keeps today's
+//! only a decision receipt, `off` skips it. Per owner decision (O-3, O-5) R1.bash,
+//! R2 and R4 ship as `shadow` until harness A measures them; R1.read keeps today's
 //! live read-dedup behaviour. A receipt goes to the savings ledger only after
 //! the output has been printed within the deadline, so a receipt never claims
 //! a replacement the host did not get.
@@ -91,6 +98,7 @@ pub(crate) struct Policy {
     pub r1_bash: RuleMode,
     pub r2: RuleMode,
     pub r3: RuleMode,
+    pub r4: RuleMode,
 }
 
 impl Policy {
@@ -102,6 +110,7 @@ impl Policy {
             r1_bash: rule("LEAN_CTX_GOVERNOR_R1_BASH", RuleMode::Shadow),
             r2: rule("LEAN_CTX_GOVERNOR_R2", RuleMode::Shadow),
             r3: rule("LEAN_CTX_GOVERNOR_R3", RuleMode::Shadow).min(RuleMode::Shadow),
+            r4: rule("LEAN_CTX_GOVERNOR_R4", RuleMode::Shadow),
         }
     }
 }

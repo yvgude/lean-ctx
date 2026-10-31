@@ -1080,7 +1080,25 @@ async fn handle_request_with(
             authorised
         }
     };
-    let project = project.filter(|_| project_binding::is_project_read(&route, &method));
+    // A named project binds the routes that answer for it; device-wide routes
+    // answer the same for every project; any other route refuses it rather
+    // than answering for the dashboard's own project.
+    let project = match project {
+        None => None,
+        Some(project) => match project_binding::project_scope(&route, &method) {
+            project_binding::ProjectScope::Project => Some(project),
+            project_binding::ProjectScope::Global => None,
+            project_binding::ProjectScope::Refused => {
+                write_json_error(
+                    &mut stream,
+                    "400 Bad Request",
+                    r#"{"error":"this route does not answer for a named project"}"#,
+                )
+                .await;
+                return;
+            }
+        },
+    };
     // Display snapshots answer plain reads only; a query string selects a
     // different answer than the snapshot holds.
     let snapshot_read = method.eq_ignore_ascii_case("GET")

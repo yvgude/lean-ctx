@@ -57,17 +57,6 @@ lean-ctx gain --json
 PILOT_DURATION=1209600 scripts/pilot-baseline.sh --collect-end ./pilot-baseline
 ```
 
-### SLO Validation
-
-```bash
-# Run the supported task benchmark profiles
-lean-ctx benchmark tasks --config standard --json
-
-# Compare conservative and aggressive profiles when tuning
-lean-ctx benchmark tasks --config stock --json
-lean-ctx benchmark tasks --config aggressive --json
-```
-
 ### Evidence Collection
 
 ```bash

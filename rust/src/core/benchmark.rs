@@ -22,61 +22,61 @@ fn cache_hit_tokens() -> usize {
 // ── Types ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-pub struct ModeMeasurement {
-    pub mode: String,
-    pub tokens: usize,
-    pub savings_pct: f64,
-    pub latency_us: u64,
-    pub preservation_score: f64,
+pub(crate) struct ModeMeasurement {
+    pub(crate) mode: String,
+    pub(crate) tokens: usize,
+    pub(crate) savings_pct: f64,
+    pub(crate) latency_us: u64,
+    pub(crate) preservation_score: f64,
 }
 
 #[derive(Debug, Clone)]
-pub struct FileMeasurement {
-    pub path: String,
-    pub ext: String,
-    pub raw_tokens: usize,
-    pub modes: Vec<ModeMeasurement>,
+pub(crate) struct FileMeasurement {
+    pub(crate) path: String,
+    pub(crate) ext: String,
+    pub(crate) raw_tokens: usize,
+    pub(crate) modes: Vec<ModeMeasurement>,
 }
 
 #[derive(Debug, Clone)]
-pub struct LanguageStats {
-    pub ext: String,
-    pub count: usize,
-    pub total_tokens: usize,
-    pub best_mode: String,
-    pub best_mode_tokens: usize,
-    pub best_savings_pct: f64,
+pub(crate) struct LanguageStats {
+    pub(crate) ext: String,
+    pub(crate) count: usize,
+    pub(crate) total_tokens: usize,
+    pub(crate) best_mode: String,
+    pub(crate) best_mode_tokens: usize,
+    pub(crate) best_savings_pct: f64,
 }
 
 #[derive(Debug, Clone)]
-pub struct ModeSummary {
-    pub mode: String,
-    pub total_compressed_tokens: usize,
-    pub avg_savings_pct: f64,
-    pub avg_latency_us: u64,
-    pub avg_preservation: f64,
+pub(crate) struct ModeSummary {
+    pub(crate) mode: String,
+    pub(crate) total_compressed_tokens: usize,
+    pub(crate) avg_savings_pct: f64,
+    pub(crate) avg_latency_us: u64,
+    pub(crate) avg_preservation: f64,
 }
 
 #[derive(Debug, Clone)]
-pub struct SessionSimResult {
-    pub raw_tokens: usize,
-    pub lean_tokens: usize,
-    pub lean_ccp_tokens: usize,
-    pub raw_cost: f64,
-    pub lean_cost: f64,
-    pub ccp_cost: f64,
+pub(crate) struct SessionSimResult {
+    pub(crate) raw_tokens: usize,
+    pub(crate) lean_tokens: usize,
+    pub(crate) lean_ccp_tokens: usize,
+    pub(crate) raw_cost: f64,
+    pub(crate) lean_cost: f64,
+    pub(crate) ccp_cost: f64,
 }
 
 #[derive(Debug, Clone)]
-pub struct ProjectBenchmark {
-    pub root: String,
-    pub files_scanned: usize,
-    pub files_measured: usize,
-    pub total_raw_tokens: usize,
-    pub languages: Vec<LanguageStats>,
-    pub mode_summaries: Vec<ModeSummary>,
-    pub session_sim: SessionSimResult,
-    pub file_results: Vec<FileMeasurement>,
+pub(crate) struct ProjectBenchmark {
+    pub(crate) root: String,
+    pub(crate) files_scanned: usize,
+    pub(crate) files_measured: usize,
+    pub(crate) total_raw_tokens: usize,
+    pub(crate) languages: Vec<LanguageStats>,
+    pub(crate) mode_summaries: Vec<ModeSummary>,
+    pub(crate) session_sim: SessionSimResult,
+    pub(crate) file_results: Vec<FileMeasurement>,
 }
 
 // ── Scanner ─────────────────────────────────────────────────
@@ -1067,10 +1067,27 @@ mod tests {
 
     #[test]
     fn run_project_benchmark_on_multi_language_fixture() {
-        // The shared benchmark_compare fixture exercises the same scan/measure
-        // path in milliseconds; scanning the real `src/` took ~7 s.
-        let root = crate::core::benchmark_compare::tests::fixture_root();
-        let bench = run_project_benchmark(&root.to_string_lossy());
+        // A small multi-language fixture exercises the same scan/measure path
+        // in milliseconds; scanning the real `src/` took ~7 s.
+        let dir = tempfile::tempdir().unwrap();
+        let files: &[(&str, &str)] = &[
+            (
+                "config.rs",
+                "use std::collections::HashMap;\n\n/// Parsed configuration.\npub struct Config {\n    pub values: HashMap<String, String>,\n}\n\nimpl Config {\n    pub fn parse(input: &str) -> Result<Self, String> {\n        let mut values = HashMap::new();\n        for line in input.lines() {\n            let (k, v) = line.split_once('=').ok_or_else(|| format!(\"bad line: {line}\"))?;\n            values.insert(k.trim().to_string(), v.trim().to_string());\n        }\n        Ok(Self { values })\n    }\n}\n",
+            ),
+            (
+                "client.ts",
+                "export interface Options { retries: number; timeoutMs: number }\n\nexport async function fetchWithRetry(url: string, opts: Options): Promise<string> {\n  let lastError: unknown;\n  for (let i = 0; i < opts.retries; i++) {\n    try {\n      const res = await fetch(url);\n      return await res.text();\n    } catch (err) {\n      lastError = err;\n    }\n  }\n  throw lastError;\n}\n",
+            ),
+            (
+                "parse.py",
+                "def parse(text):\n    \"\"\"Parse key=value configuration lines.\"\"\"\n    result = {}\n    for line in text.splitlines():\n        if '=' not in line:\n            raise ValueError(f'bad line: {line}')\n        key, value = line.split('=', 1)\n        result[key.strip()] = value.strip()\n    return result\n",
+            ),
+        ];
+        for (name, body) in files {
+            std::fs::write(dir.path().join(name), body).unwrap();
+        }
+        let bench = run_project_benchmark(&dir.path().to_string_lossy());
         assert!(bench.files_measured > 0);
         assert!(bench.total_raw_tokens > 0);
         assert!(!bench.languages.is_empty());

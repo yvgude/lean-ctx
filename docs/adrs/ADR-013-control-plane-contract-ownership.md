@@ -160,7 +160,7 @@ The current projection locations are:
 - Rust protocol and client: `rust/crates/lean-ctx-protocol/` and
   `clients/rust/lean-ctx-client/`;
 - Python SDK v1: `packages/python-lean-ctx/`;
-- Historical Python, TypeScript, and Go prototypes: `_archive/`;
+- Historical Python, TypeScript, and Go prototypes: removed in 3.12.1 (git history keeps them);
 - gRPC bindings: `packages/ocla-grpc/`.
 
 `scripts/check-sdk-versions.py` verifies canonical Python SDK metadata; protocol

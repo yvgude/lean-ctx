@@ -196,17 +196,6 @@ impl PackageLayer {
             Self::Checkpoint => "checkpoint",
         }
     }
-
-    pub(crate) fn filename(&self) -> &'static str {
-        match self {
-            Self::Knowledge => "knowledge.json",
-            Self::Graph => "graph.json",
-            Self::Session => "session.json",
-            Self::Patterns => "patterns.json",
-            Self::Gotchas => "gotchas.json",
-            Self::Checkpoint => "checkpoint.json",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

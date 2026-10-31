@@ -1,7 +1,0 @@
-total 40
-drwxr-xr-x  7 agent staff  224 Aug  9 08:20 .
-drwxr-xr-x  9 agent staff  288 Aug  9 08:20 ..
-drwxr-xr-x  8 agent staff  256 Aug  9 08:19 .git
--rw-r--r--  1 agent staff 1120 Aug  9 08:20 Cargo.toml
--rw-r--r--  1 agent staff  410 Aug  9 08:20 README.md
-drwxr-xr-x  4 agent staff  128 Aug  9 08:20 src

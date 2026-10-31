@@ -30,7 +30,7 @@ if [ -n "$marker_hits" ]; then
     echo "║  that was written by a corrupted edit tool read.           ║"
     echo "║                                                            ║"
     echo "║  Fix: restore from the last clean commit:                  ║"
-    echo "║    LEAN_CTX_DISABLE=1 git restore --source=HEAD -- <file>  ║"
+    echo "║    LEAN_CTX_DISABLED=1 git restore --source=HEAD -- <file> ║"
     echo "║                                                            ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
@@ -47,31 +47,31 @@ while IFS= read -r file; do
     staged=$(git show ":$file" 2>/dev/null) || continue
     if echo "$staged" | grep -qF -- '--- lean-ctx:'; then
         echo "pre-commit: BLOCKED — '$file' contains lean-ctx footer marker."
-        echo "  Fix: LEAN_CTX_DISABLE=1 git restore --source=HEAD -- $file"
+        echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
         exit 1
     fi
     # Detect ctx_read build_header corruption: "filename.ext NNL" on first line
     if echo "$staged" | head -2 | grep -qE '^[^ ]+\.[a-z]+ [0-9]+L$'; then
         if echo "$staged" | sed -n '2p' | grep -qE '^ (deps|exports) '; then
             echo "pre-commit: BLOCKED — '$file' contains ctx_read header corruption."
-            echo "  Fix: LEAN_CTX_DISABLE=1 git restore --source=HEAD -- $file"
+            echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
             exit 1
         fi
     fi
     # Detect cognitive/signatures mode section markers (#1444)
     if echo "$staged" | grep -qF '§ function'; then
         echo "pre-commit: BLOCKED — '$file' contains §-section markers (cognitive mode corruption)."
-        echo "  Fix: LEAN_CTX_DISABLE=1 git restore --source=HEAD -- $file"
+        echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
         exit 1
     fi
     if echo "$staged" | grep -qF '§ block'; then
         echo "pre-commit: BLOCKED — '$file' contains §-section markers (cognitive mode corruption)."
-        echo "  Fix: LEAN_CTX_DISABLE=1 git restore --source=HEAD -- $file"
+        echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
         exit 1
     fi
     if echo "$staged" | grep -qF '§ impl'; then
         echo "pre-commit: BLOCKED — '$file' contains §-section markers (cognitive mode corruption)."
-        echo "  Fix: LEAN_CTX_DISABLE=1 git restore --source=HEAD -- $file"
+        echo "  Fix: LEAN_CTX_DISABLED=1 git restore --source=HEAD -- $file"
         exit 1
     fi
 done < <(git diff --cached --name-only --diff-filter=d)
@@ -153,13 +153,6 @@ run_step "clippy (tests)" "Fix warnings before committing." \
 if printf '%s\n' "$staged_names" | grep -qE '^rust/src/(tools|tool_defs|core/config)'; then
     run_step "generated docs" "Run: cd rust && cargo run --example gen_docs --features dev-tools" \
         cargo run --quiet --example gen_docs --features dev-tools -- --check
-fi
-
-# The committed testbench recording must match the fixtures + assembly/judge framing —
-# the CI Documentation job runs the same check (#611).
-if printf '%s\n' "$staged_names" | grep -qE '^rust/(eval/testbench/|src/core/eval_ab/)'; then
-    run_step "testbench recording" "Run: cd rust && cargo run --example gen_testbench_recording --features dev-tools" \
-        cargo run --quiet --example gen_testbench_recording --features dev-tools -- --check
 fi
 
 rm -rf "$LOG_DIR"

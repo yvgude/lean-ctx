@@ -8,5 +8,4 @@ pub mod place;
 pub mod purge;
 pub mod push;
 pub mod records;
-pub mod swarm;
 pub mod writer;

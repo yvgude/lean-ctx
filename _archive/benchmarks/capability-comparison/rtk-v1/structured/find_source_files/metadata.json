@@ -1,6 +1,0 @@
-{
-  "command": "find rust/src rust/tests -type f -name '*.rs'",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 176,
-  "category": "structured"
-}

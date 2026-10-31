@@ -15,8 +15,6 @@ pub mod auth;
 pub mod bus;
 pub mod capture;
 pub mod company_bound;
-pub mod compute;
-pub mod conductor;
 pub mod config;
 pub mod connect;
 pub mod consent;
@@ -51,8 +49,6 @@ pub mod scheduler;
 pub mod sealed;
 pub mod state;
 pub mod status;
-pub mod swarm;
-pub mod swarms;
 pub mod sync;
 pub mod tasks;
 pub mod throttle;
@@ -79,7 +75,7 @@ pub const PREVIEW_ENV: &str = "LEAN_CTX_HIVE_PREVIEW";
 /// The one line `hive connect`/`hive link` print while the switch is off.
 pub const NOT_AVAILABLE: &str =
     "LeanCTX Hive comes with 3.12.1; this version does not connect to a Hive.";
-/// The one line a call to a Hive MCP tool (`ctx_tasks`, `ctx_compute`)
+/// The one line a call to a Hive MCP tool (`ctx_tasks`)
 /// answers while the switch is off; the tools stay out of every tool list.
 pub const TOOL_NOT_AVAILABLE: &str =
     "LeanCTX Hive comes with 3.12.1; this tool is not available in this version.";

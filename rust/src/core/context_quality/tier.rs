@@ -7,8 +7,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::eval_ab::model::{ModelFingerprint, PROVIDER_RECORDED};
-
 /// Kind of evidence behind a quality result, ordered from weakest to strongest claim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,58 +50,5 @@ impl EvidenceTier {
     /// quality on a real model. Mechanism and deterministic tiers do not.
     pub fn supports_task_quality_claim(self) -> bool {
         self >= Self::RecordedRegression
-    }
-
-    /// Tier of a paired model evaluation, derived from where the answers came from.
-    ///
-    /// Answers produced by a fixture (`provider = recorded` at capture time) can only
-    /// show the mechanism works. Replaying a capture of a real model is Tier C; calling
-    /// the model live is Tier D.
-    pub fn for_model_run(fingerprint: &ModelFingerprint, replayed: bool) -> Self {
-        if fingerprint.provider == PROVIDER_RECORDED {
-            Self::Mechanism
-        } else if replayed {
-            Self::RecordedRegression
-        } else {
-            Self::LiveTaskEvaluation
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::eval_ab::model::{ModelParams, PROVIDER_OPENAI};
-
-    fn fp(provider: &str) -> ModelFingerprint {
-        ModelFingerprint {
-            provider: provider.into(),
-            endpoint: "e".into(),
-            params: ModelParams::default(),
-        }
-    }
-
-    #[test]
-    fn fixture_answers_never_exceed_mechanism_tier() {
-        assert_eq!(
-            EvidenceTier::for_model_run(&fp(PROVIDER_RECORDED), true),
-            EvidenceTier::Mechanism
-        );
-        assert_eq!(
-            EvidenceTier::for_model_run(&fp(PROVIDER_RECORDED), false),
-            EvidenceTier::Mechanism
-        );
-    }
-
-    #[test]
-    fn replay_of_real_model_is_recorded_tier_and_live_is_tier_d() {
-        assert_eq!(
-            EvidenceTier::for_model_run(&fp(PROVIDER_OPENAI), true),
-            EvidenceTier::RecordedRegression
-        );
-        assert_eq!(
-            EvidenceTier::for_model_run(&fp(PROVIDER_OPENAI), false),
-            EvidenceTier::LiveTaskEvaluation
-        );
     }
 }

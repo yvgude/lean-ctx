@@ -1169,8 +1169,8 @@ mod tests {
         assert!(text.contains("only in a personal MCP session"), "{text}");
     }
 
-    /// Owner 28.10.: while the Hive switch is off, ctx_tasks and ctx_compute
-    /// are in no tool list and every call path answers one fixed line.
+    /// Owner 28.10.: while the Hive switch is off, ctx_tasks is in no tool
+    /// list and every call path answers one fixed line.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn hive_tools_are_withheld_while_the_switch_is_off() {
         if crate::core::hive::available_locally() {

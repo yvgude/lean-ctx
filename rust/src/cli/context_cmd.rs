@@ -2,6 +2,9 @@
 
 //! CLI subcommands for Context Field Theory tools:
 //! `lean-ctx control`, `lean-ctx plan`, `lean-ctx compile`.
+//!
+//! `plan` and `compile` render locally from the persisted ledger: their MCP
+//! tools were removed in 3.12.0, so the daemon cannot serve them.
 
 use crate::core::context_ledger::ContextLedger;
 use crate::core::context_overlay::OverlayStore;
@@ -90,17 +93,8 @@ pub(crate) fn cmd_plan(args: &[String]) {
         json["budget"] = serde_json::json!(budget);
     }
 
-    #[cfg(unix)]
-    {
-        if let Some(out) =
-            crate::daemon_client::try_daemon_tool_call_blocking_text("ctx_plan", Some(json.clone()))
-        {
-            println!("{out}");
-            return;
-        }
-    }
-    super::common::daemon_fallback_hint();
-
+    // The MCP tool `ctx_plan` was removed in 3.12.0; the daemon only answers
+    // "was removed". The plan reads the persisted ledger, so it runs locally.
     let ledger = ContextLedger::load();
     let policies = PolicySet::defaults();
 
@@ -120,18 +114,7 @@ pub(crate) fn cmd_compile(args: &[String]) {
         json["budget"] = serde_json::json!(budget);
     }
 
-    #[cfg(unix)]
-    {
-        if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-            "ctx_compile",
-            Some(json.clone()),
-        ) {
-            println!("{out}");
-            return;
-        }
-    }
-    super::common::daemon_fallback_hint();
-
+    // `ctx_compile` is no MCP tool since 3.12.0 (see `cmd_plan`): run locally.
     let ledger = ContextLedger::load();
     let policies = PolicySet::defaults();
 
@@ -182,4 +165,48 @@ fn build_map(pairs: &[(&str, Option<String>)]) -> serde_json::Map<String, serde_
         }
     }
     map
+}
+
+#[cfg(test)]
+mod tests {
+    /// F9a: a CLI command that asks the daemon for an MCP tool removed from
+    /// the public surface only ever gets "was removed" back. Every daemon
+    /// tool name in `cli/` must still be a live tool.
+    #[test]
+    fn cli_never_routes_a_removed_tool_through_the_daemon() {
+        // Split so this literal is not itself a match.
+        let marker = concat!("try_daemon_tool_call_", "blocking_text(");
+        let cli = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("cli");
+        let mut stack = vec![cli];
+        let mut checked = 0;
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).unwrap();
+                for (index, _) in text.match_indices(marker) {
+                    let rest = text[index + marker.len()..].trim_start();
+                    let Some(rest) = rest.strip_prefix('"') else {
+                        continue;
+                    };
+                    let name = &rest[..rest.find('"').unwrap()];
+                    checked += 1;
+                    assert!(
+                        crate::server::dynamic_tools::removed_tool(name).is_none(),
+                        "{} asks the daemon for the removed tool {name}",
+                        path.display()
+                    );
+                }
+            }
+        }
+        assert!(checked > 0, "the scan found no daemon tool calls");
+    }
 }

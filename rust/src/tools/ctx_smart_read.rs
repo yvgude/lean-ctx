@@ -1,7 +1,6 @@
 use crate::core::auto_mode_resolver::{self, AutoModeContext};
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
-use crate::tools::CrpMode;
 
 pub fn select_mode(cache: &SessionCache, path: &str) -> String {
     select_mode_with_task(cache, path, None)
@@ -43,8 +42,35 @@ pub fn select_mode_with_task(cache: &SessionCache, path: &str, task: Option<&str
     auto_mode_resolver::resolve(&ctx).mode
 }
 
-pub fn handle(cache: &mut SessionCache, path: &str, crp_mode: CrpMode) -> String {
-    crate::tools::ctx_read::handle(cache, path, "auto", crp_mode)
+/// The view for a `ctx_read` that names no range: the resolver's choice under
+/// [`auto_mode_resolver::unranged_view`] — an outline above
+/// [`auto_mode_resolver::OUTLINE_MIN_LINES`] lines, the whole file below.
+/// Counts come from the fresh cache entry or, like the resolver's own count,
+/// from what the read path would deliver (G01).
+pub fn select_unranged_mode(cache: &SessionCache, path: &str, task: Option<&str>) -> String {
+    // Over the read cap the handler refuses the read; do not load it here.
+    if std::fs::metadata(path)
+        .is_ok_and(|meta| meta.len() > crate::core::limits::max_read_bytes() as u64)
+    {
+        return "full".to_string();
+    }
+    let (token_count, line_count) = cache
+        .get(path)
+        .filter(|e| !crate::core::cache::is_cache_entry_stale(path, e.stored_mtime))
+        .filter(|e| e.original_tokens > 0)
+        .map(|e| (e.original_tokens, e.line_count))
+        .unwrap_or_else(|| {
+            crate::tools::ctx_read::read_file_lossy(path)
+                .map_or((0, 0), |c| (count_tokens(&c), c.lines().count()))
+        });
+    let ctx = AutoModeContext {
+        path,
+        token_count,
+        line_count: Some(line_count),
+        task,
+        cache: Some(cache),
+    };
+    auto_mode_resolver::unranged_view(auto_mode_resolver::resolve(&ctx), path, line_count).mode
 }
 
 pub fn is_code_ext(ext: &str) -> bool {

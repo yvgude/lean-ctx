@@ -231,7 +231,7 @@ lean-ctx shadow --latest
 - **Archive Full-Text Search** (`ctx_expand search_all`): FTS5-powered cross-archive search over all previously archived tool outputs
 - **PR Context Packs**: `lean-ctx pack --pr` builds a PR-ready context pack (changed files, related tests, impact, artifacts)
 - **Context Packages — Research**: `lean-ctx pack create` bundles local Knowledge, Graph and Session state into `.ctxpkg` files with SHA-256 integrity; this is experimental local packaging, not a generally available Context Kits or hosted sharing product
-- **Context Time Machine — Research**: `lean-ctx snapshot create|list|show|verify|restore|publish|import` handles git-anchored, signed local snapshots and file-based sharing; dashboard replay and restore are experimental, and hosted history or a hosted registry is not a generally available product ([concept →](docs/concepts/context-time-machine.md))
+- **Context Time Machine — Research**: `lean-ctx snapshot create|list|show|verify|restore|publish|import` handles git-anchored, signed local snapshots and file-based sharing; dashboard replay and restore are experimental, and hosted history or a hosted registry is not a generally available product
 - **Observability**: `lean-ctx cockpit` shows local activity and recorded context metrics (Savings · Spend · Report · Proof, recorded calls in the Ledger); `lean-ctx gain` is the terminal summary (`--json` for scripts), and `gain --svg`/`--share` creates a shareable card or self-hostable page
 - **Usage ledger**: `lean-ctx savings` is a local per-event ledger with tokenizer transparency, bounce-netting and a tamper-evident SHA-256 chain; provider-measured savings require the proxy's counterfactual holdout
 - **HTTP mode**: `lean-ctx serve` for Streamable HTTP MCP + `/v1/tools/call` (used by the Cookbook and external clients)
@@ -277,7 +277,7 @@ secret scrubbing does not cover every possible secret. See the
 LeanCTX remains the Context Gateway for AI Systems. These research directions
 extend its context capabilities; they are not supported product commitments.
 
-- **Hosted context history** — local snapshot create/show/verify/restore and signed file-based sharing are experimental Research; a hosted registry and model-view comparison remain future work. ([concept →](docs/concepts/context-time-machine.md))
+- **Hosted context history** — local snapshot create/show/verify/restore and signed file-based sharing are experimental Research; a hosted registry and model-view comparison remain future work.
 - **Context as Code** — declarative pipelines, profiles, and policies in TOML, versioned like infrastructure
 - **Unified Context Graph** — code, tests, commits, CI runs, and knowledge entries in a single semantic graph
 - **Cross-agent context controls** — explore context roles, budgets, and permissions while the host retains agent scheduling and workflow execution
@@ -662,24 +662,14 @@ with `lean-ctx doctor overhead --gate`. The deterministic
 `lean-ctx benchmark dual-arm --json` replay reports a **synthetic upper bound**:
 its baseline never uses the provider's prompt cache, while agent hosts can cache
 the prefix with or without LeanCTX. It is not a provider invoice, an on/off
-comparison or an outcome-quality evaluation. Available comparison methods include
-the `lean-ctx eval ab` subcommand (requires a suite file via `--suite`), the
-injected-context footprint comparison in `lean-ctx eval footprint` (requires a
-suite via `--suite` and a baseline via `--compare`), and the proxy's opt-in compression holdout
-(`[proxy] compression_holdout`).
+comparison or an outcome-quality evaluation. The on/off comparison the Engine
+offers is the proxy's opt-in compression holdout (`[proxy] compression_holdout`).
 
-Accuracy is gated, within stated limits. A model-free A/B gate checks that the JSON
-crusher keeps every gold answer in its fixtures while cutting tokens, and proxy
-rewrites preserve stable output for prompt-cache eligibility under the same inputs and settings.
-Actual cache hits, prices, and discounts depend on the provider. The **off-vs-on testbench** (`lean-ctx eval testbench`)
-runs pinned real repos through a raw-dump baseline and through lean-ctx at an
-identical token budget, grades free-form QA with an LLM judge and code with each
-repo's own tests, and emits `FINDINGS.md` (tokens / turns / walltime / quality) plus a
-regressions file. What CI replays is a small committed recording: it is a
-**mechanism gate** (it catches a broken pipeline or a changed grade), not evidence
-that compression preserves answer quality. Every eval report states its evidence
-tier (A mechanism … E production); a run below 30 paired tasks is
-`UNDERPOWERED` and fails `--gate` unless run as an explicit `--mechanism` check — see
+Proxy rewrites preserve stable output for prompt-cache eligibility under the same
+inputs and settings, and the compression engine checks that critical facts
+(failing tests, error codes, locations) survive or it delivers the original.
+Actual cache hits, prices, and discounts depend on the provider. Quality results
+state their evidence tier (A mechanism … E production) — see
 [context-quality-v1](docs/contracts/context-quality-v1.md).
 A powered with/without quality study has not been run yet; the proxy's
 compression holdout measures prompt size on real traffic and reports answer

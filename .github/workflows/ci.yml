@@ -818,7 +818,7 @@ jobs:
           path: scorecard.json
 
   quality-gate:
-    name: Output-Quality Gate (eval A/B)
+    name: Self-Footprint Gate (doctor overhead)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -854,73 +854,6 @@ jobs:
           mkdir -p "$SCRATCH/home" "$SCRATCH/data" "$SCRATCH/work"
           cd "$SCRATCH/work"
           HOME="$SCRATCH/home" LEAN_CTX_DATA_DIR="$SCRATCH/data" "$BIN" doctor overhead --gate
-      # Deterministic with/without output-quality proof. Three modes, in priority order:
-      #   1. A committed recording (rust/eval/recording.json) → byte-stable replay, no secrets,
-      #      and the gate BLOCKS on a regression.
-      #   2. Otherwise, if LEAN_CTX_EVAL_* secrets are set → capture from the live model + gate.
-      #   3. Otherwise → skipped (the harness itself is still covered by the test job).
-      # Capture a recording once with: lean-ctx eval ab --suite … --record rust/eval/recording.json
-      - name: Run deterministic A/B output-quality gate
-        working-directory: rust
-        shell: bash
-        env:
-          LEAN_CTX_EVAL_MODEL_URL: ${{ secrets.LEAN_CTX_EVAL_MODEL_URL }}
-          LEAN_CTX_EVAL_MODEL: ${{ secrets.LEAN_CTX_EVAL_MODEL }}
-          LEAN_CTX_EVAL_MODEL_KEY: ${{ secrets.LEAN_CTX_EVAL_MODEL_KEY }}
-        run: |
-          set -euo pipefail
-          BIN=./target/debug/lean-ctx
-          REC=eval/recording.json
-          "$BIN" eval init eval-suite
-          if [ -f "$REC" ]; then
-            echo "Replaying committed recording (deterministic, no secrets)…"
-            "$BIN" eval ab --suite eval-suite/suite.ndjson --replay "$REC" --out ab-report.json --gate --mechanism
-          elif [ -n "${LEAN_CTX_EVAL_MODEL_URL:-}" ]; then
-            echo "No committed recording; capturing from the configured live model…"
-            mkdir -p eval
-            "$BIN" eval ab --suite eval-suite/suite.ndjson --record "$REC" --out ab-report.json --gate --mechanism
-          else
-            echo "::notice::Output-quality gate skipped — commit rust/eval/recording.json or set LEAN_CTX_EVAL_* secrets."
-          fi
-      - name: Verify artifact (signature + determinism digest)
-        working-directory: rust
-        shell: bash
-        run: |
-          if [ -f ab-report.json ]; then ./target/debug/lean-ctx eval verify ab-report.json; fi
-      - name: Upload signed A/B report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: eval-ab-report
-          path: rust/ab-report.json
-          if-no-files-found: ignore
-      # Off-vs-on answer-quality testbench across pinned repos (#611). The committed
-      # local-fixture subset replays with a recorded model → byte-stable, no secrets,
-      # and BLOCKS on any per-repo regression. Refresh with:
-      #   lean-ctx eval testbench --lock eval/testbench/testbench.lock.json --record eval/testbench/recording.json
-      - name: Run deterministic testbench gate (off vs on)
-        working-directory: rust
-        shell: bash
-        run: |
-          set -euo pipefail
-          BIN=./target/debug/lean-ctx
-          LOCK=eval/testbench/testbench.lock.json
-          REC=eval/testbench/recording.json
-          if [ -f "$REC" ]; then
-            echo "Replaying committed testbench subset (deterministic, no secrets)…"
-            "$BIN" eval testbench --lock "$LOCK" --replay "$REC" --out testbench-out --gate --mechanism
-          else
-            echo "::notice::Testbench gate skipped — commit rust/eval/testbench/recording.json."
-          fi
-      - name: Upload testbench FINDINGS
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: testbench-findings
-          path: |
-            rust/testbench-out/FINDINGS.md
-            rust/testbench-out/regressions.json
-          if-no-files-found: ignore
 
   doc:
     name: Documentation
@@ -955,9 +888,6 @@ jobs:
           cargo test --test product_capability_classification
           cargo run --quiet --example gen_product_capability_matrix
           git diff --exit-code -- data/product-capabilities.toml ../docs/reference/generated/product-capabilities.md
-      - name: Check committed testbench recording is current
-        working-directory: rust
-        run: cargo run --example gen_testbench_recording --features dev-tools -- --check
 
   ip-provenance:
     # Fail-closed IP/provenance gate: every tracked file must carry a

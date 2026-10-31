@@ -34,6 +34,7 @@ pub(super) fn handle_setup(rest: &[String]) {
         "-y",
         "--fix",
         "--json",
+        // Deprecated no-op (rust/data/DEPRECATIONS.toml): accepted so scripts keep working.
         "--no-auto-approve",
         "--skip-rules",
         "--no-agent-aliases",
@@ -49,7 +50,11 @@ pub(super) fn handle_setup(rest: &[String]) {
     let yes = rest.iter().any(|a| a == "--yes" || a == "-y");
     let fix = rest.iter().any(|a| a == "--fix");
     let json = rest.iter().any(|a| a == "--json");
-    let no_auto_approve = rest.iter().any(|a| a == "--no-auto-approve");
+    if rest.iter().any(|a| a == "--no-auto-approve") {
+        eprintln!(
+            "setup: --no-auto-approve has no effect and is deprecated (earliest removal 3.15.0)"
+        );
+    }
     let skip_rules = rest.iter().any(|a| a == "--skip-rules");
     let no_agent_aliases = rest.iter().any(|a| a == "--no-agent-aliases");
     let dry_run = rest.iter().any(|a| a == "--dry-run");
@@ -65,7 +70,6 @@ pub(super) fn handle_setup(rest: &[String]) {
             yes: true,
             fix,
             json,
-            no_auto_approve,
             skip_rules,
             agents,
             dry_run,
@@ -88,7 +92,6 @@ pub(super) fn handle_setup(rest: &[String]) {
             yes,
             fix,
             json,
-            no_auto_approve,
             skip_rules,
             agents,
             ..Default::default()
@@ -255,7 +258,6 @@ fn print_setup_help() {
     println!("  --yes, -y           Assume yes for all prompts");
     println!("  --fix               Repair an existing installation");
     println!("  --json              Machine-readable report (implies non-interactive)");
-    println!("  --no-auto-approve   Skip auto-approve configuration");
     println!("  --skip-rules        Do not write agent rules files");
     println!("  --agents <list>     Configure only these tools (e.g. claude,cursor; or none)");
     println!("                      and remember the choice; skips the selection prompt");

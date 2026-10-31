@@ -14,8 +14,6 @@ pub mod annotate;
 pub mod astutil;
 #[allow(dead_code)]
 pub mod cognitive;
-#[allow(dead_code)]
-pub mod coupling;
 pub mod delta;
 pub mod fabric;
 pub mod gate;

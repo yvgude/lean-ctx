@@ -11,7 +11,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | Command | Purpose |
 |---------|---------|
 | `onboard` | Zero-prompt golden path: connect all detected AI tools |
-| `setup` | Guided wizard (full control); flags: `--non-interactive`, `--yes`, `--fix`, `--json`, `--skip-rules`, `--no-auto-approve` |
+| `setup` | Guided wizard (full control); flags: `--non-interactive`, `--yes`, `--fix`, `--json`, `--skip-rules`, `--agents`, `--dry-run` |
 | `install` | Alias for `setup`; `install --repair` = non-interactive refresh |
 | `bootstrap` | Non-interactive setup + fix (CI/scripts); `--json` |
 | `init --global` | Install shell aliases/hook only |
@@ -39,7 +39,6 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | `value [--session <id>\|--all] [--json]` | What lean-ctx did in a session (tokens kept out of context, security events), recomputed from the signed savings ledger and audit trail (chain integrity checked; token counts are local, not provider-billed); exits 1 when a chain is broken |
 | `statusline [--wrap "<cmd>"]` | Claude Code status line (`statusLine.command`), set by `init --agent claude` when none exists; `--wrap` chains your own status line and appends lean-ctx's segment to its first line |
 | `prompt-segment [--shell zsh\|bash\|fish\|plain]` | One dim shell-prompt segment for the current project, or nothing; wired by `init --prompt` (zsh/bash/fish, `off` removes it), `plain` for Starship and other prompt engines — see [value display](../guides/value-display.md) |
-| `prove speed --suite <file> [--runs N] [--budget N] [--json] [--out FILE]` | Signed A/B measurement: the same live model answers each task with a raw context dump and with lean-ctx's context; `--verify [FILE]` re-checks a proof (exit 1 if tampered) — see [value display](../guides/value-display.md#speed) |
 | `init --git-trailer [off]` | Opt-in `prepare-commit-msg` hook that adds a `lean-ctx:` trailer with what was saved since the last trailered commit; never touches an existing hook or fails a commit |
 | `shadow [--latest\|--list\|--force]` | Inspect or generate local baseline-versus-treatment recommendations; example: `lean-ctx shadow --latest` |
 | `token-report` (`report-tokens`) | Token + memory report; `--json` |

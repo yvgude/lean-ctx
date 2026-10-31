@@ -112,23 +112,8 @@ impl PackageBuilder {
         self
     }
 
-    pub(crate) fn compatibility(mut self, spec: CompatibilitySpec) -> Self {
-        self.compatibility = spec;
-        self
-    }
-
-    pub(crate) fn project_hash(mut self, hash: &str) -> Self {
-        self.project_hash = Some(hash.to_string());
-        self
-    }
-
     pub(crate) fn checkpoint(mut self, checkpoint: CheckpointPackageContentV1) -> Self {
         self.content.checkpoint = Some(checkpoint);
-        self
-    }
-
-    pub(crate) fn session_id(mut self, id: &str) -> Self {
-        self.session_id = Some(id.to_string());
         self
     }
 

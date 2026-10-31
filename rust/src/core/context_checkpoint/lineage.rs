@@ -458,10 +458,7 @@ mod test_support;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lean_ctx_protocol::{
-        ContextCheckpointBranchIdV1, ContextCheckpointDeviceIdV1, ContextCheckpointIdV1,
-        TaskEnvelopeV1, UtcTimestamp,
-    };
+    use lean_ctx_protocol::TaskEnvelopeV1;
     use serde_json::json;
 
     use super::test_support::checkpoint;
@@ -688,116 +685,6 @@ mod tests {
                 std::slice::from_ref(&fixture.protocol.accepted_outcome),
             )
             .is_err()
-        );
-    }
-
-    #[test]
-    fn verified_v2_branch_preserves_authoritative_artifact_lineage() {
-        let task = make_task("task-1");
-        let fixture = crate::core::execution_protocol::test_support::build(&task);
-        let receipt = VerifiedReceiptDocumentV1::from_canonical_bytes(
-            &fixture
-                .protocol
-                .receipt
-                .canonical_bytes()
-                .expect("receipt bytes"),
-            &fixture.signer_admission,
-            &fixture.verifying_key,
-        )
-        .expect("verified receipt");
-        let checkpoint = checkpoint(&task, &fixture.protocol.execution_plan.plan_id);
-        let parent = build_checkpoint_v2(
-            &checkpoint,
-            &task,
-            Some(&fixture.protocol.execution_plan),
-            std::slice::from_ref(&receipt),
-            std::slice::from_ref(&fixture.protocol.accepted_outcome),
-        )
-        .expect("V2 checkpoint");
-        let spec = super::super::ContextCheckpointChildSpecV1 {
-            checkpoint_id: ContextCheckpointIdV1::try_from(
-                "22222222-3333-4444-8555-666666666666".to_owned(),
-            )
-            .expect("checkpoint id"),
-            branch_id: ContextCheckpointBranchIdV1::try_from("feature".to_owned())
-                .expect("branch id"),
-            device_id: ContextCheckpointDeviceIdV1::try_from("device-b".to_owned())
-                .expect("device id"),
-            device_sequence: 1,
-            created_at: UtcTimestamp::new("2026-08-23T12:01:00Z").expect("timestamp"),
-        };
-        let child = super::super::branch_verified_checkpoint_v2(
-            &parent,
-            &spec,
-            &task,
-            Some(&fixture.protocol.execution_plan),
-            std::slice::from_ref(&receipt),
-            std::slice::from_ref(&fixture.protocol.accepted_outcome),
-        )
-        .expect("verified V2 branch");
-
-        assert_eq!(
-            child.lineage.artifact_lineage,
-            parent.lineage.artifact_lineage
-        );
-        assert_eq!(
-            child.identity.parent_checkpoint_id.as_ref(),
-            Some(&parent.identity.checkpoint_id)
-        );
-        assert!(
-            !child
-                .signing_payload()
-                .expect("signing payload")
-                .bytes()
-                .is_empty(),
-            "`child .signing_payload() .expect(\"signing payload\") .bytes()` is empty"
-        );
-
-        let merge_spec = super::super::ContextCheckpointChildSpecV1 {
-            checkpoint_id: ContextCheckpointIdV1::try_from(
-                "33333333-4444-4555-8666-777777777777".to_owned(),
-            )
-            .expect("checkpoint id"),
-            branch_id: ContextCheckpointBranchIdV1::try_from("feature".to_owned())
-                .expect("branch id"),
-            device_id: ContextCheckpointDeviceIdV1::try_from("device-b".to_owned())
-                .expect("device id"),
-            device_sequence: 2,
-            created_at: UtcTimestamp::new("2026-08-23T12:02:00Z").expect("timestamp"),
-        };
-        let merged = super::super::merge_verified_checkpoints_v2(
-            &parent,
-            &[],
-            &child,
-            &[],
-            &parent,
-            &merge_spec,
-            super::super::ContextCheckpointConflictPolicyV1::Fail,
-            &task,
-            Some(&fixture.protocol.execution_plan),
-            &[receipt],
-            std::slice::from_ref(&fixture.protocol.accepted_outcome),
-        )
-        .expect("verified V2 merge");
-        assert_eq!(
-            merged.checkpoint().lineage.artifact_lineage,
-            parent.lineage.artifact_lineage
-        );
-        assert_eq!(
-            merged.receipt().right_digest(),
-            &parent.digest().expect("parent digest")
-        );
-        assert!(
-            merged
-                .receipt()
-                .signing_payload()
-                .starts_with(b"leanctx/context-checkpoint-merge/v2\0")
-        );
-        assert!(
-            !merged
-                .receipt()
-                .signing_payload()
-                .starts_with(b"leanctx/context-checkpoint-merge/v1\0")
         );
     }
 }

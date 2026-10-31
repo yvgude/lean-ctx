@@ -31,7 +31,9 @@ use super::{keys, signing, verify};
 pub(crate) struct SkillsPackPlan {
     pub name: String,
     pub version: String,
-    /// The signed `.ctxpkg` document (pretty JSON, ready for store/upload).
+    /// The signed `.ctxpkg` document as verified by the self-check; the
+    /// store writes from `manifest` and `content`, tests inspect the bytes.
+    #[cfg(test)]
     pub bundle_json: String,
     pub manifest: PackageManifest,
     pub content: PackageContent,
@@ -203,6 +205,7 @@ pub(crate) fn build_skills_pack(
     Ok(SkillsPackPlan {
         name: name.to_string(),
         version: version.to_string(),
+        #[cfg(test)]
         bundle_json,
         manifest,
         content,

@@ -357,7 +357,7 @@ Parameters: `format`
 
 ## `ctx_read`
 
-Read files. Omit mode to explore: auto gives small files whole, large code as outline.
+Read files. No mode: ≤300 lines whole, larger files as outline with line ranges.
 symbol=Name or lines:N-M reads just that part, also for edits.
 To UNDERSTAND code run ctx_compose FIRST.
 

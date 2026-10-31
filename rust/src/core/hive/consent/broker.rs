@@ -169,14 +169,6 @@ pub enum Approval {
 pub enum Restart {
     /// The review loop: the place's `reviewer_enable` subject.
     ReviewLoop(Value),
-    /// The unattended swarm loop: the `unattended_start` subject.
-    Unattended(Value),
-    /// Claims from the person's host sessions after an engine restart.
-    Participation {
-        swarm: String,
-        cli: String,
-        pledge_digest: String,
-    },
 }
 
 /// A stored record and whether its proof holds.
@@ -271,52 +263,14 @@ impl Broker {
 
     /// Before an automatic restart: the covering record, or a new request.
     pub fn cover(&self, restart: &Restart, now: u64) -> Result<Record, ConsentError> {
-        let kind = match restart {
-            Restart::ReviewLoop(_) => Kind::ReviewerEnable,
-            Restart::Unattended(_) => Kind::UnattendedStart,
-            Restart::Participation { .. } => Kind::SwarmJoin,
-        };
-        self.policy_gate(kind, now)?;
+        self.policy_gate(Kind::ReviewerEnable, now)?;
         match restart {
             Restart::ReviewLoop(subject) => self.require(Kind::ReviewerEnable, subject, now),
-            Restart::Unattended(subject) => self.require(Kind::UnattendedStart, subject, now),
-            Restart::Participation {
-                swarm,
-                cli,
-                pledge_digest,
-            } => {
-                let join = json!({"swarm": swarm, "cli": cli, "pledge_digest": pledge_digest});
-                check_subject(Kind::SwarmJoin, &join)?;
-                // An approved pledge change to this pledge covers a join of
-                // the same swarm and CLI under an earlier pledge.
-                let approved: Vec<Record> = self
-                    .records()?
-                    .into_iter()
-                    .filter(|l| l.valid && l.record.state == State::Approved)
-                    .map(|l| l.record)
-                    .collect();
-                let joined = approved.iter().find(|r| {
-                    r.kind == Kind::SwarmJoin
-                        && r.subject["swarm"] == swarm.as_str()
-                        && r.subject["cli"] == cli.as_str()
-                });
-                let changed = approved.iter().any(|r| {
-                    r.kind == Kind::PledgeChange
-                        && r.subject["swarm"] == swarm.as_str()
-                        && r.subject["after_digest"] == pledge_digest.as_str()
-                });
-                match joined {
-                    Some(r) if r.subject["pledge_digest"] == pledge_digest.as_str() || changed => {
-                        Ok(r.clone())
-                    }
-                    _ => self.require(Kind::SwarmJoin, &join, now),
-                }
-            }
         }
     }
 
-    /// End coverage: `swarm leave` (field `swarm`), `review disable`
-    /// (field `place`). Removes the approved records of `kinds` naming it.
+    /// End coverage: `review disable` (field `place`). Removes the approved
+    /// records of `kinds` naming it.
     pub fn withdraw(
         &self,
         kinds: &[Kind],

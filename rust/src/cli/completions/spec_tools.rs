@@ -217,21 +217,7 @@ pub(super) const BENCHMARK: CommandNode = CommandNode {
     name: "benchmark",
     aliases: &[],
     description: "Run compression benchmarks",
-    subcommands: &[CommandNode {
-        name: "replay",
-        aliases: &[],
-        description: "Replay paired sessions with and without compression",
-        subcommands: &[],
-        flags: &[FlagSpec {
-            long: "--output",
-            short: None,
-            description: "Write Markdown report to a file",
-            takes_value: true,
-            value_kind: None,
-        }],
-        positional: None,
-        hidden: false,
-    }],
+    subcommands: &[],
     flags: &[
         FlagSpec {
             long: "--real",

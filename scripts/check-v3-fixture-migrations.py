@@ -11,7 +11,7 @@ from pathlib import Path
 
 REQUIRED_FAMILIES = {"execution_receipt_v1"}
 ALLOWED_MIGRATIONS = {"read_only_compatibility_projection"}
-ACTIVE_RECEIPT_ROOT = Path("_archive/benchmarks/efficiency/task-spine-v1/tasks")
+ACTIVE_RECEIPT_ROOT = Path("rust/tests/fixtures/v3/task-spine-v1/tasks")
 
 
 def validate(root: Path) -> list[str]:

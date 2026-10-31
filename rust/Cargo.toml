@@ -67,13 +67,6 @@ path = "src/bin/gen_rules.rs"
 required-features = ["dev-tools"]
 
 [[example]]
-name = "gen_testbench_recording"
-path = "src/bin/gen_testbench_recording.rs"
-required-features = ["dev-tools"]
-
-
-
-[[example]]
 name = "bench_cross_agent_cache"
 path = "src/bin/bench_cross_agent_cache.rs"
 required-features = ["dev-tools"]
@@ -126,9 +119,6 @@ shape-xlat = ["http-server"]
 # Release-signature checks run in-process (updater/sigstore.rs) with the
 # rustls crypto provider; no external `cosign` binary is required.
 secure-update = ["dep:rustls"]
-experimental = []
-# Compatibility feature name for existing builds; Engine internals are always compiled.
-context_kernel = []
 tree-sitter = [
   "dep:tree-sitter",
   "dep:tree-sitter-rust",
@@ -218,9 +208,6 @@ futures = "0.3"
 tokio-util = { version = "0.7", features = ["codec"] }
 dirs = "6.0"
 chrono = { version = "0.4", features = ["serde"] }
-# Swarm pledge windows are evaluated in their own IANA zone (SPEC-ENGINE §3.14.1).
-chrono-tz = "0.10"
-iana-time-zone = "0.1"
 toml = "1.1"
 toml_edit = "0.25"
 similar = "3.1"

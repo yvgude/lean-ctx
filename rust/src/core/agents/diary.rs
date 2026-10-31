@@ -92,29 +92,6 @@ impl AgentDiary {
         out
     }
 
-    pub(crate) fn format_compact(&self) -> String {
-        if self.entries.is_empty() {
-            return String::new();
-        }
-        let items: Vec<String> = self
-            .entries
-            .iter()
-            .rev()
-            .take(5)
-            .map(|e| {
-                let prefix = match e.entry_type {
-                    DiaryEntryType::Discovery => "F",
-                    DiaryEntryType::Decision => "D",
-                    DiaryEntryType::Blocker => "B",
-                    DiaryEntryType::Progress => "P",
-                    DiaryEntryType::Insight => "I",
-                };
-                format!("{prefix}:{}", truncate(&e.content, 50))
-            })
-            .collect();
-        format!("diary:{}|{}", self.agent_id, items.join("|"))
-    }
-
     /// Persist into this diary's project partition. An agent id used in two
     /// projects keeps one diary per project.
     pub(crate) fn save(&self) -> Result<(), String> {
@@ -248,12 +225,4 @@ fn sanitize_filename(name: &str) -> String {
             }
         })
         .collect()
-}
-
-pub(super) fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..s.floor_char_boundary(max.saturating_sub(3))])
-    }
 }

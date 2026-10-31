@@ -1,6 +1,0 @@
-{
-  "command": "git log --oneline --decorate -5",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 74,
-  "category": "git"
-}

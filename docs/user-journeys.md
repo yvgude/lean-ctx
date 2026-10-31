@@ -251,7 +251,7 @@ across versions — trust by construction, not by claim.
 Act I made the context window safe and scalable. Act II opens the runtime itself:
 embed it from any language, point it at any corpus, reshape it for any domain, and
 extend it without forking — then take it to a team while every local feature stays
-free. Full developer map: [The Context OS Guide](context-os/guide.md).
+free. Contracts to build against: [docs/contracts/](contracts/).
 
 ---
 
@@ -592,9 +592,6 @@ regenerated from code.
 
 ## Where to go next
 
-- **Build your own tool (developer map):** [The Context OS Guide](context-os/guide.md)
-- **Non-coding recipes (lead-gen / research / support / data):** [Non-Coding Cookbook](context-os/cookbook-non-coding.md)
-- **The vision & rationale:** [Context OS RFC v1](context-os/rfc-v1.md)
 - **The contracts you build against:** [docs/contracts/](contracts/) — capabilities · persona-spec · extractors · extension-trust · wasm-abi · conformance · local-free-invariant
 - **Full feature reference, as journeys:** [docs/reference/README.md](reference/README.md)
 - **The gateway in depth:** [Advanced & Integrations §10](reference/05-advanced.md)

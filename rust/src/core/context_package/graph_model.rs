@@ -105,6 +105,7 @@ impl ContextGraph {
         self.edges.push(edge);
     }
 
+    #[cfg(test)]
     pub(crate) fn node_by_id(&self, id: &str) -> Option<&ContextNode> {
         self.nodes.iter().find(|n| n.id == id)
     }
@@ -139,6 +140,7 @@ impl ContextGraph {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn apply_temporal_decay(&mut self, now: DateTime<Utc>) {
         for node in &mut self.nodes {
             let Some(half_life) = node.decay_half_life_days else {

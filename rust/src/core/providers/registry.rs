@@ -221,7 +221,7 @@ pub fn capability_matrix_markdown() -> String {
         CapabilityLevel::Partial => "partial",
         CapabilityLevel::Unsupported => "no",
     };
-    let rows: [(&str, ConnectorDescriptor); 7] = [
+    let rows: [(&str, ConnectorDescriptor); 8] = [
         (
             "GitLab (project configured)",
             super::gitlab::descriptor(true),
@@ -230,6 +230,7 @@ pub fn capability_matrix_markdown() -> String {
         ("GitHub", super::github::descriptor()),
         ("Jira", super::jira::descriptor()),
         ("MCP bridge", super::mcp_bridge::descriptor()),
+        ("Emspace", super::emspace::descriptor()),
         (
             "Config provider (GET resources)",
             super::config_provider::descriptor(false),
@@ -302,7 +303,12 @@ pub fn result_to_chunks(result: &ProviderResult) -> Vec<ContentChunk> {
                 body,
             );
 
-            let references = crate::core::content_chunk::extract_file_references(&content);
+            let mut references = crate::core::content_chunk::extract_file_references(&content);
+            if !item.references.is_empty() {
+                references.extend(item.references.iter().cloned());
+                references.sort();
+                references.dedup();
+            }
 
             let metadata = serde_json::json!({
                 "state": item.state,

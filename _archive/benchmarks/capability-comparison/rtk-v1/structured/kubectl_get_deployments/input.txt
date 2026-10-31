@@ -1,9 +1,0 @@
-NAME              READY   UP-TO-DATE   AVAILABLE   AGE
-context-runtime   2/2     2            2           3d4h
-context-worker    3/3     3            3           3d4h
-edge-proxy        1/1     1            1           3d4h
-
-NAME              DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
-context-runtime   2         2         2       2            2           linux/arm64     3d4h
-context-worker    3         3         3       3            3           linux/arm64     3d4h
-edge-proxy        1         1         1       1            1           linux/arm64     3d4h

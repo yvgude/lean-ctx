@@ -95,6 +95,11 @@ account.
   import`, `pack install --file` and `pack receive` refuse a package whose signer is not
   pinned in `trusted-signers.toml`, a local identity or this machine. Pin the publisher's key,
   or pass `--allow-untrusted-signer` to accept a validly signed package from an unknown key.
+- **Addons from other publishers need a pinned key too (3.12.1).** `lean-ctx addon add`
+  applies the same rule to executable addons: an addon signed by a key that is not pinned, a
+  local identity or this machine is refused after the consent prompt. Addons you built with
+  `addon release` on this machine install as before; for a third-party addon pin its
+  publisher's key or pass `--allow-untrusted-signer`.
 - **`compliance verify` can exit with 3 (3.12.1).** A report signed by a key other than this
   installation's is reported as `SELF-SIGNED / UNPINNED` with exit code 3. Scripts that verify
   reports from another machine pass that machine's key with `--pubkey <hex>`.

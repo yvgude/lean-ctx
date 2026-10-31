@@ -66,7 +66,6 @@ pub struct MessageArgs {
     pub to_instance: Option<String>,
     pub reply_to: Option<String>,
     pub deadline_hours: Option<u64>,
-    pub swarm_id: Option<String>,
     pub references: Vec<String>,
 }
 
@@ -81,8 +80,7 @@ impl MessageArgs {
     }
 }
 
-/// `send`: a typed message to the project's Hive channel (or a
-/// swarm). `reply`: answers a received message in its own network and
+/// `send`: a typed message to the project's Hive channel. `reply`: answers a received message in its own network and
 /// thread (type defaults to `answer`). `inbox`: unread Hive messages and
 /// task events, every body wrapped as foreign data.
 pub fn handle_message(
@@ -122,7 +120,7 @@ pub fn handle_message(
         to_instance: args.to_instance.as_deref(),
         reply_to,
         deadline_hours: args.deadline_hours,
-        swarm_id: args.swarm_id.as_deref(),
+        swarm_id: None,
         references: &args.references,
     };
     match send_from_root(project_root, agent, &request) {

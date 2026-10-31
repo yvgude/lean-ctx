@@ -979,6 +979,88 @@ async fn concurrent_reads_for_two_projects_never_cross() {
     assert_eq!(body, br#"{"error":"forbidden"}"#);
 }
 
+/// F12a/F12b: a named project binds every route that answers for it (reads
+/// and the session note), device-wide reads answer unchanged, and a route
+/// that can do neither refuses instead of answering for another project.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_named_project_is_honoured_or_refused_never_ignored() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let projects = tempdir().expect("tempdir");
+    let mut roots = Vec::new();
+    for name in ["alpha", "beta"] {
+        let root = projects.path().join(name);
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(
+            root.join("marker.txt"),
+            format!("only in {name}: {name}-marker\n"),
+        )
+        .unwrap();
+        let root = root.to_string_lossy().into_owned();
+        let mut session = crate::core::session::SessionState::new();
+        session.project_root = Some(root.clone());
+        session.save().expect("save session");
+        roots.push(root);
+    }
+    let (alpha, beta) = (roots[0].clone(), roots[1].clone());
+    let send = |method: &'static str, path: &'static str, project: String, body: &'static str| async move {
+        let raw = exchange(
+            Arc::new(|| Err(super::cockpit::CockpitUnavailable::NotInstalled)),
+            Some("dash-token"),
+            format!(
+                "{method} {path} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer dash-token\r\n\
+                 X-LeanCTX-Project: {project}\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            ),
+        )
+        .await;
+        let (head, body) = split_response(&raw);
+        (head, String::from_utf8_lossy(&body).into_owned())
+    };
+
+    // A read the Cockpit does not list follows the named project.
+    let (head, body) = send(
+        "GET",
+        "/api/compression-demo?path=marker.txt",
+        alpha.clone(),
+        "",
+    )
+    .await;
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(body.contains("alpha-marker"), "{body}");
+    assert!(!body.contains("beta-marker"), "{body}");
+
+    // Device-wide data answers the same for every project.
+    let (head, _) = send("GET", "/api/telemetry", alpha.clone(), "").await;
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+
+    // A route that cannot answer for the project refuses it.
+    let (head, body) = send("GET", "/api/hive/explained", alpha.clone(), "").await;
+    assert!(head.starts_with("HTTP/1.1 400"), "{head}");
+    assert!(body.contains("named project"), "{body}");
+
+    // The session note lands in the named project's session, not the newest
+    // session of any project (beta's).
+    let (head, body) = send(
+        "POST",
+        "/api/session/note",
+        alpha.clone(),
+        r#"{"note":"for alpha"}"#,
+    )
+    .await;
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}: {body}");
+    let notes = |root: &str| -> Vec<String> {
+        crate::core::session::SessionState::load_latest_for_project_root(root)
+            .expect("project session")
+            .progress
+            .into_iter()
+            .filter(|entry| entry.action == "note")
+            .filter_map(|entry| entry.detail)
+            .collect()
+    };
+    assert_eq!(notes(&alpha), vec!["for alpha".to_string()]);
+    assert!(notes(&beta).is_empty());
+}
+
 /// The ledger figures of a read that names its project count that project's
 /// folders (here a worktree of it) and never another project's; without a
 /// project they count every project.

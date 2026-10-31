@@ -15,7 +15,7 @@
 //! the command is never a silent no-op.
 
 /// Extension identifier (`publisher.name`) — the URI authority the editor routes
-/// the deep link to. Must stay in sync with `vscode-extension/package.json`.
+/// the deep link to. Must stay in sync with `packages/vscode-lean-ctx/package.json`.
 const EXTENSION_ID: &str = "LeanCTX.lean-ctx";
 
 /// Outcome of a hand-off attempt, so the caller knows whether it still needs to

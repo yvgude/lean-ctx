@@ -3,17 +3,8 @@
 #[cfg(test)]
 mod tests {
     use super::super::client_profile::ProfileBuilder;
-    use super::super::context_broker::{ContextBroker, ContextMode, OutputFormat, ToolDescriptor};
     use super::super::coverage_class::{self, CoverageClass};
     use super::super::etpao_live::{EtpaoLive, OutcomeMetrics, RequestMetrics};
-
-    fn tool(index: usize) -> ToolDescriptor {
-        ToolDescriptor {
-            name: format!("tool-{index}"),
-            schema_tokens: 10,
-            priority: index as u8,
-        }
-    }
 
     fn request(client_id: &str, tokens: usize, coverage_class: CoverageClass) -> RequestMetrics {
         RequestMetrics {
@@ -61,26 +52,6 @@ mod tests {
     }
 
     #[test]
-    fn broker_filters_tools_to_budget() {
-        let mut profile = ProfileBuilder::new("budgeted").build();
-        profile.tool_budget.max_tools = 5;
-        let broker = ContextBroker::new(profile);
-        let tools = (0..20).map(tool).collect::<Vec<_>>();
-
-        assert!(broker.select_tools(&tools).len() <= 5);
-    }
-
-    #[test]
-    fn broker_selects_handles_for_small_window() {
-        let profile = ProfileBuilder::new("small-window")
-            .context_window(16_000)
-            .build();
-        let broker = ContextBroker::new(profile);
-
-        assert!(broker.should_use_handles());
-    }
-
-    #[test]
     fn etpao_records_and_computes() {
         let mut etpao = EtpaoLive::new();
         for index in 0..10 {
@@ -112,18 +83,6 @@ mod tests {
     #[test]
     fn full_pipeline_profile_to_etpao() {
         let coverage = coverage_class::detect_coverage(true, false, false);
-        let mut profile = ProfileBuilder::new("pipeline")
-            .coverage(coverage)
-            .context_window(16_000)
-            .build();
-        profile.tool_budget.max_tools = 2;
-        let broker = ContextBroker::new(profile);
-        let selected = broker.select_tools(&(0..4).map(tool).collect::<Vec<_>>());
-
-        assert!(!selected.is_empty());
-        assert_eq!(broker.select_context_mode(), ContextMode::ManifestOnly);
-        assert_eq!(broker.select_output_format(), OutputFormat::TypedResult);
-
         let mut etpao = EtpaoLive::new();
         etpao.record_request(request("pipeline", 500, coverage));
         etpao.record_outcome(outcome("pipeline", true));

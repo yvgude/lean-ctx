@@ -1,4 +1,0 @@
-CONTAINER ID   IMAGE                         COMMAND                  CREATED        STATUS                 PORTS                     NAMES
-4e2a91c0d6b1   postgres:16-alpine            "docker-entrypoint.s…"   18 minutes ago Up 18 minutes          0.0.0.0:5432->5432/tcp    local-postgres
-89bc13f2a77d   redis:7-alpine                "docker-entrypoint.s…"   18 minutes ago Up 18 minutes          0.0.0.0:6379->6379/tcp    local-redis
-f17c8a2d0e54   leanctx-fixture:dev           "./target/debug/lea…"   17 minutes ago Up 17 minutes          127.0.0.1:8787->8787/tcp  context-runtime

@@ -568,7 +568,6 @@ pub fn run_setup_with_agents(agents: Option<std::collections::BTreeSet<String>>)
             let names: Vec<_> = chunk.iter().map(|t| format!("\x1b[2m{t}\x1b[0m")).collect();
             println!("    {}", names.join(", "));
         }
-        println!("  \x1b[2mDisable with: lean-ctx setup --no-auto-approve\x1b[0m");
     }
 
     terminal_ui::print_step_header(14, 14, "Intelligence Runtime (optional)");

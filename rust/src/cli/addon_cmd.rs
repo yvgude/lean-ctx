@@ -58,6 +58,8 @@ fn print_usage() {
   list                    Installed addons, the modules they load, what they wire
   info <name>             The author's manifest and module digests
   add <file.ctxpkg>       Verify, show, ask, then install a local package file
+                          (signed by a trusted publisher key; opt out with
+                          --allow-untrusted-signer or --allow-unsigned)
   remove <name>           Remove an addon, its modules and its gateway entry
   release <dir>           Build a signed .ctxpkg from a directory
   auth <name>             Browser OAuth login for an HTTP MCP server
@@ -269,10 +271,19 @@ fn cmd_info(args: &[String]) {
 /// is shown.
 fn cmd_add(args: &[String]) {
     let Some(file) = positional(args, "add").or_else(|| positional(args, "install")) else {
-        eprintln!("Usage: lean-ctx addon add <file.ctxpkg> [--yes] [--allow-unsigned]");
+        eprintln!(
+            "Usage: lean-ctx addon add <file.ctxpkg> [--yes] [--allow-untrusted-signer] [--allow-unsigned]"
+        );
         std::process::exit(2);
     };
     let assume_yes = args.iter().any(|a| a == "--yes" || a == "-y");
+    // GHSA-gvg8-285q-m62g / F8: executable content needs a signature from a
+    // trusted publisher key (pinned in trusted-signers.toml, a local identity
+    // or this machine's own key), the same default as `pack import`. The key
+    // travels inside the package, so a valid signature alone proves only
+    // that *someone* signed it. `--allow-untrusted-signer` accepts any valid
+    // signature; `--allow-unsigned` also an unsigned file.
+    let policy = super::pack_cmd::local_signature_policy(args);
 
     // Add-ons install from a local file only; remote registries are gone.
     let path = Path::new(&file);
@@ -380,13 +391,6 @@ fn cmd_add(args: &[String]) {
         return;
     }
 
-    // GHSA-gvg8-285q-m62g: executable content is never installed unsigned
-    // unless the caller vouches for the local file with --allow-unsigned.
-    let policy = if args.iter().any(|a| a == "--allow-unsigned") {
-        crate::core::context_package::registry::SignaturePolicy::AllowUnsigned
-    } else {
-        crate::core::context_package::registry::SignaturePolicy::RequireSigned
-    };
     match registry.install_addon_from_file(path, policy) {
         Ok(manifest) => {
             println!("Installed {}@{}", manifest.name, manifest.version);
@@ -776,6 +780,27 @@ fn sha256_hex(data: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::core::mcp_catalog::config::TransportKind;
+
+    /// F8 for addons: `addon add` defaults to a trusted publisher key, like
+    /// `pack import`.
+    #[test]
+    fn add_defaults_to_a_trusted_publisher() {
+        use crate::core::context_package::registry::SignaturePolicy;
+        let args = |list: &[&str]| list.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let policy = crate::cli::pack_cmd::local_signature_policy;
+        assert_eq!(
+            policy(&args(&["add", "x.ctxpkg"])),
+            SignaturePolicy::RequireTrustedPublisher
+        );
+        assert_eq!(
+            policy(&args(&["add", "x.ctxpkg", "--allow-untrusted-signer"])),
+            SignaturePolicy::RequireSigned
+        );
+        assert_eq!(
+            policy(&args(&["add", "x.ctxpkg", "--allow-unsigned"])),
+            SignaturePolicy::AllowUnsigned
+        );
+    }
 
     #[test]
     fn positional_skips_flags_and_the_verb() {

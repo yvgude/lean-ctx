@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -29,8 +29,6 @@ pub struct AutonomyState {
     pub config: AutonomyConfig,
     /// Repeated `pattern|path` keys for search tools (see [`AutonomyState::track_search`]).
     pub search_repetition: Mutex<HashMap<String, SearchHistory>>,
-    /// One-shot keys for large-output hints (`ctx_shell` bytes, `ctx_read` full tokens).
-    pub large_output_hints_shown: Mutex<HashSet<String>>,
 }
 
 impl Default for AutonomyState {
@@ -49,7 +47,6 @@ impl AutonomyState {
             last_consolidation_unix: AtomicU64::new(0),
             config: AutonomyConfig::load(),
             search_repetition: Mutex::new(HashMap::new()),
-            large_output_hints_shown: Mutex::new(HashSet::new()),
         }
     }
 

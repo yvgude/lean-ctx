@@ -5,9 +5,9 @@
 //! Every claim and every result passes this gate first:
 //!
 //! - The engine's opt-in lives on the server (`GET /v1/me/optin`): which
-//!   repos and swarms its agents may work on, whether it is
-//!   active, and the daily budget. It is read fresh for every claim; when
-//!   it cannot be read, nothing is claimed (fail closed).
+//!   vaults its agents may work on, whether it is active, and the daily
+//!   budget. It is read fresh for every claim; when it cannot be read,
+//!   nothing is claimed (fail closed).
 //! - The daily budget has three limits and the first one reached stops the
 //!   work: tasks per day (checked before a claim), and optionally tokens and
 //!   USD per day (counted from the usage each result reports; the result
@@ -18,8 +18,6 @@
 //!   claims are no longer renewed (they end at their expiry); `hive worker
 //!   stop` also switches the opt-in off on the server, which ends every claim
 //!   of this engine at once. Only the owner turns it on again, on the web.
-//! - A swarm task carries only the swarm's material: a result that
-//!   cites files of the engine's own projects is refused before it leaves.
 //!
 //! Hive enforces the same rules (C0 1.9 section 4: 403 `optin_scope` /
 //! `vetoed`, 409 `optin_inactive` / `optin_changed`, 429 `daily_budget`);
@@ -35,7 +33,6 @@ use super::HiveError;
 use super::auth::Session;
 use super::state::{HiveStore, write_private};
 use super::transport::HiveClient;
-use lean_ctx_protocol::hive::messages::NetworkV1;
 use lean_ctx_protocol::hive::optin::{ENGINE_OPTIN_STOP_SCHEMA, EngineOptinStopV1, EngineOptinV1};
 
 /// The engine's own opt-in record (engine auth, own instance only).
@@ -48,8 +45,7 @@ You use your own subscription; follow your provider's terms. LeanCTX never sees,
 stores or routes your provider login: your agent runs in a session you started
 and signed in to yourself. Not allowed by the providers: OpenCode or Pi signed in
 with a Claude Pro or Max login, and third-party tools using a Gemini CLI login
-(OAuth). Use the provider's own agent or an API key instead. Swarm work on a
-personal subscription is allowed; your provider's terms still apply.";
+(OAuth). Use the provider's own agent or an API key instead.";
 
 const STATE_FILE: &str = "worker.json";
 const LOCK_FILE: &str = "worker.lock";
@@ -78,14 +74,6 @@ pub struct Usage {
 /// The engine's opt-in (C0 1.9 section 4).
 pub type Optin = EngineOptinV1;
 
-/// The swarms `optin` names.
-pub fn optin_swarms(optin: &Optin) -> impl Iterator<Item = &str> {
-    optin.networks.iter().filter_map(|n| match n {
-        NetworkV1::Swarm { swarm_id } => Some(swarm_id.as_str()),
-        NetworkV1::Org { .. } => None,
-    })
-}
-
 /// The local worker state: pause flag and what this machine used today.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -106,26 +94,12 @@ impl WorkerState {
     }
 }
 
-/// Where a task comes from.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TaskKind {
-    /// A task of one of the organization's repos.
-    Org,
-    /// A subtask of a swarm; the opt-in covers it by its
-    /// network (the swarm) or by one of its topics.
-    Swarm {
-        swarm_id: String,
-        topics: Vec<String>,
-    },
-}
-
 /// The task a claim or result is for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskScope {
     pub task_id: String,
     /// The Hive project (repo) id.
     pub vault_id: String,
-    pub kind: TaskKind,
 }
 
 /// What a result reports it cost, for today's budget.
@@ -176,7 +150,7 @@ impl fmt::Display for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotOptedIn => f.write_str(
-                "worker mode is not enabled for this task (opt in for its vault or swarm on the web)",
+                "worker mode is not enabled for this task (opt in for its vault on the web)",
             ),
             Self::Stopped => {
                 f.write_str("worker mode was stopped for this engine (the owner resumes it on the web)")
@@ -207,9 +181,9 @@ impl From<Refusal> for HiveError {
     }
 }
 
-/// Repo and swarm ids compare without their wire prefix (`sw_`, `prj_`),
-/// dashes and case: Hive writes a project id as 32 hex digits, an opt-in
-/// repo or swarm as a dashed UUID, and swarm routes as `sw_<hex>`.
+/// Repo ids compare without their wire prefix (`prj_`), dashes and case:
+/// Hive writes a project id as 32 hex digits and an opt-in repo as a dashed
+/// UUID.
 fn same_id(a: &str, b: &str) -> bool {
     let norm = |s: &str| {
         let bare = match s.split_once('_') {
@@ -255,14 +229,7 @@ pub fn decide_claim(
         return Err(Refusal::Stopped);
     }
     let budget = optin.daily_budget;
-    let in_scope = match &scope.kind {
-        TaskKind::Org => optin.vaults.iter().any(|r| same_id(r, &scope.vault_id)),
-        TaskKind::Swarm { swarm_id, topics } => {
-            optin_swarms(optin).any(|q| same_id(q, swarm_id))
-                || topics.iter().any(|t| optin.topics.contains(t))
-        }
-    };
-    if !in_scope {
+    if !optin.vaults.iter().any(|r| same_id(r, &scope.vault_id)) {
         return Err(Refusal::NotOptedIn);
     }
     // The server counts the engine, this machine counts itself: the higher
@@ -449,7 +416,6 @@ mod tests {
     use serde_json::json;
 
     const REPO: &str = "0b7c3c1e5d2a4f7e9a312c4d5e6f7a8b";
-    const SWARM: &str = "sw_01jbretry";
 
     fn optin() -> Optin {
         parse_optin(json!({
@@ -457,8 +423,8 @@ mod tests {
             "optin_id": "opt_1",
             "active": true,
             "vaults": [REPO],
-            "networks": [{"kind": "swarm", "swarm_id": SWARM}],
-            "topics": ["rust"],
+            "networks": [],
+            "topics": [],
             "daily_budget": {"tasks": 2, "tokens": 1000},
             "used_today": {"day": "2026-10-22", "tasks": 0, "tokens": 0, "usd_micros": 0},
             "updated_at": "2026-10-22T10:00:00Z"
@@ -470,18 +436,6 @@ mod tests {
         TaskScope {
             task_id: "7".into(),
             vault_id: REPO.into(),
-            kind: TaskKind::Org,
-        }
-    }
-
-    fn swarm() -> TaskScope {
-        TaskScope {
-            task_id: "3".into(),
-            vault_id: String::new(),
-            kind: TaskKind::Swarm {
-                swarm_id: SWARM.into(),
-                topics: Vec::new(),
-            },
         }
     }
 
@@ -494,7 +448,6 @@ mod tests {
         assert_eq!(admitted.budget_left.tasks, Some(1));
         assert_eq!(admitted.budget_left.tokens, Some(1000));
         assert_eq!(admitted.budget_left.usd_micros, None);
-        assert!(decide_claim(&optin(), &local, &state, &swarm()).is_ok());
 
         let other = TaskScope {
             vault_id: "ffffffffffffffffffffffffffffffff".into(),
@@ -521,19 +474,6 @@ mod tests {
         assert_eq!(
             decide_claim(&stopped, &local, &state, &org()),
             Err(Refusal::Stopped)
-        );
-        // Swarms are covered by their network or a topic.
-        let by_topic = |topics: &[&str]| TaskScope {
-            kind: TaskKind::Swarm {
-                swarm_id: "sw_other".into(),
-                topics: topics.iter().map(|t| (*t).to_string()).collect(),
-            },
-            ..swarm()
-        };
-        assert!(decide_claim(&optin(), &local, &state, &by_topic(&["go", "rust"])).is_ok());
-        assert_eq!(
-            decide_claim(&optin(), &local, &state, &by_topic(&["go"])),
-            Err(Refusal::NotOptedIn)
         );
         let paused = WorkerState {
             paused: true,
@@ -650,7 +590,6 @@ mod tests {
         .unwrap();
         let optin = parse_optin(fixture.clone()).unwrap();
         assert!(optin.active && optin.optin_id.is_some());
-        assert!(optin_swarms(&optin).count() >= 1);
 
         let mut wrong = fixture.clone();
         wrong["schema"] = json!("leanctx.hive.engine-optin/v2");
@@ -683,7 +622,7 @@ mod tests {
             Refusal::BudgetExhausted(Limit::Tokens),
         ] {
             let text = refusal.to_string();
-            assert!(!text.contains(REPO) && !text.contains(SWARM), "{text}");
+            assert!(!text.contains(REPO), "{text}");
             assert_eq!(HiveError::from(refusal).to_string(), text);
         }
     }
@@ -691,10 +630,9 @@ mod tests {
     #[test]
     fn ids_match_across_wire_prefix_dashes_and_case() {
         let uuid = "558f6ef0-1c2d-4e5f-8a9b-0c1d2e3f4a5b";
-        assert!(same_id(uuid, "sw_558f6ef01c2d4e5f8a9b0c1d2e3f4a5b"));
+        assert!(same_id(uuid, "558f6ef01c2d4e5f8a9b0c1d2e3f4a5b"));
         assert!(same_id("prj_558F6EF01C2D4E5F8A9B0C1D2E3F4A5B", uuid));
-        assert!(same_id("sw_01jbretry", "sw_01jbretry"));
-        assert!(!same_id(uuid, "sw_658f6ef01c2d4e5f8a9b0c1d2e3f4a5b"));
+        assert!(!same_id(uuid, "prj_658f6ef01c2d4e5f8a9b0c1d2e3f4a5b"));
         assert!(!same_id("", ""));
     }
 

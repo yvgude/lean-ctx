@@ -129,21 +129,8 @@ pub fn clone_place(
     place: &str,
     verifier: &Verifier<'_>,
 ) -> Result<SyncReport, HiveError> {
-    clone_scoped(api, replica, place, None, verifier)
-}
-
-/// [`clone_place`] of a swarm subtree (`scope=subtree:<goal node id>`,
-/// CONTRACT §3.13 "Swarm scope"): the ad-hoc manifest and its segments
-/// hold the goal, its subtree and the nodes they reference.
-pub fn clone_scoped(
-    api: &dyn PlaceApi,
-    replica: &mut Replica,
-    place: &str,
-    scope: Option<&str>,
-    verifier: &Verifier<'_>,
-) -> Result<SyncReport, HiveError> {
-    match clone_once(api, replica, place, scope, verifier) {
-        Err(HiveError::NotFound) => clone_once(api, replica, place, scope, verifier),
+    match clone_once(api, replica, place, verifier) {
+        Err(HiveError::NotFound) => clone_once(api, replica, place, verifier),
         other => other,
     }
 }
@@ -152,12 +139,10 @@ fn clone_once(
     api: &dyn PlaceApi,
     replica: &mut Replica,
     place: &str,
-    scope: Option<&str>,
     verifier: &Verifier<'_>,
 ) -> Result<SyncReport, HiveError> {
     let base = place_path(place);
-    let query = scope.map_or_else(String::new, |s| format!("?scope={s}"));
-    let manifest = api.get(&format!("{base}/snapshot{query}"))?;
+    let manifest = api.get(&format!("{base}/snapshot"))?;
     if manifest.get("place").and_then(Value::as_str) != Some(place) {
         return Err(protocol("snapshot manifest names another place"));
     }
@@ -188,7 +173,7 @@ fn clone_once(
     let pk = pk_id(replica)?;
     let mut stored = 0;
     for meta in records::segments(&manifest).map_err(protocol)? {
-        let path = format!("{base}/snapshot/{rev}/segments/{}{query}", meta.n);
+        let path = format!("{base}/snapshot/{rev}/segments/{}", meta.n);
         let mut attempt = 0;
         let events = loop {
             let mut lines = segment_records(&api.get_bytes(&path, MAX_SEGMENT_BYTES)?)?;

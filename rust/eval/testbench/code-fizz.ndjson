@@ -1,2 +1,0 @@
-# lean-ctx testbench — local code fixture (deterministic CI subset, #611)
-{"id":"code-fizz","domain":"code","prompt":"Implement the POSIX shell function fizzbuzz(n) in solution.sh: echo 'Fizz' when n is divisible by 3, 'Buzz' when divisible by 5, 'FizzBuzz' when divisible by both, otherwise echo n. Output only the file contents.","workspace":".","retrieval_query":"fizzbuzz solution.sh divisible by 3 5","target_file":"solution.sh","test_cmd":"sh test.sh"}

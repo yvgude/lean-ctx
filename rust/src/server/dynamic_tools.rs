@@ -86,8 +86,9 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
         "ctx_execute" | "ctx_pack" | "ctx_control" => ToolCategory::Metrics,
 
         // Multi-agent: on-demand collaboration
-        "ctx_agent" | "ctx_share" | "ctx_handoff" | "ctx_work_graph" | "ctx_tasks"
-        | "ctx_compute" => ToolCategory::Session,
+        "ctx_agent" | "ctx_share" | "ctx_handoff" | "ctx_work_graph" | "ctx_tasks" => {
+            ToolCategory::Session
+        }
 
         _ => ToolCategory::Core,
     }
@@ -248,7 +249,7 @@ pub fn targets_internal_host_tool(
 /// Hive MCP tools. They ship with the connector but follow its release switch
 /// (`core::hive::available_locally`, owner 28.10.): while it is off they are
 /// in no tool list and every call answers [`crate::core::hive::TOOL_NOT_AVAILABLE`].
-pub const HIVE_TOOLS: &[&str] = &["ctx_tasks", "ctx_compute"];
+pub const HIVE_TOOLS: &[&str] = &["ctx_tasks"];
 
 /// Whether `name` is a Hive tool withheld by the release switch.
 #[must_use]

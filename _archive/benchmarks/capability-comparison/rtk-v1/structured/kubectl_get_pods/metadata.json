@@ -1,6 +1,0 @@
-{
-  "command": "kubectl get pods -n context-runtime",
-  "working_dir": "/workspace/lean-ctx/deploy",
-  "expected_tokens": 166,
-  "category": "structured"
-}

@@ -56,13 +56,6 @@ pub fn required_capabilities(tool_name: &str) -> &'static [Capability] {
         "ctx_handoff" | "ctx_share" => &[Capability::KnowledgeRead, Capability::AgentManage],
         "ctx_agent" | "ctx_work_graph" => &[Capability::AgentManage],
         "ctx_tasks" => &[Capability::AgentManage, Capability::HiveNet],
-        // Task Compute reads the checkout into a bundle and spends the
-        // workspace's prepaid credit: never from a read-only role.
-        "ctx_compute" => &[
-            Capability::FsRead,
-            Capability::AgentManage,
-            Capability::HiveNet,
-        ],
         "ctx_session" | "ctx" => &[],
         _ => &[Capability::FsRead],
     }
@@ -142,8 +135,7 @@ fn capabilities_from_role(role_name: &str) -> HashSet<Capability> {
     }
     // Hive tasks reach the organization's linked Hive only; the
     // connection, its lease and the opt-in decide what goes out (C0 1.9 §4).
-    if crate::core::hive::available_locally() && (has_tool("ctx_tasks") || has_tool("ctx_compute"))
-    {
+    if crate::core::hive::available_locally() && has_tool("ctx_tasks") {
         caps.insert(Capability::AgentManage);
         caps.insert(Capability::HiveNet);
     }
@@ -247,9 +239,7 @@ mod tests {
         assert!(check_capabilities("unknown_role", "ctx_tasks").allowed);
         for read_only in ["reviewer", "ci", "minimal"] {
             assert!(!check_capabilities(read_only, "ctx_tasks").allowed);
-            assert!(!check_capabilities(read_only, "ctx_compute").allowed);
         }
-        assert!(check_capabilities("coder", "ctx_compute").allowed);
         // Hive only: no role but admin reaches other hosts.
         for role in ["coder", "unknown_role", "reviewer", "minimal"] {
             assert!(!role_capabilities(role).contains(&Capability::NetOutbound));

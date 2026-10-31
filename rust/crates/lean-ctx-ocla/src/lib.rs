@@ -1,7 +1,7 @@
 //! Open Context & Token Lifecycle Architecture (OCLA) — the stable contract
 //! boundary between lean-ctx-core (Apache-2.0 OSS) and lean-ctx-enterprise
-//! (proprietary). All 14 OCLA traits, canonical types, token envelopes,
-//! and agent message primitives live here.
+//! (proprietary). The `OclaService` base trait and its 14 capability traits,
+//! canonical types, token envelopes and agent message primitives live here.
 //!
 //! Dependency direction:
 //!   lean-ctx-core depends on lean-ctx-ocla (OSS → OSS)

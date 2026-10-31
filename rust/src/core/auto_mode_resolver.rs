@@ -158,6 +158,74 @@ pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
     r
 }
 
+/// Above this many lines a `ctx_read` that names no range answers with an
+/// outline; at or below it the file comes whole (owner decision 2026-10-30).
+///
+/// Measured on pilot P8 (42 Haiku default-arm runs): every file the model read
+/// whole with `mode="full"` had at most 283 lines, every file it navigated by
+/// `symbol=`/`lines:` had 417 or more (`service.py` 1062, `factories.py` 1517,
+/// `flows.py` 473, `views.py` 464). Both no-range outlines of a 238-line test
+/// file were followed by a whole-file read of the same file, so a smaller
+/// threshold buys a round trip, not tokens.
+pub const OUTLINE_MIN_LINES: usize = 300;
+
+/// Resolutions that already are the right answer to a read without a range:
+/// the `[unchanged]` stub and the delta of a re-read, files read whole by
+/// rule (instruction files, binaries), a configured Context Kit, and the
+/// one-shot quality-loop recoveries after a failed edit.
+const UNRANGED_KEEP_SOURCES: &[&str] = &[
+    "cache_hit",
+    "cache_changed",
+    "binary",
+    "instruction_file",
+    "context_kit",
+    "anchored_edit_fail_escalation",
+    "edit_fail_escalation",
+    "edit_quality_penalty",
+];
+
+/// The outline view for a large file: the symbol list with line spans, or the
+/// key structure of a data/prose format. A file with no extractable structure
+/// gets the header (line count) and a pointer to `lines:N-M`.
+#[must_use]
+pub fn outline_mode(path: &str) -> &'static str {
+    let lower = path.to_ascii_lowercase();
+    let ext = std::path::Path::new(&lower)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    if matches!(
+        ext,
+        "md" | "mdx" | "rst" | "json" | "yaml" | "yml" | "toml" | "lock"
+    ) || lower.ends_with("go.sum")
+    {
+        "map"
+    } else {
+        "signatures"
+    }
+}
+
+/// Owner rule for a read that names no range (no mode, or `auto`): a file
+/// with more than [`OUTLINE_MIN_LINES`] lines comes as its outline, a smaller
+/// file comes whole. A pure function of the resolution, the path and the line
+/// count, so the delivered view stays byte-stable (#498).
+#[must_use]
+pub fn unranged_view(r: ResolvedMode, path: &str, line_count: usize) -> ResolvedMode {
+    if UNRANGED_KEEP_SOURCES.contains(&r.source) {
+        return r;
+    }
+    if line_count > OUTLINE_MIN_LINES {
+        if matches!(r.mode.as_str(), "signatures" | "map") {
+            return r;
+        }
+        return resolved(outline_mode(path), "large_file_outline");
+    }
+    if r.mode == "full" {
+        return r;
+    }
+    resolved("full", "small_file_whole")
+}
+
 fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
     if crate::tools::ctx_read::is_instruction_file(ctx.path) {
         return resolved("full", "instruction_file");
@@ -1266,6 +1334,54 @@ mod tests {
         crate::test_env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Owner decision 2026-10-30: a read without a range outlines a large file
+    /// and gives a small one whole; stubs, deltas, rule-whole files and edit
+    /// recoveries keep their resolution.
+    #[test]
+    fn unranged_view_outlines_large_files_and_keeps_small_ones_whole() {
+        let r = |mode: &str, source: &'static str| ResolvedMode {
+            mode: mode.to_string(),
+            source,
+        };
+        let big = OUTLINE_MIN_LINES + 1;
+        for (mode, source, path, lines, expected) in [
+            ("full", "heuristic", "a.rs", big, "signatures"),
+            ("aggressive", "heuristic", "notes.txt", big, "signatures"),
+            (
+                "lines:46-228",
+                "cache_hit_compressed",
+                "a.py",
+                big,
+                "signatures",
+            ),
+            ("full", "path_bounce_memory", "a.go", big, "signatures"),
+            ("full", "config_data", "data.json", big, "map"),
+            ("aggressive", "heuristic", "README.md", big, "map"),
+            ("map", "heuristic", "a.rs", big, "map"),
+            ("signatures", "heuristic", "a.rs", OUTLINE_MIN_LINES, "full"),
+            ("lines:1-40", "cache_hit_compressed", "a.rs", 120, "full"),
+            ("full", "small_file", "a.rs", 10, "full"),
+            ("full", "cache_hit", "a.rs", big, "full"),
+            ("diff", "cache_changed", "a.rs", big, "diff"),
+            ("full", "instruction_file", "AGENTS.md", big, "full"),
+            ("full", "edit_fail_escalation", "a.rs", big, "full"),
+            (
+                "anchored",
+                "anchored_edit_fail_escalation",
+                "a.rs",
+                big,
+                "anchored",
+            ),
+            ("map", "context_kit", "a.rs", 10, "map"),
+        ] {
+            assert_eq!(
+                unranged_view(r(mode, source), path, lines).mode,
+                expected,
+                "{mode} ({source}) for {path} with {lines} lines"
+            );
+        }
     }
 
     #[test]

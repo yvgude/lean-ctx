@@ -16,8 +16,6 @@ Hover the item for the breakdown. Each line is labelled by where its number come
 - `✓` counted from the savings ledger or the audit trail
 - `≈` derived from counted values, such as a percentage
 
-If you ran `lean-ctx prove speed`, the tooltip also shows the signed A/B result. The extension never shows a speed claim you haven't measured.
-
 ## Inspect the recorded evidence
 
 The extension computes nothing. It asks the lean-ctx binary (`lean-ctx prompt-segment --json`), which reads the same snapshot as your shell prompt.

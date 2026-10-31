@@ -40,7 +40,6 @@ fn display_ttl(route: &str) -> Option<(&'static str, Duration)> {
     let (route, secs): (&'static str, u64) = match route {
         "/api/stats" => ("/api/stats", 3),
         "/api/roi" => ("/api/roi", 30),
-        "/api/roi-report" => ("/api/roi-report", 30),
         "/api/value" => ("/api/value", 15),
         "/api/gain" => ("/api/gain", 15),
         "/api/health" => ("/api/health", 10),

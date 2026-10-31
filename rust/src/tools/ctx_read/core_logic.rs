@@ -522,6 +522,32 @@ pub(crate) fn resolve_auto_mode(
     crate::core::auto_mode_resolver::resolve(&ctx).mode
 }
 
+/// [`resolve_auto_mode`] for an MCP `ctx_read` with `mode="auto"` and no
+/// range: the same choice under the outline rule
+/// ([`crate::core::auto_mode_resolver::unranged_view`]), so explicit `auto`
+/// and an omitted mode deliver the same view.
+pub(crate) fn resolve_unranged_auto_mode(
+    cache: Option<&SessionCache>,
+    file_path: &str,
+    original_tokens: usize,
+    line_count: usize,
+    task: Option<&str>,
+) -> String {
+    let ctx = crate::core::auto_mode_resolver::AutoModeContext {
+        path: file_path,
+        token_count: original_tokens,
+        line_count: Some(line_count),
+        task,
+        cache,
+    };
+    crate::core::auto_mode_resolver::unranged_view(
+        crate::core::auto_mode_resolver::resolve(&ctx),
+        file_path,
+        line_count,
+    )
+    .mode
+}
+
 const AUTO_DELTA_THRESHOLD: f64 = 0.6;
 
 /// Re-reads from disk; if content changed and delta is compact, sends auto-delta.

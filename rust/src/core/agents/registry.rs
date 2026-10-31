@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 #[cfg(test)]
-use super::diary::{AgentDiary, DiaryEntryType, truncate};
+use super::diary::{AgentDiary, DiaryEntryType};
 use super::persistence::{
     FileLock, ProcessIdentityIndex, agents_dir, create_agents_dir, generate_short_id,
     load_registry_file, mutate_persistent, save_registry_file,
@@ -959,45 +959,12 @@ impl AgentRegistry {
         Ok(id)
     }
 
-    pub(crate) fn read_messages(
-        &mut self,
-        agent_id: &str,
-    ) -> Result<Vec<&ScratchpadEntry>, String> {
-        self.require_active_for_presence(agent_id, "reading messages")?;
-        let now = Utc::now();
-        let floor = self.broadcast_floor(agent_id);
-        let unread: Vec<usize> = self
-            .scratchpad
-            .iter()
-            .enumerate()
-            .filter(|(_, e)| {
-                !e.read_by.contains(&agent_id.to_string())
-                    && (e.to_agent.as_deref() == Some(agent_id)
-                        || (e.to_agent.is_none() && floor.is_none_or(|floor| e.timestamp >= floor)))
-                    && e.expires_at.is_none_or(|exp| exp > now)
-            })
-            .map(|(i, _)| i)
-            .collect();
-
-        for i in &unread {
-            self.scratchpad[*i].read_by.push(agent_id.to_string());
-        }
-
-        Ok(self
-            .scratchpad
-            .iter()
-            .filter(|e| {
-                (e.to_agent.is_none() || e.to_agent.as_deref() == Some(agent_id))
-                    && e.from_agent != agent_id
-                    && e.expires_at.is_none_or(|exp| exp > now)
-            })
-            .collect())
-    }
-
+    #[cfg(test)]
     pub(crate) fn read_unread(&mut self, agent_id: &str) -> Result<Vec<&ScratchpadEntry>, String> {
         self.read_unread_for_project(agent_id, None)
     }
 
+    #[cfg(test)]
     pub(crate) fn read_unread_scoped(
         &mut self,
         agent_id: &str,
@@ -1107,6 +1074,7 @@ impl AgentRegistry {
         }
     }
 
+    #[cfg(test)]
     fn read_unread_for_project(
         &mut self,
         agent_id: &str,
@@ -1240,6 +1208,7 @@ impl AgentRegistry {
         self.updated_at = Utc::now();
     }
 
+    #[cfg(test)]
     pub(crate) fn save(&self) -> Result<(), String> {
         let dir = agents_dir()?;
         create_agents_dir(&dir)?;

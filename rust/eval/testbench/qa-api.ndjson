@@ -1,2 +1,0 @@
-# lean-ctx testbench — local QA fixture (deterministic CI subset, #611)
-{"id":"qa-api-backoff","domain":"qa","prompt":"How does the PaymentGateway retry failed charges?","workspace":".","retrieval_query":"PaymentGateway retry failed charges exponential backoff base delay attempts","answers":["exponential backoff base delay 200ms maximum 5 attempts","exponential backoff, 200ms base delay, up to 5 attempts"]}

@@ -30,20 +30,17 @@ const SELF_HELP: &[&[&str]] = &[
     &["shadow"],
     &["finops"],
     &["roi"],
-    &["measure"],
     &["token-report", "report-tokens"],
     &["policy"],
     &["addon", "addons"],
     &["enable-gpu", "gpu"],
     &["rules"],
-    &["prove"],
     &["value"],
     &["prompt-segment"],
     &["statusline"],
     &["inspect"],
     &["gateway"],
     &["claude-mod", "claude_mod"],
-    &["eval"],
     &["agent"],
     &["instructions"],
     &["index"],
@@ -112,7 +109,6 @@ const GUARDED: &[&[&str]] = &[
     &["learning"],
     &["conformance", "selftest"],
     &["health"],
-    &["quality-lab", "quality_lab"],
     &["triage"],
     &["scenario"],
     &["pack"],
@@ -196,7 +192,7 @@ const NON_COMMAND_SECTIONS: &[&str] = &[
 /// [`SELF_HELP`] arms whose handler honours `--help` at *any* position with its
 /// own, richer usage (`init --agent claude --help`, #1849 — covered by the
 /// `init_help_safety_1849` integration test; `hive tasks --help` prints the
-/// tasks usage, `hive swarm|worker --help` the hive one).
+/// tasks usage, `hive worker --help` the hive one).
 const SELF_HELP_ANYWHERE: &[&str] = &["init", "hive"];
 
 fn group_of<'a>(table: &'a [&'a [&'a str]], cmd: &str) -> Option<&'a [&'a str]> {
@@ -210,11 +206,8 @@ fn wants_help(rest: &[String]) -> bool {
         || matches!(rest, [only] if only == "-h")
 }
 
-/// Measurement commands deprecated by the focus release
-/// (docs/migration/focus-2026-10.md, part E): they still run for one release.
-const DEPRECATED_COMMANDS: &[&str] = &["quality-lab", "quality_lab", "eval"];
-
-/// Measurement and demo commands removed by the focus release.
+/// Measurement and demo commands removed by the focus release, and the
+/// research and evaluation commands removed from the engine afterwards.
 const REMOVED_COMMANDS: &[&str] = &[
     "visualize",
     "demo",
@@ -222,7 +215,15 @@ const REMOVED_COMMANDS: &[&str] = &[
     "benchmark-run",
     "bench-run",
     "pair",
+    "quality-lab",
+    "quality_lab",
+    "eval",
+    "measure",
+    "prove",
 ];
+
+/// Research and evaluation commands removed from the engine (2026-10-30).
+const RESEARCH_COMMANDS: &[&str] = &["quality-lab", "quality_lab", "eval", "measure", "prove"];
 
 /// The stderr message for a removed command; the dispatcher exits with 2.
 pub(super) fn removed_notice(cmd: &str) -> Option<String> {
@@ -233,20 +234,17 @@ pub(super) fn removed_notice(cmd: &str) -> Option<String> {
                     agents; see ctx_work_graph action=start (docs/migration/focus-2026-10.md)."
                 .to_string();
         }
+        if RESEARCH_COMMANDS.contains(&cmd) {
+            return format!(
+                "lean-ctx: '{cmd}' was removed: research and evaluation tooling is no longer \
+                 part of the engine. Measured savings: `lean-ctx gain`; fixed context cost: \
+                 `lean-ctx doctor overhead`."
+            );
+        }
         format!(
             "lean-ctx: '{cmd}' was removed with the focus release; use `lean-ctx gain`, \
              `lean-ctx benchmark`, `lean-ctx doctor` or `lean-ctx cockpit --export` \
              (HTML report) instead (docs/migration/focus-2026-10.md)."
-        )
-    })
-}
-
-/// The stderr notice for a deprecated command, so stdout (often JSON) stays clean.
-pub(super) fn deprecation_notice(cmd: &str) -> Option<String> {
-    DEPRECATED_COMMANDS.contains(&cmd).then(|| {
-        format!(
-            "lean-ctx: '{cmd}' is deprecated and will be removed in the next minor release \
-             (docs/migration/focus-2026-10.md)."
         )
     })
 }
@@ -451,7 +449,7 @@ mod tests {
     /// subcommand's own usage, never the generic reference lines.
     #[test]
     fn hive_subcommand_help_is_answered_by_hive() {
-        for sub in ["tasks", "swarm", "worker", "review"] {
+        for sub in ["tasks", "worker", "review"] {
             let rest = vec![sub.to_owned(), "--help".to_owned()];
             assert_eq!(guarded_help("hive", &rest), None, "{sub}");
         }

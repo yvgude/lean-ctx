@@ -38,14 +38,14 @@ pub fn run_cli(args: &[String]) -> i32 {
     crate::core::version_check::check_background();
 
     match build_status_report() {
-        Ok((report, path)) => {
+        Ok((mut report, path)) => {
+            let saved = save_report(&report, &path).map_err(|error| report.errors.push(error));
             let text = serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string());
-            let _ = crate::config_io::write_atomic_with_backup(&path, &text);
 
             if json {
                 println!("{text}");
             } else {
-                print_human(&report, &path);
+                print_human(&report, saved.is_ok().then_some(path.as_path()));
                 if let Some(banner) = crate::core::version_check::get_update_banner() {
                     println!("\n{banner}");
                 }
@@ -58,6 +58,16 @@ pub fn run_cli(args: &[String]) -> i32 {
             2
         }
     }
+}
+
+/// Persist a report as pretty JSON. A failed write is the report's error:
+/// it was the one thing the command could not do, so it must not exit 0
+/// (shared with `token-report`).
+pub(crate) fn save_report<T: Serialize>(report: &T, path: &std::path::Path) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(report)
+        .map_err(|error| format!("cannot serialize the report: {error}"))?;
+    crate::config_io::write_atomic_with_backup(path, &text)
+        .map_err(|error| format!("cannot save the report to {}: {error}", path.display()))
 }
 
 fn build_status_report() -> Result<(StatusReport, std::path::PathBuf), String> {
@@ -153,7 +163,7 @@ fn build_status_report() -> Result<(StatusReport, std::path::PathBuf), String> {
     Ok((report, path))
 }
 
-fn print_human(report: &StatusReport, path: &std::path::Path) {
+fn print_human(report: &StatusReport, saved_to: Option<&std::path::Path>) {
     println!("lean-ctx status  v{}", report.version);
     let cfg = crate::core::config::Config::load();
     let hosts = dirs::home_dir()
@@ -204,5 +214,29 @@ fn print_human(report: &StatusReport, path: &std::path::Path) {
     if !report.errors.is_empty() {
         println!("  errors: {}", report.errors.len());
     }
-    println!("  report saved: {}", path.display());
+    for error in &report.errors {
+        eprintln!("error: {error}");
+    }
+    if let Some(path) = saved_to {
+        println!("  report saved: {}", path.display());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// F9c: `status`/`token-report` used to ignore a failed report write and
+    /// always exit 0. The failure is now the report's error.
+    #[test]
+    fn a_failed_report_write_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("blocker");
+        std::fs::write(&blocker, "a file, not a directory").unwrap();
+        let error =
+            super::save_report(&serde_json::json!({}), &blocker.join("status.json")).unwrap_err();
+        assert!(error.contains("cannot save the report"), "{error}");
+
+        let ok = dir.path().join("status.json");
+        super::save_report(&serde_json::json!({ "a": 1 }), &ok).unwrap();
+        assert!(std::fs::read_to_string(&ok).unwrap().contains("\"a\": 1"));
+    }
 }

@@ -127,13 +127,6 @@ fn print_report(r: &ToolHealthReport, show_all: bool) {
     if !r.disable_action.is_empty() {
         println!("\n  {YELLOW}→ {}{RST}", r.disable_action);
     }
-    if let Some(note) = &r.footprint_note {
-        println!("  {DIM}{note}{RST}");
-    } else {
-        println!(
-            "  {DIM}→ run `lean-ctx eval footprint --suite <f>` to prove the tool-schema element earns its tokens.{RST}"
-        );
-    }
 
     if show_all {
         println!(

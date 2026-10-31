@@ -9,7 +9,7 @@ use chrono::Local;
 use serde_json::{Value, json};
 
 use crate::{
-    core::{benchmark_compare::system_info, share::copy_to_clipboard},
+    core::{share::copy_to_clipboard, system_info},
     proxy::pipeline_bench::{BenchmarkReport, run_benchmark},
 };
 
