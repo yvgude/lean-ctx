@@ -1200,11 +1200,16 @@ impl CtxReadTool {
         // When enabled, appends issue/PR/schema references from the property
         // graph. Skipped when graph.db doesn't exist (#682).
         // Legacy graph edges carry no source authority for protected reuse.
-        let hints_suffix = if crate::core::profiles::active_profile()
+        // A project linked to an emspace space is indexed in the background
+        // (detached, never waited for), so its page hints need no provider call.
+        let hints_on = crate::core::profiles::active_profile()
             .output_hints
             .cross_source_hint()
-            && !crate::core::policy::runtime::is_active()
-        {
+            && !crate::core::policy::runtime::is_active();
+        if hints_on && crate::core::providers::emspace::is_linked(&ctx.project_root) {
+            crate::core::providers::emspace::refresh_index_if_due(&ctx.project_root);
+        }
+        let hints_suffix = if hints_on {
             let graph_db =
                 crate::core::property_graph::graph_dir(&ctx.project_root).join("graph.db");
             let graph = graph_db

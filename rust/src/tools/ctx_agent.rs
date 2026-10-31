@@ -157,7 +157,12 @@ fn read_messages(current_agent_id: Option<&str>, project_root: &str) -> Result<S
     let Some(agent_id) = current_agent_id else {
         return Err("Error: agent must be registered first (use action=register)".to_string());
     };
-    read_messages_as(agent_id, project_root, true)
+    let mut text = read_messages_as(agent_id, project_root, true)?;
+    // What other agents declared in the linked emspace space, beside the bus.
+    if let Some(sessions) = crate::core::providers::emspace::admitted_sessions_block(project_root) {
+        text.push_str(&sessions);
+    }
+    Ok(text)
 }
 
 /// The line `read`/`wait` print once after an expired registration was renewed.
@@ -391,8 +396,10 @@ pub fn handle(
             };
 
             let agents = registry.list_active(Some(project_root));
+            let sessions = crate::core::providers::emspace::admitted_sessions_block(project_root)
+                .unwrap_or_default();
             if agents.is_empty() {
-                return "No active agents for this project.".to_string();
+                return format!("No active agents for this project.{sessions}");
             }
 
             // V5.3: sessions are listed under the durable worker they attach
@@ -408,11 +415,13 @@ pub fn handle(
                 }
                 _ => Vec::new(),
             };
-            crate::core::hive::workers::roster::render(
+            let mut roster = crate::core::hive::workers::roster::render(
                 &agents,
                 instance.as_deref().map(|id| (id, book.as_slice())),
                 chrono::Utc::now(),
-            )
+            );
+            roster.push_str(&sessions);
+            roster
         }
 
         "post" => {

@@ -160,7 +160,9 @@ Working the space economically:
 - before documenting, check the checkout is the base the space documents, and
   rescan only what `emspace coverage` and `emspace status` (stale) name;
 - find a page for a file through the `ctx_read` hint rather than a separate
-  `emspace search` → `page show` chain.
+  `emspace search` → `page show` chain;
+- check open sessions through `ctx_agent read` instead of a separate
+  `emspace orient` when only the in-flight work matters.
 
 After 30+ tool calls without documentation:
 - lean-ctx will prompt with `[CHECKPOINT: please document current progress]`
@@ -179,15 +181,19 @@ This means `ctx_semantic_search` finds issues/PRs/tickets, `ctx_knowledge` recal
 and `ctx_read` shows cross-source hints (e.g. "Issue #42 references this file"); a profile can
 turn them off with `output_hints.cross_source_hint = false`.
 
-**Emspace:** in a linked checkout, index the space once per session, and again
-after pages were added or repinned:
-`ctx_provider(action="query", provider="emspace", resource="pages")`.
-Afterwards `ctx_read` of a documented file names its page
-(`emspace://pages/<slug> [documents]`) when the active profile sets
-`output_hints.cross_source_hint` is on (the default).
-`resource="search"` (with `query`) and `resource="tasks"` (with `state`)
+**Emspace:** a linked checkout needs no setup. `ctx_read` indexes the space in
+the background (first read, then every ten minutes) and, with
+`output_hints.cross_source_hint` on (the default), names the page that
+documents the file: `emspace://pages/<slug> [documents]` — read it with
+`emspace page show --body <slug>`. Right after pages were added or repinned,
+`ctx_provider(action="query", provider="emspace", resource="pages")` indexes
+at once. `ctx_agent read`/`list` show the space's open sessions beside the bus,
+so the directive check also shows what other agents declared there.
+`resource="search"` (with `query`), `"tasks"` (with `state`) and `"sessions"`
 answer without leaving lean-ctx. The provider only reads; writes stay with the
-`emspace` CLI.
+`emspace` CLI, whose page bodies, `--json`, `schema` and listings `ctx_shell`
+passes unchanged; only a single `page show` header is shortened. `emspace` is
+on the default shell allowlist (3.12.1).
 
 ## Agent Bus Registration (mandatory, first action)
 

@@ -433,6 +433,12 @@ impl CodeGraph {
         cross_source::delete_by_kind(&self.conn, kind)
     }
 
+    /// Delete every cross-source edge with an end under the URI `prefix`
+    /// (both directions), so a re-indexed source replaces its own edges.
+    pub fn delete_cross_source_edges_with_uri_prefix(&self, prefix: &str) -> anyhow::Result<usize> {
+        cross_source::delete_with_uri_prefix(&self.conn, prefix)
+    }
+
     pub fn clear(&self) -> anyhow::Result<()> {
         self.conn.execute_batch(
             "DELETE FROM edges; DELETE FROM nodes; DELETE FROM file_catalog; DELETE FROM paths; \

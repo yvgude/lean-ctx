@@ -261,7 +261,9 @@ new_paths = [
   "rust/src/core/providers/connection.rs",
   "rust/src/core/providers/credentials.rs",
   # Emspace provider (owner go 2026-10-31): read-only connector for the space
-  # a project is linked to via `.emspace`. Own code, Apache-2.0 SPDX-headed.
+  # a project is linked to via `.emspace`, and the compressor of its CLI
+  # output. Own code, Apache-2.0 SPDX-headed.
+  "rust/src/core/patterns/emspace.rs",
   "rust/src/core/providers/emspace.rs",
   "rust/src/core/root_selection.rs",
   "rust/src/core/audit_trail/checkpoint.rs",

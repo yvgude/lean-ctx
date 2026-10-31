@@ -1,15 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Named phases of a long tool call (#2063).
 //!
-//! `LEAN_CTX_PHASE_TIMING=1` prints each phase's duration to stderr, so a slow
-//! call can be attributed without a debugger. Independently, the phase that is
-//! still running is kept, so `lean-ctx call` can say where it is stuck instead
-//! of going silent.
+//! `LEAN_CTX_PHASE_TIMING=1` prints each phase's start and duration to stderr,
+//! so a slow call can be attributed without a debugger — also a call that
+//! never finishes, whose phases would otherwise print nothing. Independently,
+//! the phase that is still running is kept, so `lean-ctx call` can say where
+//! it is stuck instead of going silent.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 static CURRENT: Mutex<Option<(&'static str, Instant)>> = Mutex::new(None);
+
+/// Whether `LEAN_CTX_PHASE_TIMING=1` asks for phase lines on stderr.
+pub(crate) fn enabled() -> bool {
+    std::env::var_os("LEAN_CTX_PHASE_TIMING").is_some_and(|v| v == "1")
+}
 
 /// Marks `name` as running until the guard drops.
 #[must_use = "the phase ends when the guard drops"]
@@ -19,10 +25,21 @@ pub(crate) fn enter(name: &'static str) -> PhaseGuard {
         .lock()
         .map(|mut slot| slot.replace((name, started)))
         .unwrap_or(None);
+    if enabled() {
+        eprintln!("[phase] {name} started");
+    }
     PhaseGuard {
         name,
         started,
         outer,
+    }
+}
+
+/// Reports one slow step inside `phase` (one source of a scan, say) when
+/// phase timing is on. `detail` names the step; it goes to stderr only.
+pub(crate) fn note_slow(phase: &'static str, detail: &str, spent: Duration) {
+    if enabled() {
+        eprintln!("[phase] {phase} slow step {spent:?}: {detail}");
     }
 }
 
@@ -45,7 +62,7 @@ impl Drop for PhaseGuard {
         if let Ok(mut slot) = CURRENT.lock() {
             *slot = self.outer;
         }
-        if std::env::var_os("LEAN_CTX_PHASE_TIMING").is_some_and(|v| v == "1") {
+        if enabled() {
             eprintln!("[phase] {} {:?}", self.name, self.started.elapsed());
         }
     }

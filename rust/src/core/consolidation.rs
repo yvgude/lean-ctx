@@ -205,6 +205,10 @@ pub struct PrunePrior {
     pub bm25_prefix: Option<String>,
     /// Remove cross-source edges of this `kind` (e.g. `health_hotspot`).
     pub edge_kind: Option<String>,
+    /// Remove cross-source edges with an end whose URI starts with this
+    /// prefix (e.g. `emspace://pages/`), whatever their kind: a source that
+    /// shares a kind with others (`documents`) replaces only its own edges.
+    pub edge_uri_prefix: Option<String>,
     /// Remove knowledge facts of this `category` (e.g. `code_health`).
     pub fact_category: Option<String>,
 }
@@ -329,11 +333,14 @@ pub(crate) fn apply_artifacts_to_stores_with_origins(
 
     // Cross-source edges → property graph (#682). Evict prior edges of this kind
     // first so a replace-source's resolved links disappear from `ctx_read` hints.
-    if prune.edge_kind.is_some() || !artifacts.edges.is_empty() {
+    if prune.edge_kind.is_some() || prune.edge_uri_prefix.is_some() || !artifacts.edges.is_empty() {
         match crate::core::property_graph::CodeGraph::open(project_root) {
             Ok(pg) => {
                 if let Some(kind) = &prune.edge_kind {
                     let _ = pg.delete_cross_source_edges_by_kind(kind);
+                }
+                if let Some(prefix) = &prune.edge_uri_prefix {
+                    let _ = pg.delete_cross_source_edges_with_uri_prefix(prefix);
                 }
                 write_edges_to_property_graph(&pg, &artifacts.edges);
             }

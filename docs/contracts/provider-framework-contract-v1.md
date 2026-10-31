@@ -32,7 +32,7 @@ ContextProvider::execute()
 | GitLab | `GITLAB_TOKEN` set | issues, merge_requests, pipelines |
 | Jira | `JIRA_TOKEN` set | issues, sprints, projects |
 | PostgreSQL | `DATABASE_URL` or `PGDATABASE` set | tables, schemas (catalog introspection only) |
-| Emspace | a `.emspace` link at or above the project root and the `emspace` CLI on `PATH` or in `~/.local/bin` | pages, search, tasks |
+| Emspace | a `.emspace` link at or above the project root and the `emspace` CLI on `PATH` or in `~/.local/bin` | pages, search, tasks, sessions |
 
 GitLab list filters (`state`, issue `labels`, and pipeline `status`) are
 percent-encoded as individual query values. Reserved characters, literal plus
@@ -78,13 +78,25 @@ noted) indexes the first 6000 characters of each body. A page's `derived`
 `dir:` sources become its `references` when the dir is this repository (the
 same checkout, or a registered checkout with one of this repository's git
 remotes); a glob is expanded against the checkout to the files it selects
-there (at most 256 per pin). `ctx_read` shows the resulting hints only under
-a profile with `output_hints.cross_source_hint = true`, the default in every
-built-in profile since 3.12.1. `search` is
-`emspace search` over pages (`query` required); `tasks` is `emspace task list`
-(`state` = backlog, todo, doing, done or dropped). Without the link or the CLI
-the provider is unavailable and runs nothing. Removed pages keep their indexed
-edges until the stores are rebuilt.
+there (at most 256 per pin). `search` is `emspace search` over pages (`query`
+required); `tasks` is `emspace task list` (`state` = backlog, todo, doing, done
+or dropped); `sessions` is `emspace session list` (`state` = open, the default,
+closed or all). Without the link or the CLI the provider is unavailable and
+runs nothing.
+
+In a linked project the provider needs no call. While
+`output_hints.cross_source_hint` is on (the default in every built-in profile
+since 3.12.1), `ctx_read` starts a background index of the space on its first
+read and again after ten minutes, and shows the resulting hints; `false` turns
+both off. The pass is detached from the read, bounded like every provider call
+(30 s, 16 MiB), and runs at most once at a time per project across processes
+(a lock file beside the project's graph). Each pass replaces the previous one
+(chunks under `emspace://pages/` and every cross-source edge with an end
+there), and a failed read keeps it. It honours `providers.enabled` and
+`providers.auto_index` and the strict screen of an untrusted workspace.
+`ctx_agent read` and `list` append the space's open sessions (title, author,
+plan up to 240 characters) after redaction, admitted and recorded as the
+source `provider:emspace/sessions`, fetched at most once a minute.
 
 ### Config-based Providers
 
