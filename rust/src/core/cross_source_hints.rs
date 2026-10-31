@@ -9,6 +9,10 @@
 
 use crate::core::graph_index::IndexEdge;
 
+/// Weight factor of a hint reached through a directory reference rather than
+/// the file itself.
+const DIRECTORY_MATCH_FACTOR: f32 = 0.9;
+
 /// A hint about related data from another source.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CrossSourceHint {
@@ -41,27 +45,47 @@ pub(crate) fn hints_for_file_matching(
 ) -> Vec<CrossSourceHint> {
     let rel = crate::core::graph_index::graph_relative_key(file_path, project_root);
 
-    let matches_path = |edge_path: &str| -> bool { edge_path == file_path || edge_path == rel };
+    // The file itself, or a directory a provider declared the item to be
+    // about (an emspace page pinned to `rust/src/dashboard`). A directory
+    // match ranks below an exact one of the same weight.
+    let path_weight = |edge_path: &str| -> Option<f32> {
+        if edge_path == file_path || edge_path == rel {
+            Some(1.0)
+        } else if !edge_path.is_empty()
+            && !edge_path.contains("://")
+            // Separator-agnostic: Windows keys may carry `\`.
+            && rel
+                .replace('\\', "/")
+                .strip_prefix(edge_path.replace('\\', "/").as_str())
+                .is_some_and(|rest| rest.starts_with('/'))
+        {
+            Some(DIRECTORY_MATCH_FACTOR)
+        } else {
+            None
+        }
+    };
 
     let mut hints: Vec<CrossSourceHint> = edges
         .iter()
-        .filter(|e| {
-            (matches_path(&e.from) && is_external_uri(&e.to))
-                || (matches_path(&e.to) && is_external_uri(&e.from))
-        })
-        .map(|e| {
-            if matches_path(&e.from) {
-                CrossSourceHint {
+        .filter_map(|e| {
+            if is_external_uri(&e.to)
+                && let Some(factor) = path_weight(&e.from)
+            {
+                Some(CrossSourceHint {
                     source_uri: e.to.clone(),
                     relation: e.kind.clone(),
-                    weight: e.weight,
-                }
-            } else {
-                CrossSourceHint {
+                    weight: e.weight * factor,
+                })
+            } else if is_external_uri(&e.from)
+                && let Some(factor) = path_weight(&e.to)
+            {
+                Some(CrossSourceHint {
                     source_uri: e.from.clone(),
                     relation: e.kind.clone(),
-                    weight: e.weight,
-                }
+                    weight: e.weight * factor,
+                })
+            } else {
+                None
             }
         })
         .collect();
@@ -112,6 +136,29 @@ mod tests {
     }
 
     const ROOT: &str = "/project";
+
+    #[test]
+    fn a_directory_reference_hints_files_below_it_after_exact_ones() {
+        let edges = vec![
+            edge("emspace://pages/core", "src/core", "documents", 1.0),
+            edge(
+                "emspace://pages/core/auth",
+                "src/core/auth.rs",
+                "documents",
+                1.0,
+            ),
+            edge("emspace://pages/corelib", "src/corelib", "documents", 1.0),
+        ];
+
+        let hints = hints_for_file("src/core/auth.rs", &edges, ROOT);
+        let uris: Vec<&str> = hints.iter().map(|h| h.source_uri.as_str()).collect();
+        // `src/corelib` is not a parent of `src/core/auth.rs`.
+        assert_eq!(
+            uris,
+            vec!["emspace://pages/core/auth", "emspace://pages/core"]
+        );
+        assert_eq!(hints_for_file("src/core", &edges, ROOT).len(), 1);
+    }
 
     #[test]
     fn finds_hints_from_forward_edges() {

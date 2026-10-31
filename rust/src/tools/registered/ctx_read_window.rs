@@ -2,6 +2,44 @@
 //!
 //! Extracted from ctx_read.rs to satisfy the 1500-LOC gate (#660).
 
+use serde_json::{Map, Value};
+
+/// Honour a `lines` argument as the window it names. It is not in the schema,
+/// yet pilot P8 saw it on 58 of 246 `ctx_read` calls (`"231-300"`,
+/// `"864:925"`, `":225-410"`, `[30, 50]`, `105` with `limit`). Ignored, each
+/// of those was a read without a range and answered with something other than
+/// the lines asked for. A `mode` the caller also passed wins; a string or pair
+/// becomes `mode="lines:…"` (malformed payloads fail loudly through the normal
+/// `lines:` validation), a bare number becomes `start_line`.
+pub(super) fn apply_lines_alias(args: &Map<String, Value>) -> Option<Map<String, Value>> {
+    if args.contains_key("mode") {
+        return None;
+    }
+    let mut rewritten = args.clone();
+    match rewritten.remove("lines")? {
+        Value::String(text) => {
+            let payload = text.trim();
+            let payload = payload.strip_prefix("lines:").unwrap_or(payload);
+            let payload = payload.trim_start_matches(':');
+            rewritten.insert("mode".into(), Value::String(format!("lines:{payload}")));
+        }
+        Value::Array(pair) => match pair.as_slice() {
+            [start, end] => {
+                let (start, end) = (start.as_i64()?, end.as_i64()?);
+                rewritten.insert("mode".into(), Value::String(format!("lines:{start}-{end}")));
+            }
+            _ => return None,
+        },
+        Value::Number(start) => {
+            if !(rewritten.contains_key("start_line") || rewritten.contains_key("offset")) {
+                rewritten.insert("start_line".into(), Value::from(start.as_i64()?));
+            }
+        }
+        _ => return None,
+    }
+    Some(rewritten)
+}
+
 /// Resolve the `start_line`/`offset`/`limit` arguments into `(start, limit)`.
 ///
 /// `offset` is an alias for `start_line` (1-based first line); `start_line`

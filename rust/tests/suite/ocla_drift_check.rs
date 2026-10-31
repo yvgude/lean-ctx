@@ -5,9 +5,7 @@ use sha2::{Digest, Sha256};
 
 const CANONICAL_SOURCES: &[&str] = &[
     include_str!("../../crates/lean-ctx-ocla/src/lib.rs"),
-    include_str!("../../crates/lean-ctx-ocla/src/failure.rs"),
     include_str!("../../crates/lean-ctx-ocla/src/manifest.rs"),
-    include_str!("../../crates/lean-ctx-ocla/src/observation.rs"),
     include_str!("../../crates/lean-ctx-ocla/src/traits.rs"),
     include_str!("../../crates/lean-ctx-ocla/src/types.rs"),
 ];

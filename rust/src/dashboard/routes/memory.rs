@@ -416,28 +416,54 @@ fn post_session_note(body: &str) -> (&'static str, &'static str, String) {
             json_err("note must not be empty"),
         );
     }
-    let Some(mut session) = crate::core::session::SessionState::load_latest() else {
+    // The note goes to the newest session of the dashboard's project (or the
+    // project the request names), admitted like the episode annotation.
+    let root = detect_project_root_for_dashboard();
+    if root.is_empty() {
         return (
             "400 Bad Request",
             "application/json",
-            json_err("no session to attach note to"),
-        );
-    };
-    let now = Utc::now();
-    session.updated_at = now;
-    session.progress.push(crate::core::session::ProgressEntry {
-        action: "note".to_string(),
-        detail: Some(note.to_string()),
-        timestamp: now,
-    });
-    if let Err(e) = session.save() {
-        return (
-            "500 Internal Server Error",
-            "application/json",
-            json_err(&e),
+            json_err("no project to attach note to"),
         );
     }
-    ("200 OK", "application/json", json_ok())
+    match append_session_note(&root, note) {
+        Ok(true) => ("200 OK", "application/json", json_ok()),
+        Ok(false) => (
+            "400 Bad Request",
+            "application/json",
+            json_err("no session to attach note to"),
+        ),
+        Err(_) => (
+            "503 Service Unavailable",
+            "application/json",
+            json_err("session note unavailable under current policy"),
+        ),
+    }
+}
+
+/// Append `note` to the newest session of the project at `root`. `Ok(false)`
+/// when the project has no session. The note is admitted for storage under
+/// the project's policy before it is written, and the write is published only
+/// while that policy still holds.
+fn append_session_note(root: &str, note: &str) -> Result<bool, String> {
+    with_dashboard_project(root, |_hash, admission, _authority| {
+        let Some(mut session) =
+            crate::core::session::SessionState::load_latest_for_project_root(root)
+        else {
+            return Ok(false);
+        };
+        let note = crate::core::session::admission::admit_store_text(admission, note)
+            .ok_or_else(|| "session note withheld by current policy".to_string())?;
+        let now = Utc::now();
+        session.updated_at = now;
+        session.progress.push(crate::core::session::ProgressEntry {
+            action: "note".to_string(),
+            detail: Some(note),
+            timestamp: now,
+        });
+        session.save()?;
+        Ok(true)
+    })
 }
 
 #[derive(Deserialize)]
@@ -864,6 +890,55 @@ mod dashboard_memory_admission_tests {
             Ok(())
         });
         assert!(result.is_err(), "stale policy snapshot was accepted");
+    }
+
+    fn project_with_session(parent: &Path, name: &str) -> String {
+        let root = parent.join(name);
+        std::fs::create_dir_all(root.join(".git")).expect("project root");
+        let root = root.to_string_lossy().into_owned();
+        let mut session = crate::core::session::SessionState::new();
+        session.project_root = Some(root.clone());
+        session.save().expect("save session");
+        root
+    }
+
+    fn notes(root: &str) -> Vec<String> {
+        crate::core::session::SessionState::load_latest_for_project_root(root)
+            .expect("project session")
+            .progress
+            .into_iter()
+            .filter(|entry| entry.action == "note")
+            .filter_map(|entry| entry.detail)
+            .collect()
+    }
+
+    /// F12b: a session note goes to the named project's newest session, never
+    /// to the newest session of another project.
+    #[test]
+    fn dashboard_session_note_goes_to_the_projects_own_session() {
+        let _isolated = isolated_data_dir();
+        let projects = tempfile::tempdir().expect("projects");
+        let alpha = project_with_session(projects.path(), "alpha");
+        // Beta's session is the newest one of any project.
+        let beta = project_with_session(projects.path(), "beta");
+
+        assert!(append_session_note(&alpha, "alpha note").expect("admitted note"));
+        assert_eq!(notes(&alpha), vec!["alpha note".to_string()]);
+        assert!(notes(&beta).is_empty(), "the note went to another project");
+
+        let empty = projects.path().join("empty");
+        std::fs::create_dir_all(empty.join(".git")).expect("empty project");
+        assert!(
+            !append_session_note(&empty.to_string_lossy(), "nowhere").expect("no session"),
+            "a project without a session takes no note"
+        );
+
+        let refused = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(std::path::PathBuf::from(&beta))),
+            || append_session_note(&alpha, "crossed"),
+        );
+        assert!(refused.is_err(), "a foreign request project was accepted");
+        assert_eq!(notes(&alpha), vec!["alpha note".to_string()]);
     }
 
     #[test]

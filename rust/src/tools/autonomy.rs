@@ -143,74 +143,6 @@ pub const AUTO_CONTEXT_MAX_TOKENS: usize = 400;
 const AUTO_CONTEXT_OPEN: &str = "--- AUTO CONTEXT ---";
 const AUTO_CONTEXT_CLOSE: &str = "--- END AUTO CONTEXT ---";
 
-fn take_large_output_hint_once(state: &AutonomyState, key: &str) -> bool {
-    if !autonomy_enabled_effective(state) {
-        return false;
-    }
-    let mut set = state
-        .large_output_hints_shown
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    set.insert(key.to_string())
-}
-
-/// `ctx_shell`: suggest sandbox / read modes when final output is large (bytes).
-pub fn large_ctx_shell_output_hint(
-    state: &AutonomyState,
-    command: &str,
-    output_bytes: usize,
-) -> Option<String> {
-    const THRESHOLD_BYTES: usize = 5000;
-    if output_bytes <= THRESHOLD_BYTES {
-        return None;
-    }
-    if !take_large_output_hint_once(state, "ctx_shell_large_bytes") {
-        return None;
-    }
-    let n = output_bytes;
-    if shell_command_looks_structured(command) {
-        Some(format!(
-            "[hint: large output ({n} bytes). For structured output (e.g. cargo test, npm test, grep), use ctx_execute for automatic compression; for file contents use ctx_read(mode=\"aggressive\")]"
-        ))
-    } else {
-        Some(format!(
-            "[hint: large output ({n} bytes). Consider piping through ctx_execute for automatic compression, or use ctx_read(mode=\"aggressive\") for file contents]"
-        ))
-    }
-}
-
-fn shell_command_looks_structured(cmd: &str) -> bool {
-    let t = cmd.trim();
-    let lower = t.to_lowercase();
-    lower.contains("cargo test")
-        || lower.contains("npm test")
-        || t.starts_with("grep ")
-        || t.starts_with("rg ")
-}
-
-/// `ctx_read` full mode: suggest compressed read modes when output is very large (tokens).
-pub fn large_ctx_read_full_hint(
-    state: &AutonomyState,
-    mode: Option<&str>,
-    output: &str,
-) -> Option<String> {
-    const THRESHOLD_TOKENS: usize = 10_000;
-    let m = mode.unwrap_or("").trim();
-    if m != "full" {
-        return None;
-    }
-    let n = count_tokens(output);
-    if n <= THRESHOLD_TOKENS {
-        return None;
-    }
-    if !take_large_output_hint_once(state, "ctx_read_full_large_tokens") {
-        return None;
-    }
-    Some(format!(
-        "[hint: large file ({n} tokens). Consider mode=\"map\" or mode=\"aggressive\" for compressed view]"
-    ))
-}
-
 /// Suggests a more token-efficient lean-ctx tool when shell compression is low.
 pub fn shell_efficiency_hint(
     state: &AutonomyState,
@@ -289,43 +221,6 @@ mod tests {
         let state = AutonomyState::new();
         let hint = shell_efficiency_hint(&state, "cargo build", 100, 95);
         assert!(hint.is_none());
-    }
-
-    #[test]
-    fn large_shell_hint_once_per_session() {
-        let state = AutonomyState::new();
-        let h1 = large_ctx_shell_output_hint(&state, "ls -la", 5001).expect("first");
-        assert!(h1.contains("5001 bytes"));
-        assert!(h1.contains("ctx_execute"));
-        assert!(large_ctx_shell_output_hint(&state, "ls -la", 5001).is_none());
-    }
-
-    #[test]
-    fn large_shell_structured_hint_mentions_execute() {
-        let state = AutonomyState::new();
-        let h = large_ctx_shell_output_hint(&state, "cargo test", 6000).expect("hint");
-        assert!(h.contains("structured"));
-        assert!(h.contains("ctx_execute"));
-    }
-
-    #[test]
-    fn large_read_full_hint_respects_mode() {
-        let state = AutonomyState::new();
-        let big = "word ".repeat(20_000);
-        assert!(large_ctx_read_full_hint(&state, Some("map"), &big).is_none());
-        let h = large_ctx_read_full_hint(&state, Some("full"), &big).expect("hint");
-        assert!(h.contains("tokens"));
-        assert!(h.contains("aggressive"));
-        assert!(large_ctx_read_full_hint(&state, Some("full"), &big).is_none());
-    }
-
-    #[test]
-    fn large_hints_disabled_when_autonomy_off() {
-        let mut state = AutonomyState::new();
-        state.config.enabled = false;
-        let big = "word ".repeat(20_000);
-        assert!(large_ctx_shell_output_hint(&state, "cargo test", 6000).is_none());
-        assert!(large_ctx_read_full_hint(&state, Some("full"), &big).is_none());
     }
 
     #[test]

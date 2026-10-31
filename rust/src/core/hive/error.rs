@@ -103,7 +103,7 @@ pub struct Quota {
 /// What a `402 plan_required` says, as far as it is shown.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PlanNeed {
-    /// `[a-z_]` feature token (`compute`, `repos`, `internal_vaults`, …);
+    /// `[a-z_]` feature token (`repos`, `internal_vaults`, …);
     /// `None` from a 1.x Hive: Hive itself (the engine-seat text).
     pub feature: Option<String>,
     /// The lowest plan that includes it (`pro`, `team`, `enterprise`).
@@ -188,11 +188,6 @@ fn write_plan_need(f: &mut fmt::Formatter<'_>, need: &PlanNeed) -> fmt::Result {
         })
         .unwrap_or_default();
     match feature {
-        "compute" => write!(
-            f,
-            "Task Compute is included in {}{on}",
-            plans.unwrap_or("Team and Enterprise")
-        ),
         "repos" | "vaults" | "private_vaults" => {
             f.write_str("this workspace has used all its vaults")?;
             if let (Some(used), Some(limit)) = (need.used, need.limit) {
@@ -1015,42 +1010,21 @@ mod tests {
 
     #[test]
     fn plan_required_keeps_the_feature_and_words_it() {
-        // C0 2.x compute (the live e2e: a no-plan workspace's submit).
-        let (status, body) = plan_required_example("compute-top-up.json", "compute");
+        // A vault limit (W11 transfer into a no-plan workspace).
+        let (status, body) = plan_required_example("vault-transfer.json", "repos");
         assert_eq!(status, 402);
         let error = HiveError::from_response(status, &body);
-        assert_eq!(
-            error,
-            HiveError::PlanRequired(Box::new(PlanNeed {
-                feature: Some("compute".into()),
-                plan_needed: Some("team".into()),
-                limit: None,
-                used: None,
-                message: Some("Task Compute: included in Team and Enterprise.".into()),
-                plan: None,
-                reason: None,
-            }))
+        assert!(
+            matches!(&error, HiveError::PlanRequired(need) if need.feature.as_deref() == Some("repos"))
         );
-        assert_eq!(
-            error.to_string(),
-            "Task Compute is included in Team and Enterprise"
-        );
-        let on_community = error.clone().with_plan(HivePlan::NoPlan);
-        assert_eq!(
-            on_community.to_string(),
-            "Task Compute is included in Team and Enterprise; this workspace has no plan"
-        );
-        assert!(!on_community.to_string().contains("engine"));
         assert_eq!(
             error.clone().with_plan(HivePlan::Unknown),
             error,
             "an unknown plan is not named"
         );
         assert!(!error.is_transient());
-
-        // A vault limit (W11 transfer into a no-plan workspace).
-        let (status, body) = plan_required_example("vault-transfer.json", "repos");
-        let repos = HiveError::from_response(status, &body).with_plan(HivePlan::NoPlan);
+        let repos = error.with_plan(HivePlan::NoPlan);
+        assert!(!repos.to_string().contains("engine"));
         assert_eq!(
             repos.to_string(),
             "this workspace has used all its vaults (3 of 3); more are included in Personal, Team and Enterprise; this workspace has no plan; remove or publish a vault in Hive, or upgrade the plan"
@@ -1065,11 +1039,11 @@ mod tests {
         );
         let unnamed = HiveError::from_response(
             402,
-            &json!({"error": {"code": "plan_required", "message": "", "feature": "team_swarms", "plan_needed": "team"}}),
+            &json!({"error": {"code": "plan_required", "message": "", "feature": "sealed_vaults", "plan_needed": "team"}}),
         );
         assert_eq!(
             unnamed.to_string(),
-            "team swarms is included in Team and Enterprise"
+            "sealed vaults is included in Team and Enterprise"
         );
         let hostile = HiveError::from_response(
             402,

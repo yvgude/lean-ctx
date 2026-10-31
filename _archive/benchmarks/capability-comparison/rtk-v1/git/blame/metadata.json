@@ -1,6 +1,0 @@
-{
-  "command": "git blame -L 1,15 rust/src/core/ocla/mod.rs",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 218,
-  "category": "git"
-}

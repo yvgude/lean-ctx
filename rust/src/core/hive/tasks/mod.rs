@@ -45,7 +45,7 @@ use crate::core::hive::metrics::hive_use;
 use crate::core::hive::sealed;
 use crate::core::hive::state::HiveStore;
 use crate::core::hive::vault::{VaultMap, VaultRecord};
-use crate::core::hive::worker::{self, Admission, EvidenceSummary, Refusal, TaskKind, TaskScope};
+use crate::core::hive::worker::{self, Admission, EvidenceSummary, Refusal, TaskScope};
 use claims::HeldClaim;
 use client::TasksApi;
 use lean_ctx_protocol::hive::lease::{HiveRight, LeaseState};
@@ -267,7 +267,6 @@ impl Link<'_> {
         TaskScope {
             task_id: number.to_string(),
             vault_id: self.vault_id.to_owned(),
-            kind: TaskKind::Org,
         }
     }
 

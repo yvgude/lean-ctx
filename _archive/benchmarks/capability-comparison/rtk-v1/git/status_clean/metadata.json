@@ -1,6 +1,0 @@
-{
-  "command": "git status --short --branch",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 22,
-  "category": "git"
-}

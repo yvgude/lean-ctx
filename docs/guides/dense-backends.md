@@ -102,4 +102,4 @@ LEANCTX_PGVECTOR_URL=postgres://postgres:lctx@127.0.0.1:5432/postgres \
 
 *See also: [Context Infrastructure](context-infrastructure.md),
 [Custom Embedding Models](custom-embeddings.md),
-[lean-ctx vs naive RAG](../comparisons/vs-naive-rag.md).*
+[Where LeanCTX fits](../where-leanctx-fits.md).*

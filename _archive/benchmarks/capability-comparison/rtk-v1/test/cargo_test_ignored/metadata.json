@@ -1,6 +1,0 @@
-{
-  "command": "cargo test --lib -- --ignored --list",
-  "working_dir": "/workspace/lean-ctx/rust",
-  "expected_tokens": 224,
-  "category": "test"
-}

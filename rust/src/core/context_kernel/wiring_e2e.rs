@@ -2,30 +2,17 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::client_profile::ProfileBuilder;
     use super::super::client_wiring;
     use super::super::coverage_class::{self, CoverageClass};
     use super::super::etpao_live::EtpaoLive;
     use super::super::identity::{CallerIdentity, CallerRole, IdentityLedger};
     use super::super::identity_resolver;
-    use super::super::tool_surface::{ToolCategory, ToolSchema, ToolSurfaceOptimizer};
 
     fn headers(values: &[(&str, &str)]) -> Vec<(String, String)> {
         values
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             .collect()
-    }
-
-    fn tool(index: usize, token_count: usize) -> ToolSchema {
-        ToolSchema {
-            name: format!("tool-{index}"),
-            description: format!("Production tool number {index}"),
-            parameters_json: r#"{"type":"object","properties":{}}"#.to_owned(),
-            token_count,
-            priority: u8::try_from(index).unwrap_or(u8::MAX),
-            category: ToolCategory::Core,
-        }
     }
 
     #[test]
@@ -61,23 +48,6 @@ mod tests {
         assert_eq!(identity, context.identity);
         assert_eq!(context.identity.user_id.as_deref(), Some("bob"));
         assert_eq!(context.identity.cost_center.as_deref(), Some("eng-01"));
-    }
-
-    #[test]
-    fn full_inline_optimizes_tools() {
-        let mut profile = ProfileBuilder::new("inline")
-            .coverage(CoverageClass::FullInline)
-            .build();
-        profile.tool_budget.max_tools = 5;
-        profile.tool_budget.max_schema_tokens = 10_000;
-        let schemas = (0..15)
-            .map(|index| tool(index, 100 + index * 10))
-            .collect::<Vec<_>>();
-
-        let reduction = ToolSurfaceOptimizer::from_profile(&profile).optimize(&schemas);
-
-        assert!(reduction.reduced_count <= 5);
-        assert!(reduction.tokens_saved > 0);
     }
 
     #[test]
@@ -117,19 +87,6 @@ mod tests {
     }
 
     #[test]
-    fn tool_surface_savings_realistic() {
-        let schemas = (0..20)
-            .map(|index| tool(index, 100 + index * 20))
-            .collect::<Vec<_>>();
-
-        let reduction = ToolSurfaceOptimizer::new(5, 1_000).optimize(&schemas);
-
-        assert!(reduction.reduced_count <= 5);
-        assert!(reduction.reduced_tokens <= 1_000);
-        assert!(reduction.savings_pct > 50.0);
-    }
-
-    #[test]
     fn end_to_end_request_lifecycle() {
         let headers = headers(&[
             ("x-client-id", "lifecycle-client"),
@@ -139,28 +96,18 @@ mod tests {
         ]);
         let identity = identity_resolver::resolve_with_defaults(&headers);
         let coverage = coverage_class::detect_coverage(true, false, false);
-        let mut context = client_wiring::build_request_context(&headers, true, false, false);
-        context.profile.tool_budget.max_tools = 3;
-        context.profile.tool_budget.max_schema_tokens = 600;
-        let schemas = (0..8)
-            .map(|index| tool(index, 100 + index * 10))
-            .collect::<Vec<_>>();
-        let reduction = ToolSurfaceOptimizer::from_profile(&context.profile).optimize(&schemas);
+        let context = client_wiring::build_request_context(&headers, true, false, false);
         let mut etpao = EtpaoLive::new();
         let mut ledger = IdentityLedger::new();
 
         client_wiring::record_request_etpao(&mut etpao, &context, 1_000, 250);
         client_wiring::record_outcome_etpao(&mut etpao, &context, true, 0.95);
-        ledger.record(&identity, 1_250, reduction.tokens_saved, true);
+        ledger.record(&identity, 1_250, 0, true);
 
         assert_eq!(identity, context.identity);
         assert_eq!(coverage, CoverageClass::FullInline);
         assert_eq!(context.profile.coverage, coverage);
         assert!(context.broker_budget.context_tokens > 0);
-        assert!(
-            !reduction.selected_tools.is_empty(),
-            "`reduction.selected_tools` is empty"
-        );
         assert!(ledger.total_tokens() > 0);
         assert!(etpao.current_etpao() > 0.0);
     }

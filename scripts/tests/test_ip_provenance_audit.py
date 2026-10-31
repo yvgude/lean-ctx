@@ -106,7 +106,6 @@ class WorkflowProvenanceGateTests(unittest.TestCase):
 
     def test_publish_jobs_require_unconditional_strict_gate(self) -> None:
         for filename, report_name in (
-            ("publish-sdk.yml", "ip-provenance-publish-sdk-report"),
             ("publish-clients.yml", "ip-provenance-publish-clients-report"),
         ):
             jobs = _workflow_jobs((WORKFLOW_ROOT / filename).read_text(encoding="utf-8"))
@@ -139,7 +138,6 @@ class WorkflowProvenanceGateTests(unittest.TestCase):
                     self.assertNotIn("continue-on-error: true", job, job_name)
 
             expected_publish_jobs = {
-                "publish-sdk.yml": {"publish-npm", "publish-pypi"},
                 "publish-clients.yml": {
                     "publish-npm",
                     "publish-pypi",
@@ -152,7 +150,7 @@ class WorkflowProvenanceGateTests(unittest.TestCase):
             )
 
     def test_provenance_upload_actions_remain_sha_pinned(self) -> None:
-        for filename in ("publish-sdk.yml", "publish-clients.yml", "release.yml"):
+        for filename in ("publish-clients.yml", "release.yml"):
             workflow = (WORKFLOW_ROOT / filename).read_text(encoding="utf-8")
             pins = re.findall(
                 r"^\s+uses: actions/upload-artifact@([^\s]+)",
@@ -162,13 +160,7 @@ class WorkflowProvenanceGateTests(unittest.TestCase):
             self.assertTrue(pins, filename)
             self.assertEqual(pins, [self.UPLOAD_SHA] * len(pins), filename)
 
-    def test_sdk_publish_and_sbom_generation_fail_closed(self) -> None:
-        sdk = (WORKFLOW_ROOT / "publish-sdk.yml").read_text(encoding="utf-8")
-        pypi = _workflow_jobs(sdk)["publish-pypi"]
-        self.assertIn('if [ -z "${TWINE_PASSWORD}" ]', pypi)
-        self.assertIn("exit 1", pypi)
-        self.assertNotIn("skipping PyPI publish", pypi)
-
+    def test_sbom_generation_fails_closed(self) -> None:
         ci = (WORKFLOW_ROOT / "ci.yml").read_text(encoding="utf-8")
         self.assertIn("cargo install cargo-cyclonedx --version 0.5.9 --locked", ci)
         self.assertIn("bash scripts/generate-sbom.sh --check", ci)

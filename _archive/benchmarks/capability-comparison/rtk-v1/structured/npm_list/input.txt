@@ -1,7 +1,0 @@
-lean-ctx-fixtures@0.1.0 /workspace/lean-ctx/packages/ocla-fixtures
-├── @types/node@22.5.4
-├── jest@29.7.0
-├── ts-jest@29.2.5
-├── ts-node@10.9.2
-├── typescript@5.5.4
-└── zod@3.23.8

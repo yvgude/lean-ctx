@@ -519,9 +519,9 @@ class DriftThenRepair(MiniatureTree):
 
     def test_publish_workflow_source(self):
         self.drift_then_repair(
-            ".github/workflows/publish-sdk.yml",
+            ".github/workflows/publish-clients.yml",
             "delivery-evidence",
-            "release.publish_channels[1].source_sha256 (.github/workflows/publish-sdk.yml)",
+            "release.publish_channels[1].source_sha256 (.github/workflows/publish-clients.yml)",
             also_changed={CONTRACT},
         )
 

@@ -20,12 +20,17 @@ pub fn cmd_config(args: &[String]) {
     match args[0].as_str() {
         "init" | "create" => {
             let full = args.iter().any(|a| a == "--full");
-            if full {
-                init_full_config();
+            let created = if full {
+                init_full_config()
             } else {
-                match write_simplified_config() {
-                    Ok(path) => println!("Created simplified config at {path}"),
-                    Err(e) => eprintln!("Error: {e}"),
+                write_simplified_config().map(|path| format!("Created simplified config at {path}"))
+            };
+            // F9c: a config that was not written is an error exit.
+            match created {
+                Ok(message) => println!("{message}"),
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
                 }
             }
         }
@@ -192,32 +197,26 @@ fn config_for_full_init(existing_raw: Option<&str>) -> Result<config::Config, St
 /// documentation. The body is a verbatim serialization of the resolved config,
 /// so no customized value is ever lost; an unparseable existing file is refused
 /// upstream by [`config_for_full_init`] rather than clobbered.
-fn init_full_config() {
-    let Some(path) = config::Config::path() else {
-        eprintln!("Error: cannot determine the config path");
-        return;
-    };
+fn init_full_config() -> Result<String, String> {
+    let path = config::Config::path().ok_or("cannot determine the config path")?;
 
     let existing_raw = std::fs::read_to_string(&path).ok();
 
-    let cfg = match config_for_full_init(existing_raw.as_deref()) {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            eprintln!(
-                "Error: refusing to overwrite an unparseable config.toml ({e}).\n  \
-                 Fix it manually or run `lean-ctx doctor --fix`, then retry."
-            );
-            return;
-        }
-    };
+    let cfg = config_for_full_init(existing_raw.as_deref()).map_err(|e| {
+        format!(
+            "refusing to overwrite an unparseable config.toml ({e}).\n  \
+             Fix it manually or run `lean-ctx doctor --fix`, then retry."
+        )
+    })?;
 
     let schema = config::schema::ConfigSchema::generate();
     let rendered = config::render_annotated_config(&cfg, &schema);
 
-    match crate::config_io::write_atomic_with_backup(&path, &rendered) {
-        Ok(()) => println!("Created full annotated config at {}", path.display()),
-        Err(e) => eprintln!("Error: {e}"),
-    }
+    crate::config_io::write_atomic_with_backup(&path, &rendered)?;
+    Ok(format!(
+        "Created full annotated config at {}",
+        path.display()
+    ))
 }
 
 fn cmd_apply() {
@@ -582,43 +581,15 @@ fn normalize_optional_upstream(value: &str) -> Option<String> {
 
 pub fn cmd_benchmark(args: &[String]) {
     use crate::core::benchmark;
-    use crate::core::benchmark_compare;
-
-    if args.is_empty() || args.first().is_some_and(|arg| arg.starts_with('-')) {
-        super::benchmark_tasks_cmd::cmd_benchmark_tasks(args);
-        return;
-    }
 
     let action = args.first().map_or("run", std::string::String::as_str);
 
     match action {
         "--help" | "-h" => {
-            println!(
-                "Usage: lean-ctx benchmark [--config stock|standard|aggressive] [--repeats N] [--json|--markdown] [--output file]"
-            );
-            println!(
-                "       lean-ctx benchmark tasks [--config stock|standard|aggressive] [--repeats N] [--json|--markdown] [--output file]"
-            );
-            println!("       lean-ctx benchmark run [path] [--json]");
+            println!("Usage: lean-ctx benchmark run [path] [--json]");
             println!("       lean-ctx benchmark report [path]");
-            println!("       lean-ctx benchmark replay <sessions.json> [--output report.md]");
-            println!("       lean-ctx benchmark eval [path] [--json]");
-            println!("       lean-ctx benchmark eval-ab [path] [--suite file.ndjson] [--json]");
-            println!("       lean-ctx benchmark compare [--repo path] [--output file.md]");
             println!("       lean-ctx benchmark scorecard [--json] [--output file]");
             println!("       lean-ctx benchmark dual-arm [--json] [--output file]");
-            println!(
-                "       lean-ctx benchmark tasks [--config stock|standard|aggressive] [--repeats N] [--json|--markdown] [--output file]"
-            );
-            println!(
-                "       lean-ctx benchmark study [--suite humaneval] [--arms control,compress,route,combined] [--model MODEL] [--repeats N] [--timeout SECS] [--json] [--output file]"
-            );
-        }
-        "tasks" => {
-            super::benchmark_tasks_cmd::cmd_benchmark_tasks(&args[1..]);
-        }
-        "study" => {
-            super::benchmark_study_cmd::cmd_benchmark_study(&args[1..]);
         }
         "dual-arm" => {
             let is_json = args.iter().any(|a| a == "--json");
@@ -664,69 +635,6 @@ pub fn cmd_benchmark(args: &[String]) {
                 }
             }
         }
-        "eval" => {
-            let path = args.get(1).map_or(".", std::string::String::as_str);
-            let is_json = args.iter().any(|a| a == "--json");
-            let root = std::path::Path::new(path);
-
-            let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
-            let cfg = crate::core::hybrid_search::HybridConfig::from_config();
-            let queries = crate::core::eval_harness::generate_self_eval(&index, 50);
-
-            if queries.is_empty() {
-                eprintln!("No symbols found — cannot generate eval queries.");
-                std::process::exit(1);
-            }
-
-            let scorecard = crate::core::eval_harness::run_eval(root, &queries, &index, &cfg);
-            if is_json {
-                if let Ok(json) = serde_json::to_string_pretty(&scorecard) {
-                    println!("{json}");
-                }
-            } else {
-                print!("{scorecard}");
-            }
-        }
-        "eval-ab" => {
-            let path = args
-                .get(1)
-                .filter(|a| !a.starts_with("--"))
-                .map_or(".", std::string::String::as_str);
-            let is_json = args.iter().any(|a| a == "--json");
-            let root = std::path::Path::new(path);
-            if !root.exists() {
-                eprintln!("Path does not exist: {path}");
-                std::process::exit(1);
-            }
-
-            let index = crate::core::bm25_index::BM25Index::build_from_directory(root);
-            let cfg = crate::core::hybrid_search::HybridConfig::from_config();
-
-            let queries = match parse_flag_value(args, "--suite") {
-                Some(suite) => {
-                    match crate::core::eval_harness::load_suite(std::path::Path::new(&suite)) {
-                        Ok(q) => q,
-                        Err(e) => {
-                            eprintln!("Failed to load suite {suite}: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                None => crate::core::eval_harness::generate_self_eval(&index, 50),
-            };
-
-            if queries.is_empty() {
-                eprintln!("No eval queries (empty suite / no symbols indexed).");
-                std::process::exit(1);
-            }
-
-            let report = crate::core::eval_harness::run_ab(root, &queries, &index, &cfg);
-            if is_json {
-                println!("{}", report.to_json());
-            } else {
-                print!("{report}");
-            }
-        }
         "run" => {
             let path = args.get(1).map_or(".", std::string::String::as_str);
             let is_json = args.iter().any(|a| a == "--json");
@@ -743,50 +651,6 @@ pub fn cmd_benchmark(args: &[String]) {
             let result = benchmark::run_project_benchmark(path);
             println!("{}", benchmark::format_markdown(&result));
         }
-        "replay" => {
-            let Some(input) = args.get(1).filter(|arg| !arg.starts_with("--")) else {
-                eprintln!("Usage: lean-ctx benchmark replay <sessions.json> [--output report.md]");
-                std::process::exit(1);
-            };
-            let result = crate::core::quality_benchmark::load_replay(std::path::Path::new(input))
-                .and_then(|suite| crate::core::quality_benchmark::replay(&suite));
-            match result {
-                Ok(report) => {
-                    let markdown = crate::core::quality_benchmark::format_markdown(&report);
-                    if let Some(output) = parse_flag_value(args, "--output") {
-                        if let Err(error) = std::fs::write(&output, markdown) {
-                            eprintln!("Failed to write benchmark report to {output}: {error}");
-                            std::process::exit(1);
-                        }
-                        eprintln!("Wrote compression quality report to {output}");
-                    } else {
-                        print!("{markdown}");
-                    }
-                }
-                Err(error) => {
-                    eprintln!("Benchmark replay failed: {error:#}");
-                    std::process::exit(1);
-                }
-            }
-        }
-        "compare" => {
-            let repo = parse_flag_value(args, "--repo").unwrap_or_else(|| ".".to_string());
-            let output = parse_flag_value(args, "--output");
-
-            let root = std::path::Path::new(&repo);
-            if !root.exists() {
-                eprintln!("Repository path does not exist: {repo}");
-                std::process::exit(1);
-            }
-
-            let report = benchmark_compare::run_compare(root, output.as_deref());
-
-            println!("{}", benchmark_compare::report::generate_terminal(&report));
-
-            if output.is_none() {
-                eprintln!("Tip: use --output BENCHMARKS.md to save the full markdown report");
-            }
-        }
         _ => {
             if std::path::Path::new(action).exists() {
                 let result = benchmark::run_project_benchmark(action);
@@ -794,12 +658,6 @@ pub fn cmd_benchmark(args: &[String]) {
             } else {
                 eprintln!("Usage: lean-ctx benchmark run [path] [--json]");
                 eprintln!("       lean-ctx benchmark report [path]");
-                eprintln!("       lean-ctx benchmark replay <sessions.json> [--output report.md]");
-                eprintln!("       lean-ctx benchmark eval [path] [--json]");
-                eprintln!(
-                    "       lean-ctx benchmark eval-ab [path] [--suite file.ndjson] [--json]"
-                );
-                eprintln!("       lean-ctx benchmark compare [--repo path] [--output file.md]");
                 eprintln!("       lean-ctx benchmark scorecard [--json] [--output file]");
                 std::process::exit(1);
             }

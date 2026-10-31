@@ -1,6 +1,0 @@
-{
-  "command": "pytest -vv clients/python/tests/test_conformance.py clients/python/tests/test_client.py",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 344,
-  "category": "test"
-}

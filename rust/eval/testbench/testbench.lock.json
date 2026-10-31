@@ -1,7 +1,0 @@
-{
-  "kind": "lean-ctx.testbench-lock",
-  "repos": [
-    { "name": "qa-api", "path": "repos/qa-api", "suite": "qa-api.ndjson" },
-    { "name": "code-fizz", "path": "repos/code-fizz", "suite": "code-fizz.ndjson" }
-  ]
-}

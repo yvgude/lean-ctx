@@ -299,19 +299,55 @@ fn generate_and_save(agent_id: &str) -> Result<SigningKey, String> {
         std::fs::create_dir_all(parent).map_err(|e| format!("mkdir keys: {e}"))?;
     }
 
-    std::fs::write(&key_file, signing_key.to_bytes()).map_err(|e| format!("write key: {e}"))?;
+    // Claim the key file atomically: of two first runs racing here, one key
+    // wins and both sign with it (an overwritten key would make the loser's
+    // signatures read as tampering).
+    let signing_key = match create_key_file(&key_file, &signing_key.to_bytes()) {
+        Ok(()) => signing_key,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => load_settled_key(&key_file)?,
+        Err(e) => return Err(format!("write key: {e}")),
+    };
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        let _ = std::fs::set_permissions(&key_file, perms);
-    }
-
-    let pub_bytes = signing_key.verifying_key().to_bytes();
-    std::fs::write(&pub_file, pub_bytes).map_err(|e| format!("write pub: {e}"))?;
+    // Derived from the private key, so racing writers write the same bytes;
+    // the rename keeps a reader from seeing a partial file.
+    let tmp = pub_file.with_extension(format!("pub.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, signing_key.verifying_key().to_bytes())
+        .and_then(|()| std::fs::rename(&tmp, &pub_file))
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("write pub: {e}")
+        })?;
 
     Ok(signing_key)
+}
+
+/// Create `path` only if it does not exist, owner-only from the first byte.
+fn create_key_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+/// The key another process just created: retried briefly while its bytes
+/// are still being written.
+fn load_settled_key(path: &Path) -> Result<SigningKey, String> {
+    let mut last = String::new();
+    for _ in 0..50 {
+        match load_key(path) {
+            Ok(key) => return Ok(key),
+            Err(e) => last = e,
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    Err(last)
 }
 
 fn load_key(path: &Path) -> Result<SigningKey, String> {

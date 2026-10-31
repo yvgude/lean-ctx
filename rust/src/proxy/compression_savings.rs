@@ -21,12 +21,10 @@ use super::holdout::Arm;
 use super::output_savings::{Measured, Sample, welch_reduction};
 use super::usage_meter::{CohortUsage, compression_cohort_key};
 use crate::core::context_quality::EvidenceTier;
-use crate::core::eval_ab::report::MIN_POWERED_PAIRS;
 
-/// Turns each arm needs before a reduction is reported — the same power floor
-/// as the paired quality reports, so "measured" means the same everywhere.
-#[allow(clippy::cast_possible_truncation)]
-const MIN_TURNS_PER_ARM: u64 = MIN_POWERED_PAIRS as u64;
+/// Turns each arm needs before a reduction is reported: the 30-pair power floor
+/// the paired quality reports used, so "measured" keeps one meaning.
+const MIN_TURNS_PER_ARM: u64 = 30;
 
 /// Outcome of an input-compression savings query.
 #[derive(Debug, Clone, PartialEq)]

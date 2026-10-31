@@ -58,7 +58,6 @@ pub mod ctx_smart_read;
 pub mod ctx_smells;
 pub mod ctx_summary;
 pub mod ctx_symbol;
-pub(crate) mod ctx_tasks_swarm;
 pub mod ctx_tools;
 pub mod ctx_transcript_compact;
 pub mod ctx_tree;

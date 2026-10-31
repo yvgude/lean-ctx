@@ -171,6 +171,58 @@ mod tests {
         );
     }
 
+    /// F8 for addons: the `addon add` default (`RequireTrustedPublisher`)
+    /// refuses an addon signed on another machine by an unpinned key, and
+    /// keeps accepting this machine's own `addon release` output.
+    #[test]
+    fn an_addon_from_an_unpinned_key_needs_an_opt_out() {
+        use super::super::registry::SignaturePolicy;
+        let tmp = tempfile::tempdir().unwrap();
+        let foreign = tmp.path().join("foreign-1.0.0.ctxpkg");
+        let build = |out: &Path, version: &str| {
+            write_addon_package(
+                out,
+                "@ns/demo",
+                version,
+                "",
+                "[addon]\nname = \"@ns/demo\"\n",
+                vec![DocumentBlob::from_plaintext("demo.wasm", &empty_wasm()).unwrap()],
+            )
+            .expect("build");
+        };
+        {
+            // Another machine: its own data dir, so its own signing key.
+            let _other = crate::core::data_dir::isolated_data_dir();
+            build(&foreign, "1.0.0");
+        }
+
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let registry = super::super::LocalRegistry::open().expect("registry");
+        let err = registry
+            .install_addon_from_file(&foreign, SignaturePolicy::RequireTrustedPublisher)
+            .expect_err("an unpinned signer must not install by default");
+        assert!(err.contains("not pinned"), "{err}");
+        assert!(err.contains("--allow-untrusted-signer"), "{err}");
+        let store = super::super::addons::store_root().unwrap();
+        assert!(super::super::addons::installed_modules(&store).is_empty());
+        assert!(
+            registry
+                .install_addon_from_file(&foreign, SignaturePolicy::RequireSigned)
+                .is_ok(),
+            "--allow-untrusted-signer keeps the old behaviour"
+        );
+
+        let own = tmp.path().join("own-2.0.0.ctxpkg");
+        build(&own, "2.0.0");
+        let registry = super::super::LocalRegistry::open().expect("registry");
+        assert!(
+            registry
+                .install_addon_from_file(&own, SignaturePolicy::RequireTrustedPublisher)
+                .is_ok(),
+            "this machine's own release installs by default"
+        );
+    }
+
     /// The inert door must refuse executable content, and say where to go.
     #[test]
     fn the_context_import_door_refuses_an_addon() {

@@ -23,7 +23,6 @@ paths-ignore:
   # stay scanned.
   - "tests/**"
   - "**/tests/fixtures/**"
-  - "_archive/**"
   - "cookbook/examples/**"
 
 query-filters:

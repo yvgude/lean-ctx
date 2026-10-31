@@ -3,6 +3,7 @@ pub mod config;
 pub mod config_provider;
 pub mod connection;
 pub mod credentials;
+pub mod emspace;
 pub mod github;
 pub mod gitlab;
 pub mod hardened_http;
@@ -70,6 +71,11 @@ pub struct ProviderItem {
     /// Empty for plain records; populated by research/extraction providers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub claims: Vec<Claim>,
+    /// Repository paths (files or directories) the item is about, declared by
+    /// the provider rather than found in its text. Indexed as cross-source
+    /// references beside the paths extracted from the body.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<String>,
 }
 
 impl ProviderResult {

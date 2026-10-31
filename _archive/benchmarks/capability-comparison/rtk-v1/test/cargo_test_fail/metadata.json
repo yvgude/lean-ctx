@@ -1,6 +1,0 @@
-{
-  "command": "cargo test --lib core::ocla::reference_adapters",
-  "working_dir": "/workspace/lean-ctx/rust",
-  "expected_tokens": 242,
-  "category": "test"
-}

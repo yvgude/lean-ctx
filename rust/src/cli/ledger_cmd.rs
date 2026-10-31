@@ -303,17 +303,11 @@ fn cmd_push(args: &[String]) {
 pub fn cmd_ledger(args: &[String]) {
     let action = args.first().map_or("status", String::as_str);
 
+    // The MCP tool `ctx_ledger` was retired in 3.12.0, so the daemon cannot
+    // serve these actions; they work on the persisted ledger directly.
     match action {
         "push" => cmd_push(&args[1..]),
         "status" => {
-            #[cfg(unix)]
-            if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                "ctx_ledger",
-                Some(serde_json::json!({ "action": "status" })),
-            ) {
-                println!("{out}");
-                return;
-            }
             let ledger = ContextLedger::load();
             let pressure = ledger.pressure();
             println!(
@@ -334,14 +328,6 @@ pub fn cmd_ledger(args: &[String]) {
         }
 
         "reset" => {
-            #[cfg(unix)]
-            if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                "ctx_ledger",
-                Some(serde_json::json!({ "action": "reset" })),
-            ) {
-                println!("{out}");
-                return;
-            }
             let mut ledger = ContextLedger::load();
             let prev_entries = ledger.entries.len();
             let prev_tokens = ledger.total_tokens_sent;
@@ -357,18 +343,6 @@ pub fn cmd_ledger(args: &[String]) {
             if targets.is_empty() {
                 eprintln!("Usage: lean-ctx ledger evict <file1> [file2...]");
                 std::process::exit(1);
-            }
-
-            #[cfg(unix)]
-            {
-                let targets_joined = targets.join(", ");
-                if let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                    "ctx_ledger",
-                    Some(serde_json::json!({ "action": "evict", "targets": targets_joined })),
-                ) {
-                    println!("{out}");
-                    return;
-                }
             }
 
             let mut ledger = ContextLedger::load();

@@ -6,7 +6,6 @@ pub mod ctx_checkpoint;
 pub mod ctx_compose;
 pub mod ctx_compress;
 pub mod ctx_compress_memory;
-pub mod ctx_compute;
 pub mod ctx_context;
 pub mod ctx_control;
 pub mod ctx_cost;

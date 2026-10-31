@@ -66,23 +66,6 @@ pub fn dedup_stats() -> DedupStats {
     snapshot
 }
 
-/// Applies content deduplication, returning either full content or a stub.
-#[must_use]
-pub fn apply_dedup(path: &str, content: &str) -> String {
-    apply_dedup_enabled(
-        super::kernel_config::features().content_dedup,
-        path,
-        content,
-    )
-}
-
-fn apply_dedup_enabled(enabled: bool, path: &str, content: &str) -> String {
-    match check_content_enabled(enabled, false, path, content) {
-        DedupAction::DeliverStub { stub } => stub,
-        DedupAction::DeliverFull | DedupAction::DeliverModified => content.to_owned(),
-    }
-}
-
 /// Invalidates cached content for `path` after a write or external change.
 pub fn invalidate(path: &str) {
     lock(dedup()).invalidate(path);
@@ -191,10 +174,7 @@ pub mod tests {
     use super::super::kernel_config::{KERNEL_TEST_LOCK, reset_features};
     use std::sync::MutexGuard;
 
-    use super::{
-        DedupAction, apply_dedup_enabled, check_content_enabled, dedup_stats, invalidate,
-        reset_dedup,
-    };
+    use super::{DedupAction, check_content_enabled, dedup_stats, invalidate, reset_dedup};
 
     fn isolated() -> MutexGuard<'static, ()> {
         // Other kernel suites reset this same process-global ledger.
@@ -274,17 +254,6 @@ pub mod tests {
             DedupAction::DeliverFull
         );
         assert_eq!(dedup_stats().total_checks, 0);
-    }
-
-    #[test]
-    fn apply_dedup_returns_stub() {
-        let _guard = isolated();
-        assert_eq!(
-            apply_dedup_enabled(true, "src/lib.rs", "content"),
-            "content"
-        );
-        let stub = apply_dedup_enabled(true, "src/lib.rs", "content");
-        assert!(stub.contains("src/lib.rs unchanged"));
     }
 
     #[test]

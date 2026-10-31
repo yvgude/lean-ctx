@@ -1,5 +1,0 @@
-{"log":
- [{"message":
-   ".> LEAN_PATH=././.lake/build/lib/lean /Users/yvesgugger/.elan/toolchains/leanprover--lean4---v4.18.0/bin/lean ././././LeanCtxProofs/Compression/TerseQuality.lean -R ./././. -o ././.lake/build/lib/lean/LeanCtxProofs/Compression/TerseQuality.olean -i ././.lake/build/lib/lean/LeanCtxProofs/Compression/TerseQuality.ilean -c ././.lake/build/ir/LeanCtxProofs/Compression/TerseQuality.c --json",
-   "level": "trace"}],
- "depHash": "17872414244596950419"}

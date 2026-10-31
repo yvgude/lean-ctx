@@ -1,6 +1,0 @@
-{
-  "command": "git show --stat --patch --format=fuller HEAD",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 462,
-  "category": "git"
-}

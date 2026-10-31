@@ -23,7 +23,6 @@ mod tests {
         crate::core::context_kernel::receipt_chain::reset_chain();
         response_evidence::reset();
         crate::tools::search_hook::reset();
-        crate::core::context_kernel::adaptive_hook::reset();
         startup::reset();
         guard
     }

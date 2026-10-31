@@ -262,83 +262,6 @@ impl ContextKernel {
         ))
     }
 
-    /// Restrict an existing plan without replanning or inventing its request scope.
-    pub(crate) fn restrict_plan(
-        plan: &ContextPlanV1,
-        available: impl Fn(&str) -> bool,
-    ) -> Result<ContextPlanV1, KernelPlanError> {
-        let preconsumed = validate_plan_accounting(plan)?;
-        let mut restricted = plan.clone();
-        restricted.selected.clear();
-        for stat in restricted.provider_stats.values_mut() {
-            stat.candidates_selected = 0;
-            stat.tokens_used = 0;
-        }
-        let mut used_tokens = preconsumed;
-        for entry in &plan.selected {
-            let origin = match plan.origins.get(&entry.object_id).map(Vec::as_slice) {
-                Some([origin])
-                    if !origin.provider_id.trim().is_empty() && origin.source == entry.provider =>
-                {
-                    origin
-                }
-                _ => return Err(KernelPlanError::InvalidPlanOrigin),
-            };
-            if available(&origin.provider_id) {
-                let stat = restricted
-                    .provider_stats
-                    .get_mut(&entry.provider)
-                    .ok_or(KernelPlanError::MissingProviderStats)?;
-                stat.candidates_selected += 1;
-                stat.tokens_used = stat
-                    .tokens_used
-                    .checked_add(entry.tokens)
-                    .ok_or(KernelPlanError::InvalidPlanAccounting)?;
-                used_tokens = used_tokens
-                    .checked_add(entry.tokens)
-                    .ok_or(KernelPlanError::InvalidPlanAccounting)?;
-                restricted.selected.push(entry.clone());
-            } else {
-                restricted.excluded.push(ExcludedEntry {
-                    object_id: entry.object_id.clone(),
-                    provider: entry.provider.clone(),
-                    reason: "provider unavailable".to_owned(),
-                });
-            }
-        }
-        if restricted.selected.len() == plan.selected.len() {
-            return Ok(plan.clone());
-        }
-        restricted
-            .selected
-            .sort_by(|a, b| a.object_id.cmp(&b.object_id));
-        restricted.excluded.sort_by(|a, b| {
-            (&a.object_id, &a.provider, &a.reason).cmp(&(&b.object_id, &b.provider, &b.reason))
-        });
-        restricted.budget.used_tokens = used_tokens;
-        restricted.budget.remaining_tokens = restricted.budget.total_tokens - used_tokens;
-        let mut material = serde_json::Map::from_iter([
-            (
-                "schema".to_owned(),
-                serde_json::json!("leanctx.context-plan-derivation/v1"),
-            ),
-            (
-                "operation".to_owned(),
-                serde_json::json!("provider_degradation"),
-            ),
-            ("parent_plan_id".to_owned(), serde_json::json!(plan.plan_id)),
-            ("intent".to_owned(), serde_json::json!(restricted.intent)),
-            ("budget".to_owned(), serde_json::json!(restricted.budget)),
-            (
-                "deferred".to_owned(),
-                serde_json::json!(restricted.deferred),
-            ),
-        ]);
-        material.extend(plan_projection_material(&restricted));
-        restricted.plan_id = canonical_plan_id(&serde_json::Value::Object(material).to_string());
-        Ok(restricted)
-    }
-
     /// Record delivery outcome and provider-level feedback for a completed plan.
     pub fn record_receipt(
         &self,
@@ -384,47 +307,6 @@ impl ContextKernel {
             feedback_attribution,
         }
     }
-}
-
-fn validate_plan_accounting(plan: &ContextPlanV1) -> Result<usize, KernelPlanError> {
-    if plan.plan_id.trim().is_empty()
-        || plan.budget.used_tokens > plan.budget.total_tokens
-        || plan.budget.remaining_tokens != plan.budget.total_tokens - plan.budget.used_tokens
-    {
-        return Err(KernelPlanError::InvalidPlanAccounting);
-    }
-    let mut seen = HashSet::new();
-    let mut actual = HashMap::<&str, (usize, usize)>::new();
-    let mut selected_tokens = 0usize;
-    for entry in &plan.selected {
-        if !seen.insert(&entry.object_id) || !entry.phi.is_finite() {
-            return Err(KernelPlanError::InvalidPlanAccounting);
-        }
-        if !plan.provider_stats.contains_key(&entry.provider) {
-            return Err(KernelPlanError::MissingProviderStats);
-        }
-        let (count, tokens) = actual.entry(&entry.provider).or_default();
-        *count += 1;
-        *tokens = tokens
-            .checked_add(entry.tokens)
-            .ok_or(KernelPlanError::InvalidPlanAccounting)?;
-        selected_tokens = selected_tokens
-            .checked_add(entry.tokens)
-            .ok_or(KernelPlanError::InvalidPlanAccounting)?;
-    }
-    for (provider, stat) in &plan.provider_stats {
-        let (count, tokens) = actual.get(provider.as_str()).copied().unwrap_or_default();
-        if stat.candidates_selected != count
-            || stat.tokens_used != tokens
-            || stat.candidates_offered < count
-        {
-            return Err(KernelPlanError::InvalidPlanAccounting);
-        }
-    }
-    plan.budget
-        .used_tokens
-        .checked_sub(selected_tokens)
-        .ok_or(KernelPlanError::InvalidPlanAccounting)
 }
 
 fn dedup_by_content_ref(objects: &mut Vec<ContextObjectV1>) {

@@ -146,7 +146,7 @@ as JSON with `--json`. Key options (`SetupOptions`):
 - `fix` — overwrite invalid/corrupt MCP configs (merge-based repair).
 - `skip_rules` — never touch rules files (CLI flag wins over config).
 - `force_inject_rules` — always inject rules (overrides config).
-- `skip_proxy` / `no_auto_approve`.
+- `skip_proxy` — leave the proxy unconfigured.
 
 The decision for rules injection is: `skip_rules` → off; else `force_inject_rules`
 → on; else respect `config.toml`'s `should_inject_rules()`.

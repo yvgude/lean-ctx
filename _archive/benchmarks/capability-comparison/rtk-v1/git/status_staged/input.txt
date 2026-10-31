@@ -1,9 +1,0 @@
-On branch feature/cache-aware-shell
-Changes to be committed:
-  (use "git restore --staged <file>..." to unstage)
-        modified:   rust/src/core/ocla/cache_delivery.rs
-        new file:   rust/tests/capability_comparison_fixtures.rs
-
-Changes not staged for commit:
-  (use "git add <file>..." to update what will be committed)
-        modified:   rust/src/core/ocla/invocation.rs

@@ -81,14 +81,15 @@ pub fn run_cli(args: &[String]) -> i32 {
     let project_root = extract_flag(args, "--project-root");
 
     match build_report(project_root.as_deref()) {
-        Ok((report, path)) => {
+        Ok((mut report, path)) => {
+            let saved =
+                crate::status::save_report(&report, &path).map_err(|e| report.errors.push(e));
             let text = serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string());
-            let _ = crate::config_io::write_atomic_with_backup(&path, &text);
 
             if json {
                 println!("{text}");
             } else {
-                print_human(&report, &path);
+                print_human(&report, saved.is_ok().then_some(path.as_path()));
             }
 
             i32::from(!report.errors.is_empty())
@@ -191,7 +192,7 @@ fn build_report(project_root_override: Option<&str>) -> Result<(TokenReport, Pat
     Ok((report, report_path))
 }
 
-fn print_human(report: &TokenReport, path: &Path) {
+fn print_human(report: &TokenReport, saved_to: Option<&Path>) {
     println!("lean-ctx token-report  v{}", report.version);
     println!("  project: {}", report.project_root);
     println!("  data:    {}", report.data_dir);
@@ -242,7 +243,12 @@ fn print_human(report: &TokenReport, path: &Path) {
     if !report.errors.is_empty() {
         println!("  errors: {}", report.errors.len());
     }
-    println!("  report saved: {}", path.display());
+    for error in &report.errors {
+        eprintln!("error: {error}");
+    }
+    if let Some(path) = saved_to {
+        println!("  report saved: {}", path.display());
+    }
 }
 
 fn extract_flag(args: &[String], flag: &str) -> Option<String> {

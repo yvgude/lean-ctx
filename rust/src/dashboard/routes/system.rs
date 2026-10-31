@@ -68,13 +68,6 @@ pub(super) fn handle(
             let json = serde_json::to_string(&proof).unwrap_or_else(|_| "{}".to_string());
             Some(("200 OK", "application/json", json))
         }
-        "/api/feedback" => {
-            let store = crate::core::feedback::FeedbackStore::load();
-            let json = serde_json::to_string(&store).unwrap_or_else(|_| {
-                "{\"error\":\"failed to serialize feedback store\"}".to_string()
-            });
-            Some(("200 OK", "application/json", json))
-        }
         "/api/theme-tokens" => {
             let cfg = crate::core::config::Config::load();
             let theme = crate::core::theme::load_theme(&cfg.theme);

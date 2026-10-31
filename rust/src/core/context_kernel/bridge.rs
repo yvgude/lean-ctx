@@ -10,7 +10,7 @@ use super::autopilot::{
 };
 use super::enforce::{KernelMode, resolve_mode};
 use super::policy::ContextPolicy;
-use super::types::{ContextPlanV1, ContextReceiptV1, PlanEntry, ReceiptOutcome, RetrievalContext};
+use super::types::{ContextPlanV1, PlanEntry, RetrievalContext};
 
 /// Result of kernel gating: what to add and what to suppress.
 #[derive(Debug, Clone)]
@@ -42,11 +42,6 @@ impl KernelEnrichment {
     pub fn autopilot_decision(&self) -> Option<&AutopilotDecision> {
         self.autopilot_decision.as_ref()
     }
-}
-/// Check whether `path` should be suppressed as already delivered.
-/// Returns `false` until the orchestrator exposes recent-delivery state.
-pub fn kernel_gate(_path: &str, _project_root: &str) -> bool {
-    false
 }
 /// Enrich a compose response with kernel-selected context.
 ///
@@ -233,28 +228,6 @@ fn append_provider_block(
     }
 }
 
-/// Update the bandit-learned FieldWeights based on a receipt outcome.
-///
-/// Accepted outcomes reinforce the balanced arm, rejected outcomes penalize
-/// the aggressive arm, and partial outcomes inform the conservative arm.
-pub fn apply_feedback(receipt: &ContextReceiptV1) {
-    use crate::core::context_field::{FieldWeights, set_active_weights};
-
-    let arm_name = match receipt.outcome {
-        ReceiptOutcome::Accepted => "balanced",
-        ReceiptOutcome::Rejected => "aggressive",
-        ReceiptOutcome::Partial => "conservative",
-        ReceiptOutcome::Unknown => return,
-    };
-    let mut bandit = crate::core::bandit::ThresholdBandit::default();
-    bandit.update(arm_name, receipt.outcome == ReceiptOutcome::Accepted);
-
-    let best_idx = bandit.best_arm_idx_by_mean();
-    if let Some(best_arm) = bandit.arms.get(best_idx) {
-        set_active_weights(FieldWeights::from_arm(best_arm));
-    }
-}
-
 /// Format a plan as a compact human-readable summary.
 pub fn format_plan_summary(plan: &ContextPlanV1) -> String {
     let mut out = String::new();
@@ -295,7 +268,7 @@ pub mod tests {
     use super::super::enforce::KernelMode;
     use super::super::types::PlanBudget;
     use super::{
-        ContextPlanV1, PlanEntry, enrichment_from_plan, format_enrichment_blocks, kernel_gate,
+        ContextPlanV1, PlanEntry, enrichment_from_plan, format_enrichment_blocks,
         truncate_to_token_budget, verdict_from_blocks,
     };
 
@@ -371,10 +344,6 @@ pub mod tests {
             enrichment.verdict.budget_used,
             crate::core::tokens::count_tokens(enrichment.verdict.supplement.as_deref().unwrap())
         );
-    }
-    #[test]
-    fn kernel_gate_returns_false_by_default() {
-        assert!(!kernel_gate("src/lib.rs", "/project"));
     }
     #[test]
     fn backward_compat_enrichment_still_works() {

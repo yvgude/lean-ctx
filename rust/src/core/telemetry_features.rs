@@ -21,7 +21,6 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("autopilot", &[]),
     ("conformance", &["selftest"]),
     ("health", &[]),
-    ("quality_lab", &["quality-lab"]),
     ("billing", &[]),
     ("finops", &[]),
     ("roi", &[]),
@@ -32,7 +31,6 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("shadow", &[]),
     ("triage", &[]),
     ("scenario", &[]),
-    ("measure", &[]),
     ("token_report", &["token-report", "report-tokens"]),
     ("pack", &[]),
     ("migrate", &[]),
@@ -43,13 +41,12 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("model", &[]),
     ("gpu", &["enable-gpu"]),
     ("rules", &[]),
-    ("proof", &["prove"]),
+    ("proof", &[]),
     ("value", &[]),
     ("claude_mod", &["claude-mod"]),
     ("inspect", &[]),
     ("snapshot", &[]),
     ("verify", &[]),
-    ("eval", &[]),
     ("verify_cache", &["verify-cache", "cache-selftest"]),
     ("visualize", &[]),
     ("audit", &[]),
@@ -426,10 +423,6 @@ mod tests {
         assert_eq!(
             cli_code(&args(&["index", "build-full"])).as_deref(),
             Some("cli.index.build_full")
-        );
-        assert_eq!(
-            cli_code(&args(&["quality-lab"])).as_deref(),
-            Some("cli.quality_lab")
         );
         assert_eq!(
             cli_code(&args(&["report-tokens"])).as_deref(),

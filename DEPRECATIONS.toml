@@ -1,8 +1,0 @@
-# Deprecated configuration keys and features.
-# These still work but will be removed in a future major version.
-
-[[deprecated]]
-key = "cloud.contribute_enabled"
-since = "3.9.14"
-replacement = "telemetry.enabled"
-notes = "Automatically migrated on first load. The unified telemetry flag controls both heartbeat and compression pattern sharing."

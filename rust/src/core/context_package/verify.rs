@@ -1165,6 +1165,7 @@ pub(crate) enum CheckOutcome {
     Skipped,
 }
 
+#[cfg(test)]
 impl CheckOutcome {
     pub(crate) fn as_str(&self) -> &'static str {
         match self {
@@ -1209,6 +1210,7 @@ impl VerifyReport {
     }
 }
 
+#[cfg(test)]
 fn sha256_hex(data: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(data);

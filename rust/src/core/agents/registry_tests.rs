@@ -4,9 +4,7 @@ use std::collections::HashMap;
 
 use chrono::Utc;
 
-use super::{
-    AgentDiary, AgentEntry, AgentRegistry, AgentStatus, DiaryEntryType, ScratchpadEntry, truncate,
-};
+use super::{AgentDiary, AgentEntry, AgentRegistry, AgentStatus, DiaryEntryType, ScratchpadEntry};
 use crate::core::a2a::message::{MessagePriority, PrivacyLevel};
 
 #[test]
@@ -528,22 +526,6 @@ fn diary_add_and_format() {
 }
 
 #[test]
-fn diary_compact_format() {
-    let mut diary = AgentDiary::new("test-agent-002", "claude", "/tmp/project");
-    diary.add_entry(DiaryEntryType::Insight, "DB queries are N+1", None);
-    diary.add_entry(
-        DiaryEntryType::Blocker,
-        "Missing API credentials",
-        Some("deploy"),
-    );
-
-    let compact = diary.format_compact();
-    assert!(compact.contains("diary:test-agent-002"));
-    assert!(compact.contains("B:Missing API credentials"));
-    assert!(compact.contains("I:DB queries are N+1"));
-}
-
-#[test]
 fn diary_entry_types() {
     let types = vec![
         DiaryEntryType::Discovery,
@@ -564,23 +546,6 @@ fn diary_truncation() {
         diary.add_entry(DiaryEntryType::Progress, &format!("Step {i}"), None);
     }
     assert!(diary.entries.len() <= 100);
-}
-
-#[test]
-fn truncate_utf8_emoji_no_panic() {
-    let result = truncate("Agent 🤖 Name ist lang genug", 15);
-    assert!(result.ends_with("..."));
-}
-
-#[test]
-fn truncate_utf8_cyrillic_no_panic() {
-    let result = truncate("агент выполняет длинную задачу", 15);
-    assert!(result.ends_with("..."));
-}
-
-#[test]
-fn truncate_short_utf8_unchanged() {
-    assert_eq!(truncate("短い", 20), "短い");
 }
 
 #[cfg(unix)]

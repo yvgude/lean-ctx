@@ -58,11 +58,8 @@ pub(crate) fn cmd_prompt_segment(args: &[String]) {
         let snap = (mode != ValueDisplayMode::Off)
             .then(|| dir.as_deref().and_then(snapshot::load_for_dir))
             .flatten();
-        let speed = (mode != ValueDisplayMode::Off)
-            .then(crate::core::eval_ab::speed::SpeedHeadline::latest)
-            .flatten();
         let watch = snapshot::value_dir().map(|d| d.join("projects"));
-        let mut payload = json_payload(mode, snap.as_ref(), speed.as_ref(), watch.as_deref());
+        let mut payload = json_payload(mode, snap.as_ref(), watch.as_deref());
         // The caller's ancestors, nearest first: a session whose `host_pid` is
         // among them serves the caller. Plugins read it here instead of walking
         // the process tree themselves, which needs `ps` and fails on Windows (#2077).
@@ -118,13 +115,14 @@ impl Options {
 
 /// `--json`: everything an editor status bar needs in one call, so the
 /// extension formats nothing itself. Schema 1:
-/// `{schema, display, segment, tooltip[], speed?, watch, verify}`; the command
+/// `{schema, display, segment, tooltip[], speed, watch, verify}`; the command
 /// adds `hosts[]`, the caller's ancestor pids.
 /// `segment` is null when there is nothing fresh to show — never a 0.
+/// `speed` stays null: its source, the removed `prove speed` A/B proof, is gone,
+/// and the key is kept so schema 1 readers see the same shape.
 pub(crate) fn json_payload(
     mode: ValueDisplayMode,
     snap: Option<&snapshot::ValueSnapshot>,
-    speed: Option<&crate::core::eval_ab::speed::SpeedHeadline>,
     watch: Option<&Path>,
 ) -> serde_json::Value {
     let style = format::Style {
@@ -139,7 +137,7 @@ pub(crate) fn json_payload(
         "display": mode,
         "segment": segment,
         "tooltip": tooltip,
-        "speed": speed.map(|h| serde_json::json!({ "phrase": h.phrase(), "detail": h.detail() })),
+        "speed": serde_json::Value::Null,
         "watch": watch.map(|p| p.to_string_lossy().into_owned()),
         "verify": "lean-ctx value",
     })
@@ -315,7 +313,6 @@ mod tests {
         let v = json_payload(
             ValueDisplayMode::Minimal,
             Some(&fresh()),
-            None,
             Some(Path::new("/d/value/projects")),
         );
         assert_eq!(v["schema"], 1);
@@ -347,24 +344,10 @@ mod tests {
             (ValueDisplayMode::Minimal, snap()),
             (ValueDisplayMode::Off, fresh()),
         ] {
-            let v = json_payload(mode, Some(&s), None, None);
+            let v = json_payload(mode, Some(&s), None);
             assert!(v["segment"].is_null(), "{v}");
             assert_eq!(v["tooltip"], serde_json::json!([]));
         }
-        assert!(json_payload(ValueDisplayMode::Minimal, None, None, None)["segment"].is_null());
-    }
-
-    #[test]
-    fn json_quotes_speed_only_from_a_verified_headline() {
-        let h = crate::core::eval_ab::speed::SpeedHeadline {
-            faster_pct: 24.0,
-            measured_on: "2026-09-25".into(),
-            tasks: 12,
-            runs: 3,
-            model: "m".into(),
-        };
-        let v = json_payload(ValueDisplayMode::Minimal, None, Some(&h), None);
-        assert_eq!(v["speed"]["phrase"], h.phrase());
-        assert_eq!(v["speed"]["detail"], h.detail());
+        assert!(json_payload(ValueDisplayMode::Minimal, None, None)["segment"].is_null());
     }
 }

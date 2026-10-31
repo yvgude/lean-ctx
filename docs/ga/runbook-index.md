@@ -133,10 +133,9 @@ supported repair does not resolve the fault. For wider symptom diagnosis, see
    lean-ctx raw "<command>"
    ```
 
-2. Assess quality and inspect the runtime.
+2. Inspect the runtime.
 
    ```bash
-   lean-ctx quality-lab
    lean-ctx status
    ```
 
@@ -145,7 +144,6 @@ supported repair does not resolve the fault. For wider symptom diagnosis, see
 
    ```bash
    lean-ctx restart
-   lean-ctx quality-lab
    ```
 
 **Verification**: The command retains required content without bypassing compression.

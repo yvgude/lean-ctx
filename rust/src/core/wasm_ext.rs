@@ -336,6 +336,7 @@ fn item_from_json(v: &Value) -> ProviderItem {
             .unwrap_or_default(),
         body: s("body"),
         claims: Vec::new(),
+        references: Vec::new(),
     }
 }
 

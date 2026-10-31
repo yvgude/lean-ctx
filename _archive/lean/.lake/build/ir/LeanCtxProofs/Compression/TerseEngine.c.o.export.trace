@@ -1,5 +1,0 @@
-{"log":
- [{"message":
-   ".> /Users/yvesgugger/.elan/toolchains/leanprover--lean4---v4.18.0/bin/clang -c -o ././.lake/build/ir/LeanCtxProofs/Compression/TerseEngine.c.o.export ././.lake/build/ir/LeanCtxProofs/Compression/TerseEngine.c -I /Users/yvesgugger/.elan/toolchains/leanprover--lean4---v4.18.0/include -fstack-clash-protection -fwrapv -fvisibility=hidden -Wno-unused-command-line-argument --sysroot /Users/yvesgugger/.elan/toolchains/leanprover--lean4---v4.18.0 -nostdinc -isystem /Users/yvesgugger/.elan/toolchains/leanprover--lean4---v4.18.0/include/clang -O3 -DNDEBUG -DLEAN_EXPORTING",
-   "level": "trace"}],
- "depHash": "4621510257003688901"}

@@ -1,6 +1,0 @@
-{
-  "command": "git diff --no-ext-diff --unified=8",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 812,
-  "category": "git"
-}

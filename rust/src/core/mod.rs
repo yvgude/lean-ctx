@@ -8,7 +8,6 @@ pub(crate) mod behavior_nudge;
 pub mod codebook;
 #[cfg(target_os = "macos")]
 pub(crate) mod codesign;
-pub mod cognitive;
 pub mod command_cwd;
 pub(crate) mod command_vars;
 pub(crate) mod compress_preview;
@@ -20,8 +19,6 @@ pub(crate) mod engine_artifact;
 pub(crate) mod engine_interface;
 pub mod entropy;
 pub mod etpao;
-pub mod eval_ab;
-pub mod eval_harness;
 pub(crate) mod extractive;
 pub mod finops_export;
 pub(crate) mod foreign_mcp;
@@ -41,7 +38,6 @@ pub mod policy;
 pub mod pop_pruning;
 pub mod preservation;
 pub(crate) mod process_capture;
-pub mod process_guard;
 pub(crate) mod protect;
 pub mod rabin_karp;
 pub mod relevance_tracker;
@@ -107,7 +103,6 @@ pub(crate) mod repomap;
 // Domain: Context
 // ---------------------------------------------------------------------------
 pub mod context_admission;
-pub mod context_artifacts;
 pub(crate) mod context_bundle;
 pub(crate) mod context_compiler;
 pub mod context_deficit;
@@ -241,7 +236,6 @@ mod decision_loop_runtime_tests;
 pub mod execution_lifecycle;
 pub mod execution_protocol;
 pub mod litm_calibration;
-pub mod measurement;
 pub mod mode_predictor;
 pub(crate) mod model_registry;
 pub mod shadow;
@@ -252,8 +246,6 @@ pub mod task_spine;
 // Domain: Diagnostics & Quality
 // ---------------------------------------------------------------------------
 pub(crate) mod benchmark;
-pub mod benchmark_compare;
-pub(crate) mod benchmark_study;
 pub mod code_health;
 pub mod conformance;
 pub mod contracts;
@@ -262,7 +254,6 @@ pub(crate) mod cyclomatic;
 pub mod loop_detection;
 pub mod output_verification;
 pub mod quality;
-pub(crate) mod quality_lab;
 pub(crate) mod safety_needles;
 pub mod scorecard;
 pub mod setup_report;
@@ -270,6 +261,7 @@ pub(crate) mod slow_log;
 pub(crate) mod smells;
 pub(crate) mod subagent_contract;
 pub mod surprise;
+pub(crate) mod system_info;
 pub(crate) mod verification_observability;
 
 // ---------------------------------------------------------------------------
@@ -341,7 +333,6 @@ pub mod mcp_catalog;
 pub mod metering;
 pub mod ocla;
 pub mod ocla_bus;
-pub(crate) mod quality_benchmark;
 pub mod work_graph;
 pub mod work_graph_delegation;
 pub mod work_graph_store;
@@ -390,7 +381,6 @@ pub mod llm_enhance;
 pub(crate) mod llm_feedback;
 pub(crate) mod logging;
 pub mod mcp_manifest;
-pub mod mdl_mode;
 pub mod multi_repo;
 pub(crate) mod nc_compress;
 pub mod ocp;
@@ -425,8 +415,6 @@ pub mod provider_cache;
 pub mod providers;
 pub(crate) mod read_stub_index;
 pub(crate) mod recovery;
-#[allow(dead_code)] // The quality receipt consumes this API; not every function has a caller yet.
-pub(crate) mod recovery_verify;
 pub(crate) mod redaction;
 pub mod reference_docs;
 pub mod roles;
@@ -457,7 +445,6 @@ pub mod startup_guard;
 pub mod stats;
 pub mod symbol_map;
 pub(crate) mod syntax_validate;
-pub(crate) mod task_benchmark;
 pub mod task_briefing;
 /// macOS Seatbelt self-sandbox (#356): wraps launchd-owned daemon/proxy/updater
 /// in a `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/

@@ -716,65 +716,6 @@ fn a_key_lost_event_is_kept_out_and_repaired_by_its_author() {
     assert_eq!(ga.digest(), gb.digest());
 }
 
-/// Records every path and serves the scoped requests from the plain place.
-struct Scoped<'a> {
-    inner: &'a Server,
-    paths: RefCell<Vec<String>>,
-}
-
-impl Scoped<'_> {
-    fn strip(&self, path: &str) -> String {
-        self.paths.borrow_mut().push(path.to_string());
-        path.replace("?scope=subtree:n_goal", "")
-    }
-}
-
-impl PlaceApi for Scoped<'_> {
-    fn get(&self, path: &str) -> Result<Value, HiveError> {
-        self.inner.get(&self.strip(path))
-    }
-    fn get_bytes(&self, path: &str, max: usize) -> Result<Vec<u8>, HiveError> {
-        self.inner.get_bytes(&self.strip(path), max)
-    }
-    fn post(&self, path: &str, body: &Value) -> Result<Value, HiveError> {
-        self.inner.post(path, body)
-    }
-}
-
-#[test]
-fn a_scoped_clone_asks_for_the_subtree_in_manifest_and_segments() {
-    let server = Server::new(&STATEMENTS[..3], 2);
-    let scoped = Scoped {
-        inner: &server,
-        paths: RefCell::new(Vec::new()),
-    };
-    let data = tempfile::tempdir().unwrap();
-    let (mut replica, _) = Replica::open(data.path(), "pl_scoped", &[1; 32]).unwrap();
-    let (snap, inst) = verifier_parts();
-    let ok = |e: &Value| sign::verify(e, &inst);
-    let v = Verifier {
-        snapshot_keys: &snap,
-        signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
-    };
-    let report = clone_scoped(&scoped, &mut replica, PLACE, Some("subtree:n_goal"), &v).unwrap();
-    assert!(report.cloned);
-    let paths = scoped.paths.borrow();
-    assert_eq!(
-        paths[0],
-        format!("/places/{PLACE}/snapshot?scope=subtree:n_goal")
-    );
-    assert_eq!(
-        paths[1],
-        format!("/places/{PLACE}/snapshot/1/segments/0?scope=subtree:n_goal")
-    );
-    assert!(
-        paths[2..].iter().all(|p| !p.contains("scope")),
-        "the tail is not scoped"
-    );
-}
-
 /// E2E-FINAL: with the month's transfer used up the tail carries only the
 /// purge tombstones (`next_since` = `since`). They are applied on top of the
 /// replica's graph and its purged bodies shredded, but never stored: the

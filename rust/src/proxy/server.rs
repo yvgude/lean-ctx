@@ -533,10 +533,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         // Drop-in `compress(messages, model)` contract (#739): deterministic
         // messages-in / messages-out compression for SDK clients.
         .route("/v1/compress", post(compress_api::handler))
-        .route(
-            "/v1/quality-lab",
-            post(quality_lab_api::handler).get(quality_lab_api::handler_get),
-        )
         // Universal provider registry (`[[proxy.providers]]`, enterprise#7):
         // `/providers/{id}/...` forwards to the registry entry with that id,
         // speaking its declared wire shape. New provider = config, not code.

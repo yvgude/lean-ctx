@@ -30,6 +30,8 @@ const SUBCOMMANDS: &[&str] = &[
     "checkpoint-seal",
     "checkpoint-inspect",
     "snapshot-v1-inspect",
+    "migrate",
+    "rollback",
     "auto-load",
     "send",
     "receive",
@@ -143,4 +145,39 @@ fn print_usage() {
          \x20 lean-ctx pack --limit 128k --intent \"fix token refresh\" --copy\n\
          \x20 lean-ctx pack src/auth --limit 32k --unit tokens -o auth.xml\n"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SUBCOMMANDS;
+
+    /// F9b: a subcommand missing from `SUBCOMMANDS` turns into a chat bundle
+    /// as soon as a file of that name exists in the working directory. Every
+    /// verb `cmd_pack` dispatches must be listed.
+    #[test]
+    fn every_dispatched_subcommand_is_listed() {
+        let source = include_str!("mod.rs");
+        let start = source.find("match subcommand {").expect("dispatch match");
+        let end = start + source[start..].find("other =>").expect("fallback arm");
+        let mut dispatched = Vec::new();
+        for line in source[start..end].lines() {
+            let Some((patterns, _)) = line.split_once("=>") else {
+                continue;
+            };
+            for pattern in patterns.split('|') {
+                let verb = pattern.trim().trim_matches('"');
+                if !verb.is_empty() && !verb.starts_with('-') && !verb.contains(' ') {
+                    dispatched.push(verb.to_string());
+                }
+            }
+        }
+        assert!(dispatched.iter().any(|verb| verb == "migrate"));
+        assert!(dispatched.iter().any(|verb| verb == "rollback"));
+        for verb in &dispatched {
+            assert!(
+                SUBCOMMANDS.contains(&verb.as_str()),
+                "`pack {verb}` is dispatched but missing from SUBCOMMANDS"
+            );
+        }
+    }
 }

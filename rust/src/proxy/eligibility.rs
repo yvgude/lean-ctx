@@ -64,14 +64,6 @@ pub fn evaluate(policy: &EligibilityPolicy, context: &EligibilityContext) -> Eli
     }
 }
 
-/// Explicitly named alias for callers that prefer the domain term.
-pub fn evaluate_eligibility(
-    policy: &EligibilityPolicy,
-    context: &EligibilityContext,
-) -> EligibilityResult {
-    evaluate(policy, context)
-}
-
 /// Extension trait providing method syntax without adding intelligence to the
 /// protocol schema type.
 pub trait EligibilityPolicyEvaluator {

@@ -131,10 +131,6 @@ impl McpTool for CtxAgentTool {
                         "maximum": 168,
                         "description": "send type=question: hours until an unanswered question becomes a task proposal (org default 24)"
                     },
-                    "swarm_id": {
-                        "type": "string",
-                        "description": "send: a swarm network (sw_…) instead of the project's org channel"
-                    },
                     "references": {
                         "type": "array",
                         "items": { "type": "string" },
@@ -314,11 +310,11 @@ impl McpTool for CtxAgentTool {
                     )));
                 }
             };
-            // Commons became swarms (C0 1.9): an old caller's key is
-            // refused, never sent into the project's org channel instead.
-            if args.contains_key("question_id") {
+            // Commons and then Hive swarms were removed: an old caller's
+            // key is refused, never sent into the project's org channel instead.
+            if args.contains_key("question_id") || args.contains_key("swarm_id") {
                 return Err(ErrorData::invalid_params(
-                    "question_id was renamed to swarm_id (swarms replace Commons)",
+                    "Hive swarms were removed; send without swarm_id to the project's channel",
                     None,
                 ));
             }
@@ -329,7 +325,6 @@ impl McpTool for CtxAgentTool {
                 to_instance: get_str(args, "to_instance"),
                 reply_to: get_str(args, "reply_to"),
                 deadline_hours: args.get("deadline_hours").and_then(Value::as_u64),
-                swarm_id: get_str(args, "swarm_id"),
                 references: args
                     .get("references")
                     .and_then(Value::as_array)

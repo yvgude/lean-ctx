@@ -396,8 +396,7 @@ impl AdaptiveLearningStore {
             );
             observations.push(observation);
         }
-        let mut evidence = fold(&observations)?;
-        evidence.evaluations = crate::core::eval_ab::strategy_evaluations::load();
+        let evidence = fold(&observations)?;
         evidence.validate().map_err(anyhow::Error::msg)?;
         Ok(evidence)
     }

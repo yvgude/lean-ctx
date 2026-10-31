@@ -114,7 +114,6 @@ pub mod prose_ranker;
 #[cfg(feature = "http-server")]
 pub mod providers;
 #[cfg(feature = "http-server")]
-pub mod quality_lab_api;
 #[cfg(all(test, feature = "http-server"))]
 mod reference_tests;
 pub(crate) mod request_project;

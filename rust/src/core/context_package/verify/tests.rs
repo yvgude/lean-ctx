@@ -252,7 +252,8 @@ fn pre_extension_reader_fails_closed_on_checkpoint_layer() {
     }
     #[derive(serde::Deserialize)]
     struct LegacyManifest {
-        layers: Vec<LegacyLayer>,
+        #[serde(rename = "layers")]
+        _layers: Vec<LegacyLayer>,
     }
     let bundle = signed_checkpoint_bundle();
     let old = serde_json::from_value::<LegacyManifest>(bundle["manifest"].clone());

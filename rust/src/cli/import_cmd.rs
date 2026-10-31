@@ -6,12 +6,22 @@ use crate::core::import;
 use crate::core::knowledge::{KnowledgeFact, ProjectKnowledge};
 
 pub fn cmd_import(args: &[String]) {
+    let code = run(args);
+    if code != 0 {
+        std::process::exit(code);
+    }
+}
+
+/// Exit status: 0 on success, 2 for a usage error, 1 when the import itself
+/// fails (F9c: an error never exits 0). Per-source read warnings stay
+/// warnings.
+fn run(args: &[String]) -> i32 {
     if args
         .iter()
         .any(|arg| matches!(arg.as_str(), "--help" | "-h"))
     {
         print_help();
-        return;
+        return 0;
     }
 
     let dry_run = args.iter().any(|arg| arg == "--dry-run");
@@ -31,7 +41,7 @@ pub fn cmd_import(args: &[String]) {
     if !repo_source && ((all && !sources.is_empty()) || sources.len() > 1) {
         eprintln!("Use one source (claude-code, codex, cursor, opencode, docs, git) or --all.");
         print_help();
-        return;
+        return 2;
     }
 
     let (label, mut result) = if repo_source {
@@ -39,7 +49,7 @@ pub fn cmd_import(args: &[String]) {
             Ok(root) => root,
             Err(error) => {
                 eprintln!("Import failed: {error}");
-                return;
+                return 1;
             }
         };
         let root = std::path::Path::new(&project_root);
@@ -53,7 +63,7 @@ pub fn cmd_import(args: &[String]) {
                 Some(Ok(limit)) if limit > 0 => limit,
                 Some(_) => {
                     eprintln!("--limit takes a positive number of commits.");
-                    return;
+                    return 2;
                 }
             };
             ("git", import::git_history::import(root, limit))
@@ -75,7 +85,7 @@ pub fn cmd_import(args: &[String]) {
                     "Choose a source: claude-code, codex, cursor, opencode, docs, git, or --all."
                 );
                 print_help();
-                return;
+                return 2;
             }
         }
     };
@@ -88,7 +98,7 @@ pub fn cmd_import(args: &[String]) {
             Ok(root) => root,
             Err(error) => {
                 eprintln!("Import failed: {error}");
-                return;
+                return 1;
             }
         };
         let scope = result.repo_scope.take();
@@ -100,7 +110,7 @@ pub fn cmd_import(args: &[String]) {
             Ok(count) => count,
             Err(error) => {
                 eprintln!("Import failed: {error}");
-                return;
+                return 1;
             }
         }
     };
@@ -113,6 +123,7 @@ pub fn cmd_import(args: &[String]) {
     if repo_source && !dry_run {
         queue_import_drafts();
     }
+    0
 }
 
 /// A connected machine proposes what the repository import brought to the
@@ -315,6 +326,16 @@ mod tests {
         assert_eq!(ImportSource::Codex.as_str(), "codex");
         assert_eq!(ImportSource::Cursor.as_str(), "cursor");
         assert_eq!(ImportSource::OpenCode.as_str(), "opencode");
+    }
+
+    /// F9c: a usage error exits non-zero instead of printing and exiting 0.
+    #[test]
+    fn a_usage_error_exits_non_zero() {
+        let args = |list: &[&str]| list.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert_eq!(super::run(&args(&[])), 2, "no source");
+        assert_eq!(super::run(&args(&["codex", "cursor"])), 2, "two sources");
+        assert_eq!(super::run(&args(&["nowhere"])), 2, "unknown source");
+        assert_eq!(super::run(&args(&["--help"])), 0);
     }
 
     use crate::cli::common::carrier_tests_support::{AWS_KEY, governed, lineage};

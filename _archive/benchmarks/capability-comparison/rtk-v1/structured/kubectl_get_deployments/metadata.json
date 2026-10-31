@@ -1,6 +1,0 @@
-{
-  "command": "kubectl get deployments -n context-runtime -o wide",
-  "working_dir": "/workspace/lean-ctx/deploy",
-  "expected_tokens": 238,
-  "category": "structured"
-}

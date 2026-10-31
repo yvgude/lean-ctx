@@ -82,12 +82,6 @@ pub fn print_logo_animated_themed(t: &crate::core::theme::Theme) {
     print_logo_themed_static(t);
 }
 
-pub fn print_logo_static() {
-    let cfg = crate::core::config::Config::load();
-    let t = crate::core::theme::load_theme(&cfg.theme);
-    print_logo_themed_static(&t);
-}
-
 fn print_logo_themed_static(t: &crate::core::theme::Theme) {
     if crate::core::theme::no_color() {
         print_logo_plain();
@@ -215,18 +209,6 @@ pub fn print_status_warn(msg: &str) {
     println!("  \x1b[33m⚠\x1b[0m {msg}");
 }
 
-pub fn spinner_tick(msg: &str, frame: usize) {
-    let frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    let ch = frames[frame % frames.len()];
-    print!("\r  \x1b[36m{ch}\x1b[0m {msg}");
-    let _ = io::stdout().flush();
-}
-
-pub fn spinner_done(msg: &str) {
-    print!("\r  \x1b[32m✓\x1b[0m {msg}\x1b[K\n");
-    let _ = io::stdout().flush();
-}
-
 // ── Unified progress indicator (index builds, long CLI work) ──────────
 
 /// Interior width of the progress bar (characters between `[` and `]`).
@@ -351,82 +333,6 @@ impl ProgressIndicator {
         bar[idx] = arrow;
         let bar: String = bar.into_iter().collect();
         format!("  {label} [{bar}]")
-    }
-}
-
-/// Animated dashboard intro: logo wave, then KPI count-up, then section-by-section reveal.
-/// `header_box` is the pre-rendered KPI box (with placeholder values for frame 0).
-/// `kpi_values` are (final_value, width) for the 4 KPI counters.
-/// `sections` are the remaining dashboard sections to reveal sequentially.
-pub fn animate_dashboard_intro(
-    t: &crate::core::theme::Theme,
-    kpi_box_builder: &dyn Fn(&[String]) -> String,
-    kpi_final: &[(u64, f64, u64, f64)], // (tokens, pct, commands, usd)
-    sections: &[String],
-) {
-    use std::io::Write;
-    let is_tty = std::io::stdout().is_terminal();
-    if crate::core::theme::no_color() || !is_tty {
-        if let &[(tokens, pct, commands, usd)] = kpi_final {
-            let kw = 14;
-            let vals = [
-                crate::core::theme::animate_countup(tokens, kw)
-                    .pop()
-                    .unwrap_or_default(),
-                crate::core::theme::animate_countup_pct(pct, kw)
-                    .pop()
-                    .unwrap_or_default(),
-                crate::core::theme::animate_countup(commands, kw)
-                    .pop()
-                    .unwrap_or_default(),
-                crate::core::theme::animate_countup_usd(usd, kw)
-                    .pop()
-                    .unwrap_or_default(),
-            ];
-            println!("{}", kpi_box_builder(&vals));
-        }
-        for s in sections {
-            println!("{s}");
-        }
-        return;
-    }
-
-    print_logo_animated_themed(t);
-
-    let mut stdout = std::io::stdout();
-    let frames = 11;
-    let frame_ms = 70;
-
-    if let &[(tokens, pct, commands, usd)] = kpi_final {
-        let kw = 14;
-        let tok_frames = crate::core::theme::animate_countup(tokens, kw);
-        let pct_frames = crate::core::theme::animate_countup_pct(pct, kw);
-        let cmd_frames = crate::core::theme::animate_countup(commands, kw);
-        let usd_frames = crate::core::theme::animate_countup_usd(usd, kw);
-
-        let mut last_line_count = 0usize;
-        for f in 0..frames {
-            if last_line_count > 0 {
-                print!("\x1b[{last_line_count}A\x1b[J");
-            }
-            let vals = [
-                tok_frames[f].clone(),
-                pct_frames[f].clone(),
-                cmd_frames[f].clone(),
-                usd_frames[f].clone(),
-            ];
-            let box_str = kpi_box_builder(&vals);
-            last_line_count = box_str.lines().count();
-            print!("{box_str}");
-            let _ = stdout.flush();
-            std::thread::sleep(std::time::Duration::from_millis(frame_ms));
-        }
-    }
-
-    for s in sections {
-        let _ = writeln!(stdout, "{s}");
-        let _ = stdout.flush();
-        std::thread::sleep(std::time::Duration::from_millis(60));
     }
 }
 

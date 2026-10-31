@@ -770,7 +770,7 @@ if [ -f /.dockerenv ] || grep -qsE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; 
   if [ -z "${LEAN_CTX_ACTIVE:-}" ] && [ -z "${_LEAN_CTX_HEAL:-}" ]; then
     # XDG-only paths (GL #623): never touch ~/.lean-ctx, which would re-collapse
     # a committed XDG layout. heal_ts is STATE, locks live in the DATA dir
-    # (matches process_guard::lock_dir defaults).
+    # (where the retired process slot locks lived).
     _LEAN_CTX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/lean-ctx"
     _LEAN_CTX_HEAL_TS="${_LEAN_CTX_STATE_DIR}/.heal_ts"
     _LEAN_CTX_HEAL_COOLDOWN=60

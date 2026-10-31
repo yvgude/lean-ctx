@@ -13,16 +13,6 @@ pub(super) const HELP: CommandNode = CommandNode {
     hidden: false,
 };
 
-pub(super) const EVAL: CommandNode = CommandNode {
-    name: "eval",
-    aliases: &[],
-    description: "Evaluate compression quality",
-    subcommands: &[],
-    flags: &[],
-    positional: None,
-    hidden: false,
-};
-
 pub(super) const AUDIT: CommandNode = CommandNode {
     name: "audit",
     aliases: &[],

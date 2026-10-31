@@ -70,6 +70,7 @@ fn provider_entry(id: &str) -> SourceManifestEntry {
         "github" => entry(id, "GitHub", &["issue", "pull_request"], CostClass::Low),
         "gitlab" => entry(id, "GitLab", &["issue", "pull_request"], CostClass::Low),
         "postgres" => entry(id, "PostgreSQL", &["schema", "table"], CostClass::Medium),
+        "emspace" => entry(id, "Emspace", &["page", "task"], CostClass::Low),
         _ => entry(id, id, &["external"], CostClass::Medium),
     }
 }

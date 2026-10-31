@@ -9,6 +9,8 @@ const ALL_ON: Policy = Policy {
     r1_bash: RuleMode::On,
     r2: RuleMode::On,
     r3: RuleMode::Shadow,
+    // R4 needs an archive and a project; its tests turn it on explicitly.
+    r4: RuleMode::Off,
 };
 
 fn unique_session(tag: &str) -> String {
@@ -261,6 +263,235 @@ fn r2_never_touches_errors_diffs_or_test_results() {
     }
 }
 
+const R4_ONLY: Policy = Policy {
+    r1_read: RuleMode::Off,
+    r1_bash: RuleMode::Off,
+    r2: RuleMode::Off,
+    r3: RuleMode::Off,
+    r4: RuleMode::On,
+};
+/// A compressible command (asserted in the R2 test). File viewers such as
+/// `cat` are verbatim-class: no governor rule touches their output.
+const LOG_CMD: &str = BUILD_CMD;
+const RARE_ERROR: &str = "2026-03-14T03:12:09.114Z ERROR worker-2 batch b-006992 stopped: \
+                          ValueError: invalid duration '5x' raised in parse_duration";
+
+/// A day's log: heartbeats and transient retries differing only in
+/// timestamps, ids and counters, with one rare error in the middle.
+fn timestamped_log() -> String {
+    let mut s = String::new();
+    for i in 0..1500usize {
+        let (m, sec, ms) = ((i / 60) % 60, i % 60, (i * 37) % 1000);
+        s.push_str(&format!(
+            "2026-03-14T03:{m:02}:{sec:02}.{ms:03}Z INFO heartbeat ok worker-1 seq={i}\n"
+        ));
+        if i % 3 == 0 {
+            s.push_str(&format!(
+                "2026-03-14T03:{m:02}:{sec:02}.{ms:03}Z WARN worker-1 delivery dlv-{:08x} \
+                 failed: 503 Service Unavailable (attempt {}/5, retrying in 500ms)\n",
+                0x1000_0000 + i * 7919,
+                i % 5 + 1
+            ));
+        }
+        if i == 977 {
+            s.push_str(RARE_ERROR);
+            s.push('\n');
+        }
+    }
+    s
+}
+
+fn bash_in(session: &str, cwd: &std::path::Path, cmd: &str, stdout: &str) -> String {
+    let mut v: serde_json::Value = serde_json::from_str(&bash(session, "t1", cmd, stdout)).unwrap();
+    v["cwd"] = serde_json::Value::String(cwd.to_string_lossy().into_owned());
+    v.to_string()
+}
+
+/// A git project, an isolated archive and community policy for R4 tests.
+fn r4_project() -> (
+    crate::core::data_dir::IsolatedDataDir,
+    crate::core::policy::runtime::TestPolicyOverride,
+    tempfile::TempDir,
+) {
+    let data = crate::core::data_dir::isolated_data_dir();
+    let community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join(".git")).unwrap();
+    (data, community, project)
+}
+
+#[test]
+fn r4_groups_a_timestamped_log_keeps_the_rare_error_and_archives_the_exact_original() {
+    let (_data, _policy, project) = r4_project();
+    assert!(!crate::shell::output_policy::classify(LOG_CMD, &[]).is_protected());
+    let original = timestamped_log();
+    let payload = bash_in(&unique_session("r4"), project.path(), LOG_CMD, &original);
+    let d = decide(&payload, &R4_ONLY);
+    let shown = replaced_stdout(&d).expect("R4 applies");
+    let r = d.receipt.expect("receipt");
+    assert_eq!(r.rule_id, "R4");
+    assert!(
+        r.actual_tokens * 5 <= r.baseline_tokens,
+        "saves ≥ 80 %: {r:?}"
+    );
+    assert!(
+        shown.lines().any(|l| l == RARE_ERROR),
+        "rare error verbatim"
+    );
+    assert!(shown.contains("[1500× like] "), "{shown}");
+    // Deterministic (#498): the same output gives the same bytes.
+    let again = decide(
+        &bash_in(&unique_session("r4b"), project.path(), LOG_CMD, &original),
+        &R4_ONLY,
+    );
+    assert_eq!(replaced_stdout(&again).as_deref(), Some(shown.as_str()));
+
+    let id = shown
+        .split("ctx_expand(id=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .expect("archive id named");
+    let root = project.path().to_str().unwrap();
+    let (exact, expanded) = crate::core::policy::runtime::with_project_source_view(root, || {
+        (
+            crate::core::archive::retrieve(id),
+            crate::tools::ctx_expand::handle(&serde_json::json!({ "id": id })),
+        )
+    })
+    .unwrap();
+    assert_eq!(exact.as_deref(), Some(original.as_str()), "exact bytes");
+    assert!(expanded.contains(RARE_ERROR) && expanded.contains("seq=1499"));
+}
+
+#[test]
+fn r4_modes_archive_gate_and_untouched_shapes() {
+    let (_data, _policy, project) = r4_project();
+    let s = unique_session("r4m");
+    let log = timestamped_log();
+    let run = |stdout: &str, policy: &Policy| {
+        decide(&bash_in(&s, project.path(), LOG_CMD, stdout), policy)
+    };
+
+    let shadow = run(
+        &log,
+        &Policy {
+            r4: RuleMode::Shadow,
+            ..R4_ONLY
+        },
+    );
+    assert!(shadow.output.is_empty(), "shadow never replaces");
+    assert_eq!(shadow.receipt.map(|r| r.rule_id), Some("R4"));
+    let off = run(
+        &log,
+        &Policy {
+            r4: RuleMode::Off,
+            ..R4_ONLY
+        },
+    );
+    assert!(off.output.is_empty() && off.receipt.is_none());
+    // File viewers qualify unless a file read looks like code or data;
+    // other verbatim-class commands never do (owner decision 2026-10-31).
+    let commands = [
+        ("cat logs/relayd.log", true),
+        (
+            "cd logs && grep -v heartbeat relayd.log | head -80; tail -30 relayd.log",
+            true,
+        ),
+        ("cat relayd/worker.py", false),
+        ("head -5000 data/exports/deliveries.jsonl", false),
+        (
+            "grep -n retry relayd/sender.py config/relayd.ini | head -40",
+            false,
+        ),
+        ("curl -s https://ops.example/logs/relayd", false),
+    ];
+    for (cmd, fires) in commands {
+        let d = decide(&bash_in(&s, project.path(), cmd, &log), &R4_ONLY);
+        assert_eq!(!d.output.is_empty(), fires, "{cmd}");
+    }
+
+    // Diffs are refused whole; small output is below the trigger.
+    let diff = format!("{log}diff --git a/x b/x\n@@ -1,2 +1,2 @@\n");
+    for stdout in [
+        diff.as_str(),
+        "2026-03-14T03:00:00.000Z INFO heartbeat ok seq=1\n",
+    ] {
+        let d = run(stdout, &R4_ONLY);
+        assert!(d.output.is_empty() && d.receipt.is_none());
+    }
+
+    // R4 is Bash only: a Read of the same text never gets an R4 receipt.
+    let read = serde_json::json!({
+        "session_id": s, "hook_event_name": "PostToolUse", "tool_name": "Read",
+        "cwd": project.path(), "tool_input": { "file_path": project.path().join("x.log") },
+        "tool_response": { "type": "text", "file": { "content": log } },
+    });
+    let d = decide(
+        &read.to_string(),
+        &Policy {
+            r1_read: RuleMode::On,
+            ..R4_ONLY
+        },
+    );
+    assert!(d.receipt.is_none_or(|r| r.rule_id != "R4"));
+
+    // Without a usable archive R4 never fires, in either mode.
+    for (var, value) in [("LEAN_CTX_ARCHIVE", "off"), ("LEAN_CTX_MINIMAL", "1")] {
+        crate::test_env::set_var(var, value);
+        for mode in [RuleMode::On, RuleMode::Shadow] {
+            let d = run(
+                &log,
+                &Policy {
+                    r4: mode,
+                    ..R4_ONLY
+                },
+            );
+            assert!(d.output.is_empty() && d.receipt.is_none(), "{var}");
+        }
+        crate::test_env::remove_var(var);
+    }
+}
+
+/// Offline evidence over bench transcripts: `LEAN_CTX_R4_CORPUS` holds
+/// `<name>.txt` Bash results with their command in `<name>.cmd`. Prints
+/// whether R4 would fire (command guard and thresholds included) and writes
+/// the view to `<name>.r4`.
+#[test]
+#[ignore = "offline evidence; needs LEAN_CTX_R4_CORPUS"]
+fn r4_offline_corpus_report() {
+    use crate::core::patterns::template_collapse;
+    use crate::core::tokens::count_tokens;
+    let Ok(dir) = std::env::var("LEAN_CTX_R4_CORPUS") else {
+        return;
+    };
+    let mut paths: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "txt"))
+        .collect();
+    paths.sort();
+    for path in paths {
+        let input = std::fs::read_to_string(&path).unwrap();
+        let cmd = std::fs::read_to_string(path.with_extension("cmd")).unwrap_or_default();
+        let class = crate::shell::output_policy::classify(cmd.trim(), &[]);
+        let allowed = super::bash::r4_may_collapse(cmd.trim(), class);
+        let baseline = count_tokens(&input);
+        let view = template_collapse::collapse(&input)
+            .map(|c| template_collapse::render(&c, "full: ctx_expand(id=\"ffffffffffffffff\")"));
+        let actual = view.as_deref().map_or(baseline, count_tokens);
+        let fires = allowed && super::bash::r4_worthwhile(baseline, actual);
+        let text = view.unwrap_or_else(|| input.clone());
+        std::fs::write(path.with_extension("r4"), &text).unwrap();
+        println!(
+            "R4 {} class={class:?} allowed={allowed} fires={fires} tokens={baseline}->{actual} chars={}->{}",
+            path.file_name().unwrap().to_string_lossy(),
+            input.len(),
+            text.len(),
+        );
+    }
+}
+
 #[test]
 fn r3_is_shadow_only_and_counts_repeated_blocks() {
     let s = unique_session("r3");
@@ -470,6 +701,7 @@ fn policy_env_caps_every_rule() {
         "LEAN_CTX_GOVERNOR_R1_BASH",
         "LEAN_CTX_GOVERNOR_R2",
         "LEAN_CTX_GOVERNOR_R3",
+        "LEAN_CTX_GOVERNOR_R4",
     ] {
         crate::test_env::remove_var(var);
     }
@@ -481,13 +713,19 @@ fn policy_env_caps_every_rule() {
             r1_bash: RuleMode::Shadow,
             r2: RuleMode::Shadow,
             r3: RuleMode::Shadow,
+            r4: RuleMode::Shadow,
         },
         "v1 defaults: R1.read live, everything new log-only"
     );
     crate::test_env::set_var("LEAN_CTX_GOVERNOR_R2", "on");
     crate::test_env::set_var("LEAN_CTX_GOVERNOR_R3", "on");
+    crate::test_env::set_var("LEAN_CTX_GOVERNOR_R4", "on");
     let p = Policy::from_env();
-    assert_eq!((p.r2, p.r3), (RuleMode::On, RuleMode::Shadow), "R3 capped");
+    assert_eq!(
+        (p.r2, p.r3, p.r4),
+        (RuleMode::On, RuleMode::Shadow, RuleMode::On),
+        "R3 capped"
+    );
     crate::test_env::set_var("LEAN_CTX_GOVERNOR", "shadow");
     assert_eq!(Policy::from_env().r1_read, RuleMode::Shadow, "global cap");
     crate::test_env::set_var("LEAN_CTX_GOVERNOR", "off");
@@ -496,6 +734,7 @@ fn policy_env_caps_every_rule() {
         "LEAN_CTX_GOVERNOR",
         "LEAN_CTX_GOVERNOR_R2",
         "LEAN_CTX_GOVERNOR_R3",
+        "LEAN_CTX_GOVERNOR_R4",
     ] {
         crate::test_env::remove_var(var);
     }

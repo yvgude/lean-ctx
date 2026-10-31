@@ -1,6 +1,0 @@
-NAME                              READY   STATUS    RESTARTS   AGE
-context-runtime-7b8f5d6c9b-k4m2p  1/1     Running   0          12m
-context-worker-6d7c8f9b7d-h8q1r   1/1     Running   1          12m
-context-worker-6d7c8f9b7d-j2w9x   1/1     Running   0          12m
-postgres-0                       1/1     Running   0          12m
-redis-0                          1/1     Running   0          12m

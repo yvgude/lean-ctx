@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::core::context_kernel::{
-        adaptive_bridge, adaptive_hook, ctx_read_dedup, evidence_wiring, health, health_api,
-        kernel_config, response_evidence, startup,
+        adaptive_bridge, ctx_read_dedup, evidence_wiring, health, health_api, kernel_config,
+        response_evidence, startup,
     };
     use crate::tools::search_hook;
 
@@ -23,7 +23,6 @@ mod tests {
         adaptive_bridge::reset();
         crate::tools::search_kernel::reset();
         search_hook::reset();
-        adaptive_hook::reset();
         response_evidence::reset();
         crate::core::context_kernel::usage_normalizer::reset_usage();
         crate::core::context_kernel::receipt_chain::reset_chain();
@@ -55,9 +54,10 @@ mod tests {
         let _guard = isolated();
         startup::initialize();
         adaptive_bridge::update_bounce_signal(0.5);
-        assert!(adaptive_hook::global_advice().should_reduce);
+        let advice = || adaptive_bridge::compression_advice(adaptive_bridge::current_bounce_rate());
+        assert_eq!(advice(), adaptive_bridge::KernelCompressionAdvice::Reduce);
         adaptive_bridge::update_bounce_signal(0.01);
-        assert!(!adaptive_hook::global_advice().should_reduce);
+        assert_ne!(advice(), adaptive_bridge::KernelCompressionAdvice::Reduce);
     }
 
     #[test]

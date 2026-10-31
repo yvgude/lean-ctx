@@ -1,6 +1,0 @@
-CONTAINER ID   IMAGE                         COMMAND                  CREATED        STATUS                     PORTS                     NAMES
-4e2a91c0d6b1   postgres:16-alpine            "docker-entrypoint.s…"   18 minutes ago Up 18 minutes              0.0.0.0:5432->5432/tcp    local-postgres
-89bc13f2a77d   redis:7-alpine                "docker-entrypoint.s…"   18 minutes ago Up 18 minutes              0.0.0.0:6379->6379/tcp    local-redis
-f17c8a2d0e54   leanctx-fixture:dev           "./target/debug/lea…"   17 minutes ago Up 17 minutes              127.0.0.1:8787->8787/tcp  context-runtime
-2a3b4c5d6e7f   nginx:1.27-alpine             "/docker-entrypoint.…"   3 hours ago    Exited (0) 2 hours ago                              edge-proxy
-7f6e5d4c3b2a   example-worker:ci             "./bin/worker --once"   5 hours ago    Created                                           one-shot-worker

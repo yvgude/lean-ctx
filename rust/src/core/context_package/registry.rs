@@ -106,6 +106,7 @@ impl LocalRegistry {
         Ok(Self { root })
     }
 
+    #[cfg(test)]
     pub(crate) fn open_at(root: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(root).map_err(|e| format!("create packages dir: {e}"))?;
         Ok(Self {
@@ -119,6 +120,7 @@ impl LocalRegistry {
 
     /// Installs a package received from elsewhere (import, remote, transfer,
     /// addon add): an installed name@version never changes its content.
+    #[cfg(test)]
     pub(crate) fn install(
         &self,
         manifest: &PackageManifest,
@@ -515,6 +517,7 @@ impl LocalRegistry {
         Ok((bundle, json))
     }
 
+    #[cfg(test)]
     pub(crate) fn import_from_file(
         &self,
         path: &Path,
@@ -963,6 +966,9 @@ pub(crate) enum SignaturePolicy<'a> {
     /// Remote registry installs: signed, the package belongs to the requested
     /// `namespace`, and the key matches the publisher key pinned for it
     /// (trust on first use).
+    // Never constructed outside tests since remote registry installs left with
+    // 3.12.0; removing it means removing the TOFU pin path (`PendingPin`) too.
+    #[allow(dead_code)]
     RequirePinnedPublisher { namespace: &'a str },
 }
 

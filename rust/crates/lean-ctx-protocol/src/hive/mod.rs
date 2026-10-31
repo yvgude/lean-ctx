@@ -29,7 +29,6 @@ pub mod anchor;
 pub mod automerge;
 pub mod bus;
 pub mod codegraph;
-pub mod compute;
 pub mod ctxpkg;
 pub mod effective_policy;
 pub mod enroll;

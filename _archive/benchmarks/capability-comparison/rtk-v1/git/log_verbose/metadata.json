@@ -1,6 +1,0 @@
-{
-  "command": "git log --format=fuller -4",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 286,
-  "category": "git"
-}

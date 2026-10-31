@@ -86,11 +86,11 @@ pub(super) fn prepare_uncached(
     // here.
     let resolved_mode = match mode_eff {
         "auto" => tuning.auto_density_mode().unwrap_or_else(|| {
-            crate::tools::ctx_read::resolve_auto_mode(
+            crate::tools::ctx_read::resolve_unranged_auto_mode(
                 None,
                 path,
                 original_tokens,
-                Some(raw.lines().count()),
+                raw.lines().count(),
                 task_ref,
             )
         }),

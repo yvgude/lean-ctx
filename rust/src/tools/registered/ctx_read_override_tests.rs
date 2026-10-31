@@ -187,3 +187,149 @@ fn explicit_full_reread_is_not_replaced_by_automatic_delta() {
     assert!(output.text.contains("body_marker_0"));
     assert!(output.text.contains("body_marker_39"));
 }
+
+/// `count` three-line functions; function `i` spans lines `3i+1..=3i+3`.
+fn functions(count: usize) -> String {
+    use std::fmt::Write;
+    let mut source = String::new();
+    for i in 0..count {
+        writeln!(
+            source,
+            "pub fn function_{i}() {{\n    let body_marker_{i} = {i};\n}}"
+        )
+        .unwrap();
+    }
+    source
+}
+
+/// Owner decision 2026-10-30: a read without a range outlines a file above
+/// 300 lines (symbols with line spans) and gives a smaller file whole; `full`,
+/// `lines:`, `symbol=` and the `lines` argument keep returning what they name,
+/// and a re-read without a range never replays an earlier window.
+#[test]
+fn unranged_reads_outline_large_files_and_ranges_stay_exact() {
+    if isolated(
+        "tools::registered::ctx_read::override_tests::unranged_reads_outline_large_files_and_ranges_stay_exact",
+    ) {
+        return;
+    }
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let directory = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(directory.path()).unwrap();
+    let large = root.join("large.rs");
+    std::fs::write(&large, functions(120)).unwrap();
+    let read = |ctx: &ToolContext, extra: serde_json::Value| {
+        let mut args = serde_json::json!({"path": large});
+        args.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        CtxReadTool
+            .handle(args.as_object().unwrap(), ctx)
+            .unwrap()
+            .text
+    };
+    let is_outline = |text: &str| {
+        text.contains("function_119") && text.contains("@L") && !text.contains("body_marker_")
+    };
+
+    let ctx = context(&root, &large);
+    let first = read(&ctx, serde_json::json!({}));
+    assert!(is_outline(&first), "no mode → outline: {first}");
+    // #498: the same file and arguments give the same bytes.
+    let again = read(&context(&root, &large), serde_json::json!({}));
+    assert_eq!(first, again);
+    for extra in [
+        serde_json::json!({"mode": "auto"}),
+        serde_json::json!({"mode": "auto", "fresh": true}),
+    ] {
+        let text = read(&context(&root, &large), extra.clone());
+        assert!(is_outline(&text), "{extra} → outline: {text}");
+    }
+
+    for extra in [
+        serde_json::json!({"mode": "lines:4-6"}),
+        serde_json::json!({"lines": "4-6"}),
+        serde_json::json!({"lines": "4:6"}),
+        serde_json::json!({"lines": [4, 6]}),
+        serde_json::json!({"lines": 4, "limit": 3}),
+        serde_json::json!({"symbol": "function_1"}),
+    ] {
+        let text = read(&ctx, extra.clone());
+        assert!(
+            text.contains("body_marker_1 ") && !text.contains("body_marker_2 "),
+            "{extra} → lines 4-6 only: {text}"
+        );
+    }
+    // P8: a read without a range after a window replayed that window.
+    let after_window = read(&ctx, serde_json::json!({}));
+    assert!(
+        is_outline(&after_window),
+        "re-read → outline: {after_window}"
+    );
+
+    let full = read(&ctx, serde_json::json!({"mode": "full"}));
+    assert!(full.contains("body_marker_0 ") && full.contains("body_marker_119 "));
+
+    let small = root.join("small.rs");
+    std::fs::write(&small, functions(40)).unwrap();
+    let args = serde_json::json!({"path": small});
+    let text = CtxReadTool
+        .handle(args.as_object().unwrap(), &context(&root, &small))
+        .unwrap()
+        .text;
+    assert!(
+        text.contains("body_marker_0 ") && text.contains("body_marker_39 "),
+        "120 lines → whole: {text}"
+    );
+}
+
+/// An outline read leaves every edit route intact: `replace_unique` needs no
+/// prior read, and line+hash ops take their anchors from an `anchored:N-M`
+/// window of the outlined file.
+#[test]
+fn edits_work_after_an_outline_read() {
+    if isolated("tools::registered::ctx_read::override_tests::edits_work_after_an_outline_read") {
+        return;
+    }
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let directory = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(directory.path()).unwrap();
+    let path = root.join("large.rs");
+    std::fs::write(&path, functions(120)).unwrap();
+    let ctx = context(&root, &path);
+    let call =
+        |tool: &dyn McpTool, args: serde_json::Value| tool.handle(args.as_object().unwrap(), &ctx);
+    let patch = crate::tools::registered::ctx_patch::CtxPatchTool;
+
+    let outline = call(&CtxReadTool, serde_json::json!({"path": path})).unwrap();
+    assert!(!outline.text.contains("body_marker_"), "{}", outline.text);
+    call(
+        &patch,
+        serde_json::json!({"path": path, "op": "replace_unique",
+            "old_text": "let body_marker_100 = 100;", "new_text": "let body_marker_100 = 1000;"}),
+    )
+    .unwrap();
+
+    let window = call(
+        &CtxReadTool,
+        serde_json::json!({"path": path, "mode": "anchored:5-5"}),
+    )
+    .unwrap()
+    .text;
+    let hash = window
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix("5:"))
+        .and_then(|rest| rest.split('|').next())
+        .unwrap_or_else(|| panic!("anchor for line 5: {window}"))
+        .to_string();
+    call(
+        &patch,
+        serde_json::json!({"path": path, "op": "set_line", "line": 5, "hash": hash,
+            "new_text": "    let body_marker_1 = 11;"}),
+    )
+    .unwrap();
+
+    let source = std::fs::read_to_string(&path).unwrap();
+    assert!(source.contains("let body_marker_100 = 1000;"), "{source}");
+    assert!(source.contains("let body_marker_1 = 11;"), "{source}");
+}

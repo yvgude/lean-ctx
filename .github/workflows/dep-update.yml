@@ -1,8 +1,7 @@
 # Dependency Auto-Update — ongoing patch/minor maintenance of the Cargo dependencies.
 #
-# Complements the one-off, manual major upgrades
-# (docs/superpowers/specs/2026-06-17-dependency-upgrades-plan-a/b-design.md):
-# those catch up accumulated major drift; THIS workflow then keeps
+# Complements the one-off, manual major upgrades: those catch up
+# accumulated major drift; THIS workflow then keeps
 # patch + compatible minor current. It NEVER touches `--incompatible`/major —
 # breaking-change bumps stay deliberately manual.
 #

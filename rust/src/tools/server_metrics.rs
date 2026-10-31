@@ -182,13 +182,6 @@ impl LeanCtxServer {
         );
 
         let output_tokens = original.saturating_sub(saved);
-        let session_id = self.session.read().await.id.clone();
-        let model = std::env::var("LEAN_CTX_MODEL").unwrap_or_else(|_| "unknown".to_string());
-        if let Err(error) = crate::core::measurement::MeasurementFramework::from_data_dir()
-            .record_tool_call(&session_id, tool, 0, original as u64, saved as u64, &model)
-        {
-            tracing::debug!("lean-ctx: measurement write failed: {error}");
-        }
         crate::core::metering::MeterStore::append_best_effort(
             crate::core::metering::MeterEntry::new(
                 tool,

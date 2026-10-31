@@ -175,19 +175,6 @@ pub fn resolve(id: &str) -> Option<String> {
     resolve_checked(id).ok()
 }
 
-#[cfg(test)]
-pub(crate) fn expire_for_test(id: &str) {
-    if let Some(entry) = store_lock()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .get_mut(id)
-    {
-        entry.created_at = Instant::now()
-            .checked_sub(TTL + Duration::from_secs(1))
-            .expect("test timestamp supports TTL subtraction");
-    }
-}
-
 pub fn stats() -> (usize, usize) {
     let Ok(map) = store_lock().try_lock() else {
         return (0, 0);

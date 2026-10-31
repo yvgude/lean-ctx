@@ -517,7 +517,7 @@ fn approve_now(broker: &Broker, kind: Kind, subject: &Value) -> Record {
         .unwrap()
 }
 
-/// T-CONSENT-7, restart half: the three restarts need no new request; a
+/// T-CONSENT-7, restart half: the review-loop restart needs no new request; a
 /// CLI change on the review loop does.
 #[test]
 fn approved_records_cover_automatic_restarts() {
@@ -530,50 +530,6 @@ fn approved_records_cover_automatic_restarts() {
     let mut other_cli = review.clone();
     other_cli["cli"] = "codex".into();
     required_id(broker.cover(&Restart::ReviewLoop(other_cli), NOW + 1));
-
-    let unattended = case_subject(Kind::UnattendedStart);
-    approve_now(&broker, Kind::UnattendedStart, &unattended);
-    broker
-        .cover(&Restart::Unattended(unattended.clone()), NOW + 1)
-        .unwrap();
-    let mut new_pledge = unattended;
-    new_pledge["pledge_digest"] = "ab".repeat(32).into();
-    required_id(broker.cover(&Restart::Unattended(new_pledge), NOW + 1));
-
-    let join = case_subject(Kind::SwarmJoin);
-    approve_now(&broker, Kind::SwarmJoin, &join);
-    let participation = |pledge: &str| Restart::Participation {
-        swarm: join["swarm"].as_str().unwrap().into(),
-        cli: join["cli"].as_str().unwrap().into(),
-        pledge_digest: pledge.into(),
-    };
-    broker
-        .cover(
-            &participation(join["pledge_digest"].as_str().unwrap()),
-            NOW + 1,
-        )
-        .unwrap();
-    let after = "9c".repeat(32);
-    required_id(broker.cover(&participation(&after), NOW + 1));
-    approve_now(
-        &broker,
-        Kind::PledgeChange,
-        &json!({"swarm": join["swarm"], "before_digest": join["pledge_digest"], "after_digest": after}),
-    );
-    broker.cover(&participation(&after), NOW + 2).unwrap();
-
-    // `swarm leave` ends the coverage.
-    assert_eq!(
-        broker
-            .withdraw(
-                &[Kind::SwarmJoin, Kind::PledgeChange, Kind::UnattendedStart],
-                "swarm",
-                join["swarm"].as_str().unwrap()
-            )
-            .unwrap(),
-        3
-    );
-    required_id(broker.cover(&participation(&after), NOW + 3));
 }
 
 #[test]

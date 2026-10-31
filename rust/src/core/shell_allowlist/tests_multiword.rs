@@ -1,5 +1,5 @@
 //! Multi-word allowlist entry tests (GH #1419) and the subcommand-scoping
-//! follow-up (design doc: docs/dev/shell-allowlist-subcommand-scoping.md).
+//! follow-up.
 //!
 //! Extracted from `tests.rs` to stay within the 1500-line LOC gate.
 

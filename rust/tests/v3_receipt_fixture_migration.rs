@@ -8,7 +8,7 @@ const V3_RECEIPT: &[u8] = include_bytes!("fixtures/v3/execution-receipt-v1.json"
 fn v3_task_cli_migration_is_idempotent_and_rollback_preserves_source_bytes() {
     let sandbox = tempfile::tempdir().expect("isolated migration workspace");
     let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../_archive/benchmarks/efficiency/task-spine-v1/tasks/task-001-python-bug");
+        .join("tests/fixtures/v3/task-spine-v1/tasks/task-001-python-bug");
     let task = sandbox.path().join("task");
     std::fs::create_dir(&task).unwrap();
     let names = [

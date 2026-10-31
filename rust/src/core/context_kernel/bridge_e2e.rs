@@ -16,7 +16,6 @@ mod tests {
     use super::super::coverage_class::CoverageClass;
     use super::super::identity::CallerRole;
     use super::super::proxy_bridge::{self, ProxyRequestData};
-    use super::super::tool_surface;
 
     fn request_for(user_id: &str) -> ProxyRequestData {
         ProxyRequestData {
@@ -73,25 +72,6 @@ mod tests {
         }
 
         assert!(proxy_bridge::identity_summary().total_users >= 1);
-    }
-
-    #[test]
-    fn tool_optimization_saves_tokens() {
-        let _guard = isolated();
-        let schemas = (0..15)
-            .map(|index| tool_surface::ToolSchema {
-                name: format!("tool-{index}"),
-                description: "Conformance test tool".to_owned(),
-                parameters_json: r#"{"type":"object"}"#.to_owned(),
-                token_count: 2_000,
-                priority: 1,
-                category: tool_surface::ToolCategory::Core,
-            })
-            .collect::<Vec<_>>();
-
-        let reduction = tool_surface::optimize_for_request(&[], &schemas);
-
-        assert!(reduction.tokens_saved > 0);
     }
 
     #[test]

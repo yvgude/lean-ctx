@@ -85,10 +85,6 @@ outcome quality.
   "status_guarded_records": [
     "docs/cognition-interface.md",
     "docs/cognition-lab/plan-v1.md",
-    "docs/context-os/guide.md",
-    "docs/context-os/rfc-v1.md",
-    "docs/context-os/cookbook-non-coding.md",
-    "docs/comparisons/README.md",
     "docs/ga/README.md",
     "docs/integrations/datadog.md",
     "docs/integrations/finops.md",

@@ -75,13 +75,6 @@ release assets, and verification commands.
   python3 scripts/check-sdk-surface.py
   ```
 
-- [ ] The committed provider-free fixture boundary remains reproducible and
-  fails closed for drift/path violations.
-
-  ```bash
-  cargo test --manifest-path rust/Cargo.toml --lib eval_ab::safe_paths
-  ```
-
 - [ ] If a release exposes a profile/Kit selection or rollback path, rehearse
   the corresponding local rollback tests before publication. Profiles and
   first-class Context Kits remain **Research** until their separate W4/W5 exit

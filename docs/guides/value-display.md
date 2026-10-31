@@ -204,53 +204,9 @@ the audit trail, and they are shown only when the trail verifies:
 
 ## Speed
 
-lean-ctx never estimates speed from your sessions: a session has no
-comparison run without lean-ctx. Speed is shown only after you have measured
-it:
-
-```bash
-lean-ctx eval init ./speed-suite     # a starter suite; add your own tasks
-export LEAN_CTX_EVAL_MODEL_URL=http://localhost:11434/v1
-export LEAN_CTX_EVAL_MODEL=qwen2.5-coder:7b
-lean-ctx prove speed --suite ./speed-suite/suite.ndjson
-```
-
-Each task goes to the same live model twice per run: once with a raw context
-dump (baseline) and once with lean-ctx's context, both within the same token
-budget. The first request is a warm-up and is not counted. Which arm goes
-first alternates. Each arm's latency is the median of `--runs` rounds
-(default 3), and every answer is scored. The numbers below illustrate the
-format; they are not a measurement of lean-ctx:
-
-```text
-◆ lean-ctx speed proof · suite.ndjson · qwen2.5-coder:7b
-  5 tasks × 3 runs · budget 4000 tokens · warm-up request excluded
-
-                      baseline    lean-ctx
-  median latency     2.10 s      1.24 s     ✓ 41.0% faster
-  context tokens     3.9K        2.1K
-  correct answers    14/15       15/15
-  faster on          5 of 5 tasks
-
-  ✓ measured 2026-09-25 · signed
-  Verify: lean-ctx prove speed --verify <data_dir>/value/speed/speed-proof-v1_20260925T101500Z.json
-```
-
-The proof is signed with your agent key. `lean-ctx prove speed --verify`
-checks the signature and recomputes the summary from the raw timings, so an
-edited number shows `TAMPERED` and exits 1.
-
-`gain --wrapped` then shows your latest proof, with its date, size and model
-(same illustrative numbers). It describes your suite, model and machine, not
-lean-ctx in general:
-
-```text
-  ⚡  41% faster model answers with lean-ctx
-      measured 2026-09-25 · 5 tasks × 3 runs · qwen2.5-coder:7b
-```
-
-It is left out when the proof does not verify, when lean-ctx was not faster,
-or when it answered fewer tasks correctly than the baseline.
+lean-ctx does not report speed. A session has no comparison run without
+lean-ctx, and the signed A/B speed proof (`prove speed`) was removed with
+the engine's evaluation tooling.
 
 ## VS Code, Cursor and Windsurf
 
@@ -264,8 +220,7 @@ published to an extension registry:
 ```
 
 Hovering it shows the breakdown, with each line labelled `✓` (counted) or `≈`
-(derived). If you ran `prove speed`, the verified speed proof is shown too.
-Clicking it runs `lean-ctx value` in a terminal.
+(derived). Clicking it runs `lean-ctx value` in a terminal.
 
 The extension computes nothing itself. It calls:
 

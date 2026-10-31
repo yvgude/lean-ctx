@@ -19,8 +19,8 @@ commercial agreement for production/OEM use; Enterprise has its own license and
 release scope. An Engine artifact does not confer rights in either product.
 
 The [public contract index](docs/contracts/README.md) lists files currently
-present in this distribution. Legacy commercial entries in the historical matrix
-below are retained for compatibility history, not as public service availability.
+present in this distribution, and the stability matrix below classifies every
+contract document in `docs/contracts/`.
 
 ## Architecture positioning
 
@@ -71,7 +71,7 @@ A versioned contract doc (`docs/contracts/<name>-vN.md`) is an **artifact, not a
 
 ## Stability matrix
 
-Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_docs()`; enforced by `rust/tests/contracts_frozen.rs` — no doc may stay unclassified):
+Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_docs()`; enforced by `rust/tests/suite/contracts_frozen.rs` — no doc may stay unclassified):
 
 | Status | Meaning |
 |---|---|
@@ -83,30 +83,34 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 |---|---|---|---|
 | HTTP MCP | `docs/contracts/http-mcp-contract-v1.md` | 1 | frozen |
 | HTTP MCP directed events | `docs/contracts/http-mcp-contract-v2.md` | 2 | stable |
-| Decision signature profile | `docs/contracts/decision-record-signature-v1.md` | 1 | stable |
-| Context plan projection digest | `docs/contracts/context-plan-projection-digest-v1.md` | 1 | stable |
-| OCLA cache validator | `docs/contracts/ocla-cache-validator-v1.md` | 1 | stable |
-| Team Context source pin | `docs/contracts/team-context-v1.SOURCE.md` | 1 | experimental (provenance note, not protocol acceptance) |
-| V4 integration notes | 32 individually enumerated `v4-*.md` entries in `core::contracts::contract_docs()` | 1 | experimental (checkpoint/audit evidence, not release acceptance) |
-| Team Server | `docs/contracts/team-server-contract-v1.md` | 1 | frozen |
 | Context IR | `docs/contracts/context-ir-v1.md` | 1 | frozen |
 | Local-Free Invariant | `docs/contracts/local-free-invariant-v1.md` | 1 | frozen |
+| Local-Free Invariant v2 | `docs/contracts/local-free-invariant-v2.md` | 2 | stable |
 | OSS Plane Separation | `docs/contracts/oss-plane-separation-v1.md` | 1 | frozen |
 | OSS Plane Separation v2 | `docs/contracts/oss-plane-separation-v2.md` | 2 | stable |
-| Billing Plane | `docs/contracts/billing-plane-v1.md` | 1 | frozen |
 | WASM ABI | `docs/contracts/wasm-abi-v1.md` | 1 | frozen² |
 | Delivery Manifest | `docs/contracts/delivery-manifest-v1.md` | 1 | frozen |
 | Deployment Rehearsal | `docs/contracts/deployment-rehearsal-v1.md` | 1 | frozen |
 | Release Key Rotation | `docs/contracts/release-key-rotation-v1.md` | 1 | frozen |
 | Capabilities | `docs/contracts/capabilities-contract-v1.md` | 1 | stable¹ |
-| Billing Plane v2 | `docs/contracts/billing-plane-v2.md` | 2 | stable |
-| Settlement Evidence | `docs/contracts/settlement-evidence-v2.md` | 2 | stable |
+| Evidence Bundle | `docs/contracts/evidence-bundle-v1.md` | 1 | stable |
 | A2A | `docs/contracts/a2a-contract-v1.md` | 1 | stable |
 | Attention Layout Driver | `docs/contracts/attention-layout-driver-v1.md` | 1 | stable |
 | Conformance | `docs/contracts/conformance-v1.md` | 1 | stable |
+| Context plan projection digest | `docs/contracts/context-plan-projection-digest-v1.md` | 1 | stable |
+| OCLA cache validator | `docs/contracts/ocla-cache-validator-v1.md` | 1 | stable |
 | OCLA Verifier Conformance | `docs/contracts/ocla-verifier-conformance-v1.md` | 1 | stable |
 | Extension Trust | `docs/contracts/extension-trust-v1.md` | 1 | stable |
 | Extractors | `docs/contracts/extractors-v1.md` | 1 | stable |
+| Contract index | `docs/contracts/README.md` | 1 | stable |
+| Deprecation and advisory process | `docs/contracts/DEPRECATION.md` | 1 | stable |
+| Audit Schedule | `docs/contracts/audit-schedule-v1.md` | 1 | stable |
+| Branch Protection | `docs/contracts/branch-protection-v1.md` | 1 | stable |
+| OCLA Certification Levels | `docs/contracts/certification-levels-v1.md` | 1 | stable |
+| Release Integrity | `docs/contracts/release-integrity-v1.md` | 1 | stable |
+| Customer-Proof Evidence Bundle v2 | `docs/contracts/evidence-bundle-v2.md` | 2 | stable |
+| Customer-Proof Evidence Bundle v2 Verification | `docs/contracts/evidence-bundle-v2-verification-v1.md` | 1 | stable |
+| Public Product Claims | `docs/contracts/public-product-claims-v1.md` | 1 | stable |
 | Gotchas/Reminders | `docs/contracts/gotchas-reminders-contract-v1.md` | 1 | stable |
 | Graph Reproducibility | `docs/contracts/graph-reproducibility-contract-v1.md` | 1 | stable |
 | Handoff Transfer Bundle | `docs/contracts/handoff-transfer-bundle-v1.md` | 1 | stable |
@@ -115,14 +119,39 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | Persona Spec | `docs/contracts/persona-spec-v1.md` | 1 | stable |
 | Provider Framework | `docs/contracts/provider-framework-contract-v1.md` | 1 | stable |
 | Wrapped Permalink | `docs/contracts/wrapped-permalink-v1.md` | 1 | stable |
+| Addon Manifest | `docs/contracts/addon-manifest-v1.md` | 1 | stable |
+| Decision signature profile | `docs/contracts/decision-record-signature-v1.md` | 1 | stable |
+| Team Context source pin | `docs/contracts/team-context-v1.SOURCE-v1.md` | 1 | experimental (provenance note, not protocol acceptance) |
 | Context Candidate Admission | `docs/contracts/context-candidate-admission-v1.md` | 1 | experimental |
+| Context Quality | `docs/contracts/context-quality-v1.md` | 1 | experimental |
 | Multi-Agent Efficiency Benchmark | `docs/contracts/multi-agent-efficiency-benchmark-v1.md` | 1 | experimental |
 | Test Deployment Evidence | `docs/contracts/test-deployment-evidence-v1.md` | 1 | experimental |
-| Hosted Personal Index | `docs/contracts/hosted-personal-index-v1.md` | 1 | experimental |
-| Personal Cloud Encryption | `docs/contracts/personal-cloud-encryption-v1.md` | 1 | experimental |
-| Context Snapshot | `docs/contracts/context-snapshot-v1.md` | 1 | experimental |
 | OCLA Config Tuning | `docs/contracts/ocla-config-tuning-v2.md` | 2 | experimental |
+| Personal Cloud Encryption | `docs/contracts/personal-cloud-encryption-v1.md` | 1 | experimental |
+| Context Policy Packs | `docs/contracts/context-policy-packs-v1.md` | 1 | experimental |
+| Quality Loop | `docs/contracts/quality-loop-v1.md` | 1 | experimental |
+| Edit Metering | `docs/contracts/edit-metering-v1.md` | 1 | experimental |
+| Context Snapshot | `docs/contracts/context-snapshot-v1.md` | 1 | experimental |
+| Team Invite Links | `docs/contracts/team-invite-links-v1.md` | 1 | experimental |
+| Pillar Boundaries | `docs/contracts/pillar-boundaries-v1.md` | 1 | stable |
+| Logical Session Presence | `docs/contracts/logical-session-presence-v1.md` | 1 | experimental |
+| Tokenizer calibration evidence | `docs/contracts/tokenizer-calibration-v1.md` | 1 | experimental |
+| Engine Interface and Compatibility Policy | `docs/contracts/engine-interface-compatibility-v1.md` | 1 | stable |
+| Receipt Document | `docs/contracts/receipt-document-v1.md` | 1 | frozen |
+| Native Engine Context Proof | `docs/contracts/native-engine-context-proof-v1.md` | 1 | experimental |
 | Context Gateway | `docs/contracts/context-gateway-v1.md` | 1 | experimental |
+| Context Gateway v2 | `docs/contracts/context-gateway-v2.md` | 2 | experimental |
+| Egress lifecycle receipts | `docs/contracts/egress-lifecycle-v1.md` | 1 | experimental |
+| Team context outcome report | `docs/contracts/team-context-outcome-v1.md` | 1 | experimental |
+| Local Engine context planning | `docs/contracts/engine-context-plan-v1.md` | 1 | experimental |
+| Explicit Engine source planning | `docs/contracts/engine-context-sources-v1.md` | 1 | experimental |
+| Engine context sources v2 | `docs/contracts/engine-context-sources-v2.md` | 2 | experimental |
+| Operator-attested Engine outcome | `docs/contracts/engine-outcome-v1.md` | 1 | experimental |
+| Engine Context Store reads | `docs/contracts/engine-context-store-v1.md` | 1 | experimental |
+| Engine provider-execution | `docs/contracts/engine-provider-execution-v1.md` | 1 | experimental |
+| Operator-owned source execution | `docs/contracts/engine-source-execution-v1.md` | 1 | experimental |
+| Optional Intelligence Runtime installation | `docs/contracts/intelligence-runtime-install-v1.md` | 1 | experimental |
+| Reference scheduler estimate semantics | `docs/contracts/reference-scheduler-estimates-v1.md` | 1 | experimental |
 
 ¹ The capabilities document is additive **by design**: its drift test binds the doc's key list to `server_capabilities::TOP_LEVEL_KEYS`, so the doc must grow whenever a key is added. Freezing the file would contradict its own contract; removal or mutation of existing keys remains a breaking change.
 
@@ -158,9 +187,13 @@ leanctx.contract.a2a_snapshot_v1.schema_version=1
 leanctx.contract.memory_boundary_v1.schema_version=1
 leanctx.contract.gotchas_reminders_v1.schema_version=1
 leanctx.contract.provider_framework_v1.schema_version=1
+leanctx.contract.context_package_v1.schema_version=1
+leanctx.contract.context_package_v2.schema_version=2
+leanctx.contract.context_snapshot_v1.schema_version=1
 leanctx.contract.http_mcp.contract_version=2
 leanctx.contract.team_server.contract_version=1
-leanctx.contract.context_snapshot_v1.schema_version=1
+leanctx.contract.capabilities.contract_version=1
+leanctx.contract.team_seat_value_v1.schema_version=1
 <!-- leanctx-contracts-kv:end -->
 
 ---
@@ -308,7 +341,7 @@ Define how LeanCTX communicates with the outside world.
 
 ### Team Server v1
 
-- **Doc**: `docs/contracts/team-server-contract-v1.md`
+- **Doc**: not part of this distribution (the Team server does not ship in this binary)
 - **Workspaces**: `x-leanctx-workspace` header + `workspaceId` body + deterministic fallback
 - **Audit log**: JSONL with `argumentsMd5` only (no raw args)
 

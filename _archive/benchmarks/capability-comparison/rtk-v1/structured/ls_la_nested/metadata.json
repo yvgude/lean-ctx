@@ -1,6 +1,0 @@
-{
-  "command": "ls -la . crates rust tests",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 184,
-  "category": "structured"
-}

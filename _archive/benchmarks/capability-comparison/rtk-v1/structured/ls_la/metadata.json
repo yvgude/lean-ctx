@@ -1,6 +1,0 @@
-{
-  "command": "ls -la",
-  "working_dir": "/workspace/lean-ctx/rust",
-  "expected_tokens": 118,
-  "category": "structured"
-}

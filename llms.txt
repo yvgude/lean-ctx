@@ -33,16 +33,12 @@ Key properties for an LLM evaluating lean-ctx:
 - [Embedding guide](https://github.com/yvgude/lean-ctx/blob/main/docs/guides/embed-sdk.md): application-owned workflows and supported Engine integration.
 - [Monorepo guide](https://github.com/yvgude/lean-ctx/blob/main/docs/guides/monorepo.md): multi-repo serving.
 
-## Comparisons
-
-- [Historical comparisons](https://github.com/yvgude/lean-ctx/blob/main/docs/comparisons/README.md): retained research; use the current fit guide for product positioning.
-
 ## Reference & internals
 
 - [Generated config keys](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/generated/config-keys.md): every `config.toml` key + env override.
 - [Generated MCP tools](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/generated/mcp-tools.md): complete inventory generated from the registry.
 - [ARCHITECTURE](https://github.com/yvgude/lean-ctx/blob/main/ARCHITECTURE.md): how the read path, wire path, graphs and memory fit together.
-- [CONTRACTS](https://github.com/yvgude/lean-ctx/blob/main/CONTRACTS.md): 29 published stability contracts, CI-enforced.
+- [CONTRACTS](https://github.com/yvgude/lean-ctx/blob/main/CONTRACTS.md): the stability matrix (frozen, stable, experimental) for every contract document in `docs/contracts/`, CI-enforced.
 - [VISION](https://github.com/yvgude/lean-ctx/blob/main/VISION.md): Available, Preview, and Research scope for the Context Gateway.
 
 ## Optional

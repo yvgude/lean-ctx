@@ -172,7 +172,6 @@ COMMANDS:
     embeddings status              Show the ONNX Runtime used for semantic embeddings (ORT_DYLIB_PATH)
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Inspect local session-cache re-read behavior
-    prove speed --suite FILE [--runs N] [--budget N] [--json] | --verify [FILE]  Signed A/B proof of model latency with vs. without lean-ctx
     health [path] [--json] [--gate]  Code-health report: cognitive complexity, naming, navigability score + token tax
     cockpit [--port N] [--foreground] [--no-open] [--host=H] [--base-path=/prefix] [--open=browser|none|vscode]  Open the Cockpit (also: lean-ctx dashboard; background server, default http://localhost:3333)
     cockpit stop                   Stop the background Cockpit server
@@ -185,7 +184,6 @@ COMMANDS:
     sessions [list|show|delete|cleanup]  Manage saved session snapshots — PLURAL; see 'session' for live memory (alias: session-store)
     benchmark run [path] [--json]  Run a local representation comparison on project files
     benchmark report [path]        Generate a local Markdown report
-    benchmark compare [--output F] Research-only comparative report; not a public benchmark claim
     benchmark scorecard [--json]   Local representation scorecard; not a matched-workload result
     cheatsheet                     Context-tool cheat sheet & quick reference
     onboard                        Zero-prompt golden path: connect tools + sensible defaults
@@ -309,19 +307,15 @@ EVIDENCE & MEASUREMENT:
     roi [--json|--md] [--export <path>]  Recorded savings (ROI) report from the signed ledger
     finops export [--target=focus|cbf|vantage] [--from=D] [--to=D] [--out=FILE]
                                    Daily cost/savings rows from the savings ledger
-    measure <baseline-start|baseline-stop|treatment-start|treatment-stop|compare|report>
-                                   Baseline vs. treatment measurement [--format markdown|json]
     evidence run|workflow|realworld|report|v2|inspect  Generate or inspect evidence bundles
     evidence-export [--output DIR] [--format markdown|json]  Portable package of local evidence
     shadow [--latest|--list|--force]  Inspect local Shadow Mode comparisons
-    eval init <dir> | eval ab --suite <file>  Deterministic with/without output-quality proof
     verify [--format summary|json|both] [--json]  Output-verification statistics
     verify <bundle.zip> [--public-key F] [--verbose] [--json]  Verify an evidence bundle offline
     proof [--format json|summary|both] [--no-write] [--filename F]  Write context proof artifacts
     audit [evidence|determinism]   Compliance report (default), evidence audit, determinism check
     compliance report|facts|verify  Signed CISO report (frameworks: Enterprise), assessed facts, offline verify
     conformance [--json]           Conformance scorecard, non-zero exit on failure (alias: selftest)
-    quality-lab [--original F --compressed F --ext E] [--json] [--gate]  Compression quality check
     scenario [all|triage|knowledge|shadow|value-gate|full-loop]  Run an end-to-end scenario
     triage accuracy [--json]       Triage model accuracy report
     model install triage | model status | model remove triage  Manage the local triage model

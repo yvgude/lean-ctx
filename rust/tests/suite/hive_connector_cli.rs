@@ -487,34 +487,26 @@ fn against_a_1x_only_hive_the_engine_stays_on_1x() {
     .unwrap();
     assert_eq!(recorded, serde_json::json!({"bus": 1}));
     assert!(machine.status_json().connected);
-    // Task Compute (C0 2.x only) is "not available" here, and nothing asks.
+    // Hive swarms and Task Compute were removed (owner decision
+    // 2026-10-30): their commands say so and nothing asks Hive.
     let before = fake.requests().len();
     for args in [
         &["compute", "status", "cj_0b4f9a7e3c2d4e1f8a6b5c4d3e2f1a09"][..],
-        &[
-            "compute",
-            "submit",
-            "--type",
-            "tests",
-            "--image",
-            "rust-1.99",
-            "--",
-            "true",
-        ][..],
+        &["swarm", "list"][..],
     ] {
         let out = machine.run(args);
         assert!(!out.status.success(), "{args:?}: {out:?}");
         let stderr = text(&out.stderr);
         assert!(
-            stderr.contains("not_available: Task Compute is not available on this Hive"),
+            stderr.contains("was retired in 3.12.1"),
             "{args:?}: {stderr}"
         );
     }
-    let compute_requests = fake.requests()[before..]
+    let removed_requests = fake.requests()[before..]
         .iter()
-        .filter(|r| r.path.contains("/compute/"))
+        .filter(|r| r.path.contains("/compute/") || r.path.contains("/swarms/"))
         .count();
-    assert_eq!(compute_requests, 0, "a 1.x Hive is never asked");
+    assert_eq!(removed_requests, 0, "removed features never ask Hive");
 }
 
 /// Another root key than the one the fake signs with (32 bytes of 7).
@@ -771,23 +763,7 @@ fn hive_subcommand_help_shows_its_own_usage() {
             &["tasks", "claim", "--help"][..],
             "lean-ctx hive tasks claim <number> --agent",
         ),
-        (
-            &["swarm", "--help"][..],
-            "swarm       Swarm subtasks within",
-        ),
         (&["worker", "--help"][..], "worker      Worker mode"),
-        (
-            &["compute", "--help"][..],
-            "lean-ctx hive compute result <job id> [--out <dir>]",
-        ),
-        (
-            &["compute"][..],
-            "lean-ctx hive compute result <job id> [--out <dir>]",
-        ),
-        (
-            &["compute", "submit", "--help"][..],
-            "lean-ctx hive compute submit --type",
-        ),
     ] {
         let out = m.run(args);
         assert!(out.status.success(), "{args:?}: {out:?}");

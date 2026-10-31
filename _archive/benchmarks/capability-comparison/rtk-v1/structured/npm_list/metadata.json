@@ -1,6 +1,0 @@
-{
-  "command": "npm list --depth=0",
-  "working_dir": "/workspace/lean-ctx/packages/ocla-fixtures",
-  "expected_tokens": 118,
-  "category": "structured"
-}

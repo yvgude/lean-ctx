@@ -89,6 +89,21 @@ When working on lean-ctx itself:
 3. **Verify the final diff once**: `cargo test --lib` + `cargo clippy --all-features -- -D warnings` + `cargo fmt --check`; repeat when changes or failures justify it.
 4. **Install**: `lean-ctx dev-install` or `make dev` (build→atomic stop/install→restart).
 
+### Build budget for parallel agents (owner 2026-10-30)
+
+The engine crate `lean_ctx` is large; every compile with codegen costs
+8–17 GB RAM and queues behind the machine's compile gate. With many agents
+per machine, memory runs out. Therefore:
+
+- **Workers** iterate with `cargo check --locked --all-targets` only (type
+  checks code and tests, no codegen). A worker runs affected tests at most once
+  per task, filtered, and only when the task needs behaviour evidence.
+- **Workers do not run** `cargo fast`, `cargo build`, `--release`,
+  `dev-install`/`make dev`, or the full `cargo test --lib`.
+- **The integrator** (lead) runs `cargo fast`, `dev-install` and the full gates
+  once per integrated batch, on one machine at a time.
+- A worker that needs a runnable binary asks the lead instead of building one.
+
 Published artifacts and release rehearsals keep the production `--release`
 profile. Do not use `cargo clean` in the normal edit/build loop. Use one shared
 target directory and the configured job budget across worktrees.
@@ -131,6 +146,22 @@ After completing a significant task (implementation, bugfix, refactoring):
 2. Record progress: `ctx_session(action="task", value="<current task> [N%]")`
 3. Record blockers: `ctx_knowledge(action="remember", category="blocker", content="...")`
 
+**When the checkout is linked to an emspace space** (a `.emspace` file at or
+above the root), the space is the one place for decisions, blockers and tasks:
+write them there (a note on the owning page, or a task) and **skip steps 1 and
+3** — do not write the same decision twice. lean-ctx reaches the space
+through the Emspace provider (below).
+Step 2 (`ctx_session` progress) stays, since it is per-agent session state.
+
+Working the space economically:
+- read `emspace schema` at most once per session;
+- read pages with `emspace page show --body <slug>…` (several slugs in one
+  call) unless the source/notes header is the point;
+- before documenting, check the checkout is the base the space documents, and
+  rescan only what `emspace coverage` and `emspace status` (stale) name;
+- find a page for a file through the `ctx_read` hint rather than a separate
+  `emspace search` → `page show` chain.
+
 After 30+ tool calls without documentation:
 - lean-ctx will prompt with `[CHECKPOINT: please document current progress]`
 - Respond by calling `ctx_session(action="task")` with current status
@@ -145,7 +176,18 @@ All provider data flows through the same consolidation pipeline:
 3. `apply_artifacts_to_stores()` → persists to BM25 index, Graph index, ProjectKnowledge, Session cache (background thread)
 
 This means `ctx_semantic_search` finds issues/PRs/tickets, `ctx_knowledge` recalls provider facts,
-and `ctx_read` shows cross-source hints (e.g. "Issue #42 references this file").
+and `ctx_read` shows cross-source hints (e.g. "Issue #42 references this file"); a profile can
+turn them off with `output_hints.cross_source_hint = false`.
+
+**Emspace:** in a linked checkout, index the space once per session, and again
+after pages were added or repinned:
+`ctx_provider(action="query", provider="emspace", resource="pages")`.
+Afterwards `ctx_read` of a documented file names its page
+(`emspace://pages/<slug> [documents]`) when the active profile sets
+`output_hints.cross_source_hint` is on (the default).
+`resource="search"` (with `query`) and `resource="tasks"` (with `state`)
+answer without leaving lean-ctx. The provider only reads; writes stay with the
+`emspace` CLI.
 
 ## Agent Bus Registration (mandatory, first action)
 

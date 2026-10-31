@@ -95,8 +95,9 @@ pub struct OutputHints {
     pub checkpoint_in_output: Option<bool>,
     pub graph_context_block: Option<bool>,
     pub efficiency_hint: Option<bool>,
-    /// Cross-source hints: append issue/PR/schema references from the property
-    /// graph when reading a file. Default: off (speculative, costs tokens).
+    /// Cross-source hints: append issue/PR/schema/page references from the
+    /// property graph when reading a file. Default: on (owner 2026-10-31); it
+    /// costs tokens only when a provider linked a reference to the file.
     pub cross_source_hint: Option<bool>,
     /// Proactive context: auto-expand previously compressed content when
     /// keyword-relevant to the current read. Default: off (speculative, up to
@@ -133,7 +134,7 @@ impl OutputHints {
         self.efficiency_hint.unwrap_or(false)
     }
     pub fn cross_source_hint(&self) -> bool {
-        self.cross_source_hint.unwrap_or(false)
+        self.cross_source_hint.unwrap_or(true)
     }
     pub fn proactive_context(&self) -> bool {
         self.proactive_context.unwrap_or(false)

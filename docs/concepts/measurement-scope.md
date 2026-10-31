@@ -72,8 +72,5 @@ E production — and a verdict (`improved`, `non-inferior`, `regressed`,
 claim. Details: [context-quality-v1](../contracts/context-quality-v1.md).
 
 `lean-ctx benchmark dual-arm` is a synthetic upper bound: its baseline never uses
-the provider's prompt cache. Other comparison methods include the `lean-ctx eval ab`
-subcommand (requires a suite file via `--suite`), the injected-context footprint
-comparison in `lean-ctx eval footprint` (requires a suite via `--suite` and a baseline
-via `--compare`),
-and the compression holdout. Each method reports its own measurement scope.
+the provider's prompt cache. The on/off comparison the Engine offers is the
+proxy's compression holdout. Each method reports its own measurement scope.

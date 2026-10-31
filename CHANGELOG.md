@@ -8,6 +8,21 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Security
 
+- **A dashboard request that names a project is answered for that project or refused.**
+  The dashboard accepted an `X-LeanCTX-Project` header on routes outside its project list
+  (`/api/tree`, `/api/architecture`, `/api/compression-demo`, `/api/tools-health` and others)
+  and then answered them for its own project. Every route that reads or writes project data
+  now runs inside the named project, device-wide routes (`/api/telemetry`,
+  `/api/context-summary`, `/api/context-history`, …) answer as before, and any other route
+  answers `400` instead of another project's data. Cockpit writes (`/api/knowledge/edit`,
+  `/api/knowledge-relations/edit`, `/api/context-overlay`, `/api/context-policy`,
+  `/api/episodes/annotate`) now also land in the selected project.
+- **`POST /api/session/note` writes to the project's own session.** It appended to the
+  newest session of whatever project the dashboard process ran in, without the project
+  binding or admission. It now takes the dashboard's (or the named) project, admits the note
+  under that project's policy like the episode annotation, and answers `400` when the
+  dashboard has no project or the project no session.
+
 - **Native Read and Grep now follow the secret-path rule.** `ctx_read` and `ctx_search`
   refused `.env`, keys and credential files, but the host's own Read and Grep did not:
   Claude Code keeps the Read redirect off and the redirect hook passed `.env` straight to
@@ -80,6 +95,11 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   --file` and `pack receive` used to accept any package signed with the key embedded in the
   package itself; they now require a publisher pinned in `trusted-signers.toml`, a local
   identity or this machine's own key. `--allow-untrusted-signer` restores the old check.
+- **Addons need a trusted publisher by default.** `addon add` accepted any validly signed
+  addon behind its consent prompt, although the signing key travels inside the package. It now
+  applies the same rule as `pack import`: a publisher pinned in `trusted-signers.toml`, a local
+  identity or this machine's own key (`addon release` output installs as before).
+  `--allow-untrusted-signer` restores the old check.
   Restoring a context snapshot checks out only a full hex commit id, so an imported snapshot
   can no longer pass an option or refspec to `git checkout`.
 - **`compliance verify` checks who signed the report.** A compliance report was "verified"
@@ -90,6 +110,25 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   coverage; it shows as unverified.
 
 ### Added
+
+- **Governor rule R4: template collapse for large Bash output.** R2 folds only
+  byte-identical lines, so real logs, lint output and exports, whose lines differ in a
+  timestamp, sequence number or id, never shrank and the governor wrote no receipts. R4
+  shows lines that differ only in numbers, timestamps, hex ids or UUIDs once, where the
+  first one was, as `[N× like] <first line> … last: <changed part of the last line>`
+  (groups of at least 8). The exact original goes to the content-addressed archive and the
+  result names it (`ctx_expand(id="…")`); without a usable archive (archive off, policy,
+  `LEAN_CTX_MINIMAL`) R4 does not fire. Unlike R2 it also runs on output with error lines:
+  error, warning and failure lines stay verbatim while all of them fit in 4 KB, otherwise
+  each distinct normalized message is kept once with its count, never merged with plain
+  lines; traceback blocks and test-runner lines always stay verbatim, and output with a
+  diff is left alone. JSON records (lines opening with `{`, or a `[` line that parses as
+  JSON) are never grouped, so exports stay countable. Unlike R1–R3, R4 also applies to
+  file viewers (`cat`, `head`, `tail`, `sed`, `awk`, also at the end of a pipe), except
+  when a file read looks like source code or data (`.rs`, `.py`, `.json`, `.jsonl`, `.csv`,
+  `.yaml`, `.toml`, `.sql` …); user-excluded and other verbatim commands stay untouched.
+  Bash only, from 2,000 tokens and when it at least halves the output.
+  `LEAN_CTX_GOVERNOR_R4` (default `shadow`: receipt only, nothing stored).
 
 - **`ctx_read` reads one function or class by name.** `symbol="name"` (or
   `"Class.method"`) serves exactly that definition's lines, located by its tree-sitter
@@ -133,6 +172,27 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Changed
 
+- **`ctx_read` names the issues, PRs and pages that reference a file by default.**
+  `output_hints.cross_source_hint` is now on in every built-in profile; it adds a line only
+  when a provider (GitHub, GitLab, Jira, emspace, ...) linked a reference to the file. A
+  profile can set it to `false`.
+- **`ctx_read` without a range: whole up to 300 lines, an outline above.** A read with no
+  `mode` (or `mode="auto"`), no window and no `symbol` now returns a file of up to 300
+  lines whole and a larger file as its outline: every symbol with its line span, the data
+  or prose structure for JSON/YAML/TOML/Markdown, or the line count for a file without
+  extractable structure, plus the `symbol=`/`lines:N-M` pointer. Before, the resolver
+  could compress a small file to signatures (followed by a whole-file read in both pilot
+  cases), return a large one whole or aggressively compressed, or replay the previous
+  `lines:` window of the same file. Only `mode="full"` returns a large file whole;
+  `lines:`, `symbol=`, `anchored:N-M`, `signatures`, `map`, a configured default mode, a
+  saved per-file view, instruction files, `[unchanged]` stubs and deltas are unchanged.
+  The context gate's heuristics (bounce prevention, intent target, graph and knowledge
+  hints) no longer override such a read. A `lines` argument (`"40-80"`, `"40:80"`,
+  `[40, 80]`, or a start line with `limit`), which models pass although the schema has
+  none, is now read as that window instead of being ignored. Offline replay of the 42
+  default-arm runs of pilot P8: ctx_read output 8,515 → 8,019 chars per run (−6 %), or
+  7,627 (−10 %) counting the whole-file re-reads that become `[unchanged]` stubs.
+
 - **Knowledge has no fact limit.** The Cockpit no longer shows slots, a budget or a
   capacity share, and the Engine no longer archives facts by count, refuses a snapshot
   restore for size, or scales a fact cap with the disk budget; facts leave memory only by
@@ -173,6 +233,7 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   types (`HiveCliStatusV1`, `HiveStatusPolicyV1` and their siblings) drop
   `deny_unknown_fields` (or become `#[non_exhaustive]`), as the contract's convention for
   response types says, so later additive fields are not breaking for typed readers.
+  The same bump removes `hive::compute` (Hive Task Compute was retired).
 - `lean-ctx gain` and the savings ROI report a higher, more honest prefix overhead.
   A cached prefix token now costs 0.1× input instead of nothing, and a cache miss
   costs the 1.25× write (Anthropic, OpenAI GPT-5.6+). At the default 75% hit rate the
@@ -240,6 +301,38 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `command`, `builtin`, `eval`, `exec`, `source` or `trap`. What runs is checked again
   as one command. Inline-script blocks are two lines instead of seven.
 
+### Removed
+
+- **Research and evaluation tooling** leaves the engine (owner decision 2026-10-30):
+  `lean-ctx eval` (`init`, `ab`, `verify`, `footprint`, `frontier`, `testbench`),
+  `quality-lab`, `measure`, `prove speed`, and the `benchmark` subcommands `tasks`,
+  `study`, `eval`, `eval-ab`, `replay` and `compare`, with the proxy route
+  `GET/POST /v1/quality-lab`, the `benchmark-study` workflow and the CI output-quality
+  and testbench gates. The commands print a removal notice and exit with 2. With them go
+  the speed line in `gain --wrapped` (the prompt segment's `speed` stays `null`), the
+  footprint note in `tools health` and the task-benchmark section of `evidence-export`.
+  `benchmark run|report|scorecard|dual-arm`, `gain` and `doctor overhead` are unchanged.
+
+- **Hive swarms and Task Compute** (owner decision 2026-10-30; Hive answers `404` on every
+  `/v1/swarms/*` and `/v1/compute/*` route). The engine drops the swarm client, participation,
+  pledges and conductor, the Task Compute client, the `ctx_compute` MCP tool, `ctx_tasks`
+  `scope=swarm`, `ctx_agent send swarm_id`, and `lean-ctx hive swarm`, `hive compute` and
+  `hive replica --swarm`; such calls are refused instead of reaching the org channel. Hive
+  tasks, worker mode and its opt-in, durable workers and the agent bus stay.
+
+- Internal clean-up, no behaviour change: modules and functions without a production
+  caller are gone from the Engine (among them the process-slot guard, the recovery
+  verifier, the cognitive chunker, the context-checkpoint adapters, branch/merge and
+  migrator, the context-kernel gate and feedback stubs, the proxy web-app request
+  normaliser and conversation tracker, the multi-read and smart-read handlers, the CLI
+  provider-run harness and unused terminal animations), together with four tracked
+  source files that were never compiled. Rust embedders that imported these internal
+  paths must drop the imports.
+- `lean-ctx doctor` no longer shows the "Budget SLOs" line. It always passed and checked
+  nothing, so the board has one check fewer.
+- The Cargo features `experimental` and `context_kernel` are removed. Neither switched
+  any code; a build that names them must drop them.
+
 ### Deprecated
 
 - `lean-ctx autopilot policy`, `lean-ctx autopilot evidence --learn` and the config key
@@ -247,9 +340,23 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   read-strategy policies are retired and the read strategy is chosen locally. They stay
   accepted, report `retired` and warn on stderr; earliest removal 3.15.0
   (`rust/data/DEPRECATIONS.toml`, shown by `lean-ctx doctor`).
+- `lean-ctx setup --no-auto-approve` never changed what setup writes. It stays accepted,
+  warns on stderr and has no effect; earliest removal 3.15.0. The interactive setup no
+  longer suggests it.
 
 ### Fixed
 
+- **`plan`, `compile`, `overview` and `ledger` work again.** They asked the daemon for the
+  MCP tools `ctx_plan`, `ctx_compile`, `ctx_overview` and `ctx_ledger`, which 3.12.0 removed,
+  so with a running daemon they printed "was removed" instead of a result. They now render
+  locally from the same implementation; a test keeps every daemon call in the CLI on a live
+  tool.
+- **`pack migrate` and `pack rollback` stay subcommands.** With a file named `migrate` or
+  `rollback` in the working directory, `pack` built a chat bundle of it instead.
+- **CLI errors exit non-zero.** `checkpoints`, `import`, `config init` and `gotchas` printed
+  their errors (bad options, unknown source or action, unwritable config or store) and exited
+  0; usage errors now exit 2, failures 1. `status` and `token-report` report a report file they
+  could not save as an error and exit 1.
 - **`policy org uninstall` restores the endpoint.** It now also removes the trust pins of the
   removed policy's organization. Before, `install --trust` followed by `uninstall` left the
   pin behind, and a pinned organization without a policy refuses every governed call, so

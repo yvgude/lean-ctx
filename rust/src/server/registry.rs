@@ -223,7 +223,6 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_handoff::CtxHandoffTool));
     registry.register(Box::new(registered::ctx_work_graph::CtxWorkGraphTool));
     registry.register(Box::new(registered::ctx_tasks::CtxTasksTool));
-    registry.register(Box::new(registered::ctx_compute::CtxComputeTool));
     registry.register(Box::new(registered::ctx_load_tools::CtxLoadToolsTool));
 
     // #509: deprecated aliases — hidden from tools/list but stay registered so

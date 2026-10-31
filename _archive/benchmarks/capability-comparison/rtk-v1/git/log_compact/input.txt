@@ -1,5 +1,0 @@
-a31f9d2 (HEAD -> main) Add deterministic shell observation receipt
-8be2c14 Add native adapter health checks
-4d6a901 (tag: v3.9.18) Document context cache invalidation
-f6c201a Improve structured shell output handling
-9a12e77 Bootstrap OCLA capability registry

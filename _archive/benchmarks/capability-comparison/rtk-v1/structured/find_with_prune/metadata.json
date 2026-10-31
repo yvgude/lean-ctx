@@ -1,6 +1,0 @@
-{
-  "command": "find . -path './target' -prune -o -type f -print",
-  "working_dir": "/workspace/lean-ctx",
-  "expected_tokens": 142,
-  "category": "structured"
-}

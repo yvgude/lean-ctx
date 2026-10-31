@@ -99,9 +99,6 @@ pub fn run() {
             eprintln!("{notice}");
             std::process::exit(2);
         }
-        if let Some(notice) = cmd_help::deprecation_notice(&args[1]) {
-            eprintln!("{notice}");
-        }
 
         match args[1].as_str() {
             "-c" | "exec" => handle_exec(&args, &rest),
@@ -156,13 +153,6 @@ pub fn run() {
                 }
                 return;
             }
-            "quality-lab" | "quality_lab" => {
-                let code = crate::cli::quality_lab_cmd::cmd_quality_lab(&rest);
-                if code != 0 {
-                    std::process::exit(code);
-                }
-                return;
-            }
             "finops" => {
                 cmd_finops(&rest);
                 return;
@@ -208,10 +198,6 @@ pub fn run() {
                     eprintln!("scenario: {error}");
                     std::process::exit(2);
                 }
-                return;
-            }
-            "measure" => {
-                super::cmd_measure(&rest);
                 return;
             }
             "token-report" | "report-tokens" => {
@@ -296,10 +282,6 @@ pub fn run() {
                 crate::cli::cmd_proof(&rest);
                 return;
             }
-            "prove" => {
-                crate::cli::cmd_prove(&rest);
-                return;
-            }
             "value" => {
                 crate::cli::cmd_value(&rest);
                 cockpit_hint::print_footer("activity", &rest);
@@ -343,10 +325,6 @@ pub fn run() {
                 } else {
                     crate::cli::cmd_verify(&rest);
                 }
-                return;
-            }
-            "eval" => {
-                crate::cli::eval_cmd::cmd_eval(&rest);
                 return;
             }
             "verify-cache" | "cache-selftest" => {
