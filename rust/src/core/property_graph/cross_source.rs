@@ -62,6 +62,22 @@ pub(super) fn delete_by_kind(conn: &Connection, kind: &str) -> anyhow::Result<us
     Ok(removed)
 }
 
+/// Delete every cross-source edge with an end whose URI starts with `prefix`,
+/// whatever its kind: a re-indexed source (emspace pages) replaces its own
+/// edges without touching other sources of the same kind. Returns the rows
+/// removed.
+pub(super) fn delete_with_uri_prefix(conn: &Connection, prefix: &str) -> anyhow::Result<usize> {
+    if prefix.is_empty() {
+        return Ok(0);
+    }
+    let removed = conn.execute(
+        "DELETE FROM cross_source_edges
+         WHERE substr(from_path, 1, length(?1)) = ?1 OR substr(to_path, 1, length(?1)) = ?1",
+        params![prefix],
+    )?;
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::CodeGraph;
@@ -132,5 +148,33 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn delete_with_uri_prefix_removes_only_that_source_in_both_directions() {
+        let g = CodeGraph::open_in_memory().unwrap();
+        g.upsert_cross_source_edge("emspace://pages/core", "src/a.rs", "documents", 0.8)
+            .unwrap();
+        g.upsert_cross_source_edge("src/a.rs", "emspace://pages/core", "mentioned_in", 0.6)
+            .unwrap();
+        g.upsert_cross_source_edge("gitlab://wikis/core", "src/a.rs", "documents", 0.8)
+            .unwrap();
+        // A URI that only starts like the prefix without its `/` stays.
+        g.upsert_cross_source_edge("emspace://pagesX", "src/b.rs", "documents", 0.8)
+            .unwrap();
+
+        let removed = g
+            .delete_cross_source_edges_with_uri_prefix("emspace://pages/")
+            .unwrap();
+        assert_eq!(removed, 2);
+        let left: Vec<String> = g
+            .all_cross_source_edges()
+            .into_iter()
+            .map(|e| e.from)
+            .collect();
+        assert_eq!(left.len(), 2);
+        assert!(left.contains(&"gitlab://wikis/core".to_owned()));
+        assert!(left.contains(&"emspace://pagesX".to_owned()));
+        assert_eq!(g.delete_cross_source_edges_with_uri_prefix("").unwrap(), 0);
     }
 }

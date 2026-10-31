@@ -111,6 +111,12 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Added
 
+- **A project linked to an emspace space uses it without setup.** `ctx_read` indexes the
+  space in the background (detached, bounded, one pass per project at a time) and names the
+  page that documents the file; `ctx_agent read`/`list` show the space's open sessions,
+  screened for secrets; `ctx_shell` shortens the header of a single `emspace page show` and
+  passes page bodies, `--json`, `schema` and `run` output unchanged. Needs the optional
+  `emspace` CLI; without a `.emspace` link nothing runs.
 - **Governor rule R4: template collapse for large Bash output.** R2 folds only
   byte-identical lines, so real logs, lint output and exports, whose lines differ in a
   timestamp, sequence number or id, never shrank and the governor wrote no receipts. R4
@@ -172,10 +178,17 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Changed
 
+- **`emspace` is on the default shell allowlist**, so agents in a checkout linked to an emspace
+  space can query it directly without an approval prompt.
 - **`ctx_read` names the issues, PRs and pages that reference a file by default.**
   `output_hints.cross_source_hint` is now on in every built-in profile; it adds a line only
   when a provider (GitHub, GitLab, Jira, emspace, ...) linked a reference to the file. A
   profile can set it to `false`.
+- **Cross-source hints name each source once, in a fixed order.** A provider edge is stored
+  in both directions, and a source could appear twice (as `documents` and `mentioned_in`),
+  each line costing tokens; it now appears once, at its strongest relation. Ties are ordered
+  by URI and relation, so the same graph always yields the same hint lines, whatever order
+  its rows come back in. Applies to every provider.
 - **`ctx_read` without a range: whole up to 300 lines, an outline above.** A read with no
   `mode` (or `mode="auto"`), no window and no `symbol` now returns a file of up to 300
   lines whole and a larger file as its outline: every symbol with its line span, the data
@@ -346,6 +359,21 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Fixed
 
+- **A failed background `ctx_shell` job keeps its output when it leaves a process running.**
+  If the command exited while a process it started still held its output pipe, the status
+  poll answered "retained output withheld by storage policy" with no stdout, no stderr and
+  no archive, whether the job succeeded or failed. The captured streams are now returned
+  (and archived) with the partial-output note, as the foreground path does; a governed
+  gateway still withholds them, and truncated, timed-out or cancelled captures are unchanged.
+  (#2164)
+- **`ctx_search` semantic no longer waits indefinitely on its source scan.** Without a
+  `mode`, the tool reads and admits every project source on each call; it resolved the
+  gateway configuration (re-reading the config files) for every file, so on slow storage the
+  per-file cost could add up to minutes with no sign of progress. It now takes one configuration snapshot per scan, stops after 90 s with an
+  error that says how to narrow the scan, names its stages (listing files, reading and
+  admitting files, persisted external items) instead of "BM25 index", and
+  `LEAN_CTX_PHASE_TIMING=1` prints each stage as it starts and every source that takes
+  longer than 500 ms. (#2063)
 - **`plan`, `compile`, `overview` and `ledger` work again.** They asked the daemon for the
   MCP tools `ctx_plan`, `ctx_compile`, `ctx_overview` and `ctx_ledger`, which 3.12.0 removed,
   so with a running daemon they printed "was removed" instead of a result. They now render

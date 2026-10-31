@@ -116,13 +116,18 @@ fn handle_inner(
         return workspace_search(query, root, top_k, compact, &filter, &mode);
     }
 
-    let index_phase = crate::core::phase_timing::enter("semantic: BM25 index");
+    // #2063: the two branches are different work. `bm25` (also the default
+    // mode) reads and admits every source now; the other modes load the
+    // persisted index. One shared label sent a stalled source scan to the
+    // already built index.
     let index = if mode == "bm25" {
+        // The scan names its own phases (walk, source admission).
         match admitted::fresh_index(root, &filter, tool) {
             Ok(index) => std::sync::Arc::new(index),
             Err(error) => return format!("ERR: {error}"),
         }
     } else {
+        let _index_phase = crate::core::phase_timing::enter("semantic: BM25 index load");
         match load_or_refresh_bm25(root) {
             Bm25LoadResult::Ready(idx) => idx,
             Bm25LoadResult::Building => {
@@ -132,7 +137,6 @@ fn handle_inner(
             }
         }
     };
-    drop(index_phase);
     if index.doc_count == 0 {
         return "No admitted text chunks available for local search.".to_string();
     }

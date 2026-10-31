@@ -27,7 +27,8 @@ use crate::core::input_filters::FilterAction;
 use crate::core::policy::runtime::PublicationAuthority;
 
 use super::{
-    AdmissionPolicy, OutputCompleteness, admit, admit_output_for_storage, clean, fingerprint_digest,
+    AdmissionPolicy, OutputCompleteness, admit, admit_output_for_poll, admit_output_for_storage,
+    clean, fingerprint_digest,
 };
 
 /// One resolved admission policy, applied to every object of a store build.
@@ -183,6 +184,21 @@ impl StoreAdmission {
     ) -> Option<String> {
         super::semantic_deferred::for_stored_context(|| {
             admit_output_for_storage(text, completeness, &self.policy)
+        })
+    }
+
+    /// Admit a finished background job's output for its job record, read
+    /// back by a status poll (#2164). Unlike `admit_shell_output`, a capture
+    /// whose only gap is a pipe still held by a process the command left
+    /// running is kept; delivery re-admits it with its real completeness.
+    #[must_use]
+    pub(crate) fn admit_background_output(
+        &self,
+        text: &str,
+        completeness: OutputCompleteness,
+    ) -> Option<String> {
+        super::semantic_deferred::for_stored_context(|| {
+            admit_output_for_poll(text, completeness, &self.policy)
         })
     }
 

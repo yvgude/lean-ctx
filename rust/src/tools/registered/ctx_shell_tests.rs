@@ -357,6 +357,49 @@ fn detect_heredoc_reroute_unquoted_and_tab_stripped() {
     assert!(rest.is_none());
 }
 
+/// #2164: a detached job that fails while a process it started still holds
+/// its output pipe used to report "retained output withheld by storage
+/// policy" with no stdout, no stderr and nothing archived. Its status poll
+/// returns the captured streams, as a job without that process does.
+#[test]
+#[cfg_attr(windows, ignore)]
+fn failed_background_job_with_lingering_child_returns_its_output() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let id = crate::server::background_shell::start(
+        "sleep 4 & printf 'hello stdout\\n'; printf 'boom stderr\\n' >&2; exit 1".to_string(),
+        ".".to_string(),
+        std::collections::HashMap::default(),
+        Some(30_000),
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let snapshot = loop {
+        let snapshot = crate::server::background_shell::snapshot(&id).expect("job is known");
+        if !matches!(snapshot.state, JobState::Running { .. }) {
+            break snapshot;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "background job did not finish"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    assert!(
+        snapshot.completeness.reader_incomplete,
+        "the lingering child must hold the pipe for this test to cover #2164"
+    );
+    assert!(!snapshot.output_withheld, "the capture was withheld");
+
+    let (text, outcome) = format_background_snapshot(&id, false, Some(snapshot));
+    let outcome = background(outcome);
+    assert_eq!(outcome.state, BackgroundJobState::Failed);
+    assert_eq!(outcome.exit_code, Some(1));
+    assert!(!text.contains("withheld by storage policy"), "{text}");
+    assert!(text.contains("hello stdout"), "{text}");
+    assert!(text.contains("boom stderr"), "{text}");
+    assert_ne!(outcome.summary, "output withheld by storage policy");
+}
+
 #[test]
 fn detect_heredoc_reroute_rejects_compound_prefix() {
     assert!(detect_heredoc_reroute("echo hi; python3 <<'PY'\nx\nPY").is_none());

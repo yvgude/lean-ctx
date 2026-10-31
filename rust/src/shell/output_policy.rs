@@ -251,6 +251,26 @@ mod tests {
     }
 
     #[test]
+    fn emspace_data_is_verbatim_and_listings_compressible() {
+        for data in [
+            "emspace page show core --json",
+            "emspace page show --body core",
+            "emspace schema pages",
+            "emspace run --query prog.js",
+        ] {
+            assert_eq!(classify(data, &[]), OutputPolicy::Verbatim, "{data}");
+        }
+        assert_eq!(
+            classify("emspace search budget", &[]),
+            OutputPolicy::Compressible
+        );
+        assert_eq!(
+            classify("emspace page show core", &[]),
+            OutputPolicy::Compressible
+        );
+    }
+
+    #[test]
     fn lean_ctx_is_passthrough() {
         assert_eq!(
             classify("lean-ctx init powershell", &[]),

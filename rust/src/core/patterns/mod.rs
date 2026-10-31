@@ -26,6 +26,7 @@ pub mod deploy;
 pub mod deps_cmd;
 pub mod docker;
 pub mod dotnet;
+pub mod emspace;
 pub mod env_filter;
 pub mod eslint;
 pub mod fd;
@@ -186,7 +187,8 @@ pub(crate) fn strip_leading_cd(command: &str) -> &str {
 
 /// True for version-control commands whose output is authoritative under their
 /// own compressor and must not be reinterpreted by the generic log/test
-/// fallbacks (commit history is not application log output).
+/// fallbacks (commit history is not application log output). emspace is owned
+/// the same way: its page bodies are `page edit` anchors and must stay exact.
 pub(crate) fn has_vcs_owner(command: &str) -> bool {
     let c = command.trim_start().to_ascii_lowercase();
     c.starts_with("git ")
@@ -194,6 +196,7 @@ pub(crate) fn has_vcs_owner(command: &str) -> bool {
         || c.starts_with("gh ")
         || c.starts_with("glab ")
         || c.starts_with("hg ")
+        || c.starts_with("emspace ")
 }
 
 /// Collapse whitespace into single spaces so comparisons align with logical word tokens.
@@ -266,6 +269,10 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
     (
         |c| c.starts_with("glab "),
         |c, output| glab::try_glab_pattern(c, output),
+    ),
+    (
+        |c| c.starts_with("emspace "),
+        |c, output| emspace::compress(c, output),
     ),
     (
         |c| c == "terraform" || c.starts_with("terraform "),

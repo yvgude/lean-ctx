@@ -234,7 +234,7 @@ pub(crate) fn reauthorize_retained_output(
 ) -> Option<crate::core::context_admission::ToolOutputAdmission> {
     let store = crate::core::context_admission::stores::StoreAdmission::current();
     let retained = store
-        .admit_shell_output(expected, snapshot.completeness)
+        .admit_background_output(expected, snapshot.completeness)
         .filter(|_| store.is_current());
     let delivery = retained
         .as_ref()
@@ -242,7 +242,7 @@ pub(crate) fn reauthorize_retained_output(
     let replacement = delivery
         .as_ref()
         .and_then(|admission| admission.text.as_deref())
-        .and_then(|text| store.admit_shell_output(text, snapshot.completeness))
+        .and_then(|text| store.admit_background_output(text, snapshot.completeness))
         .filter(|_| store.is_current());
     let current = store.is_current();
     let replacement = if current { replacement } else { None };

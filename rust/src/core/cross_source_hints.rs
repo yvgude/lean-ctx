@@ -91,12 +91,20 @@ pub(crate) fn hints_for_file_matching(
         .collect();
 
     hints.retain(|hint| include(hint));
+    // Total order (weight, then URI, then relation) so the output is a function
+    // of the graph's contents, not of the order its rows come back in (#498).
     hints.sort_by(|a, b| {
         b.weight
             .partial_cmp(&a.weight)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.source_uri.cmp(&b.source_uri))
+            .then_with(|| a.relation.cmp(&b.relation))
     });
-    hints.dedup_by(|a, b| a.source_uri == b.source_uri);
+    // One hint per source, at its strongest relation: a provider edge is
+    // stored in both directions (`documents` and `mentioned_in`), and the two
+    // need not be adjacent after the sort.
+    let mut seen = std::collections::HashSet::new();
+    hints.retain(|hint| seen.insert(hint.source_uri.clone()));
     hints.truncate(5);
     hints
 }
@@ -221,6 +229,54 @@ mod tests {
 
         let hints = hints_for_file("src/auth.rs", &edges, ROOT);
         assert_eq!(hints.len(), 5);
+    }
+
+    #[test]
+    fn hint_output_is_byte_stable_for_the_same_graph_in_any_row_order() {
+        let edges = vec![
+            edge("emspace://pages/core", "src/a.rs", "documents", 0.8),
+            edge("src/a.rs", "emspace://pages/core", "mentioned_in", 0.64),
+            edge("github://issues/9", "src/a.rs", "mentions", 0.8),
+            edge("github://issues/3", "src/a.rs", "mentions", 0.8),
+            edge("emspace://pages/src", "src", "documents", 0.8),
+            edge("jira://tickets/A-1", "src/a.rs", "mentions", 0.5),
+        ];
+        let expected = format_hints(&hints_for_file("src/a.rs", &edges, ROOT));
+        assert!(expected.contains("emspace://pages/core [documents]"));
+        assert_eq!(expected.matches("emspace://pages/core ").count(), 1);
+        let mut rotated = edges.clone();
+        for _ in 0..edges.len() {
+            rotated.rotate_left(1);
+            let mut reversed = rotated.clone();
+            reversed.reverse();
+            for order in [&rotated, &reversed] {
+                assert_eq!(
+                    format_hints(&hints_for_file("src/a.rs", order, ROOT)),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_source_linked_both_ways_is_hinted_once_at_its_strongest_relation() {
+        let edges = vec![
+            edge("emspace://pages/core", "src/a.rs", "documents", 0.8),
+            edge("github://issues/7", "src/a.rs", "mentions", 0.7),
+            edge("src/a.rs", "emspace://pages/core", "mentioned_in", 0.64),
+        ];
+        let hints = hints_for_file("src/a.rs", &edges, ROOT);
+        let seen: Vec<(&str, &str)> = hints
+            .iter()
+            .map(|h| (h.source_uri.as_str(), h.relation.as_str()))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                ("emspace://pages/core", "documents"),
+                ("github://issues/7", "mentions")
+            ]
+        );
     }
 
     #[test]

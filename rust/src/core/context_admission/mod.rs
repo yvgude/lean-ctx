@@ -864,6 +864,29 @@ pub(super) fn admit_output_for_storage(
     )
 }
 
+/// A finished background job's output, kept until a status poll delivers it
+/// (#2164). Only a held pipe (a process the command left running) is
+/// tolerated; deliveries still pass `admit_tool_output` with the real flags,
+/// and truncated, timed-out, cancelled or lossy captures stay unretained.
+pub(super) fn admit_output_for_poll(
+    text: &str,
+    completeness: OutputCompleteness,
+    policy: &AdmissionPolicy,
+) -> Option<String> {
+    let without_reader = OutputCompleteness {
+        reader_incomplete: false,
+        ..completeness
+    };
+    if !completeness.reader_incomplete {
+        return admit_output_for_storage(text, completeness, policy);
+    }
+    if !without_reader.is_complete() || (policy.enabled_effective() && policy.detectors_mandatory())
+    {
+        return None;
+    }
+    admit_output_for_storage(text, without_reader, policy)
+}
+
 fn mark_capture_incomplete(
     admission: &mut Admission,
     completeness: OutputCompleteness,
@@ -1342,8 +1365,54 @@ mod shell_admission_regression_tests {
         };
         assert!(
             admit_output_for_storage("partial output", incomplete, &policy).is_none(),
-            "an incomplete prefix must not seed a cache or terminal job"
+            "an incomplete prefix must not seed a cache"
         );
+    }
+
+    /// #2164: a background job whose command exited while a process it left
+    /// running still holds the pipe keeps its captured output for the status
+    /// poll; every other gap, and a mandatory gateway, still withholds it.
+    #[test]
+    fn background_poll_keeps_a_capture_whose_only_gap_is_a_held_pipe() {
+        let developer = AdmissionPolicy::builtin(
+            ContextGatewayConfig::default(),
+            SecretDetectionConfig::default(),
+        );
+        let held_pipe = OutputCompleteness {
+            reader_incomplete: true,
+            ..OutputCompleteness::complete()
+        };
+        assert_eq!(
+            admit_output_for_poll("hello stdout\nboom stderr", held_pipe, &developer).as_deref(),
+            Some("hello stdout\nboom stderr")
+        );
+        for other_gap in [
+            OutputCompleteness {
+                truncated: true,
+                ..held_pipe
+            },
+            OutputCompleteness {
+                timed_out: true,
+                ..held_pipe
+            },
+            OutputCompleteness {
+                cancelled: true,
+                ..OutputCompleteness::complete()
+            },
+        ] {
+            assert!(admit_output_for_poll("partial", other_gap, &developer).is_none());
+        }
+
+        let governed = AdmissionPolicy::builtin(
+            ContextGatewayConfig {
+                mode: GatewayModeV1::Governed,
+                ..ContextGatewayConfig::default()
+            },
+            SecretDetectionConfig::default(),
+        );
+        if governed.enabled_effective() {
+            assert!(admit_output_for_poll("partial", held_pipe, &governed).is_none());
+        }
     }
 
     #[test]

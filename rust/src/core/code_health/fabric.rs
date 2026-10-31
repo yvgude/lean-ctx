@@ -158,6 +158,7 @@ fn prune_spec() -> PrunePrior {
     PrunePrior {
         bm25_prefix: Some(URI_SCHEME.to_string()),
         edge_kind: Some(EDGE_KIND.to_string()),
+        edge_uri_prefix: None,
         fact_category: Some(FACT_CATEGORY.to_string()),
     }
 }

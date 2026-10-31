@@ -18,6 +18,9 @@ pub(crate) fn default_shell_allowlist() -> Vec<String> {
         "gh",
         "svn",
         "hg",
+        // Project knowledge space linked via `.emspace` (owner 2026-10-31);
+        // the Emspace provider reads it, agents query it directly.
+        "emspace",
         // Build tools
         "cargo",
         "npm",

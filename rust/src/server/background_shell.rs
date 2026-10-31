@@ -222,7 +222,10 @@ fn start_inner_with_sender(
                 let policy_outcome = crate::core::policy::runtime::active().map(|policy| {
                     crate::core::policy::content::evaluate_text(&execution.output, &policy)
                 });
-                let stored = store.admit_shell_output(&execution.output, execution.completeness);
+                // #2164: a pipe still held by a process the command left
+                // running does not cost the job its output.
+                let stored =
+                    store.admit_background_output(&execution.output, execution.completeness);
                 if let Some(outcome) = policy_outcome
                     && !outcome.audit.is_empty()
                     && (outcome.blocked

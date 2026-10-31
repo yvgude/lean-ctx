@@ -184,6 +184,17 @@ fn is_cli_api_data_command(command: &str) -> bool {
         return true;
     }
 
+    // emspace: JSON answers, page bodies, the schema contract and program
+    // results are data a caller parses or matches `page edit` anchors against.
+    if cl.starts_with("emspace ")
+        && (cl.contains(" --json")
+            || cl.contains(" --body")
+            || cl.starts_with("emspace schema")
+            || cl.starts_with("emspace run"))
+    {
+        return true;
+    }
+
     // Jira CLI
     if cl.starts_with("jira ") && (cl.contains(" view") || cl.contains(" list")) {
         return true;
