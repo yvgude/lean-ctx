@@ -458,27 +458,15 @@ fn api_profile_returns_json() {
 }
 
 #[test]
-fn api_episodes_returns_json() {
+fn retired_api_episodes_and_procedures_return_the_retirement_notice() {
     let _data = crate::core::data_dir::isolated_data_dir();
-    let (status, _ct, body) =
-        routes::route_response("/api/episodes", "", None, None, false, "GET", "");
-    assert_eq!(status, "200 OK", "{body}");
-    let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
-    assert!(v.get("project_hash").is_some());
-    assert!(v.get("stats").is_some());
-    assert!(v.get("recent").and_then(|a| a.as_array()).is_some());
-}
-
-#[test]
-fn api_procedures_returns_json() {
-    let _data = crate::core::data_dir::isolated_data_dir();
-    let (status, _ct, body) =
-        routes::route_response("/api/procedures", "", None, None, false, "GET", "");
-    assert_eq!(status, "200 OK", "{body}");
-    let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
-    assert!(v.get("project_hash").is_some());
-    assert!(v.get("procedures").and_then(|a| a.as_array()).is_some());
-    assert!(v.get("suggestions").and_then(|a| a.as_array()).is_some());
+    for route in ["/api/episodes", "/api/procedures"] {
+        let (status, _ct, body) = routes::route_response(route, "", None, None, false, "GET", "");
+        assert_eq!(status, "200 OK", "{body}");
+        let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
+        assert_eq!(v["retired"], serde_json::json!(true), "{route}");
+        assert!(v.get("project_hash").is_none(), "{route} reads no store");
+    }
 }
 
 #[test]
@@ -1467,4 +1455,110 @@ fn get_routes_write_nothing() {
     assert!(changed.is_empty(), "a GET wrote {changed:?}");
     assert_eq!(after.len(), before.len(), "a GET removed files");
     assert!(crate::core::installation_id::existing().is_none());
+}
+
+/// I08 (dashboard half): with the canary planted in one project and tool
+/// calls made from another, the dashboard inspector bound to that other
+/// project answers exactly as it answers for a term that exists nowhere.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_inspector_bound_to_another_project_never_shows_its_canary() {
+    use crate::server::isolation_fixture::{ABSENT, CANARY, canary_invisible_to_tools};
+    let world = canary_invisible_to_tools().await;
+    let _bound = crate::test_env::VarGuard::set("LEAN_CTX_DASHBOARD_PROJECT", &world.second_root);
+    for route in [
+        "/api/knowledge",
+        "/api/knowledge-relations",
+        "/api/memory",
+        "/api/search",
+        "/api/search-index",
+        "/api/symbols",
+        "/api/call-graph",
+        "/api/graph",
+        "/api/session",
+        "/api/intent",
+        "/api/gotchas",
+    ] {
+        let body_for = |term: &str| {
+            let query = format!("q={term}");
+            super::routes::route_response(route, &query, None, None, true, "GET", "").2
+        };
+        // The bound project's own session remembers the last semantic
+        // query it ran — the absent term, probed last (I07: the query
+        // lands in the caller's own session). That is its own state, not
+        // the first project's.
+        let own_last_query = format!("\"last_semantic_query\":\"{ABSENT}\"");
+        let (seen, baseline) = (
+            body_for(CANARY).replace(&own_last_query, ""),
+            body_for(ABSENT).replace(&own_last_query, ""),
+        );
+        // The bound project's own session lists its own queries and a
+        // route may echo the query; anything from the first project
+        // would make the canary appear more often than the absent term.
+        assert_eq!(
+            seen.matches(CANARY).count(),
+            baseline.matches(ABSENT).count(),
+            "{route}: {seen}"
+        );
+    }
+}
+
+/// The cockpit's analysis bridge (`/api/dashboard-analysis/*`) answers
+/// without any entitlement, behind the dashboard's bearer token.
+#[test]
+fn both_routes_answer_without_any_entitlement() {
+    use serde_json::{Value, json};
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let token = std::sync::Arc::new("secret".to_string());
+    let route = |path: &str, token: Option<&std::sync::Arc<String>>, method: &str, body: &Value| {
+        let (status, _, body) =
+            super::routes::route_response(path, "", None, token, true, method, &body.to_string());
+        (
+            status,
+            serde_json::from_str::<Value>(&body).unwrap_or(Value::Null),
+        )
+    };
+    let request = json!({ "op": "memory.analyze", "method": "GET" });
+
+    let (status, inputs) = route(
+        "/api/dashboard-analysis/inputs",
+        Some(&token),
+        "POST",
+        &request,
+    );
+    assert_eq!(status, "200 OK", "{inputs}");
+    assert_eq!(inputs["request"]["op"], json!("memory.analyze"));
+    assert!(inputs["request"]["inputs"].is_object());
+
+    let mut apply = request.clone();
+    apply["response"] = json!({ "status": 200, "body": { "contradictions": [] } });
+    let (status, answer) = route(
+        "/api/dashboard-analysis/apply",
+        Some(&token),
+        "POST",
+        &apply,
+    );
+    assert_eq!(status, "200 OK", "{answer}");
+    assert_eq!(
+        answer,
+        json!({ "status": 200, "body": { "contradictions": [] } })
+    );
+
+    // Project data and writes stay behind the dashboard's bearer token.
+    for path in [
+        "/api/dashboard-analysis/inputs",
+        "/api/dashboard-analysis/apply",
+    ] {
+        assert_eq!(route(path, None, "POST", &request).0, "403 Forbidden");
+        assert_eq!(
+            route(path, Some(&token), "GET", &request).0,
+            "405 Method Not Allowed"
+        );
+    }
+    let (status, _) = route(
+        "/api/runtime/pro.dashboard.knowledge_workflows",
+        Some(&token),
+        "POST",
+        &request,
+    );
+    assert_eq!(status, "404 Not Found");
 }

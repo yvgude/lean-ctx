@@ -61,10 +61,9 @@ pub struct SessionState {
     /// provider cache prefixes must be re-established after a restart.
     #[serde(skip)]
     pub live_zone: LiveZoneSessionState,
-    /// LITM placement manifest (#539): what the last wakeup injection placed
-    /// where, so explicit re-recalls can be scored as placement misses.
-    #[serde(default)]
-    pub wakeup_manifest: Vec<ManifestEntry>,
+    // `wakeup_manifest` (the LITM placement manifest, #539) is retired with
+    // LITM calibration; an older session file that still carries it loads,
+    // since unknown fields are ignored, and its next save drops it.
     /// ACE delta playbook (#541): incremental, stable-ID checkpoint entries —
     /// grown by ctx_compress, never rewritten (anti context-collapse).
     #[serde(default)]
@@ -90,20 +89,6 @@ pub struct LiveZoneSessionState {
     pub frozen_at_turn: Option<usize>,
     pub frozen_tokens_estimate: u64,
     pub snapshot_hash: Option<String>,
-}
-
-/// One item placed by the wakeup/instructions builder, used for LITM
-/// placement calibration (#539).
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ManifestEntry {
-    pub key: String,
-    /// "begin" | "end"
-    pub position: String,
-    /// LITM profile name active when placed ("claude" | "gpt" | "gemini").
-    pub profile: String,
-    /// Set once this entry was re-recalled (counted as a miss).
-    #[serde(default)]
-    pub missed: bool,
 }
 
 /// Description of the current task being worked on, with optional progress tracking.

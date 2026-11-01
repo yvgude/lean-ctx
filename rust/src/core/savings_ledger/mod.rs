@@ -61,7 +61,7 @@ fn model_and_price() -> &'static (String, f64) {
             configured,
             client.starts_with("codex"),
             codex_configured_model,
-            crate::proxy::usage_meter::persisted_dominant_model,
+            crate::core::proxy_usage::persisted_dominant_model,
         );
         // Disk cache only, no network: the price list the proxy keeps current.
         crate::core::gain::live_pricing::ensure_loaded();

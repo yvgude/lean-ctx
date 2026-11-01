@@ -3,44 +3,7 @@
 use super::carrier_tests_support::{
     AWS_KEY, acquire_source, governed, lineage, project, source_file,
 };
-use super::{
-    detect_project_root, detect_project_root_in, format_tokens_cli, normalize_explicit_root,
-};
-
-/// AP04-G10: a pin from a user-global agent config does not take a
-/// command run inside another real project away from that project.
-#[test]
-fn a_pin_does_not_override_the_project_the_command_runs_in() {
-    let _data = crate::core::data_dir::isolated_data_dir();
-    let (pinned, current) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    for project in [&pinned, &current] {
-        std::fs::create_dir(project.path().join(".git")).unwrap();
-    }
-    let _pin = crate::test_env::VarGuard::set("LEAN_CTX_PROJECT_ROOT", pinned.path());
-
-    let root = detect_project_root_in(&[], Some(current.path()));
-
-    assert_eq!(root, current.path().to_string_lossy());
-}
-
-/// AP04-G10 / S5: a command that writes project-scoped state refuses to
-/// act for `~`, even when `~` is a dotfiles repository.
-#[test]
-fn a_project_scoped_command_refuses_the_home_directory() {
-    let _data = crate::core::data_dir::isolated_data_dir();
-    let home = tempfile::tempdir().unwrap();
-    let home = home.path().canonicalize().unwrap();
-    std::fs::create_dir_all(home.join(".git")).unwrap();
-    std::fs::create_dir_all(home.join("notes")).unwrap();
-    let _home = crate::test_env::VarGuard::set("HOME", &home);
-    let _pin = crate::test_env::VarGuard::set("LEAN_CTX_PROJECT_ROOT", "");
-
-    assert!(super::require_project_root_in(Some(&home)).is_err());
-    assert_ne!(
-        detect_project_root_in(&[], Some(&home.join("notes"))),
-        home.to_string_lossy()
-    );
-}
+use super::format_tokens_cli;
 
 /// The same handler, the same admitted source: a declared carrier run
 /// registers the printed text, a human-facing run registers nothing, and
@@ -443,23 +406,6 @@ fn a_finding_in_a_json_key_withholds_the_document() {
     assert!(!reason.contains("value"), "{reason}");
 }
 
-/// G01: shell history was read raw and its lines were ranked and printed
-/// by `discover`. A masked value now stays masked in every derived line;
-/// clean history keeps its bytes.
-#[test]
-fn shell_history_is_admitted_before_anything_is_derived_from_it() {
-    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
-    let _data = crate::core::data_dir::isolated_data_dir();
-    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
-    let clean = "git status\ncargo test --lib\n";
-    assert_eq!(super::admitted_history(clean), clean);
-    let keyed = format!("git status\nexport AWS_ACCESS_KEY_ID={AWS_KEY}\ncargo build\n");
-    let admitted = super::admitted_history(&keyed);
-    assert!(!admitted.contains(AWS_KEY), "{admitted}");
-    assert_eq!(admitted.lines().count(), 3, "line structure is kept");
-    assert!(admitted.contains("cargo build"), "{admitted}");
-}
-
 #[test]
 fn format_tokens_cli_scales_through_billions() {
     assert_eq!(format_tokens_cli(742), "742");
@@ -468,27 +414,4 @@ fn format_tokens_cli_scales_through_billions() {
     // Must read as billions once a heavy user crosses 1B, not "1310.0M".
     assert_eq!(format_tokens_cli(1_310_000_000), "1.31B");
     assert_eq!(format_tokens_cli(1_500_000_000_000), "1.50T");
-}
-
-#[test]
-fn explicit_root_is_not_promoted_to_parent_git_root() {
-    let args = vec![
-        "build".to_string(),
-        "--root".to_string(),
-        "/home/example/travail".to_string(),
-    ];
-
-    assert_eq!(detect_project_root(&args), "/home/example/travail");
-}
-
-#[test]
-fn explicit_root_expands_home_prefix() {
-    let Some(home) = dirs::home_dir() else {
-        return;
-    };
-
-    assert_eq!(
-        normalize_explicit_root("~/travail"),
-        home.join("travail").to_string_lossy().to_string()
-    );
 }

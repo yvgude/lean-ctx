@@ -95,7 +95,7 @@ impl DeliveryDelegationV1 {
             || self.child_agent != assigned_child
             || self.child_agent == self.host_agent
             || self.execution.attempt == 0
-            || self.execution.attempt > crate::core::work_graph_delegation::MAX_DELIVERY_ATTEMPTS
+            || self.execution.attempt > crate::core::work_graph::MAX_DELIVERY_ATTEMPTS
             || self.expires_at <= self.issued_at
             || self.expires_at - self.issued_at > chrono::Duration::hours(1)
         {

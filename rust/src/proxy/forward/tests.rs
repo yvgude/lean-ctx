@@ -954,7 +954,7 @@ async fn forward_request_applies_pre_optimization_and_reports_its_result() {
         2
     );
     assert_eq!(
-        crate::proxy::value_gate_proxy::session_metrics().total_original_tokens,
+        crate::core::proxy_value_metrics::session_metrics().total_original_tokens,
         u64::try_from(original_tokens).unwrap()
     );
 }
@@ -1761,8 +1761,8 @@ async fn uninspectable_body_under_a_project_policy_is_refused_without_a_connecti
 /// user turn — `egress_lifecycle::token_mode_changes_only_the_last_user_turn`.)
 /// Take it after the data-directory guard, which holds the environment lock;
 /// the previous value is restored on drop.
-fn proxy_mode(mode: &str) -> crate::setup::EnvVarGuard {
-    crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", mode)
+fn proxy_mode(mode: &str) -> crate::test_env::EnvVarGuard {
+    crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", mode)
 }
 
 fn write_gateway_config(text: &str) {

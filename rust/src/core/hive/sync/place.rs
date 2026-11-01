@@ -61,6 +61,12 @@ pub struct VaultSync {
     /// Anchor states the automatic re-check queued (`to_verify`, `gone`,
     /// or `fresh` again).
     pub rechecked: usize,
+    /// Own nodes the capture lifecycle queued as superseded (`edge.add
+    /// supersedes` from their successor), withdrawn (`retract`) and
+    /// re-anchored after a local re-pin (`field.set anchors`).
+    pub superseded: usize,
+    pub retracted: usize,
+    pub confirmed: usize,
     /// Events the place refused for good: (event id, refusal).
     pub failed: Vec<(String, String)>,
     pub counts: capture::CaptureCounts,
@@ -135,8 +141,9 @@ pub fn canonical_instance_id(instance_id: &str) -> String {
 
 /// The automatic anchor re-check of one sync (v5 2.2.1): the deterministic
 /// `--stale` task of `hive maintain`, queued after this run's capture
-/// events (continuing `clock`). Returns how many states it queued; an error
-/// is logged and counts as none, so the sync goes on.
+/// events (continuing `clock`). Returns how many states it queued and the
+/// clock after them; an error is logged and counts as none, so the sync goes
+/// on.
 fn recheck_anchors(
     replica: &Replica,
     place: &Place,
@@ -145,7 +152,7 @@ fn recheck_anchors(
     checkout: &mut capture::refs::Checkout,
     now: u64,
     clock: Stamp,
-) -> usize {
+) -> (usize, Stamp) {
     use crate::core::hive::review::maintain;
     let req = maintain::Request {
         vault: String::new(),
@@ -162,12 +169,101 @@ fn recheck_anchors(
         seal,
     };
     match maintain::run_stale_at(&target, checkout, &req, now, clock) {
-        Ok((counts, _)) => counts.done,
+        Ok((counts, clock)) => (counts.done, clock),
         Err(e) => {
             tracing::warn!("hive: anchor re-check skipped: {e}");
-            0
+            (0, clock)
         }
     }
+}
+
+/// Replica meta keys of the lifecycle gate, per checkout (`<key>:<project
+/// hash>`; checkouts of one vault share its replica but each has its own
+/// knowledge store): the knowledge journal's LSN and the time (unix ms) of
+/// the last lifecycle pass.
+const LIFECYCLE_LSN: &str = "lifecycle_lsn";
+const LIFECYCLE_AT: &str = "lifecycle_at";
+/// The longest a lifecycle pass is skipped while nothing moved: it covers
+/// what neither the journal nor the tail records (a store edited outside the
+/// engine).
+const LIFECYCLE_FULL_MS: u64 = 60 * 60 * 1000;
+
+/// Whether a lifecycle pass has work: the knowledge journal moved since the
+/// last pass, the place delivered new events (another engine may have marked
+/// a claim this checkout already re-pinned), or an hour passed; and the
+/// journal LSN to record.
+fn lifecycle_due(
+    replica: &Replica,
+    root: &Path,
+    project_hash: &str,
+    remote_changed: bool,
+    now: u64,
+) -> Result<(bool, u64), HiveError> {
+    let head = crate::core::knowledge::knowledge_dir_of(&root.to_string_lossy())
+        .map_or(0, |dir| crate::core::knowledge::journal::head_lsn(&dir));
+    let read = |key: &str| -> Result<Option<u64>, HiveError> {
+        Ok(replica
+            .meta(&format!("{key}:{project_hash}"))?
+            .and_then(|v| String::from_utf8(v.to_vec()).ok())
+            .and_then(|s| s.parse().ok()))
+    };
+    let due = match (read(LIFECYCLE_LSN)?, read(LIFECYCLE_AT)?) {
+        (Some(lsn), Some(at)) => {
+            remote_changed || lsn != head || now.saturating_sub(at) >= LIFECYCLE_FULL_MS
+        }
+        _ => true,
+    };
+    Ok((due, head))
+}
+
+/// The capture lifecycle of one sync ([`capture::lifecycle`]): what the
+/// agent superseded, withdrew or re-pinned since its facts were captured,
+/// queued after this run's capture and re-check events. A failure is logged
+/// and plans nothing, so the sync goes on.
+#[allow(clippy::too_many_arguments)]
+fn lifecycle(
+    target: &crate::core::hive::review::maintain::Target<'_>,
+    graph: &crate::core::hive::replica::fold::Graph,
+    checkout: &mut capture::refs::Checkout,
+    root: &Path,
+    project_hash: &str,
+    remote_changed: bool,
+    now: u64,
+    clock: Stamp,
+) -> Result<capture::lifecycle::Queued, HiveError> {
+    use capture::lifecycle;
+    let idle = lifecycle::Queued {
+        clock,
+        ..lifecycle::Queued::default()
+    };
+    let (due, head) = lifecycle_due(target.replica, root, project_hash, remote_changed, now)?;
+    if !due {
+        return Ok(idle);
+    }
+    let Some(store) = lifecycle::store_facts(target.replica, &root.to_string_lossy()) else {
+        tracing::debug!("hive: lifecycle skipped, the knowledge store is not readable");
+        return Ok(idle);
+    };
+    let own = lifecycle::own_nodes(target.replica, project_hash)?;
+    let present = lifecycle::present(graph, target.replica)?;
+    let removed = lifecycle::removed_identities(&root.to_string_lossy());
+    let actions = lifecycle::plan(
+        &own,
+        &store,
+        &removed,
+        |id| present.view(graph, id),
+        &present,
+    );
+    let queued = lifecycle::queue(target, graph, checkout, &actions, clock, now)?;
+    target.replica.set_meta(
+        &format!("{LIFECYCLE_LSN}:{project_hash}"),
+        head.to_string().as_bytes(),
+    )?;
+    target.replica.set_meta(
+        &format!("{LIFECYCLE_AT}:{project_hash}"),
+        now.to_string().as_bytes(),
+    )?;
+    Ok(queued)
 }
 
 /// The claims of `knowledge` (after `since`) that pass the capture gate.
@@ -419,11 +515,15 @@ fn sync_vault_once(
         let signer = writer.signer();
         // A sealed place's events are sealed with the newest epoch key held.
         let seal = super::writer::vault_seal(&session.store, record)?;
+        // The checkout's name in `own_sources` (never shared): what the
+        // capture lifecycle finds this checkout's own nodes by.
+        let project_hash =
+            blake3::hash(root.to_string_lossy().as_bytes()).to_hex()[..16].to_owned();
         let target = emit::Target {
             replica: &replica,
             place: &place,
             signer: &signer,
-            project_hash: &blake3::hash(root.to_string_lossy().as_bytes()).to_hex()[..16],
+            project_hash: &project_hash,
             seal: seal.as_ref(),
         };
         let emitted = emit::emit(
@@ -448,7 +548,7 @@ fn sync_vault_once(
         // checkout (`hive maintain --stale`, automatically): a changed
         // anchor makes the claim `outdated` until a person confirms it
         // (`--confirm`). A failed re-check never fails the sync.
-        report.rechecked = recheck_anchors(
+        let (rechecked, clock) = recheck_anchors(
             &replica,
             &place,
             &signer,
@@ -457,6 +557,32 @@ fn sync_vault_once(
             now,
             clock,
         );
+        report.rechecked = rechecked;
+        // What the agent superseded, withdrew or re-pinned since capture
+        // (the knowledge journal gates it; a failure never fails the sync).
+        let maintain_target = crate::core::hive::review::maintain::Target {
+            replica: &replica,
+            place: &place,
+            signer: &signer,
+            seal: seal.as_ref(),
+        };
+        match lifecycle(
+            &maintain_target,
+            &graph,
+            &mut run.checkout,
+            root,
+            &project_hash,
+            report.stored > 0,
+            now,
+            clock,
+        ) {
+            Ok(queued) => {
+                report.superseded = queued.superseded;
+                report.retracted = queued.retracted;
+                report.confirmed = queued.confirmed;
+            }
+            Err(e) => tracing::warn!("hive: knowledge lifecycle skipped: {e}"),
+        }
         capture::finish_run(store.data_dir(), &place_name, &run)?;
         report.counts = run.counts.clone();
         if let Some(mark) = plan.watermark {

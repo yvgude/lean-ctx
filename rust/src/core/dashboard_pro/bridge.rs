@@ -144,7 +144,6 @@ pub(crate) fn prepare(
         inputs: collected.inputs,
     };
     let size = match request.op {
-        Op::WorkAnalysis => fit_newest_episodes(&mut payload, MAX_FRAME_BYTES)?,
         // Knowledge has no fact limit: a review reads the newest facts that
         // fit; `facts_total` still counts them all.
         Op::MemoryAnalyze | Op::MemorySnapshot => {
@@ -165,13 +164,6 @@ fn encoded_len(payload: &wire::Request) -> ProResult<usize> {
     serde_json::to_vec(payload)
         .map(|bytes| bytes.len())
         .map_err(|_| ProError::internal("The request could not be encoded"))
-}
-
-/// A long-lived project's sessions outgrow one frame: the work analysis then
-/// reads the newest sessions that fit, dropping the oldest a tenth at a time.
-/// Returns the encoded size it ends with.
-pub(crate) fn fit_newest_episodes(payload: &mut wire::Request, max: usize) -> ProResult<usize> {
-    fit_newest(payload, "episodes", max)
 }
 
 /// Drops the oldest tenth of the oldest-first list input `key` until the

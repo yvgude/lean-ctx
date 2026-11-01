@@ -22,8 +22,8 @@ pub use playbook::{DeltaOutcome, EntryKind, Playbook, PlaybookEntry};
 pub use slot::{SessionSlot, SharedSession};
 pub use types::{
     Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, LiveZoneSessionState,
-    ManifestEntry, PreparedSave, ProgressEntry, SaveError, SessionDayCounts, SessionState,
-    SessionStats, SessionSummary, TaskInfo, TestSnapshot,
+    PreparedSave, ProgressEntry, SaveError, SessionDayCounts, SessionState, SessionStats,
+    SessionSummary, TaskInfo, TestSnapshot,
 };
 
 #[cfg(test)]
@@ -50,6 +50,20 @@ mod tests {
             "session memory kept the credential"
         );
         assert!(stored.contains("key is"), "the finding itself is kept");
+    }
+
+    /// `wakeup_manifest` is retired with LITM calibration: a session file
+    /// written before still loads, and its next save no longer carries it.
+    #[test]
+    fn a_session_with_the_retired_wakeup_manifest_still_loads() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let mut stored = serde_json::to_value(SessionState::new()).expect("serialize session");
+        stored["wakeup_manifest"] = serde_json::json!([
+            { "key": "fact:a", "position": "begin", "profile": "claude", "missed": true }
+        ]);
+        let loaded: SessionState = serde_json::from_value(stored).expect("old session loads");
+        let saved = serde_json::to_value(&loaded).expect("serialize session");
+        assert!(saved.get("wakeup_manifest").is_none());
     }
 
     /// A git-derived task names the uncommitted files; it was a `--stat`

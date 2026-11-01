@@ -37,7 +37,7 @@ const ALLOWLIST: &[&str] = &[
     // Denies writes: enumerates every location that may hold lean-ctx state or
     // credentials — the legacy dir included — so the protected Codex session
     // cannot modify them. It never creates or reads the legacy path.
-    "cli/codex_protected_cmd/write_guard.rs",
+    "core/protected_store.rs",
     // Denies writes from agent shells: lists every directory that may hold
     // lean-ctx state (the legacy dir included) so a command cannot write there.
     // It never creates or reads the legacy path.

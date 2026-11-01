@@ -246,7 +246,6 @@ impl SessionState {
             last_aaak_hash: None,
             extra_roots: Vec::new(),
             live_zone: super::types::LiveZoneSessionState::default(),
-            wakeup_manifest: Vec::new(),
             playbook: super::playbook::Playbook::default(),
             last_semantic_query: None,
             last_flush: None,

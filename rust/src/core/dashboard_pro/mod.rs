@@ -273,7 +273,7 @@ impl ProjectScope {
             || relative.len() > 4096
             || relative.chars().any(char::is_control)
             || candidate.is_absolute()
-            || crate::dashboard::routes::helpers::is_windows_absolute_path(relative)
+            || crate::core::pathutil::is_windows_absolute_path(relative)
             || candidate
                 .components()
                 .any(|c| !matches!(c, std::path::Component::Normal(_)))

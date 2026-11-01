@@ -42,7 +42,8 @@ use serde_json::Value;
 
 #[cfg(feature = "http-server")]
 use super::admitted::{self, GatewayRefusal, Payload};
-use super::{adaptive_policy::select_policy, live_zone};
+use super::live_zone;
+use crate::core::adaptive_policy::select_policy;
 #[cfg(feature = "http-server")]
 use crate::core::context_admission::egress::{EgressTarget, TrustedDestinationBinding};
 use crate::core::protocol::strip_trailing_savings_footer;
@@ -184,7 +185,7 @@ pub fn compress_messages(req: CompressRequest) -> CompressResponse {
         .and_then(|message| message.get("content").and_then(Value::as_str));
     let task_class = super::pre_optimize::classify_task(last_user_content);
 
-    let policy = super::adaptive_policy::best_policy_for(task_class);
+    let policy = crate::core::adaptive_policy::best_policy_for(task_class);
     let live_split = live_zone::detect_live_zone(&messages);
     for msg in &mut messages[live_split.boundary_turn..] {
         compress_message(msg, &mut totals, family, policy);
@@ -223,7 +224,7 @@ fn compress_message(
     msg: &mut Value,
     totals: &mut Totals,
     family: TokenizerFamily,
-    policy: super::adaptive_policy::CompressionPolicy,
+    policy: crate::core::adaptive_policy::CompressionPolicy,
 ) {
     // OpenAI `tool`/`function` messages carry the tool name; pass it to the funnel
     // so it can honour the #479 pass-through for lean-ctx's own `ctx_*` results.
@@ -238,7 +239,7 @@ fn compress_content(
     name: Option<&str>,
     totals: &mut Totals,
     family: TokenizerFamily,
-    policy: super::adaptive_policy::CompressionPolicy,
+    policy: crate::core::adaptive_policy::CompressionPolicy,
 ) {
     match content {
         Value::String(s) => squeeze_in_place(s, name, totals, family, policy),
@@ -256,7 +257,7 @@ fn compress_block(
     name: Option<&str>,
     totals: &mut Totals,
     family: TokenizerFamily,
-    policy: super::adaptive_policy::CompressionPolicy,
+    policy: crate::core::adaptive_policy::CompressionPolicy,
 ) {
     let Some(obj) = block.as_object_mut() else {
         return;
@@ -285,7 +286,7 @@ fn squeeze_in_place(
     name: Option<&str>,
     totals: &mut Totals,
     family: TokenizerFamily,
-    policy: super::adaptive_policy::CompressionPolicy,
+    policy: crate::core::adaptive_policy::CompressionPolicy,
 ) {
     let before = count_tokens_for(s, family);
     // Gateway audience (#702): a lossy rewrite carries the `hash=<24hex>`

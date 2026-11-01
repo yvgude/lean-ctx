@@ -1,6 +1,6 @@
 //! Explicit cross-store restore from the lossless memory archive (#995 Phase 6).
 //!
-//! Every capacity reclaim (facts, history, procedures, patterns) archives the
+//! Every capacity reclaim (facts, history, patterns) archives the
 //! evicted tail under `memory/archive/<store>/` before dropping it. This module
 //! reads those archives back and merges the matching items into the live stores —
 //! the user-facing "undo" for an over-eager reclaim, surfaced as
@@ -12,8 +12,7 @@
 
 use crate::core::context_admission::stores::StoreAdmission;
 use crate::core::knowledge::ProjectKnowledge;
-use crate::core::memory_archive::{ArchiveConfig, MemoryStore, reachable_archives, restore_items};
-use crate::core::procedural_memory::ProceduralStore;
+use crate::core::memory_archive::{ArchiveConfig, MemoryStore, reachable_archives};
 
 /// Default cap on how many items a single restore call rehydrates, across all
 /// requested stores. Generous enough to undo a normal reclaim, bounded so a
@@ -254,94 +253,9 @@ fn restore_patterns(
     }
 }
 
-/// Restore archived procedures (dedup by id) into the procedural store.
-fn restore_procedures(
-    hash: &str,
-    cfg: &ArchiveConfig,
-    query: Option<&str>,
-    remaining: &mut usize,
-    admission: &StoreAdmission,
-) -> Result<StoreRestore, String> {
-    let cands = collect_admitted_procedures(hash, cfg, query, admission);
-    let matched = cands.len();
-    let (_, restored) = ProceduralStore::mutate_locked_admitted(hash, admission, |store| {
-        let mut restored = 0;
-        for procedure in cands {
-            if *remaining == 0 {
-                break;
-            }
-            if store.procedures.iter().any(|live| live.id == procedure.id) {
-                continue;
-            }
-            store.procedures.push(procedure);
-            restored += 1;
-            *remaining -= 1;
-        }
-        Ok(restored)
-    })?;
-    Ok(StoreRestore {
-        store: MemoryStore::Procedures,
-        matched,
-        restored,
-    })
-}
-
-/// Load archived procedures only after each field is admitted. Query matching
-/// and the reported match count operate on the same safe representation that
-/// may be restored, so a blocked archive item cannot influence the response.
-fn collect_admitted_procedures(
-    hash: &str,
-    cfg: &ArchiveConfig,
-    query: Option<&str>,
-    admission: &StoreAdmission,
-) -> Vec<crate::core::procedural_memory::Procedure> {
-    fn admit_procedure(
-        mut procedure: crate::core::procedural_memory::Procedure,
-        admission: &StoreAdmission,
-    ) -> Option<crate::core::procedural_memory::Procedure> {
-        fn field(value: &mut String, admission: &StoreAdmission) -> Option<()> {
-            *value = crate::core::session::admission::admit_store_text(admission, value)?;
-            Some(())
-        }
-        field(&mut procedure.name, admission)?;
-        field(&mut procedure.description, admission)?;
-        for keyword in &mut procedure.activation_keywords {
-            field(keyword, admission)?;
-        }
-        for step in &mut procedure.steps {
-            field(&mut step.tool, admission)?;
-            field(&mut step.description, admission)?;
-        }
-        Some(procedure)
-    }
-
-    let needle = query.map(str::to_lowercase);
-    let mut out = Vec::new();
-    for path in reachable_archives(MemoryStore::Procedures, Some(hash), cfg)
-        .into_iter()
-        .rev()
-    {
-        let Ok(items) = restore_items::<crate::core::procedural_memory::Procedure>(&path) else {
-            continue;
-        };
-        for item in items {
-            let Some(procedure) = admit_procedure(item, admission) else {
-                continue;
-            };
-            if needle.as_deref().is_none_or(|query| {
-                format!("{} {}", procedure.name, procedure.description)
-                    .to_lowercase()
-                    .contains(query)
-            }) {
-                out.push(procedure);
-            }
-        }
-    }
-    out
-}
-
 /// Restore archived items into the live stores. Facts/history/patterns share one
-/// locked knowledge write; procedures persist to their own store.
+/// locked knowledge write. Archives of the retired procedure store stay on disk
+/// untouched and are never restored.
 pub(crate) fn run_restore(
     project_root: &str,
     opts: &RestoreOptions,
@@ -361,7 +275,7 @@ fn run_restore_in_view(project_root: &str, opts: &RestoreOptions) -> Result<Rest
     let want = |s: MemoryStore| opts.stores.contains(&s);
 
     let mut per_store: Vec<StoreRestore> = Vec::new();
-    let mut remaining = opts.limit;
+    let remaining = opts.limit;
 
     let knowledge_wanted =
         want(MemoryStore::Facts) || want(MemoryStore::History) || want(MemoryStore::Patterns);
@@ -371,7 +285,7 @@ fn run_restore_in_view(project_root: &str, opts: &RestoreOptions) -> Result<Rest
         crate::core::legacy_adoption::auto_adopt_facts(project_root);
     }
     if knowledge_wanted {
-        let (_k, (results, rem)) = ProjectKnowledge::mutate_locked_with_admission(
+        let (_k, results) = ProjectKnowledge::mutate_locked_with_admission(
             project_root,
             &knowledge_admission,
             |knowledge| {
@@ -407,22 +321,10 @@ fn run_restore_in_view(project_root: &str, opts: &RestoreOptions) -> Result<Rest
                         &knowledge_admission,
                     ));
                 }
-                (local, rem)
+                local
             },
         )?;
         per_store.extend(results);
-        remaining = rem;
-    }
-
-    if want(MemoryStore::Procedures) && remaining > 0 {
-        let hash = ProjectKnowledge::new(project_root).project_hash;
-        per_store.push(restore_procedures(
-            &hash,
-            &cfg,
-            query.as_deref(),
-            &mut remaining,
-            &admission,
-        )?);
     }
 
     if !admission.is_current() {
@@ -473,8 +375,6 @@ mod tests {
     use crate::core::knowledge::ProjectKnowledge;
     use crate::core::memory_archive::archive_items;
     use crate::core::memory_policy::MemoryPolicy;
-    use crate::core::procedural_memory::Procedure;
-    use chrono::Utc;
 
     /// Sandbox the data dir and hand the closure a fresh project root inside it.
     fn with_sandbox<T>(f: impl FnOnce(String) -> T) -> T {
@@ -505,22 +405,6 @@ mod tests {
         archive_facts_of(root, &k.facts);
         k.facts.clear();
         k.save().unwrap();
-    }
-
-    fn make_proc(id: &str) -> Procedure {
-        Procedure {
-            id: id.into(),
-            name: format!("proc {id}"),
-            description: "restore test procedure".into(),
-            steps: Vec::new(),
-            activation_keywords: Vec::new(),
-            confidence: 0.8,
-            times_used: 1,
-            times_succeeded: 1,
-            last_used: Utc::now(),
-            project_specific: true,
-            created_at: Utc::now(),
-        }
     }
 
     #[test]
@@ -647,79 +531,6 @@ mod tests {
             assert_eq!(
                 format_restore_report(&report),
                 format_restore_report(&report)
-            );
-        });
-    }
-
-    #[test]
-    fn restore_procedures_round_trip_is_idempotent() {
-        with_sandbox(|root| {
-            let hash = ProjectKnowledge::new(&root).project_hash;
-            archive_items(
-                MemoryStore::Procedures,
-                Some(&hash),
-                &[make_proc("p1"), make_proc("p2")],
-                &ArchiveConfig::default(),
-            )
-            .unwrap();
-
-            let opts = RestoreOptions::new(Some(MemoryStore::Procedures), None, 50);
-            let report = run_restore(&root, &opts).unwrap();
-            assert_eq!(report.total_restored(), 2);
-
-            let store = ProceduralStore::load(&hash).unwrap();
-            assert_eq!(store.procedures.len(), 2);
-
-            let again = run_restore(&root, &opts).unwrap();
-            assert_eq!(again.total_restored(), 0);
-        });
-    }
-
-    #[test]
-    fn restored_procedure_archive_content_is_admitted_before_matching_and_save() {
-        with_sandbox(|root| {
-            let policy_dir = std::path::Path::new(&root).join(".lean-ctx");
-            std::fs::create_dir_all(&policy_dir).expect("policy directory");
-            std::fs::write(
-                policy_dir.join("policy.toml"),
-                "name = \"memory-admission-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n[redaction]\ncustomer = 'SECRET-[0-9]+'\n",
-            )
-            .expect("redaction policy");
-            let hash = ProjectKnowledge::new(&root).project_hash;
-            let mut archived = make_proc("p1");
-            archived.description = "uses SECRET-123".into();
-            archived
-                .steps
-                .push(crate::core::procedural_memory::ProcedureStep {
-                    tool: "ctx_read".into(),
-                    description: "inspect SECRET-123".into(),
-                    optional: false,
-                });
-            archive_items(
-                MemoryStore::Procedures,
-                Some(&hash),
-                &[archived],
-                &ArchiveConfig::default(),
-            )
-            .unwrap();
-
-            let secret_query =
-                RestoreOptions::new(Some(MemoryStore::Procedures), Some("SECRET-123".into()), 10);
-            let secret_report = run_restore(&root, &secret_query).expect("admit before matching");
-            assert_eq!(secret_report.per_store[0].matched, 0);
-            assert_eq!(secret_report.per_store[0].restored, 0);
-
-            let opts = RestoreOptions::new(Some(MemoryStore::Procedures), None, 10);
-            let report = run_restore(&root, &opts).expect("restore admitted procedure");
-            assert_eq!(report.total_restored(), 1);
-            assert_eq!(report.per_store[0].matched, 1);
-
-            let store = ProceduralStore::load(&hash).expect("procedural store");
-            assert_eq!(store.procedures.len(), 1);
-            assert_eq!(store.procedures[0].description, "uses [REDACTED:customer]");
-            assert_eq!(
-                store.procedures[0].steps[0].description,
-                "inspect [REDACTED:customer]"
             );
         });
     }

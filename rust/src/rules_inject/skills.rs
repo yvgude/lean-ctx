@@ -21,7 +21,7 @@ pub(super) fn build_skill_targets(home: &std::path::Path) -> Vec<SkillTarget> {
         SkillTarget {
             agent_key: "claude",
             display_name: "Claude Code",
-            skill_dir: crate::setup::claude_config_dir(home).join("skills/lean-ctx"),
+            skill_dir: crate::core::editor_registry::claude_state_dir(home).join("skills/lean-ctx"),
         },
         SkillTarget {
             agent_key: "codebuddy",

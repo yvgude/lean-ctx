@@ -37,18 +37,11 @@ pub const PROTOCOL_V2: &str = "2.0";
 /// The protocol major this engine speaks and accepts in an answer.
 const PROTOCOL_MAJOR: u16 = 2;
 
-/// The answer header the deployed Hive still sends to every request, a 2.0
-/// one included, until its guard mirrors the request's major (lean-ctx-e0,
-/// 31.10.). Accepted from a Hive that took the 2.0 request; remove once that
-/// Hive is deployed.
-const DEPLOYED_ANSWER_1X: (u16, u16) = (1, 9);
-
 /// Why an answer's `Hive-Protocol` is refused: only a 2.x Hive is spoken
 /// to (Hive 1.x is retired), and the error names the protocol required.
 fn incompatible(peer: &str) -> Option<HiveError> {
     match parse_protocol_header(peer) {
         Some((PROTOCOL_MAJOR, _)) => None,
-        Some(version) if version == DEPLOYED_ANSWER_1X => None,
         Some((major, minor)) => Some(HiveError::Protocol(format!(
             "Hive speaks protocol {major}.{minor}; this engine requires Hive-Protocol \
              {PROTOCOL_MAJOR}.x (Hive 1.x is retired): upgrade the Hive server"
@@ -405,13 +398,10 @@ mod tests {
     }
 
     #[test]
-    fn a_2x_or_the_deployed_1_9_answer_is_accepted_and_a_refusal_names_the_protocol() {
+    fn only_a_2x_answer_is_accepted_and_a_refusal_names_the_protocol() {
         assert!(incompatible("2.0").is_none());
         assert!(incompatible("2.7").is_none());
-        // The deployed Hive answers 1.9 to a 2.0 request until its guard
-        // mirrors the request's major.
-        assert!(incompatible("1.9").is_none());
-        for peer in ["1.8", "1.0", "3.0", "", "two"] {
+        for peer in ["1.9", "1.8", "1.0", "3.0", "", "two"] {
             let Some(HiveError::Protocol(message)) = incompatible(peer) else {
                 panic!("{peer:?} must be refused");
             };

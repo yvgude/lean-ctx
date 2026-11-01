@@ -478,69 +478,16 @@ impl LeanCtxServer {
         );
     }
 
-    async fn record_shutdown_episode(&self, until: Instant) {
-        let tool_calls: Vec<(String, u64)> = self
-            .tool_calls
-            .read()
-            .await
-            .iter()
-            .map(|call| (call.tool.clone(), call.duration_ms))
-            .collect();
-        if tool_calls.is_empty() {
-            return;
-        }
-
-        let session = self.session.read().await.clone();
-        let Some(project_root) = session
-            .project_root
-            .clone()
-            .or_else(|| self.startup_project_root.clone())
-        else {
-            return;
-        };
-        let agent_id = self.agent_id.read().await.clone();
-        let agent_id = match agent_id {
-            Some(agent_id) => Some(agent_id),
-            None => self.presence_agent_id.read().await.clone(),
-        };
-        let policy = crate::core::config::Config::load()
-            .memory_policy_effective()
-            .unwrap_or_default();
-        let project_hash = crate::core::project_hash::hash_project_root(&project_root);
-
-        // Storage admission of the session's text: off the async executor and
-        // within the shutdown's enrichment time.
-        let recorded = within_shutdown("episode", until, move || {
-            crate::core::episodic_memory::record_session_episode(
-                &project_hash,
-                &session,
-                &tool_calls,
-                agent_id.as_deref(),
-                &policy.episodic,
-                true,
-            )
-        })
-        .await;
-        match recorded {
-            Some(Ok(Some(id))) => tracing::info!("lean-ctx: recorded shutdown episode {id}"),
-            Some(Ok(None)) | None => {}
-            Some(Err(error)) => {
-                tracing::warn!("lean-ctx: failed to record shutdown episode: {error}");
-            }
-        }
-    }
-
     /// Aggressive cleanup on connection drop: save session, consolidate knowledge, clear caches.
     ///
     /// Order and bounds: the host that closed the connection waits a bounded
     /// time and then kills the process. What must not be lost comes first —
     /// the session's last state — and what only enriches later sessions (the
-    /// shutdown episode, the knowledge consolidation) runs afterwards within
-    /// `SHUTDOWN_ENRICHMENT`. With a semantic detector bound each of the
-    /// two re-admits the session's text through the model; run first and
-    /// unbounded, they kept the server alive beyond the host's wait while
-    /// the last state was still to be saved. The consolidation reads the
-    /// SAVED session, so it also belongs after the save.
+    /// knowledge consolidation) runs afterwards within `SHUTDOWN_ENRICHMENT`.
+    /// With a semantic detector bound it re-admits the session's text through
+    /// the model; run first and unbounded, it kept the server alive beyond the
+    /// host's wait while the last state was still to be saved. The
+    /// consolidation reads the SAVED session, so it also belongs after the save.
     pub async fn shutdown(&self) {
         let stage = Instant::now();
         let last_state_durable =
@@ -568,8 +515,6 @@ impl LeanCtxServer {
         let stage = shutdown_stage("summary and presence", stage);
 
         let enrichment_ends = Instant::now() + SHUTDOWN_ENRICHMENT;
-        self.record_shutdown_episode(enrichment_ends).await;
-        let stage = shutdown_stage("episode", stage);
         {
             let session = self.session.read().await;
             let has_insights = !session.findings.is_empty() || !session.decisions.is_empty();
@@ -650,12 +595,11 @@ const SHUTDOWN_ENRICHMENT: std::time::Duration = std::time::Duration::from_secs(
 ///
 /// The bound ends the WAIT, not the work: a blocking task cannot be stopped.
 /// Work that did not finish keeps running until the process ends (or to its
-/// end, when the server object lives on). Both stages write their store in
-/// one atomic replace at the end (`episodic_memory::mutate_locked_admitted`,
-/// `knowledge::persist::write_json_atomic`), so a process that ends first
-/// leaves the store as it was — this session's episode is then missing, and
-/// the consolidation's items stay ahead of the session's watermark for the
-/// next consolidation of the continued session.
+/// end, when the server object lives on). The knowledge consolidation writes
+/// its store in one atomic replace at the end
+/// (`knowledge::persist::write_json_atomic`), so a process that ends first
+/// leaves the store as it was — the consolidation's items stay ahead of the
+/// session's watermark for the next consolidation of the continued session.
 async fn within_shutdown<T: Send + 'static>(
     stage: &'static str,
     until: Instant,

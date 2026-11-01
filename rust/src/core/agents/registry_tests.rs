@@ -1174,6 +1174,11 @@ fn transport_fields_roundtrip_and_old_records_still_load() {
 /// gets its own id next to the parent's; neither reads the other's mail.
 #[test]
 fn a_subagent_role_gets_its_own_id_and_never_reads_the_parents_messages() {
+    // `post_message` stores the message through `admit_and_bind`, which reads
+    // process-wide state other tests change under this lock (the working
+    // directory, an active project policy): without a project under a
+    // protecting policy it is refused (`store.project_unresolved`).
+    let _lock = crate::core::data_dir::test_env_lock();
     let mut reg = AgentRegistry::new();
     let lead = reg
         .register("claude", Some("lead"), "/tmp/project", None)

@@ -858,7 +858,15 @@ pub(in crate::server) async fn reversible_post_process(
             let cfg = crate::core::config::Config::load();
             // #1754: this tip is lean-ctx steering delivered inside a tool
             // result, so the settings that decline steering must silence it.
-            if !cfg.declines_rule_steering() && !cfg.setup.should_inject_rules() {
+            // The tip is for hosts whose guidance is really missing: Claude
+            // Code keeps it in CLAUDE.md, which no rules target covers, so
+            // `should_inject_rules()` alone told set-up Claude users to run
+            // setup in every session.
+            if !cfg.declines_rule_steering()
+                && !cfg.setup.should_inject_rules()
+                && !dirs::home_dir()
+                    .is_some_and(|home| crate::rules_inject::host_guidance_present(&home))
+            {
                 result_text = format!(
                     "{result_text}\n\n\
                          --- tip: run 'lean-ctx setup' to configure agent rules for optimal AI integration ---"

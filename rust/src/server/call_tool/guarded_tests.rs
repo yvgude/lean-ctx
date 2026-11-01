@@ -4,6 +4,28 @@ use super::{
     cache_call_result, cached_call_result, response_cache_key,
 };
 
+// A loop-throttle block came back as a successful result although the call
+// was refused; it is now a tool error like a role or policy denial.
+#[test]
+fn loop_throttle_block_is_a_tool_error() {
+    use crate::core::config::LoopDetectionConfig;
+    use crate::core::loop_detection::LoopDetector;
+    let cfg = LoopDetectionConfig {
+        blocked_threshold: 2,
+        ..Default::default()
+    };
+    let mut detector = LoopDetector::with_config(&cfg);
+    let first = detector.record_call("ctx_shell", "same_fp");
+    assert!(super::loop_throttle_refusal(&first).is_none());
+    detector.record_call("ctx_shell", "same_fp");
+    let blocked = detector.record_call("ctx_shell", "same_fp");
+
+    let result = super::loop_throttle_refusal(&blocked).expect("blocked call is refused");
+    assert_eq!(result.is_error, Some(true));
+    let text = result.content[0].as_text().expect("text").text.clone();
+    assert!(text.contains("LOOP DETECTED"), "{text}");
+}
+
 #[test]
 fn response_cache_cannot_reuse_a_result_under_changed_rules() {
     use crate::core::policy::{parse, resolve, runtime::TestPolicyOverride};

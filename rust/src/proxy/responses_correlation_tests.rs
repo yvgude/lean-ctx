@@ -143,7 +143,7 @@ fn a_responses_output_gets_a_stub_only_for_the_call_this_stores_engine_answered(
     let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     // Cache mode: the default mode appends its steer to the last user turn,
     // which is asserted on its own in the forward tests.
-    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     let directory = tempfile::tempdir().expect("project");
     let root = directory.path().canonicalize().expect("canonical root");
     governed_project_with(&root, ROLLING);

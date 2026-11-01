@@ -395,7 +395,7 @@ mod tests {
             .sections
             .get("llm")
             .expect("[llm] section must exist in the schema");
-        let defaults = serde_json::to_value(crate::core::llm_enhance::LlmConfig::default())
+        let defaults = serde_json::to_value(crate::core::config::LlmConfig::default())
             .expect("LlmConfig serialises");
         let defaults = defaults.as_object().expect("LlmConfig is a struct");
 

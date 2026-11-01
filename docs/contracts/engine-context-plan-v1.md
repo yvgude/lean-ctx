@@ -28,7 +28,7 @@ This is not a remote multi-tenant authorization boundary or an Enterprise deploy
 Requests are strict JSON with unique known fields: at most64KiB, query at most16KiB,
 budget1..1048576 estimated tokens and candidates1..256 per provider. The plan uses
 the requested budget (subject to host policy), not the legacy150-token supplement cap.
-The public provider set remains project knowledge/session/episodic/procedural/ledger.
+The public provider set remains project knowledge/session/ledger and the BM25/graph indexes (the episodic and procedural providers are retired since 3.13.0).
 This operation neither invokes a model nor promises compiled output/recovery of every
 candidate; use the existing context-view/recover contract for its supported file views.
 

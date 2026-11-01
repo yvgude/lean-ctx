@@ -1,3 +1,8 @@
+pub(crate) use crate::core::command_root::{
+    detect_project_root, promote_to_git_root, require_project_root,
+};
+pub(crate) use crate::core::shell_history::load_shell_history;
+
 pub(crate) fn print_savings(original: usize, sent: usize) {
     let footer = crate::core::protocol::format_savings(original, sent);
     if !footer.is_empty() {
@@ -783,68 +788,6 @@ pub(crate) fn filter_daemon_output(text: &str) -> String {
         .join("\n")
 }
 
-pub fn load_shell_history_pub() -> Vec<String> {
-    load_shell_history()
-}
-
-pub(crate) fn load_shell_history() -> Vec<String> {
-    let shell = std::env::var("SHELL").unwrap_or_default();
-    let Some(home) = dirs::home_dir() else {
-        return Vec::new();
-    };
-
-    let history_file = if shell.contains("zsh") {
-        home.join(".zsh_history")
-    } else if shell.contains("fish") {
-        home.join(".local/share/fish/fish_history")
-    } else if cfg!(windows) && shell.is_empty() {
-        home.join("AppData")
-            .join("Roaming")
-            .join("Microsoft")
-            .join("Windows")
-            .join("PowerShell")
-            .join("PSReadLine")
-            .join("ConsoleHost_history.txt")
-    } else {
-        home.join(".bash_history")
-    };
-
-    // Shell history files (especially zsh's metafied format) frequently contain
-    // non-UTF-8 bytes; `read_to_string` would reject the whole file. Read raw and
-    // decode lossily so a single bad byte never hides 900 lines of real history.
-    match std::fs::read(&history_file) {
-        Ok(bytes) => admitted_history(&String::from_utf8_lossy(&bytes))
-            .lines()
-            .filter_map(|l| {
-                let trimmed = l.trim();
-                if trimmed.starts_with(':') {
-                    trimmed
-                        .split(';')
-                        .nth(1)
-                        .map(std::string::ToString::to_string)
-                } else {
-                    Some(trimmed.to_string())
-                }
-            })
-            .filter(|l| !l.is_empty())
-            .collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
-/// Shell history is command lines the user typed — tokens, passwords and
-/// connection strings included. Before anything is counted, ranked or printed
-/// from it (`discover`, `session` statistics), the whole text passes
-/// admission as carrier text: a value the gateway masks is masked in every
-/// derived line, and a history the policy withholds contributes no line at
-/// all. Redaction keeps the line structure, so the per-line parsing below is
-/// unaffected for clean history. Nothing is written back.
-fn admitted_history(raw: &str) -> String {
-    crate::core::context_admission::carrier::admit_carrier_text(raw)
-        .map(|admission| admission.text)
-        .unwrap_or_default()
-}
-
 pub(crate) fn daemon_fallback_hint() {
     use std::sync::Once;
     static HINT: Once = Once::new();
@@ -870,94 +813,6 @@ pub(crate) fn format_tokens_cli(tokens: u64) -> String {
     }
 }
 
-pub(crate) fn detect_project_root(args: &[String]) -> String {
-    detect_project_root_in(args, std::env::current_dir().ok().as_deref())
-}
-
-/// The project a command that writes project-scoped state acts for; `Err`
-/// instead of `~`, `/` or an agent directory (AP04-G10).
-pub(crate) fn require_project_root() -> Result<String, String> {
-    require_project_root_in(std::env::current_dir().ok().as_deref())
-}
-
-fn require_project_root_in(cwd: Option<&std::path::Path>) -> Result<String, String> {
-    let root = detect_project_root_in(&[], cwd);
-    if crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(&root)) {
-        return Err(format!(
-            "{root} is not a project — run inside a project or set LEAN_CTX_PROJECT_ROOT"
-        ));
-    }
-    Ok(root)
-}
-
-fn detect_project_root_in(args: &[String], cwd: Option<&std::path::Path>) -> String {
-    let mut it = args.iter().peekable();
-    while let Some(a) = it.next() {
-        if let Some(v) = a.strip_prefix("--root=")
-            && !v.trim().is_empty()
-        {
-            return normalize_explicit_root(v);
-        }
-        if let Some(v) = a.strip_prefix("--project-root=")
-            && !v.trim().is_empty()
-        {
-            return normalize_explicit_root(v);
-        }
-        if (a == "--root" || a == "--project-root")
-            && let Some(v) = it.peek()
-            && !v.starts_with("--")
-            && !v.trim().is_empty()
-        {
-            return normalize_explicit_root(v);
-        }
-    }
-    let cwd_root = cwd.map(|cwd| promote_to_git_root(&cwd.to_string_lossy()));
-    if let Ok(root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
-        && !root.trim().is_empty()
-    {
-        return crate::server::roots::reconcile_pinned_root(
-            normalize_explicit_root(&root),
-            cwd_root,
-        );
-    }
-    cwd_root.unwrap_or_else(|| ".".to_string())
-}
-
-fn normalize_explicit_root(path: &str) -> String {
-    let expanded = expand_home(path.trim());
-    crate::core::index_paths::normalize_project_root(&expanded)
-}
-
-fn expand_home(path: &str) -> String {
-    if path == "~" {
-        return dirs::home_dir().map_or_else(
-            || path.to_string(),
-            |home| home.to_string_lossy().to_string(),
-        );
-    }
-    if let Some(rest) = path.strip_prefix("~/") {
-        return dirs::home_dir().map_or_else(
-            || path.to_string(),
-            |home| home.join(rest).to_string_lossy().to_string(),
-        );
-    }
-    path.to_string()
-}
-
-pub(crate) fn promote_to_git_root(path: &str) -> String {
-    let mut p = std::path::Path::new(path);
-    loop {
-        // A dotfiles repository at `~` is not the project of everything below.
-        if p.join(".git").exists() && !crate::core::pathutil::is_broad_or_unsafe_root(p) {
-            return p.to_string_lossy().to_string();
-        }
-        match p.parent() {
-            Some(parent) => p = parent,
-            None => return path.to_string(),
-        }
-    }
-}
-
 /// Shared set-up for the tests of the CLI commands that run through
 /// [`CliToolRun`]. Every test starts with the isolation lines
 /// (`isolated_data_dir`, `TestPolicyOverride`) itself.
@@ -966,18 +821,7 @@ pub(crate) mod carrier_tests_support {
     /// A value the gateway masks in every mode.
     pub(crate) const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
 
-    /// Governed mode without a pack: protection is active, so the admitted
-    /// readers publish their sources into the capture. Call after
-    /// `isolated_data_dir()`.
-    pub(crate) fn governed() {
-        let dir = crate::core::paths::config_dir_read_only().expect("isolated config dir");
-        std::fs::create_dir_all(&dir).expect("config dir");
-        std::fs::write(
-            dir.join("config.toml"),
-            "[context_gateway]\nmode = \"governed\"\n",
-        )
-        .expect("config");
-    }
+    pub(crate) use crate::core::config::test_support::governed;
 
     /// A project directory and its canonical root.
     pub(crate) fn project() -> (tempfile::TempDir, String) {

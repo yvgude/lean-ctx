@@ -40,7 +40,7 @@ pub fn compress(
     // bridge results) compacts losslessly far better than the token engine.
     // lean-ctx read outputs carry a header line, so they never match here —
     // only genuine pure-JSON payloads do, keeping file reads byte-exact.
-    if let Some(compact) = crate::core::structured_compact::compact_json(input) {
+    if let Some(compact) = lean_ctx_compress::structured_compact::compact_json(input) {
         let before = counter::count(input);
         let after = counter::count(&compact);
         if after < before {

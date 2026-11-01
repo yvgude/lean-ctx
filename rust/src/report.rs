@@ -611,7 +611,7 @@ fn check_mcp_configs() -> String {
     };
 
     let mut found = Vec::new();
-    let claude_cfg = crate::setup::claude_config_json_path(&home);
+    let claude_cfg = crate::core::editor_registry::claude_mcp_json_path(&home);
     let codebuddy_cfg = crate::core::editor_registry::codebuddy_mcp_json_path(&home);
     let configs: Vec<(std::path::PathBuf, &str)> = vec![
         (home.join(".cursor/mcp.json"), "Cursor"),

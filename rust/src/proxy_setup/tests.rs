@@ -7,37 +7,6 @@ use super::shell::*;
 use super::util::*;
 use super::*;
 
-#[test]
-fn uid_port_first_regular_user() {
-    // uid 1000 (first regular user on most Linux) → base port
-    assert_eq!(DEFAULT_PROXY_PORT, 4444);
-}
-
-#[test]
-fn uid_port_no_overflow() {
-    // Ensure port stays in valid range even with high UIDs
-    // uid 2999 → offset (2999-1000) % 1000 = 999 → port 5443
-    let port = DEFAULT_PROXY_PORT + 999;
-    assert_eq!(port, 5443);
-    assert!(port < u16::MAX);
-}
-
-#[test]
-fn uid_port_system_accounts_get_base() {
-    // uid < 1000 → saturating_sub gives 0 → base port
-    let uid: u16 = 500;
-    let offset = uid.saturating_sub(1000) % 1000;
-    assert_eq!(DEFAULT_PROXY_PORT + offset, DEFAULT_PROXY_PORT);
-}
-
-#[test]
-fn proxy_timeout_default_200ms() {
-    if std::env::var("LEAN_CTX_PROXY_TIMEOUT_MS").is_ok() {
-        return;
-    }
-    assert_eq!(proxy_timeout(), std::time::Duration::from_millis(200));
-}
-
 /// Codex's auth state now decides whether the OpenAI export is written (#1685),
 /// and `resolve_codex_dir` reads the real `~/.codex` unless `CODEX_HOME` points
 /// somewhere else. Pin it to a temp dir so these tests do not depend on how the
@@ -54,12 +23,6 @@ pub(super) fn pin_codex_home(auth_json: &str) -> tempfile::TempDir {
 pub(super) const CODEX_AUTH_API_KEY: &str =
     r#"{"auth_mode": "apikey", "OPENAI_API_KEY": "sk-test"}"#;
 pub(super) const CODEX_AUTH_CHATGPT: &str = r#"{"auth_mode": "chatgpt"}"#;
-
-#[test]
-fn proxy_timeout_is_non_zero() {
-    let t = proxy_timeout();
-    assert!(t.as_millis() > 0);
-}
 
 #[test]
 fn is_proxy_reachable_returns_false_on_unused_port() {
@@ -1453,38 +1416,4 @@ fn commandcode_omitted_note_mentions_cmd_login() {
         COMMANDCODE_OMITTED_NOTE.contains("cmd login"),
         "binary is cmd, not commandcode: {COMMANDCODE_OMITTED_NOTE}"
     );
-}
-
-#[test]
-fn proxy_liveness_ignores_a_foreign_process_on_the_port() {
-    use std::io::{Read, Write};
-    // A foreign HTTP server on the proxy port answers 200 "ok"; only the
-    // lean-ctx proxy's own /health marker may count as "proxy up".
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-    let port = listener.local_addr().expect("addr").port();
-    let server = std::thread::spawn(move || {
-        let bodies = [
-            r#"{"status":"ok"}"#,
-            r#"{"pid":1,"service":"lean-ctx-proxy","status":"ok"}"#,
-        ];
-        for body in bodies {
-            let (mut stream, _) = listener.accept().expect("accept");
-            let mut req = [0u8; 512];
-            let _ = stream.read(&mut req);
-            let resp = format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
-                body.len()
-            );
-            let _ = stream.write_all(resp.as_bytes());
-        }
-    });
-    assert!(
-        !lean_ctx_proxy_responding(port),
-        "foreign 200 must not count"
-    );
-    assert!(
-        lean_ctx_proxy_responding(port),
-        "lean-ctx /health must count"
-    );
-    server.join().expect("server thread");
 }

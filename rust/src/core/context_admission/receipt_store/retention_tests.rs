@@ -183,7 +183,7 @@ fn a_write_over_the_ceiling_is_refused_only_when_a_count_proves_it_full() {
     for n in 0..32 {
         receipt(dir, n, "json.zst", 64 * 1024, 5);
     }
-    let _ceiling = crate::setup::EnvVarGuard::set("LEAN_CTX_GATEWAY_STORE_MAX_MB", "1");
+    let _ceiling = crate::test_env::EnvVarGuard::set("LEAN_CTX_GATEWAY_STORE_MAX_MB", "1");
     write_entry(dir, 500).expect("admitted: nothing proves the store full");
     let done = maintain_in(dir, SystemTime::now(), Policy::current()).unwrap();
     assert!(!done.full && done.removed > 0, "{done:?}");
@@ -216,7 +216,7 @@ fn a_copied_ledger_that_overstates_refuses_nothing_and_is_recounted() {
     }
     claim_ledger(dir, 7 << 30, 250_056);
     std::fs::write(dir.join(".maintenance"), br#"{"store":"0:1","full":true}"#).unwrap();
-    let _ceiling = crate::setup::EnvVarGuard::set("LEAN_CTX_GATEWAY_STORE_MAX_MB", "1");
+    let _ceiling = crate::test_env::EnvVarGuard::set("LEAN_CTX_GATEWAY_STORE_MAX_MB", "1");
     assert!(!proven_full(dir), "another store's stamp proves nothing");
     assert!(last_pass(dir).is_none(), "nor is it this store's last pass");
     for n in 100..110 {
@@ -243,7 +243,7 @@ fn a_ledger_that_understates_is_recounted_and_the_store_brought_down() {
         receipt(dir, n, "json.zst", 64 * 1024, 5);
     }
     claim_ledger(dir, 0, 0);
-    let _ceiling = crate::setup::EnvVarGuard::set("LEAN_CTX_GATEWAY_STORE_MAX_MB", "2");
+    let _ceiling = crate::test_env::EnvVarGuard::set("LEAN_CTX_GATEWAY_STORE_MAX_MB", "2");
     write_entry(dir, 100).expect("fits as booked");
     let done = maintain_in(dir, SystemTime::now(), Policy::current()).unwrap();
     assert!(done.removed > 0 && !done.full, "{done:?}");
@@ -268,7 +268,7 @@ fn the_first_write_to_a_store_of_100k_files_counts_nothing() {
         std::fs::write(receipts.join(format!("{}.json.zst", hex(n))), [0u8; 64]).unwrap();
     }
     claim_ledger(dir, 7 << 30, 250_056);
-    let _ceiling = crate::setup::EnvVarGuard::set("LEAN_CTX_GATEWAY_STORE_MAX_MB", "1024");
+    let _ceiling = crate::test_env::EnvVarGuard::set("LEAN_CTX_GATEWAY_STORE_MAX_MB", "1024");
     for (n, stale) in [(200_000, false), (200_001, true)] {
         if stale {
             super::super::capacity::recount_later(dir);

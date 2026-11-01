@@ -167,7 +167,8 @@ fn aggressiveness_is_deterministic_and_monotonic() {
 fn entropy_saves_on_real_source_and_scales_with_aggressiveness() {
     let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/core/compressor.rs");
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("crates/lean-ctx-compress/src/compressor.rs");
     let content = std::fs::read_to_string(&path).unwrap();
     let raw = count_tokens(&content);
     let render_at = |a: Option<f64>| -> String {
@@ -179,7 +180,7 @@ fn entropy_saves_on_real_source_and_scales_with_aggressiveness() {
             "rs",
             raw,
             CrpMode::Off,
-            "src/core/compressor.rs",
+            "crates/lean-ctx-compress/src/compressor.rs",
             None,
             ReadTuning {
                 aggressiveness: a,
@@ -212,8 +213,10 @@ fn entropy_saves_on_real_source_and_scales_with_aggressiveness() {
         !high_out.starts_with("[lean-ctx] no compression applied"),
         "aggressive entropy fell back on compressor.rs"
     );
-    // Measured 2026-10-12: a=0.9 keeps 4104 of 4554 tok (~10%) with every
-    // omission marked; the floor leaves headroom for tokenizer/fixture drift.
+    // Measured 2026-10-12 on the pre-split core/compressor.rs: a=0.9 kept
+    // 4104 of 4554 tok (~10%) with every omission marked. The file now lives
+    // in lean-ctx-compress (2026-11-01, ~8% shorter); the floor leaves headroom
+    // for tokenizer/fixture drift.
     assert!(
         high * 100 <= raw * 95,
         "aggressive entropy saves <5%: {high} of {raw} tok"

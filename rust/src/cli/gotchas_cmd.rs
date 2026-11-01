@@ -117,7 +117,7 @@ fn released_export(project_root: &str, json: String) -> Result<String, String> {
 /// only checks instead of silently installing the latest release (#1906).
 pub fn cmd_upgrade(args: &[String]) {
     println!("'upgrade' has been renamed to 'update'. Running 'lean-ctx update' instead.\n");
-    core::updater::run(args);
+    core::updater::run(args, &crate::setup::UpdateRefresh);
 }
 
 #[cfg(test)]

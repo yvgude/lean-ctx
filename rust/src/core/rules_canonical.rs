@@ -54,7 +54,7 @@ pub const END_MARK: &str = "<!-- /lean-ctx-rules -->";
 /// `render()` wraps the compression prompt in these markers for **persistent
 /// carriers** (the `Dedicated` and `Shared` wrappers, i.e. every injected rule
 /// file). This is the single carrier/marker model: coverage and dedup
-/// (`core::rules_channel`, `cli::rules_dedup`) detect and thin the payload by
+/// (`core::rules_channel`, `core::rules_dedup`) detect and thin the payload by
 /// these markers, so the writer and the readers can never disagree again. The
 /// ephemeral `Bare` MCP-instructions channel deliberately omits the markers —
 /// its inclusion is *governed* by carrier coverage (`client_autoloads_compression`),

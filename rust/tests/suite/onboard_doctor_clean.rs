@@ -58,7 +58,8 @@ fn onboard_yes_leaves_doctor_fully_green() {
         ("LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD".into(), "0".into()),
     ];
     // Stops the daemon `onboard` starts, even when an assertion panics.
-    let _daemon = super::hermetic_env::SandboxDaemon(&home);
+    let data_dir = home.join("data");
+    let _daemon = super::hermetic_env::SandboxDaemon(&data_dir);
 
     let onboard = Command::new(bin)
         .args(["onboard", "--yes"])

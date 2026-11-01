@@ -27,6 +27,7 @@ use transaction::{
 pub(crate) use github_api::github_api_json;
 #[cfg(test)]
 use github_api::{github_token, rate_limit_message};
+pub(crate) use rewire::SetupRefresh;
 pub(crate) use rewire::migrate_shadow_mode_default_public;
 use rewire::{post_update_rewire, print_rewire_plan};
 
@@ -49,12 +50,14 @@ const UPDATE_TRANSACTION_SCHEMA: &str = "leanctx.update-transaction/v1";
 const UPDATE_TRANSACTION_FILE: &str = "update-transaction.json";
 const UPDATE_LOCK_FILE: &str = "update.lock";
 
-pub(crate) fn run(args: &[String]) {
-    run_with_mode(args, UpdateMode::Normal);
+/// `lean-ctx update`. `setup` is the refresh run after the binary is replaced.
+pub(crate) fn run(args: &[String], setup: &dyn SetupRefresh) {
+    run_with_mode(args, UpdateMode::Normal, setup);
 }
 
-pub(crate) fn enable_gpu(args: &[String]) {
-    run_with_mode(args, UpdateMode::EnableGpu);
+/// `lean-ctx enable-gpu`. `setup` is the refresh run after the binary is replaced.
+pub(crate) fn enable_gpu(args: &[String], setup: &dyn SetupRefresh) {
+    run_with_mode(args, UpdateMode::EnableGpu, setup);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,7 +137,7 @@ fn print_help(mode: UpdateMode) {
     println!("  -h, --help             show this help");
 }
 
-fn run_with_mode(args: &[String], mode: UpdateMode) {
+fn run_with_mode(args: &[String], mode: UpdateMode, setup: &dyn SetupRefresh) {
     match check_flags(args) {
         FlagCheck::Run => {}
         FlagCheck::Help => {
@@ -151,7 +154,7 @@ fn run_with_mode(args: &[String], mode: UpdateMode) {
         }
     }
 
-    flow::run_with_mode(args, mode);
+    flow::run_with_mode(args, mode, setup);
 }
 
 #[cfg(test)]

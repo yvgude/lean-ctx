@@ -43,6 +43,10 @@ pub fn run() {
     #[cfg(windows)]
     shell::process_tree::contain_requested_session();
 
+    // The MCP server refreshes stale shell-hook files on start (#1959); the
+    // hook generator lives in the CLI, so it is handed to the engine here.
+    crate::shell_hook::register_installed_hook_refresh(super::refresh_installed_shell_hooks);
+
     let mut args: Vec<String> = std::env::args().collect();
 
     // On Linux, if the binary was replaced while running, systemd may write
@@ -271,7 +275,7 @@ pub fn run() {
                 return;
             }
             "enable-gpu" | "gpu" => {
-                core::updater::enable_gpu(&rest);
+                core::updater::enable_gpu(&rest, &crate::setup::UpdateRefresh);
                 return;
             }
             "rules" => {
@@ -737,7 +741,7 @@ pub fn run() {
                 return;
             }
             "update" | "--self-update" => {
-                core::updater::run(&rest);
+                core::updater::run(&rest, &crate::setup::UpdateRefresh);
                 return;
             }
             "restart" => {

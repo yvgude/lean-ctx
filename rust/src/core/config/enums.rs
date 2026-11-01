@@ -18,7 +18,7 @@ static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 ///
 /// This type only carries the operator's *intent*; the wire translation into
 /// each provider's native parameter (OpenAI `reasoning(_).effort`, Anthropic
-/// `output_config.effort`) lives in [`crate::proxy::effort`]. The value is a
+/// `output_config.effort`) lives in `proxy::effort`. The value is a
 /// constant once configured, so it is identical on every request of every
 /// conversation — the provider prompt-cache prefix stays byte-stable (#448/#498)
 /// and only the model's reasoning depth changes. Per-turn effort switching is

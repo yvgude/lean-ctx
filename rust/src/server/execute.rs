@@ -302,7 +302,7 @@ pub(crate) fn execute_command_with_env_cancellable_captured(
         }
     };
     #[cfg(not(unix))]
-    let protected_prefix = match crate::cli::protected_child_prefix() {
+    let protected_prefix = match crate::core::protected_store::protected_child_prefix() {
         Ok(prefix) => prefix,
         Err(error) => return ShellExecution::complete(format!("ERROR: {error}"), 1),
     };
@@ -922,12 +922,13 @@ mod tests {
         let write_fact = format!("printf downgraded > {}", fact.display());
 
         // Community: the store is an ordinary file, the shell is unwrapped.
-        crate::cli::unpin_synthetic_session();
+        crate::core::protected_store::unpin_synthetic_session();
         let (text, code) = execute_command_in(&read_fact, cwd);
         assert_eq!(code, 0, "{text}");
         assert!(text.contains("synthetic-provider-fact"), "{text}");
 
-        let _session = crate::cli::pin_synthetic_session(isolation.path()).expect("pinned rules");
+        let _session = crate::core::protected_store::pin_synthetic_session(isolation.path())
+            .expect("pinned rules");
         crate::core::protected_execution::with_test_supervisor(|| {
             let (text, code) = execute_command_in(&read_fact, cwd);
             assert_ne!(code, 0, "{text}");
@@ -949,7 +950,7 @@ mod tests {
 
         // A protected session whose rules went missing runs nothing at all —
         // there is no unconfined fallback shell.
-        crate::test_env::remove_var(crate::cli::CHILD_PROFILE_ENV);
+        crate::test_env::remove_var(crate::core::protected_store::CHILD_PROFILE_ENV);
         let (text, code) = execute_command_in("printf ran-unconfined", cwd);
         assert_ne!(code, 0, "{text}");
         assert!(text.starts_with("ERROR:"), "{text}");

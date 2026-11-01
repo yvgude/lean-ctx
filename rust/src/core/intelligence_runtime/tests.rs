@@ -12,7 +12,7 @@ use super::{sha256, verify};
 
 #[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "gnu")))]
 #[path = "first_install_tests.rs"]
-mod first_install_tests;
+pub(crate) mod first_install_tests;
 
 #[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "gnu")))]
 fn signed_delegation(

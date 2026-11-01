@@ -349,7 +349,10 @@ pub struct Target<'a> {
     pub seal: Option<&'a crate::core::hive::events::sealed_body::SealKey>,
 }
 
-pub(super) fn queue(target: &Target<'_>, mut event: Value, stamp: Stamp) -> Result<(), HiveError> {
+/// Queue a built class-W event as pending, sealed for a sealed place
+/// (maintenance, curation, and the capture lifecycle's retract, supersedes
+/// and confirm events).
+pub(crate) fn queue(target: &Target<'_>, mut event: Value, stamp: Stamp) -> Result<(), HiveError> {
     if let Some(seal) = target.seal {
         // A sealed event always carries `flags` (signed; C0 event schema);
         // a maintenance field.set never adds commands.

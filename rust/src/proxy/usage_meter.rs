@@ -7,17 +7,19 @@
 //! savings ledger (which run in *other* processes) can read the user's real
 //! provider bill.
 //!
-//! Unlike [`super::metrics`] (which resets per proxy lifetime), this meter is a
+//! Unlike [`crate::core::proxy_metrics`] (which resets per proxy lifetime), this meter is a
 //! lifetime-cumulative spend counter: [`resume_from_disk`] seeds the in-memory
 //! totals on proxy startup so a restart never zeroes the user's measured spend.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::core::gain::model_pricing::ModelPricing;
 use crate::core::ocla::{OclaRegistry, UsageSink};
+pub use crate::core::proxy_usage::{CohortUsage, load_persisted};
+use crate::core::proxy_usage::{LastModel, MeasuredSlice, ModelUsage, PersistedUsage, usage_path};
 
 /// Projects one managed, provider-measured turn into the OCLA usage sink.
 ///
@@ -32,66 +34,13 @@ fn project_ocla_usage(u: &super::usage::RealUsage, sink: &dyn UsageSink) {
     let _ = sink.record_usage(record).now_or_never();
 }
 
-/// Cumulative real token counts for one model. Cost is derived at read time so a
-/// pricing-table change re-values historical usage consistently.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct ModelUsage {
-    pub requests: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub cache_write_tokens: u64,
-    pub reasoning_tokens: u64,
-    /// Requests whose free `count_tokens` probe answered (#701) — the rows the
-    /// verified-savings pair below covers. `serde(default)` keeps pre-#701
-    /// usage files loadable.
-    #[serde(default)]
-    pub counterfactual_requests: u64,
-    /// Provider-counted input tokens the covered requests would have billed
-    /// WITHOUT lean-ctx (sum of probe answers on the original bodies).
-    #[serde(default)]
-    pub counterfactual_input_tokens: u64,
-    /// Input-side tokens those same requests actually billed (input +
-    /// cache read + cache write) — same request, same moment, no confound.
-    #[serde(default)]
-    pub counterfactual_billed_tokens: u64,
-    /// The turns whose response carried the provider's own USD charge
-    /// (OpenRouter usage accounting, #1179). Their tokens are *inside* the
-    /// totals above; pricing subtracts this slice and books its measured USD
-    /// instead of a table estimate. `serde(default)` keeps older files loadable.
-    #[serde(default)]
-    pub measured: MeasuredSlice,
-    /// Recent factual response measurements, not quality/training labels.
-    /// This local diagnostic history must not be pooled into private ranking:
-    /// it has no verified actor/endpoint scope or user-accepted outcome yet.
-    #[serde(default)]
-    pub response_observations: VecDeque<super::usage::ResponseObservation>,
+/// Adds one finalized turn to a running total. The totals themselves are the
+/// on-disk record of [`crate::core::proxy_usage`]; only the meter sees a turn.
+trait AddTurn {
+    fn add(&mut self, u: &super::usage::RealUsage);
 }
 
-/// Token/cost sums of the turns that reported a measured provider charge.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
-pub struct MeasuredSlice {
-    pub requests: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_tokens: u64,
-    pub cache_write_tokens: u64,
-    /// Sum of provider-reported USD for those turns — the bill, not a table.
-    pub cost_usd: f64,
-}
-
-impl MeasuredSlice {
-    fn merge(&mut self, other: &Self) {
-        self.requests += other.requests;
-        self.input_tokens += other.input_tokens;
-        self.output_tokens += other.output_tokens;
-        self.cache_read_tokens += other.cache_read_tokens;
-        self.cache_write_tokens += other.cache_write_tokens;
-        self.cost_usd += other.cost_usd;
-    }
-}
-
-impl ModelUsage {
+impl AddTurn for ModelUsage {
     fn add(&mut self, u: &super::usage::RealUsage) {
         if let Some(observation) = &u.response_observation {
             self.add_observation(observation.clone());
@@ -126,17 +75,20 @@ impl ModelUsage {
                 u.input_tokens + u.cache_read_tokens + u.cache_write_tokens;
         }
     }
+}
 
-    fn billable_tokens(&self) -> u64 {
-        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_write_tokens
-    }
-
-    fn add_observation(&mut self, observation: super::usage::ResponseObservation) {
-        const MAX_RESPONSE_OBSERVATIONS: usize = 32;
-        self.response_observations.push_back(observation);
-        while self.response_observations.len() > MAX_RESPONSE_OBSERVATIONS {
-            self.response_observations.pop_front();
-        }
+impl AddTurn for CohortUsage {
+    fn add(&mut self, u: &super::usage::RealUsage) {
+        self.requests += 1;
+        self.input_tokens += u.input_tokens;
+        self.output_tokens += u.output_tokens;
+        self.sum_sq_output += u.output_tokens.saturating_mul(u.output_tokens);
+        let prompt = u
+            .input_tokens
+            .saturating_add(u.cache_read_tokens)
+            .saturating_add(u.cache_write_tokens);
+        self.prompt_tokens += prompt;
+        self.sum_sq_prompt += prompt.saturating_mul(prompt);
     }
 }
 
@@ -169,114 +121,6 @@ pub fn compression_cohort_key(arm: super::holdout::Arm) -> String {
     format!("compression:{}", arm.as_str())
 }
 
-/// Cumulative holdout cohort totals. Keyed by arm name: `"control"` |
-/// `"treatment"` for output savings (#895 Track B), `"compression:control"` |
-/// `"compression:treatment"` for input compression (#1905). The average tokens
-/// per turn are `*_tokens / requests`. Only populated while a holdout is active.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct CohortUsage {
-    pub requests: u64,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    /// Sum of squared per-turn output tokens, enabling an online sample variance
-    /// (and therefore a confidence interval) without retaining every turn.
-    /// `#[serde(default)]` keeps pre-#895 files loadable.
-    #[serde(default)]
-    pub sum_sq_output: u64,
-    /// Whole prompt per turn — billed input plus cache reads and writes (#1905).
-    /// Compression shrinks the prompt wherever it is billed, so the
-    /// input-compression comparison uses this, not `input_tokens` alone.
-    /// `#[serde(default)]` keeps earlier files loadable.
-    #[serde(default)]
-    pub prompt_tokens: u64,
-    /// Sum of squared per-turn `prompt_tokens`, for its confidence interval.
-    #[serde(default)]
-    pub sum_sq_prompt: u64,
-}
-
-impl CohortUsage {
-    fn add(&mut self, u: &super::usage::RealUsage) {
-        self.requests += 1;
-        self.input_tokens += u.input_tokens;
-        self.output_tokens += u.output_tokens;
-        self.sum_sq_output += u.output_tokens.saturating_mul(u.output_tokens);
-        let prompt = u
-            .input_tokens
-            .saturating_add(u.cache_read_tokens)
-            .saturating_add(u.cache_write_tokens);
-        self.prompt_tokens += prompt;
-        self.sum_sq_prompt += prompt.saturating_mul(prompt);
-    }
-
-    /// Adds another cohort's running totals — every field, so the sums of
-    /// squares (and with them the variance / CI) survive a proxy restart.
-    fn merge(&mut self, other: &Self) {
-        self.requests += other.requests;
-        self.input_tokens += other.input_tokens;
-        self.output_tokens += other.output_tokens;
-        self.sum_sq_output = self.sum_sq_output.saturating_add(other.sum_sq_output);
-        self.prompt_tokens += other.prompt_tokens;
-        self.sum_sq_prompt = self.sum_sq_prompt.saturating_add(other.sum_sq_prompt);
-    }
-
-    /// Average output tokens per turn, or `None` with no observations.
-    #[must_use]
-    pub fn avg_output(&self) -> Option<f64> {
-        if self.requests == 0 {
-            None
-        } else {
-            #[allow(clippy::cast_precision_loss)]
-            Some(self.output_tokens as f64 / self.requests as f64)
-        }
-    }
-
-    /// Unbiased sample variance of per-turn output tokens, or `None` with < 2
-    /// observations. Computed from the running sum / sum-of-squares (clamped at
-    /// 0 to absorb floating-point error on near-constant samples).
-    #[must_use]
-    pub fn variance_output(&self) -> Option<f64> {
-        if self.requests < 2 {
-            return None;
-        }
-        #[allow(clippy::cast_precision_loss)]
-        let n = self.requests as f64;
-        #[allow(clippy::cast_precision_loss)]
-        let sum = self.output_tokens as f64;
-        #[allow(clippy::cast_precision_loss)]
-        let sum_sq = self.sum_sq_output as f64;
-        let var = (sum_sq - sum * sum / n) / (n - 1.0);
-        Some(var.max(0.0))
-    }
-}
-
-/// On-disk shape of the measured spend totals.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct PersistedUsage {
-    pub ts: u64,
-    pub models: HashMap<String, ModelUsage>,
-    /// Output-savings cohort totals (#895). `#[serde(default)]` keeps older
-    /// `proxy_usage.json` files (written before the holdout existed) loadable.
-    #[serde(default)]
-    pub cohorts: HashMap<String, CohortUsage>,
-    /// The foreground model of the most recent finalized turn and when it was
-    /// seen (unix seconds), so other processes can attribute work to the model
-    /// in use now rather than the all-time largest bucket.
-    #[serde(default)]
-    pub last_model: Option<LastModel>,
-    /// The same totals per project key and model (the folder the agent named
-    /// in each request). Turns that named none stay in `models` only, which
-    /// remains the device total.
-    #[serde(default)]
-    pub projects: HashMap<String, HashMap<String, ModelUsage>>,
-}
-
-/// The model the proxy saw last, with the time it saw it.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct LastModel {
-    pub model: String,
-    pub at: u64,
-}
-
 fn last_model_store() -> &'static Mutex<Option<LastModel>> {
     static STORE: OnceLock<Mutex<Option<LastModel>>> = OnceLock::new();
     STORE.get_or_init(|| Mutex::new(None))
@@ -285,8 +129,6 @@ fn last_model_store() -> &'static Mutex<Option<LastModel>> {
 /// Distinct-model bucket cap. `record` keys on the raw response model string, so
 /// overflow folds into "unknown" to keep the map bounded (real model names < ~50).
 const MAX_TRACKED_MODELS: usize = 256;
-
-const PROXY_USAGE_FILE: &str = "proxy_usage.json";
 
 fn store() -> &'static Mutex<HashMap<String, ModelUsage>> {
     static STORE: OnceLock<Mutex<HashMap<String, ModelUsage>>> = OnceLock::new();
@@ -627,12 +469,6 @@ fn price_one(pricing: &ModelPricing, model: &str, usage: &ModelUsage) -> ModelSp
     }
 }
 
-fn usage_path() -> Option<std::path::PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir()
-        .ok()
-        .map(|d| d.join(PROXY_USAGE_FILE))
-}
-
 /// Atomically writes the current in-memory totals to disk.
 fn persist() {
     let Some(path) = usage_path() else {
@@ -677,13 +513,6 @@ fn persist() {
     }
 }
 
-/// Cross-process read of the persisted measured spend (dashboard / CLI / ledger).
-pub fn load_persisted() -> Option<PersistedUsage> {
-    let path = usage_path()?;
-    let data = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
-}
-
 /// Cross-process priced spend rows, read from disk.
 pub fn persisted_snapshot() -> Vec<ModelSpend> {
     load_persisted()
@@ -717,20 +546,6 @@ pub fn persisted_projects() -> Vec<(String, Vec<ModelSpend>)> {
         .collect();
     rows.sort_by(|a, b| a.0.cmp(&b.0));
     rows
-}
-
-/// The model carrying the most measured tokens (excludes the "unknown" bucket).
-/// Used to value savings against the real dominant model when no explicit model
-/// is configured.
-pub fn persisted_dominant_model() -> Option<String> {
-    let persisted = load_persisted()?;
-    persisted
-        .models
-        .iter()
-        .filter(|(m, _)| m.as_str() != "unknown" && !m.trim().is_empty())
-        .max_by_key(|(_, u)| u.billable_tokens())
-        .filter(|(_, u)| u.billable_tokens() > 0)
-        .map(|(m, _)| m.clone())
 }
 
 #[cfg(test)]
@@ -1172,5 +987,59 @@ mod tests {
             &sink,
         );
         assert_eq!(sink.record_count(), 1);
+    }
+
+    /// Counts the records the global registry's usage sink receives.
+    struct SpyUsage(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl crate::core::ocla::traits::OclaService for SpyUsage {
+        fn capability(&self) -> crate::core::ocla::types::OclaCapability {
+            crate::core::ocla::types::OclaCapability::available(
+                crate::core::ocla::types::OclaCapabilityKind::UsageSink,
+            )
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl UsageSink for SpyUsage {
+        async fn record_usage(
+            &self,
+            _usage: crate::core::ocla::types::UsageRecord,
+        ) -> crate::core::ocla::OclaResult<()> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn proxy_request_projects_measured_usage_to_usage_spy() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let usage_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut registry = OclaRegistry::with_builtins();
+        registry.usage_sink = std::sync::Arc::new(SpyUsage(usage_calls.clone()));
+        let _guard = crate::core::ocla::registry::with_test_registry(registry);
+        let usage = super::super::usage::RealUsage {
+            model: "test-model".into(),
+            input_tokens: 11,
+            output_tokens: 7,
+            wire: Some(Box::new(super::super::usage::WireContext {
+                lineage: Some(crate::core::ocla::OclaRequestContext {
+                    request_id: "request-1".into(),
+                    session_id: "session-1".into(),
+                    agent_id: "agent-1".into(),
+                    content_ref: "file:test.rs".into(),
+                    tenant_id: None,
+                    trace_id: "tr-unit".into(),
+                    task_id: None,
+                    parent_task_id: None,
+                }),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        record(&usage);
+
+        assert_eq!(usage_calls.load(std::sync::atomic::Ordering::Relaxed), 1);
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! BuiltinResponseOptimizer — response dedup and cache via OCLA trait.
 //!
-//! Wraps `proxy/response_optimizer.rs` behind the canonical trait interface.
+//! Wraps `core/response_optimizer.rs` behind the canonical trait interface.
 //! The actual cache and dedup
 //! logic is delegated to the existing optimizer; this provides the trait seam.
 
@@ -41,7 +41,7 @@ impl ResponseOptimizer for BuiltinResponseOptimizer {
         &self,
         request: ResponseOptimizationRequest,
     ) -> OclaResult<ResponseOptimizationResult> {
-        let decision = crate::proxy::response_optimizer::optimize_response(&request);
+        let decision = crate::core::response_optimizer::optimize_response(&request);
 
         Ok(ResponseOptimizationResult {
             response_ref: request.response_ref.clone(),
@@ -55,7 +55,7 @@ impl ResponseOptimizer for BuiltinResponseOptimizer {
 
 fn delivered_tokens(
     request: &ResponseOptimizationRequest,
-    decision: &crate::proxy::response_optimizer::OptimizationDecision,
+    decision: &crate::core::response_optimizer::OptimizationDecision,
 ) -> u64 {
     if decision.cache_hit {
         return 0;
@@ -155,12 +155,12 @@ mod tests {
     #[test]
     fn duplicate_delivery_uses_target_ratio() {
         let request = req("duplicate", 1000, 250);
-        let decision = crate::proxy::response_optimizer::OptimizationDecision {
+        let decision = crate::core::response_optimizer::OptimizationDecision {
             cache_hit: false,
             is_duplicate: true,
             cache_key: 0,
             tokens_saved: 750,
-            source: crate::proxy::response_optimizer::OptimizationSource::Dedup,
+            source: crate::core::response_optimizer::OptimizationSource::Dedup,
         };
 
         assert_eq!(delivered_tokens(&request, &decision), 250);

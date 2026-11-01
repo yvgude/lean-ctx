@@ -308,7 +308,7 @@ impl ServerHandler for LeanCtxServer {
                     }
                 }
                 crate::hooks::refresh_installed_hooks();
-                crate::cli::refresh_installed_shell_hooks();
+                crate::shell_hook::refresh_installed_shell_hooks();
                 crate::core::version_check::check_background();
                 // Enforce the on-disk budget: prune accumulated quarantined BM25
                 // indexes and cap the archive FTS DB (#2364). Silent (tracing
@@ -946,11 +946,12 @@ mod tests {
         )
         .unwrap();
 
-        let _config_guard = crate::setup::EnvVarGuard::set(
+        let _config_guard = crate::test_env::EnvVarGuard::set(
             "LEAN_CTX_CONFIG_DIR",
             config_dir.to_string_lossy().as_ref(),
         );
-        let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _injection_guard =
+            crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
 
         assert!(
             suppress_initialize_instructions("cursor"),
@@ -966,11 +967,12 @@ mod tests {
 
         std::fs::create_dir_all(&config_dir).unwrap();
 
-        let _config_guard = crate::setup::EnvVarGuard::set(
+        let _config_guard = crate::test_env::EnvVarGuard::set(
             "LEAN_CTX_CONFIG_DIR",
             config_dir.to_string_lossy().as_ref(),
         );
-        let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _injection_guard =
+            crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
 
         assert!(
             !suppress_initialize_instructions("cursor"),
@@ -991,11 +993,12 @@ mod tests {
         )
         .unwrap();
 
-        let _config_guard = crate::setup::EnvVarGuard::set(
+        let _config_guard = crate::test_env::EnvVarGuard::set(
             "LEAN_CTX_CONFIG_DIR",
             config_dir.to_string_lossy().as_ref(),
         );
-        let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _injection_guard =
+            crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
 
         assert!(
             !suppress_initialize_instructions("cursor"),
@@ -1011,11 +1014,11 @@ mod tests {
 
         std::fs::create_dir_all(&config_dir).unwrap();
 
-        let _config_guard = crate::setup::EnvVarGuard::set(
+        let _config_guard = crate::test_env::EnvVarGuard::set(
             "LEAN_CTX_CONFIG_DIR",
             config_dir.to_string_lossy().as_ref(),
         );
-        let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
+        let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
 
         assert!(
             suppress_initialize_instructions("cursor"),
@@ -1031,11 +1034,12 @@ mod tests {
 
         std::fs::create_dir_all(&config_dir).unwrap();
 
-        let _config_guard = crate::setup::EnvVarGuard::set(
+        let _config_guard = crate::test_env::EnvVarGuard::set(
             "LEAN_CTX_CONFIG_DIR",
             config_dir.to_string_lossy().as_ref(),
         );
-        let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _injection_guard =
+            crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
 
         assert!(suppress_initialize_instructions("antigravity"));
         assert!(suppress_initialize_instructions("gemini-cli"));
@@ -1062,12 +1066,13 @@ mod tests {
         )
         .unwrap();
 
-        let _config_guard = crate::setup::EnvVarGuard::set(
+        let _config_guard = crate::test_env::EnvVarGuard::set(
             "LEAN_CTX_CONFIG_DIR",
             config_dir.to_string_lossy().as_ref(),
         );
-        let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-        let _scope_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+        let _injection_guard =
+            crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _scope_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
 
         startup_rule_maintenance_at_home(&home);
 
@@ -1095,12 +1100,13 @@ mod tests {
         )
         .unwrap();
 
-        let _config_guard = crate::setup::EnvVarGuard::set(
+        let _config_guard = crate::test_env::EnvVarGuard::set(
             "LEAN_CTX_CONFIG_DIR",
             config_dir.to_string_lossy().as_ref(),
         );
-        let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-        let _scope_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+        let _injection_guard =
+            crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _scope_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
 
         startup_rule_maintenance_at_home(&home);
 
@@ -1132,12 +1138,13 @@ mod tests {
         )
         .unwrap();
 
-        let _config_guard = crate::setup::EnvVarGuard::set(
+        let _config_guard = crate::test_env::EnvVarGuard::set(
             "LEAN_CTX_CONFIG_DIR",
             config_dir.to_string_lossy().as_ref(),
         );
-        let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-        let _scope_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+        let _injection_guard =
+            crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _scope_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
 
         startup_rule_maintenance_at_home(&home);
 

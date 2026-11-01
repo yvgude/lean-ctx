@@ -3,17 +3,13 @@
 //! Built-in candidate providers for the context control kernel.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use crate::core::bm25_index::{BM25Index, SearchResult};
 
-use crate::core::context_admission::stores::StoreAdmission;
 use crate::core::context_field::{ContextItemId, ContextState, Provenance, ViewCosts};
 use crate::core::context_ledger::{ContextLedger, LedgerEntry};
-use crate::core::episodic_memory::{EpisodicStore, Outcome};
 use crate::core::knowledge::ProjectKnowledge;
-use crate::core::procedural_memory::{ProceduralStore, Procedure};
 use crate::core::session::SessionState;
 use crate::core::tokens::count_tokens;
 
@@ -24,8 +20,6 @@ use super::types::{
 
 const KNOWLEDGE_PROVIDER: &str = "knowledge.facts";
 const SESSION_PROVIDER: &str = "session.state";
-const EPISODIC_PROVIDER: &str = "memory.episodic";
-const PROCEDURAL_PROVIDER: &str = "memory.procedural";
 const LEDGER_PROVIDER: &str = "context.ledger";
 const SEARCH_PROVIDER: &str = "index.bm25";
 const GRAPH_PROVIDER: &str = "index.graph";
@@ -246,202 +240,6 @@ impl SessionProvider {
             .map(|(_, candidate)| candidate)
             .collect()
     }
-}
-
-/// Supplies query-matched episodes from persistent episodic memory.
-pub(crate) struct EpisodicProvider {
-    project_root: String,
-}
-
-impl EpisodicProvider {
-    /// Creates a provider scoped to `project_root`.
-    pub(crate) fn new(project_root: impl Into<String>) -> Self {
-        Self {
-            project_root: project_root.into(),
-        }
-    }
-}
-
-impl CandidateProvider for EpisodicProvider {
-    fn provider_id(&self) -> &str {
-        EPISODIC_PROVIDER
-    }
-
-    fn candidates(&self, ctx: &RetrievalContext) -> Vec<ContextObjectV1> {
-        let project_hash = crate::core::project_hash::hash_project_root(&self.project_root);
-        with_project_store_admission(&self.project_root, |admission| {
-            let Ok(store) = EpisodicStore::load_admitted_for_project(
-                &project_hash,
-                Path::new(&self.project_root),
-                admission,
-            ) else {
-                return Vec::new();
-            };
-            store
-                .search(&ctx.query)
-                .into_iter()
-                .filter(|episode| episode_belongs_to(episode, &self.project_root))
-                .take(ctx.max_candidates)
-                .map(|episode| {
-                    let mut metadata = HashMap::new();
-                    metadata.insert("session_id".to_string(), episode.session_id.clone());
-                    metadata.insert("outcome".to_string(), episode.outcome.label().to_string());
-                    context_object(
-                        ContextItemId::from_memory(&episode.id),
-                        ContextObjectKind::Episode,
-                        EPISODIC_PROVIDER,
-                        episode.id.clone(),
-                        episode.task_description.clone(),
-                        Some(episode.summary.clone()),
-                        freshness(episode.timestamp.to_rfc3339(), false),
-                        outcome_confidence(&episode.outcome),
-                        count_tokens(&episode.summary),
-                        ViewCosts::from_full_tokens(count_tokens(&episode.summary)),
-                        Provenance::default(),
-                        metadata,
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn side_effect_policy(&self) -> SideEffectPolicy {
-        SideEffectPolicy::ReadOnly
-    }
-}
-
-/// #1993: a store is keyed by project, but an agent session can touch files in
-/// several projects, so an episode recorded under one root may be about
-/// another entirely. Such an episode is history from a different codebase;
-/// it is kept only when it names no files or at least one under `root`.
-///
-/// Rooted paths are compared in canonical form on both sides, like the
-/// admitted loader does: a project reached through a symlink is the same
-/// project. A root or a path that cannot be resolved does not belong.
-fn episode_belongs_to(episode: &crate::core::episodic_memory::Episode, root: &str) -> bool {
-    if episode.affected_files.is_empty() {
-        return true;
-    }
-    let resolve = crate::core::pathutil::canonicalize_secure;
-    // Resolved once, and only when a rooted path asks for it.
-    let canonical_root = std::cell::OnceCell::new();
-    episode.affected_files.iter().any(|file| {
-        let file = Path::new(file);
-        // `has_root`, not `is_absolute`: on Windows `/home/u/x` has no
-        // drive and is not absolute, yet it is no project-relative path.
-        if !file.has_root() {
-            return true;
-        }
-        let Some(project) = canonical_root
-            .get_or_init(|| resolve(Path::new(root)).ok())
-            .as_deref()
-        else {
-            return false;
-        };
-        canonical_scope_path(file).is_some_and(|resolved| resolved.starts_with(project))
-    })
-}
-
-/// Canonical form of `path` for the project-scope comparison. A file that is
-/// gone is resolved through its nearest existing ancestor; a `..` component,
-/// a dangling link or an unreadable ancestor resolves to nothing.
-fn canonical_scope_path(path: &Path) -> Option<std::path::PathBuf> {
-    if path
-        .components()
-        .any(|component| matches!(component, std::path::Component::ParentDir))
-    {
-        return None;
-    }
-    for ancestor in path.ancestors() {
-        match std::fs::symlink_metadata(ancestor) {
-            Ok(_) => {
-                let resolved = crate::core::pathutil::canonicalize_secure(ancestor).ok()?;
-                return Some(resolved.join(path.strip_prefix(ancestor).ok()?));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return None,
-        }
-    }
-    None
-}
-
-/// Supplies task-matched procedures from persistent procedural memory.
-pub(crate) struct ProceduralProvider {
-    project_root: String,
-}
-
-impl ProceduralProvider {
-    /// Creates a provider scoped to `project_root`.
-    pub(crate) fn new(project_root: impl Into<String>) -> Self {
-        Self {
-            project_root: project_root.into(),
-        }
-    }
-}
-
-impl CandidateProvider for ProceduralProvider {
-    fn provider_id(&self) -> &str {
-        PROCEDURAL_PROVIDER
-    }
-
-    fn candidates(&self, ctx: &RetrievalContext) -> Vec<ContextObjectV1> {
-        let project_hash = crate::core::project_hash::hash_project_root(&self.project_root);
-        with_project_store_admission(&self.project_root, |admission| {
-            let Ok(store) = ProceduralStore::load_admitted(&project_hash, admission) else {
-                return Vec::new();
-            };
-            let task = ctx.task.as_deref().unwrap_or(&ctx.query);
-            store
-                .suggest(task)
-                .into_iter()
-                .take(ctx.max_candidates)
-                .map(|procedure| {
-                    let content = format_procedure_steps(procedure);
-                    let mut metadata = HashMap::new();
-                    metadata.insert("description".to_string(), procedure.description.clone());
-                    metadata.insert(
-                        "activation_keywords".to_string(),
-                        procedure.activation_keywords.join(","),
-                    );
-                    context_object(
-                        ContextItemId::from_memory(&procedure.id),
-                        ContextObjectKind::Procedure,
-                        PROCEDURAL_PROVIDER,
-                        procedure.id.clone(),
-                        procedure.name.clone(),
-                        Some(content),
-                        freshness(procedure.created_at.to_rfc3339(), false),
-                        procedure.confidence,
-                        procedure.steps.len() * 30,
-                        ViewCosts::from_full_tokens(procedure.steps.len() * 30),
-                        Provenance::default(),
-                        metadata,
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-    }
-
-    fn side_effect_policy(&self) -> SideEffectPolicy {
-        SideEffectPolicy::ReadOnly
-    }
-}
-
-/// Admit memory under the caller's project policy and one current Gateway
-/// snapshot. A provider for another project cannot borrow a request's policy.
-fn with_project_store_admission<T>(
-    project_root: &str,
-    operation: impl FnOnce(&StoreAdmission) -> T,
-) -> Option<T> {
-    crate::core::policy::runtime::with_explicit_project_source_view(Path::new(project_root), |_| {
-        let admission = StoreAdmission::current();
-        let value = operation(&admission);
-        admission.is_current().then_some(value)
-    })
-    .ok()
-    .flatten()
 }
 
 /// Supplies previously delivered ledger items as high-confidence candidates.
@@ -741,8 +539,6 @@ pub(crate) fn default_providers(project_root: &str) -> Vec<Box<dyn CandidateProv
         Box::new(LedgerProvider::new(project_root)),
         Box::new(KnowledgeProvider::new(project_root)),
         Box::new(SessionProvider::new(project_root)),
-        Box::new(EpisodicProvider::new(project_root)),
-        Box::new(ProceduralProvider::new(project_root)),
         Box::new(SearchProvider::new(index.clone())),
         Box::new(GraphProvider::new(index)),
     ]
@@ -787,24 +583,6 @@ fn freshness(created_at: String, stale: bool) -> Freshness {
         ttl_secs: None,
         stale,
     }
-}
-
-fn outcome_confidence(outcome: &Outcome) -> f32 {
-    match outcome {
-        Outcome::Success { .. } => 0.9,
-        Outcome::Partial { .. } => 0.6,
-        Outcome::Failure { .. } | Outcome::Unknown => 0.3,
-    }
-}
-
-fn format_procedure_steps(procedure: &Procedure) -> String {
-    procedure
-        .steps
-        .iter()
-        .enumerate()
-        .map(|(index, step)| format!("{}. {}: {}", index + 1, step.tool, step.description))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn ledger_candidates(entries: &[LedgerEntry], max_candidates: usize) -> Vec<ContextObjectV1> {
@@ -887,14 +665,6 @@ mod tests {
             KNOWLEDGE_PROVIDER
         );
         assert_eq!(SessionProvider::new("/tmp").provider_id(), SESSION_PROVIDER);
-        assert_eq!(
-            EpisodicProvider::new("/tmp").provider_id(),
-            EPISODIC_PROVIDER
-        );
-        assert_eq!(
-            ProceduralProvider::new("/tmp").provider_id(),
-            PROCEDURAL_PROVIDER
-        );
         assert_eq!(LedgerProvider::new("/tmp").provider_id(), LEDGER_PROVIDER);
         let index = IndexSource::new("/tmp");
         assert_eq!(
@@ -912,8 +682,6 @@ mod tests {
         );
         for provider in [
             SessionProvider::new("/tmp").side_effect_policy(),
-            EpisodicProvider::new("/tmp").side_effect_policy(),
-            ProceduralProvider::new("/tmp").side_effect_policy(),
             LedgerProvider::new("/tmp").side_effect_policy(),
             SearchProvider::new(IndexSource::new("/tmp")).side_effect_policy(),
             GraphProvider::new(IndexSource::new("/tmp")).side_effect_policy(),
@@ -924,7 +692,7 @@ mod tests {
 
     #[test]
     fn default_providers_include_all_store_wrappers() {
-        assert_eq!(default_providers("/tmp").len(), 7);
+        assert_eq!(default_providers("/tmp").len(), 5);
     }
 
     /// Search and graph sources keep their provenance through one candidate
@@ -1048,125 +816,6 @@ mod tests {
         assert!(provider.candidates(&retrieval_context()).is_empty());
     }
 
-    #[test]
-    fn episodic_and_procedural_candidates_are_project_and_gateway_admitted() {
-        use crate::core::episodic_memory::Episode;
-        use crate::core::memory_policy::EpisodicPolicy;
-        use crate::core::procedural_memory::ProcedureStep;
-        use chrono::Utc;
-
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let root = tempfile::tempdir().expect("project root");
-        let policy_dir = root.path().join(".lean-ctx");
-        std::fs::create_dir_all(&policy_dir).expect("policy directory");
-        std::fs::write(
-            policy_dir.join("policy.toml"),
-            "name = \"memory-admission-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n[redaction]\ncustomer = 'SECRET-[0-9]+'\n",
-        )
-        .expect("redaction policy");
-        let root = root.path().to_string_lossy().into_owned();
-        let hash = crate::core::project_hash::hash_project_root(&root);
-
-        let mut episodes = EpisodicStore::new(&hash);
-        episodes.record_episode(
-            Episode {
-                id: "episode-1".into(),
-                session_id: "session-1".into(),
-                timestamp: Utc::now(),
-                task_description: "fixture SECRET-123".into(),
-                actions: Vec::new(),
-                outcome: Outcome::Unknown,
-                affected_files: Vec::new(),
-                summary: "summary SECRET-123".into(),
-                duration_secs: 0,
-                tokens_used: 0,
-                agent_id: None,
-            },
-            &EpisodicPolicy::default(),
-        );
-        let foreign = tempfile::tempdir().expect("foreign project root");
-        let mut mixed = episodes.episodes[0].clone();
-        mixed.id = "episode-mixed".into();
-        mixed.task_description = "fixture from mixed roots".into();
-        mixed.summary = "foreign project summary".into();
-        mixed.affected_files = vec![
-            Path::new(&root)
-                .join("src/local.rs")
-                .to_string_lossy()
-                .into_owned(),
-            foreign
-                .path()
-                .join("secret.rs")
-                .to_string_lossy()
-                .into_owned(),
-        ];
-        episodes.episodes.push(mixed);
-        episodes.save().expect("save raw episode fixture");
-
-        let mut procedures = ProceduralStore::new(&hash);
-        procedures.procedures.push(Procedure {
-            id: "procedure-1".into(),
-            name: "fixture workflow".into(),
-            description: "uses SECRET-123".into(),
-            steps: vec![ProcedureStep {
-                tool: "ctx_read".into(),
-                description: "inspect SECRET-123".into(),
-                optional: false,
-            }],
-            activation_keywords: vec!["fixture".into()],
-            confidence: 0.8,
-            times_used: 1,
-            times_succeeded: 1,
-            last_used: Utc::now(),
-            project_specific: true,
-            created_at: Utc::now(),
-        });
-        procedures.save().expect("save raw procedure fixture");
-
-        let mut ctx = retrieval_context();
-        ctx.query = "fixture".into();
-        ctx.task = Some("fixture".into());
-        ctx.project_root = root.clone();
-        let episodes = EpisodicProvider::new(&root).candidates(&ctx);
-        let procedures = ProceduralProvider::new(&root).candidates(&ctx);
-        assert_eq!(episodes.len(), 1);
-        assert_eq!(procedures.len(), 1);
-        assert_eq!(
-            EpisodicStore::load(&hash).unwrap().episodes.len(),
-            2,
-            "retrieval scoping must not rewrite persisted history"
-        );
-        for candidate in episodes.iter().chain(&procedures) {
-            assert!(!candidate.title.contains("SECRET-123"));
-            assert!(
-                !candidate
-                    .content
-                    .as_deref()
-                    .unwrap_or_default()
-                    .contains("SECRET-123")
-            );
-            assert!(
-                candidate
-                    .metadata
-                    .values()
-                    .all(|value| !value.contains("SECRET-123"))
-            );
-        }
-        assert!(episodes[0].title.contains("[REDACTED:customer]"));
-        assert!(procedures[0].title.contains("fixture workflow"));
-        assert!(procedures[0].metadata["description"].contains("[REDACTED:customer]"));
-
-        let other = tempfile::tempdir().expect("other project root");
-        let mismatch = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(other.path().to_path_buf())),
-            || EpisodicProvider::new(&root).candidates(&ctx),
-        );
-        assert!(
-            mismatch.is_empty(),
-            "a foreign request scope must fail closed"
-        );
-    }
-
     fn with_two_findings(root: &str) -> SessionState {
         std::fs::write(format!("{root}/pool.rs"), "pub fn lease() {}\n").expect("source");
         let mut session = SessionState::new();
@@ -1277,111 +926,5 @@ mod tests {
         assert_eq!(offered(), [typed, bound]);
         std::fs::remove_file(format!("{root}/auth.rs")).expect("delete");
         assert_eq!(offered(), [typed]);
-    }
-
-    /// #1993: reading files under one project surfaced an episode whose files
-    /// all lay in another project.
-    #[test]
-    fn episodes_about_another_project_are_not_candidates() {
-        use crate::core::episodic_memory::{Episode, Outcome};
-        let episode = |files: &[&str]| Episode {
-            id: "e".to_string(),
-            session_id: "s".to_string(),
-            timestamp: chrono::Utc::now(),
-            task_description: String::new(),
-            actions: Vec::new(),
-            outcome: Outcome::Unknown,
-            affected_files: files.iter().map(ToString::to_string).collect(),
-            summary: String::new(),
-            duration_secs: 0,
-            tokens_used: 0,
-            agent_id: None,
-        };
-        // The comparison is canonical, so the root has to exist; the files
-        // named by an episode need not (they may be gone since).
-        let htdocs = tempfile::tempdir().expect("htdocs");
-        let at = |relative: &str| htdocs.path().join(relative).to_string_lossy().into_owned();
-        std::fs::create_dir(htdocs.path().join("evcc")).expect("project root");
-        let root = at("evcc");
-        let root = root.as_str();
-        assert!(!episode_belongs_to(
-            &episode(&[at("edifact/a.go").as_str(), at("edifact/b.go").as_str()]),
-            root
-        ));
-        // A sibling whose name merely starts with the root's is still foreign.
-        assert!(!episode_belongs_to(
-            &episode(&[at("evcc-old/a.go").as_str()]),
-            root
-        ));
-        assert!(episode_belongs_to(
-            &episode(&[at("edifact/a.go").as_str(), at("evcc/c.go").as_str()]),
-            root
-        ));
-        assert!(episode_belongs_to(&episode(&["src/main.rs"]), root));
-        assert!(episode_belongs_to(&episode(&[]), root));
-        // Fail closed: a root that cannot be resolved owns no rooted path.
-        assert!(!episode_belongs_to(
-            &episode(&[at("missing-root/c.go").as_str()]),
-            &at("missing-root")
-        ));
-    }
-
-    /// The store's loader compares canonical paths; this scope rule must not
-    /// drop an episode of the project only because the project root or the
-    /// recorded file is spelled through a symlink.
-    #[cfg(unix)]
-    #[test]
-    fn a_symlinked_project_root_keeps_its_own_episodes_only() {
-        use crate::core::episodic_memory::{Episode, Outcome};
-        let episode = |file: &Path| Episode {
-            id: "e".to_string(),
-            session_id: "s".to_string(),
-            timestamp: chrono::Utc::now(),
-            task_description: String::new(),
-            actions: Vec::new(),
-            outcome: Outcome::Unknown,
-            affected_files: vec![file.to_string_lossy().into_owned()],
-            summary: String::new(),
-            duration_secs: 0,
-            tokens_used: 0,
-            agent_id: None,
-        };
-        let base = tempfile::tempdir().expect("base");
-        let real = base.path().join("real");
-        let other = base.path().join("other");
-        let link = base.path().join("link");
-        std::fs::create_dir_all(real.join("src")).expect("project");
-        std::fs::create_dir(&other).expect("other project");
-        std::fs::write(real.join("src/a.rs"), "a").expect("project file");
-        std::fs::write(other.join("b.rs"), "b").expect("foreign file");
-        std::os::unix::fs::symlink(&real, &link).expect("symlinked root");
-        let canonical_real = std::fs::canonicalize(&real).expect("canonical project");
-        let linked_root = link.to_string_lossy().into_owned();
-        let real_root = real.to_string_lossy().into_owned();
-
-        // Root through the link, file recorded canonically — and the reverse.
-        assert!(episode_belongs_to(
-            &episode(&canonical_real.join("src/a.rs")),
-            &linked_root
-        ));
-        assert!(episode_belongs_to(
-            &episode(&link.join("src/a.rs")),
-            &real_root
-        ));
-        // A file of the project that is gone since still names the project.
-        assert!(episode_belongs_to(
-            &episode(&link.join("src/gone.rs")),
-            &real_root
-        ));
-        assert!(!episode_belongs_to(
-            &episode(&other.join("b.rs")),
-            &linked_root
-        ));
-        // A link inside the project that leads out of it is not the project.
-        std::os::unix::fs::symlink(&other, real.join("out")).expect("escaping link");
-        assert!(!episode_belongs_to(
-            &episode(&real.join("out/b.rs")),
-            &linked_root
-        ));
     }
 }

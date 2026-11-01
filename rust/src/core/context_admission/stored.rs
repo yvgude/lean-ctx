@@ -25,7 +25,7 @@
 //! - no binding at all (a record written before bindings existed): withheld
 //!   under an active project policy and in governed or sovereign mode with the
 //!   tee store's wording; Community developer mode re-admits it, exactly as
-//!   the originless tee rule (`proxy/ccr/storage.rs`) does.
+//!   the originless tee rule (`core/ccr/storage.rs`) does.
 
 use lean_ctx_protocol::context_gateway::ClassificationV1;
 use serde::{Deserialize, Serialize};

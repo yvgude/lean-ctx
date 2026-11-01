@@ -1,15 +1,22 @@
 # Workspace root. The Apache Rust embedding research crate is opt-in; it is not
 # the separately governed Production SDK. `default-members` keeps ordinary
-# build/test/clippy/publish commands scoped to the Engine crate.
+# build/test/clippy commands scoped to the Engine and the crates split out of it
+# (lean-ctx-patterns, lean-ctx-compress, lean-ctx-workgraph, lean-ctx-fs,
+# lean-ctx-syntax), so their tests stay in every default run.
 [workspace]
 members = [
   ".",
   "crates/lean-ctx-ocla",
+  "crates/lean-ctx-patterns",
+  "crates/lean-ctx-compress",
+  "crates/lean-ctx-fs",
   "crates/lean-ctx-protocol",
+  "crates/lean-ctx-syntax",
+  "crates/lean-ctx-workgraph",
   "crates/leanctx-native-storage",
   "crates/lean-ctx-embed",
 ]
-default-members = ["."]
+default-members = [".", "crates/lean-ctx-fs", "crates/lean-ctx-patterns", "crates/lean-ctx-compress", "crates/lean-ctx-syntax", "crates/lean-ctx-workgraph"]
 
 [package]
 name = "lean-ctx"
@@ -119,46 +126,32 @@ shape-xlat = ["http-server"]
 # Release-signature checks run in-process (updater/sigstore.rs) with the
 # rustls crypto provider; no external `cosign` binary is required.
 secure-update = ["dep:rustls"]
+# The grammars live in lean-ctx-syntax. The engine keeps `tree-sitter` itself
+# (cyclomatic, code health, read_symbol, the jemalloc allocator hook) and the
+# bash grammar (proxy_setup shell parsing).
 tree-sitter = [
+  "lean-ctx-syntax/tree-sitter",
   "dep:tree-sitter",
-  "dep:tree-sitter-rust",
-  "dep:tree-sitter-typescript",
-  "dep:tree-sitter-javascript",
-  "dep:tree-sitter-python",
-  "dep:tree-sitter-go",
-  "dep:tree-sitter-java",
-  "dep:tree-sitter-c",
-  "dep:tree-sitter-cpp",
-  "dep:tree-sitter-ruby",
-  "dep:tree-sitter-c-sharp",
-  "dep:tree-sitter-kotlin-ng",
-  "dep:tree-sitter-swift",
-  "dep:tree-sitter-php",
   "dep:tree-sitter-bash",
-  "dep:tree-sitter-dart",
-  "dep:tree-sitter-scala",
-  "dep:tree-sitter-elixir",
-  "dep:tree-sitter-zig",
-  "dep:tree-sitter-gdscript",
-  "dep:tree-sitter-lua",
-  "dep:tree-sitter-luau",
-  "dep:tree-sitter-solidity",
-  "dep:tree-sitter-nix",
-  "dep:tree-sitter-powershell",
 ]
 # Long-tail grammars with the largest parse tables (focus analysis
 # 2026-10-15: OCaml 6.5, Julia 6.2, Haskell 3.7 MB of grammar archive).
 # Opt-in since focus decision 2 (2026-10-15); without them these languages
 # fall back to the regex signature extractors (docs/migration/focus-2026-10.md).
 grammars-long-tail = ["grammar-ocaml", "grammar-haskell", "grammar-julia"]
-grammar-ocaml = ["tree-sitter", "dep:tree-sitter-ocaml"]
-grammar-haskell = ["tree-sitter", "dep:tree-sitter-haskell"]
-grammar-julia = ["tree-sitter", "dep:tree-sitter-julia"]
+grammar-ocaml = ["tree-sitter", "lean-ctx-syntax/grammar-ocaml"]
+grammar-haskell = ["tree-sitter", "lean-ctx-syntax/grammar-haskell"]
+grammar-julia = ["tree-sitter", "lean-ctx-syntax/grammar-julia"]
 wasm = ["dep:wasmi"]
 
 [dependencies]
 lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "4.0.0" }
 lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.4.0" }
+lean-ctx-workgraph = { path = "crates/lean-ctx-workgraph", version = "0.1.0" }
+lean-ctx-patterns = { path = "crates/lean-ctx-patterns", version = "0.1.0" }
+lean-ctx-compress = { path = "crates/lean-ctx-compress", version = "0.1.0" }
+lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.1.0" }
+lean-ctx-syntax = { path = "crates/lean-ctx-syntax", version = "0.1.0" }
 rmcp = { version = "2", features = [
   "server",
   "client",
@@ -214,20 +207,6 @@ similar = "3.1"
 flate2 = "1.1"
 rusqlite = { version = "0.39", features = ["bundled"] }
 tree-sitter = { version = "0.26", optional = true }
-tree-sitter-rust = { version = "0.24", optional = true }
-tree-sitter-typescript = { version = "0.23", optional = true }
-tree-sitter-javascript = { version = "0.25", optional = true }
-tree-sitter-python = { version = "0.25", optional = true }
-tree-sitter-go = { version = "0.25", optional = true }
-tree-sitter-java = { version = "0.23", optional = true }
-tree-sitter-c = { version = "0.24", optional = true }
-tree-sitter-cpp = { version = "0.23", optional = true }
-tree-sitter-ruby = { version = "0.23", optional = true }
-tree-sitter-c-sharp = { version = "0.23", optional = true }
-# tree-sitter-kotlin (fwcd) caps tree-sitter at <0.23; kotlin-ng matches tree-sitter 0.26.
-tree-sitter-kotlin-ng = { version = "1.1", optional = true }
-tree-sitter-swift = { version = "0.7", optional = true }
-tree-sitter-php = { version = "0.24", optional = true }
 # platform-verifier: validate TLS against the OS trust store (corp proxy CAs),
 # not just compiled-in webpki-roots. Opt-in per-agent via RootCerts::PlatformVerifier.
 ureq = { version = "3.3", features = ["platform-verifier"] }
@@ -237,21 +216,6 @@ pdf-extract = "0.12"
 tar = "0.4"
 zip = "9.0.4"
 tree-sitter-bash = { version = "0.25", optional = true }
-tree-sitter-scala = { version = "0.26", optional = true }
-tree-sitter-elixir = { version = "0.3", optional = true }
-tree-sitter-zig = { version = "1.1", optional = true }
-tree-sitter-dart = { version = "0.2", optional = true }
-tree-sitter-gdscript = { version = "6.1", optional = true }
-tree-sitter-lua = { version = "0.5", optional = true }
-tree-sitter-luau = { version = "1.2", optional = true }
-# All five below expose the modern `LANGUAGE*: LanguageFn` const (tree-sitter-language
-# crate), so they bind to tree-sitter 0.26 via `.into()` like the grammars above.
-tree-sitter-ocaml = { version = "0.25", optional = true }
-tree-sitter-haskell = { version = "0.23", optional = true }
-tree-sitter-julia = { version = "0.23", optional = true }
-tree-sitter-solidity = { version = "1.2", optional = true }
-tree-sitter-nix = { version = "0.3", optional = true }
-tree-sitter-powershell = { version = "0.26", optional = true }
 # Native library loading for the ONNX runtime (features `onnx`, `embeddings`).
 libloading = { version = "0.8", optional = true }
 # Exact pin: `ort` 2.0 is still in its release-candidate phase (no stable 2.0.0
@@ -510,6 +474,8 @@ keyring = { version = "3.6.3", default-features = false, features = ["apple-nati
 keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "vendored"] }
 
 [dev-dependencies]
+# Test helpers only: env mutation under the shared test lock, listing counter.
+lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.1.0", features = ["test-support"] }
 leanctx-verify = { path = "../packages/leanctx-verify" }
 criterion = { version = "0.8", features = ["html_reports"] }
 filetime = "0.2"

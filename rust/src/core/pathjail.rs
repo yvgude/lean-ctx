@@ -335,7 +335,7 @@ fn canonical_target(candidate: &Path) -> PathBuf {
 pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
     // This boundary covers caller-selected edit/backup/export destinations.
     // Engine-owned knowledge persistence uses its own authorized store writer.
-    crate::cli::enforce_protected_store_path(candidate)?;
+    crate::core::protected_store::enforce_protected_store_path(candidate)?;
     // Hive policies and limits are never changed by an agent (Release B).
     if crate::core::hive::effective_floor::is_policy_path(&canonical_target(candidate)) {
         return Err(format!(
@@ -605,7 +605,7 @@ fn jail_in_workspace(
             });
         }
     }
-    crate::cli::enforce_protected_store_path(&out)
+    crate::core::protected_store::enforce_protected_store_path(&out)
         .map_err(|reason| PathJailError::ProtectedContext { reason })?;
     Ok(out)
 }
@@ -1078,7 +1078,7 @@ fn jail_path_checked(
     } else {
         jail_root.join(candidate)
     };
-    crate::cli::enforce_protected_store_path(&absolute)
+    crate::core::protected_store::enforce_protected_store_path(&absolute)
         .map_err(|reason| PathJailError::ProtectedContext { reason })?;
 
     // A launcher-bound Workspace is the only authority (#2120): it is checked
@@ -1223,7 +1223,7 @@ fn jail_path_checked(
             }
         }
 
-        crate::cli::enforce_protected_store_path(&out)
+        crate::core::protected_store::enforce_protected_store_path(&out)
             .map_err(|reason| PathJailError::ProtectedContext { reason })?;
         Ok(out)
     }
@@ -1247,7 +1247,8 @@ mod protected_store_tests {
             jail_path(&fact, project.path()).is_ok(),
             "Community keeps its existing runtime access"
         );
-        let _protected = crate::cli::pin_synthetic_session(isolated.path()).unwrap();
+        let _protected =
+            crate::core::protected_store::pin_synthetic_session(isolated.path()).unwrap();
         let roots = vec![isolated.path().to_string_lossy().into_owned()];
         for candidate in [&fact, &store, &isolated.path().to_path_buf()] {
             assert!(
@@ -1293,8 +1294,9 @@ mod protected_store_tests {
         let project = tempfile::tempdir().unwrap();
         let code = project.path().join("main.rs");
         std::fs::write(&code, "fn main() {}\n").unwrap();
-        let _protected = crate::cli::pin_synthetic_session(isolated.path()).unwrap();
-        crate::test_env::remove_var(crate::cli::CHILD_PROFILE_ENV);
+        let _protected =
+            crate::core::protected_store::pin_synthetic_session(isolated.path()).unwrap();
+        crate::test_env::remove_var(crate::core::protected_store::CHILD_PROFILE_ENV);
         assert!(matches!(
             jail_path(&code, project.path()),
             Err(PathJailError::ProtectedContext { .. })

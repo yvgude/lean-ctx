@@ -660,6 +660,11 @@ fn do_replace(
     }
 
     let new_lines = new_content.lines().count();
+    // The receipt counts the lines that actually changed, not the spans the
+    // caller sent: an anchor repeated in new_text is unchanged text, and a
+    // receipt of "+80 -6" for a pure 74-line insertion sent agents to
+    // `git diff` to see what had been deleted.
+    let (net_added, net_removed) = net_line_change(args.old_str.lines(), args.new_str.lines());
     let detail = (args.replace_all && args.occurrences > 1)
         .then(|| format!("{} replacements", args.occurrences));
 
@@ -671,8 +676,8 @@ fn do_replace(
     let mut out = edit_summary_line(
         &short,
         new_lines,
-        lines_added,
-        lines_removed,
+        net_added.saturating_mul(replacements),
+        net_removed.saturating_mul(replacements),
         detail.as_deref(),
     );
     if let Some(bp) = backup_path {
@@ -745,6 +750,30 @@ pub(crate) fn diff_artifact_id(
     }
     let diff = build_diff_evidence(old, new, short, max_lines);
     crate::core::archive::store("ctx_patch", &format!("diff {short}"), &diff, None)
+}
+
+/// Lines added and removed between `old` and `new` once the lines both share
+/// at the start and at the end are set aside — the change a diff would show
+/// for one contiguous edit.
+pub(crate) fn net_line_change<S: AsRef<str>, T: AsRef<str>>(
+    old: impl IntoIterator<Item = S>,
+    new: impl IntoIterator<Item = T>,
+) -> (u64, u64) {
+    let old: Vec<S> = old.into_iter().collect();
+    let new: Vec<T> = new.into_iter().collect();
+    let prefix = old
+        .iter()
+        .zip(&new)
+        .take_while(|(a, b)| a.as_ref() == b.as_ref())
+        .count();
+    let suffix = old[prefix..]
+        .iter()
+        .rev()
+        .zip(new[prefix..].iter().rev())
+        .take_while(|(a, b)| a.as_ref() == b.as_ref())
+        .count();
+    let count = |n: usize| u64::try_from(n - prefix - suffix).unwrap_or(u64::MAX);
+    (count(new.len()), count(old.len()))
 }
 
 /// The one-line success receipt shared by `ctx_edit` and `ctx_patch`:

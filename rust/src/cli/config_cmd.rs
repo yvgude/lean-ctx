@@ -985,67 +985,6 @@ fn try_read_project_root_from_graph(path: &std::path::Path) -> Option<String> {
     val.get("project_root")?.as_str().map(String::from)
 }
 
-pub const SIMPLIFIED_TEMPLATE: &str = r#"# lean-ctx — Simplified Configuration
-# Full reference: https://leanctx.com/docs/configuration
-# For all settings: lean-ctx config init --full
-#
-# Optional named overlay. LEAN_CTX_CONFIG_PROFILE overrides this selection:
-# config_profile = "cloud"
-# [profiles.local]
-# compression_level = "lite"
-# [profiles.cloud]
-# compression_level = "standard"
-
-# ── High-Level Knobs ─────────────────────────────────────────────────
-# These auto-adjust advanced settings. Override individual values below
-# only if you need fine-grained control.
-
-# Output style for the model's prose (not tool-output compression):
-#   off    — no style guidance
-#   lite   — plain-English concise (default; readable, still token-saving)
-#   standard / max — denser symbolic "power modes" (opt-in)
-compression_level = "lite"
-
-# RAM/feature trade-off: low | balanced | performance
-memory_profile = "balanced"
-
-# Maximum % of system RAM lean-ctx may use (1-50)
-max_ram_percent = 5
-
-# Per-process RSS target (MB) of each stdio MCP server; the lower of this and
-# max_ram_percent applies (0 = percent only).
-# mcp_max_rss_mb = 512
-
-# Process RSS target (MB) of the background daemon; the lower of this and
-# max_ram_percent applies (0 = percent only).
-# daemon_max_rss_mb = 2048
-
-# Exit a stdio MCP server after N minutes without a tool call (0 = never).
-# Codex does not restart exited servers, so leave this off for Codex.
-# mcp_idle_exit_minutes = 0
-
-# Total disk budget in MB (0 = use individual limits).
-# Distributes proportionally: archive ~25%, BM25 cache ~10%.
-# max_disk_mb = 2000
-
-# Auto-purge data older than N days (0 = disabled).
-# Flows into archive.max_age_hours.
-# max_staleness_days = 30
-
-# Session retention for `lean-ctx sessions cleanup` and `ctx_session cleanup`.
-# This is independent from archive retention and preserves the newest session
-# for every project root.
-# session_retention_days = 7
-
-# Explicit project paths to scan/index (default: auto-detect).
-# [ide_paths]
-# cursor = ["/home/user/projects/app1"]
-
-# ── Proxy ────────────────────────────────────────────────────────────
-# proxy_enabled = false
-# proxy_port = 3128
-"#;
-
 /// Create the simplified config. An existing one is never replaced: the
 /// template would reset every setting the person tightened.
 fn write_simplified_config() -> Result<String, String> {
@@ -1068,7 +1007,7 @@ fn write_simplified_config() -> Result<String, String> {
                 format!("{e}")
             }
         })?;
-    file.write_all(SIMPLIFIED_TEMPLATE.as_bytes())
+    file.write_all(config::SIMPLIFIED_TEMPLATE.as_bytes())
         .map_err(|e| format!("{e}"))?;
     Ok(path.to_string_lossy().to_string())
 }
@@ -1158,14 +1097,6 @@ fn cmd_show_effective() {
     box_row(&format!(
         " memory.knowledge.max_patterns  = {:>6}",
         policy.knowledge.max_patterns
-    ));
-    box_row(&format!(
-        " memory.episodic.max_episodes   = {:>6}",
-        policy.episodic.max_episodes
-    ));
-    box_row(&format!(
-        " memory.procedural.max_procedures = {:>4}",
-        policy.procedural.max_procedures
     ));
     println!("{}", box_bottom());
 

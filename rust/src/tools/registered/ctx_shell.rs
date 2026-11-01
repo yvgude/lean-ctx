@@ -525,7 +525,7 @@ impl McpTool for CtxShellTool {
                     ) {
                     crate::shell::save_tee(command_for_store, output_for_store)
                         .map(|p| {
-                            if crate::cli::enforce_protected_store_path(std::path::Path::new(&p)).is_err() {
+                            if crate::core::protected_store::enforce_protected_store_path(std::path::Path::new(&p)).is_err() {
                                 format!("\n[full output: ctx_expand(id=\"{p}\", search=\"…\"|head=N|json_path=\"…\")]")
                             } else if matches!(cfg.tee_mode, crate::core::config::TeeMode::HighCompression)
                             {

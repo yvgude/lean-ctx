@@ -434,7 +434,7 @@ where
                 prepared.kept_whole.summary()
             );
         }
-        super::super::metrics::record_request(
+        crate::core::proxy_metrics::record_request(
             prepared.tokens_saved,
             prepared.compressed_size as u64,
         );

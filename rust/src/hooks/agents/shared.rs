@@ -25,6 +25,40 @@ pub(super) fn install_standard_hook_scripts(
     make_executable(&redirect_path);
 }
 
+/// An agent's JSON settings file as JSON for a merge, or `{}` when it is
+/// missing or blank. A file that cannot be read or parsed is an error and is
+/// left byte-identical: replacing it with `{}` dropped every other setting of
+/// the user. `agent_id` names the `lean-ctx init --agent` to rerun.
+pub(super) fn read_agent_json_config(
+    path: &std::path::Path,
+    agent_id: &str,
+) -> Result<serde_json::Value, String> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(serde_json::json!({}));
+        }
+        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
+    };
+    if content.trim().is_empty() {
+        return Ok(serde_json::json!({}));
+    }
+    crate::core::jsonc::parse_jsonc(&content).map_err(|error| {
+        format!(
+            "{} is not valid JSON ({error}); it was left unchanged. Fix it (or move it aside) \
+             and run `lean-ctx init --agent {agent_id}` again.",
+            path.display()
+        )
+    })
+}
+
+/// A refused settings file is reported even in quiet mode: the hooks or
+/// permissions it should carry are missing until the file is fixed.
+pub(super) fn report_unreadable_agent_config(agent: &str, error: &str) {
+    tracing::error!("{agent} settings not updated: {error}");
+    eprintln!("  \x1b[31m✗\x1b[0m {agent} settings not updated: {error}");
+}
+
 pub(super) fn prepare_project_rules_path(global: bool, file_name: &str) -> Option<PathBuf> {
     let scope = crate::core::config::Config::load().rules_scope_effective();
     if global || scope == crate::core::config::RulesScope::Global {

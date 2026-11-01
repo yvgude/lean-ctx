@@ -997,6 +997,12 @@ fn sync(config: &HiveConfig) -> Result<(), HiveError> {
                         },
                         done.counts.summary()
                     );
+                    if done.superseded + done.retracted + done.confirmed > 0 {
+                        println!(
+                            "  knowledge lifecycle: {} superseded, {} withdrawn, {} re-anchored",
+                            done.superseded, done.retracted, done.confirmed
+                        );
+                    }
                     for (id, refusal) in &done.failed {
                         say.refusal(&format!("hive: event {id} refused: {refusal}"));
                     }

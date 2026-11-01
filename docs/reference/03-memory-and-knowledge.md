@@ -44,7 +44,9 @@ lean-ctx session reset         # clear current session
 **Under the hood:** `ctx_session` writes to `sessions/<id>.json` with an atomic
 write (`.tmp` → rename) and updates `sessions/latest.json` as the pointer. The
 MCP tool supports more actions: `snapshot`, `restore`, `resume`, `diff`,
-`verify`, `episodes`, `procedures`.
+`verify`. `episodes` and `procedures` are retired with the episode and
+procedure memory (3.13.0): they are accepted, have no effect and point to
+`ctx_knowledge`, where decisions, findings and gotchas live.
 
 ### Auto-restore — the key feature
 
@@ -126,9 +128,8 @@ archived, compacted, and remaining facts. **Facts have no limit**: they leave
 the active store only by quality — confidence decay, merging near-duplicates,
 and archiving low-confidence or stale facts — never by count. The old
 `[memory.knowledge] max_facts` setting is deprecated and ignored (an existing
-value still loads). The other stores — history, procedures and patterns — are
-capacity-bounded (`[memory.knowledge] max_history` / `max_patterns` and
-`[memory.procedural] max_procedures`) and
+value still loads). The other stores — history and patterns — are
+capacity-bounded (`[memory.knowledge] max_history` / `max_patterns`) and
 reclaimed **losslessly**: when such a store reaches its cap, the lowest-value tail is
 archived under `memory/archive/<store>/` (restorable) and the store settles at a
 working-room target — 75% by default (`[memory.lifecycle] reclaim_headroom_pct`).
@@ -170,8 +171,9 @@ Three ways bring knowledge back: copying a backup of the data directory,
 only resumes a saved session slice and, with `--git`, checks out its commit
 (never over a dirty tree); it does not touch knowledge or account access.
 
-- **What a restore brings back:** the facts, history, patterns and procedures
-  in the backup, archive or cloud copy.
+- **What a restore brings back:** the facts, history and patterns in the
+  backup, archive or cloud copy. Archived procedures of the retired procedure
+  memory stay on disk and are not restored.
 - **What it never brings back:**
   - Access you have lost. Revoked plans, seats and grants stay revoked. A
     restored entitlement file is not trusted: the record of what your account

@@ -109,8 +109,8 @@ fn build_skills() -> Vec<AgentSkill> {
         AgentSkill {
             id: "agent-memory".to_string(),
             name: "Structured Agent Memory".to_string(),
-            description: "Episodic, procedural, and semantic memory with cross-session \
-                           persistence, embedding-based recall, and lifecycle management"
+            description: "Semantic project knowledge with cross-session persistence, \
+                           embedding-based recall, and lifecycle management"
                 .to_string(),
             tags: vec![
                 "memory".to_string(),

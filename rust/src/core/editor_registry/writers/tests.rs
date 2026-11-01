@@ -132,7 +132,7 @@ fn commandcode_config_uses_command_code_schema() {
 #[test]
 fn legacy_commandcode_writer_respects_absolute_rules_off() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _rules_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
+    let _rules_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mcp.json");
@@ -155,7 +155,7 @@ fn legacy_commandcode_writer_respects_absolute_rules_off() {
 #[test]
 fn commandcode_rules_off_removes_owned_existing_steering() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _rules_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
+    let _rules_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mcp.json");
@@ -168,7 +168,7 @@ fn commandcode_rules_off_removes_owned_existing_steering() {
                     "transport": "stdio",
                     "enabled": true,
                     "command": "/old/path/lean-ctx",
-                    "instructions": crate::proxy_setup::COMMANDCODE_MCP_INSTRUCTIONS
+                    "instructions": crate::core::editor_registry::COMMANDCODE_MCP_INSTRUCTIONS
                 }
             }
         }))
@@ -195,7 +195,7 @@ fn commandcode_rules_off_removes_owned_existing_steering() {
 #[test]
 fn commandcode_rules_off_preserves_custom_existing_instructions() {
     let _env_lock = crate::core::data_dir::test_env_lock();
-    let _rules_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
+    let _rules_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mcp.json");

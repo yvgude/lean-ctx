@@ -127,7 +127,7 @@ fn honors_path_jail_false_after_mtime_preserving_edit() {
 #[test]
 fn allows_nonexistent_child_under_root() {
     // jail_path reads the protected-session env, which the macOS
-    // write_guard tests set process-wide under this lock.
+    // protected_store tests set process-wide under this lock.
     let _env = crate::core::data_dir::test_env_lock();
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("root");

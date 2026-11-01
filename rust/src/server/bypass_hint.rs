@@ -471,8 +471,8 @@ mod tests {
     #[test]
     fn rule_steering_opt_out_disables_bypass_nudges() {
         let _env_lock = crate::core::data_dir::test_env_lock();
-        let _rules_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
-        let _hints_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_BYPASS_HINTS", "aggressive");
+        let _rules_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
+        let _hints_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_BYPASS_HINTS", "aggressive");
 
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("context_radar.jsonl");

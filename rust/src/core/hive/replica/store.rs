@@ -601,6 +601,33 @@ impl Replica {
         Ok(Some((kind, value)))
     }
 
+    /// Every own-authored node with its source, in node id order: what the
+    /// capture lifecycle compares with the knowledge store.
+    pub fn own_sources(&self) -> Result<Vec<(String, String, serde_json::Value)>, HiveError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT node_id, source_kind, source_ref_ct FROM own_sources ORDER BY node_id")
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Vec<u8>>(2)?,
+                ))
+            })
+            .map_err(db_err)?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (node_id, kind, ct) = row.map_err(db_err)?;
+            let plain = self.open_value("own_sources", &node_id, "source_ref", &ct)?;
+            let value =
+                serde_json::from_slice(&plain).map_err(|e| HiveError::Local(e.to_string()))?;
+            out.push((node_id, kind, value));
+        }
+        Ok(out)
+    }
+
     /// `hex(blake3_keyed(rk, value))`, the `value_digest` of a source ref.
     pub fn value_digest(&self, value: &str) -> String {
         blake3::keyed_hash(&self.rk, value.as_bytes())

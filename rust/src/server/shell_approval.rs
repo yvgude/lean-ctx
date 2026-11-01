@@ -567,9 +567,9 @@ impl LeanCtxServer {
             };
             let persisted = tokio::task::spawn_blocking(move || {
                 if execute {
-                    crate::cli::allow_cmd::allow_execute_languages(&to_add)
+                    crate::core::shell_allowlist::allow_execute_languages(&to_add)
                 } else {
-                    crate::cli::allow_cmd::allow_programs(&to_add)
+                    crate::core::shell_allowlist::allow_programs(&to_add)
                 }
             })
             .await

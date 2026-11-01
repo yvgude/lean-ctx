@@ -313,7 +313,7 @@ pub(crate) fn installed_hook_mode(agent: &str, home: &std::path::Path) -> Option
 fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
     match agent {
         "claude" => {
-            let dir = crate::setup::claude_config_dir(home);
+            let dir = crate::core::editor_registry::claude_state_dir(home);
             dir.join("hooks/lean-ctx-rewrite.sh").exists()
                 || file_contains_lean_ctx(&dir.join("settings.json"))
         }
@@ -747,7 +747,7 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
         // lean-ctx-owned copy is removed instead of refreshed.
         // A3: text a user added outside the lean-ctx markers survives.
         let claude_rules_file = cwd.join(".claude").join("rules").join("lean-ctx.md");
-        if let Some(line) = crate::cli::rules_dedup::retire_rules_file(&claude_rules_file)
+        if let Some(line) = crate::core::rules_dedup::retire_rules_file(&claude_rules_file)
             && !mcp_server_quiet_mode()
         {
             eprintln!(
@@ -760,7 +760,7 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
 
     if wants("codebuddy") {
         let codebuddy_rules_file = cwd.join(".codebuddy").join("rules").join("lean-ctx.md");
-        if let Some(line) = crate::cli::rules_dedup::retire_rules_file(&codebuddy_rules_file)
+        if let Some(line) = crate::core::rules_dedup::retire_rules_file(&codebuddy_rules_file)
             && !mcp_server_quiet_mode()
         {
             eprintln!("{line} (always-loaded duplicate; CODEBUDDY.md block + skill replace it).");

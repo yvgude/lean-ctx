@@ -229,6 +229,11 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   token in the process list; the new `--auth-token-file <path>` (or `LEAN_CTX_HTTP_TOKEN_FILE`)
   reads it from a bounded regular file, besides `LEAN_CTX_HTTP_TOKEN`. Giving both the token
   and a token file is refused.
+- **`cockpit` reads its auth token from a file too.** `--auth-token=<token>` (and `--token=`)
+  left the Bearer token in the process list; `--auth-token-file <path>` (or
+  `LEAN_CTX_HTTP_TOKEN_FILE` while `LEAN_CTX_HTTP_TOKEN` is unset) reads it from a bounded
+  regular file, and a background server reads the same file instead of getting the token.
+  Giving both the token and a token file is refused.
 - **Role and policy denials are tool errors.** A tool blocked by the active role, a context
   policy pack or its egress rules came back as a successful result; it now carries
   `isError: true` with the same reason, and its audit entry names the calling agent instead
@@ -269,6 +274,17 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `action=repin` re-anchors a fact marked to verify to its code as it is now without
   retyping it, and `action=coverage` lists the most edited files that no fact is anchored to.
 - **`ctx_provider query mode=text`** lists each item with its body, for every provider.
+- **A connected engine keeps the vault in line with what its agents changed.** Until now a
+  fact reached the Hive vault once, when it was captured; correcting, superseding, removing or
+  re-pinning it later never left the machine, so other engines kept receiving knowledge its
+  author had withdrawn. Each sync now compares the engine's own vault items with its knowledge
+  store: a superseded fact whose successor is shared gets `supersedes` (the vault shows it
+  outdated), a withdrawn one is retracted (reason "withdrawn by author", no content), and a
+  fact re-pinned locally is re-anchored in the vault. Only items this checkout captured, the
+  raw store decides (a fact a policy view withholds is never retracted), an unreadable or
+  empty store changes nothing, and the server's retraction limits and review holds apply
+  unchanged. The knowledge journal gates the pass (nothing to do while it stands still, a full
+  pass hourly); `hive sync` reports what it queued.
 - **Governor rule R4: template collapse for large Bash output.** R2 folds only
   byte-identical lines, so real logs, lint output and exports, whose lines differ in a
   timestamp, sequence number or id, never shrank and the governor wrote no receipts. R4
@@ -330,6 +346,10 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Changed
 
+- **`ctx_search` drops the `[∈ enclosing symbol → …]` legend line.** The `∈name@Lstart`
+  tags on hits stay — agents read those symbols by name and line — but no agent in the
+  benchmark transcripts used the `handle=` form the legend described; it cost about 30
+  tokens per run.
 - **The telemetry data dictionary says which events LeanCTX | OSS sends.** Of the 24
   contract events the engine sends eleven; nine (trial, subscription, team and
   orchestration) belong to the hosted service and are never built by the engine, and four
@@ -499,6 +519,20 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Removed
 
+- **Episodic and procedural memory** (owner decision 2026-11-01, measured on 126 real
+  tasks: procedures were never selected into a kernel plan, and episodes, tool/file run
+  logs, never reached the delivered kernel trailer for code queries; decisions, findings
+  and gotchas already live in project knowledge). Gone are `core::episodic_memory`,
+  `core::procedural_memory`, the `memory.episodic` / `memory.procedural` kernel
+  providers, the episode recorded at MCP shutdown and on a completed `ctx_session` task
+  (the `Episode auto-recorded` note), the procedure capacity reclaim and its
+  `Procedures:` line in the consolidation report, the `episodic`/`procedural` lines of
+  `ctx_knowledge action=lifecycle_report` and of the effective-config summary, the doctor
+  capacity checks for both stores, and the `episodes`, `procedures` and `existing_paths`
+  inputs of the dashboard's work analysis (its work view now reports `available: false`).
+  Existing files under `memory/episodes`, `memory/procedures` and
+  `memory/archive/procedures` stay on disk; nothing reads them, and only the existing
+  orphaned-project prune still removes a removed project's episode file.
 - **Dormant Context Kernel code without a caller:** `enforce_plan` (the mode never reached
   filtering), `activation::should_suppress_in_mode`, `health::format_health` and
   `health_api::one_line_status`. No command, route or tool output changes.
@@ -569,9 +603,27 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   always uses the static layout. `ctx_metrics` no longer prints the calibration section,
   `lean-ctx learning status` and the efficacy snapshots drop the placement hit rate, and
   `/api/learning` no longer has a `litm` field.
+- **The optional LLM enhancement layer** (`core::llm_enhance`: LLM query expansion and
+  observation enhancement, off by default). Nothing called it since the cognition loop and
+  its observation synthesis were removed; LeanCTX calls no model itself.
+- Session files no longer carry `wakeup_manifest`, the LITM placement manifest that nothing
+  has read since LITM calibration was removed. An older session file with it still loads;
+  its next save drops the field.
 
 ### Deprecated
 
+- The `[llm]` config section (`enabled`, `backend`, `model`, `base_url`, `timeout_secs`) has
+  no effect any more: the LLM enhancement layer it configured is removed. The keys stay
+  accepted so existing configs keep loading; earliest removal 3.15.0
+  (`rust/data/DEPRECATIONS.toml`).
+- `ctx_session action=episodes|procedures` (every value), `ctx_knowledge action=restore
+  store=procedures` (and `lean-ctx knowledge restore --store procedures`), the dashboard
+  routes `GET /api/episodes`, `GET /api/procedures`, `POST /api/episodes/annotate`, and
+  the config sections `memory.episodic` / `memory.procedural` with their
+  `LEAN_CTX_EPISODIC_*` / `LEAN_CTX_PROCEDURAL_*` variables are retired with the episode
+  and procedure memory. They stay accepted, answer that they were retired (decisions,
+  findings and gotchas live in `ctx_knowledge`) and have no effect; earliest removal
+  3.15.0 (`rust/data/DEPRECATIONS.toml`).
 - `ctx_agent action=poll_events` has its own parameters: `workspace_id`, `channel_id`,
   `since_id`, `kinds` and `limit`. The parameters it borrowed for them (`to_agent`,
   `category`, `message`, `privacy`, `ttl_hours`) stay accepted as aliases; the new names win
@@ -587,6 +639,12 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - `lean-ctx serve --a2a-signing-key <key>` puts the key in the process list. It still works
   and warns on stderr; use `--a2a-signing-key-file <path>` or `LEAN_CTX_A2A_SIGNING_KEY`
   instead. Earliest removal 3.15.0.
+- `lean-ctx serve --auth-token <token>` puts the Bearer token in the process list. It still
+  works and warns on stderr; use `--auth-token-file <path>`, `LEAN_CTX_HTTP_TOKEN_FILE` or
+  `LEAN_CTX_HTTP_TOKEN` instead. Earliest removal 3.15.0.
+- `lean-ctx cockpit --auth-token=<token>` (alias `--token=`) puts the Bearer token in the
+  process list. It still works and warns on stderr; use `--auth-token-file <path>`,
+  `LEAN_CTX_HTTP_TOKEN_FILE` or `LEAN_CTX_HTTP_TOKEN` instead. Earliest removal 3.15.0.
 - The config key `auto_mode_learning` and its env var `LEAN_CTX_AUTO_MODE_LEARNING` have no
   effect any more: the learned `auto` signals they switched on are retired. Both stay
   accepted; earliest removal 3.15.0 (`rust/data/DEPRECATIONS.toml`).
@@ -607,22 +665,45 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Fixed
 
+- **The kernel trailer no longer ends in an empty heading.** When the 150-token budget cut
+  right after a provider heading, the delivered `--- kernel context ---` block ended in
+  `## Relevant …` with no entry under it. A heading whose entries were all cut is now
+  dropped with them; a trailer that would hold only headings is not delivered.
+- **`ctx_read` finds a file named relative to a search root on the wrong prefix.** A
+  `ctx_search` under `tests/` lists hits as `signal/test_x.py`; agents then asked for
+  `src/app/signal/test_x.py`, got "file not found" and spent a request on the retry. When
+  exactly one file in the project shares the longest trailing part (at least directory and
+  file name) with the missing path, `ctx_read` reads it and says so, as it already did for
+  a wrong leading directory.
+- **Edit receipts count the lines that changed.** `ctx_patch`/`ctx_edit` reported the spans
+  the caller sent, so inserting one import line with its block as anchor read `(+4 -3)` and a
+  74-line test appended after a 6-line anchor `(+80 -6)`; agents ran `git diff` to see what
+  had been removed. The receipt now leaves out lines that are the same at the start and end
+  of the replaced span: `(+1 -0)`, `(+74 -0)`.
+- **No "run `lean-ctx setup`" tip for a set-up Claude Code.** The first tool result of every
+  session told Claude Code users to run setup although its `CLAUDE.md` block was installed:
+  the check looked only at rules files, and Claude Code (like CodeBuddy) has none. The tip
+  now appears only when no host carries lean-ctx guidance.
 - **The context ledger's Phi no longer depends on earlier entropy reads (#498).** Every
   `mode=entropy` read picked a threshold-bandit arm and installed its field weights for
   the whole process; with tied arms the first read switched the ledger from the default
   to the `conservative` weights, so the same files scored, ordered and were evicted
   differently depending on what had been read before. Phi now always uses the fixed
   default weights, for the ledger and the context kernel.
-- `lean-ctx serve --auth-token <token>` puts the Bearer token in the process list. It still
-  works and warns on stderr; use `--auth-token-file <path>`, `LEAN_CTX_HTTP_TOKEN_FILE` or
-  `LEAN_CTX_HTTP_TOKEN` instead. Earliest removal 3.15.0.
-
 - **A Claude Code `settings.json` that does not parse is left alone.** The permission writers
   replaced it with an empty object plus the lean-ctx entries, dropping every other setting
   (only the `.bak` kept them), and the hook installer skipped it while reporting the hooks as
   installed. Both now refuse: the file stays unchanged, and the error names the file, the
   parse error and that `lean-ctx init --agent claude` sets it up once it is fixed. The same
   holds for a project's `.claude/settings.local.json`.
+- **A CodeBuddy `settings.json` or a Cursor or Windsurf `hooks.json` that does not parse is
+  left alone.** The installers replaced it with an empty object plus the lean-ctx entries,
+  dropping the user's own settings and hooks. They now refuse: the file stays unchanged, and
+  the error names the file, the parse error and that `lean-ctx init --agent <agent>` sets it
+  up once it is fixed.
+- **A loop-throttle block is a tool error.** A call the loop detector refused came back as a
+  successful result carrying the `LOOP DETECTED` message; like a role or policy denial it now
+  carries `isError`, so the host and the agent see that the call did not run.
 - **Dashboard relation edits no longer drop concurrent edges.** `POST
   /api/knowledge-relations/edit` loaded and saved the relation graph without the knowledge
   lock, so an edge the MCP server wrote at the same time could be lost; it now edits under

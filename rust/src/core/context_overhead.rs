@@ -264,7 +264,7 @@ fn net_of_injection_with(
 /// did not see, so [`net_of_injection`] then collapses to the gross savings.
 #[must_use]
 pub fn observed_turns() -> u64 {
-    crate::proxy::metrics::load_persisted().map_or(0, |m| m.requests_total)
+    crate::core::proxy_metrics::load_persisted().map_or(0, |m| m.requests_total)
 }
 
 #[cfg(test)]

@@ -1,6 +1,25 @@
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::{dropin, marked_block};
+
+/// Refresh of already-installed shell-hook files (#1959). The hook generator
+/// belongs to the CLI layer, which registers it at start-up; the MCP server
+/// runs it on start. Without a registration (library use, tests) there is
+/// nothing to refresh against, so the call does nothing.
+static INSTALLED_HOOK_REFRESH: OnceLock<fn()> = OnceLock::new();
+
+/// Register the installed shell-hook refresh. The first registration wins.
+pub(crate) fn register_installed_hook_refresh(refresh: fn()) {
+    let _ = INSTALLED_HOOK_REFRESH.set(refresh);
+}
+
+/// Bring installed shell hooks up to this binary, if a refresh is registered.
+pub(crate) fn refresh_installed_shell_hooks() {
+    if let Some(refresh) = INSTALLED_HOOK_REFRESH.get() {
+        refresh();
+    }
+}
 
 const MARKER_START: &str = "# >>> lean-ctx shell hook >>>";
 const MARKER_END: &str = "# <<< lean-ctx shell hook <<<";

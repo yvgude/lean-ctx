@@ -346,10 +346,7 @@ impl McpTool for CtxSessionTool {
                 };
                 crate::tools::ctx_session::handle_read_only(&snapshot, &action)
                     .expect("read-only action is explicitly handled")
-            } else if matches!(
-                action.as_str(),
-                "task" | "finding" | "decision" | "list" | "episodes" | "procedures"
-            ) {
+            } else if matches!(action.as_str(), "task" | "finding" | "decision" | "list") {
                 let Some(snapshot) = crate::server::bounded_lock::read_for(
                     session_handle,
                     "ctx_session admitted action snapshot",
@@ -383,9 +380,8 @@ impl McpTool for CtxSessionTool {
                     )
                 })?;
                 if matches!(action.as_str(), "task" | "finding" | "decision") {
-                    let completed_task = prepared.completed_task;
                     let candidate = prepared.candidate;
-                    let mut output = prepared.output;
+                    let output = prepared.output;
                     let Some(mut live) = crate::server::bounded_lock::write_for(
                         session_handle,
                         "ctx_session admitted action commit",
@@ -420,16 +416,6 @@ impl McpTool for CtxSessionTool {
                             &candidate.id,
                             &finding.summary,
                         );
-                    }
-                    if let Some(note) =
-                        crate::tools::ctx_session::record_completed_task_after_commit(
-                            &candidate,
-                            completed_task,
-                            &call_durations,
-                            agent_id.as_deref(),
-                        )
-                    {
-                        output.push_str(&note);
                     }
                     crate::core::session::admission::admit_tool_value(&candidate, &output)
                         .unwrap_or_else(|_| "[lean-ctx gateway: session content withheld]".into())

@@ -321,8 +321,6 @@ mod simplified_config_tests {
         // factor = 2000/500 = 4.0; facts have no limit to scale.
         assert_eq!(policy.knowledge.max_facts, None);
         assert_eq!(policy.knowledge.max_patterns, 200);
-        assert_eq!(policy.episodic.max_episodes, 2000);
-        assert_eq!(policy.procedural.max_procedures, 400);
     }
 
     #[test]
@@ -334,7 +332,6 @@ mod simplified_config_tests {
         let policy = cfg.memory_policy_effective().unwrap();
         // factor clamped at 10.0
         assert_eq!(policy.knowledge.max_patterns, 500);
-        assert_eq!(policy.episodic.max_episodes, 5000);
     }
 
     #[test]
@@ -342,7 +339,6 @@ mod simplified_config_tests {
         let cfg = Config::default();
         let policy = cfg.memory_policy_effective().unwrap();
         assert_eq!(policy.knowledge.max_patterns, 50);
-        assert_eq!(policy.episodic.max_episodes, 500);
     }
 
     /// Knowledge has no fact limit (3.12.1). A config written for an older
@@ -367,7 +363,8 @@ mod simplified_config_tests {
 
     #[test]
     fn simplified_template_is_valid_toml() {
-        let parsed: Result<toml::Table, _> = toml::from_str(crate::cli::SIMPLIFIED_TEMPLATE);
+        let parsed: Result<toml::Table, _> =
+            toml::from_str(crate::core::config::SIMPLIFIED_TEMPLATE);
         assert!(parsed.is_ok(), "Template must be valid TOML");
     }
 }

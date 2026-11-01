@@ -69,7 +69,6 @@ All `std::sync::Mutex` unless noted otherwise.
 | L17 | `FILE_LOCKS` | `core/path_locks.rs:30` | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-file read serialization for concurrent subagents |
 | L19 | `CACHE` (graph) | `core/graph_cache.rs:38` | `OnceLock<Mutex<HashMap<String, Entry>>>` | Property graph query result cache |
 | L20 | `RECENT` | `core/auto_findings.rs:15` | `Mutex<Vec<RecentEntry>>` | Recent auto-finding entries |
-| L21 | `LOCK` (home) | `core/home.rs:259` | `Mutex<()>` | Serialize home directory creation |
 | L22 | `BACKENDS` | `lsp/router.rs:57` | `LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>>` | Per-language code-intelligence backend registry (rust-analyzer / JetBrains); replaces the former `CLIENTS` map. Held across `Config::load` (L4) — see §3 |
 | L23 | `BUDGETS` | `core/agent_budget.rs:6` | `Mutex<Option<HashMap<String, AgentBudget>>>` | Per-agent token budget tracking |
 | L24 | `SHELL_ENV_LOCK` | `shell_hook.rs:1211` | `Mutex<()>` | Serialize env-var access in shell hook |
@@ -128,14 +127,14 @@ All `std::sync::Mutex` unless noted otherwise.
 | L87 | `PROVIDER_CACHE` | `core/providers/cache.rs:34` | `LazyLock<Mutex<ProviderCache>>` | LRU cache for provider responses (E8); locked briefly to read, insert, or evict entries; independent leaf lock, never nested |
 | L89 | `INJECTED` | `core/rule_discovery.rs:24` | `Mutex<Option<HashSet<String>>>` | Per-session rule injection deduplication for ctx_read (#1325); locked briefly to check/record a source/content key; independent leaf lock, never nested |
 | L90 | `DIR_CACHE` | `core/rule_discovery.rs:150` | `Mutex<Option<HashMap<String, Vec<DiscoveredRule>>>>` | Directory-scoped rule discovery cache for ctx_read (#1325); locked briefly to read or store discovered rules, then released before path filtering; independent leaf lock, never nested |
-| L91 | `SIG_QUERY_CACHE` | `core/signatures_ts/query_cache.rs:9` | `OnceLock<Mutex<HashMap<Language, Arc<Query>>>>` | Compiled tree-sitter signature queries per language; locked briefly to get or insert a cached query; independent leaf lock, never nested |
-| L92 | `BLOCKED` | `core/signatures.rs:295` | `Mutex<Option<HashSet<String>>>` | Per-session tree-sitter language blocklist; tracks extensions whose grammars panicked so subsequent calls skip straight to regex fallback; locked briefly to check or insert; independent leaf lock, never nested |
+| L91 | `SIG_QUERY_CACHE` | `crates/lean-ctx-syntax/src/signatures_ts/query_cache.rs:11` | `OnceLock<Mutex<HashMap<Language, Arc<Query>>>>` | Compiled tree-sitter signature queries per language; locked briefly to get or insert a cached query; independent leaf lock, never nested |
+| L92 | `BLOCKED` | `crates/lean-ctx-syntax/src/signatures.rs:297` | `Mutex<Option<HashSet<String>>>` | Per-session tree-sitter language blocklist; tracks extensions whose grammars panicked so subsequent calls skip straight to regex fallback; locked briefly to check or insert; independent leaf lock, never nested |
 | L99 | `TURN_BUDGETS` | `core/agent_budget.rs:7` | `Mutex<Option<HashMap<String, TurnBudget>>>` | Per-agent per-turn budget tracking; independent leaf lock, never nested |
 | L100 | `ADOPTION_PASSES` | `core/legacy_adoption.rs:170` | `OnceLock<Mutex<HashSet<String>>>` | Records the projects whose automatic legacy-context adoption pass already ran in this process; locked only to check-and-insert, released before any adoption work; independent leaf lock, never nested |
 | L101 | `PRELOADER` | `server/predictive_preload.rs:127` | `OnceLock<Mutex<PredictivePreloader>>` | Predictive file preloader state; independent leaf lock, never nested |
 | L102 | `SUMMARY_CACHE` | `core/savings_ledger/store.rs:283` | `Mutex<Option<(u64, LedgerSummary)>>` | Ledger summary cache keyed by file length; independent leaf lock, never nested |
 | L104 | `SESSION_LINEAGES` | `core/task_spine.rs:27` | `OnceLock<Arc<Mutex<HashMap<String, String>>>>` | Maps session IDs to parent lineage; independent leaf lock, never nested |
-| L108 | `PROXY_VALUE_METRICS` | `proxy/value_gate_proxy.rs:23` | `Mutex<ProxyValueMetrics>` | Proxy-level value gate metrics counters; independent leaf lock, never nested |
+| L108 | `PROXY_VALUE_METRICS` | `core/proxy_value_metrics.rs:23` | `Mutex<ProxyValueMetrics>` | Proxy-level value gate metrics counters; independent leaf lock, never nested |
 | L109 | `PROXY_STARTED` | `proxy/web_app/dashboard.rs:9` | `LazyLock<Mutex<Option<Instant>>>` | Proxy start timestamp for uptime display; independent leaf lock, never nested |
 | L110 | `ROI_CACHE` | `dashboard/routes/roi.rs:14` | `Mutex<Option<(Instant, String)>>` | Cached ROI dashboard response; independent leaf lock, never nested |
 | L111 | `DOCTOR_CACHE` | `dashboard/routes/doctor.rs:17` | `Mutex<Option<(Instant, String)>>` | Cached doctor check response; independent leaf lock, never nested |
@@ -256,8 +255,8 @@ network I/O would make lock hold time depend on an external service.
 |---|------|------|---------|
 | S1 | `RECENT_EDITS` | `hook_handlers/solution_capture.rs:35` | `Mutex<RecentEdits>` deduplication cache for recent native edit observations |
 | S2 | `TRACKER_LOCK` | `core/config/solution_tests.rs:4` | `Mutex<()>` serialize solution-config integration tests |
-| E5 | `LOCK` | `core/tokens.rs:222` | Serialize tokenizer tests |
-| E7 | `TEST_ENV_MUTEX` | `core/data_dir.rs:189` | `OnceLock<Mutex<()>>` reentrant test env lock — serialize env-mutating tests across threads (`std::env::set_var` is not thread-safe); same thread may re-acquire without deadlocking |
+| E5 | `LOCK` | `crates/lean-ctx-patterns/src/tokens.rs:224` | Serialize tokenizer tests |
+| E7 | `TEST_ENV_MUTEX` | `crates/lean-ctx-fs/src/env_lock.rs:12` (re-exported as `core::data_dir::test_env_lock`) | `OnceLock<Mutex<()>>` reentrant test env lock — serialize env-mutating tests across threads (`std::env::set_var` is not thread-safe); same thread may re-acquire without deadlocking |
 | E8 | `COMPRESSOR_INPUT` | `proxy/forward/tests.rs:1609` | `Mutex<Option<String>>` test-only (file is the `#[cfg(test)]` module of `proxy/forward`): what the compression stage was handed in the reintroducing-compressor tests; taken alone, never nested |
 | S4 | `FENCE_KEY` | `core/sanitize.rs:139` | `Mutex<Option<(PathBuf, [u8; 32])>>` product lock: the fence key last read with the file it came from; held across the read or first creation of the `fence_key` file so that one process settles on one key per file; takes no other lock; a poisoned lock falls back to the process key, never to a fence without a key |
 | S5 | `REGISTER` | `proxy/sealed_origin.rs:257` | `Mutex<Register>` product lock: bounded register of sealed items and their producers (age and count bound enforced under the lock); product paths take it alone; only the `#[cfg(test)]` bound reset takes `PARTS` (S6) while holding it — order S5 → S6, never the reverse |

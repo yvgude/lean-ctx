@@ -258,7 +258,7 @@ fn resolved_gain_model() -> Option<String> {
                 .cost
                 .model_for_client("cli")
         })
-        .or_else(crate::proxy::usage_meter::persisted_dominant_model)
+        .or_else(crate::core::proxy_usage::persisted_dominant_model)
 }
 
 impl CostModel {

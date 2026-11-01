@@ -194,6 +194,18 @@ fn truncate_to_token_budget(mut text: String, budget: usize) -> String {
     // #1993: whole entries only. A byte cut left a bullet ending mid-path
     // (`files:[/Users/<me>`), a record that no longer described itself.
     text.truncate(text.rfind('\n').map_or(0, |end| end + 1));
+    // A heading whose entries were all cut is no context: never deliver an
+    // empty `## Relevant …` block.
+    loop {
+        let body = text.trim_end_matches('\n');
+        let line_start = body.rfind('\n').map_or(0, |end| end + 1);
+        if !body[line_start..].starts_with("## ") {
+            break;
+        }
+        text.truncate(line_start);
+    }
+    let kept = text.trim_end_matches('\n').len();
+    text.truncate(if kept == 0 { 0 } else { kept + 1 });
     text
 }
 
@@ -203,13 +215,6 @@ fn truncate_to_token_budget(mut text: String, budget: usize) -> String {
 fn format_enrichment_blocks(entries: &[&PlanEntry]) -> String {
     let mut out = String::new();
     append_provider_block(&mut out, entries, "knowledge.facts", "Relevant Knowledge");
-    append_provider_block(&mut out, entries, "memory.episodic", "Relevant Episodes");
-    append_provider_block(
-        &mut out,
-        entries,
-        "memory.procedural",
-        "Relevant Procedures",
-    );
     append_provider_block(&mut out, entries, "session.state", "Relevant Session State");
     append_provider_block(&mut out, entries, "index.bm25", "Relevant Code");
     append_provider_block(&mut out, entries, "index.graph", "Related Files");
@@ -320,20 +325,53 @@ pub mod tests {
 
     #[test]
     fn budget_capped_at_150() {
-        let item = entry(&"token ".repeat(1_000));
-        let blocks = format_enrichment_blocks(&[&item]);
-        let enrichment = enrichment_from_plan(plan(vec![item]), blocks, 150, KernelMode::Shadow)
+        let items: Vec<PlanEntry> = (0..60)
+            .map(|i| entry(&format!("Known constraint number {i}")))
+            .collect();
+        let refs: Vec<&PlanEntry> = items.iter().collect();
+        let blocks = format_enrichment_blocks(&refs);
+        let enrichment = enrichment_from_plan(plan(items.clone()), blocks, 150, KernelMode::Shadow)
             .expect("long enrichment should be truncated, not removed");
         assert!(enrichment.verdict.budget_used <= 150);
+    }
+
+    /// Only whole entries are delivered: one entry larger than the budget
+    /// leaves just its heading, and a heading alone is not delivered.
+    #[test]
+    fn an_entry_larger_than_the_budget_is_not_delivered() {
+        let item = entry(&"token ".repeat(1_000));
+        let blocks = format_enrichment_blocks(&[&item]);
+        assert!(enrichment_from_plan(plan(vec![item]), blocks, 150, KernelMode::Shadow).is_none());
     }
     #[test]
     fn truncation_keeps_whole_entries_only() {
         let line = "- [success] files:[/Users/me/htdocs/evcc/docs/agents/a.md] (phi=0.25)\n";
-        let text = format!("\n## Relevant Episodes\n{}", line.repeat(40));
+        let text = format!("\n## Relevant Knowledge\n{}", line.repeat(40));
         let cut = truncate_to_token_budget(text, 150);
         assert!(!cut.is_empty(), "`cut` is empty");
         assert!(cut.ends_with('\n'), "a partial entry survived: {cut:?}");
         assert!(cut.lines().skip(2).all(|l| l == line.trim_end()));
+    }
+
+    /// A budget cut right after a provider heading used to deliver that
+    /// heading with no entry under it (`## Relevant Code` and nothing else).
+    #[test]
+    fn truncation_never_leaves_an_empty_heading() {
+        let fact = entry("Known constraint");
+        let code = PlanEntry {
+            provider: "index.bm25".to_owned(),
+            ..entry(&"token ".repeat(1_000))
+        };
+        let blocks = format_enrichment_blocks(&[&fact, &code]);
+        let kept = format_enrichment_blocks(&[&fact]);
+        let budget = crate::core::tokens::count_tokens(&format!("{kept}\n## Relevant Code\n")) + 1;
+        let cut = truncate_to_token_budget(blocks, budget);
+        assert_eq!(cut, kept);
+
+        let only_code = format_enrichment_blocks(&[&code]);
+        let budget = crate::core::tokens::count_tokens("\n## Relevant Code\n") + 1;
+        assert_eq!(truncate_to_token_budget(only_code.clone(), budget), "");
+        assert!(verdict_from_blocks(only_code, budget).supplement.is_none());
     }
 
     /// Index selections spend plan budget, so they must be delivered too; a

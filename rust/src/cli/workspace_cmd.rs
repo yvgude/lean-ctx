@@ -10,6 +10,7 @@
 
 use std::path::PathBuf;
 
+use crate::core::workspace_args::{Parsed, parse};
 use crate::core::workspace_authority::{self as authority, Access};
 
 const USAGE: &str = "\
@@ -30,74 +31,6 @@ every root of the Workspace. A launcher binds an MCP server by starting it with
 LEAN_CTX_WORKSPACE_FILE=<file>; while bound, client roots, extra_roots,
 allow_paths, the home jail scope and ctx_multi_repo roots grant nothing.
 --expect-revision is the revision you last read; a stale one is refused.";
-
-struct Parsed {
-    verb: String,
-    positional: Option<String>,
-    file: Option<String>,
-    id: Option<String>,
-    expect_revision: Option<String>,
-    read_only: bool,
-    json: bool,
-}
-
-fn parse(args: &[String]) -> Result<Parsed, String> {
-    let mut parsed = Parsed {
-        verb: String::new(),
-        positional: None,
-        file: None,
-        id: None,
-        expect_revision: None,
-        read_only: false,
-        json: false,
-    };
-    let mut words = parse_into(args, &mut parsed)?.into_iter();
-    parsed.verb = words.next().ok_or("a command is required")?;
-    parsed.positional = words.next();
-    if let Some(extra) = words.next() {
-        return Err(format!("unexpected argument: {extra}"));
-    }
-    Ok(parsed)
-}
-
-/// Fill `parsed` from flags (`--flag value` or `--flag=value`); returns the
-/// remaining words in order.
-fn parse_into(args: &[String], parsed: &mut Parsed) -> Result<Vec<String>, String> {
-    let mut words = Vec::new();
-    let mut rest = args.iter();
-    while let Some(arg) = rest.next() {
-        match arg.as_str() {
-            "--json" => parsed.json = true,
-            "--read-only" => parsed.read_only = true,
-            "--file" | "--id" | "--expect-revision" => {
-                let value = rest
-                    .next()
-                    .ok_or_else(|| format!("{arg} needs a value"))?
-                    .clone();
-                let slot = match arg.as_str() {
-                    "--file" => &mut parsed.file,
-                    "--id" => &mut parsed.id,
-                    _ => &mut parsed.expect_revision,
-                };
-                if slot.replace(value).is_some() {
-                    return Err(format!("{arg} is given twice"));
-                }
-            }
-            flag if flag.starts_with("--") => match flag.split_once('=') {
-                Some((name, _)) if matches!(name, "--json" | "--read-only") => {
-                    return Err(format!("{name} takes no value"));
-                }
-                Some((name, value)) => {
-                    let pair = [name.to_string(), value.to_string()];
-                    words.extend(parse_into(&pair, parsed)?);
-                }
-                None => return Err(format!("unknown argument: {flag}")),
-            },
-            _ => words.push(arg.clone()),
-        }
-    }
-    Ok(words)
-}
 
 fn workspace_file(parsed: &Parsed) -> Result<PathBuf, String> {
     let raw = match &parsed.file {
@@ -234,20 +167,6 @@ fn run(parsed: &Parsed) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether an agent shell may run `lean-ctx workspace <args>`: only forms
-/// that read or narrow (`show`, `diagnose`, `remove`, help). Anything that
-/// does not parse is refused — the verb must not hide behind a flag.
-pub(crate) fn agent_shell_may_run(args: &[String]) -> bool {
-    if args
-        .first()
-        .is_none_or(|first| matches!(first.as_str(), "-h" | "--help" | "help"))
-    {
-        return true;
-    }
-    parse(args)
-        .is_ok_and(|parsed| matches!(parsed.verb.as_str(), "show" | "diagnose" | "remove" | "rm"))
-}
-
 /// Entry point of `lean-ctx workspace`.
 pub(crate) fn cmd_workspace(args: &[String]) {
     if args
@@ -285,31 +204,6 @@ mod tests {
         assert_eq!(parsed.file.as_deref(), Some("/w.json"));
         assert_eq!(expect_revision(&parsed).unwrap(), 3);
         assert!(parsed.read_only && parsed.json);
-    }
-
-    #[test]
-    fn agent_shells_may_only_read_or_narrow() {
-        for allowed in [
-            "",
-            "--help",
-            "show",
-            "diagnose --json",
-            "remove --file /w /x",
-        ] {
-            assert!(agent_shell_may_run(&words(allowed)), "{allowed}");
-        }
-        for refused in [
-            "add /etc",
-            "--file /w.json --expect-revision 3 add /etc",
-            "--json add /etc",
-            "--read-only add /etc",
-            "--json=x add /etc",
-            "create --id x /code",
-            "--id x create /code",
-            "frobnicate",
-        ] {
-            assert!(!agent_shell_may_run(&words(refused)), "{refused}");
-        }
     }
 
     #[test]

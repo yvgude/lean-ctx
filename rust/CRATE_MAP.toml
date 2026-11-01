@@ -1,0 +1,100 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Engine crate map ("Split before you grow", AGENTS.md). Read by
+# scripts/check-crate-boundaries.py; the human view is CRATE_MAP.md.
+#
+# Direction: extracted crates never depend on the engine crate `lean-ctx`.
+# The engine depends on them and keeps a thin facade, so engine paths such as
+# `crate::core::patterns` stay stable. Between crates only `may_depend_on`
+# edges are allowed.
+#
+# `scheduled` lists engine modules planned for a crate. Their outbound
+# `crate::` edges are frozen at rust/crate_boundary_baseline.json: a new edge
+# fails the check, because the extraction would have to cut it first.
+
+schema = 1
+
+# ---------------------------------------------------------------- extracted
+
+[[crate]]
+name = "lean-ctx-patterns"
+path = "crates/lean-ctx-patterns"
+may_depend_on = []
+# Shell-output patterns, token counting, json_crush, safety needles, ANSI.
+facade = [
+  { dir = "core/patterns", files = ["mod.rs"] },
+]
+
+[[crate]]
+name = "lean-ctx-workgraph"
+path = "crates/lean-ctx-workgraph"
+may_depend_on = []
+# Work graph and outcome model, budget cascade. Uses lean-ctx-protocol only.
+facade = [
+  { dir = "core/outcome", files = ["mod.rs"] },
+  { dir = "core/work_graph", files = [] },
+]
+
+[[crate]]
+name = "lean-ctx-compress"
+path = "crates/lean-ctx-compress"
+may_depend_on = ["lean-ctx-patterns"]
+# Generic text compressors: compressor, html/tabular/yaml crush,
+# markdown/structured compact, csv extractor. Engine keeps re-export shims
+# (core::compressor keeps task_aware_compress).
+
+[[crate]]
+name = "lean-ctx-fs"
+path = "crates/lean-ctx-fs"
+may_depend_on = []
+# Foundation, first half: atomic_fs, error, file_lock, hasher, home, jsonc,
+# process liveness, the shared test env lock (test-support feature).
+# Engine keeps one-line re-export facades at the old core:: paths.
+
+[[crate]]
+name = "lean-ctx-syntax"
+path = "crates/lean-ctx-syntax"
+may_depend_on = ["lean-ctx-patterns"]
+# tree-sitter code structure: ast_walk, signatures(_ts), deep_queries,
+# import_resolver, syntax_validate, chunk grammar map. Grammars behind the
+# crate's `tree-sitter`/`grammar-*` features; engine features forward.
+
+# ---------------------------------------------------------------- scheduled
+# Order is the planned extraction order. L0 = leaf crates, L1 = foundation,
+# L2 = needs an inversion first (frozen so the knot does not grow).
+
+[[scheduled]]
+crate = "lean-ctx-syntax"
+level = "L0"
+# Rest of the syntax layer. chunks_ts needs bm25_index's CodeChunk model,
+# grammar_usage writes the engine cache, signatures.rs is the facade that
+# adds persistent telemetry and extract_file_map (core::deps).
+modules = [
+  "core::chunks_ts",
+  "core::grammar_usage",
+  "core::signatures",
+]
+
+[[scheduled]]
+crate = "lean-ctx-fs"
+level = "L1"
+# Second half of the foundation. data_dir/paths switch to a temp sandbox
+# under the engine's cfg(test) (GL #512); that switch cannot cross a crate
+# boundary, so these wait for a sandbox design that does not rely on
+# cfg(test). pathutil, project_hash, agent_identity, canonical depend on it.
+modules = [
+  "core::agent_identity",
+  "core::canonical",
+  "core::data_dir",
+  "core::paths",
+  "core::pathutil",
+  "core::project_hash",
+]
+
+[[scheduled]]
+crate = "(inversion first)"
+level = "L2"
+modules = [
+  "core::config",
+  "core::hive",
+]

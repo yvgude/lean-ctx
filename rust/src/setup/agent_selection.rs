@@ -9,7 +9,8 @@
 
 use std::collections::BTreeSet;
 
-use crate::core::editor_registry::EditorTarget;
+pub use crate::core::editor_registry::known_agent_keys;
+use crate::core::editor_registry::{EditorTarget, PI_AGENT_KEY as PI_KEY};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentScope {
@@ -37,22 +38,6 @@ pub struct DetectedAgent {
     pub label: String,
     /// Already carries a lean-ctx entry from an earlier setup.
     pub connected: bool,
-}
-
-/// `pi` has no MCP target (its integration is the pi-lean-ctx package, see
-/// `editor_registry::detect`) but is an `init --agent` and rules target.
-const PI_KEY: &str = "pi";
-
-/// Agent keys `--agents` and `setup.agents` accept.
-#[must_use]
-pub fn known_agent_keys(targets: &[EditorTarget]) -> BTreeSet<String> {
-    let mut keys: BTreeSet<String> = targets
-        .iter()
-        .filter(|t| !t.agent_key.is_empty())
-        .map(|t| t.agent_key.clone())
-        .collect();
-    keys.insert(PI_KEY.to_string());
-    keys
 }
 
 /// Parse a `--agents` value: comma-separated agent keys, or `none` to connect

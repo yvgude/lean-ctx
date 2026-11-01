@@ -12,6 +12,7 @@ pub mod dedupe;
 pub mod derived;
 pub mod emit;
 pub mod episode;
+pub mod lifecycle;
 pub mod refs;
 pub mod rules;
 

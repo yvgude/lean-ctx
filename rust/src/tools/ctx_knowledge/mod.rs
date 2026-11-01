@@ -514,28 +514,6 @@ fn handle_lifecycle_report(project_root: &str) -> String {
         archives.len()
     ));
 
-    // Episodic layer (session episodes).
-    {
-        let store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-        let cap = policy.episodic.max_episodes;
-        out.push_str(&format!(
-            "episodic    {} episode(s) (cap {cap}, {} actions/episode max)\n",
-            store.episodes.len(),
-            policy.episodic.max_actions_per_episode,
-        ));
-    }
-
-    // Procedural layer (learned action sequences).
-    {
-        let store = crate::core::procedural_memory::ProceduralStore::load_or_create(&hash);
-        out.push_str(&format!(
-            "procedural  {} procedure(s) (cap {}, learned at >={} repetitions)\n",
-            store.procedures.len(),
-            policy.procedural.max_procedures,
-            policy.procedural.min_repetitions,
-        ));
-    }
-
     // Embeddings layer (semantic index over knowledge facts).
     #[cfg(feature = "embeddings")]
     {
@@ -549,7 +527,7 @@ fn handle_lifecycle_report(project_root: &str) -> String {
     out.push_str("embeddings  (feature disabled in this build)\n");
 
     out.push_str(
-        "\nLayer boundaries: session = working memory (now) | knowledge/episodic/procedural = long-term (ETL via consolidate) | providers = external (read-through)\n",
+        "\nLayer boundaries: session = working memory (now) | knowledge = long-term (ETL via consolidate) | providers = external (read-through)\n",
     );
     out
 }
@@ -960,10 +938,13 @@ fn handle_restore(
     limit: Option<usize>,
 ) -> String {
     let store = match store {
+        Some(s) if crate::core::memory_archive::MemoryStore::is_retired(s) => {
+            return crate::core::memory_archive::RETIRED_PROCEDURES_STORE_NOTICE.to_string();
+        }
         Some(s) => match crate::core::memory_archive::MemoryStore::parse(s) {
             Some(ms) => Some(ms),
             None => {
-                return format!("Unknown store: {s}. Use: facts, history, procedures, patterns");
+                return format!("Unknown store: {s}. Use: facts, history, patterns");
             }
         },
         None => None,

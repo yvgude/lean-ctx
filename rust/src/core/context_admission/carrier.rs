@@ -28,7 +28,7 @@ use super::{
     admit_uninspectable, capture, clean, fingerprint_digest,
 };
 
-/// The wording the originless tee store uses (`proxy/ccr/storage.rs`).
+/// The wording the originless tee store uses (`core/ccr/storage.rs`).
 pub(crate) const NO_SOURCE_AUTHORITY: &str =
     "stored output has no source authority; repeat the original authorized operation";
 

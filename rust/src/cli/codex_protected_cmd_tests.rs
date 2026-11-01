@@ -198,7 +198,7 @@ fn fixture() -> Fixture {
 #[test]
 fn config_encodes_the_full_boundary() {
     let fixture = fixture();
-    let profile = write_guard::profile(&fixture.pre, &fixture.session).expect("profile");
+    let profile = mcp_profile(&fixture.pre, &fixture.session).expect("profile");
     let rendered = render_config(&fixture.pre, &fixture.session, &profile).expect("render");
     let parsed: toml::Table = rendered
         .parse()
@@ -261,7 +261,7 @@ fn selected_source_uses_wrapper_and_denies_credentials_to_native_tools() {
         glab: fixture.pre.real_home.join("bin/glab"),
         config_dir: config_dir.clone(),
     });
-    let profile = write_guard::profile(&fixture.pre, &fixture.session).unwrap();
+    let profile = mcp_profile(&fixture.pre, &fixture.session).unwrap();
     let rendered = render_config(&fixture.pre, &fixture.session, &profile).unwrap();
     let doc: toml::Table = rendered.parse().unwrap();
     assert_eq!(
@@ -283,7 +283,7 @@ fn selected_source_uses_wrapper_and_denies_credentials_to_native_tools() {
 #[test]
 fn config_has_exactly_one_mcp_server_bound_to_the_project() {
     let fixture = fixture();
-    let profile = write_guard::profile(&fixture.pre, &fixture.session).expect("profile");
+    let profile = mcp_profile(&fixture.pre, &fixture.session).expect("profile");
     let rendered = render_config(&fixture.pre, &fixture.session, &profile).expect("render");
     let parsed: toml::Table = rendered.parse().expect("valid TOML");
 
@@ -328,7 +328,7 @@ fn config_has_exactly_one_mcp_server_bound_to_the_project() {
 #[test]
 fn config_rendering_is_deterministic() {
     let fixture = fixture();
-    let profile = write_guard::profile(&fixture.pre, &fixture.session).expect("profile");
+    let profile = mcp_profile(&fixture.pre, &fixture.session).expect("profile");
     let first = render_config(&fixture.pre, &fixture.session, &profile).expect("render");
     let second = render_config(&fixture.pre, &fixture.session, &profile).expect("render");
     assert_eq!(first, second);

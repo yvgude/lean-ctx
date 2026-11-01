@@ -139,7 +139,7 @@ impl Default for Config {
             index: IndexConfig::default(),
             skillify: SkillifyConfig::default(),
             summaries: SummariesConfig::default(),
-            llm: crate::core::llm_enhance::LlmConfig::default(),
+            llm: LlmConfig::default(),
             embedding: EmbeddingConfig::default(),
             shell_hook_disabled: false,
             shadow_mode: true,

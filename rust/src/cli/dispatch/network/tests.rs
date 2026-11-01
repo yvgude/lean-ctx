@@ -145,6 +145,52 @@ fn auth_token_file_is_read_without_its_line_break_and_the_argv_form_warns() {
     assert!(super::AUTH_TOKEN_ARGV_WARNING.contains("LEAN_CTX_HTTP_TOKEN"));
 }
 
+// `cockpit --auth-token=<token>` put the Bearer token in the process list;
+// the token file (flag or env) keeps it out, the argv form still works.
+#[test]
+fn cockpit_auth_token_reads_the_file_and_keeps_the_argv_form() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("cockpit.token");
+    std::fs::write(&path, "tok-file\n").expect("write token");
+    let path_str = path.to_str().expect("utf-8 path");
+    let no_env = |_: &str| None;
+    let token = |list: &[&str]| super::cockpit_auth_token(&args(list), no_env);
+
+    assert_eq!(
+        token(&[&format!("--auth-token-file={path_str}")]),
+        Ok(Some("tok-file".into()))
+    );
+    assert_eq!(
+        token(&["--auth-token-file", path_str]),
+        Ok(Some("tok-file".into()))
+    );
+    assert_eq!(
+        token(&["--auth-token=tok-argv"]),
+        Ok(Some("tok-argv".into()))
+    );
+    assert_eq!(token(&["--token=tok-argv"]), Ok(Some("tok-argv".into())));
+    assert_eq!(token(&[]), Ok(None));
+    assert!(token(&["--auth-token=a", "--auth-token-file", path_str]).is_err());
+    assert!(token(&["--auth-token-file"]).is_err());
+    assert!(token(&["--auth-token-file", "--no-auth"]).is_err());
+    let missing = token(&["--auth-token-file=/nonexistent/lean-ctx.token"]).unwrap_err();
+    assert!(missing.contains("Invalid auth token file"), "{missing}");
+
+    // LEAN_CTX_HTTP_TOKEN_FILE applies only while LEAN_CTX_HTTP_TOKEN is unset.
+    let file_env = |name: &str| (name == "LEAN_CTX_HTTP_TOKEN_FILE").then(|| path_str.to_string());
+    assert_eq!(
+        super::cockpit_auth_token(&[], file_env),
+        Ok(Some("tok-file".into()))
+    );
+    let both_env = |name: &str| match name {
+        "LEAN_CTX_HTTP_TOKEN_FILE" => Some(path_str.to_string()),
+        "LEAN_CTX_HTTP_TOKEN" => Some("tok-env".to_string()),
+        _ => None,
+    };
+    assert_eq!(super::cockpit_auth_token(&[], both_env), Ok(None));
+    assert!(super::COCKPIT_AUTH_TOKEN_ARGV_WARNING.contains("--auth-token-file"));
+}
+
 // The owner's `lean-ctx cockpit --project <dir>` was silently ignored.
 #[test]
 fn cockpit_project_flag_takes_both_forms_and_refuses_a_missing_dir() {

@@ -276,71 +276,6 @@ fn ledger_export_neutralises_spreadsheet_formulas() {
 }
 
 #[test]
-fn both_routes_answer_without_any_entitlement() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let token = std::sync::Arc::new("secret".to_string());
-    let route = |path: &str, token: Option<&std::sync::Arc<String>>, method: &str, body: &Value| {
-        let (status, _, body) = crate::dashboard::routes::route_response(
-            path,
-            "",
-            None,
-            token,
-            true,
-            method,
-            &body.to_string(),
-        );
-        (
-            status,
-            serde_json::from_str::<Value>(&body).unwrap_or(Value::Null),
-        )
-    };
-    let request = json!({ "op": "memory.analyze", "method": "GET" });
-
-    let (status, inputs) = route(
-        "/api/dashboard-analysis/inputs",
-        Some(&token),
-        "POST",
-        &request,
-    );
-    assert_eq!(status, "200 OK", "{inputs}");
-    assert_eq!(inputs["request"]["op"], json!("memory.analyze"));
-    assert!(inputs["request"]["inputs"].is_object());
-
-    let mut apply = request.clone();
-    apply["response"] = json!({ "status": 200, "body": { "contradictions": [] } });
-    let (status, answer) = route(
-        "/api/dashboard-analysis/apply",
-        Some(&token),
-        "POST",
-        &apply,
-    );
-    assert_eq!(status, "200 OK", "{answer}");
-    assert_eq!(
-        answer,
-        json!({ "status": 200, "body": { "contradictions": [] } })
-    );
-
-    // Project data and writes stay behind the dashboard's bearer token.
-    for path in [
-        "/api/dashboard-analysis/inputs",
-        "/api/dashboard-analysis/apply",
-    ] {
-        assert_eq!(route(path, None, "POST", &request).0, "403 Forbidden");
-        assert_eq!(
-            route(path, Some(&token), "GET", &request).0,
-            "405 Method Not Allowed"
-        );
-    }
-    let (status, _) = route(
-        "/api/runtime/pro.dashboard.knowledge_workflows",
-        Some(&token),
-        "POST",
-        &request,
-    );
-    assert_eq!(status, "404 Not Found");
-}
-
-#[test]
 fn apply_refuses_a_missing_answer_and_foreign_fields() {
     let iso = crate::core::data_dir::isolated_data_dir();
     let (_dir, scope) = project(iso.path());
@@ -490,22 +425,6 @@ fn an_input_over_one_frame_is_413() {
     };
     let reply = handle_inputs(&env, r#"{"op":"memory.analyze","method":"GET"}"#);
     assert_eq!(reply.status, 413, "{}", reply.body);
-}
-
-#[test]
-fn work_analysis_keeps_the_newest_sessions_that_fit_one_frame() {
-    let session = |id: usize| json!({ "id": id, "summary": "x".repeat(1_000) });
-    let mut payload = super::wire::Request::default();
-    payload.inputs.insert(
-        "episodes".into(),
-        json!((0..500).map(session).collect::<Vec<_>>()),
-    );
-    let size = super::bridge::fit_newest_episodes(&mut payload, 100_000).unwrap();
-    assert!(size <= 100_000, "{size}");
-    let kept = payload.inputs["episodes"].as_array().unwrap();
-    assert!(!kept.is_empty() && kept.len() < 500);
-    // The oldest go first: the newest session is still the last one.
-    assert_eq!(kept.last().unwrap()["id"], json!(499));
 }
 
 #[test]

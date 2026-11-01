@@ -1,6 +1,6 @@
 //! Multi-store, lossless memory archive (#995 Phase 1).
 //!
-//! Every memory store — facts, history, procedures, patterns — archives the
+//! Every memory store — facts, history, patterns — archives the
 //! items it evicts here *before* dropping them, so capacity management is never
 //! lossy and anything reclaimed can be restored. This is the single archive
 //! subsystem behind the memory-capacity module and the recall-miss
@@ -32,21 +32,25 @@ const DEFAULT_MAX_ARCHIVE_FILES: usize = 16;
 
 /// Which memory store an archive belongs to. Drives the on-disk path only — the
 /// archive is generic over the item type, so this stays decoupled from the
-/// concrete fact/insight/procedure/pattern structs.
+/// concrete fact/insight/pattern structs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoryStore {
     Facts,
     History,
-    Procedures,
     Patterns,
 }
+
+/// Reply to a restore that names `store=procedures`: that archive belonged to
+/// the procedure memory retired in 3.13.0 (DEPRECATIONS.toml
+/// `mcp-ctx-session-episodes-procedures`). Nothing is restored; archived
+/// procedure files stay on disk untouched.
+pub const RETIRED_PROCEDURES_STORE_NOTICE: &str = "DEPRECATION: store=procedures is retired with the procedure memory; nothing was restored. Use: facts, history, patterns";
 
 impl MemoryStore {
     pub fn as_str(self) -> &'static str {
         match self {
             MemoryStore::Facts => "facts",
             MemoryStore::History => "history",
-            MemoryStore::Procedures => "procedures",
             MemoryStore::Patterns => "patterns",
         }
     }
@@ -55,18 +59,25 @@ impl MemoryStore {
         match s.trim().to_lowercase().as_str() {
             "facts" | "fact" => Some(MemoryStore::Facts),
             "history" | "insights" => Some(MemoryStore::History),
-            "procedures" | "procedure" | "procs" => Some(MemoryStore::Procedures),
             "patterns" | "pattern" => Some(MemoryStore::Patterns),
             _ => None,
         }
     }
 
+    /// Whether `s` names the retired procedure archive
+    /// ([`RETIRED_PROCEDURES_STORE_NOTICE`]).
+    pub fn is_retired(s: &str) -> bool {
+        matches!(
+            s.trim().to_lowercase().as_str(),
+            "procedures" | "procedure" | "procs"
+        )
+    }
+
     /// All stores, for cross-store iteration (restore, reporting).
-    pub fn all() -> [MemoryStore; 4] {
+    pub fn all() -> [MemoryStore; 3] {
         [
             MemoryStore::Facts,
             MemoryStore::History,
-            MemoryStore::Procedures,
             MemoryStore::Patterns,
         ]
     }
@@ -259,37 +270,6 @@ fn archive_items_at<T: Serialize>(
     archive_items_inner(store, scope, items, cfg, None, None, now)
 }
 
-pub(crate) fn archive_items_with_authority<T: Serialize>(
-    store: MemoryStore,
-    scope: Option<&str>,
-    items: &[T],
-    cfg: &ArchiveConfig,
-    admission: &crate::core::context_admission::stores::StoreAdmission,
-    authority: &crate::core::policy::runtime::PublicationAuthority,
-) -> Result<Option<PathBuf>, String> {
-    let knowledge = if knowledge_store(store) && !items.is_empty() {
-        let root = archive_project().ok_or("archive project unavailable")?;
-        let snapshot = crate::core::knowledge::protection::KnowledgeAdmission::capture(
-            &root.to_string_lossy(),
-        )?;
-        if snapshot.gateway_snapshot().digest() != admission.digest() {
-            return Err("archive admission changed; retry".into());
-        }
-        Some(snapshot)
-    } else {
-        None
-    };
-    archive_items_inner(
-        store,
-        scope,
-        items,
-        cfg,
-        Some((admission, authority)),
-        knowledge.as_ref().map(|snapshot| (snapshot, authority)),
-        Utc::now(),
-    )
-}
-
 fn knowledge_store(store: MemoryStore) -> bool {
     matches!(
         store,
@@ -306,7 +286,6 @@ fn admits_knowledge_archive_item(
         MemoryStore::Facts => admission.admits_archive_fact_value(value),
         MemoryStore::History => admission.admits_archive_history_value(value),
         MemoryStore::Patterns => admission.admits_archive_pattern_value(value),
-        MemoryStore::Procedures => admission.admits_archive_value(value),
     }
 }
 
@@ -319,7 +298,6 @@ fn admits_typed_knowledge_archive_item(
         MemoryStore::Facts => admission.admits_typed_archive_fact_value(value),
         MemoryStore::History => admission.admits_typed_archive_history_value(value),
         MemoryStore::Patterns => admission.admits_typed_archive_pattern_value(value),
-        MemoryStore::Procedures => false,
     }
 }
 
@@ -677,7 +655,6 @@ fn restore_items_inner<T: DeserializeOwned>(
         let kind = match original["store"].as_str() {
             Some("facts") => MemoryStore::Facts,
             Some("history") => MemoryStore::History,
-            Some("procedures") => MemoryStore::Procedures,
             Some("patterns") => MemoryStore::Patterns,
             _ => return Err("archive store identity unavailable".into()),
         };
@@ -817,37 +794,6 @@ pub mod tests {
     struct Item {
         id: u32,
         label: String,
-    }
-
-    #[test]
-    fn admitted_archive_rejects_unobserved_policy_before_publication() {
-        with_temp_data_dir(|| {
-            let project = tempfile::tempdir().expect("project root");
-            let project_path = project.path().to_str().expect("UTF-8 project path");
-            crate::core::policy::runtime::with_project_source_view(project_path, || {
-                let authority = crate::core::policy::runtime::PublicationAuthority::capture()
-                    .expect("active project authority");
-                let config = crate::core::config::Config::load_arc();
-                let admission = crate::core::context_admission::stores::StoreAdmission::with_policy(
-                    crate::core::context_admission::AdmissionPolicy::from_config(&config),
-                );
-                let scope = Some("publication-guard-test");
-                let result = archive_items_with_authority(
-                    MemoryStore::History,
-                    scope,
-                    &items(1),
-                    &ArchiveConfig::default(),
-                    &admission,
-                    &authority,
-                );
-                assert!(
-                    result.is_err(),
-                    "explicit unobserved snapshots cannot publish"
-                );
-                assert!(list_archives(MemoryStore::History, scope).is_empty());
-            })
-            .expect("source view");
-        });
     }
 
     fn items(n: u32) -> Vec<Item> {
@@ -1106,6 +1052,10 @@ pub mod tests {
             assert_eq!(MemoryStore::parse(store.as_str()), Some(store));
         }
         assert_eq!(MemoryStore::parse("nope"), None);
+        // The retired procedure archive is no store any more, only a notice.
+        assert_eq!(MemoryStore::parse("procedures"), None);
+        assert!(MemoryStore::is_retired(" Procedures "));
+        assert!(!MemoryStore::is_retired("patterns"));
     }
 
     #[test]

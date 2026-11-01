@@ -64,12 +64,6 @@ async fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
     cond()
 }
 
-/// True once `dir` exists and contains at least one entry. Tolerates the dir not
-/// existing yet (the background writer may not have created it).
-fn dir_has_entry(dir: &std::path::Path) -> bool {
-    std::fs::read_dir(dir).is_ok_and(|mut it| it.next().is_some())
-}
-
 #[allow(clippy::await_holding_lock)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn memory_benchmark_suite_persists_core_artifacts() {
@@ -158,27 +152,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     )
     .await;
 
-    // 3) Episodic + procedural memory persistence.
-    let _ = call_tool_json(
-        &svc,
-        "ctx_session",
-        json!({
-            "action": "episodes",
-            "value": "record"
-        }),
-    )
-    .await;
-    let _ = call_tool_json(
-        &svc,
-        "ctx_session",
-        json!({
-            "action": "procedures",
-            "value": "detect"
-        }),
-    )
-    .await;
-
-    // 4) Assert artifacts exist on disk. Persistence runs on a background thread,
+    // 3) Assert artifacts exist on disk. Persistence runs on a background thread,
     //    so poll with a bounded timeout rather than asserting immediately (#215).
     let knowledge = lean_ctx::core::knowledge::ProjectKnowledge::load_or_create(&root_str);
     let knowledge_dir = data_dir
@@ -208,18 +182,6 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     })
     .await;
     assert!(edge_present, "expected at least one relation edge");
-
-    let episodes_dir = data_dir.path().join("memory").join("episodes");
-    assert!(
-        wait_until(|| dir_has_entry(&episodes_dir)).await,
-        "expected at least one episodic store file"
-    );
-
-    let procs_dir = data_dir.path().join("memory").join("procedures");
-    assert!(
-        wait_until(|| dir_has_entry(&procs_dir)).await,
-        "expected at least one procedural store file"
-    );
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };

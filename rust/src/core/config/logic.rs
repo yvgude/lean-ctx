@@ -362,12 +362,6 @@ impl Config {
             if policy.knowledge.max_patterns == default_policy.knowledge.max_patterns {
                 policy.knowledge.max_patterns = (50.0 * scale_factor) as usize;
             }
-            if policy.episodic.max_episodes == default_policy.episodic.max_episodes {
-                policy.episodic.max_episodes = (500.0 * scale_factor) as usize;
-            }
-            if policy.procedural.max_procedures == default_policy.procedural.max_procedures {
-                policy.procedural.max_procedures = (100.0 * scale_factor) as usize;
-            }
         }
 
         policy.validate()?;

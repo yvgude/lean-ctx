@@ -2199,8 +2199,13 @@ dependencies = [
  "insta",
  "jsonschema",
  "keyring",
+ "lean-ctx-compress",
+ "lean-ctx-fs",
  "lean-ctx-ocla",
+ "lean-ctx-patterns",
  "lean-ctx-protocol",
+ "lean-ctx-syntax",
+ "lean-ctx-workgraph",
  "leanctx-native-storage",
  "leanctx-verify",
  "libc",
@@ -2248,6 +2253,114 @@ dependencies = [
  "tracing-subscriber",
  "tree-sitter",
  "tree-sitter-bash",
+ "unicode-normalization",
+ "unicode-width",
+ "ureq",
+ "urlencoding",
+ "uuid",
+ "walkdir",
+ "wasmi",
+ "wat",
+ "windows-sys 0.61.2",
+ "yaml_serde",
+ "zeroize",
+ "zip",
+ "zstd",
+]
+
+[[package]]
+name = "lean-ctx-compress"
+version = "0.1.0"
+dependencies = [
+ "lean-ctx-patterns",
+ "regex",
+ "serde_json",
+ "similar 3.1.2",
+ "yaml_serde",
+]
+
+[[package]]
+name = "lean-ctx-embed"
+version = "0.1.0"
+dependencies = [
+ "lean-ctx",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
+name = "lean-ctx-fs"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "dirs",
+ "filetime",
+ "fs2",
+ "libc",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "toml",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "lean-ctx-ocla"
+version = "4.0.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "blake3",
+ "ed25519-dalek",
+ "getrandom 0.4.3",
+ "lean-ctx-protocol",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "lean-ctx-patterns"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "moka",
+ "regex",
+ "serde",
+ "serde_json",
+ "tiktoken-rs",
+ "tracing",
+]
+
+[[package]]
+name = "lean-ctx-protocol"
+version = "0.4.0"
+dependencies = [
+ "base64 0.22.1",
+ "chacha20poly1305",
+ "chrono",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "hkdf",
+ "hmac",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
+name = "lean-ctx-syntax"
+version = "0.1.0"
+dependencies = [
+ "lean-ctx-patterns",
+ "regex",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-bash",
  "tree-sitter-c",
  "tree-sitter-c-sharp",
  "tree-sitter-cpp",
@@ -2274,63 +2387,18 @@ dependencies = [
  "tree-sitter-swift",
  "tree-sitter-typescript",
  "tree-sitter-zig",
- "unicode-normalization",
- "unicode-width",
- "ureq",
- "urlencoding",
- "uuid",
- "walkdir",
- "wasmi",
- "wat",
- "windows-sys 0.61.2",
- "yaml_serde",
- "zeroize",
- "zip",
- "zstd",
 ]
 
 [[package]]
-name = "lean-ctx-embed"
+name = "lean-ctx-workgraph"
 version = "0.1.0"
 dependencies = [
- "lean-ctx",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
-name = "lean-ctx-ocla"
-version = "4.0.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
  "blake3",
- "ed25519-dalek",
- "getrandom 0.4.3",
  "lean-ctx-protocol",
- "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.20",
-]
-
-[[package]]
-name = "lean-ctx-protocol"
-version = "0.4.0"
-dependencies = [
- "base64 0.22.1",
- "chacha20poly1305",
- "chrono",
- "curve25519-dalek",
- "ed25519-dalek",
- "hkdf",
- "hmac",
- "regex",
- "serde",
- "serde_json",
- "sha2 0.11.0",
 ]
 
 [[package]]

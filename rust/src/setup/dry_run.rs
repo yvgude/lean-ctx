@@ -286,7 +286,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(home.path().join(".cursor")).unwrap();
         std::fs::create_dir_all(home.path().join(".codeium/windsurf")).unwrap();
-        let _home = crate::setup::EnvVarGuard::set("HOME", home.path().to_str().unwrap());
+        let _home = crate::test_env::EnvVarGuard::set("HOME", home.path().to_str().unwrap());
 
         let report = run_setup_with_options(&SetupOptions {
             non_interactive: true,

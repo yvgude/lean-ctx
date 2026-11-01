@@ -1,6 +1,6 @@
 //! Consolidation engine: session import, fact lifecycle (quality only — facts
-//! have no count limit), lossless capacity reclaim of the pattern, history and
-//! procedure stores, and the consolidation reports (#995).
+//! have no count limit), lossless capacity reclaim of the pattern and history
+//! stores, and the consolidation reports (#995).
 
 use chrono::{DateTime, Utc};
 
@@ -11,7 +11,6 @@ use crate::core::memory_archive::MemoryStore;
 use crate::core::memory_capacity::{reclaim_preview, reclaim_store, reclaim_target};
 use crate::core::memory_lifecycle::LifecycleReport;
 use crate::core::memory_policy::MemoryPolicy;
-use crate::core::procedural_memory::{ProceduralStore, retention_cmp};
 use crate::core::session::SessionState;
 
 pub(crate) fn load_policy_or_error() -> Result<MemoryPolicy, String> {
@@ -33,9 +32,6 @@ pub(crate) struct KnowledgeConsolidationReport {
     pub history: usize,
     pub history_capacity_target: usize,
     pub history_compacted: usize,
-    pub procedures: usize,
-    pub procedure_capacity_target: usize,
-    pub procedures_compacted: usize,
     pub lifecycle: LifecycleReport,
     /// True when produced by a preview run (no knowledge/archive/session writes).
     pub dry_run: bool,
@@ -95,7 +91,6 @@ fn consolidate_project_knowledge_with_view(
             session.as_ref(),
             opts,
             &policy,
-            &admission,
             &knowledge_admission,
         )?;
         if !admission.is_current() {
@@ -132,7 +127,6 @@ fn consolidate_project_knowledge_with_view(
                 session.as_ref(),
                 opts,
                 &policy,
-                &admission,
                 &knowledge_admission,
                 watermark,
             )
@@ -203,7 +197,6 @@ fn run_consolidation_locked(
     session: Option<&SessionState>,
     opts: &ConsolidateOptions,
     policy: &MemoryPolicy,
-    admission: &StoreAdmission,
     knowledge_admission: &crate::core::knowledge::protection::KnowledgeAdmission,
     watermark: Option<DateTime<Utc>>,
 ) -> Result<KnowledgeConsolidationReport, String> {
@@ -244,11 +237,6 @@ fn run_consolidation_locked(
         patterns_compacted = reclaim_patterns(knowledge, policy)?;
         history_compacted += reclaim_history(knowledge, policy)?;
     }
-    let (procedures, procedure_capacity_target, procedures_compacted) = if opts.reclaim_stores {
-        reclaim_procedures(&knowledge.project_hash, policy, admission)?
-    } else {
-        procedure_counts(&knowledge.project_hash, policy, admission)?
-    };
 
     let active_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
     let archived_facts = knowledge.facts.len().saturating_sub(active_facts);
@@ -269,9 +257,6 @@ fn run_consolidation_locked(
         history: knowledge.history.len(),
         history_capacity_target: reclaim_target(policy.knowledge.max_history, headroom),
         history_compacted,
-        procedures,
-        procedure_capacity_target,
-        procedures_compacted,
         lifecycle,
         dry_run: false,
     })
@@ -285,7 +270,6 @@ fn dry_run_report(
     session: Option<&SessionState>,
     opts: &ConsolidateOptions,
     policy: &MemoryPolicy,
-    admission: &StoreAdmission,
     knowledge_admission: &crate::core::knowledge::protection::KnowledgeAdmission,
 ) -> Result<KnowledgeConsolidationReport, String> {
     let mut knowledge = ProjectKnowledge::load_for_admission(project_root, knowledge_admission)?
@@ -344,15 +328,6 @@ fn dry_run_report(
         headroom,
         enabled,
     );
-    let procedures_len = ProceduralStore::load_admitted(&knowledge.project_hash, admission)?
-        .procedures
-        .len();
-    let procedures_compacted = reclaim_preview(
-        procedures_len,
-        policy.procedural.max_procedures,
-        headroom,
-        enabled,
-    );
 
     let active_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
     let archived_facts = knowledge.facts.len().saturating_sub(active_facts);
@@ -372,9 +347,6 @@ fn dry_run_report(
         history: knowledge.history.len(),
         history_capacity_target: reclaim_target(policy.knowledge.max_history, headroom),
         history_compacted,
-        procedures: procedures_len,
-        procedure_capacity_target: reclaim_target(policy.procedural.max_procedures, headroom),
-        procedures_compacted,
         lifecycle,
         dry_run: true,
     })
@@ -429,52 +401,6 @@ fn reclaim_patterns(
     .map(|archived| archived.len())
 }
 
-/// Lossless procedure capacity reclaim. Returns `(remaining, target, archived)`.
-fn reclaim_procedures(
-    project_hash: &str,
-    policy: &MemoryPolicy,
-    admission: &StoreAdmission,
-) -> Result<(usize, usize, usize), String> {
-    let target = reclaim_target(
-        policy.procedural.max_procedures,
-        policy.lifecycle.reclaim_headroom_pct,
-    );
-    let (store, compacted) = ProceduralStore::mutate_locked_admitted_with_authority(
-        project_hash,
-        admission,
-        |store, authority| {
-            let archived = crate::core::memory_capacity::reclaim_store_with_authority(
-                MemoryStore::Procedures,
-                Some(project_hash),
-                &mut store.procedures,
-                policy.procedural.max_procedures,
-                policy.lifecycle.reclaim_headroom_pct,
-                policy.lifecycle.reclaim_enabled,
-                (admission, authority),
-                retention_cmp,
-            )?;
-            Ok(archived.len())
-        },
-    )?;
-    Ok((store.procedures.len(), target, compacted))
-}
-
-/// Report-only procedure counts when no reclaim is requested.
-fn procedure_counts(
-    project_hash: &str,
-    policy: &MemoryPolicy,
-    admission: &StoreAdmission,
-) -> Result<(usize, usize, usize), String> {
-    let target = reclaim_target(
-        policy.procedural.max_procedures,
-        policy.lifecycle.reclaim_headroom_pct,
-    );
-    let len = ProceduralStore::load_admitted(project_hash, admission)?
-        .procedures
-        .len();
-    Ok((len, target, 0))
-}
-
 /// `consolidate --all`: consolidate every stored project, with explicit options
 /// (e.g. [`ConsolidateOptions::into_dry_run`] for a preview).
 pub(crate) fn consolidate_all_project_knowledge_with(
@@ -511,7 +437,6 @@ pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport)
         "{banner}{session_line}\n\
          Facts: {} active, {} archived, {} total (no limit)\n\
          Patterns: {} (target <= {}, compacted {}), History: {} (target <= {}, compacted {})\n\
-         Procedures: {} (target <= {}, compacted {})\n\
          Lifecycle: decayed {}, consolidated {}, archived {}, compacted {}, remaining {}",
         report.active_facts,
         report.archived_facts,
@@ -522,9 +447,6 @@ pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport)
         report.history,
         report.history_capacity_target,
         report.history_compacted,
-        report.procedures,
-        report.procedure_capacity_target,
-        report.procedures_compacted,
         report.lifecycle.decayed_count,
         report.lifecycle.consolidated_count,
         report.lifecycle.archived_count,
@@ -534,8 +456,7 @@ pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport)
 
     // Eviction is lossless: if anything was (or would be) archived this run, point
     // the user at the explicit restore path.
-    let archived_total =
-        report.patterns_compacted + report.history_compacted + report.procedures_compacted;
+    let archived_total = report.patterns_compacted + report.history_compacted;
     if archived_total > 0 {
         let verb = if report.dry_run {
             "would archive"
@@ -574,7 +495,3 @@ fn project_label(project_root: &str) -> &str {
         project_root
     }
 }
-
-#[cfg(test)]
-#[path = "consolidate_admission_tests.rs"]
-mod admission_tests;

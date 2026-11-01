@@ -352,13 +352,7 @@ fn ctx_knowledge_lifecycle_report_covers_all_layers() {
         None,
     );
 
-    for layer in [
-        "knowledge",
-        "archives",
-        "episodic",
-        "procedural",
-        "embeddings",
-    ] {
+    for layer in ["knowledge", "archives", "embeddings"] {
         assert!(
             out.contains(layer),
             "lifecycle report must mention layer '{layer}': {out}"

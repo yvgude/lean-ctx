@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use crate::core::command_root::jail_cli_read_path;
 use crate::core::compressor;
 use crate::core::deps as dep_extract;
 use crate::core::entropy;
@@ -153,41 +154,6 @@ fn push_signature_lines(
             out.push_str(&sig.to_compact_located());
         }
     }
-}
-
-/// #1903: `lean-ctx read` enforces the same boundary as MCP `ctx_read` — the
-/// PathJail (project root + `allow_paths`/`extra_roots`/`read_only_roots` + the
-/// lean-ctx state dir) and the secret-path policy — with the same error text.
-/// A relative path is resolved against the process CWD (a shell user's
-/// intent), never re-anchored at the project root. A broad root (home, `/`,
-/// agent config dir) is refused like `lean-ctx call` does, unless the jail is
-/// disabled (`path_jail = false`), because jailing to `~` would admit every
-/// file the user owns.
-pub(crate) fn jail_cli_read_path(raw: &str, project_root: &str) -> Result<String, String> {
-    let candidate = if Path::new(raw).is_relative() {
-        std::env::current_dir().map_or_else(
-            |_| raw.to_string(),
-            |cwd| cwd.join(raw).to_string_lossy().into_owned(),
-        )
-    } else {
-        raw.to_string()
-    };
-    let jail_disabled = crate::core::config::Config::load().path_jail == Some(false);
-    if !jail_disabled && crate::core::pathutil::is_broad_or_unsafe_root(Path::new(project_root)) {
-        return Err(format!(
-            "path escapes project root: {candidate} (root: {project_root}). Access denied: \
-             no project detected — run inside a project, or pass --root <dir> \
-             (or set LEAN_CTX_PROJECT_ROOT)"
-        ));
-    }
-    crate::core::path_resolve::resolve_tool_path(Some(project_root), None, &candidate)
-}
-
-/// Whether `lean-ctx read <raw>` from this process would be refused (#1903).
-/// Shell-hook rewriters keep such reads on the native command instead of
-/// turning a working `cat` into an access-denied error.
-pub(crate) fn cli_read_is_refused(raw: &str) -> bool {
-    jail_cli_read_path(raw, &super::common::detect_project_root(&[])).is_err()
 }
 
 pub fn cmd_read(args: &[String]) -> bool {

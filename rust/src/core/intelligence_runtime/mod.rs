@@ -31,7 +31,7 @@ mod session;
 mod session_windows;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::io::Read;
 use std::path::Path;

@@ -50,7 +50,8 @@ fn flag_value<'a>(rest: &'a [String], names: &[&str]) -> Option<&'a str> {
 
 /// The server child's arguments: always foreground, never opening a
 /// browser, on the planned port; the user's host, subpath, auth mode and
-/// project carried over. The token is not among them.
+/// project carried over. The token is not among them (a token file's path
+/// is: the child reads the file itself).
 pub(crate) fn child_args(rest: &[String], port: u16) -> Vec<String> {
     let mut args = vec![
         "cockpit".to_string(),
@@ -66,10 +67,10 @@ pub(crate) fn child_args(rest: &[String], port: u16) -> Vec<String> {
                 args.push(arg.clone());
             }
             "--no-auth" => args.push(arg.clone()),
-            "--project" if arg.contains('=') => args.push(arg.clone()),
-            "--project" => {
-                if let Some(dir) = iter.next() {
-                    args.push(format!("--project={dir}"));
+            "--project" | "--auth-token-file" if arg.contains('=') => args.push(arg.clone()),
+            "--project" | "--auth-token-file" => {
+                if let Some(value) = iter.next() {
+                    args.push(format!("{flag}={value}"));
                 }
             }
             _ => {}
@@ -324,6 +325,8 @@ mod tests {
                 "--port",
                 "9999",
                 "--vscode",
+                "--auth-token-file",
+                "/run/token",
             ]),
             4100,
         );
@@ -338,6 +341,7 @@ mod tests {
                 "--base-path=/c",
                 "--no-auth",
                 "--project=/work/repo",
+                "--auth-token-file=/run/token",
             ])
         );
         assert!(!child.iter().any(|a| a.contains("secret")));

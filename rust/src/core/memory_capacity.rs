@@ -9,9 +9,7 @@
 use serde::Serialize;
 use std::cmp::Ordering;
 
-use super::memory_archive::{
-    ArchiveConfig, MemoryStore, archive_items, archive_items_with_authority,
-};
+use super::memory_archive::{ArchiveConfig, MemoryStore, archive_items};
 
 /// Live count to settle at after a reclaim: drop `ceil(max * headroom_pct)`
 /// items so a busy store keeps real headroom instead of churning right at its
@@ -57,65 +55,7 @@ pub(crate) fn reclaim_store<T, F>(
     max: usize,
     headroom_pct: f32,
     enabled: bool,
-    retention_cmp: F,
-) -> Result<Vec<T>, String>
-where
-    T: Serialize,
-    F: FnMut(&T, &T) -> Ordering,
-{
-    reclaim_store_inner(
-        store,
-        scope,
-        items,
-        max,
-        headroom_pct,
-        enabled,
-        retention_cmp,
-        None,
-    )
-}
-
-pub(crate) fn reclaim_store_with_authority<T, F>(
-    store: MemoryStore,
-    scope: Option<&str>,
-    items: &mut Vec<T>,
-    max: usize,
-    headroom_pct: f32,
-    enabled: bool,
-    authorization: (
-        &crate::core::context_admission::stores::StoreAdmission,
-        &crate::core::policy::runtime::PublicationAuthority,
-    ),
-    retention_cmp: F,
-) -> Result<Vec<T>, String>
-where
-    T: Serialize,
-    F: FnMut(&T, &T) -> Ordering,
-{
-    reclaim_store_inner(
-        store,
-        scope,
-        items,
-        max,
-        headroom_pct,
-        enabled,
-        retention_cmp,
-        Some(authorization),
-    )
-}
-
-fn reclaim_store_inner<T, F>(
-    store: MemoryStore,
-    scope: Option<&str>,
-    items: &mut Vec<T>,
-    max: usize,
-    headroom_pct: f32,
-    enabled: bool,
     mut retention_cmp: F,
-    authorization: Option<(
-        &crate::core::context_admission::stores::StoreAdmission,
-        &crate::core::policy::runtime::PublicationAuthority,
-    )>,
 ) -> Result<Vec<T>, String>
 where
     T: Serialize,
@@ -141,15 +81,7 @@ where
     // Persist borrowed candidates before mutating the live store. Serializing
     // references avoids requiring `T: Clone` while preserving archive order.
     let candidates: Vec<&T> = evict.iter().map(|&idx| &items[idx]).collect();
-    let cfg = ArchiveConfig::from_env();
-    match authorization {
-        Some((admission, authority)) => {
-            archive_items_with_authority(store, scope, &candidates, &cfg, admission, authority)?;
-        }
-        None => {
-            archive_items(store, scope, &candidates, &cfg)?;
-        }
-    }
+    archive_items(store, scope, &candidates, &ArchiveConfig::from_env())?;
 
     // Order-preserving: only chosen indices are removed, so retained items keep
     // their original relative order. Reverse removal avoids index shifts.
@@ -275,7 +207,7 @@ mod tests {
         with_temp_data_dir(|| {
             let mut items: Vec<Item> = (0..20).map(|rank| Item { rank }).collect();
             let archived = reclaim_store(
-                MemoryStore::Procedures,
+                MemoryStore::Patterns,
                 Some("p"),
                 &mut items,
                 10,

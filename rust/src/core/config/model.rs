@@ -284,7 +284,8 @@ pub struct Config {
     /// Archive configuration for zero-loss compression.
     #[serde(default)]
     pub archive: ArchiveConfig,
-    /// Memory policy (knowledge/episodic/procedural/lifecycle budgets & thresholds).
+    /// Memory policy (knowledge/lifecycle budgets & thresholds; the episodic
+    /// and procedural sections are retired and have no effect).
     #[serde(default)]
     pub memory: MemoryPolicy,
     /// Additional paths allowed by PathJail (absolute).
@@ -409,10 +410,10 @@ pub struct Config {
     /// AI session-summary settings (#292): periodic, semantically-recallable summaries.
     #[serde(default)]
     pub summaries: SummariesConfig,
-    /// Optional local LLM settings (`llm_enhance`). Their only consumer, the
-    /// cognition loop's observation synthesis, is retired.
+    /// Retired, no effect (kept so existing configs load; `DEPRECATIONS.toml`
+    /// `config-llm`): LeanCTX calls no model itself.
     #[serde(default)]
-    pub llm: crate::core::llm_enhance::LlmConfig,
+    pub llm: LlmConfig,
     /// Semantic-embedding engine settings (which local ONNX model to use).
     #[serde(default)]
     pub embedding: EmbeddingConfig,
@@ -859,4 +860,39 @@ pub struct Config {
     #[serde(default)]
     pub provenance: super::provenance::ProvenanceConfig,
     pub cross_agent: super::provenance::CrossAgentConfig,
+}
+
+/// `[llm]`: no effect. Its only consumers, query expansion and observation
+/// synthesis, are retired (DEPRECATIONS.toml `config-llm`); the section stays
+/// accepted so existing configs keep loading.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LlmConfig {
+    pub enabled: bool,
+    pub backend: LlmBackend,
+    pub model: String,
+    pub timeout_secs: u64,
+    pub base_url: Option<String>,
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            backend: LlmBackend::Ollama,
+            model: "qwen2.5-coder:1.5b".to_string(),
+            timeout_secs: 10,
+            base_url: None,
+        }
+    }
+}
+
+/// The `[llm] backend` values an existing config may still name.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LlmBackend {
+    #[default]
+    Ollama,
+    OpenRouter,
+    Anthropic,
 }

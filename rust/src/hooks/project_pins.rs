@@ -57,7 +57,7 @@ pub(crate) fn migrate_extra_roots(config_content: &str) {
     let Some(value) = value else {
         return;
     };
-    let mut roots = crate::cli::global_string_list("extra_roots");
+    let mut roots = crate::core::config::global_string_list("extra_roots");
     let before = roots.len();
     for path in std::env::split_paths(&value) {
         let entry = path.to_string_lossy().to_string();
@@ -350,7 +350,7 @@ mod tests {
             assert!(found.is_empty(), "{found:?}");
         }
         assert_eq!(
-            crate::cli::global_string_list("extra_roots"),
+            crate::core::config::global_string_list("extra_roots"),
             vec!["/work/b".to_string()],
             "the env-granted extra root moves into config.toml"
         );

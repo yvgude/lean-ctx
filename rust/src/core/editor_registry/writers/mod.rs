@@ -7,7 +7,7 @@ mod install;
 mod shared;
 mod uninstall;
 
-pub(crate) use install::validate_claude_binary;
+pub(crate) use install::{COMMANDCODE_MCP_INSTRUCTIONS, validate_claude_binary};
 pub use shared::auto_approve_tools;
 pub use uninstall::remove_lean_ctx_mcp_server;
 // Routers below dispatch to every install/uninstall writer; a glob keeps the

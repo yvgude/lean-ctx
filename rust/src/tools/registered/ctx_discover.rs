@@ -34,7 +34,7 @@ impl McpTool for CtxDiscoverTool {
         _ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
         let limit = get_usize(args, "limit").unwrap_or(15).min(100_000);
-        let history = crate::cli::load_shell_history_pub();
+        let history = crate::core::shell_history::load_shell_history();
         let result = crate::tools::ctx_discover::discover_from_history(&history, limit);
 
         Ok(ToolOutput::simple(result))

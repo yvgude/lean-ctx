@@ -7,7 +7,7 @@
 //! Falls back to heuristic chunking for unsupported languages.
 
 #[cfg(feature = "tree-sitter")]
-use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};
+use tree_sitter::{Node, Parser, Query, QueryCursor, StreamingIterator};
 
 use super::bm25_index::{ChunkKind, CodeChunk};
 
@@ -255,20 +255,7 @@ pub fn extract_chunks_ts(
 }
 
 #[cfg(feature = "tree-sitter")]
-fn get_language(ext: &str) -> Option<Language> {
-    Some(match ext {
-        "rs" => tree_sitter_rust::LANGUAGE.into(),
-        "ts" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
-        "js" | "jsx" => tree_sitter_javascript::LANGUAGE.into(),
-        "py" => tree_sitter_python::LANGUAGE.into(),
-        "go" => tree_sitter_go::LANGUAGE.into(),
-        "java" => tree_sitter_java::LANGUAGE.into(),
-        "c" | "h" => tree_sitter_c::LANGUAGE.into(),
-        "cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh" => tree_sitter_cpp::LANGUAGE.into(),
-        _ => return None,
-    })
-}
+use lean_ctx_syntax::chunk_grammar::chunk_language as get_language;
 
 #[cfg(feature = "tree-sitter")]
 fn get_chunk_query(ext: &str) -> Option<&'static str> {

@@ -4,7 +4,9 @@ use super::super::{
     HookMode, make_executable, mcp_server_quiet_mode, resolve_binary_path_for_bash,
     resolve_hook_command_binary, shell_quoted_binary, write_file, write_wrapper_file,
 };
-use super::shared::install_standard_hook_scripts;
+use super::shared::{
+    install_standard_hook_scripts, read_agent_json_config, report_unreadable_agent_config,
+};
 
 fn ensure_pretooluse_hook(
     pre: &mut Vec<serde_json::Value>,
@@ -289,16 +291,9 @@ pub(crate) fn install_cursor_deny_hook(_global: bool) {
     let deny_cmd = format!("{binary} hook deny");
 
     let hooks_json = home.join(".cursor").join("hooks.json");
-    let content = if hooks_json.exists() {
-        std::fs::read_to_string(&hooks_json).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let mut existing = if content.trim().is_empty() {
-        serde_json::json!({})
-    } else {
-        crate::core::jsonc::parse_jsonc(&content).unwrap_or_else(|_| serde_json::json!({}))
+    let mut existing = match read_agent_json_config(&hooks_json, "cursor") {
+        Ok(existing) => existing,
+        Err(error) => return report_unreadable_agent_config("Cursor", &error),
     };
 
     if !existing.is_object() {
@@ -367,17 +362,9 @@ pub(crate) fn install_cursor_hook_config(home: &std::path::Path) {
     let redirect_cmd = format!("{binary} hook redirect");
 
     let hooks_json = home.join(".cursor").join("hooks.json");
-
-    let content = if hooks_json.exists() {
-        std::fs::read_to_string(&hooks_json).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let mut existing = if content.trim().is_empty() {
-        serde_json::json!({})
-    } else {
-        crate::core::jsonc::parse_jsonc(&content).unwrap_or_else(|_| serde_json::json!({}))
+    let mut existing = match read_agent_json_config(&hooks_json, "cursor") {
+        Ok(existing) => existing,
+        Err(error) => return report_unreadable_agent_config("Cursor", &error),
     };
 
     if !existing.is_object() {
@@ -398,6 +385,25 @@ pub(crate) fn install_cursor_hook_config(home: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // An unparseable hooks.json was replaced with `{}` plus the lean-ctx
+    // hooks, dropping the user's own hooks. It is now refused and left
+    // byte-identical.
+    #[test]
+    fn unparseable_hooks_json_is_refused_and_left_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hooks_json = tmp.path().join(".cursor").join("hooks.json");
+        std::fs::create_dir_all(hooks_json.parent().unwrap()).unwrap();
+        let broken = "{\"version\": 1, \"hooks\": {\"stop\": [\n";
+        std::fs::write(&hooks_json, broken).unwrap();
+
+        install_cursor_hook_config(tmp.path());
+
+        assert_eq!(std::fs::read_to_string(&hooks_json).unwrap(), broken);
+        let error = read_agent_json_config(&hooks_json, "cursor").unwrap_err();
+        assert!(error.contains("hooks.json is not valid JSON"), "{error}");
+        assert!(error.contains("lean-ctx init --agent cursor"), "{error}");
+    }
 
     #[test]
     fn cursor_hooks_merge_preserves_other_entries() {

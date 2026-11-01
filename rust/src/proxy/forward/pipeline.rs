@@ -7,12 +7,12 @@ use std::collections::HashSet;
 
 use crate::{
     core::{
+        adaptive_policy::select_policy,
         config::PipelineConfig,
         knowledge_router::ContextAdvice,
         tokens::{COUNTING_FAMILY, count_tokens_for},
     },
     proxy::{
-        adaptive_policy::select_policy,
         compress::gate,
         dedup::dedup_tool_outputs,
         determinism_guard,

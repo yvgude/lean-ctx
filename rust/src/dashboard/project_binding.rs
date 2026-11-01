@@ -48,7 +48,6 @@ const PROJECT_READ_ROUTES: &[&str] = &[
     "/api/doctor",
     "/api/roi",
     "/api/memory",
-    "/api/procedures",
     "/api/gotchas",
     "/api/search",
     "/api/provenance",
@@ -68,7 +67,6 @@ const PROJECT_READ_ROUTES: &[&str] = &[
     "/api/call-graph",
     "/api/call-graph/status",
     "/api/symbols",
-    "/api/episodes",
     "/api/workspaces",
     "/api/routes",
     "/api/version",
@@ -108,6 +106,8 @@ const PROJECT_READ_ROUTES: &[&str] = &[
 /// - `/api/pulse`, `/api/pipeline-stats`: process counters.
 /// - `/api/gateway/detectors`: the detectors this engine ships.
 /// - `/metrics`: the process's Prometheus metrics.
+/// - `/api/episodes`, `/api/procedures`: retired with the episode and
+///   procedure memory; they answer the retirement notice only.
 const GLOBAL_READ_ROUTES: &[&str] = &[
     "/api/telemetry",
     "/api/context-summary",
@@ -127,6 +127,8 @@ const GLOBAL_READ_ROUTES: &[&str] = &[
     "/api/pipeline-stats",
     "/api/gateway/detectors",
     "/metrics",
+    "/api/episodes",
+    "/api/procedures",
 ];
 
 /// Writes made in the project the request names. Their handlers resolve the
@@ -139,7 +141,6 @@ const PROJECT_WRITE_ROUTES: &[&str] = &[
     "/api/dashboard-analysis/inputs",
     "/api/dashboard-analysis/apply",
     "/api/session/note",
-    "/api/episodes/annotate",
     "/api/knowledge/edit",
     "/api/knowledge-relations/edit",
     "/api/context-overlay",
@@ -148,8 +149,9 @@ const PROJECT_WRITE_ROUTES: &[&str] = &[
 ];
 
 /// Writes to device-wide state (`config.toml`, the feedback outbox): a valid
-/// project header is accepted and has no effect.
-const GLOBAL_WRITE_ROUTES: &[&str] = &["/api/settings", "/api/feedback"];
+/// project header is accepted and has no effect. `/api/episodes/annotate` is
+/// retired with the episode memory and writes nothing.
+const GLOBAL_WRITE_ROUTES: &[&str] = &["/api/settings", "/api/feedback", "/api/episodes/annotate"];
 
 /// How a request that names a project (`X-LeanCTX-Project`) is answered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -391,7 +393,6 @@ mod tests {
     fn project_writes_follow_the_named_project() {
         for route in [
             "/api/session/note",
-            "/api/episodes/annotate",
             "/api/knowledge/edit",
             "/api/knowledge-relations/edit",
             "/api/context-overlay",

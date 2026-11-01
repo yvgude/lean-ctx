@@ -282,9 +282,6 @@ fn search_compiled_pattern(
     // it cannot cover the next file the scan stops and says so; the files left
     // unscanned were not withheld by the policy and must not be counted as such.
     let mut budget_hit = false;
-    // Set when any hit gained an `∈name@Lstart` enclosing tag, so the
-    // self-describing legend is emitted only when it is actually needed (#580).
-    let mut any_enclosing = false;
 
     // Fast path: a warm resident trigram index narrows the candidate files in
     // memory, eliminating the per-call directory walk + full-corpus read. The
@@ -561,11 +558,8 @@ fn search_compiled_pattern(
                 // every caller/test relies on is untouched.
                 let tag = file_enclosing
                     .get_or_insert_with(|| EnclosingIndex::for_file(path, content.as_ref()))
-                    .tag_for(i + 1);
-                if tag.is_some() {
-                    any_enclosing = true;
-                }
-                let tag = tag.unwrap_or_default();
+                    .tag_for(i + 1)
+                    .unwrap_or_default();
                 // The anchor hash is over the RAW line (matching ctx_read/ctx_patch
                 // which both hash `content.lines()`), never the trimmed/truncated
                 // display text — otherwise ctx_patch would always see a mismatch.
@@ -707,14 +701,10 @@ fn search_compiled_pattern(
     if anchored {
         result.push_str("[anchored: path:line:hh → edit via ctx_patch]\n");
     }
-    // Self-describing output (GL #580 / #608): explain the `∈` enclosing tag and
-    // how to turn it into a handle. At most one note per result: a coverage
-    // note (cap, deadline, budget) below says more than this legend.
-    if any_enclosing && !(cap_hit || deadline_hit || budget_hit) {
-        result.push_str(
-            "[∈ enclosing symbol → ctx_search(action=symbol, handle=\"path#name@Lstart\")]\n",
-        );
-    }
+    // The `∈name@Lstart` tags carry no legend line: in the Dispatch benchmark
+    // transcripts agents used the tag names (`ctx_read symbol=`) and start
+    // lines, and never the `handle=` form the legend advertised (0 of 244
+    // tagged results, 2026-11-01); it cost ~30 tokens per run.
     result.push_str(&matches.join("\n"));
     if files_withheld > 0 {
         result.push_str(&format!(

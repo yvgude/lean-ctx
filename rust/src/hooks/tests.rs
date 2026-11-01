@@ -84,15 +84,15 @@ fn runtime_hook_refresh_does_not_write_rule_files() {
 
     std::fs::create_dir_all(&codex_home).unwrap();
 
-    let _home_guard = crate::setup::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
+    let _home_guard = crate::test_env::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
     let _profile_guard =
-        crate::setup::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
+        crate::test_env::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
 
     let _codex_guard =
-        crate::setup::EnvVarGuard::set("CODEX_HOME", codex_home.to_string_lossy().as_ref());
+        crate::test_env::EnvVarGuard::set("CODEX_HOME", codex_home.to_string_lossy().as_ref());
 
     let _copilot_guard =
-        crate::setup::EnvVarGuard::set("COPILOT_HOME", copilot_home.to_string_lossy().as_ref());
+        crate::test_env::EnvVarGuard::set("COPILOT_HOME", copilot_home.to_string_lossy().as_ref());
 
     install_codex_runtime_hook();
 
@@ -148,12 +148,12 @@ fn explicit_hook_policy_respects_absolute_rules_off() {
     let home = tmp.path();
     let copilot_home = home.join(".copilot");
 
-    let _home_guard = crate::setup::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
+    let _home_guard = crate::test_env::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
     let _profile_guard =
-        crate::setup::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
+        crate::test_env::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
     let _copilot_guard =
-        crate::setup::EnvVarGuard::set("COPILOT_HOME", copilot_home.to_string_lossy().as_ref());
-    let _rules_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
+        crate::test_env::EnvVarGuard::set("COPILOT_HOME", copilot_home.to_string_lossy().as_ref());
+    let _rules_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "off");
 
     install_agent_hook_respecting_rules_off("copilot", true, HookMode::Hybrid);
 
@@ -181,14 +181,14 @@ fn explicit_hook_policy_keeps_auto_false_overrideable() {
     )
     .unwrap();
 
-    let _home_guard = crate::setup::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
+    let _home_guard = crate::test_env::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
     let _profile_guard =
-        crate::setup::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
-    let _config_guard = crate::setup::EnvVarGuard::set(
+        crate::test_env::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
+    let _config_guard = crate::test_env::EnvVarGuard::set(
         "LEAN_CTX_CONFIG_DIR",
         config_dir.to_string_lossy().as_ref(),
     );
-    let _rules_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _rules_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
 
     install_agent_hook_respecting_rules_off("copilot", true, HookMode::Hybrid);
 
@@ -1068,15 +1068,15 @@ fn runtime_only_setup_dispatch_avoids_rule_writers() {
     std::fs::create_dir_all(home.join(".kiro")).unwrap();
     std::fs::create_dir_all(home.join(".config/opencode")).unwrap();
 
-    let _home_guard = crate::setup::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
+    let _home_guard = crate::test_env::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
     let _profile_guard =
-        crate::setup::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
-    let _config_guard = crate::setup::EnvVarGuard::set(
+        crate::test_env::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
+    let _config_guard = crate::test_env::EnvVarGuard::set(
         "LEAN_CTX_CONFIG_DIR",
         config_dir.to_string_lossy().as_ref(),
     );
-    let _rules_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-    let _scope_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+    let _rules_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _scope_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
 
     install_agent_runtime_hook_with_mode("claude", true, HookMode::Hybrid);
     install_agent_runtime_hook_with_mode("cursor", true, HookMode::Hybrid);
@@ -1089,7 +1089,7 @@ fn runtime_only_setup_dispatch_avoids_rule_writers() {
     install_agent_runtime_hook_with_mode("kiro", true, HookMode::Hybrid);
     install_agent_runtime_hook_with_mode("opencode", true, HookMode::Hybrid);
 
-    let claude_dir = crate::setup::claude_config_dir(home);
+    let claude_dir = crate::core::editor_registry::claude_state_dir(home);
 
     assert!(
         claude_dir.join("hooks/lean-ctx-rewrite.sh").exists(),

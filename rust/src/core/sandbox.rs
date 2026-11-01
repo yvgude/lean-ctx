@@ -567,7 +567,7 @@ fn run_runtime_command(mut cmd: Command, timeout: u64) -> Result<(String, String
         }
     }
     #[cfg(not(unix))]
-    let _protected = crate::cli::protected_child_prefix()?;
+    let _protected = crate::core::protected_store::protected_child_prefix()?;
     // GH #1347: isolate child into its own process group so an interactive
     // shell (bash -ic) cannot SIGTSTP the MCP server, and close stdin to
     // prevent terminal job-control attempts.
@@ -895,7 +895,8 @@ pub mod tests {
     fn level_zero_interpreters_and_compilers_require_the_protected_channel() {
         let _lock = crate::core::data_dir::test_env_lock();
         let isolation = crate::core::data_dir::isolated_data_dir();
-        let _session = crate::cli::pin_synthetic_session(isolation.path()).unwrap();
+        let _session =
+            crate::core::protected_store::pin_synthetic_session(isolation.path()).unwrap();
         let runtime = RuntimeConfig {
             command: "/bin/sh".into(),
             args: vec!["-c".into()],

@@ -40,7 +40,9 @@ async fn call_tool(
 
 #[allow(clippy::await_holding_lock)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn episodic_and_procedural_memory_persist_via_ctx_session_actions() {
+/// The episode and procedure memory is retired: its `ctx_session` actions
+/// stay accepted and write no store.
+async fn retired_episode_and_procedure_actions_write_no_store() {
     let _lock = lean_ctx::core::data_dir::test_env_lock();
     let data_dir = tempfile::tempdir().expect("data dir");
     // SAFETY: serialized by `test_env_lock()`.
@@ -87,11 +89,9 @@ async fn episodic_and_procedural_memory_persist_via_ctx_session_actions() {
     )
     .await;
 
-    let episodes_dir = data_dir.path().join("memory").join("episodes");
-    let mut entries = std::fs::read_dir(&episodes_dir).expect("episodes dir exists");
     assert!(
-        entries.next().is_some(),
-        "expected at least one episodic store file"
+        !data_dir.path().join("memory").join("episodes").exists(),
+        "a retired action wrote an episode store"
     );
 
     call_tool(
@@ -106,11 +106,9 @@ async fn episodic_and_procedural_memory_persist_via_ctx_session_actions() {
     )
     .await;
 
-    let procs_dir = data_dir.path().join("memory").join("procedures");
-    let mut entries = std::fs::read_dir(&procs_dir).expect("procedures dir exists");
     assert!(
-        entries.next().is_some(),
-        "expected at least one procedural store file"
+        !data_dir.path().join("memory").join("procedures").exists(),
+        "a retired action wrote a procedure store"
     );
 
     // SAFETY: serialized by `test_env_lock()`.

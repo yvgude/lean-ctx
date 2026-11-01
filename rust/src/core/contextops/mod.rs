@@ -173,7 +173,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
         let claude_dir = home.path().join(".claude").to_string_lossy().into_owned();
-        let _g = crate::setup::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &claude_dir);
+        let _g = crate::test_env::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &claude_dir);
 
         let ops = ContextOps::new(home.path(), project.path());
         assert!(

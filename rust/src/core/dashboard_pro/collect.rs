@@ -16,12 +16,11 @@ use super::wire::{GuardEvent, HeatmapEntry};
 use super::{ProResult, ProjectScope, guard, host_usage, ledger, security_fields, snapshots};
 
 /// The engine routes some inputs come from (`/api/knowledge-relations`,
-/// `/api/procedures`, …), already bound to the dashboard's project.
+/// `/api/gotchas`, …), already bound to the dashboard's project.
 pub(crate) trait RouteSource {
     fn get(&self, path: &str) -> Option<Value>;
 }
 
-const MAX_EPISODES: usize = 500;
 const MAX_HISTORY: usize = 100;
 /// Heatmap entries passed, most read first.
 const MAX_HEAT_ENTRIES: usize = 2_000;
@@ -241,24 +240,6 @@ fn adaptive_inputs(
     Ok(inputs)
 }
 
-fn episodes(scope: &ProjectScope) -> Value {
-    let root = scope.canonical.clone();
-    let hash = scope.partition.clone();
-    let loaded =
-        crate::core::policy::runtime::with_explicit_project_source_view(&root, |authority| {
-            let admission = crate::core::context_admission::stores::StoreAdmission::current();
-            let store =
-                crate::core::episodic_memory::EpisodicStore::load_admitted(&hash, &admission)?;
-            admission.authorize_publication(authority)?;
-            let skip = store.episodes.len().saturating_sub(MAX_EPISODES);
-            serde_json::to_value(&store.episodes[skip..]).map_err(|e| e.to_string())
-        });
-    match loaded {
-        Ok(Ok(value)) => value,
-        _ => Value::Array(Vec::new()),
-    }
-}
-
 fn agents(scope: &ProjectScope) -> Value {
     let registry: Value = super::read_json(&scope.data_dir.join("agents").join("registry.json"))
         .unwrap_or(Value::Null);
@@ -279,31 +260,6 @@ fn agents(scope: &ProjectScope) -> Value {
             })
             .collect(),
     )
-}
-
-/// Every project-relative tail of the paths episodes name.
-fn episode_paths(scope: &ProjectScope, episodes: &Value) -> Vec<String> {
-    let root = scope.canonical.to_string_lossy().into_owned();
-    let mut candidates = BTreeSet::new();
-    for episode in episodes.as_array().into_iter().flatten() {
-        for raw in episode
-            .get("affected_files")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-        {
-            let raw = raw.strip_prefix(&format!("{root}/")).unwrap_or(raw);
-            let parts: Vec<&str> = raw.split('/').filter(|p| !p.is_empty()).collect();
-            for start in 0..parts.len() {
-                candidates.insert(parts[start..].join("/"));
-            }
-        }
-        if candidates.len() >= MAX_EXISTENCE_CHECKS {
-            break;
-        }
-    }
-    existing(scope, candidates)
 }
 
 /// The inputs `op` needs. `guard_new` is only set for `alerts.evaluate`.
@@ -419,7 +375,9 @@ pub(crate) fn inputs(
             );
         }
         Op::WorkAnalysis => {
-            let episodes = episodes(scope);
+            // The episode and procedure memory is retired: `episodes`,
+            // `procedures` and `existing_paths` are no longer sent, and the
+            // analysis reports the work view as unavailable.
             let knowledge = crate::core::knowledge::ProjectKnowledge::load_or_create(&scope.root);
             let skip = knowledge.history.len().saturating_sub(MAX_HISTORY);
             put(
@@ -444,15 +402,9 @@ pub(crate) fn inputs(
                 "utc_offset_seconds",
                 json!(chrono::Local::now().offset().local_minus_utc()),
             );
-            for (key, route) in [
-                ("procedures", "/api/procedures"),
-                ("gotchas", "/api/gotchas"),
-                ("learning", "/api/learning"),
-            ] {
+            for (key, route) in [("gotchas", "/api/gotchas"), ("learning", "/api/learning")] {
                 put(key, routes.get(route).unwrap_or(Value::Null));
             }
-            put("existing_paths", json!(episode_paths(scope, &episodes)));
-            put("episodes", episodes);
             put("agents", agents(scope));
         }
         Op::AlertsUpdate | Op::AlertsTest | Op::AlertsEvaluate => {

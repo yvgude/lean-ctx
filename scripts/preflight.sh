@@ -100,7 +100,7 @@ classify_changes() {
     # CCR recovery surface (#983): a change here must keep the robustness suite
     # green, so flag it for the change-aware `cargo test --lib ccr_robustness` gate.
     case "$f" in
-      rust/src/proxy/ccr.rs|rust/src/proxy/ccr_robustness_tests.rs|rust/src/tools/ctx_expand.rs|rust/src/tools/registered/ctx_retrieve.rs|rust/src/core/read_stub_index.rs|rust/src/core/tabular_crush.rs) CCR_CHANGED=1 ;;
+      rust/src/proxy/ccr.rs|rust/src/core/ccr.rs|rust/src/core/ccr/storage.rs|rust/src/proxy/ccr_robustness_tests.rs|rust/src/tools/ctx_expand.rs|rust/src/tools/registered/ctx_retrieve.rs|rust/src/core/read_stub_index.rs|rust/src/core/tabular_crush.rs) CCR_CHANGED=1 ;;
     esac
     case "$f" in
       rust/tests/*|*/tests/*|*test*.rs|*tests.rs) TEST_SIGNAL=1 ;;
@@ -202,6 +202,12 @@ step "Engine ↔ Agent-Tools-SDK coupling" \
 # (docs/contracts/local-free-invariant-v2.md).
 step "Local-free invariant (check-local-free.py)" \
   "$COUPLING_PY" "$REPO_ROOT/scripts/check-local-free.py" --root "$REPO_ROOT"
+
+# Always-on, <1s, no build: modules scheduled for a crate gain no new
+# `crate::` edges, extracted crates never depend on the engine
+# (rust/CRATE_MAP.toml, "Split before you grow" in AGENTS.md).
+step "Crate boundaries (check-crate-boundaries.py)" \
+  "$COUPLING_PY" "$REPO_ROOT/scripts/check-crate-boundaries.py"
 
 # Always-on cheap gate: whitespace errors + leftover conflict markers. Checks
 # the pushed range (base..HEAD) when known, else the working tree.

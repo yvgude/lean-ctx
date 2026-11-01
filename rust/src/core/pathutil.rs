@@ -154,6 +154,21 @@ fn translate_msys_drive_prefix(p: &str) -> Option<String> {
     }
 }
 
+/// A Windows absolute path (`C:\…`, `C:/…`) or UNC path (`\\server`, `//server`),
+/// recognised lexically on every platform.
+pub fn is_windows_absolute_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
+    {
+        return true;
+    }
+
+    path.starts_with("\\\\") || path.starts_with("//")
+}
+
 /// Lexical (string-only) part of [`normalize_tool_path`]: MSYS2 drive prefix
 /// (Windows hosts only), separators, double slashes, trailing slash. Performs
 /// **no** filesystem access, so it is safe on persisted paths in

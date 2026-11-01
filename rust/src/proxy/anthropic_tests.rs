@@ -444,7 +444,7 @@ fn cold_prefix_repack_rewrites_protected_system_prose_when_enabled() {
     let _iso = crate::core::data_dir::isolated_data_dir();
     // Restored on drop, before the environment lock above is released: the
     // mode of this test is not the mode of whatever test runs next.
-    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
     crate::core::config::Config::update_global(|c| {
         c.proxy.role_aggressiveness.system = Some(0.9);
@@ -679,7 +679,7 @@ fn cache_breakpoint_injected_on_unanchored_system_when_opt_in() {
     // one ephemeral breakpoint lands on `system`, wrapping the verbatim text.
     let _iso = crate::core::data_dir::isolated_data_dir();
     // Stated, not inherited: like its siblings this test is about cache mode.
-    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
@@ -712,7 +712,7 @@ fn cache_breakpoint_off_by_default_is_byte_unchanged() {
     let _iso = crate::core::data_dir::isolated_data_dir();
     // Restored on drop, before the environment lock above is released: the
     // mode of this test is not the mode of whatever test runs next.
-    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
@@ -763,7 +763,7 @@ fn cache_aligner_measures_without_mutating_body() {
     let _iso = crate::core::data_dir::isolated_data_dir();
     // Restored on drop, before the environment lock above is released: the
     // mode of this test is not the mode of whatever test runs next.
-    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_ALIGNER");
     crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
     let body = serde_json::json!({
@@ -802,7 +802,7 @@ fn cache_align_relocate_moves_volatiles_to_tail_when_opt_in() {
     clear_relocate_env();
     // Restored on drop, before the environment lock above is released: the
     // mode of this test is not the mode of whatever test runs next.
-    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
         "system": cacheable_system_with_date(),
@@ -846,7 +846,7 @@ fn cache_align_relocate_off_by_default_is_byte_unchanged() {
     let _iso = crate::core::data_dir::isolated_data_dir();
     // Restored on drop, before the environment lock above is released: the
     // mode of this test is not the mode of whatever test runs next.
-    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     clear_relocate_env();
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
@@ -927,7 +927,7 @@ fn cache_align_relocate_composes_with_breakpoint_to_one_anchor() {
     clear_relocate_env();
     // Restored on drop, before the environment lock above is released: the
     // mode of this test is not the mode of whatever test runs next.
-    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
+    let _mode = crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
         "system": cacheable_system_with_date(),
