@@ -68,6 +68,16 @@ pub fn cmd_init(args: &[String]) {
         .map(|w| w[1].as_str())
         .collect();
 
+    // Safety (#476 class): the agent paths below write MCP config, hooks and
+    // rules, so a preview has to stop before them.
+    if dry_run && (!agents.is_empty() || governor_arm.is_some()) {
+        qprintln!("\nlean-ctx init --dry-run\n");
+        for agent in &agents {
+            qprintln!("  Would configure: {agent} (MCP, hooks, rules)");
+        }
+        return;
+    }
+
     if let Some(arm) = governor_arm {
         init_governor(&agents, arm);
         return;

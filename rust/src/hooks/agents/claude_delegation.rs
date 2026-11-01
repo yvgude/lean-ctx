@@ -83,7 +83,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    const BASH: &str = "Bash|bash";
+    const BASH: &str = "Bash";
 
     fn commands_for(pre: &[serde_json::Value], action: &str) -> Vec<String> {
         pre.iter()
@@ -113,7 +113,7 @@ mod tests {
             Some(""),
             Some("*"),
             Some("Bash"),
-            Some("Bash|bash"),
+            Some("Bash"),
             Some(".*"),
         ] {
             assert!(matcher_covers_bash(m), "{m:?} should cover Bash");

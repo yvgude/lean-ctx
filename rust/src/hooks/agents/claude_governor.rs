@@ -241,9 +241,9 @@ fn apply_hooks(root: &mut serde_json::Value, binary: &str) {
     let timeout = crate::hook_handlers::GOVERN_HOST_TIMEOUT_SECS;
     // One group: `ensure_command_hook` keeps a single hook per action.
     let enforce_matcher = if cfg!(windows) {
-        "Bash|bash|PowerShell|powershell|Read|Grep|Glob"
+        "Bash|PowerShell|Read|Grep|Glob"
     } else {
-        "Bash|bash|Read|Grep|Glob"
+        "Bash|Read|Grep|Glob"
     };
 
     for arr in hooks.values_mut().filter_map(|v| v.as_array_mut()) {
