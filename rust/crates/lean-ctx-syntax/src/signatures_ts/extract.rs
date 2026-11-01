@@ -28,7 +28,7 @@ pub(crate) fn extract_signatures_ts(content: &str, file_ext: &str) -> Option<Vec
     )
 }
 
-/// The signatures of [`extract_signatures_ts`] with the byte range of each
+/// The signatures of `extract_signatures_ts` with the byte range of each
 /// definition node in `content` (code anchors digest exactly these bytes).
 /// Single-file components (`svelte`, `vue`) have no node spans: `None`.
 pub fn extract_spans_ts(

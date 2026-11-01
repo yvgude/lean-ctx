@@ -162,7 +162,7 @@ fn write_staged(
 }
 
 /// Atomically move a fully written `tmp` over `path`: `rename(2)` on Unix,
-/// [`windows_replace`] (with its bounded retry of a held target) on Windows.
+/// `windows_replace` (with its bounded retry of a held target) on Windows.
 /// `tmp` is left in place on failure; the caller removes it.
 pub fn replace_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
