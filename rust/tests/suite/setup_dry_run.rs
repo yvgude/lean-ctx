@@ -132,3 +132,33 @@ fn setup_and_onboard_dry_runs_write_nothing() {
         "setup/onboard --dry-run changed files under the sandbox HOME"
     );
 }
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
+)]
+fn init_agent_dry_run_writes_nothing() {
+    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+
+    let warm = run(bin, &home, &["init", "--agent", "claude", "--dry-run"]);
+    assert!(
+        warm.status.success(),
+        "{}",
+        String::from_utf8_lossy(&warm.stderr)
+    );
+    let before = snapshot(&home);
+    let plan = run(bin, &home, &["init", "--agent", "claude", "--dry-run"]);
+    assert!(
+        plan.status.success(),
+        "{}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    assert!(stdout(&plan).contains("Would configure: claude"));
+    assert!(!home.join(".claude/settings.json").exists());
+    assert!(!home.join("AGENTS.md").exists());
+    assert_eq!(before, snapshot(&home));
+}

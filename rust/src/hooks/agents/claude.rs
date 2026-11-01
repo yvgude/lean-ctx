@@ -582,7 +582,7 @@ pub(crate) fn install_claude_hook_scripts(home: &std::path::Path) {
 }
 
 /// The `Read|…` tool matcher shared by every Claude redirect hook (global + project).
-const REDIRECT_MATCHER: &str = "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory|Glob|glob";
+const REDIRECT_MATCHER: &str = "Read|Grep|Glob";
 
 /// PostToolUse matcher for the guard-safe re-read dedup (GL #1140): the native
 /// Read and lean-ctx's own `ctx_read`, whose server-side stub is withheld on
@@ -790,9 +790,9 @@ pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
     };
 
     let bash_matcher = if cfg!(windows) {
-        "Bash|bash|PowerShell|powershell"
+        "Bash|PowerShell"
     } else {
-        "Bash|bash"
+        "Bash"
     };
 
     let desired_pretooluse = serde_json::json!([
@@ -864,9 +864,9 @@ pub(crate) fn install_claude_project_hooks(cwd: &std::path::Path) {
 
     let existing = std::fs::read_to_string(&settings_path).unwrap_or_default();
     let bash_matcher = if cfg!(windows) {
-        "Bash|bash|PowerShell|powershell"
+        "Bash|PowerShell"
     } else {
-        "Bash|bash"
+        "Bash"
     };
 
     let desired_pretooluse = serde_json::json!([
@@ -975,7 +975,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    const BASH: &str = "Bash|bash";
+    const BASH: &str = "Bash";
 
     fn commands_for(pre: &[serde_json::Value], action: &str) -> Vec<String> {
         pre.iter()
@@ -1157,7 +1157,6 @@ mod tests {
         // #556: shadow mode must intercept the Glob tool, so it has to be part
         // of the redirect matcher Claude installs.
         assert!(REDIRECT_MATCHER.contains("Glob"));
-        assert!(REDIRECT_MATCHER.contains("glob"));
     }
 
     #[test]
