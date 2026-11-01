@@ -46,7 +46,9 @@ pub(crate) struct ProjectIdentityV1 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct PolicyIdentityV1 {
     pub name: String,
-    pub policy_md5: String,
+    /// BLAKE3 hex; the serialized name keeps its historical `_md5` suffix.
+    #[serde(rename = "policy_md5")]
+    pub policy_blake3: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,9 +83,9 @@ pub(crate) fn build_bundle_v1(
     let profile_name = crate::core::profiles::active_profile_name();
     let profile = crate::core::profiles::active_profile();
 
-    let role_policy_md5 =
+    let role_policy_blake3 =
         crate::core::hasher::hash_str(&serde_json::to_string(&role).unwrap_or_default());
-    let profile_policy_md5 =
+    let profile_policy_blake3 =
         crate::core::hasher::hash_str(&serde_json::to_string(&profile).unwrap_or_default());
 
     let (project_root_hash, project_identity_hash) =
@@ -171,11 +173,11 @@ pub(crate) fn build_bundle_v1(
         },
         role: PolicyIdentityV1 {
             name: role_name,
-            policy_md5: role_policy_md5,
+            policy_blake3: role_policy_blake3,
         },
         profile: PolicyIdentityV1 {
             name: profile_name,
-            policy_md5: profile_policy_md5,
+            policy_blake3: profile_policy_blake3,
         },
         session: excerpt,
     }

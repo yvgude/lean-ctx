@@ -228,6 +228,36 @@ fn record_ws_ledger(ledger: &Mutex<WsLedger>, stats: &super::ProxyStats) -> Stag
     StageDisposition::Applied
 }
 
+/// Records one WS turn in the kernel evidence pipelines (usage normalizer,
+/// receipt chain, identity, ETPAO) exactly once, with the same byte/4 estimate
+/// as the HTTP forward path. The usage meter adds only measured provider
+/// statistics, so the turn is not counted again there.
+fn record_ws_kernel_evidence(
+    headers: &[(HeaderName, HeaderValue)],
+    model: &str,
+    result: &TurnResult,
+) {
+    let data = crate::core::context_kernel::proxy_bridge::ProxyRequestData {
+        headers: headers
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .to_str()
+                    .ok()
+                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
+            })
+            .collect(),
+        input_tokens: result.original_size / 4,
+        tokens_saved: result.original_size.saturating_sub(result.compressed_size) / 4,
+        model: (!model.is_empty()).then(|| model.to_owned()),
+        provider: Some("OpenAI".to_owned()),
+        request_count: 1,
+        ..Default::default()
+    };
+    let kernel_result = crate::core::context_kernel::proxy_bridge::process_proxy_request(&data);
+    crate::core::context_kernel::envelope_wiring::process_proxy_evidence(&data, &kernel_result);
+}
+
 #[async_trait::async_trait]
 impl<S> ExecutionDriver for WsTurnDriver<'_, S>
 where
@@ -291,9 +321,10 @@ where
     async fn record_context_ir(
         &mut self,
         _context: &TaskContext,
-        _result: &TurnResult,
+        result: &TurnResult,
     ) -> Result<StageDisposition, Self::Error> {
-        Ok(StageDisposition::Skipped("WS Context IR unavailable"))
+        record_ws_kernel_evidence(self.headers, &self.model, result);
+        Ok(StageDisposition::Applied)
     }
 
     async fn record_ledger(

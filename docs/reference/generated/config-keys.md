@@ -16,7 +16,7 @@ Top-level configuration keys
 - `allow_paths` (string[], default `[]` — env `LEAN_CTX_ALLOW_PATH`) — Additional paths allowed by PathJail (absolute)
 - `allow_symlink_roots` (string[], default `[]` — env `LEAN_CTX_ALLOW_SYMLINK_ROOTS`) — Trusted roots OUTSIDE $HOME lean-ctx may follow when an agent config is symlinked there (#596). Empty = strict $HOME-only
 - `auto_capture` (bool, default `true`) — Automatic knowledge capture from tool findings
-- `auto_mode_learning` (bool, default `false` — env `LEAN_CTX_AUTO_MODE_LEARNING`) — Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, in-session bounce rates) influence `auto` mode. Per-path bounce memory always applies. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING
+- `auto_mode_learning` (bool, default `false` — env `LEAN_CTX_AUTO_MODE_LEARNING`) — No effect (kept so existing configs load): the learned `auto` signals are retired, so `auto` is always the deterministic capability-guard and size/task cascade. Per-path bounce memory still applies. LEAN_CTX_AUTO_MODE_LEARNING is ignored as well
 - `behavior_nudges` (String, default `auto`) — In-band behavior hints (heavy full/raw reads, search→read→search chains): auto (default, one hint per pattern per session) or off. Detections are always counted for `tools health`.
 - `bm25_max_cache_mb` (u64, default `128` — env `LEAN_CTX_BM25_MAX_CACHE_MB`) — Maximum BM25 cache file size in MB
 - `bm25_max_files` (u64, default `5000`) — Maximum files in the BM25 corpus (the semantic index chunks the same corpus). 0 = unlimited
@@ -141,10 +141,10 @@ Settings for the zero-loss compression archive (large tool outputs saved to disk
 Controls autonomous background behaviors (preload, dedup, consolidation)
 
 - `auto_consolidate` (bool, default `true`) — Auto-consolidate knowledge periodically
-- `cognition_loop_enabled` (bool, default `false` — env `LEAN_CTX_COGNITION_LOOP_ENABLED`) — Enable the background cognition loop (periodic knowledge consolidation)
-- `cognition_loop_interval_secs` (u64, default `3600` — env `LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS`) — Seconds between cognition loop iterations
-- `cognition_loop_max_steps` (u8, default `9` — env `LEAN_CTX_COGNITION_LOOP_MAX_STEPS`) — Maximum steps per cognition loop iteration (>= 9 enables observation synthesis)
-- `cognition_synthesis_min_cluster` (usize, default `3` — env `LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER`) — Minimum facts per entity before observation synthesis writes a summary (needs cognition_loop_max_steps >= 9)
+- `cognition_loop_enabled` (bool, default `false` — env `LEAN_CTX_COGNITION_LOOP_ENABLED`) — No effect (kept so existing configs load): the cognition loop is retired; scheduled consolidation runs the memory lifecycle
+- `cognition_loop_interval_secs` (u64, default `3600` — env `LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS`) — No effect (kept so existing configs load): the cognition loop is retired
+- `cognition_loop_max_steps` (u8, default `9` — env `LEAN_CTX_COGNITION_LOOP_MAX_STEPS`) — No effect (kept so existing configs load): the cognition loop is retired
+- `cognition_synthesis_min_cluster` (usize, default `3` — env `LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER`) — No effect (kept so existing configs load): observation synthesis is retired with the cognition loop
 - `consolidate_cooldown_secs` (u64, default `120`) — Minimum seconds between consolidation runs
 - `consolidate_every_calls` (u32, default `25`) — Consolidate knowledge every N tool calls
 - `enabled` (bool, default `true`) — Enable autonomous background behaviors
@@ -253,7 +253,7 @@ Research-only organization gateway registry (array of tables: `[[gateway_server.
 
 - `auth_env` (string, default `""`) — Env var holding the upstream credential the gateway injects as `Authorization: Bearer <env value>` (callers never see it)
 - `enabled` (bool, default `true`) — Research-only per-server switch (default true once a development configuration explicitly adds this server)
-- `id` (string, default `""`) — Registry id; becomes the governed route `/mcp/{id}` on the proxy port (lowercase alnum/-/_)
+- `id` (string, default `""`) — Registry id; becomes the governed route `/mcp/{id}` on the enterprise gateway server's port, not the local proxy (lowercase alnum/-/_)
 - `url` (string, default `""`) — Upstream Streamable-HTTP endpoint (HTTPS; loopback HTTP ok; plain HTTP needs [proxy] allow_insecure_http_upstream)
 
 ## `[hive]`

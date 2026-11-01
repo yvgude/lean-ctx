@@ -234,9 +234,11 @@ fn start(request: &Request<'_>) -> Result<String, String> {
         if !transport.acknowledge(&plan.node.agent_id, &delivery.relay_id, &fence) {
             let _ = transport.quarantine_reserved(&plan.node.agent_id, &delivery.relay_id, &fence);
             reserved = None;
+            crate::core::a2a::health::record_delivery(false);
             return Err("capsule acknowledgement lost its reservation".into());
         }
         reserved = None;
+        crate::core::a2a::health::record_delivery(true);
         Ok((task_id, profile))
     })();
     let (task_id, profile) = match launch {
@@ -245,6 +247,7 @@ fn start(request: &Request<'_>) -> Result<String, String> {
             if let Some(delivery) = reserved {
                 let _ =
                     transport.negative_acknowledge(&plan.node.agent_id, &delivery.relay_id, &fence);
+                crate::core::a2a::health::record_delivery(false);
             }
             abort_start(
                 request,

@@ -76,8 +76,13 @@ pub(super) fn handle(
             }
         }
         "/api/compression-demo" => {
-            let body = match extract_query_param(query_str, "path") {
-                None => r#"{"error":"missing path query parameter"}"#.to_string(),
+            // Errors carry their status (400 no path, 404 unreadable file) so
+            // the Cockpit shows them instead of an empty demo.
+            let (status, body) = match extract_query_param(query_str, "path") {
+                None => (
+                    "400 Bad Request",
+                    r#"{"error":"missing path query parameter"}"#.to_string(),
+                ),
                 Some(rel) => {
                     let task = extract_query_param(query_str, "task");
                     let root = detect_project_root_for_dashboard();
@@ -115,7 +120,8 @@ pub(super) fn handle(
 
                     if content.is_none() && !candidate.is_absolute() && !rel.trim().is_empty() {
                         // Premium path healing: try to map stale paths to current indexed files.
-                        let mut file_paths = crate::core::graph_provider::open_or_build(&root)
+                        // Never waits for an index build: without one the tree is walked.
+                        let mut file_paths = crate::core::graph_provider::open_best_effort(&root)
                             .map(|o| o.provider.file_paths())
                             .unwrap_or_default();
                         if file_paths.is_empty() {
@@ -179,43 +185,42 @@ pub(super) fn handle(
                         }
                     }
 
-                    match (full, content) {
-                        (Some(full), Some(content)) => {
-                            let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("rs");
-                            let path_str = full.to_string_lossy().to_string();
-                            let original_lines = content.lines().count();
-                            let original_tokens = crate::core::tokens::count_tokens(&content);
-                            let modes = compression_demo_modes_json(
-                                &content,
-                                &path_str,
-                                ext,
-                                original_tokens,
-                                task.as_deref(),
-                            );
-                            let original_preview: String = content.chars().take(8000).collect();
-                            serde_json::json!({
-                                "path": path_str,
-                                "task": task,
-                                "original_lines": original_lines,
-                                "original_tokens": original_tokens,
-                                "original": original_preview,
-                                "modes": modes,
-                                "resolved_from": resolved_from,
-                            })
-                            .to_string()
-                        }
-                        _ => serde_json::json!({
+                    if let (Some(full), Some(content)) = (full, content) {
+                        let ext = full.extension().and_then(|e| e.to_str()).unwrap_or("rs");
+                        let path_str = full.to_string_lossy().to_string();
+                        let original_lines = content.lines().count();
+                        let original_tokens = crate::core::tokens::count_tokens(&content);
+                        let modes = compression_demo_modes_json(
+                            &content,
+                            &path_str,
+                            ext,
+                            original_tokens,
+                            task.as_deref(),
+                        );
+                        let original_preview: String = content.chars().take(8000).collect();
+                        let body = serde_json::json!({
+                            "path": path_str,
+                            "task": task,
+                            "original_lines": original_lines,
+                            "original_tokens": original_tokens,
+                            "original": original_preview,
+                            "modes": modes,
+                            "resolved_from": resolved_from,
+                        });
+                        ("200 OK", body.to_string())
+                    } else {
+                        let body = serde_json::json!({
                             "error": "failed to read file",
                             "project_root": root,
                             "requested_path": rel,
                             "candidates": candidates,
                             "tried_paths": tried_paths,
-                        })
-                        .to_string(),
+                        });
+                        ("404 Not Found", body.to_string())
                     }
                 }
             };
-            Some(("200 OK", "application/json", body))
+            Some((status, "application/json", body))
         }
         _ => None,
     }

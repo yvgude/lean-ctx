@@ -17,7 +17,8 @@ use super::types::{ContextPlanV1, PlanEntry, RetrievalContext};
 pub struct KernelVerdict {
     /// Cross-store context to supplement (hard-capped, never exceeds budget).
     pub supplement: Option<String>,
-    /// Content identifiers that are already in context and should not be resent.
+    /// Always empty: the kernel keeps no recent-delivery state, so it never
+    /// suppresses anything. Kept for the struct's shape.
     pub suppress: Vec<String>,
     /// Tokens consumed by the kernel supplement.
     pub budget_used: usize,
@@ -32,7 +33,8 @@ pub struct KernelEnrichment {
     pub blocks: String,
     /// Gate decision accompanying the backward-compatible blocks.
     pub verdict: KernelVerdict,
-    /// Kernel policy mode used while producing this enrichment.
+    /// Configured kernel mode, reported only: every mode removes policy
+    /// violations before selection.
     pub enforced_mode: KernelMode,
 }
 
@@ -101,14 +103,23 @@ fn enrichment_from_decision(
 
 /// This legacy surface has no paid entitlement, outcome history, or cost evidence.
 /// Use the canonical reference planner without inventing those inputs or a TaskId.
+///
+/// Without a task envelope there is no admitted evaluation time. Retention
+/// needs one (without it every candidate is rejected), so a policy with
+/// `retention_days` is evaluated at the current time; without retention the
+/// plan stays clock-free.
 pub(crate) fn reference_input(
     retrieval: RetrievalContext,
     kernel_mode: KernelMode,
 ) -> Result<AutopilotInput, super::policy::PolicyLoadError> {
     let policy = ContextPolicy::from_config(&retrieval.project_root)?;
+    let evaluation_time = policy
+        .retention_days
+        .is_some()
+        .then(|| chrono::Utc::now().fixed_offset());
     Ok(AutopilotInput {
         retrieval,
-        evaluation_time: None,
+        evaluation_time,
         task_class: crate::core::outcome::contracts::TaskClass::Investigation,
         entitled_to_adaptive: false,
         confidence_milli: 0,
@@ -186,6 +197,9 @@ fn truncate_to_token_budget(mut text: String, budget: usize) -> String {
     text
 }
 
+/// Renders every provider the planner may select (all but `context.ledger`,
+/// which the caller filters out): a selection that spends plan budget must
+/// also be delivered.
 fn format_enrichment_blocks(entries: &[&PlanEntry]) -> String {
     let mut out = String::new();
     append_provider_block(&mut out, entries, "knowledge.facts", "Relevant Knowledge");
@@ -197,6 +211,8 @@ fn format_enrichment_blocks(entries: &[&PlanEntry]) -> String {
         "Relevant Procedures",
     );
     append_provider_block(&mut out, entries, "session.state", "Relevant Session State");
+    append_provider_block(&mut out, entries, "index.bm25", "Relevant Code");
+    append_provider_block(&mut out, entries, "index.graph", "Related Files");
     out
 }
 
@@ -221,7 +237,9 @@ fn append_provider_block(
             found = true;
         }
         output.push_str("- ");
-        output.push_str(&entry.reason);
+        // One entry per line, so budget truncation never cuts an entry in
+        // half (code snippets span lines).
+        output.push_str(&entry.reason.replace(['\r', '\n'], " "));
         output.push_str(" (phi=");
         output.push_str(&format!("{:.2}", entry.phi));
         output.push_str(")\n");
@@ -316,6 +334,31 @@ pub mod tests {
         assert!(!cut.is_empty(), "`cut` is empty");
         assert!(cut.ends_with('\n'), "a partial entry survived: {cut:?}");
         assert!(cut.lines().skip(2).all(|l| l == line.trim_end()));
+    }
+
+    /// Index selections spend plan budget, so they must be delivered too; a
+    /// multi-line snippet stays one entry line.
+    #[test]
+    fn index_selections_are_rendered_one_line_each() {
+        let code = PlanEntry {
+            provider: "index.bm25".to_owned(),
+            ..entry("src/render.rs: fn render() {\n    draw();\n}")
+        };
+        let file = PlanEntry {
+            provider: "index.graph".to_owned(),
+            ..entry("src/layout.rs")
+        };
+        let blocks = format_enrichment_blocks(&[&code, &file]);
+        assert!(
+            blocks.contains(
+                "\n## Relevant Code\n- src/render.rs: fn render() {     draw(); } (phi=0.80)\n"
+            ),
+            "{blocks:?}"
+        );
+        assert!(
+            blocks.contains("\n## Related Files\n- src/layout.rs (phi=0.80)\n"),
+            "{blocks:?}"
+        );
     }
 
     #[test]
@@ -442,6 +485,45 @@ pub mod tests {
         assert_eq!(input.preload_budget.max_items, 0);
         assert!(input.overrides.no_routing);
         assert!(input.overrides.no_telemetry);
+    }
+
+    /// With `retention_days` set, legacy enrichment (no task envelope) used to
+    /// plan without an evaluation time, so retention rejected every candidate
+    /// and no supplement was ever delivered.
+    #[test]
+    fn retention_policy_still_delivers_fresh_context_without_a_task_envelope() {
+        let _data_dir = isolated_data_dir();
+        let config = crate::core::paths::config_dir_read_only().expect("isolated config dir");
+        std::fs::create_dir_all(&config).expect("config dir");
+        let policy = super::ContextPolicy {
+            retention_days: Some(30),
+            ..super::ContextPolicy::default()
+        };
+        std::fs::write(
+            config.join("kernel-policy.toml"),
+            toml::to_string(&policy).expect("policy TOML"),
+        )
+        .expect("kernel policy");
+        let root = tempfile::tempdir().expect("project root");
+        let project_root = root.path().to_str().expect("UTF-8 project root");
+        let mut knowledge = ProjectKnowledge::new(project_root);
+        knowledge.remember(
+            "architecture",
+            "renderer",
+            "Renderer uses typed immutable context decisions.",
+            "bridge-test",
+            1.0,
+            &MemoryPolicy::default(),
+        );
+        knowledge.save().expect("persist real project knowledge");
+
+        let enrichment = super::kernel_enrich("renderer context decisions", project_root, 500)
+            .expect("a fact recorded now is inside a 30-day retention window");
+        assert!(
+            enrichment
+                .blocks
+                .contains("typed immutable context decisions")
+        );
     }
 
     #[test]

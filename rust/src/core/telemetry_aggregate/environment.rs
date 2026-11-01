@@ -219,13 +219,16 @@ pub(super) fn client_family() -> ClientFamily {
     if let Some(family) = handshake.as_deref().and_then(ClientFamily::from_client_id) {
         return family;
     }
-    if std::env::var_os("CLAUDECODE").is_some() {
+    // `host_env`: a client that filters its MCP server's environment still
+    // sets its marker in an ancestor.
+    let marked = |key: &str| crate::core::host_env::var(key).is_some();
+    if marked("CLAUDECODE") {
         ClientFamily::Claude
-    } else if std::env::var_os("CODEX_HOME").is_some() {
+    } else if marked("CODEX_HOME") {
         ClientFamily::Codex
-    } else if std::env::var_os("CURSOR_TRACE_ID").is_some() {
+    } else if marked("CURSOR_TRACE_ID") {
         ClientFamily::Cursor
-    } else if std::env::var_os("GEMINI_CLI").is_some() {
+    } else if marked("GEMINI_CLI") {
         ClientFamily::Gemini
     } else if handshake.is_some()
         || crate::core::client_capabilities::handshake_seen(PERSISTED_MAX_AGE_SECS)

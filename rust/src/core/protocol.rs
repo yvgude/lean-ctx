@@ -77,10 +77,15 @@ pub struct ToolCallRecord {
     pub timestamp: String,
 }
 
-/// Finds the outermost project root by walking up from `file_path`.
-/// For monorepos with nested `.git` dirs (e.g. `mono/backend/.git` + `mono/frontend/.git`),
-/// returns the outermost ancestor containing `.git`, a workspace marker, or a known
-/// monorepo config file — so the whole monorepo is treated as one project.
+/// Finds the project root by walking up from `file_path`.
+///
+/// Only a repository or a workspace widens the root to an outer directory:
+/// the outermost ancestor with `.git` wins (a monorepo with nested `.git` dirs,
+/// e.g. `mono/backend/.git` + `mono/frontend/.git`, is one project), else the
+/// outermost workspace marker (`go.work`, `pnpm-workspace.yaml`, …), else the
+/// innermost generic marker (`Cargo.toml`, `package.json`, `Makefile`, …). A
+/// stray `Makefile` or `package.json` in an ancestor (`~/code/Makefile`) no
+/// longer makes that ancestor the project.
 pub fn detect_project_root(file_path: &str) -> Option<String> {
     let start = Path::new(file_path);
     let mut dir = if start.is_dir() {
@@ -88,20 +93,47 @@ pub fn detect_project_root(file_path: &str) -> Option<String> {
     } else {
         start.parent()?
     };
-    let mut best: Option<String> = None;
+    let (mut git, mut workspace, mut generic): (Option<&Path>, Option<&Path>, Option<&Path>) =
+        (None, None, None);
 
     loop {
         // `~` with a dotfiles `.git`, `/` or an agent directory carries a
         // marker without being a project (AP04-G6).
-        if is_project_root_marker(dir) && !crate::core::pathutil::is_broad_or_unsafe_root(dir) {
-            best = Some(dir.to_string_lossy().to_string());
+        if !crate::core::pathutil::is_broad_or_unsafe_root(dir) {
+            if dir.join(".git").exists() {
+                git = Some(dir);
+            } else if is_workspace_root(dir) {
+                workspace = Some(dir);
+            } else if generic.is_none() && is_project_root_marker(dir) {
+                generic = Some(dir);
+            }
         }
         match dir.parent() {
             Some(parent) if parent != dir => dir = parent,
             _ => break,
         }
     }
-    best
+    git.or(workspace)
+        .or(generic)
+        .map(|dir| dir.to_string_lossy().to_string())
+}
+
+/// A multi-package workspace root: it widens the root like `.git`. A
+/// `Cargo.toml` or `package.json` counts only when it declares a workspace.
+fn is_workspace_root(dir: &Path) -> bool {
+    const WORKSPACE_MARKERS: &[&str] = &[
+        "go.work",
+        "pnpm-workspace.yaml",
+        "lerna.json",
+        "nx.json",
+        "turbo.json",
+    ];
+    let declares = |file: &str, needle: &str| {
+        std::fs::read_to_string(dir.join(file)).is_ok_and(|text| text.contains(needle))
+    };
+    WORKSPACE_MARKERS.iter().any(|m| dir.join(m).exists())
+        || declares("Cargo.toml", "[workspace]")
+        || declares("package.json", "\"workspaces\"")
 }
 
 /// True inside a request that is bound to no project: project-keyed writes
@@ -637,6 +669,46 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn stray_generic_marker_in_an_ancestor_is_not_the_project() {
+        let canon = |p: &std::path::Path| crate::core::pathutil::safe_canonicalize(p).ok();
+        let detect = |file: &std::path::Path| {
+            detect_project_root(file.to_str().unwrap()).map(std::path::PathBuf::from)
+        };
+        let base = tempfile::tempdir().unwrap();
+        std::fs::write(base.path().join("Makefile"), "all:\n").unwrap();
+
+        // A repository below the stray Makefile is its own project.
+        let repo = base.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        std::fs::write(repo.join("src/main.rs"), "fn main() {}").unwrap();
+        let found = detect(&repo.join("src/main.rs")).unwrap();
+        assert_eq!(canon(&found), canon(&repo));
+
+        // Without a repository the innermost generic marker wins ...
+        let plain = base.path().join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::write(plain.join("package.json"), "{}").unwrap();
+        std::fs::write(plain.join("index.js"), "").unwrap();
+        let found = detect(&plain.join("index.js")).unwrap();
+        assert_eq!(canon(&found), canon(&plain));
+
+        // ... unless an ancestor declares a workspace.
+        let ws = base.path().join("ws");
+        let member = ws.join("crates").join("a");
+        std::fs::create_dir_all(&member).unwrap();
+        std::fs::write(
+            ws.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"crates/*\"]\n",
+        )
+        .unwrap();
+        std::fs::write(member.join("Cargo.toml"), "[package]\nname = \"a\"\n").unwrap();
+        std::fs::write(member.join("lib.rs"), "").unwrap();
+        let found = detect(&member.join("lib.rs")).unwrap();
+        assert_eq!(canon(&found), canon(&ws));
     }
 
     #[test]

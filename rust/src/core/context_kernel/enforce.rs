@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Kernel policy enforcement modes.
+//! Kernel policy modes.
+//!
+//! The mode is resolved and reported (`KernelEnrichment::enforced_mode`), but
+//! it does not change filtering: the planner removes policy violations before
+//! selection in every mode (`ContextPolicy::candidate_violation_at`).
 
 use serde::Deserialize;
 
-use super::policy::ContextPolicy;
-use super::types::{ContextPlanV1, PlanEntry};
-
-/// Determines whether policy violations are observed or enforced.
+/// The configured kernel mode. Reported only; every mode removes policy
+/// violations before selection.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KernelMode {
@@ -22,11 +24,26 @@ struct KernelModeConfig {
     kernel_mode: Option<KernelMode>,
 }
 
+/// The kernel mode variable.
+const KERNEL_MODE_ENV: &str = "LEAN_CTX_KERNEL_MODE";
+/// Its pre-3.13 spelling, still read (`env-leanctx-kernel-mode` in
+/// `DEPRECATIONS.toml`); `LEAN_CTX_KERNEL_MODE` wins when both are set.
+const LEGACY_KERNEL_MODE_ENV: &str = "LEANCTX_KERNEL_MODE";
+
+static LEGACY_ENV_WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Resolves the kernel mode from the environment, then the global config.
 pub fn resolve_mode(_project_root: &str) -> KernelMode {
-    if let Ok(value) = std::env::var("LEANCTX_KERNEL_MODE")
-        && let Some(mode) = parse_mode(&value)
-    {
+    let legacy = std::env::var(LEGACY_KERNEL_MODE_ENV).ok();
+    if legacy.is_some() && !LEGACY_ENV_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        tracing::warn!(
+            "{LEGACY_KERNEL_MODE_ENV} is deprecated and will be removed in 3.15.0; set {KERNEL_MODE_ENV} instead"
+        );
+    }
+    if let Some(mode) = mode_from_env(
+        std::env::var(KERNEL_MODE_ENV).ok().as_deref(),
+        legacy.as_deref(),
+    ) {
         return mode;
     }
 
@@ -38,6 +55,13 @@ pub fn resolve_mode(_project_root: &str) -> KernelMode {
         .unwrap_or_default()
 }
 
+/// The mode the environment sets: the current name wins over the legacy one.
+fn mode_from_env(current: Option<&str>, legacy: Option<&str>) -> Option<KernelMode> {
+    current
+        .and_then(parse_mode)
+        .or_else(|| legacy.and_then(parse_mode))
+}
+
 fn parse_mode(value: &str) -> Option<KernelMode> {
     match value.trim().to_ascii_lowercase().as_str() {
         "shadow" => Some(KernelMode::Shadow),
@@ -47,15 +71,6 @@ fn parse_mode(value: &str) -> Option<KernelMode> {
     }
 }
 
-/// Result of applying a policy to a context plan.
-#[derive(Debug, Clone)]
-pub struct EnforceResult {
-    pub mode: KernelMode,
-    pub allowed: Vec<PlanEntry>,
-    pub blocked: Vec<BlockedEntry>,
-    pub explanation: Option<String>,
-}
-
 /// A selected plan entry rejected by policy.
 #[derive(Debug, Clone)]
 pub struct BlockedEntry {
@@ -63,126 +78,28 @@ pub struct BlockedEntry {
     pub reason: String,
 }
 
-/// Applies policy decisions according to the requested kernel mode.
-pub fn enforce_plan(
-    plan: &ContextPlanV1,
-    policy: &ContextPolicy,
-    mode: KernelMode,
-) -> EnforceResult {
-    let mut allowed: Vec<PlanEntry> = Vec::with_capacity(plan.selected.len());
-    let mut blocked: Vec<BlockedEntry> = Vec::new();
-    let mut details: Vec<String> = Vec::new();
-
-    for entry in &plan.selected {
-        if let Some(reason) = entry_violation(entry, policy) {
-            blocked.push(BlockedEntry {
-                object_id: entry.object_id.clone(),
-                reason: reason.clone(),
-            });
-
-            if mode == KernelMode::Shadow {
-                allowed.push(entry.clone());
-            }
-            if mode == KernelMode::Explain {
-                details.push(format!("{}: blocked — {reason}", entry.object_id));
-            }
-        } else {
-            allowed.push(entry.clone());
-            if mode == KernelMode::Explain {
-                details.push(format!("{}: allowed — policy compliant", entry.object_id));
-            }
-        }
-    }
-
-    EnforceResult {
-        mode,
-        allowed,
-        blocked,
-        explanation: (mode == KernelMode::Explain).then(|| details.join("\n")),
-    }
-}
-
-fn entry_violation(entry: &PlanEntry, policy: &ContextPolicy) -> Option<String> {
-    if entry.object_id.trim().is_empty() {
-        return Some("object id is empty".to_owned());
-    }
-    if entry.provider.trim().is_empty() {
-        return Some("provider is empty".to_owned());
-    }
-    if entry.view.trim().is_empty() {
-        return Some("view is empty".to_owned());
-    }
-    if !entry.phi.is_finite() {
-        return Some("phi is not finite".to_owned());
-    }
-
-    policy.violation_reason(entry)
-}
-
 #[cfg(test)]
-pub mod tests {
-    use std::collections::HashMap;
-
-    use super::{KernelMode, enforce_plan};
-    use crate::core::context_kernel::policy::ContextPolicy;
-    use crate::core::context_kernel::types::{ContextPlanV1, PlanBudget, PlanEntry};
-
-    fn entry(object_id: &str, provider: &str) -> PlanEntry {
-        PlanEntry {
-            object_id: object_id.to_owned(),
-            provider: provider.to_owned(),
-            view: "summary".to_owned(),
-            tokens: 20,
-            phi: 1.0,
-            reason: "relevant".to_owned(),
-        }
-    }
-
-    fn plan(selected: Vec<PlanEntry>) -> ContextPlanV1 {
-        ContextPlanV1 {
-            plan_id: "plan:test".to_owned(),
-            intent: "test enforcement".to_owned(),
-            budget: PlanBudget {
-                total_tokens: 100,
-                used_tokens: 40,
-                remaining_tokens: 60,
-            },
-            selected,
-            excluded: Vec::new(),
-            deferred: Vec::new(),
-            provider_stats: HashMap::new(),
-            origins: Default::default(),
-        }
-    }
+mod tests {
+    use super::*;
 
     #[test]
-    fn shadow_mode_allows_all() {
-        let plan = plan(vec![entry("valid", "files"), entry("invalid", "")]);
-        let result = enforce_plan(&plan, &ContextPolicy::default(), KernelMode::Shadow);
-
-        assert_eq!(result.allowed.len(), 2);
-        assert_eq!(result.blocked.len(), 1);
-        assert!(result.explanation.is_none());
-    }
-
-    #[test]
-    fn enforce_mode_blocks_violations() {
-        let plan = plan(vec![entry("valid", "files"), entry("invalid", "")]);
-        let result = enforce_plan(&plan, &ContextPolicy::default(), KernelMode::Enforce);
-
-        assert_eq!(result.allowed.len(), 1);
-        assert_eq!(result.allowed[0].object_id, "valid");
-        assert_eq!(result.blocked[0].object_id, "invalid");
-    }
-
-    #[test]
-    fn explain_mode_includes_reasoning() {
-        let plan = plan(vec![entry("valid", "files"), entry("invalid", "")]);
-        let result = enforce_plan(&plan, &ContextPolicy::default(), KernelMode::Explain);
-
-        let explanation = result.explanation.expect("explanation should be present");
-        assert!(explanation.contains("valid: allowed"));
-        assert!(explanation.contains("invalid: blocked"));
-        assert!(explanation.contains("provider is empty"));
+    fn current_env_name_wins_over_the_legacy_one() {
+        assert_eq!(
+            mode_from_env(Some("enforce"), None),
+            Some(KernelMode::Enforce)
+        );
+        assert_eq!(
+            mode_from_env(None, Some("explain")),
+            Some(KernelMode::Explain)
+        );
+        assert_eq!(
+            mode_from_env(Some("Shadow"), Some("enforce")),
+            Some(KernelMode::Shadow)
+        );
+        assert_eq!(
+            mode_from_env(Some("bogus"), Some("enforce")),
+            Some(KernelMode::Enforce)
+        );
+        assert_eq!(mode_from_env(None, None), None);
     }
 }

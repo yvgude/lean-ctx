@@ -2,10 +2,9 @@
 //!
 //! Surfaces what the learning layers (#538–#544) have actually learned, plus
 //! the efficacy evidence (#549) that the adaptation works:
-//! - LITM placement calibration per client profile
 //! - the session playbook (distilled strategies/pitfalls/facts)
 //! - currently active stigmergy scents
-//! - efficacy trends (bounce rate, placement hits, prevented duplicate work)
+//! - efficacy trends (bounce rate, prevented duplicate work)
 
 pub(super) fn handle(
     path: &str,
@@ -16,20 +15,6 @@ pub(super) fn handle(
     if path != "/api/learning" || !method.eq_ignore_ascii_case("GET") {
         return None;
     }
-
-    let litm: Vec<serde_json::Value> = crate::core::litm_calibration::snapshot()
-        .into_iter()
-        .map(|(profile, s, share)| {
-            serde_json::json!({
-                "profile": profile,
-                "begin_hits": s.begin_hits,
-                "begin_misses": s.begin_misses,
-                "end_hits": s.end_hits,
-                "end_misses": s.end_misses,
-                "begin_share": share,
-            })
-        })
-        .collect();
 
     let playbook: Vec<serde_json::Value> = crate::core::session::SessionState::load_latest()
         .map(|state| {
@@ -66,7 +51,6 @@ pub(super) fn handle(
         .collect();
 
     let body = serde_json::json!({
-        "litm": litm,
         "playbook": playbook,
         "scents": scents,
         "efficacy": crate::core::efficacy::report_json(),

@@ -2,7 +2,7 @@
 //! *and* actually active at runtime.
 //!
 //! The Cognition v2 stack (power-law decay, Hebbian eviction, global-workspace
-//! ignition, replay consolidation, FEP prefetch, immune detection, …) is only
+//! ignition, integration-aware Phi, immune detection, …) is only
 //! useful if it is genuinely reached on the hot path — not dead code. Every
 //! subsystem calls [`tick`] at its real call site; [`flush`] persists the
 //! counters to a small JSON file so a *separate* process (`lean-ctx introspect
@@ -41,11 +41,6 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         science: "Ebbinghaus forgetting + spacing effect",
     },
     Subsystem {
-        key: "memory_consolidation",
-        label: "Memory consolidation",
-        science: "complementary learning systems",
-    },
-    Subsystem {
         key: "integration_phi",
         label: "Integration-aware Phi",
         science: "IIT non-redundancy (MMR)",
@@ -56,24 +51,9 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         science: "global workspace theory",
     },
     Subsystem {
-        key: "field_weights_bandit",
-        label: "Learned field weights",
-        science: "reinforcement learning (bandit)",
-    },
-    Subsystem {
-        key: "replay_consolidation",
-        label: "Idle replay",
-        science: "sharp-wave-ripple replay",
-    },
-    Subsystem {
         key: "immune_detector",
         label: "Context-poisoning screen (Control)",
         science: "self/non-self screening of provider data",
-    },
-    Subsystem {
-        key: "observation_synthesis",
-        label: "Observation synthesis",
-        science: "entity-summary memory (Hindsight)",
     },
 ];
 
@@ -277,20 +257,17 @@ pub mod tests {
         let dir = tempfile::tempdir().unwrap();
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.path());
 
-        tick("replay_consolidation");
+        tick("immune_detector");
         flush();
         let disk = read_disk();
-        assert!(
-            disk.get("replay_consolidation")
-                .is_some_and(|a| a.count >= 1)
-        );
+        assert!(disk.get("immune_detector").is_some_and(|a| a.count >= 1));
 
         // A second flush of new ticks must add, not clobber.
-        tick("replay_consolidation");
+        tick("immune_detector");
         flush();
         let disk2 = read_disk();
         assert!(
-            disk2.get("replay_consolidation").unwrap().count >= 2,
+            disk2.get("immune_detector").unwrap().count >= 2,
             "deltas should accumulate across flushes"
         );
     }

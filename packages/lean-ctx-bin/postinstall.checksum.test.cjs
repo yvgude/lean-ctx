@@ -52,6 +52,12 @@ const serve = (text) => async () => text;
     await rejects(withSums, async () => { throw new Error("HTTP 403"); }, /could not download SHA256SUMS \(HTTP 403\)/);
     await rejects(withSums, serve(`${digest}  other.tar.gz\n`), /no unique entry/);
     await rejects(withSums, serve(`${other}  ${asset}\n`), /SHA256 mismatch/);
+    // The verified release is the package's own version, never `latest`.
+    const version = require("./package.json").version;
+    assert.doesNotMatch(source, /releases\/latest/);
+    assert.match(source, /releases\/tags\/\$\{RELEASE_TAG\}/);
+    assert.match(source, /const VERSION = require\("\.\/package\.json"\)\.version;/);
+    assert.match(version, /^\d+\.\d+\.\d+$/);
     console.log("postinstall checksum verification fails closed: ok");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

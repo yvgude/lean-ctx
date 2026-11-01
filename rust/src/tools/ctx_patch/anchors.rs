@@ -123,12 +123,29 @@ fn parse_one(obj: &Map<String, Value>) -> Result<AnchorOp, String> {
             })
         }
         "insert_after" => {
-            // Line 0 means "insert at the top"; it has no preceding line to hash.
+            if !obj.contains_key("line")
+                && ["old_text", "old_string", "find"]
+                    .iter()
+                    .any(|key| obj.contains_key(*key))
+            {
+                return Err(
+                    "insert_after takes a line number, not text; to insert after \
+                            a text anchor use op=replace_unique with old_text=<anchor> and \
+                            new_text=<anchor followed by the new lines>"
+                        .to_string(),
+                );
+            }
             let line = req_line_allow_zero(obj, "line")?;
+            // Line 0 ("top of file") has no preceding line to hash. Elsewhere the
+            // hash is optional, as for replace_lines (#1114): a line number taken
+            // from a `lines:N-M` read inserts without conflict detection. The
+            // benchmark pilots' `insert_after` calls carried a line read from a
+            // plain range and failed on the missing hash, then fell back to a
+            // non-unique replace_unique — two extra model steps per edit.
             let hash = if line == 0 {
                 None
             } else {
-                Some(req_anchor_hash(obj, "hash")?)
+                get_str(obj, "hash").filter(|hash| !hash.is_empty())
             };
             Ok(AnchorOp::InsertAfter {
                 line,
@@ -300,14 +317,28 @@ mod tests {
         );
     }
 
+    /// Benchmark replay (fix-snooze-expired-filter): `insert_after line=702`
+    /// from a `lines:630-709` read, no hash. It used to fail with "missing
+    /// 'hash'"; like replace_lines (#1114) it now inserts unchecked.
     #[test]
-    fn insert_after_nonzero_requires_hash() {
+    fn insert_after_without_hash_inserts_unchecked() {
+        let ops = parse_ops(&obj(
+            json!({"op": "insert_after", "line": 702, "new_text": "x"}),
+        ))
+        .unwrap();
+        assert_eq!(
+            ops,
+            vec![AnchorOp::InsertAfter {
+                line: 702,
+                hash: None,
+                new_text: "x".into()
+            }]
+        );
         let err = parse_ops(&obj(
-            json!({"op": "insert_after", "line": 5, "new_text": "x"}),
+            json!({"op": "insert_after", "find": "anchor", "new_text": "x"}),
         ))
         .unwrap_err();
-        assert!(err.contains("missing 'hash'"), "got: {err}");
-        assert!(err.contains("ctx_read mode=anchored"), "got: {err}");
+        assert!(err.contains("replace_unique"), "got: {err}");
     }
 
     #[test]

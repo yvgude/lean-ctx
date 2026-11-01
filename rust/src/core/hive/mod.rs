@@ -3,15 +3,23 @@
 //! `lean_ctx_protocol::hive`.
 //!
 //! Rules every part keeps:
-//! - Local work is never gated: offline, disabled or a lapsed lease only
-//!   pause Hive traffic.
-//! - Hive never blocks a tool call; network work runs in [`scheduler`] or
-//!   in explicit `lean-ctx hive …` commands.
+//! - Local work is never gated: offline, disabled, a lapsed lease, a bus
+//!   `hold`/`stop`/`veto` or a damaged control file only pause Hive traffic
+//!   ([`bus::control`]). The one exception is the organization's verified
+//!   policy ([`effective_floor`]): it is policy, not Hive state, so its last
+//!   valid rules keep applying offline and after `not_after` (lifting them
+//!   would let a machine leave its policy by going offline), and a
+//!   company-bound project is never mapped into a personal workspace
+//!   ([`company_bound`]).
+//! - Hive never blocks a tool call; network work runs in [`scheduler`], in
+//!   the in-process queue a tool call hands its Hive requests to
+//!   ([`background`]) or in explicit `lean-ctx hive …` commands.
 //! - Every outbound content item passes [`knowledge::screening`] before it
 //!   is queued in the [`outbox`].
 //! - Tokens and keys never reach logs, `Debug`, errors or crash output.
 
 pub mod auth;
+pub mod background;
 pub mod bus;
 pub mod capture;
 pub mod company_bound;

@@ -14,7 +14,6 @@ use crate::core::context_ir::{ContextIrSourceKindV1, ContextIrV1, RecordIrInput}
 use crate::core::context_ledger::ContextLedger;
 use crate::core::heatmap;
 use crate::core::intent_engine::StructuredIntent;
-use crate::core::ocla::EfficiencyAnalyzer;
 use crate::core::session::SessionState;
 use crate::core::stats;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -153,10 +152,10 @@ pub(crate) fn record_file_read_accounting(
     })
     .flatten();
 
-    // Project root the learning sinks below are scoped to: the caller's
+    // Project root the read observation below is scoped to: the caller's
     // project, else the read file's own project. Defaults to "." (the MCP
-    // path's `project_root_snapshot` fallback) so a rootless read still
-    // trains a global model rather than being dropped.
+    // path's `project_root_snapshot` fallback) so a rootless read is still
+    // observed rather than dropped.
     let learning_root = usable_root(session_root.as_deref())
         .map(str::to_string)
         .or_else(|| crate::core::protocol::detect_project_root(path))
@@ -171,13 +170,11 @@ pub(crate) fn record_file_read_accounting(
         ledger.save();
     }
 
-    // Learning sinks the MCP read path runs in a background thread but the CLI
-    // path historically skipped — the mode predictor never trained and dashboard
-    // anomaly signals were missing for shadow-mode (`view`/`grep` → `lean-ctx read`)
-    // hook reads
-    // (#550). Run inline: a single-shot CLI process must finish them before it
-    // flushes and exits, so the off-hot-path thread the daemon uses is moot here.
-    record_read_learning(path, mode, original_tokens, output_tokens, &learning_root);
+    // The read observation the MCP read path records in a background thread but
+    // the CLI path historically skipped for shadow-mode (`view`/`grep` →
+    // `lean-ctx read`) hook reads (#550). Run inline: a single-shot CLI process
+    // must finish it before it flushes and exits.
+    record_read_observation(path, mode, &learning_root);
 }
 
 pub(crate) fn record_file_read_projection(
@@ -198,53 +195,14 @@ pub(crate) fn record_file_read_projection(
     }
 }
 
-/// Replicate the MCP read path's learning side effects (`registered/ctx_read.rs`
-/// background thread) for the standalone CLI path (#550): mode-predictor
-/// training and the per-call anomaly metric, not task-acceptance feedback.
-/// Both are disk-backed and therefore work from a single-shot process; the
-/// in-memory-only detectors (loop/correction) and the bounce/adaptive signals
-/// that require routing through `ctx_read::handle` are tracked separately.
-fn record_read_learning(
-    path: &str,
-    resolved_mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    project_root: &str,
-) {
-    // Delivery, compression ratio and bounce rate are not task acceptance.
-    // The canonical execution protocol alone admits outcome-based learning.
-    let ocla_density = ocla_read_density(
-        path,
-        resolved_mode,
-        original_tokens,
-        output_tokens,
-        None,
-        project_root,
-    );
+/// Record the read as an OCLA observation for the standalone CLI path, as the
+/// MCP read path does (#550). A read is observed delivery, never task
+/// acceptance: the canonical execution protocol alone admits outcome-based
+/// learning.
+fn record_read_observation(path: &str, resolved_mode: &str, project_root: &str) {
     let _ = crate::core::ocla::OclaRegistry::global()
         .outcome_tracker
         .record_outcome(read_observation(path, resolved_mode, project_root));
-
-    // Mode predictor: train auto-mode selection on the realized compression
-    // density, exactly as the MCP background thread does.
-    let sig = crate::core::mode_predictor::FileSignature::from_path(path, original_tokens);
-    let density = ocla_density.unwrap_or_else(|| {
-        if output_tokens > 0 {
-            original_tokens as f64 / output_tokens as f64
-        } else {
-            1.0
-        }
-    });
-    let outcome = crate::core::mode_predictor::ModeOutcome {
-        mode: resolved_mode.to_string(),
-        tokens_in: original_tokens,
-        tokens_out: output_tokens,
-        density: density.min(1.0),
-    };
-    let mut predictor = crate::core::mode_predictor::ModePredictor::new();
-    predictor.set_project_root(project_root);
-    predictor.record(sig, outcome);
-    predictor.save();
 }
 
 fn read_observation(
@@ -268,62 +226,6 @@ fn read_observation(
         quality_score_milli: None,
         outcome_ref: Some(format!("read:{project_root}:{resolved_mode}")),
     }
-}
-
-/// Compute read density through the production OCLA efficiency capability.
-/// Returns `None` when no accepted outcome can produce an ETPAO value.
-fn ocla_read_density(
-    path: &str,
-    resolved_mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    task_completed: Option<bool>,
-    project_root: &str,
-) -> Option<f64> {
-    let analyzer = crate::core::ocla::OclaRegistry::global()
-        .efficiency_analyzer
-        .as_ref();
-    read_density_with_analyzer(
-        analyzer,
-        path,
-        resolved_mode,
-        original_tokens,
-        output_tokens,
-        task_completed,
-        project_root,
-    )
-}
-
-fn read_density_with_analyzer(
-    analyzer: &dyn EfficiencyAnalyzer,
-    path: &str,
-    resolved_mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    task_completed: Option<bool>,
-    project_root: &str,
-) -> Option<f64> {
-    analyzer
-        .analyze_efficiency(crate::core::ocla::EfficiencySample {
-            context: crate::core::ocla::OclaRequestContext {
-                request_id: format!("read:{path}:{resolved_mode}"),
-                session_id: project_root.to_string(),
-                agent_id: "lean-ctx".to_string(),
-                content_ref: path.to_string(),
-                tenant_id: None,
-                trace_id: "tr-unit".into(),
-                task_id: None,
-                parent_task_id: None,
-            },
-            original_tokens: original_tokens as u64,
-            delivered_tokens: output_tokens as u64,
-            accepted: task_completed,
-            cache_reads: 0,
-            cache_hits: 0,
-        })
-        .ok()
-        .and_then(|analysis| analysis.etpao_milli)
-        .map(|milli| milli as f64 / 1000.0)
 }
 
 /// Record a search/grep operation with full Context OS side effects.
@@ -490,7 +392,7 @@ pub(crate) fn maybe_periodic_flush() {
 /// The long-lived MCP daemon flushes these once at shutdown
 /// (`cli/dispatch/server.rs`). Single-shot CLI commands — and the shadow-mode
 /// hook subprocesses that spawn `lean-ctx read`/`grep` — exit immediately, so
-/// without this the buffered heatmap, mode-predictor, feedback and threshold
+/// without this the buffered heatmap and threshold
 /// writes are silently lost the moment the process ends: `lean-ctx heatmap`
 /// stays empty and `lean-ctx gain` reports nothing for compressed reads (#550).
 ///
@@ -506,9 +408,6 @@ pub(crate) fn flush_all() {
     crate::core::auto_mode_resolver::flush_sources();
     crate::core::edit_quality::flush();
     crate::core::edit_metering::flush();
-    crate::core::mode_predictor::ModePredictor::flush();
-    crate::core::feedback::FeedbackStore::flush();
-    crate::core::litm_calibration::flush();
 }
 
 /// [`flush_all`] for a process that is about to exit: first commits the
@@ -598,66 +497,11 @@ fn shell_ledger_label(command: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    struct SpyAnalyzer {
-        calls: AtomicUsize,
-    }
-
-    impl crate::core::ocla::OclaService for SpyAnalyzer {
-        fn capability(&self) -> crate::core::ocla::OclaCapability {
-            crate::core::ocla::OclaCapability::available(
-                crate::core::ocla::OclaCapabilityKind::EfficiencyAnalyzer,
-            )
-        }
-    }
-
-    impl EfficiencyAnalyzer for SpyAnalyzer {
-        fn analyze_efficiency(
-            &self,
-            sample: crate::core::ocla::EfficiencySample,
-        ) -> crate::core::ocla::OclaResult<crate::core::ocla::EfficiencyAnalysis> {
-            self.calls.fetch_add(1, Ordering::Relaxed);
-            assert_eq!(sample.original_tokens, 1000);
-            assert_eq!(sample.delivered_tokens, 375);
-            Ok(crate::core::ocla::EfficiencyAnalysis {
-                etpao_milli: sample.accepted.map(|_| 375),
-                duplicate_ratio_milli: 625,
-                compression_rate_milli: 625,
-                cache_hit_rate_milli: 0,
-                recommendation_refs: Vec::new(),
-            })
-        }
-    }
-
-    // The record_* paths now drive process-global telemetry sinks (mode
-    // predictor buffer, anomaly singleton) and read the data-dir env (#550), so
+    // The record_* paths now drive process-global telemetry sinks (heatmap
+    // buffer, anomaly singleton) and read the data-dir env (#550), so
     // every test here takes the shared isolation lock to serialize that state
     // and keep its disk writes inside a throwaway dir.
-
-    #[test]
-    fn ocla_read_density_uses_etpao_for_accepted_reads() {
-        let result = ocla_read_density("src/main.rs", "aggressive", 1000, 250, Some(true), ".");
-        assert!(result.is_some(), "accepted read must produce ETPAO");
-        assert!(result.unwrap() > 0.0, "ETPAO must be positive");
-        assert_eq!(
-            ocla_read_density("src/main.rs", "aggressive", 1000, 250, Some(false), "."),
-            None,
-            "unaccepted read must not produce ETPAO"
-        );
-    }
-
-    #[test]
-    fn ocla_read_density_accepts_injected_analyzer() {
-        let spy = SpyAnalyzer {
-            calls: AtomicUsize::new(0),
-        };
-        assert_eq!(
-            read_density_with_analyzer(&spy, "src/main.rs", "full", 1000, 375, Some(true), "."),
-            Some(0.375)
-        );
-        assert_eq!(spy.calls.load(Ordering::Relaxed), 1);
-    }
 
     #[test]
     fn read_observation_does_not_invent_acceptance_or_quality() {
@@ -667,14 +511,6 @@ mod tests {
         assert_eq!(outcome.quality_score_milli, None);
         assert_eq!(outcome.context.content_ref, "file:sample.rs");
         assert_eq!(outcome.outcome_ref.as_deref(), Some("read:/project:full"));
-    }
-
-    #[test]
-    fn ocla_read_density_has_no_etpao_without_acceptance() {
-        assert_eq!(
-            ocla_read_density("sample.rs", "full", 1000, 250, None, "/project"),
-            None
-        );
     }
 
     #[test]
@@ -735,8 +571,9 @@ mod tests {
 
     #[test]
     fn cli_read_persists_observation_sinks_to_disk() {
-        // #550 regression: a single-shot CLI read must leave the mode predictor,
-        // and heatmap on disk. Task acceptance cannot be inferred from a read;
+        // #550 regression: a single-shot CLI read must leave the heatmap on
+        // disk, and no retired mode-predictor store. Task acceptance cannot be
+        // inferred from a read;
         // the real-process read_observation_acceptance test guards historical
         // feedback preservation and absence of fabricated completion records.
         // The daemon used to be the only path that flushed them, so hook reads
@@ -761,8 +598,8 @@ mod tests {
         let data = crate::core::data_dir::lean_ctx_data_dir().expect("data dir");
         let state = crate::core::paths::state_dir().expect("state dir");
         assert!(
-            data.join("mode_stats.json").exists(),
-            "mode predictor must persist after a CLI read + flush"
+            !data.join("mode_stats.json").exists(),
+            "a CLI read must not train the retired mode predictor"
         );
         assert!(
             state.join("heatmap.json").exists(),

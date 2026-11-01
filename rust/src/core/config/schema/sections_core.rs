@@ -360,7 +360,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "bool",
             serde_json::json!(false),
-            "Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, in-session bounce rates) influence `auto` mode. Per-path bounce memory always applies. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING",
+            "No effect (kept so existing configs load): the learned `auto` signals are retired, so `auto` is always the deterministic capability-guard and size/task cascade. Per-path bounce memory still applies. LEAN_CTX_AUTO_MODE_LEARNING is ignored as well",
             "LEAN_CTX_AUTO_MODE_LEARNING",
         ),
     );

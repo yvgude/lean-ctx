@@ -741,17 +741,12 @@ fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         }
     }
     let health = health_annotations(content, ext);
-    for sig in &sigs {
+    let refs: Vec<&signatures::Signature> = sigs.iter().collect();
+    let (lines, budget_note) =
+        super::outline_budget::outline_lines(&refs, crp_mode.is_tdd(), &health);
+    for line in lines.iter().chain(budget_note.iter()) {
         output.push('\n');
-        if crp_mode.is_tdd() {
-            output.push_str(&sig.to_tdd_located());
-        } else {
-            output.push_str(&sig.to_compact_located());
-        }
-        if let Some(note) = health.get(&sig.name) {
-            output.push_str("  ");
-            output.push_str(note);
-        }
+        output.push_str(line);
     }
     // Same honesty rule as map: an empty signature view for a language
     // without an extractor must be labeled (limitations audit, #4).
@@ -870,17 +865,15 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
             }
         }
         let health = health_annotations(content, ext);
-        for sig in &key_sigs {
+        let (lines, budget_note) =
+            super::outline_budget::outline_lines(&key_sigs, crp_mode.is_tdd(), &health);
+        for line in &lines {
             output.push_str("\n    ");
-            if crp_mode.is_tdd() {
-                output.push_str(&sig.to_tdd_located());
-            } else {
-                output.push_str(&sig.to_compact_located());
-            }
-            if let Some(note) = health.get(&sig.name) {
-                output.push_str("  ");
-                output.push_str(note);
-            }
+            output.push_str(line);
+        }
+        if let Some(note) = budget_note {
+            output.push_str("\n  ");
+            output.push_str(&note);
         }
     }
 
@@ -1104,17 +1097,7 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         techniques_tag(&result.techniques),
         result.output
     );
-    let (delivered, sent) = finish_lossy_view(&output, content, original_tokens, file_path);
-    let compression_ratio = if original_tokens > 0 {
-        1.0 - (sent as f64 / original_tokens as f64)
-    } else {
-        0.0
-    };
-    crate::core::adaptive_thresholds::report_bandit_outcome_for_path(
-        file_path,
-        compression_ratio > 0.15,
-    );
-    (delivered, sent)
+    finish_lossy_view(&output, content, original_tokens, file_path)
 }
 
 /// Appends the savings line and recovery hint to a lossy view, and keeps the

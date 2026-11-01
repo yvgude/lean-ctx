@@ -110,6 +110,32 @@ account.
   `lean-ctx config set path_jail_scope home` to read and write all of `~` as in 3.11.3 to
   3.12.0. Loose files outside a project (`~/Documents`, `~/Downloads`) are no longer readable
   under the default either. If you set `path_jail_scope` yourself, nothing changes.
+- **Shell security settings are read from your own config only (3.12.1).** The shell gate
+  (the hooks, `lean-ctx -c` and `ctx_shell`) reads `shell_security`, `shell_allowlist`,
+  `shell_allowlist_extra`, `shell_allowlist_subcommand_scoping`, `shell_strict_mode`,
+  `shell_allow_inline_scripts`, `shell_allow_writes`, `shell_approval` and `shell_hook_mode`
+  from the `config.toml` in the
+  home directory your account has in the operating system (`~/.config/lean-ctx/`, or
+  `~/.lean-ctx/` on an older layout), and no longer from the environment variables
+  `LEAN_CTX_SHELL_SECURITY`, `LEAN_CTX_SHELL_ALLOWLIST`, `LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE`,
+  `LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS`, `LEAN_CTX_SHELL_ALLOW_WRITES`,
+  `LEAN_CTX_SHELL_APPROVAL`, `LEAN_CTX_SHELL_HOOK_MODE` or `LEAN_CTX_ALLOWLIST_WARN_ONLY`. If
+  you set one of them, or keep your config elsewhere with `LEAN_CTX_CONFIG_DIR`,
+  `XDG_CONFIG_HOME` or a different `HOME`, put these settings in that default `config.toml`;
+  every other setting keeps its location. Without such a file the secure defaults apply.
+- **lean-ctx calls from an agent's shell are limited (3.12.1).** An agent may run reads,
+  views and searches (`read`, `grep`, `ls`, `gain`, `doctor`, `semantic-search`, …), `-c`,
+  and the read actions of `config`, `knowledge` and `session`; `config set` only for
+  presentation and compression keys. Everything else — `setup`, `init`, `allow`, `trust`,
+  `config set` of other keys, `doctor --fix`, `dev-install` and the like — you run in your
+  own terminal. `make dev` and `lean-ctx dev-install` replace the binary that enforces the
+  gate: run them yourself in your own terminal. (An agent can still run `make`, which is
+  admitted code under the limit described next.)
+- **The allowlist is not a sandbox.** Code the allowlist admits — a script such as
+  `python3 x.py`, a compiled program, `cargo run` in a lean-ctx checkout, a copied lean-ctx
+  binary — runs with your account's rights and can still change the config in your home.
+  The gate checks command lines, not what admitted programs do (#1367); only an OS sandbox
+  closes that.
 
 ## Going back to 3.11
 

@@ -66,7 +66,7 @@ impl Client {
         let url = format!("{}{path}", self.base);
         let key = format!("01jb8z{:020}", KEYS.fetch_add(1, Ordering::Relaxed));
         let mut headers: Vec<(String, String)> = vec![
-            (HEADER_PROTOCOL.into(), protocol_header_value()),
+            (HEADER_PROTOCOL.into(), "2.0".into()),
             (HEADER_NAMES.into(), NAMES_VAULT.into()),
             ("User-Agent".into(), "lean-ctx/3.12.0".into()),
         ];
@@ -388,11 +388,18 @@ fn contract_errors_are_enforced() {
         "Idempotency-Key is required"
     );
 
+    // The deployed guard: only major 2 passes; 1.x (retired), a missing or
+    // malformed header or another major is `426 upgrade_required`.
     let (status, body) = client.call("GET", "/org/salt", None, &[(HEADER_PROTOCOL, "2.0")]);
-    assert_eq!(
-        (status, error_code(&body)),
-        (426, HiveErrorCode::UpgradeRequired)
-    );
+    assert_eq!(status, 200, "protocol 2.0 passes: {body}");
+    for refused in ["", "two", "3.0", "1.9", "1.0"] {
+        let (status, body) = client.call("GET", "/org/salt", None, &[(HEADER_PROTOCOL, refused)]);
+        assert_eq!(
+            (status, error_code(&body)),
+            (426, HiveErrorCode::UpgradeRequired),
+            "Hive-Protocol {refused:?}"
+        );
+    }
 
     let (status, body) = client.call(
         "GET",
@@ -605,17 +612,28 @@ fn conformance_against_deployed_hive() {
             (401, HiveErrorCode::Unauthorized),
             "no token"
         );
+        // Enrollment is behind the same guard: 2.0 passes from the first
+        // request; a missing header or another major is `426`.
         let (status, body) = client.call(
             "POST",
             "/device/code",
             Some(&fixture("device_code.request")),
             &[(HEADER_PROTOCOL, "2.0")],
         );
-        assert_eq!(
-            (status, error_code(&body)),
-            (426, HiveErrorCode::UpgradeRequired),
-            "protocol 2.0"
-        );
+        assert_eq!(status, 200, "protocol 2.0: {body}");
+        for refused in ["", "3.0"] {
+            let (status, body) = client.call(
+                "POST",
+                "/device/code",
+                Some(&fixture("device_code.request")),
+                &[(HEADER_PROTOCOL, refused)],
+            );
+            assert_eq!(
+                (status, error_code(&body)),
+                (426, HiveErrorCode::UpgradeRequired),
+                "Hive-Protocol {refused:?}"
+            );
+        }
     });
 
     // A fresh instance key per run: the service refuses to enroll a known key twice.

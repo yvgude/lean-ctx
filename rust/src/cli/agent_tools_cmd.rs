@@ -255,7 +255,11 @@ impl Session {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             .wrapping_add(1);
         if !autonomy::should_auto_consolidate(&self.autonomy, calls)
-            || crate::tools::LeanCtxServer::guard_role_and_policy("ctx_knowledge").is_some()
+            || crate::tools::LeanCtxServer::guard_role_and_policy(
+                "ctx_knowledge",
+                crate::core::agent_identity::current_agent_id(),
+            )
+            .is_some()
         {
             return;
         }
@@ -321,13 +325,24 @@ impl Session {
             }
             _ => (tool, arguments),
         };
-        if crate::tools::LeanCtxServer::guard_role_and_policy(tool).is_some() {
+        if crate::tools::LeanCtxServer::guard_role_and_policy(
+            tool,
+            crate::core::agent_identity::current_agent_id(),
+        )
+        .is_some()
+        {
             return Err(policy_denied());
         }
         if tool == "ctx_shell" {
             return self.call_shell(arguments).map(redact_tool_output);
         }
-        if crate::tools::LeanCtxServer::guard_egress(tool, Some(arguments)).is_some() {
+        if crate::tools::LeanCtxServer::guard_egress(
+            tool,
+            Some(arguments),
+            crate::core::agent_identity::current_agent_id(),
+        )
+        .is_some()
+        {
             return Err(policy_denied());
         }
         let handler = self.registry.get(tool).ok_or_else(|| ErrorV1 {
@@ -371,7 +386,13 @@ impl Session {
 
     fn call_shell(&self, arguments: &Map<String, Value>) -> Result<ToolOutput, ErrorV1> {
         let prepared = self.prepare_shell(arguments)?;
-        if crate::tools::LeanCtxServer::guard_egress("ctx_shell", Some(&prepared)).is_some() {
+        if crate::tools::LeanCtxServer::guard_egress(
+            "ctx_shell",
+            Some(&prepared),
+            crate::core::agent_identity::current_agent_id(),
+        )
+        .is_some()
+        {
             return Err(policy_denied());
         }
         let argv = arguments["argv"]
@@ -417,7 +438,12 @@ impl Session {
                 .map(|(name, value)| (name, value.as_str().expect("validated env value"))),
         );
         // Reauthorize immediately before the side effect, after path resolution.
-        if crate::tools::LeanCtxServer::guard_role_and_policy("ctx_shell").is_some() {
+        if crate::tools::LeanCtxServer::guard_role_and_policy(
+            "ctx_shell",
+            crate::core::agent_identity::current_agent_id(),
+        )
+        .is_some()
+        {
             return Err(policy_denied());
         }
         // Q13 (Unix): the call runs in a process group of its own, so a

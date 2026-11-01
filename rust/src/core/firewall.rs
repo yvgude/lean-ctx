@@ -158,7 +158,10 @@ pub(crate) fn summarize(
             out.push_str("TIP: re-run the command with a --jq filter to select only the fields you need at the source.\n");
         }
     } else {
-        out.push_str("Use ctx_expand(search=\"KEYWORD\") for targeted extraction. Only read the full archive if you genuinely need every line.\n");
+        // P10: after a firewalled log grep the agent re-ran everything with
+        // raw=true, which skips this digest and delivers the whole output.
+        // Point at the two routes that return less, not more.
+        out.push_str("Narrow the command at the source (grep -m N, sed -n 'A,Bp', head/tail), or use ctx_expand(search=\"KEYWORD\") on this archive. Only read the full archive if you genuinely need every line.\n");
     }
 
     out.push_str("--- retrieve full output ---\n");

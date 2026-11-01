@@ -474,3 +474,32 @@ fn uninstall_dry_run_exits_zero() {
         "uninstall --dry-run should describe what it would do"
     );
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// pack: errors exit non-zero
+// ═══════════════════════════════════════════════════════════════════
+
+/// `pack` subcommands printed their errors and exited 0; a usage error now
+/// exits 2 and a failure 1.
+#[test]
+fn pack_errors_exit_non_zero() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let pack = |args: &[&str]| {
+        lean_ctx()
+            .args(args)
+            .current_dir(tmp.path())
+            .env("LEAN_CTX_DATA_DIR", tmp.path().join("data"))
+            .output()
+            .expect("failed to spawn lean-ctx binary")
+    };
+    for (args, code) in [
+        (&["pack", "no-such-subcommand"][..], 2),
+        (&["pack", "remove"][..], 2),
+        (&["pack", "info"][..], 2),
+        (&["pack", "export"][..], 2),
+        (&["pack", "remove", "no-such-package"][..], 1),
+    ] {
+        let out = pack(args);
+        assert_eq!(exit_code(&out), code, "{args:?}: {}", stderr(&out));
+    }
+}

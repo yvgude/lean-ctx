@@ -33,13 +33,32 @@ pub struct EventQuery {
 /// [`LeanCtxClient::builder`] (bearer token, default workspace/channel,
 /// timeout). All methods are blocking; wrap calls in your own thread pool or
 /// `spawn_blocking` when used from async code.
-#[derive(Debug, Clone)]
+///
+/// `Debug` never prints the bearer token: a set token shows as `"<redacted>"`.
+#[derive(Clone)]
 pub struct LeanCtxClient {
     base_url: String,
     bearer_token: Option<String>,
     workspace_id: Option<String>,
     channel_id: Option<String>,
     agent: ureq::Agent,
+}
+
+impl std::fmt::Debug for LeanCtxClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LeanCtxClient")
+            .field("base_url", &self.base_url)
+            .field("bearer_token", &redacted(self.bearer_token.as_ref()))
+            .field("workspace_id", &self.workspace_id)
+            .field("channel_id", &self.channel_id)
+            .field("agent", &self.agent)
+            .finish()
+    }
+}
+
+/// What `Debug` shows for a secret: whether it is set, never its value.
+fn redacted(secret: Option<&String>) -> Option<&'static str> {
+    secret.map(|_| "<redacted>")
 }
 
 impl LeanCtxClient {
@@ -387,14 +406,26 @@ impl LeanCtxClient {
     }
 }
 
-/// Builder for [`LeanCtxClient`].
-#[derive(Debug, Clone)]
+/// Builder for [`LeanCtxClient`]. Its `Debug`, too, redacts the bearer token.
+#[derive(Clone)]
 pub struct LeanCtxClientBuilder {
     base_url: String,
     bearer_token: Option<String>,
     workspace_id: Option<String>,
     channel_id: Option<String>,
     timeout: Option<Duration>,
+}
+
+impl std::fmt::Debug for LeanCtxClientBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LeanCtxClientBuilder")
+            .field("base_url", &self.base_url)
+            .field("bearer_token", &redacted(self.bearer_token.as_ref()))
+            .field("workspace_id", &self.workspace_id)
+            .field("channel_id", &self.channel_id)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 impl LeanCtxClientBuilder {
@@ -571,6 +602,23 @@ mod tests {
         assert!(c.bearer_token.is_none());
         assert!(c.workspace_id.is_none());
         assert_eq!(c.base_url(), "http://x");
+    }
+
+    #[test]
+    fn debug_redacts_the_bearer_token() {
+        let builder = LeanCtxClient::builder("http://x").bearer_token("sentinel-token");
+        let shown = format!("{builder:?}");
+        assert!(!shown.contains("sentinel-token"), "{shown}");
+        assert!(shown.contains("<redacted>"), "{shown}");
+        let client = builder.workspace_id("ws").build().unwrap();
+        let shown = format!("{client:?}");
+        assert!(!shown.contains("sentinel-token"), "{shown}");
+        assert!(
+            shown.contains("<redacted>") && shown.contains("ws"),
+            "{shown}"
+        );
+        let anonymous = format!("{:?}", LeanCtxClient::new("http://x").unwrap());
+        assert!(anonymous.contains("bearer_token: None"), "{anonymous}");
     }
 
     #[test]

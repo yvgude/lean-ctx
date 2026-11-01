@@ -19,6 +19,33 @@ fn read_a2a_peers(path: &std::path::Path) -> Result<String, String> {
     Ok(raw)
 }
 
+/// A secret (the A2A signing key, the HTTP auth token) from a file: bounded,
+/// no symlink, the trailing line break removed. Keeps the secret out of the
+/// process arguments, which every local user can list.
+#[cfg(feature = "http-server")]
+fn read_secret_file(path: &std::path::Path) -> Result<String, String> {
+    let raw = read_a2a_task_authority(path)?;
+    let key = raw.trim_end_matches(['\n', '\r']);
+    if key.trim().is_empty() {
+        return Err("the file is empty".to_string());
+    }
+    Ok(key.to_string())
+}
+
+/// Printed when `--a2a-signing-key <key>` is used (deprecation
+/// `cli-serve-a2a-signing-key-argv` in `DEPRECATIONS.toml`).
+#[cfg(feature = "http-server")]
+const A2A_SIGNING_KEY_ARGV_WARNING: &str = "warning: --a2a-signing-key <key> is deprecated: \
+     the key is visible in the process list. Use --a2a-signing-key-file <path> or the \
+     LEAN_CTX_A2A_SIGNING_KEY environment variable instead.";
+
+/// Printed when `serve --auth-token <token>` is used (deprecation
+/// `cli-serve-auth-token-argv` in `DEPRECATIONS.toml`).
+#[cfg(feature = "http-server")]
+const AUTH_TOKEN_ARGV_WARNING: &str = "warning: lean-ctx serve --auth-token <token> is deprecated: \
+     the token is visible in the process list. Use --auth-token-file <path> or the \
+     LEAN_CTX_HTTP_TOKEN environment variable instead.";
+
 pub(crate) mod cockpit_start;
 mod provider;
 pub(crate) use provider::*;
@@ -513,6 +540,8 @@ pub(super) fn cmd_serve(rest: &[String]) {
         let mut rrf_k: Option<f64> = None;
         let mut a2a_task_authority_path: Option<String> = None;
         let mut a2a_peers_path: Option<String> = None;
+        let mut a2a_signing_key_file: Option<String> = None;
+        let mut auth_token_file: Option<String> = None;
         let mut i = 0;
         while i < rest.len() {
             match rest[i].as_str() {
@@ -560,6 +589,15 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 arg if arg.starts_with("--auth-token=") => {
                     cfg.auth_token = Some(arg["--auth-token=".len()..].to_string());
                 }
+                "--auth-token-file" => {
+                    i += 1;
+                    if i < rest.len() {
+                        auth_token_file = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--auth-token-file=") => {
+                    auth_token_file = Some(arg["--auth-token-file=".len()..].to_string());
+                }
                 "--a2a-signing-key" => {
                     i += 1;
                     if i < rest.len() {
@@ -568,6 +606,15 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 }
                 arg if arg.starts_with("--a2a-signing-key=") => {
                     cfg.a2a_signing_key = Some(arg["--a2a-signing-key=".len()..].to_string());
+                }
+                "--a2a-signing-key-file" => {
+                    i += 1;
+                    if i < rest.len() {
+                        a2a_signing_key_file = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-signing-key-file=") => {
+                    a2a_signing_key_file = Some(arg["--a2a-signing-key-file=".len()..].to_string());
                 }
                 "--a2a-recipient-id" => {
                     i += 1;
@@ -731,13 +778,17 @@ pub(super) fn cmd_serve(rest: &[String]) {
                            --project-root        Resolve relative paths against this root (default: cwd)\n  \
                            --root PATH[:ALIAS]   Add a repo root for multi-repo mode (repeatable)\n  \
                            --rrf-k N             RRF fusion parameter (default: 60.0)\n  \
-                           --a2a-signing-key     Verify remote A2A envelope HMACs (must differ from auth token; env LEAN_CTX_A2A_SIGNING_KEY)\n  \
+                           --a2a-signing-key-file  File with the key that verifies remote A2A envelope HMACs (must differ\n  \
+                                                 from auth token; env LEAN_CTX_A2A_SIGNING_KEY_FILE, or the key in LEAN_CTX_A2A_SIGNING_KEY)\n  \
+                           --a2a-signing-key     Deprecated: the key itself, visible in the process list\n  \
                            --a2a-recipient-id    Bind incoming A2A envelopes to this server identity\n  \
                            --a2a-tenant-id       Require signed tenant scope on incoming A2A envelopes\n  \
                            --a2a-project-id      Require signed project scope on incoming A2A envelopes\n  \
                            --a2a-task-authority  JSON peer/grant trust policy for signed A2A tasks (env LEAN_CTX_A2A_TASK_AUTHORITY)\n  \
                            --a2a-peers           JSON bounded multi-peer relay table (env LEAN_CTX_A2A_PEERS)\n  \
-                           --auth-token          Require Authorization: Bearer <token> (required for non-loopback binds)\n  \
+                           --auth-token-file     File with the token Authorization: Bearer <token> must carry (required\n  \
+                                                 for non-loopback binds; env LEAN_CTX_HTTP_TOKEN_FILE, or the token in LEAN_CTX_HTTP_TOKEN)\n  \
+                           --auth-token          Deprecated: the token itself, visible in the process list\n  \
                            --stateful/--stateless  Streamable HTTP session mode (default: stateless)\n  \
                            --json/--sse          Response framing in stateless mode (default: json)\n  \
                            --max-body-bytes      Max request body size in bytes (default: 2097152)\n  \
@@ -795,17 +846,75 @@ pub(super) fn cmd_serve(rest: &[String]) {
 
         // Apply environment fallbacks before daemon dispatch as both foreground
         // and IPC servers validate the same remote-authority configuration.
+        // Auth token: the deprecated argv form, the token file, then the
+        // environment (the token, then a token file).
+        if cfg.auth_token.is_some() {
+            if auth_token_file.is_some() {
+                eprintln!(
+                    "Use either --auth-token-file or --auth-token, not both; \
+                     prefer --auth-token-file."
+                );
+                std::process::exit(1);
+            }
+            eprintln!("{AUTH_TOKEN_ARGV_WARNING}");
+        }
         if cfg.auth_token.is_none()
+            && auth_token_file.is_none()
             && let Ok(v) = std::env::var("LEAN_CTX_HTTP_TOKEN")
             && !v.trim().is_empty()
         {
             cfg.auth_token = Some(v);
         }
+        let auth_token_file = auth_token_file.or_else(|| {
+            cfg.auth_token.is_none().then(|| {
+                std::env::var("LEAN_CTX_HTTP_TOKEN_FILE")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+            })?
+        });
+        if let Some(path) = auth_token_file {
+            match read_secret_file(std::path::Path::new(&path)) {
+                Ok(token) => cfg.auth_token = Some(token),
+                Err(error) => {
+                    eprintln!("Invalid auth token file at {path}: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        // Signing key: the deprecated argv form, the key file, then the
+        // environment (the key, then a key file).
+        if cfg.a2a_signing_key.is_some() {
+            if a2a_signing_key_file.is_some() {
+                eprintln!(
+                    "Use either --a2a-signing-key-file or --a2a-signing-key, not both; \
+                     prefer --a2a-signing-key-file."
+                );
+                std::process::exit(1);
+            }
+            eprintln!("{A2A_SIGNING_KEY_ARGV_WARNING}");
+        }
         if cfg.a2a_signing_key.is_none()
+            && a2a_signing_key_file.is_none()
             && let Ok(v) = std::env::var("LEAN_CTX_A2A_SIGNING_KEY")
             && !v.trim().is_empty()
         {
             cfg.a2a_signing_key = Some(v);
+        }
+        let a2a_signing_key_file = a2a_signing_key_file.or_else(|| {
+            cfg.a2a_signing_key.is_none().then(|| {
+                std::env::var("LEAN_CTX_A2A_SIGNING_KEY_FILE")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+            })?
+        });
+        if let Some(path) = a2a_signing_key_file {
+            match read_secret_file(std::path::Path::new(&path)) {
+                Ok(key) => cfg.a2a_signing_key = Some(key),
+                Err(error) => {
+                    eprintln!("Invalid A2A signing key file at {path}: {error}");
+                    std::process::exit(1);
+                }
+            }
         }
         if cfg.a2a_recipient_id.is_none()
             && let Ok(v) = std::env::var("LEAN_CTX_A2A_RECIPIENT_ID")

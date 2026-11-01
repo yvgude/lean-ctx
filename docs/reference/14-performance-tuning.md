@@ -139,8 +139,8 @@ exceed the global cap.
 `max_ram_percent` drives userspace throttling and cache eviction; it is not a
 kernel-enforced ceiling and RSS can temporarily exceed it. For a strict
 per-process boundary, run lean-ctx in a cgroup/container with `MemoryMax` (or
-equivalent). At sustained pressure, reduce `memory_profile`, keep
-`cognition_loop_enabled` off, or provision more RAM.
+equivalent). At sustained pressure, reduce `memory_profile` or provision more
+RAM.
 
 ### Long-lived MCP servers
 

@@ -269,23 +269,6 @@ pub fn flush() {
     }
 }
 
-/// Cheap read-only lookup against the in-process heatmap buffer:
-/// `(access_count, avg_compression_ratio)` for a file, if tracked.
-/// Paths are canonicalized the same way `record_file_access` stores them.
-pub fn entry_stats(file_path: &str) -> Option<(u32, f32)> {
-    let canonical = std::fs::canonicalize(file_path).map_or_else(
-        |_| file_path.to_string(),
-        |p| p.to_string_lossy().into_owned(),
-    );
-    let mut guard = HEATMAP_BUFFER
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let hm = guard.get_or_insert_with(load_from_disk);
-    hm.entries
-        .get(&canonical)
-        .map(|e| (e.access_count, e.avg_compression_ratio))
-}
-
 pub fn reset() {
     let mut guard = HEATMAP_BUFFER
         .lock()

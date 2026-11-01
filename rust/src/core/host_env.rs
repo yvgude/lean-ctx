@@ -41,6 +41,11 @@ const HOST_KEYS: &[&str] = &[
     "CLAUDE_CODE_REMOTE",
     "KUBERNETES_SERVICE_HOST",
     "container",
+    // Client markers for the aggregate's `client_family`.
+    "CLAUDECODE",
+    "CODEX_HOME",
+    "CURSOR_TRACE_ID",
+    "GEMINI_CLI",
 ];
 
 /// How many ancestors are read: client, its shell, the job runner, its init.
@@ -151,6 +156,15 @@ mod tests {
     fn every_ci_marker_is_a_host_key() {
         for marker in crate::core::telemetry_consent::CI_MARKERS {
             assert!(HOST_KEYS.contains(marker), "{marker}");
+        }
+    }
+
+    /// The aggregate's `client_family` reads these through `var`, so a client
+    /// that filters its MCP server's environment is still recognised.
+    #[test]
+    fn every_client_marker_is_a_host_key() {
+        for marker in ["CLAUDECODE", "CODEX_HOME", "CURSOR_TRACE_ID", "GEMINI_CLI"] {
+            assert!(HOST_KEYS.contains(&marker), "{marker}");
         }
     }
 }

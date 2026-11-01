@@ -1,7 +1,8 @@
 //! Role-based tool access guard for the MCP server pipeline.
 //!
 //! Checks the active role's tool policy before dispatching a tool call.
-//! Returns `Some(CallToolResult)` with a denial message if blocked, `None` if allowed.
+//! A denial becomes a tool error (`is_error`) carrying the reason, and its
+//! audit entry names the agent that made the call.
 
 use rmcp::model::{CallToolResult, ContentBlock};
 
@@ -13,7 +14,15 @@ pub struct RoleCheckResult {
     pub message: Option<String>,
 }
 
+/// [`check_tool_access_as`] for this process's agent identity
+/// (`LEAN_CTX_AGENT_ID`, else `local`), for callers without an MCP session.
 pub fn check_tool_access(tool_name: &str) -> RoleCheckResult {
+    check_tool_access_as(tool_name, crate::core::agent_identity::current_agent_id())
+}
+
+/// Check `tool_name` against the active role; a denial is audited for
+/// `agent_id`.
+pub fn check_tool_access_as(tool_name: &str, agent_id: &str) -> RoleCheckResult {
     let role_name = roles::active_role_name();
     let role = roles::active_role();
 
@@ -32,7 +41,7 @@ pub fn check_tool_access(tool_name: &str) -> RoleCheckResult {
             "tool not allowed by role policy",
         );
         crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-            agent_id: "unknown".into(),
+            agent_id: agent_id.to_string(),
             tool: tool_name.to_string(),
             action: None,
             input_hash: String::new(),
@@ -67,7 +76,7 @@ pub fn check_tool_access(tool_name: &str) -> RoleCheckResult {
             &format!("shell denied by policy: {}", role.role.shell_policy),
         );
         crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-            agent_id: "unknown".into(),
+            agent_id: agent_id.to_string(),
             tool: tool_name.to_string(),
             action: None,
             input_hash: String::new(),
@@ -118,9 +127,10 @@ pub fn check_tool_access(tool_name: &str) -> RoleCheckResult {
     }
 }
 
+/// The denial as a tool error the agent can read; `None` when allowed.
 pub fn into_call_tool_result(check: &RoleCheckResult) -> Option<CallToolResult> {
     if check.blocked {
-        Some(CallToolResult::success(vec![ContentBlock::text(
+        Some(CallToolResult::error(vec![ContentBlock::text(
             check.message.as_deref().unwrap_or("Blocked by role policy"),
         )]))
     } else {
@@ -161,6 +171,31 @@ mod tests {
             result.role_name
         );
         assert_eq!(result.role_name, "coder");
+    }
+
+    // A denial was a successful result audited for agent "unknown".
+    #[test]
+    fn a_denial_is_a_tool_error_audited_for_the_calling_agent() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let reviewer = roles::load_role("reviewer").expect("built-in reviewer role");
+        let check = roles::with_test_active_role(reviewer, || {
+            check_tool_access_as("ctx_edit", "role-guard-test-agent")
+        });
+        assert!(check.blocked);
+        let denied = into_call_tool_result(&check).expect("a denial");
+        assert_eq!(denied.is_error, Some(true));
+        assert!(
+            crate::core::audit_trail::load_recent(50)
+                .iter()
+                .any(|entry| {
+                    entry.agent_id == "role-guard-test-agent"
+                        && entry.tool == "ctx_edit"
+                        && matches!(
+                            entry.event_type,
+                            crate::core::audit_trail::AuditEventType::ToolDenied
+                        )
+                })
+        );
     }
 
     #[test]

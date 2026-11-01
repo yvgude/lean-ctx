@@ -1,11 +1,7 @@
-use crate::core::adaptive_mode_policy::AdaptiveModePolicyStore;
 use crate::core::llm_feedback::{LlmFeedbackEvent, LlmFeedbackStore};
 
 pub fn record(event: &LlmFeedbackEvent) -> Result<String, String> {
     LlmFeedbackStore::record(event.clone())?;
-    let mut policy = AdaptiveModePolicyStore::load();
-    policy.update_from_feedback(event);
-    policy.save()?;
     Ok("feedback recorded".to_string())
 }
 
@@ -67,17 +63,8 @@ pub fn json(limit: usize) -> String {
 }
 
 pub fn reset() -> String {
-    match (LlmFeedbackStore::reset(), AdaptiveModePolicyStore::reset()) {
-        (Ok(()), Ok(())) => "LLM feedback has been reset.".to_string(),
-        (a, b) => {
-            let mut errs = Vec::new();
-            if let Err(e) = a {
-                errs.push(format!("feedback: {e}"));
-            }
-            if let Err(e) = b {
-                errs.push(format!("policy: {e}"));
-            }
-            format!("Error resetting feedback: {}", errs.join("; "))
-        }
+    match LlmFeedbackStore::reset() {
+        Ok(()) => "LLM feedback has been reset.".to_string(),
+        Err(e) => format!("Error resetting feedback: {e}"),
     }
 }

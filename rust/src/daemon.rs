@@ -25,13 +25,50 @@ pub fn is_foreground_daemon() -> bool {
 }
 
 fn data_dir() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"))
-        .join("lean-ctx")
+    ipc::endpoint_dir()
 }
 
 pub fn daemon_pid_path() -> PathBuf {
     data_dir().join("daemon.pid")
+}
+
+/// Releases up to 3.12.0 kept `daemon.pid` and `daemon.sock` in the OS
+/// data-local directory. A daemon such a release started is stopped before a
+/// new one starts and by `stop_daemon`, so the two never run side by side. Only
+/// a live `lean-ctx` process is signalled, never a reused PID. A process with a
+/// directory override (a test, an isolated instance) never touches it: that
+/// daemon belongs to the default install (GH #2007).
+fn stop_legacy_daemon() {
+    if cfg!(test) || crate::core::paths::dir_override_active() {
+        return;
+    }
+    let legacy = ipc::legacy_endpoint_dir();
+    if legacy == data_dir() {
+        return;
+    }
+    let pid_path = legacy.join("daemon.pid");
+    let Some(pid) = fs::read_to_string(&pid_path)
+        .ok()
+        .and_then(|contents| contents.trim().parse::<u32>().ok())
+    else {
+        return;
+    };
+    if ipc::process::is_alive(pid) && ipc::process::find_pids_by_name("lean-ctx").contains(&pid) {
+        let _ = ipc::process::terminate_gracefully(pid);
+        for _ in 0..20 {
+            if !ipc::process::is_alive(pid) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        if ipc::process::is_alive(pid) {
+            let _ = ipc::process::force_kill(pid);
+        }
+        eprintln!("Stopped the daemon of an earlier release (PID {pid}).");
+    }
+    let _ = fs::remove_file(&pid_path);
+    #[cfg(unix)]
+    let _ = fs::remove_file(legacy.join("daemon.sock"));
 }
 
 pub fn daemon_addr() -> ipc::DaemonAddr {
@@ -108,6 +145,7 @@ pub(crate) fn start_daemon_with_binary(
         anyhow::bail!("Daemon already running (PID {pid}). Use --stop to stop it first.");
     }
 
+    stop_legacy_daemon();
     ipc::cleanup(&daemon_addr());
 
     if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
@@ -193,6 +231,7 @@ pub(crate) fn start_daemon_with_binary(
 }
 
 pub fn stop_daemon() -> Result<()> {
+    stop_legacy_daemon();
     let pid_path = daemon_pid_path();
 
     let Some(pid) = read_daemon_pid() else {

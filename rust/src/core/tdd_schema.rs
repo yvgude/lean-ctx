@@ -35,7 +35,7 @@ pub fn tdd_schema_value() -> Value {
         },
         "ctx_read": {
             "read_modes": [
-                {"name":"auto","description":"Predict best mode (predictor + adaptive policy)."},
+                {"name":"auto","description":"Pick the mode from file size, type and task."},
                 {"name":"full","description":"Full file content (cached)."},
                 {"name":"map","description":"Deps + exports + key API signatures (TOON)."},
                 {"name":"signatures","description":"API surface only."},

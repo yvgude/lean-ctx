@@ -247,37 +247,6 @@ impl Config {
         }
     }
 
-    /// Returns `true` when the adaptive learning signals may participate in
-    /// `auto` mode resolution (#683). Off by default for a deterministic,
-    /// I/O-light cascade; the `LEAN_CTX_AUTO_MODE_LEARNING` env var wins over the
-    /// config field and accepts the usual truthy/falsy spellings.
-    pub fn auto_mode_learning_effective(&self) -> bool {
-        match std::env::var("LEAN_CTX_AUTO_MODE_LEARNING") {
-            Ok(raw) => matches!(
-                raw.trim().to_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            ),
-            Err(_) => self.auto_mode_learning,
-        }
-    }
-
-    /// Returns `true` when probabilistic exploration (Thompson sampling,
-    /// Boltzmann-temperature eviction, simulated annealing) may influence
-    /// decisions. Off by default so tool output stays a deterministic, byte-
-    /// stable function of (content, mode, task) — the determinism contract
-    /// (#498) that lets provider prompt caching apply. The `LEAN_CTX_STOCHASTIC`
-    /// env var wins (the usual truthy/falsy spellings); otherwise it follows
-    /// [`Self::auto_mode_learning_effective`], which is itself off by default.
-    pub fn is_stochastic_enabled(&self) -> bool {
-        match std::env::var("LEAN_CTX_STOCHASTIC") {
-            Ok(raw) => matches!(
-                raw.trim().to_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            ),
-            Err(_) => self.auto_mode_learning_effective(),
-        }
-    }
-
     /// Returns `true` if minimal overhead should be enabled for this MCP client.
     ///
     /// This is a superset of `minimal_overhead_effective()`:

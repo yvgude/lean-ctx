@@ -9,7 +9,7 @@
 //! where R = task relevance (heat diffusion + PageRank),
 //!       S = surprise (cross-entropy with Zipfian prior),
 //!       G = graph proximity (weighted BFS distance),
-//!       H = history signal (bandit feedback),
+//!       H = history signal (access frequency),
 //!       C = token cost for the active view,
 //!       D = redundancy with already-selected items (Jaccard).
 
@@ -189,8 +189,9 @@ pub struct Provenance {
 // Context Potential Function
 // ---------------------------------------------------------------------------
 
-/// Weights for the potential function components.
-/// Adapted via Thompson Sampling (bandit.rs) over time.
+/// Weights for the potential function components. Fixed at
+/// [`FieldWeights::default`] on every production path, so Phi is a pure
+/// function of the signals (#498).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldWeights {
     pub w_relevance: f64,
@@ -212,75 +213,6 @@ impl Default for FieldWeights {
             w_redundancy: 0.10,
         }
     }
-}
-
-impl FieldWeights {
-    /// Stability-leaning preset (#4): trusts relevance/history, applies a light
-    /// cost penalty. Selected when the `conservative` bandit arm wins.
-    pub fn conservative() -> Self {
-        Self {
-            w_relevance: 0.45,
-            w_surprise: 0.10,
-            w_graph: 0.20,
-            w_history: 0.15,
-            w_cost: 0.05,
-            w_redundancy: 0.05,
-        }
-    }
-
-    /// The default balanced preset (#4); the `balanced` arm maps here.
-    pub fn balanced() -> Self {
-        Self::default()
-    }
-
-    /// Compression-leaning preset (#4): heavier cost/surprise weighting so dense
-    /// items are favored under pressure. Selected when `aggressive` wins.
-    pub fn aggressive() -> Self {
-        Self {
-            w_relevance: 0.30,
-            w_surprise: 0.20,
-            w_graph: 0.15,
-            w_history: 0.05,
-            w_cost: 0.20,
-            w_redundancy: 0.10,
-        }
-    }
-
-    /// Map a learned bandit arm to a FieldWeights preset (#4). The arm names are
-    /// the bandit's own (`conservative`/`balanced`/`aggressive`); unknown names
-    /// fall back to balanced. This is what makes the field weights *learned*:
-    /// feedback shifts which arm wins, which shifts the weights deterministically.
-    pub fn from_arm(arm: &crate::core::bandit::BanditArm) -> Self {
-        match arm.name.as_str() {
-            "conservative" => Self::conservative(),
-            "aggressive" => Self::aggressive(),
-            _ => Self::balanced(),
-        }
-    }
-}
-
-/// Process-wide learned FieldWeights (#4): the bandit-selected weights that
-/// [`ContextField::active`] uses, so learning flows into every Phi computation
-/// without a disk read per call. `None` until an arm has been chosen on the read
-/// path; readers then fall back to the default weights.
-static ACTIVE_WEIGHTS: std::sync::RwLock<Option<FieldWeights>> = std::sync::RwLock::new(None);
-
-/// Install the bandit-selected FieldWeights as the process-wide active weights
-/// (#4). Deterministic given the bandit posterior; called when an arm is chosen.
-pub fn set_active_weights(weights: FieldWeights) {
-    if let Ok(mut w) = ACTIVE_WEIGHTS.write() {
-        *w = Some(weights);
-    }
-}
-
-/// The current active (learned) FieldWeights, or the default when none have been
-/// installed yet. Cheap — a single `RwLock` read — so safe on the hot path.
-pub fn active_weights() -> FieldWeights {
-    ACTIVE_WEIGHTS
-        .read()
-        .ok()
-        .and_then(|w| w.clone())
-        .unwrap_or_default()
 }
 
 /// Raw signal components for a single context item before combination.
@@ -349,15 +281,6 @@ impl ContextField {
 
     pub fn with_weights(weights: FieldWeights) -> Self {
         Self { weights }
-    }
-
-    /// Construct a field using the process-wide learned FieldWeights (#4) when an
-    /// arm has been selected, else the defaults. Cheap (a `RwLock` read), so it is
-    /// safe to call on the per-read Phi hot path.
-    pub fn active() -> Self {
-        Self {
-            weights: active_weights(),
-        }
     }
 
     /// Compute the unified potential Phi(i,t) for a context item.
@@ -674,50 +597,6 @@ mod tests {
     fn efficiency_ratio_is_phi_per_token() {
         let e = efficiency(0.8, 400);
         assert!((e - 0.002).abs() < 0.0001);
-    }
-
-    #[test]
-    fn field_weights_from_arm_maps_presets() {
-        // #4: each bandit arm name maps to its distinct FieldWeights preset.
-        let mut bandit = crate::core::bandit::ThresholdBandit::default();
-        let con = FieldWeights::from_arm(&bandit.arms[0]); // conservative
-        let agg = FieldWeights::from_arm(&bandit.arms[2]); // aggressive
-        assert!(
-            con.w_relevance > agg.w_relevance,
-            "conservative trusts relevance more"
-        );
-        assert!(
-            agg.w_cost > con.w_cost,
-            "aggressive penalizes cost more (denser)"
-        );
-        let _ = bandit.choose_arm();
-    }
-
-    #[test]
-    fn learned_weights_shift_after_feedback() {
-        // #4: training the bandit toward "aggressive" makes the deterministically
-        // chosen arm map to the aggressive FieldWeights preset.
-        let mut bandit = crate::core::bandit::ThresholdBandit::default();
-        for _ in 0..20 {
-            bandit.update("aggressive", true);
-        }
-        for _ in 0..20 {
-            bandit.update("conservative", false);
-        }
-        let arm = bandit.arms[bandit.best_arm_idx_by_mean()].clone();
-        let learned = FieldWeights::from_arm(&arm);
-        let expected = FieldWeights::aggressive();
-        assert!((learned.w_cost - expected.w_cost).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn active_weights_default_is_balanced() {
-        // With nothing installed, active_weights falls back to the default preset.
-        // (Set explicitly first to avoid cross-test global leakage, then restore.)
-        set_active_weights(FieldWeights::default());
-        let w = active_weights();
-        let d = FieldWeights::default();
-        assert!((w.w_relevance - d.w_relevance).abs() < f64::EPSILON);
     }
 
     #[test]

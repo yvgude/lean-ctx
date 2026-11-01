@@ -7,7 +7,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use serde::Serialize;
 
 use super::token_envelope::{ProviderKind, TokenEnvelope};
-use super::{evidence_wiring, kernel_config, usage_normalizer};
+use super::{evidence_wiring, kernel_config};
 
 /// Aggregate request statistics for one provider.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -54,23 +54,26 @@ fn record_stats(envelope: &TokenEnvelope) {
         .saturating_add(envelope.cache_read_tokens);
 }
 
-/// Records one proxy envelope in enabled kernel pipelines and provider statistics.
+/// Records one measured proxy envelope in the dispatch counters and provider statistics.
+///
+/// The request itself enters the usage normalizer, the receipt chain, the identity
+/// ledger and ETPAO exactly once, from the forward path's Context IR stage
+/// (`envelope_wiring::process_proxy_evidence`); recording it here again counted
+/// every proxied request two or three times.
 pub fn record_proxy_envelope(envelope: &TokenEnvelope) {
     if kernel_config::is_enabled() {
-        let provider = format!("{:?}", envelope.provider);
         evidence_wiring::record_from_proxy_dispatch(
             envelope.input_tokens,
             envelope.output_tokens,
             envelope.tokens_saved,
-            Some(&envelope.model),
-            Some(&provider),
         );
-        usage_normalizer::record_envelope(envelope);
     }
     record_stats(envelope);
 }
 
 /// Records one MCP envelope in enabled kernel pipelines and provider statistics.
+///
+/// `record_from_tool_dispatch` already records the call in the usage normalizer.
 pub fn record_mcp_envelope(tool_name: &str, envelope: &TokenEnvelope) {
     if kernel_config::is_enabled() {
         evidence_wiring::record_from_tool_dispatch(
@@ -79,7 +82,6 @@ pub fn record_mcp_envelope(tool_name: &str, envelope: &TokenEnvelope) {
             envelope.output_tokens,
             envelope.tokens_saved,
         );
-        usage_normalizer::record_envelope(envelope);
     }
     record_stats(envelope);
 }

@@ -83,6 +83,8 @@ pub(crate) struct FakeOptions {
     /// `Some(share)` it offers the setup and the approval page answered
     /// "Share this project" with `share`.
     pub(crate) device_setup: Option<bool>,
+    /// Every HTTP answer comes this much later (a slow Hive).
+    pub(crate) answer_delay: Option<std::time::Duration>,
 }
 
 impl Default for FakeOptions {
@@ -109,6 +111,7 @@ impl Default for FakeOptions {
             seal_new_projects: false,
             slot_cooldown_until: None,
             device_setup: None,
+            answer_delay: None,
         }
     }
 }
@@ -357,6 +360,11 @@ impl FakeHive {
     pub(crate) fn advance(&self, by: Duration) {
         let mut inner = self.lock();
         inner.now += by;
+    }
+
+    /// Answer every later HTTP request `by` later (a slow Hive).
+    pub(crate) fn delay_answers(&self, by: std::time::Duration) {
+        self.lock().options.answer_delay = Some(by);
     }
 
     pub(crate) fn set_options(&self, options: FakeOptions) {
@@ -932,16 +940,18 @@ fn timestamp(time: DateTime<Utc>) -> UtcTimestamp {
     UtcTimestamp::new(stamp(time)).expect("canonical timestamp")
 }
 
+/// The protocol every answer names, like the deployed Hive (C0 2.0).
+const ANSWER_PROTOCOL: &str = "2.0";
+
 fn reply(status: u16, body: Value) -> Response {
     let mut response = (
         StatusCode::from_u16(status).expect("status"),
         axum::Json(body),
     )
         .into_response();
-    response.headers_mut().insert(
-        HEADER_PROTOCOL,
-        HeaderValue::from_str(&protocol_header_value()).expect("header"),
-    );
+    response
+        .headers_mut()
+        .insert(HEADER_PROTOCOL, HeaderValue::from_static(ANSWER_PROTOCOL));
     response
 }
 
@@ -949,10 +959,9 @@ fn empty(status: u16) -> Response {
     let mut response = StatusCode::from_u16(status)
         .expect("status")
         .into_response();
-    response.headers_mut().insert(
-        HEADER_PROTOCOL,
-        HeaderValue::from_str(&protocol_header_value()).expect("header"),
-    );
+    response
+        .headers_mut()
+        .insert(HEADER_PROTOCOL, HeaderValue::from_static(ANSWER_PROTOCOL));
     response
 }
 
@@ -1025,6 +1034,14 @@ async fn handle(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let delay = shared
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .options
+        .answer_delay;
+    if let Some(delay) = delay {
+        tokio::time::sleep(delay).await;
+    }
     let mut inner = shared
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1050,20 +1067,15 @@ async fn handle(
         );
         return response;
     }
-    match header(HEADER_PROTOCOL) {
-        Some(value) if protocol_compatible(value) => {}
-        Some(_) => {
-            let (status, body) =
-                error(HiveErrorCode::UpgradeRequired, "Unsupported Hive protocol.");
-            return reply(status, body);
-        }
-        None => {
-            let (status, body) = error(
-                HiveErrorCode::InvalidRequest,
-                "Hive-Protocol header is required.",
-            );
-            return reply(status, body);
-        }
+    // The deployed guard: only major 2 passes, on every route, enrollment
+    // included; 1.x (retired), a missing or malformed header or another
+    // major is `426`.
+    let major = header(HEADER_PROTOCOL)
+        .and_then(lean_ctx_protocol::hive::parse_protocol_header)
+        .map(|(major, _)| major);
+    if major != Some(2) {
+        let (status, body) = error(HiveErrorCode::UpgradeRequired, "Unsupported Hive protocol.");
+        return reply(status, body);
     }
     // This fake speaks only the vault form; without the header the real
     // Hive would answer in the old names until the 3.12 release day.

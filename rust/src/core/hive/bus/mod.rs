@@ -41,6 +41,15 @@ fn relay_lock(store: &HiveStore) -> Result<StateLock, crate::core::hive::HiveErr
     })
 }
 
+/// `[hive]` as it is now, when it lets the relay run (`bus` not `off`,
+/// Hive not disabled). The relay reads it before every connect and on
+/// every tick, so switching the bus off takes effect without a restart.
+#[cfg(feature = "http-server")]
+pub(crate) fn relay_config() -> Option<HiveConfig> {
+    let config = crate::core::config::Config::load_arc().hive.clone();
+    (config.bus != HiveBusMode::Off && config.enabled != Some(false)).then_some(config)
+}
+
 /// Start the bus relay thread when this machine is connected, the bus is
 /// not off and Hive is not disabled.
 pub fn spawn(config: HiveConfig) -> Option<std::thread::JoinHandle<()>> {

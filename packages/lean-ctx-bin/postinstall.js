@@ -9,6 +9,11 @@ const { createGunzip } = require("zlib");
 const crypto = require("crypto");
 
 const REPO = "yvgude/lean-ctx";
+// The engine release this package installs: its own version, never the
+// newest release on GitHub (a pinned `lean-ctx-bin@X` must install engine X).
+const VERSION = require("./package.json").version;
+const RELEASE_TAG = `v${VERSION}`;
+const RELEASE_PAGE = `https://github.com/${REPO}/releases/tag/${RELEASE_TAG}`;
 const BIN_DIR = path.join(__dirname, "bin");
 const IS_WIN = process.platform === "win32";
 const BINARY_NAME = IS_WIN ? "lean-ctx.exe" : "lean-ctx";
@@ -246,7 +251,7 @@ async function downloadToFile(url, dest, label = "binary") {
 
   throw new Error(
     `All download methods failed.\n` +
-    `  Download manually: https://github.com/${REPO}/releases/latest`
+    `  Download manually: ${RELEASE_PAGE}`
   );
 }
 
@@ -328,7 +333,7 @@ function printSuccess() {
 // ---------------------------------------------------------------------------
 
 async function fetchRelease() {
-  const apiUrl = `https://api.github.com/repos/${REPO}/releases/latest`;
+  const apiUrl = `https://api.github.com/repos/${REPO}/releases/tags/${RELEASE_TAG}`;
 
   // Attempt 1: Node.js
   try {
@@ -364,7 +369,7 @@ async function fetchRelease() {
 
   throw new Error(
     `Cannot reach GitHub API. All methods failed (Node.js, ${IS_WIN ? "PowerShell" : "curl"}).\n` +
-    `  Download manually: https://github.com/${REPO}/releases/latest`
+    `  Download manually: ${RELEASE_PAGE}`
   );
 }
 
@@ -388,14 +393,6 @@ function sha256File(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 }
 
-function expectedDigest(sumsText, assetName) {
-  for (const line of sumsText.split("\n")) {
-    const [digest, name] = line.trim().split(/\s+/);
-    if (name === assetName || name === `*${assetName}`) return (digest || "").toLowerCase();
-  }
-  return null;
-}
-
 async function installCockpit(engine, release, target, io = {}) {
   const env = io.env || process.env;
   const log = io.log || console.log;
@@ -417,7 +414,8 @@ async function installCockpit(engine, release, target, io = {}) {
   try {
     const archive = path.join(tmpDir, assetName);
     await download(asset.browser_download_url, archive);
-    const expected = expectedDigest(await fetchText(sums.browser_download_url), assetName);
+    // Exactly one well-formed entry, as for the engine archive.
+    const expected = expectedSha256(await fetchText(sums.browser_download_url), assetName);
     if (!expected || sha256File(archive) !== expected) {
       log("lean-ctx: Cockpit not installed (checksum missing or mismatched — refusing an unverified Cockpit)");
       return "unverified";
@@ -531,7 +529,10 @@ async function main() {
   console.log("lean-ctx: fetching release info from GitHub...");
   const release = await fetchRelease();
   const tag = release.tag_name;
-  console.log(`lean-ctx: latest release ${tag}`);
+  if (tag !== RELEASE_TAG) {
+    throw new Error(`GitHub answered with release ${tag}, not ${RELEASE_TAG}; refusing to install another version.`);
+  }
+  console.log(`lean-ctx: release ${tag}`);
 
   const ext = IS_WIN ? ".zip" : ".tar.gz";
   const assetName = `lean-ctx-${target}${ext}`;
@@ -554,12 +555,11 @@ async function main() {
     fs.mkdirSync(BIN_DIR, { recursive: true });
 
     if (IS_WIN) {
-      // Stop processes that may hold the binary open (defense-in-depth; preinstall
-      // should have done this already, but npm doesn't guarantee hook ordering on
-      // every version and the user may run postinstall manually).
-      try { execFileSync(BINARY_PATH, ["stop"], { stdio: "ignore", timeout: 10000 }); } catch {}
-      try { execSync('taskkill /F /IM "lean-ctx.exe" /T', { stdio: "ignore", timeout: 5000 }); } catch {}
-      try { execSync("timeout /T 1 /NOBREAK >NUL 2>&1", { stdio: "ignore" }); } catch {}
+      // Stop this binary's own daemon (defense-in-depth; preinstall should have
+      // done this already, but npm doesn't guarantee hook ordering on every
+      // version and the user may run postinstall manually). Never a machine-wide
+      // taskkill: a binary another process still holds is moved aside below.
+      try { execFileSync(BINARY_PATH, ["daemon", "stop"], { stdio: "ignore", timeout: 10000, windowsHide: true }); } catch {}
 
       // Clean up orphans from previous failed installs
       try {
@@ -590,12 +590,12 @@ async function main() {
 
 if (require.main !== module) {
   // Loaded by tests: expose the pieces, run nothing.
-  module.exports = { installCockpit, expectedDigest };
+  module.exports = { installCockpit, expectedSha256 };
 } else main().catch((err) => {
   console.error(`\nlean-ctx: installation failed: ${err.message}`);
   console.error("");
   console.error("Manual install options:");
-  console.error("  1. Download from https://github.com/yvgude/lean-ctx/releases/latest");
+  console.error(`  1. Download from ${RELEASE_PAGE}`);
   if (IS_WIN) {
     console.error("  2. PowerShell one-liner:");
     console.error("     irm https://leanctx.com/install.ps1 | iex");

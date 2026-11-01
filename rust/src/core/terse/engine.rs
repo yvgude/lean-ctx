@@ -301,6 +301,30 @@ mod tests {
         assert!(result.output.contains("1 failed"), "{}", result.output);
     }
 
+    /// Benchmark replay (ledgerlite, Claude Code + Haiku): a passing
+    /// `python3 -m unittest` run reached the model as `---- / Ran 8 tests`
+    /// without its `OK`, and the model re-ran the suite to learn the verdict.
+    #[test]
+    fn unittest_verdict_line_survives_every_level() {
+        let run = "........\n\
+                   ----------------------------------------------------------------------\n\
+                   Ran 8 tests in 0.001s\n\nOK\n";
+        let failed = "..F.....\n\
+                      ----------------------------------------------------------------------\n\
+                      Ran 8 tests in 0.001s\n\nFAILED\n";
+        for level in [
+            CompressionLevel::Lite,
+            CompressionLevel::Standard,
+            CompressionLevel::Max,
+        ] {
+            let ok = compress(run, &level).output;
+            assert!(ok.lines().any(|l| l.trim() == "OK"), "{level:?}: {ok}");
+            assert!(ok.contains("Ran 8 tests"), "{level:?}: {ok}");
+            let bad = compress(failed, &level).output;
+            assert!(bad.contains("FAIL"), "{level:?}: {bad}");
+        }
+    }
+
     #[test]
     fn compress_lite_removes_blank_lines() {
         let text = "line one\n\n\nline two\n\n";

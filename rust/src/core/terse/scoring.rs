@@ -97,11 +97,31 @@ fn has_structural_marker(line: &str) -> bool {
     if line.contains("warning") || line.contains("Warning") || line.contains("WARN") {
         return true;
     }
+    if is_verdict_line(line) {
+        return true;
+    }
     let long_idents = line
         .split(|c: char| !c.is_alphanumeric() && c != '_')
         .filter(|w| w.len() >= 6)
         .count();
     long_idents >= 2
+}
+
+/// A run's pass/fail verdict on a line of its own (`OK` after Python
+/// `unittest`, `FAILED`, `PASSED`). Short and low-entropy, so the score alone
+/// drops it — and without it the agent re-runs the command to learn whether
+/// it passed (benchmark pilots: one extra model step per affected test run).
+fn is_verdict_line(line: &str) -> bool {
+    let word = line
+        .trim()
+        .split(|c: char| !c.is_ascii_alphabetic())
+        .next()
+        .unwrap_or("");
+    line.trim().len() <= 60
+        && matches!(
+            word,
+            "OK" | "FAILED" | "FAIL" | "PASSED" | "PASS" | "SUCCESS" | "SUCCEEDED"
+        )
 }
 
 fn repetition_ratio(line: &str, seen: &HashSet<String>) -> f32 {

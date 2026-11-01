@@ -18,7 +18,7 @@ if (process.platform === "win32") {
   process.exit(0);
 }
 
-const { installCockpit, expectedDigest } = require("./postinstall.js");
+const { installCockpit, expectedSha256 } = require("./postinstall.js");
 
 const TARGET = "x86_64-unknown-linux-gnu";
 const ASSET = `lean-ctx-cockpit-${TARGET}.tar.gz`;
@@ -68,8 +68,8 @@ function io(overrides = {}) {
 
 (async () => {
   try {
-    assert.equal(expectedDigest(`${digest} *${ASSET}\n`, ASSET), digest);
-    assert.equal(expectedDigest(`${digest}  x-${ASSET}\n`, ASSET), null);
+    assert.equal(expectedSha256(`${digest} *${ASSET}\n`, ASSET), digest);
+    assert.equal(expectedSha256(`${digest}  x-${ASSET}\n`, ASSET), null);
 
     // Verified bundle: handed to the engine as an extracted directory.
     let run = io();
@@ -81,8 +81,13 @@ function io(overrides = {}) {
     assert.match(run.lines.at(-1), /Cockpit installed and verified/);
     fs.rmSync(record);
 
-    // Fail closed before the engine on a missing entry or a different digest.
-    for (const sums of [`${digest}  other.tar.gz\n`, `${"f".repeat(64)}  ${ASSET}\n`]) {
+    // Fail closed before the engine on a missing entry, a different digest
+    // or a second entry for the bundle (the first match used to win).
+    for (const sums of [
+      `${digest}  other.tar.gz\n`,
+      `${"f".repeat(64)}  ${ASSET}\n`,
+      `${digest}  ${ASSET}\n${"f".repeat(64)}  ${ASSET}\n`,
+    ]) {
       run = io({ fetchText: async () => sums });
       assert.equal(await installCockpit(engine, release, TARGET, run), "unverified");
       assert.match(run.lines.at(-1), /refusing an unverified Cockpit/);

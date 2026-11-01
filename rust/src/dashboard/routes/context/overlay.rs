@@ -33,9 +33,9 @@ fn control() -> (&'static str, &'static str, String) {
         "action".to_string(),
         serde_json::Value::String("list".to_string()),
     );
+    // `list` only reads; a GET saves nothing (the writes are POST
+    // `/api/context-overlay` and `/api/context-policy`).
     let result = crate::tools::ctx_control::handle(Some(&args), &mut ledger, &mut overlays);
-    ledger.save();
-    let _ = overlays.save_project(&std::path::PathBuf::from(&project_root));
     let payload = serde_json::json!({
         "result": result,
         "overlays": overlays.all(),

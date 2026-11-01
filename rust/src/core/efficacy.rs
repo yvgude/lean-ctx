@@ -7,8 +7,6 @@
 //!   (`daily_bounce_trend`, #507): week-over-week rate of compressed reads
 //!   that had to be re-read full. Learned thresholds (#538) must push this
 //!   down.
-//! - **LITM placement snapshots**: daily cumulative hit/miss counters from
-//!   the calibration store (#539) so hit-rate movement is visible over time.
 //! - **Playbook survival** (#541): share of entries that stayed net-helpful
 //!   past 10 turns — the ACE quality proxy for "facts worth keeping".
 //! - **Prevented duplicate work** (#540): lifetime count of rejected scent
@@ -29,11 +27,6 @@ const SURVIVAL_AGE_TURNS: u32 = 10;
 pub(crate) struct EfficacySnapshot {
     /// Calendar day, `YYYY-MM-DD` (UTC).
     pub day: String,
-    /// Cumulative LITM counters at capture time (#539).
-    pub litm_begin_hits: u32,
-    pub litm_begin_misses: u32,
-    pub litm_end_hits: u32,
-    pub litm_end_misses: u32,
     /// Cumulative rejected scent claims at capture time (#540).
     pub claims_rejected: u64,
     /// Playbook size and net-helpful aged entries at capture time (#541).
@@ -95,8 +88,6 @@ impl EfficacyStore {
 
 /// Build today's snapshot from the live stores.
 fn current_snapshot() -> EfficacySnapshot {
-    let (bh, bm, eh, em) = crate::core::litm_calibration::totals();
-
     let (entries, aged_helpful, aged_total) = crate::core::session::SessionState::load_latest()
         .map_or((0, 0, 0), |s| {
             let turn = s.stats.total_tool_calls;
@@ -115,10 +106,6 @@ fn current_snapshot() -> EfficacySnapshot {
 
     EfficacySnapshot {
         day: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-        litm_begin_hits: bh,
-        litm_begin_misses: bm,
-        litm_end_hits: eh,
-        litm_end_misses: em,
         claims_rejected: crate::core::scent_field::claims_rejected_total(),
         playbook_entries: entries,
         playbook_aged_helpful: aged_helpful,
@@ -203,24 +190,6 @@ pub(crate) fn report() -> Vec<String> {
     if let (Some(first), Some(last)) = (store.snapshots.first(), store.snapshots.last())
         && first.day != last.day
     {
-        let hit_rate = |s: &EfficacySnapshot| {
-            let hits = u64::from(s.litm_begin_hits) + u64::from(s.litm_end_hits);
-            let total = hits + u64::from(s.litm_begin_misses) + u64::from(s.litm_end_misses);
-            if total == 0 {
-                None
-            } else {
-                Some(hits as f64 / total as f64)
-            }
-        };
-        if let (Some(a), Some(b)) = (hit_rate(first), hit_rate(last)) {
-            out.push(format!(
-                "litm placement hits: {} ({}) -> {} ({})",
-                fmt_pct(a),
-                first.day,
-                fmt_pct(b),
-                last.day
-            ));
-        }
         let delta = last.claims_rejected.saturating_sub(first.claims_rejected);
         if delta > 0 {
             out.push(format!(
@@ -268,10 +237,6 @@ mod tests {
     fn snap(day: &str, claims: u64) -> EfficacySnapshot {
         EfficacySnapshot {
             day: day.to_string(),
-            litm_begin_hits: 10,
-            litm_begin_misses: 2,
-            litm_end_hits: 5,
-            litm_end_misses: 3,
             claims_rejected: claims,
             playbook_entries: 4,
             playbook_aged_helpful: 3,
@@ -309,6 +274,19 @@ mod tests {
         s.upsert(snap("2026-06-10", 1));
         let days: Vec<&str> = s.snapshots.iter().map(|x| x.day.as_str()).collect();
         assert_eq!(days, vec!["2026-06-09", "2026-06-10", "2026-06-11"]);
+    }
+
+    #[test]
+    fn a_store_with_retired_litm_counters_still_loads() {
+        let json = r#"{"schema_version":1,"snapshots":[{"day":"2026-06-10",
+            "litm_begin_hits":10,"litm_begin_misses":2,"litm_end_hits":5,"litm_end_misses":3,
+            "claims_rejected":4,"playbook_entries":1,"playbook_aged_helpful":1,
+            "playbook_aged_total":1}]}"#;
+        let store: EfficacyStore = serde_json::from_str(json).expect("old store loads");
+        assert_eq!(store.snapshots.len(), 1);
+        assert_eq!(store.snapshots[0].claims_rejected, 4);
+        let saved = serde_json::to_string(&store).expect("serialize");
+        assert!(!saved.contains("litm"), "{saved}");
     }
 
     #[test]

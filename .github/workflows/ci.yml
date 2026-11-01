@@ -474,6 +474,8 @@ jobs:
         run: node packages/lean-ctx-bin/postinstall.cockpit.test.cjs
       - name: Test fail-closed checksum verification
         run: node packages/lean-ctx-bin/postinstall.checksum.test.cjs
+      - name: Test preinstall stops only the installed daemon
+        run: node packages/lean-ctx-bin/preinstall.test.cjs
 
   cookbook:
     name: Cookbook (Node)

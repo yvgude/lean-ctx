@@ -31,7 +31,7 @@ impl McpTool for CtxProviderTool {
                     },
                     "provider": {
                         "type": "string",
-                        "description": "github|gitlab|jira|mcp:<name>"
+                        "description": "github|gitlab|jira|emspace|mcp:<name>"
                     },
                     "resource": {
                         "type": "string",
@@ -40,7 +40,7 @@ impl McpTool for CtxProviderTool {
                     "project": { "type": "string", "description": "Provider project/repository identifier" },
                     "query": { "type": "string", "description": "Provider-side search query" },
                     "id": { "type": "string", "description": "Provider resource identifier" },
-                    "mode": { "type": "string", "description": "compact|chunks|snapshot (versioned bounded JSON)" },
+                    "mode": { "type": "string", "description": "compact|text (with bodies)|chunks|snapshot (versioned bounded JSON)" },
                     "state": { "type": "string", "description": "open|closed|merged|all" },
                     "labels": { "type": "string", "description": "Comma-separated labels" },
                     "iid": { "type": "integer", "description": "Issue/MR IID" },

@@ -29,6 +29,7 @@ mod serde_defaults;
 pub mod setter;
 mod shell_activation;
 mod shell_approval;
+pub mod shell_policy;
 pub mod solution;
 mod value_display;
 
@@ -66,6 +67,7 @@ pub(crate) use loader::strip_sensitive_overrides;
 pub use memory::{
     CompressionAnnotation, MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter,
 };
+pub(crate) use merge::is_project_key;
 pub use provenance::{ConfigProvenance, EnvOverride};
 pub use proxy::{
     BaselineConfig, DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK, HistoryMode, PipelineConfig, ProseRanker,

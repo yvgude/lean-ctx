@@ -17,8 +17,9 @@ the native `read`/`bash`/`grep`/`find`/`ls` are **not** routed through lean-ctx 
 | `ctx_glob` | `find` | Compressed, .gitignore-aware file matching |
 | `ctx_tree` | `ls` | Compact directory maps |
 
-- Use `ctx_shell` for commands with side effects (build/test/git/etc.); set `raw=true` when exact
-  output matters.
+- Use `ctx_shell` for commands with side effects (build/test/git/etc.); set `raw=true` only when exact
+  bytes matter (a diff to apply, hashes, encoded output); for large logs narrow the command
+  (`grep`, `sed -n 'A,Bp'`, `head`/`tail`) instead.
 - Use `ctx_read` with `mode=anchored` for files you will edit, then patch by anchor via
   `ctx_patch` (reachable through `ctx_call` in the default `lean` profile) — no old-text echo.
   For line ranges pass `offset`/`limit` (aliases of `start_line`) or `mode=lines:N-M` — all cached

@@ -193,13 +193,16 @@ fn set_private_file_perms(path: &PathBuf) {
     let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
 }
 
+/// The first 16 hex digits of the content's BLAKE3 hash: stable across Rust
+/// releases and builds. Releases up to 3.12.0 used `DefaultHasher`, whose
+/// output Rust does not keep stable; those ids have the same shape and stay
+/// readable, because an entry is found by its stored id. Only
+/// [`content_matches_id`] recomputes an id, and its caller (the governor's R4
+/// archive) checks the id it has just stored.
 fn compute_id(content: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    let hash = hasher.finish();
-    format!("{hash:016x}")
+    let mut id = crate::core::hasher::hash_str(content);
+    id.truncate(16);
+    id
 }
 
 pub fn is_enabled() -> bool {
@@ -1127,6 +1130,8 @@ mod tests {
         assert_eq!(id1, id2);
         let id3 = compute_id("different content");
         assert_ne!(id1, id3);
+        // A fixed vector: the id must not change with the Rust release.
+        assert_eq!(id1, "ead3df8af4aece77");
     }
 
     #[test]

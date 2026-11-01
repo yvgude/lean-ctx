@@ -925,7 +925,8 @@ impl AutopilotController {
         decision.bind_task(task_id)
     }
 
-    /// Build Community from fixed reference weights and Pro from one learned snapshot.
+    /// Build both kernels from the fixed reference weights: the learned field
+    /// weights are retired, so Phi is a pure function of the signals (#498).
     pub fn for_project(project_root: &str) -> Self {
         let community_kernel = ContextKernel::with_field(
             super::providers::default_providers(project_root),
@@ -933,7 +934,7 @@ impl AutopilotController {
         );
         let adaptive_kernel = ContextKernel::with_field(
             super::providers::default_providers(project_root),
-            ContextField::with_weights(crate::core::context_field::active_weights()),
+            ContextField::with_weights(FieldWeights::default()),
         );
         Self::with_kernels(community_kernel, adaptive_kernel)
     }

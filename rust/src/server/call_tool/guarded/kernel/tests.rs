@@ -431,10 +431,12 @@ async fn real_lifecycle_replay_retains_original_plan_and_cached_result() {
         .run(request, runtime, entitlements, driver())
         .await
         .unwrap();
-    // Role denial is intentionally a soft MCP result; assert its content,
-    // not the transport success bit or a fabricated acceptance outcome.
+    // Role denial is a soft MCP tool error: the call itself succeeds, the
+    // result is marked `isError` and carries the reason, with no fabricated
+    // acceptance outcome.
     let denied_text = serde_json::to_string(&denied).unwrap();
     assert!(denied_text.contains("ROLE DENIED"));
+    assert!(denied_text.contains("\"isError\":true"), "{denied_text}");
     assert!(!denied_text.contains("ORIGINAL replay snapshot"));
     assert_eq!(
         captured

@@ -194,10 +194,29 @@ fn wait_for(what: &str, condition: impl Fn() -> bool) {
 
 fn lease_ref(granted: &str) -> String {
     granted
-        .strip_prefix("Lease granted: ")
+        .split("Lease granted: ")
+        .nth(1)
         .and_then(|rest| rest.split_whitespace().next())
         .unwrap_or_else(|| panic!("{granted}"))
         .to_string()
+}
+
+/// Wait until the Hive requests this process queued have run, then make
+/// `agent_id`'s next `ctx_agent` call: it shows what Hive answered.
+fn answered(machine: &Machine, project: &Path, agent_id: &str) -> String {
+    assert!(
+        lean_ctx::core::hive::background::wait_idle(std::time::Duration::from_secs(30)),
+        "the queued Hive requests ran"
+    );
+    agent(
+        machine,
+        project,
+        "control_status",
+        Some(agent_id),
+        None,
+        None,
+        None,
+    )
 }
 
 #[test]
@@ -226,6 +245,8 @@ fn leases_and_handoffs_cross_machines_through_hive() {
     });
 
     // Leases: one file, two machines, one holder; the service clock decides.
+    // Hive is asked off the call: the lease is pending (no token) until
+    // Hive's answer, which comes with the agent's next call.
     let granted = agent(
         &a,
         &root_a,
@@ -235,7 +256,23 @@ fn leases_and_handoffs_cross_machines_through_hive() {
         None,
         None,
     );
-    assert!(granted.contains("scope=hive fencing_token=1"), "{granted}");
+    assert!(granted.contains("scope=pending"), "{granted}");
+    assert!(
+        !granted.contains("fencing_token"),
+        "never printed: {granted}"
+    );
+    let shown = answered(&a, &root_a, &alpha);
+    assert!(shown.contains("granted by Hive"), "{shown}");
+    assert!(shown.contains("scope=hive"), "{shown}");
+    assert!(!shown.contains("fencing_token"), "never printed: {shown}");
+    let token = |machine: &Machine| {
+        lean_ctx::core::hive::bus::leases::Bindings::load(&machine.data())
+            .leases
+            .values()
+            .map(|b| b.fencing_token)
+            .max()
+    };
+    assert_eq!(token(&a), Some(1));
     let abs = root_b.join("src/lib.rs");
     let held = agent(
         &b,
@@ -246,8 +283,17 @@ fn leases_and_handoffs_cross_machines_through_hive() {
         None,
         None,
     );
-    assert!(held.starts_with("Lease HELD (hive)"), "{held}");
-    assert!(held.contains(&format!("owner={alpha}")), "{held}");
+    assert!(held.contains("scope=pending"), "{held}");
+    // The refusal reaches the agent on its next call, once, and the local
+    // lease is gone with it.
+    let refused = answered(&b, &root_b, &beta);
+    assert!(refused.contains("Lease HELD (hive)"), "{refused}");
+    assert!(refused.contains(&format!("owner={alpha}")), "{refused}");
+    assert!(refused.contains("local lease"), "{refused}");
+    assert!(
+        !answered(&b, &root_b, &beta).contains("Lease HELD"),
+        "shown once"
+    );
     fake.advance(chrono::Duration::minutes(11));
     let taken = agent(
         &b,
@@ -258,10 +304,10 @@ fn leases_and_handoffs_cross_machines_through_hive() {
         None,
         None,
     );
-    assert!(
-        taken.contains("scope=hive fencing_token=2"),
-        "fencing order: {taken}"
-    );
+    assert!(taken.contains("scope=pending"), "{taken}");
+    let shown = answered(&b, &root_b, &beta);
+    assert!(shown.contains("granted by Hive"), "{shown}");
+    assert_eq!(token(&b), Some(2), "fencing order");
     let renew = agent(
         &a,
         &root_a,
@@ -271,7 +317,9 @@ fn leases_and_handoffs_cross_machines_through_hive() {
         Some(&lease_ref(&granted)),
         None,
     );
-    assert!(renew.contains("Hive no longer holds it"), "{renew}");
+    assert!(renew.contains("scope=pending"), "{renew}");
+    let renewed = answered(&a, &root_a, &alpha);
+    assert!(renewed.contains("Hive no longer holds it"), "{renewed}");
     let released = agent(
         &b,
         &root_b,
@@ -338,12 +386,54 @@ fn leases_and_handoffs_cross_machines_through_hive() {
                     }
         })
     });
+    // A slow Hive never holds the call: pending, then a release while Hive
+    // is still asked; the release waits behind the grant and ends it.
+    std::fs::write(root_a.join("src/slow.rs"), "pub fn slow() {}\n").unwrap();
+    fake.delay_answers(std::time::Duration::from_millis(1500));
+    let started = std::time::Instant::now();
+    let pending = agent(
+        &a,
+        &root_a,
+        "lease_acquire",
+        Some(&alpha2),
+        Some("src/slow.rs"),
+        None,
+        None,
+    );
+    let released = agent(
+        &a,
+        &root_a,
+        "lease_release",
+        Some(&alpha2),
+        Some("src/slow.rs"),
+        Some(&lease_ref(&pending)),
+        None,
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_millis(1000),
+        "no tool call waits for Hive: {:?}",
+        started.elapsed()
+    );
+    assert!(pending.contains("scope=pending"), "{pending}");
+    assert!(released.contains("Lease released"), "{released}");
+    let shown = answered(&a, &root_a, &alpha2);
+    assert!(shown.contains("granted by Hive"), "{shown}");
+    assert!(
+        lean_ctx::core::hive::bus::leases::Bindings::load(&a.data())
+            .leases
+            .is_empty(),
+        "the grant was released behind it"
+    );
+    wait_for("the late grant's release reached Hive", || {
+        fake.live_bus_leases().is_empty()
+    });
     relay_a.kill().ok();
     relay_b.kill().ok();
     relay_a.wait().ok();
     relay_b.wait().ok();
 
-    // Offline: the lease stays local, says so, and the call stays bounded.
+    // Offline: the call answers at once; Hive's absence comes with the next
+    // call, and the lease stays local.
     drop(fake);
     let started = std::time::Instant::now();
     let local = agent(
@@ -356,10 +446,90 @@ fn leases_and_handoffs_cross_machines_through_hive() {
         None,
     );
     assert!(
-        started.elapsed() < std::time::Duration::from_secs(4),
+        started.elapsed() < std::time::Duration::from_secs(1),
         "{:?}",
         started.elapsed()
     );
-    assert!(local.contains("scope=local (Hive unreachable"), "{local}");
-    assert!(local.contains("other machines are not excluded"), "{local}");
+    assert!(local.contains("scope=pending"), "{local}");
+    let offline = answered(&a, &root_a, &alpha2);
+    assert!(
+        offline.contains("scope=local (Hive unreachable"),
+        "{offline}"
+    );
+    assert!(
+        offline.contains("other machines are not excluded"),
+        "{offline}"
+    );
+}
+
+/// Task reads answer from the cache and changes are queued: no `ctx_tasks`
+/// call waits for Hive, also a slow one. Hive's answers come with the
+/// caller's next call.
+#[test]
+fn task_calls_never_wait_for_hive() {
+    use lean_ctx::core::hive::background::{wait_idle, with_answers};
+    use lean_ctx::core::hive::tasks::{ListFilter, cache};
+    use lean_ctx_protocol::hive::lease::HiveRight;
+    let _env = lean_ctx::core::data_dir::test_env_lock();
+    let _dirs = RestoreDirs::capture();
+    let mut options = crate::support::fake_hive::FakeOptions::default();
+    options
+        .rights
+        .extend([HiveRight::TasksRead, HiveRight::TasksWork]);
+    let fake = FakeHive::start_with(options);
+    let machine = Machine::new(&fake);
+    let root = machine.project();
+    let vault = fake.project_ids().into_iter().next().unwrap();
+    fake.add_task(&vault, "Explain the retry budget", "A fact on retry.rs");
+    machine.enter();
+    let caller = cache::caller("tester");
+    let quick = |what: &str, started: std::time::Instant| {
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(1000),
+            "{what} waited for Hive: {:?}",
+            started.elapsed()
+        );
+    };
+
+    fake.delay_answers(std::time::Duration::from_millis(1500));
+    let started = std::time::Instant::now();
+    let first = cache::list(&root, &ListFilter::default(), &caller).unwrap();
+    quick("list", started);
+    assert!(first.contains("not loaded"), "{first}");
+    let started = std::time::Instant::now();
+    let queued = cache::queue(
+        &root,
+        HiveRight::TasksWork,
+        &caller,
+        "claim of task #1",
+        || {
+            Err(lean_ctx::core::hive::HiveError::Refused(
+                "test refusal".into(),
+            ))
+        },
+    )
+    .unwrap();
+    quick("a queued change", started);
+    assert!(
+        queued.starts_with("Queued for Hive: claim of task #1"),
+        "{queued}"
+    );
+
+    assert!(wait_idle(std::time::Duration::from_secs(30)));
+    let started = std::time::Instant::now();
+    let listed = with_answers(
+        &caller,
+        cache::list(&root, &ListFilter::default(), &caller).unwrap(),
+    );
+    quick("a cached list", started);
+    assert!(
+        listed.contains("Hive tasks (claim of task #1): test refusal"),
+        "{listed}"
+    );
+    assert!(listed.contains("Explain the retry budget"), "{listed}");
+    // A change outdates the cache: the next read says so and refreshes.
+    assert!(listed.contains("a refresh is running"), "{listed}");
+    assert!(wait_idle(std::time::Duration::from_secs(30)));
+    let fresh = cache::list(&root, &ListFilter::default(), &caller).unwrap();
+    assert!(!fresh.contains("a refresh is running"), "{fresh}");
 }

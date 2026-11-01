@@ -184,11 +184,11 @@
    "size": 1605
   },
   {
-   "blob": "736d51df753ca201c7779f1382ff143c4a068a9b",
+   "blob": "6ff814a9162cba2cc5005c26ff984acd7c69c8f5",
    "mode": "100644",
    "path": ".github/workflows/ci.yml",
-   "sha256": "a63cadcb477ba9427cfefc62dbf78414b21426c640adb6a08ea04136d0af6223",
-   "size": 46488
+   "sha256": "5b080d06c0983f8c5b155f1e4e3731d1ab1918c0bdc01f6ae3c42dafe228fcf5",
+   "size": 46610
   },
   {
    "blob": "75f0a8c31e05c2ead623063c320d5783b406aee0",
@@ -226,11 +226,11 @@
    "size": 2035
   },
   {
-   "blob": "0efcd98653624bb57a84ed078a05aa88de28dd10",
+   "blob": "6b69d4d3c3f4be4ac5000c718c881733a1c85c9e",
    "mode": "100644",
    "path": ".github/workflows/publish-clients.yml",
-   "sha256": "dabe867e3aee5660a9e01b54b4876298b2faf0740c3a73af4ee4236cdc6a0cf3",
-   "size": 4569
+   "sha256": "46e826bc26beb81a2128c9696b6203a94fe0f7770c6046e107639ef3f9cb5562",
+   "size": 3699
   },
   {
    "blob": "672c6530206eafd60c790c0ada0467a4710dc416",
@@ -310,11 +310,11 @@
    "size": 1137
   },
   {
-   "blob": "1fb84e01273ab8b6472c4d7d052ce572e2a0bff6",
+   "blob": "f511c5e4e3ed9dfd53a96a67863e77ef472429a9",
    "mode": "100644",
    "path": "AGENTS.md",
-   "sha256": "873fb5463d8a4af0587bc69276e1db10a5ff0a1b8707363905ac34342afa4f9d",
-   "size": 17634
+   "sha256": "6649fbf2f6767b3d271805015f172a0e2c5fa54060153792fb3a36352319be5d",
+   "size": 20023
   },
   {
    "blob": "c6ea20293740330b9c0e6f114106e9642a51c330",
@@ -331,11 +331,11 @@
    "size": 1033
   },
   {
-   "blob": "99135bf9cbd42ddef71c4cdfc306c9a5c93babf1",
+   "blob": "bda6d97bb5efb443fb6ccffbbbb45c1c0671df43",
    "mode": "100644",
    "path": "CHANGELOG.md",
-   "sha256": "95246ee71d3eb887aa3c6bc637166b4daec98b861e5e25f543b857ccf178b884",
-   "size": 1143776
+   "sha256": "7469a986f99412f9b541029ea4fb4e45221cc8879d458d7cc6c2056240b1a4d8",
+   "size": 1183703
   },
   {
    "blob": "77a7c7a520af8fc8b4df372eb5bd5fddcefbfecf",
@@ -436,11 +436,11 @@
    "size": 525
   },
   {
-   "blob": "c5d81caf9a9af32341bc8e3468b7d00dc8c10b28",
+   "blob": "4c5f384c505d5355c55bffb682e4b3c7b6754084",
    "mode": "100644",
    "path": "PUBLISH_MANIFEST.toml",
-   "sha256": "41abc93b8da57f4cfae8cca0c48512469f65e8013e754b35f603d66258a1448d",
-   "size": 188187
+   "sha256": "0d45974d80507623415889b4c3ab4ff5cd7366f7076828f9e168a16d33691261",
+   "size": 189966
   },
   {
    "blob": "11ac79ad8f0398d5a85c5db7231de68503d07dd9",
@@ -513,10 +513,10 @@
    "size": 594
   },
   {
-   "blob": "0a30c364fa0daaaf538b09fba1ffb56190650315",
+   "blob": "d7647fbda9f0117dd2612dde48244ecaa5dadf6d",
    "mode": "100644",
    "path": "aur/lean-ctx/PKGBUILD",
-   "sha256": "81641368cda452d0a70d4fe1c8416d688fbe6c83dc96d2649d1601b5f63d0224",
+   "sha256": "b1974087c1e13cab44f63b919490698ba563c32dc884006ba9b5cfc08fc43828",
    "size": 2097
   },
   {
@@ -590,11 +590,11 @@
    "size": 4165
   },
   {
-   "blob": "297c0a41d04c4ab0492a549b860a4e97049daf1f",
+   "blob": "ef30cbb1fe33bb6d7d64be20654f16c006d69606",
    "mode": "100644",
    "path": "clients/rust/lean-ctx-client/src/client.rs",
-   "sha256": "b5b07d3e11b346dae685bd06b525b574c383cee0d3f1c122aeb63c9010cafa2a",
-   "size": 19155
+   "sha256": "54db5459658b16b44b83f342f415a0bddf862ea35a44cc6f201f185c70db3a38",
+   "size": 21124
   },
   {
    "blob": "4a27ba35c5e2f9fbc8e68134fd1bbc185bab77af",
@@ -968,11 +968,11 @@
    "size": 195
   },
   {
-   "blob": "3ef8e3986c29fb5357b11973d135f54b7e09e9cd",
+   "blob": "9d2b6eaa1022fb573a0a74914e7c38ec869a278c",
    "mode": "100644",
    "path": "cookbook/package-lock.json",
-   "sha256": "e7ee82ac3aa8e2fbaca16debfda1bf993939588b2271e33483004b7101b8e3c1",
-   "size": 113690
+   "sha256": "2d25ffef7c73e78cd193b4ee39ab87a2e6ebfeefa4c037bb9a28d0ff128f7d9e",
+   "size": 113697
   },
   {
    "blob": "d166688a01784e08400191ef8826649a2733ddb4",
@@ -989,18 +989,18 @@
    "size": 2886
   },
   {
-   "blob": "7ce18ba9eb6a4a5e7fdbed1385dba429f8d67b43",
+   "blob": "cd953b9f6898be30e02b9f0041285bfb915f0d0b",
    "mode": "100644",
    "path": "cookbook/sdk/package.json",
-   "sha256": "10d5c3de3038c7d6b84c4d78f6d3a38600bd07248a5c81455473493223d04982",
-   "size": 908
+   "sha256": "8db1b1b26b35b9905f895cb6646ab3d8ef00e3880c0e7861453054e188f82411",
+   "size": 915
   },
   {
-   "blob": "7a048a7ac6de341b3057b6bf3f1e08433be47075",
+   "blob": "47d79eac0a157b31e47c4cff4fb797edbb54b30e",
    "mode": "100644",
    "path": "cookbook/sdk/src/client.e2e.test.ts",
-   "sha256": "3dbcfdf21b57eaecfe25c114f9d5720690f8438671704f9a7315327994584f9e",
-   "size": 4600
+   "sha256": "4ce7d9f651e4aef5534082834e81be328834e34255fad82188ccf4a27947f641",
+   "size": 4736
   },
   {
    "blob": "10137c35f9be6bcab82d5144366fc2e94ce58380",
@@ -1262,11 +1262,11 @@
    "size": 10407
   },
   {
-   "blob": "dd8ae9749b72efeae25a8da2c122e3b4c8bfddab",
+   "blob": "878f97c8dc21a3b7a5be49548a9a99b94d2c395f",
    "mode": "100644",
    "path": "docs/architecture/autopilot.md",
-   "sha256": "bc6d272bc195394bb480b23fe5dd1eeac121fed58d9d38b8aff52a3d6c7636ef",
-   "size": 13694
+   "sha256": "1db9187b54436f0965680a8cec09b765c9ead79c728c08131adaa376f3efc03b",
+   "size": 13679
   },
   {
    "blob": "c4e8f3a0a483d8114b77b6f911bd806fab0e4aa0",
@@ -1332,11 +1332,11 @@
    "size": 908
   },
   {
-   "blob": "0ef298f65eb1b8288400dd06b8f75784465eaaa6",
+   "blob": "5a28e76dd33d5569c59ec2d0f90ae244ae545199",
    "mode": "100644",
    "path": "docs/architecture/stigmergic-coordination.md",
-   "sha256": "49e74b76a61825c15eed461b2f43f9bc9920f004a42672ec22bba00747f2f95a",
-   "size": 7664
+   "sha256": "10840ce44c4550fa821d584258de7a0038fa5ab4a7a87365bdc9a521f0eb4e7d",
+   "size": 7691
   },
   {
    "blob": "e94762f9503bafc98f7288c14f27b3e96e0469af",
@@ -1360,11 +1360,11 @@
    "size": 525
   },
   {
-   "blob": "1fd00c08afd6802294f4342c36aade2fc99be748",
+   "blob": "90684de8171e851a12200df4582305a7c0e80f59",
    "mode": "100644",
    "path": "docs/architecture/telemetry.md",
-   "sha256": "5a6ba1743d7da77e18884ef379dfeb17574c46cbcc89220270e859adb59dd5f8",
-   "size": 11891
+   "sha256": "608eb3322e540f977f5c18c29541754b0ef4344f7d60b80dcb7ace807ecaa725",
+   "size": 12114
   },
   {
    "blob": "065f53dbfccd64916884436fcde230b42a8a10df",
@@ -1388,18 +1388,18 @@
    "size": 7282
   },
   {
-   "blob": "1a129406e0aae9c08a0ed30ac60458c667e41c4d",
+   "blob": "3ef322f00b6458e561e48479bbf92835a027be2f",
    "mode": "100644",
    "path": "docs/cognition-interface.md",
-   "sha256": "4dd00674cc9e26dfe6135f744668e4125d0193c8a826cb9a2ad10b8100731cdc",
-   "size": 3262
+   "sha256": "e9883399472f91a7656e6eba6c5d00c5d303ebb8e093899407f0f0032afa9d00",
+   "size": 3233
   },
   {
-   "blob": "a5ef19d94e1ee56f13d6c8cd24bb1cf149af934a",
+   "blob": "e6caed3ce7233365cb991d33b2bd8ceff2b4e296",
    "mode": "100644",
    "path": "docs/cognition-lab/plan-v1.md",
-   "sha256": "221747008017587fa16d8bb615b227ce2f99ce6c09bc6e804af06f88135ae493",
-   "size": 3447
+   "sha256": "e0da462f38681f9bc0179af65dc5c61ba95f8fcdd2a843bc8582a781f35a8fed",
+   "size": 3409
   },
   {
    "blob": "11f8a38f89f36fab8a0b79e153576060c886c53c",
@@ -1430,11 +1430,11 @@
    "size": 13147
   },
   {
-   "blob": "bffee242159060c50c9f1d8f45e687aa196b25ef",
+   "blob": "befc7b7ece6fc438b2388a0e096350e07a1a3e63",
    "mode": "100644",
    "path": "docs/contracts/a2a-contract-v1.md",
-   "sha256": "8f69641d91c914482945ba56fc0603227d08811951a59bb7c454ada0719fa435",
-   "size": 7591
+   "sha256": "cf4314235947b331eee6b3e89cdad1ae73d1f04e849371918a978aecac137315",
+   "size": 7943
   },
   {
    "blob": "ba6bd4b8eb54504d013cb26ea26956f29d09f39d",
@@ -1605,10 +1605,10 @@
    "size": 4024
   },
   {
-   "blob": "6efeb902e2b1fb261b0fbe701454e3ad3ee9b296",
+   "blob": "f4cd1859ff1f64c1da162858ab66380010f7b2dc",
    "mode": "100644",
    "path": "docs/contracts/delivery-evidence-v1.json",
-   "sha256": "a163987cb1a638df7fe75039e7fcfceb065dfe6b9e84b385903dc84da92c5e67",
+   "sha256": "e9e7ce55b09208669fccf8105c240e3483ff5a2ee3f73ed95f2ac814c911f977",
    "size": 6706
   },
   {
@@ -1829,11 +1829,11 @@
    "size": 2012
   },
   {
-   "blob": "af20f4719417250b0f9843cc31645d69c57284b4",
+   "blob": "78c035447d3506f85c66e67f7e879d71e301d19f",
    "mode": "100644",
    "path": "docs/contracts/intelligence-runtime-install-v1.md",
-   "sha256": "77e1401c5b4d7f80642b0506f691f416c03a2af111fbe456bc141aa8ffe07faa",
-   "size": 45624
+   "sha256": "bfa68ac7a960e2270e0a19689e67ebea9e07bafb06c61c7e5aa158fa0790ae2f",
+   "size": 45976
   },
   {
    "blob": "eb733f788e2bcda7d1a760f1a372c33541b64a23",
@@ -2074,11 +2074,11 @@
    "size": 3130
   },
   {
-   "blob": "f2a865bd30e22e804500f63b7dd410b859ffe1e9",
+   "blob": "ee23014fb313d528bcbe7a08f52a0a30844e184d",
    "mode": "100644",
    "path": "docs/contracts/provider-framework-contract-v1.md",
-   "sha256": "eebaa75597d2604fdd61a253ec6d36c053dbdf758b22b6d82c6f3d37ae469481",
-   "size": 20458
+   "sha256": "a69a22243b115b63942f9b09df78e5068ba4d9bb5dda97de51a71cfe45958959",
+   "size": 21516
   },
   {
    "blob": "2eb732631990334791bca4a180194f4d615eb951",
@@ -2424,10 +2424,10 @@
    "size": 671
   },
   {
-   "blob": "8d1d37cba9aee5f3581c5a2e77f9a823ba156599",
+   "blob": "ea25052a8aaa7df4cfbd804f80648d064ce5d297",
    "mode": "100644",
    "path": "docs/contracts/team-seat-value-v1/frozen-hashes.json",
-   "sha256": "ef4b49a0653892af75fb5f27e5ba677363fb308c081cc03eb3c570cedaa51a1f",
+   "sha256": "530f480b2a13c2bd654ae19b93957388d8ec2f7a36a5d8212438e00942db6e04",
    "size": 3887
   },
   {
@@ -2795,11 +2795,11 @@
    "size": 7985
   },
   {
-   "blob": "6b2192122791c5d41dd115c69e4aa4e840efa499",
+   "blob": "1900ddc5fd68584391684a02981065cbd7e8fbfe",
    "mode": "100644",
    "path": "docs/guides/upgrade-3.12.md",
-   "sha256": "b7823523df87cbb854e7696ff9c5658487f9a281ba2f0e22e1de4b9b9a7b3459",
-   "size": 8567
+   "sha256": "12dc10654909b3917f990c724dde736a9b1cb06ee6b6c6e79f11d495aa37efd3",
+   "size": 10702
   },
   {
    "blob": "051859cd4c8c993ff524aff737b42e52c22989d4",
@@ -2886,11 +2886,11 @@
    "size": 2655
   },
   {
-   "blob": "f066ca058218821a10d391c952b5bd27f5934302",
+   "blob": "ad9d135c9cdcac5df2e2dff1e8b22d10aa5856eb",
    "mode": "100644",
    "path": "docs/migration/focus-2026-10.md",
-   "sha256": "7f4c263360662a382274279fcac58f3808a7c54625e0b05c81f2a67dd23e148f",
-   "size": 24151
+   "sha256": "19169f5e1e53a33d6c119c121d5045b08438d712b793917862e883c8353de9c9",
+   "size": 24191
   },
   {
    "blob": "6c2e382379df5cef4f6aea41bcf663d976d893bd",
@@ -2921,11 +2921,11 @@
    "size": 5280
   },
   {
-   "blob": "b48bcde79bb84358c0b87d5a6629a8f5674de8e9",
+   "blob": "22186f85a2bb2250e1e46c5b0ca7e15b43950b82",
    "mode": "100644",
    "path": "docs/privacy/TELEMETRY-DATA-DICTIONARY.md",
-   "sha256": "7f321d051ed5edc41c1fb0f46bfa4ac86d04eb9b309888c447abccbdba38c547",
-   "size": 16338
+   "sha256": "3fb900d01a8abfd5958fc4355dab8c745527e21fdf34f727aea579ac750dfc6d",
+   "size": 17659
   },
   {
    "blob": "7ab82d69c9b1c0ac54d48446f68c3bfc0c872409",
@@ -2970,11 +2970,11 @@
    "size": 17017
   },
   {
-   "blob": "a6ed06c1430986d00b4bd4c16d9d0ae67388f2b2",
+   "blob": "4381957dc857a2a3bfc1256ec9ee1f7384218149",
    "mode": "100644",
    "path": "docs/reference/02-daily-use.md",
-   "sha256": "8249a4b76c5a4e4591e9caa98429475c1b725d0c68c6f6d4ee2f545bc15c5b11",
-   "size": 11615
+   "sha256": "76e38c6679e1fde9cc16c6350ecc2e0f6a5e40a79b00064477d6a88289eb97ba",
+   "size": 11648
   },
   {
    "blob": "0a4ed8cc0529ee490cc0c27e44a26f23ca93db92",
@@ -3047,11 +3047,11 @@
    "size": 83837
   },
   {
-   "blob": "34ce999fa740017a2013be7358182d41e716f3b6",
+   "blob": "e6b83a76d55abeb068b704b404efd7ea42342974",
    "mode": "100644",
    "path": "docs/reference/14-performance-tuning.md",
-   "sha256": "8c5e4926120f53ed602c4822c4036908abc5e838534c3b8f424ae405b5513b5c",
-   "size": 17344
+   "sha256": "eb4692cbe0e5064a520aabd3f0ca3ecf59cc6e631390c7f7a93af459578a10a3",
+   "size": 17308
   },
   {
    "blob": "b1e62558a6c82016f37645edf950cf31d0ebeccc",
@@ -3152,11 +3152,11 @@
    "size": 13216
   },
   {
-   "blob": "a6d6a977c2bfe7e7a4053a14a34810e0937d72b8",
+   "blob": "f4b95131ff0037f80f17d52d9efcef36f527a86a",
    "mode": "100644",
    "path": "docs/reference/appendix-paths-and-config.md",
-   "sha256": "2dc8cfa322f5ab95df3da030314afb0a69669fbd84e55c73a43a99777c299ef7",
-   "size": 20733
+   "sha256": "e4ab91034fa8314843875fdd4b1dc96ff3004881f67f80c1443c24257868fead",
+   "size": 20864
   },
   {
    "blob": "a013486eb49d785187b522237a064e5edae77d9a",
@@ -3180,11 +3180,11 @@
    "size": 8690
   },
   {
-   "blob": "32c1af5574689fd777d1120159be55e5c4abaafa",
+   "blob": "8e028ffc3db0d533a88736c83035b174da911515",
    "mode": "100644",
    "path": "docs/reference/generated/config-keys.md",
-   "sha256": "b4e16aaa433643e62ee981cfb1a78c982e0a42355fac720b2eb5855c033d940e",
-   "size": 67912
+   "sha256": "add9578622f375d54b624d3d64f9ce551f5b97fccc12c65fa6ba49fafe7e2857",
+   "size": 67905
   },
   {
    "blob": "2c5050b1d9f7207fe6763446ae95b3460a2b1da8",
@@ -3194,11 +3194,11 @@
    "size": 5291
   },
   {
-   "blob": "6e270b0b350ba9e864312e8ac2e6496c30ad4c31",
+   "blob": "2e4069eed27b1093c1c81c7c7b22371e90e2de8c",
    "mode": "100644",
    "path": "docs/reference/generated/mcp-tools.md",
-   "sha256": "35279fd0312efbfec1834a283cf98e0649d44dffb549ead093b1d53c91020da8",
-   "size": 21587
+   "sha256": "b791f4da960f7f8b85924eca5ba5b6e6c31e6e169660558f1ffbfd208623c4e9",
+   "size": 21576
   },
   {
    "blob": "92a2f00c8647485d900b61e4874fcecd029afb65",
@@ -3229,11 +3229,11 @@
    "size": 1614
   },
   {
-   "blob": "9b30fb4217b0587fb4a08928c6a6e7c0fc496210",
+   "blob": "a8f90069864ebe04403bef23ca8e3150ee3c01ff",
    "mode": "100644",
    "path": "docs/reference/requirements-traceability-v1.md",
-   "sha256": "f5c4d8f0ed4ebea6b91c51286a4c66e3351e7e5d74e94b410a7d03cd75d3009a",
-   "size": 2360
+   "sha256": "cd53cf3899107106e41c6b19756649783d611a6a1603c0121ec869238acb4a06",
+   "size": 2414
   },
   {
    "blob": "8ffc4c3d2fa8df9ba1b851a3cb411f38f163d9a9",
@@ -3369,18 +3369,18 @@
    "size": 3301
   },
   {
-   "blob": "a4d3cb8735a836f91d3c03226bc2ec80c8f9ee40",
+   "blob": "d36cfd8f7be3813438950b1f65b2144d8e4cb1c2",
    "mode": "100644",
    "path": "examples/sprint-poc/README.md",
-   "sha256": "016b026271078ec3d9cdee0cb3545692ca0de36a3847d958edbb40c1ac27ea79",
-   "size": 1073
+   "sha256": "2aece3f8d3d480a17314a321a4b60b142cda7bcc2d33bee6c5a769b50d088b03",
+   "size": 1555
   },
   {
-   "blob": "1cda19da6da9b990b841570141e1f0fe50ffe4dc",
+   "blob": "f27ea3974181c9edde000de464771f0c68f86176",
    "mode": "100644",
    "path": "examples/sprint-poc/RUNBOOK.md",
-   "sha256": "88c1fa57c6f222f8bf236438128453522074fb26ef274d0a7362458ecd3291f6",
-   "size": 1285
+   "sha256": "dd32aca11866b3747a24527440a39c99c0966f8152b4dd33634cb638910a5662",
+   "size": 1445
   },
   {
    "blob": "39faecc6cbd9d8e997b5490b5620b7436700af5f",
@@ -3432,11 +3432,11 @@
    "size": 2235
   },
   {
-   "blob": "73048deedb4500df06f9340112eb360895ca1e2b",
+   "blob": "fb5b89a01be20d54af2059fe939797d048463ce8",
    "mode": "100644",
    "path": "examples/sprint-poc/requirements.txt",
-   "sha256": "6e66be71e9c5415c03095af43be800ed4a2c6a778baf4c86064a145f5279a49c",
-   "size": 41
+   "sha256": "f88e344848b1a89fc86762994a664d0bd36d5e4a5091b485dff977be680bb4a9",
+   "size": 255
   },
   {
    "blob": "4a0ccba33bb7797a8d74cba664b14709f9f4673f",
@@ -3509,18 +3509,18 @@
    "size": 259
   },
   {
-   "blob": "35713cb1fb145ab2b19aa7a79b091bb42801505c",
+   "blob": "f192066da41c90ef529c057403e3926b016510e1",
    "mode": "100644",
    "path": "install.ps1",
-   "sha256": "d494918b5c99fcfe75ccb65deeb10062c3904c0e09bda9d1e0f03fcdd92981ea",
-   "size": 6834
+   "sha256": "04050ab7807e593eeb823884d252b1d9441df91b97c04bbdc1c55201b74f3825",
+   "size": 8821
   },
   {
-   "blob": "238ddebf28ff38013df34588ca52dafa380b1913",
+   "blob": "7b9ee4856459f7c0fed7bd5d1f19ef5a89da3134",
    "mode": "100755",
    "path": "install.sh",
-   "sha256": "e300670eb105ea66f00a13e7f45b8926949438f541f90a0ae213baaf7bef461c",
-   "size": 21624
+   "sha256": "dabe6a01924193e7df475eb705e8b123253872e1a7c4afd7cbe166ab90803056",
+   "size": 22573
   },
   {
    "blob": "5dce257aa90060051e5dea972df7c7aab9c71701",
@@ -3621,11 +3621,11 @@
    "size": 103
   },
   {
-   "blob": "7f90309fbf9ef41313c26622d719c80fe4fb4e84",
+   "blob": "516abe95f572f7d4cc1991336e4f21929a86bc37",
    "mode": "100644",
    "path": "integrations/hermes-lean-ctx/README.md",
-   "sha256": "a37c409e79d74580a687346e6504baecdb15008a169a0738a837177cf2623fec",
-   "size": 5811
+   "sha256": "bd31184e78aa2c61a1b01225d36d260434c5883991c4fa2005a37362bd0f5321",
+   "size": 6017
   },
   {
    "blob": "7963d2c8ec7812dda4f612192f9205c5e2ab09da",
@@ -3677,11 +3677,11 @@
    "size": 2192
   },
   {
-   "blob": "15b371374be2b704bbe662b15896f1fb9f1cee48",
+   "blob": "75803477a09a5c9f4f725715fb6079f5bb2e3a0b",
    "mode": "100644",
    "path": "integrations/hermes-lean-ctx/benchmarks/run.py",
-   "sha256": "32fd3726d1865e93876322e75cdedca65e9fd3ef361e74e6aa653cea33e27fb7",
-   "size": 5643
+   "sha256": "fabbe76862e1640b8fd374206ab2f0d2c8521a6a262d29b40e67f8d11506616a",
+   "size": 5419
   },
   {
    "blob": "6b48c3779afb03a8d7116307f603175732db1be2",
@@ -3719,11 +3719,11 @@
    "size": 1196
   },
   {
-   "blob": "6c91f9ed407502ea288f53d66a16bd257dc822de",
+   "blob": "83df4d89d9f8d356b2c3f4df6a8c674768e5af45",
    "mode": "100644",
    "path": "integrations/hermes-lean-ctx/requirements.txt",
-   "sha256": "89f28ca416efaa64906524986e2be3680a33c3e08612cd46787c21eb93a0d3fb",
-   "size": 253
+   "sha256": "1b13f2483fb39a3489ce5f71ef8bdb96ef710da9bf2b1fb3590f681a16eebc67",
+   "size": 509
   },
   {
    "blob": "0f6e0cad327618e76a2e2d1e27fa64fc5de1b3ca",
@@ -3733,11 +3733,11 @@
    "size": 4483
   },
   {
-   "blob": "04814fcfa8884f9587ae87315eb608f9c0237b27",
+   "blob": "82eb3e80e673a1b21100d016dc5c221d170b6d5f",
    "mode": "100644",
    "path": "integrations/hermes-lean-ctx/scripts/install.sh",
-   "sha256": "98c50cbfb84d55728521e72ea5b9bf275aa3d52df033ede1c464cd67c409cb08",
-   "size": 2074
+   "sha256": "4e124d595cfea8f7646b9d6209e0312ebd4ccbc576a4294dba90f3a7c2c68e30",
+   "size": 2088
   },
   {
    "blob": "c37cf0a8f3b9313b1bc1f34bfb023cfb85d93252",
@@ -3761,11 +3761,11 @@
    "size": 3119
   },
   {
-   "blob": "3e35020cfc1fd6a56117c46220ada2f9ffc21721",
+   "blob": "1612b0c5be0096ef4b23bf1ab9045d3f1cffd2ba",
    "mode": "100644",
    "path": "integrations/hermes-lean-ctx/tests/conftest.py",
-   "sha256": "d1f6bd1ffc213e9dbbd6393dd2af069bbc6b5c8f5921183a0cba338946e4d53e",
-   "size": 2883
+   "sha256": "9b9eed1a0280ec9d7960c61e58435df018434d1cede76f00cf0559217fe964c0",
+   "size": 2659
   },
   {
    "blob": "17722032fb2707abb40f7a83f4bb9bacf71f6530",
@@ -3810,11 +3810,11 @@
    "size": 2744
   },
   {
-   "blob": "7498a19bf05c55644c5448b04a8407f96f8f1252",
+   "blob": "4c339f5b203b8ebe58bde4722b4804f77bae0b6f",
    "mode": "100644",
    "path": "integrations/hermes-lean-ctx/tests/test_live_daemon.py",
-   "sha256": "03c91bc5b91c572843ab808c059b57f65642c8abee5b0e8d5e0faf8bf4b2d7cb",
-   "size": 3682
+   "sha256": "137a0d88765d466e5e9fe80e4f84dc88811c781e29404f94f9d625dc5d8f37c0",
+   "size": 3959
   },
   {
    "blob": "9f8543488e50615cfc4c9e136e846c68c5cda5bc",
@@ -3845,11 +3845,11 @@
    "size": 1812
   },
   {
-   "blob": "f5c60115ccf8d059c3fa894aad88280048a3bda8",
+   "blob": "0e1bd66dbd999dad6c10ec33ed9451e14334f024",
    "mode": "100644",
    "path": "integrations/hermes-lean-ctx/transport.py",
-   "sha256": "568db51a63aa8612a37895c1c043dd4330663fe37be7684dfd4427fe95183166",
-   "size": 4815
+   "sha256": "124fdd53982171bc690b7fe894c015f299ee8671c82512a7c90ce3fa8d7baa16",
+   "size": 4822
   },
   {
    "blob": "04731b86e537b69ec15ce4233f0f3a2a10316d97",
@@ -3929,18 +3929,18 @@
    "size": 935
   },
   {
-   "blob": "828a878b76c2a99d37a73c224ed984df497ab1ef",
+   "blob": "f54886458909af160b5db35672d7f6d79d481251",
    "mode": "100644",
    "path": "packages/lean-ctx-bin/postinstall.checksum.test.cjs",
-   "sha256": "2f4adb20f3ec7b00d46d0f55816ed154ede6182ac49a5542e5b00580787b643b",
-   "size": 2971
+   "sha256": "57ae00c622b122126e1fff5d901e07a24adff4edfc06513fbb46e9ea08abfbb1",
+   "size": 3348
   },
   {
-   "blob": "026fec3f288e1e77945663e6f777dba93ed3e467",
+   "blob": "2195b98b738f09228bd891a44e72ab5dc7c66f81",
    "mode": "100644",
    "path": "packages/lean-ctx-bin/postinstall.cockpit.test.cjs",
-   "sha256": "73bdf444a8888c9eb56a06d13b704c24db2ad97dbf798383a3840afee46904be",
-   "size": 4872
+   "sha256": "9a224f9a5b83a90330583aace84b79f422f2da5cb6965272ee7d7537dc80c434",
+   "size": 5019
   },
   {
    "blob": "5798ecbafbba6682a9fe883af48221ee450ef8bd",
@@ -3950,11 +3950,11 @@
    "size": 1603
   },
   {
-   "blob": "c824ff16201ba847a2ef3c9261a9572118fa0054",
+   "blob": "5ce67d17eb1fdf6717da7ddb776f539b98e00641",
    "mode": "100644",
    "path": "packages/lean-ctx-bin/postinstall.js",
-   "sha256": "2d41d43c001752bf8bf0a58ece63dbbb3217b1661a98db5615c7b615d1540c75",
-   "size": 24114
+   "sha256": "8061e9e35b1cc18cf1ce64321e42432073bea544f4a6dee63c8a3e5cb1013160",
+   "size": 24221
   },
   {
    "blob": "0a85eb889ebb3a1923e7d7b322b24c9c236e8707",
@@ -3964,11 +3964,18 @@
    "size": 3823
   },
   {
-   "blob": "ffc34932b0f5d4a210db3ee202ad3757112c8423",
+   "blob": "7b87a6d7a492a707b4ab887e840ce496da3bc9e2",
    "mode": "100644",
    "path": "packages/lean-ctx-bin/preinstall.js",
-   "sha256": "59d2eac9848473b03f20f7d3c48a1cd6b0e57ae33191f57227c3fdad2cc93753",
-   "size": 1748
+   "sha256": "139aeb5e74cdd6e251805a59f5706e1d21dddcc4df5a036e4ebc94764dd2cc27",
+   "size": 1724
+  },
+  {
+   "blob": "1f3aec36a83f98292e13f0ca472043a0d111f34a",
+   "mode": "100644",
+   "path": "packages/lean-ctx-bin/preinstall.test.cjs",
+   "sha256": "799cdca708b26315ec42986edd63928b4e98c4758244dddc18d3e4091e30fabb",
+   "size": 1656
   },
   {
    "blob": "2c96eb1b6517f2617f9ddeae9f07f5fd7bd7ddef",
@@ -4244,11 +4251,11 @@
    "size": 5229
   },
   {
-   "blob": "ffede6c99569cca2ff18c19bc0ded260a0565051",
+   "blob": "f12a9f649a08be483761c96e4d168df5f9eb4711",
    "mode": "100644",
    "path": "packages/pi-lean-ctx/extensions/index.ts",
-   "sha256": "c259df3814729a48526a6b1e5f219ec6fbd758dc42c01891dffe3244683d4f2c",
-   "size": 49889
+   "sha256": "0643f3c3ccac6e0a7be6c37d82e0f803b6abe95bcf9e4bcb7d50042e8ea08a1a",
+   "size": 49958
   },
   {
    "blob": "b93fd28e187a4be44495940ee313471a28c727c4",
@@ -4615,10 +4622,10 @@
    "size": 150582
   },
   {
-   "blob": "a57f07289c3a681b13f31c4a90918cf6e40922bd",
+   "blob": "1236f0840c9c6b66c4af8c697888966b9f31b63b",
    "mode": "100644",
    "path": "rust/Cargo.toml",
-   "sha256": "a45daa2fe181a3f7bac645cfefc11319b6f0058a6a44fc6ce6eda716233bec04",
+   "sha256": "f5190e6d2d9455f12d47de00737290d07b905dfd9081c63b23ab856d723daec7",
    "size": 20269
   },
   {
@@ -4636,11 +4643,11 @@
    "size": 10763
   },
   {
-   "blob": "a04647bee7e77d0aaf230248e661b257a0ee1d63",
+   "blob": "1eba54bf8f49dc767022c625a42c412b5a6a8376",
    "mode": "100644",
    "path": "rust/LOCK_ORDERING.md",
-   "sha256": "04ab6e18c1d9858aff45e9afa7253d0654460e36ce3ab8fd4228be0ccb5ac04e",
-   "size": 51980
+   "sha256": "94ea7622e8ff36ac95329eb1722a78104f3a868e0ea3febf2a90ba1be0f63af9",
+   "size": 52266
   },
   {
    "blob": "0fca026424a85106671de73a3eaa93e1a0963192",
@@ -12686,11 +12693,11 @@
    "size": 418
   },
   {
-   "blob": "f0ea201a6293ba5ea83e3a6dcf777e912626b23d",
+   "blob": "3765babbca9f198aea3fe7f1af8eb0e4404a4f5c",
    "mode": "100644",
    "path": "rust/data/DEPRECATIONS.toml",
-   "sha256": "37945029a76d85e7248f7bdcfbe1f18a6eff0b1dd9e9e6647960655cd568b08c",
-   "size": 2150
+   "sha256": "cb4efdc7f64cd79f8e6456b9721e2f95d7f8eed19d57cefb5efc75a54ff24273",
+   "size": 6250
   },
   {
    "blob": "96d003820bb122758285a4bd8914a6c6de80c32b",
@@ -12938,11 +12945,11 @@
    "size": 23614
   },
   {
-   "blob": "00805dccff3f5cca8c15d12afbad515841716c31",
+   "blob": "9b37a21c589336292092af1d53f31d9910d7fad3",
    "mode": "100644",
    "path": "rust/src/cli/agent_tools_cmd.rs",
-   "sha256": "225a19a303eec2801f9a1eee26f8df34ce9c23dd1e5622a7b6a4de706e4d7773",
-   "size": 41282
+   "sha256": "8dc30978bdd98c92f006e3a6751ce36837ee1b460b8326ea8aaa9b9882e65338",
+   "size": 41819
   },
   {
    "blob": "fe582952fd5a2330199d8637b6768b1f3517a455",
@@ -13001,18 +13008,18 @@
    "size": 4485
   },
   {
-   "blob": "f2902fc2887881e2f6fc7908261177c523823005",
+   "blob": "3ac27ff84f7b6f45c7a8576688f0542ad9a33fb0",
    "mode": "100644",
    "path": "rust/src/cli/autopilot_cmd.rs",
-   "sha256": "42c65be24961cf9a0905a473fc81ebd4d443654d890464ddae88ffd5809a2086",
-   "size": 10917
+   "sha256": "eaf24f074f272fc5601b10e5df5af00f88807997d48ade1eb5018d895bb359b7",
+   "size": 12402
   },
   {
-   "blob": "7a11732b7a6ebe4c482071952e8b153748d5a4cd",
+   "blob": "4be892e04e5e87f901591cf5899e40279816578f",
    "mode": "100644",
    "path": "rust/src/cli/benchmark_cmd.rs",
-   "sha256": "02a3b367c65502a3ec54bc27509d9857abda239de24fe3e9137ee7905c52a517",
-   "size": 15063
+   "sha256": "be76bcca9c92be3473f14f61250b1fd9136f764cda5be1c66f5fd7b17d5349b7",
+   "size": 16162
   },
   {
    "blob": "1ec46e50f574fbf445515a9d93dcf38bf12ee96a",
@@ -13197,11 +13204,11 @@
    "size": 9464
   },
   {
-   "blob": "ff0f6eb0df3536c826a03b072cb5c6d888af74ef",
+   "blob": "4aaf00c9e57f47d9209d9611e747d2df3a659ca0",
    "mode": "100644",
    "path": "rust/src/cli/config_cmd.rs",
-   "sha256": "778016efe81f3d055bb44a70b119003797f355dbe6b104b531b5653bc212e2ee",
-   "size": 44507
+   "sha256": "1651ec44438ccdd4c9ebed5bb07379d99e79812dead07f751554a144e5b7a48e",
+   "size": 44337
   },
   {
    "blob": "086892117d6faa86c24b4e7640e861c0e5a3efc6",
@@ -13267,11 +13274,11 @@
    "size": 6031
   },
   {
-   "blob": "ddc87a4c6bd06a00f3483c694f7c96ec3643c4be",
+   "blob": "2896b6b5d2e73e4b65ee54dfce738b5c7e3a2bc8",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/analytics/gain.rs",
-   "sha256": "7562454abaa11c939048895d9f3182650788d1618da64b437e29ee3cb087ecd6",
-   "size": 28668
+   "sha256": "9c10c1dd79c8aa58e0e1cd1a492b4670a60735f8fec0c2ee488a3da59e092cd4",
+   "size": 28908
   },
   {
    "blob": "f2a27abfd18c59f9659b8267da3d730e36c39b69",
@@ -13281,11 +13288,11 @@
    "size": 15315
   },
   {
-   "blob": "3bf3c1e04c22dbbfc07c62326ec91f590ae7bae6",
+   "blob": "5b414d06c58c1d03165184e76f2fedb7b498b762",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/analytics/learning.rs",
-   "sha256": "be857f0403f6bc48652ea7cc80cde3939b3f0f624892036abb179c16f0a87ee3",
-   "size": 3547
+   "sha256": "4dc3e26e52e5df01f083d5477ed9323bb75aa9c1a3c7eb6075d158323f71a32f",
+   "size": 1906
   },
   {
    "blob": "9efdff3a7d59587527c46a8d82c7bc3581bc9331",
@@ -13309,11 +13316,11 @@
    "size": 5286
   },
   {
-   "blob": "03a581563c6760f019a90110b61253ccd016ce10",
+   "blob": "d9d31e9c1d3a977be9f445ee29642b6b79d79f23",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/cli_shell_admission_tests.rs",
-   "sha256": "f88e8436719053ce9d0831232e355645a0094dc0f829c7a5dd71b27a2627ec8d",
-   "size": 5964
+   "sha256": "ca5626f327428ac8def95f303c2ba14f1d6c40c96e36139a67980247076adeba",
+   "size": 8429
   },
   {
    "blob": "c63ff0d9a9fe4c10a13f278098567619b4a45016",
@@ -13330,11 +13337,11 @@
    "size": 12688
   },
   {
-   "blob": "4f88b17687eb08d37a68e99df05ef3a5a0a28b96",
+   "blob": "dc132689be9d978115188283a5d10470e637c62f",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/env_prefix_tests.rs",
-   "sha256": "b0082d024b4e716814896762e511cf288a6a2571033bcc13b03ccbdf9d23a110",
-   "size": 2268
+   "sha256": "29d08a0ebe0ff874d58fa76eca93bfc369ed85df75f99dbeee318b5903557237",
+   "size": 3118
   },
   {
    "blob": "77ce3eeafdc501fbdc27bccbd6581d82aae89b08",
@@ -13372,11 +13379,11 @@
    "size": 26795
   },
   {
-   "blob": "5cfe23983f07b350d231fbf4c66ab1de4388f901",
+   "blob": "045d73a6634cfa8258180e4b69a63bcb3713974d",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/help.rs",
-   "sha256": "a32a2b0225dd086b909556c19ad585f8b5302982cc29dad4b6baf179941b10d7",
-   "size": 32952
+   "sha256": "aecf435abbadd0ab4f55cf1a6ad662d786084785696902cdb7d6d33ffc771544",
+   "size": 32998
   },
   {
    "blob": "7db68f5547a700637e3ef0627af766bcbf1e4ed6",
@@ -13393,11 +13400,11 @@
    "size": 10572
   },
   {
-   "blob": "f8ab96582abd015b6a941e395bce12acaf129d10",
+   "blob": "4053ab22e39debd0de89923bc6e17f2cd91d9c26",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/mod.rs",
-   "sha256": "dd3eff367ab951aa31124031c49f0431c2835fafb69a5879ffc104ad7f637fd2",
-   "size": 47433
+   "sha256": "14c0d754092d3306641568b68982a619af00bf89351146bf5f8f65829b81f3d4",
+   "size": 47814
   },
   {
    "blob": "023492c6ad0a0ca004dc9bd2cf8816dafda26ac1",
@@ -13407,11 +13414,11 @@
    "size": 13803
   },
   {
-   "blob": "368eaa8e1b3f8e1783ca89e516a34ca30968f432",
+   "blob": "e4b48587631a382dc5987c69ed9fce41474d4d6c",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/network/mod.rs",
-   "sha256": "70c24d116643a403874270167b6e7eaf153f32d022b00f723ba9377b2156c451",
-   "size": 39591
+   "sha256": "f6dc3a8af4e1d0b0576c3b6be2d6def7e9192ee0ab4612ba03341582a053e1d8",
+   "size": 44763
   },
   {
    "blob": "6a4b3afc102c03d514b171fd23e9fc622af8b57c",
@@ -13428,18 +13435,18 @@
    "size": 36053
   },
   {
-   "blob": "336a2ecc9c96dd48c2da1e46b7f68b55dae5f29f",
+   "blob": "8d57cb0f2b8a390fe5e9a6dedcdc6c1396f26eee",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/network/tests.rs",
-   "sha256": "07c2c71f64ef3fbc466b4fb6c4f5e660d4902856b8e20c25e5045f903f4757ae",
-   "size": 5215
+   "sha256": "ad6dcc71bdeaf975ec89e10421c14f587e8a7aac8cdb40eb2df35104986cfa82",
+   "size": 6797
   },
   {
-   "blob": "17f76676c0ff35901206852e82d1972bba4df2ed",
+   "blob": "50e12d109027ad832b2a5a2cd0bb8426558c4952",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/server.rs",
-   "sha256": "9ffc365d217e6f20a7700449c93cf157752cf9b09d098fd0a66d3e664caabb7c",
-   "size": 24671
+   "sha256": "168b0bb6230d89b21833ff482b26e95160621aab188932dadc2e0219135f4b6f",
+   "size": 24862
   },
   {
    "blob": "8e7975dda70e412cc1c81538da5591eeb6b29241",
@@ -13568,11 +13575,11 @@
    "size": 11297
   },
   {
-   "blob": "f1f38483d4ff9b56e93b5d2459053a510b3a5ae6",
+   "blob": "751970758074dde45237f656138ae944c29d4e54",
    "mode": "100644",
    "path": "rust/src/cli/gotchas_cmd.rs",
-   "sha256": "d978b4b725265ed676523a7592ee9b791f5fac5fe2111a6edebdc17220f7065e",
-   "size": 3887
+   "sha256": "763b599f6415df61923a78783fa2b538a1a344cb4439f9c1f43123d3e4abd2df",
+   "size": 6252
   },
   {
    "blob": "38d2490b49a7d22ee859eafd56d19e56f2ddcfe7",
@@ -13589,18 +13596,18 @@
    "size": 2968
   },
   {
-   "blob": "f8225698d8ea0c2714075d16979b1ffe339fdbea",
+   "blob": "f87718d338cecb48e06d661136d85528a1ddd1d2",
    "mode": "100644",
    "path": "rust/src/cli/hive_cmd.rs",
-   "sha256": "2ade3c1724085398177214bcb29e3b415cb23d52f4f6681bda16bad19b73977d",
-   "size": 60696
+   "sha256": "08a78d265b552e01da97ec245a3626b42b22fa5515e994331c3d4bf60070c474",
+   "size": 60261
   },
   {
-   "blob": "b59f131816b7b38c143c2b641d5ab59813e8e155",
+   "blob": "5fca7333b00340c082ec1d44015ca149760e6235",
    "mode": "100644",
    "path": "rust/src/cli/hive_connect_cmd.rs",
-   "sha256": "ddd4dee7f22c395cf35240bee45378683c7eeaaefd54210d317dfab53451034a",
-   "size": 31333
+   "sha256": "d4294cd7c1ea55d3dc221d38c42e154728ae33ed2338528e8dc81a768705d50c",
+   "size": 32987
   },
   {
    "blob": "e114c420e267ecaaed53f927d45ee267332add1f",
@@ -13687,11 +13694,11 @@
    "size": 3190
   },
   {
-   "blob": "82ac84ced2e908266e4f73c7fec135f0bcce73a7",
+   "blob": "9e7afc159b7d9499c1b9f7bbdd072778bd64cde5",
    "mode": "100644",
    "path": "rust/src/cli/knowledge_cmd.rs",
-   "sha256": "5c1472322bc6535bfd0eabe00e478bb44853bd34f1d8645b2bdb3ccc10f6bfcb",
-   "size": 46661
+   "sha256": "2be592a331acf20dd069942740470a4b34ae87b18ad3a386627f3513d0c85e90",
+   "size": 47841
   },
   {
    "blob": "0d18209720eba546df27c7a0577e94369589aed8",
@@ -13771,25 +13778,25 @@
    "size": 12326
   },
   {
-   "blob": "9bc00e14b055716886b54731f238aa025bbad151",
+   "blob": "69c3bb7a9e651c1d84a05564f00b90db3cc8e58e",
    "mode": "100644",
    "path": "rust/src/cli/pack_cmd/management.rs",
-   "sha256": "22de0183facbf54aa55f90f2d0c2a25bd66200d6c429816acc852408f629d20d",
-   "size": 21107
+   "sha256": "134f9fe255f15dd59f3c90edf874346460b262764e2c41fe7574fc933cbb603b",
+   "size": 20900
   },
   {
-   "blob": "d5baf7e42953cf6556591b1b52515f1f590a129a",
+   "blob": "ccf1b63d72edb7eb0997c16e95e3d489b7b4da9e",
    "mode": "100644",
    "path": "rust/src/cli/pack_cmd/mod.rs",
-   "sha256": "eb254e26f1cca4c1dbf0017df2116106ce43376611370b8f0d538e332a173fba",
-   "size": 8944
+   "sha256": "144785031fc41be0e845b21d0c80f62195644d88694fa0d7cad991c66cb22368",
+   "size": 9406
   },
   {
-   "blob": "6b4b8cf94b9b979c091863bb52faeb681973e396",
+   "blob": "3fd8c1620667857b13ad80dbc4c664b9d949647e",
    "mode": "100644",
    "path": "rust/src/cli/pack_cmd/package.rs",
-   "sha256": "12a089110d31cff8462f4f4b8ae1c53f404d89582dbcf933cb8b2dbac7b4ccba",
-   "size": 23849
+   "sha256": "a1e2c5f4b0af7326c1c04a1b4c9b72c87271ecfd320e871e62cbd79324739940",
+   "size": 23607
   },
   {
    "blob": "70862f26c76ee12e3f4ed6e3148f5d23895c0dec",
@@ -13799,11 +13806,11 @@
    "size": 2162
   },
   {
-   "blob": "c19f5f06e24178bf400a6f28461d837308bd8a2f",
+   "blob": "15d0687e7ecefbfe3feea0493873544e9c5bade8",
    "mode": "100644",
    "path": "rust/src/cli/pack_cmd/transfer.rs",
-   "sha256": "5afd35f89fb946d9db52657159cc3779a9137025da88ff97ead960cb501da0ef",
-   "size": 15349
+   "sha256": "29e683562e0c112395a6f6b9013bd4f631a798b0ff448b5d299192023ca12b31",
+   "size": 15753
   },
   {
    "blob": "35c82d9b76bd460e4022247865273b768eff3ef8",
@@ -13813,11 +13820,11 @@
    "size": 15642
   },
   {
-   "blob": "839ea36d0e5c1299bb2433a5b1ca8aab75e27e8c",
+   "blob": "00fa2be8c4279c157ae70716423e832c189f4a67",
    "mode": "100644",
    "path": "rust/src/cli/policy_enforce_cmd.rs",
-   "sha256": "139bada1cf5f4b077c7427e2d87ce8d04cb2b8df11c0c77739f43c91c584dcfd",
-   "size": 15315
+   "sha256": "913d044a85e33474d47deabf10de34af964e2998edbb1ca5d89ba79bf15d2e19",
+   "size": 15833
   },
   {
    "blob": "4f231e0ed793a6949d4eee588555bd974847c8bb",
@@ -13876,11 +13883,11 @@
    "size": 3343
   },
   {
-   "blob": "e23ec4b809b027f1df6f937a0ef0eb2a691f0a44",
+   "blob": "ea9abb17a79936b066c2db7a432ed791dab0b95c",
    "mode": "100644",
    "path": "rust/src/cli/read_cmd.rs",
-   "sha256": "ca7023cafda0999f03dd54fed81bd8dec828f289a3e2ac4203c4fcf5748e2206",
-   "size": 44571
+   "sha256": "ce6224280cd5e860f7485c9864d33d57ec75d13691f1b5a378bfd023486837ea",
+   "size": 45920
   },
   {
    "blob": "290306d61d271ffddf1b94f3c9037bff5e5289fb",
@@ -13890,11 +13897,11 @@
    "size": 14675
   },
   {
-   "blob": "71e922059b271816a656a05e979de8f2c2e3e302",
+   "blob": "96c0c6ae0f06ea0f4cd5f830204ea8f9f862a147",
    "mode": "100644",
    "path": "rust/src/cli/read_cmd_carrier.rs",
-   "sha256": "49a90a1afe5de609bcd2416c3d63a3ae0b0ce3846d54c65c75bd63f00f65fcbd",
-   "size": 3779
+   "sha256": "f1299d1123122ccca5bd935cf612e850eba6ac23a0b9232586fcdebaa93be217",
+   "size": 6496
   },
   {
    "blob": "4d30e101c2d48acd74c59082fac2d69f4a504c5e",
@@ -14107,11 +14114,11 @@
    "size": 13340
   },
   {
-   "blob": "21270cf43addbfc48df81364ce2c290a02705e28",
+   "blob": "a95c3884d2dd66da5dfe8b24e25f04d8eb8c06f8",
    "mode": "100644",
    "path": "rust/src/cli/wrap_cmd.rs",
-   "sha256": "3d7e270f85c660f2f79f6118bc91eb34f689e00a4d1c068bc674ccba9b8a7f1a",
-   "size": 36750
+   "sha256": "cb7fc0ce9b7a200ee089d015f301566d2f553332817cfe727ecd0754d4ea3fd7",
+   "size": 37616
   },
   {
    "blob": "437c5392c0ee48958996fcc69af5b1b45efdcaba",
@@ -14163,11 +14170,11 @@
    "size": 48637
   },
   {
-   "blob": "f4ad79a9218700e10d2d1682d4ba929c51735f57",
+   "blob": "b75d42661ff971eb9d2083108580df09988efe94",
    "mode": "100644",
    "path": "rust/src/core/a2a/health.rs",
-   "sha256": "fbf66f9ab22086ecbce0e2fc08ecd8ac5de05b73a9181cac35d06ccff64f1a16",
-   "size": 5028
+   "sha256": "5949129364e4bbb1de585326ae884fc4525b7168b845c1f02fb93527fd8c8843",
+   "size": 7298
   },
   {
    "blob": "d5e3c731eb2578a182ccb5fc63b7be1da71c61e9",
@@ -14177,11 +14184,11 @@
    "size": 5522
   },
   {
-   "blob": "4d1022f768f24ba6fa8ef266f64ca69c7e9d9c41",
+   "blob": "7c068e8e2f0fdfc6ebda86fb752d85d1a26e9709",
    "mode": "100644",
    "path": "rust/src/core/a2a/mod.rs",
-   "sha256": "96176b750df4ff98f39bf65d8af5f3a5c7ed4e77460d6816ec89817d8cda3a05",
-   "size": 295
+   "sha256": "d84265d811cf4c0039e73ebf225929a2570fd10148a1b83bc81e52a9a874859f",
+   "size": 276
   },
   {
    "blob": "b573f85502a61d3c0f6da73c1bdf19917786a23e",
@@ -14261,11 +14268,11 @@
    "size": 15303
   },
   {
-   "blob": "1056045fca2bbaaa80fb5a6c62985246ed962439",
+   "blob": "a54e643c9b7f3a19f4d98f9016d9cc9cd434919c",
    "mode": "100644",
    "path": "rust/src/core/a2a/task/policy_file.rs",
-   "sha256": "ca67fade8175bc59bc5f05db556016dfcb7dd96b660ec9a9b67c6dd6a06447b2",
-   "size": 1193
+   "sha256": "2ac96ff037ae6ccfed547a41bdc9670f46280604dd131eb67520b1bdfe11a1bf",
+   "size": 1266
   },
   {
    "blob": "6bc50e560bd61c145378c52883de0b832fbf53ea",
@@ -14296,13 +14303,6 @@
    "size": 19706
   },
   {
-   "blob": "b964da50d60531c3091f8290596229f9580fa092",
-   "mode": "100644",
-   "path": "rust/src/core/a2a/telemetry.rs",
-   "sha256": "3c053407b6fc4a50f0dda9a85e1caf1817bf4cbf6f95110d17811b862b4b8512",
-   "size": 4872
-  },
-  {
    "blob": "835f14c15e3457f791d55d356ddc38d6b7a3436f",
    "mode": "100644",
    "path": "rust/src/core/a2a/transfer.rs",
@@ -14331,18 +14331,11 @@
    "size": 3612
   },
   {
-   "blob": "4ebd8d529eec49a92c98e7d5eea4ddfa441245c8",
-   "mode": "100644",
-   "path": "rust/src/core/adaptive_mode_policy.rs",
-   "sha256": "6f5fcd0ff7f715b6eea7606cf08aa0592568848269a6f36e517a2aa636bfb6d9",
-   "size": 7431
-  },
-  {
-   "blob": "1a9717d9e91c157a1c8422249fbe42e258804ff5",
+   "blob": "bb41ff81b0f9117da605bd62ab5e583ab5c56adf",
    "mode": "100644",
    "path": "rust/src/core/adaptive_thresholds.rs",
-   "sha256": "84ada4e7858c68c7db864b87227b2e55b4591daed00d04c5df6e09fbcd9e3c69",
-   "size": 15130
+   "sha256": "ee7b989229af83b9941833b9a86fc9aa05c3ca6054030df3722b542ab250f1ec",
+   "size": 8527
   },
   {
    "blob": "027b20d2e810bc10d6efe160450b9b57f92291f2",
@@ -14436,11 +14429,11 @@
    "size": 5792
   },
   {
-   "blob": "4a6ce30f64855eba09d2607ddb073356c14e130a",
+   "blob": "c0e78796eda8471e696ccc38530f5898bede6601",
    "mode": "100644",
    "path": "rust/src/core/agents/registry.rs",
-   "sha256": "447a67851c7cabff02b9a7bfb1f6ed4eb16f5c363ac55c6590472c1f9b0f616f",
-   "size": 49774
+   "sha256": "e05de324742a76b311e3abbbe22ec97b9a9680bb6b755be6275b96473ef43241",
+   "size": 50572
   },
   {
    "blob": "dc0e0c9d0e674e59e3897d3dfe8ff155dbe28e48",
@@ -14520,11 +14513,11 @@
    "size": 10742
   },
   {
-   "blob": "2ff151c9095c7bd20e4e648d40f5b6029537dd3f",
+   "blob": "6dad91c5b3be19dbaeb82406e14f37cc9ac6cac0",
    "mode": "100644",
    "path": "rust/src/core/archive.rs",
-   "sha256": "bda1ff75f3349b1573de6b9e22cd815afedca6d30852f08caff424935cfabc1f",
-   "size": 49653
+   "sha256": "a88f76380f161a3df8efb5a362f20f88656b0af5ee2040bce58d4c2c1e0cfb56",
+   "size": 50055
   },
   {
    "blob": "07063fe94edd23edad634ad47243ca6c6a2e3edc",
@@ -14660,11 +14653,11 @@
    "size": 33201
   },
   {
-   "blob": "2755951336983cb6ffb22dee2e9e3c460d0ff1dc",
+   "blob": "2787cf106830098ef3850a6f37a6a843de9ecf9e",
    "mode": "100644",
    "path": "rust/src/core/auto_mode_resolver.rs",
-   "sha256": "c2216cda8e4ad59f9fe9696e9962671ea5be40d447467f18b3c94078d8f44ba8",
-   "size": 51677
+   "sha256": "0c577382855c4cd6620dfe98bd077257bb9406ebde6d76755d162ca20125cfe6",
+   "size": 45663
   },
   {
    "blob": "790017cb9fbd0c31caeebcc01fdef4fd2ee9476b",
@@ -14674,13 +14667,6 @@
    "size": 5199
   },
   {
-   "blob": "042d1ea5f632cce85dcca95530e01d4dd5f8935c",
-   "mode": "100644",
-   "path": "rust/src/core/bandit.rs",
-   "sha256": "3e46c55cbbd0598a4b6f33c76fe5d811febba0eab3eaf5e8004fab7b586f6bfd",
-   "size": 16129
-  },
-  {
    "blob": "005bef81b50bb7710b36b41637e15b2b6197c7b8",
    "mode": "100644",
    "path": "rust/src/core/baseline.rs",
@@ -14688,11 +14674,11 @@
    "size": 4279
   },
   {
-   "blob": "b32d361f845389dccae62a430064c6a7b245b7c0",
+   "blob": "1fb7f79b7e468b746e386d6eba486247cca62f4e",
    "mode": "100644",
    "path": "rust/src/core/behavior_nudge.rs",
-   "sha256": "8933991dc1c00d03d42857729f13213cfe6e125f07922b3f355ba60c93e83b32",
-   "size": 11035
+   "sha256": "a0f6ed964e2cdebee91dc312dd09b717f1e7eb9c864f785d6f082498571da819",
+   "size": 10986
   },
   {
    "blob": "f8669497445ded5567e012d84f69d3c24d1931ad",
@@ -14716,11 +14702,11 @@
    "size": 2936
   },
   {
-   "blob": "bcb042609e50570ac5e29623e7c5c38182987e95",
+   "blob": "e8ec31615ad07943d13039badaa6a0f7f668806e",
    "mode": "100644",
    "path": "rust/src/core/bm25_cache.rs",
-   "sha256": "d08f0734d191b41221b53a45fe4424ab576d977eb23e14cf4f9f68f365283461",
-   "size": 9803
+   "sha256": "3fc4faab37f2140ae4995809f54f287973ce408c3f78288a42c929f7783a62ea",
+   "size": 11612
   },
   {
    "blob": "6ac8a638c0a59b9845d2436d84b0b0e13140ace6",
@@ -14814,11 +14800,11 @@
    "size": 5772
   },
   {
-   "blob": "ba7d280356e587c5d4e1734b896be934da2a59ac",
+   "blob": "dc6bd96d65990b2c5298edc99cb0536fe276a856",
    "mode": "100644",
    "path": "rust/src/core/bounce_tracker.rs",
-   "sha256": "6c667e224933336d998af3a41472c40ac21ac8b4e936bc47e62c15d8ae37de1f",
-   "size": 42668
+   "sha256": "ed9a3b06d43216d206bd776671e010bbc806143fdbf86a1267ede81a56720766",
+   "size": 42511
   },
   {
    "blob": "9a5157651e883f332425bb821f4cae2de88c60b6",
@@ -14884,18 +14870,18 @@
    "size": 14827
   },
   {
-   "blob": "3cd42c3c84ece06348d86975725d772a3aba88c4",
+   "blob": "978e8542242a29614952304773e1f99682c06d2a",
    "mode": "100644",
    "path": "rust/src/core/call_graph.rs",
-   "sha256": "35dda66da2a1f89c576f6c9ce12487d5d8044539eec59cd7b3192c0ebfc63e87",
-   "size": 48412
+   "sha256": "523bcb302c17fc45e06de1e5ea2758cb971da312d67f917767313234ce7f63ea",
+   "size": 51477
   },
   {
-   "blob": "a1b713c97624919e3eeb8a427e9381652c27081a",
+   "blob": "18c66eeaf311323a67a479ce8e23394a05a4c4e2",
    "mode": "100644",
    "path": "rust/src/core/call_graph_tests.rs",
-   "sha256": "b2c619d50562b185e66b3648fdb35d3bb51ef258840a38a505fd5d512bc110a3",
-   "size": 19999
+   "sha256": "4cd7a6aad7f63c15b6d78da9c242691fcfe8b461a0f13c22256f78644c0ef5ef",
+   "size": 23011
   },
   {
    "blob": "20a6c7559950596507258292d021722e63d62f74",
@@ -14926,11 +14912,11 @@
    "size": 2451
   },
   {
-   "blob": "74d0b6f1b35f7341b90bdd6f487abca55e3dc483",
+   "blob": "d52b8b13151c6120ee34bd196a8b2439981ebb0d",
    "mode": "100644",
    "path": "rust/src/core/ccp_session_bundle.rs",
-   "sha256": "0eacc5c28194147713b6d66b59d5d1876257733a61cf41e938a9092caa04a387",
-   "size": 18528
+   "sha256": "a6aa510aa876d980f9769ce01d4af40cf198b733243a7203de89a2120923bf34",
+   "size": 18661
   },
   {
    "blob": "f910dc8c523063f07c9d2c7e7fb6399b5a60b6f9",
@@ -14947,11 +14933,11 @@
    "size": 9856
   },
   {
-   "blob": "9bebe7af4d2812ad8df80df6c71224909555711c",
+   "blob": "285ba983ee3bfcd8e103060c1ae1a12383d911cf",
    "mode": "100644",
    "path": "rust/src/core/cli_cache.rs",
-   "sha256": "f80d0c3054c60d56d3dc8e9f3e1d592a7ed7fb97c2c7a00143d3b60dcb92040d",
-   "size": 21721
+   "sha256": "9258b4f5295d680d5a9dfcc36fe99d2ffad79917ad6ed62baf6f459ce2169f4d",
+   "size": 23470
   },
   {
    "blob": "249c2831ba6db7f2a8f71a5f42b5e4feba7a45d4",
@@ -15066,32 +15052,18 @@
    "size": 10955
   },
   {
-   "blob": "5de40faad9a2f6e149c99f0105cc1571ed311aec",
+   "blob": "2a6089f1fb4ee241ca87f33ea5dd157da0fe70b5",
    "mode": "100644",
    "path": "rust/src/core/codesign/mod.rs",
-   "sha256": "86ad1fcb9ec7adb350e073cc3c1c3cc102ed5b0cdf325b071adf254b51d4aa96",
-   "size": 44272
+   "sha256": "d1248cd1d9879cc07cb75326891ae99cfb2201e9e1190b75275da4cc560be76a",
+   "size": 47870
   },
   {
-   "blob": "1b3347c6eacbcbbf56e0bdf711642b812a8e25c6",
+   "blob": "69761f8d8bd1023dd6e2c084a6010e10fd25d68d",
    "mode": "100644",
    "path": "rust/src/core/codesign/setup.rs",
-   "sha256": "184f5d0d9130887fb1c736ae0bad0e774f9ce877cb11f3a931ed3a3c53b114f3",
-   "size": 6987
-  },
-  {
-   "blob": "a18aa3626d5b525f2dc86e96285d387803896271",
-   "mode": "100644",
-   "path": "rust/src/core/cognition_loop.rs",
-   "sha256": "498bfa6ffdbdbcd83f656d3c6add2a081a9c274e6a2a6ed865f562022daafbbb",
-   "size": 46773
-  },
-  {
-   "blob": "3862459853adf4bb2730e3e895e423b9c4c46967",
-   "mode": "100644",
-   "path": "rust/src/core/cognition_scheduler.rs",
-   "sha256": "ba0200e992c3e436465c35e901b83aa98a97d242fe9e6558d0693879e0af9085",
-   "size": 6882
+   "sha256": "2ad4c824797148351f9235b99ede167494ce97768cf381c5bccb1fa5d9263a40",
+   "size": 8084
   },
   {
    "blob": "ad0e163b162130c67d294795b76923f238de87af",
@@ -15262,18 +15234,18 @@
    "size": 1865
   },
   {
-   "blob": "395fac0eff900186bcb88820fa314b1ba4845159",
+   "blob": "1157420f25e8e2ae2988665a227933e256ea5cd4",
    "mode": "100644",
    "path": "rust/src/core/config/loader.rs",
-   "sha256": "25e144a927cd1ea23f94bd2ab428975d3a043001a3a6cdb33c51069525314202",
-   "size": 38844
+   "sha256": "09ec3f3c6093cf048f7b061abc58b52643f133b376675032187be87f4a30aac5",
+   "size": 39438
   },
   {
-   "blob": "fe0be9029c4f4cc51666535d8bf671bbfb5aa6f0",
+   "blob": "58e39a021887df154712d4f23bae856ede7b873f",
    "mode": "100644",
    "path": "rust/src/core/config/logic.rs",
-   "sha256": "c96e71fb1e0ad445904bb91f1943d2cf14d17b315de8144df213eb97e8d09e9f",
-   "size": 34947
+   "sha256": "121269e92932746e313f81f6059fbee6ff72d857b579b68d3d7abf7574953563",
+   "size": 33451
   },
   {
    "blob": "00bd95b1653b991639ffb96fa7918b31c63c8a41",
@@ -15283,25 +15255,25 @@
    "size": 6603
   },
   {
-   "blob": "005fb2717c664c7ef2c89f4d98a3c801cf126b0a",
+   "blob": "be097eb215f562d34a2bba31b4c1073aada49c44",
    "mode": "100644",
    "path": "rust/src/core/config/merge.rs",
-   "sha256": "85d25a91764e66dfbb3be7b531d8e957dc54ce16deb23590c7d0e739c382f7c0",
-   "size": 15873
+   "sha256": "eb5c11bc909b2079ba6c819458ebd2e3f5a8d2c0d1d6b4c6335741863ac0d83f",
+   "size": 15884
   },
   {
-   "blob": "c4ba4834ce533128a298bbc0021232b53e67b452",
+   "blob": "7d73f7aa0027dba2f68927691a8ad0d85978acfa",
    "mode": "100644",
    "path": "rust/src/core/config/mod.rs",
-   "sha256": "d17b61c0fa389b83ca893499a380ab827e3b917d25b6917ed4ac8f0fb879e8d8",
-   "size": 2833
+   "sha256": "80cee2d39f098e536dfa943abc363772158f3c2b8ada15c29ef67275ba3ae603",
+   "size": 2893
   },
   {
-   "blob": "15046ac90191a2303705cf9dc9145bbccf82a708",
+   "blob": "0bc5a9d041c6d0bc0aa86a7cb709df19fb1b5b79",
    "mode": "100644",
    "path": "rust/src/core/config/model.rs",
-   "sha256": "0f2fdfa5b913a58b7067a4ca20ca3f6964027b70f69ae0d5f8bd901696299fc5",
-   "size": 49261
+   "sha256": "1d894967b36413e22ce101cff037e89d3f07173637876942932cc9f481c9a740",
+   "size": 49014
   },
   {
    "blob": "afabe89ce9e27b1b279b26cc9a2f0a2e3dfa8fb3",
@@ -15395,25 +15367,25 @@
    "size": 35501
   },
   {
-   "blob": "4a4acf2f6fbe53c5f4b6f4599b5a28905d65b7c9",
+   "blob": "06d415d46d96b7c563de07be20f5b39b440ae336",
    "mode": "100644",
    "path": "rust/src/core/config/schema/sections_core.rs",
-   "sha256": "500218366d41576ee817735a987667ad520ca3b452e4130e377ff8ab15e3cbbd",
-   "size": 51994
+   "sha256": "f1e688fa1241256f6754fb6612687c0521a6cd1afbbd969706c552a25810bdce",
+   "size": 51877
   },
   {
-   "blob": "f6bc4a305eeb789305c4899c37476f97f80d3cac",
+   "blob": "5f34c593740dce0e71bc73a0b15ccdbfa9d42e83",
    "mode": "100644",
    "path": "rust/src/core/config/schema/sections_features.rs",
-   "sha256": "0e783ab42ee83c3323cd10d23db41626c109b1e8f99450da54f22b25f810b944",
-   "size": 25032
+   "sha256": "fa46549a35b6115774d2cd4762453673317d17b85e776ec1c4fba64cae04e5c3",
+   "size": 25142
   },
   {
-   "blob": "997b7f5378f9e086debb997c48cb43a2ac9b66ae",
+   "blob": "c829189ac7ec9cba5e67c82c2414562385533cdf",
    "mode": "100644",
    "path": "rust/src/core/config/sections.rs",
-   "sha256": "5be4fd6701e8c1122071c326c9771b9578c0ef37c41452e2698c768219abb5e1",
-   "size": 57045
+   "sha256": "5f9b2eaac0a19e9aaa82dc6ca2cd505fa4e9a1a84352f22547fa74017d067d3c",
+   "size": 56735
   },
   {
    "blob": "1f68c1b32ad4f55c64c7f0ebfae930b03e0a083a",
@@ -15449,6 +15421,13 @@
    "path": "rust/src/core/config/shell_approval.rs",
    "sha256": "5d4031ae287ec56e6d99d7be7062fa6c249188f89f13aab30b748ce0c33a8887",
    "size": 2403
+  },
+  {
+   "blob": "4e25b4f40a7f06e8fe48d8ec5622cbd273fdcea6",
+   "mode": "100644",
+   "path": "rust/src/core/config/shell_policy.rs",
+   "sha256": "1f53b86dc06ccc67f01b707427068d46478e67c23e400a115402af9991b8bac9",
+   "size": 13614
   },
   {
    "blob": "fe6ff080bc9014968107f7574559a70ec40449f6",
@@ -16039,11 +16018,11 @@
    "size": 10419
   },
   {
-   "blob": "bd1e8eaced4934daf48890f4e02a6b4dfc12a437",
+   "blob": "2c3b76115c9a693af8210da4195dbecc1e79a10d",
    "mode": "100644",
    "path": "rust/src/core/context_field.rs",
-   "sha256": "95716ed4585880db03556f1c7c61d235bbd1572ea95f10f47bf35a27ca3569d0",
-   "size": 25756
+   "sha256": "50e96d64d79f940f4288e3694efdfd26acee441def3194b0867df6f38905130b",
+   "size": 21178
   },
   {
    "blob": "f7452bdc7a2f71297378583174b617089befd5f2",
@@ -16074,11 +16053,11 @@
    "size": 8919
   },
   {
-   "blob": "8f9a6763a8467e9ea94175a9ad91692308cb9da7",
+   "blob": "8dcca07c20b651be4c3b029bb12d088565c3c0b9",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/activation.rs",
-   "sha256": "8be0124ad612591998cebc722d8111979563c2d0f8c4b7a80115146d4e127a27",
-   "size": 5879
+   "sha256": "8d07f807b5e1b0311c1bfe9523e64b08771134e02df95488e966511952422d72",
+   "size": 5380
   },
   {
    "blob": "452f40c4c712430a918ce9af4393f00b9198075c",
@@ -16102,18 +16081,18 @@
    "size": 2153
   },
   {
-   "blob": "fd9290d91512e34f1a0dc68450ff07249d34b565",
+   "blob": "37ddb465cbb4c2a7ebec0fa72ada46367883c4c0",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/airgap_e2e.rs",
-   "sha256": "72ac1b2ccf000b949a47cf74d7e98ecd34eb1a105f37e8e73e67c2629020d59f",
-   "size": 4301
+   "sha256": "8a9afdf359debae111d8c0d2e4253a4925b9f38f425fb84114c34fd69452a615",
+   "size": 4236
   },
   {
-   "blob": "a21ea566a3ba5b33358ad8d70924f06c98541dbb",
+   "blob": "c81d6e31600f1c52be912023f47b7082c8b7382e",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/autopilot.rs",
-   "sha256": "180aac4b7e3af0b275fe5b7be9182472bbf257aeec8967934cc077d3aa352a51",
-   "size": 41209
+   "sha256": "2cdabaca1bc9702c97591ddbd20c9cda5a1487bd67d106354449e2a6d9470fbd",
+   "size": 41257
   },
   {
    "blob": "255fabf153406bad0d82deea1fb6ef64f673cbda",
@@ -16186,11 +16165,11 @@
    "size": 2626
   },
   {
-   "blob": "e347b8f6e9a146b86165662d4a6493b782549ddf",
+   "blob": "25d7d9fb06d892ebdd8fef49d2aaaf506bbcabb1",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/bridge.rs",
-   "sha256": "e4621794ee6ea166b3aa9bb69f98aa796f6de63f87f9469874f73fa8de7cbd96",
-   "size": 15770
+   "sha256": "3cc0d2233769d4184195bb8394f82f098864061fa7a582aa1d2f3c4c2498ac5f",
+   "size": 19246
   },
   {
    "blob": "453bf75c116b840cde9edeb5447927f3677413f6",
@@ -16291,18 +16270,18 @@
    "size": 9745
   },
   {
-   "blob": "0245be624700c2d3f064774fa3848d13bdf9f41a",
+   "blob": "ffda88d6bf5612a513bf2e1861337bf8d84a0393",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/enforce.rs",
-   "sha256": "2b3793c58bd72368d4176e83d4c86002700f39ab6d921977770b633991c83d78",
-   "size": 5866
+   "sha256": "ea3291d6cdb47373dbd6dad418e3b5430cc7552d80906551a82198a3e2a7f1be",
+   "size": 3361
   },
   {
-   "blob": "49d53b86288e7e0c9dfd72b33473cdd910a93c08",
+   "blob": "44a71c5cdaaaa9e3e201a9a6efd3250360f1f23d",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/envelope_bridge.rs",
-   "sha256": "b3658d57674beb5576ef4d6014fe271db9a9d72161f35c23f32e12334b37aa1e",
-   "size": 6015
+   "sha256": "e5bc18b90f4cf5e3526bd4bafb2d01902c7d910594eb1c74ece2ed9f9315e81d",
+   "size": 6151
   },
   {
    "blob": "8f2baa5738bc5864e056b456fe0bab6b6714d2d1",
@@ -16333,39 +16312,39 @@
    "size": 4141
   },
   {
-   "blob": "7a44bd794542e393c639d92cf1a0350d37a2f3c9",
+   "blob": "090772ca75e4dd8e4c85e9d77722b263bdc2cdb8",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/evidence_hook.rs",
-   "sha256": "ad84f2b2cba93ec48eb9b6732ed5b191063206f2a92fc9edf966db1d12b6571a",
-   "size": 4897
+   "sha256": "f587d1a870768b7452a05acb53c8065e768a491f07da0c27b2a6bed295db1ff2",
+   "size": 5142
   },
   {
-   "blob": "4bbe3a70bfb999eee8cb0f84c0632e8af61e8d58",
+   "blob": "646e59137a2835e4066f736e05d8bfb391731e87",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/evidence_wiring.rs",
-   "sha256": "040f6fad2d9749a7d7116aba3b84f94033d67ecad196621704b49b0e9cd4ca5b",
-   "size": 5264
+   "sha256": "89cfd9339e8bf680235d0f22a62e1aca7830d67f31869e73230115f659882576",
+   "size": 5432
   },
   {
-   "blob": "8b66165c631463001b3378c59cc421ba7f9c56b3",
+   "blob": "66f54fba62f56798b0f59822964996cd85406619",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/feedback_e2e.rs",
-   "sha256": "2aebed570b5ee9228345b79e761a3453f501c6cdf63c1d7ecd957efe5a911e8f",
-   "size": 4851
+   "sha256": "8b172ea267fd047947f8ebf85d55c4eb7cb7df29471794b04a65a54683137781",
+   "size": 4713
   },
   {
-   "blob": "548b2c18ea8d88eb05e1560a2aaef6b674fd673c",
+   "blob": "cb5344116c446579972b830c7be378191ff93575",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/health.rs",
-   "sha256": "7f75d19aa80263fbe49f20d037e82a6549e0a8d048803ee84d55b547225280a3",
-   "size": 4781
+   "sha256": "41b680ac9e3571a04dac839d510ad3a47ae4f69e568e407d952c0beef1277cc4",
+   "size": 4341
   },
   {
-   "blob": "a7da96a017f77972c0ac880e997ef17f6ee5b989",
+   "blob": "9efb73925b40b37c165e449e3eb2180b7d9d9298",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/health_api.rs",
-   "sha256": "27bf94cbf5f66283433cef0e44c2679b387ef3b91e189e3661061ef29b131d35",
-   "size": 3786
+   "sha256": "a5ec34ddc03aef9d7b298527c1f66eb65dd072092e63dc8330023d50603fdd56",
+   "size": 2950
   },
   {
    "blob": "67dadb905e2ffbb3d2d611e04870f6509596093e",
@@ -16382,11 +16361,11 @@
    "size": 5191
   },
   {
-   "blob": "fe3c00a410ab544198c8abaee98fb0fa51c94de3",
+   "blob": "554acd4717bd97d8c0f57b2761e66c6299796213",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/integration_e2e.rs",
-   "sha256": "cbcd5845a653dbdd59e9f846faf0fbd93221dcca3aa1355e0870b9824be7778f",
-   "size": 6340
+   "sha256": "bdc1710d03dd50570f7f9e93e1b76cb6099442831a1083246dc0a8b0e7cb2e73",
+   "size": 6690
   },
   {
    "blob": "5f7dde395e3ba3f28491cb626e9092b5e2797adb",
@@ -16445,11 +16424,11 @@
    "size": 3204
   },
   {
-   "blob": "863ef88481d4463d7f978c573dd06aff0bd8f187",
+   "blob": "2d8bf63228e4ea3f19921727e401bda19520957e",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/orchestrator.rs",
-   "sha256": "a5f8b9b52ee71cc625adcdc122eac46dc4908f90bdbf5d8bbd0bdcf3ca290701",
-   "size": 27011
+   "sha256": "c0fe64c4a6484d9c885f38e106db4349dd581b1c27558fd95d58ba32a9876c88",
+   "size": 27008
   },
   {
    "blob": "837b5ac4059c260c224383793dfdf8fe575e7f95",
@@ -16466,11 +16445,11 @@
    "size": 1406
   },
   {
-   "blob": "ac9f4dd02af191d03ff155b1e412c9e0aa0119d1",
+   "blob": "e7099bed0f494931d4cab06b45e506b4e0727d31",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/policy.rs",
-   "sha256": "6a05b89c88a8a1a3c12c4d56176ff36e1bdd48cbb0c6482c04c5abfacee816ed",
-   "size": 22315
+   "sha256": "ae6bc797b04941c392caaaddb316491940f7e9d74c916b698d62ab3d0b992684",
+   "size": 21869
   },
   {
    "blob": "0f38cd1cb8ba470564c259997554b3e20483e3af",
@@ -16487,11 +16466,11 @@
    "size": 6224
   },
   {
-   "blob": "e5608052f2617ae23b257b05458d29876f08f1a2",
+   "blob": "a2e39bb4a6eb53d7d4e29266664bf44434887cf4",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/provider_metrics_e2e.rs",
-   "sha256": "8d8924a71f28ed85cc79d685c77165aa67054f7a7961d758721fc77d3d1c8365",
-   "size": 5168
+   "sha256": "91523084276a048475e33e3453d255229549124e40e3ad5dba9bd82875c9aea9",
+   "size": 5552
   },
   {
    "blob": "3def4a447a687aec1dea95d6ff9f2936dff12b21",
@@ -16564,11 +16543,11 @@
    "size": 5511
   },
   {
-   "blob": "aee9d6a5a66ae20590618d6a267a401b699197f2",
+   "blob": "114e6729bcfdc3d69e56a6eee4869cf7f95d9079",
    "mode": "100644",
    "path": "rust/src/core/context_kernel/startup.rs",
-   "sha256": "8020c27b570c6bca5f6bfcd518454d47fed07764c1ff0bd90486c2022ce9b034",
-   "size": 3296
+   "sha256": "52ebbbd45a1e1b4c0034eeabd0b102917da114d160196971fe94799fb5a8bfff",
+   "size": 4097
   },
   {
    "blob": "86e997cde01f759a987545397faa407018cb073b",
@@ -16606,11 +16585,11 @@
    "size": 3074
   },
   {
-   "blob": "17d5503c7e81d1783009c89088633e2a37b98c0f",
+   "blob": "0f35d0e55656bd128f31877ed77d313808f193d1",
    "mode": "100644",
    "path": "rust/src/core/context_ledger/ledger.rs",
-   "sha256": "197d3e01205d7c42bd8013a9520a9bfb413f8435abc6f2088a6c4b2d3700c1b7",
-   "size": 24624
+   "sha256": "da2089f7b76c00f9bb99eb8b6eff99bf375613ad722619d7c131a357b323470b",
+   "size": 24539
   },
   {
    "blob": "97a48f1e0876c55143e1fc8b615bf9af22d7a055",
@@ -16634,11 +16613,11 @@
    "size": 3708
   },
   {
-   "blob": "e6d85bf1ed970162dc475bb81b10167997c5185b",
+   "blob": "9bfa1cb36c1f1b81e6deb6f96edeba8c410d843b",
    "mode": "100644",
    "path": "rust/src/core/context_ledger/tests.rs",
-   "sha256": "f548300b59404477a88cc2f0397c2559ce6460f3114d5927ee252e2571d60f2b",
-   "size": 19010
+   "sha256": "ffe9a5ab407cc4ae6bf2286692d1b4da48fb62a4a25bfa2716531fd7f3862b22",
+   "size": 20781
   },
   {
    "blob": "b8b787e3516093546439897dc461f01b43b60a89",
@@ -16942,11 +16921,11 @@
    "size": 492
   },
   {
-   "blob": "1b4f562532e0e0fd7b49cc8fda730f5f9cc551ee",
+   "blob": "ed3feeec9f845ddb2249598f4ecf6bc836943d74",
    "mode": "100644",
    "path": "rust/src/core/context_proof.rs",
-   "sha256": "5e355988c6854d9a85487d856c19b91eda906adbf027bf395832e564446a3376",
-   "size": 11257
+   "sha256": "c95ed92c311e0a6b9c84bbdf9e795060362650560b5f2516cb233384e265fd44",
+   "size": 11852
   },
   {
    "blob": "c02f111cc2cb7c4570c9d7132f846c48bf8f9b8a",
@@ -17411,11 +17390,11 @@
    "size": 8548
   },
   {
-   "blob": "cb81cfcd772c56d615553aa13e30c4f026b4de1e",
+   "blob": "3d431681bdf4b76175d3d1a861c1ef4f9af54c8f",
    "mode": "100644",
    "path": "rust/src/core/edit_quality.rs",
-   "sha256": "0f1e17c7f8263f4aba042363fdd2d3f15cd612e8fe83432b44a9d64d98f1d9ad",
-   "size": 22630
+   "sha256": "e5c2b38fc9e0f231eae2685de057676cefc3f222f43a90d719873ed35592505a",
+   "size": 22397
   },
   {
    "blob": "21abbac544311f8ad11aa45086c1c441a6c7c20b",
@@ -17621,11 +17600,11 @@
    "size": 6821
   },
   {
-   "blob": "e2910e9576df4fdd34fb0fbcf617a780e5a2c9f4",
+   "blob": "b0f581bd3a3cfc1244a717e5e9c5a44b6dbdeffe",
    "mode": "100644",
    "path": "rust/src/core/efficacy.rs",
-   "sha256": "1c03c36f1ba70e4119bec6870c66b2e69f4458f019436df64d657855051e56e7",
-   "size": 10962
+   "sha256": "b8a0acc39cea4a19d5bb0b331c27e0217a2505670f66cca43b47416c0090b948",
+   "size": 10341
   },
   {
    "blob": "987610ba67eb131388577904a145adc36aa7599b",
@@ -17684,11 +17663,11 @@
    "size": 4506
   },
   {
-   "blob": "982bc85ee2351f6a5dea78ce6940d79774a423ef",
+   "blob": "4d191658942c8302f1f397cba3b03e27b68772cb",
    "mode": "100644",
    "path": "rust/src/core/embeddings/static_model.rs",
-   "sha256": "47104b97e9f7411df79ee9c5c47d9bb90b22b8e73053ae8e4481edb2723cae51",
-   "size": 14115
+   "sha256": "2eb5b41b85e692dcf529e0f0c08f9d7de0aa13b516d09a4c0377fe98ee958368",
+   "size": 14185
   },
   {
    "blob": "38e03ef128791d589873c45b0b502bc7b7d0536c",
@@ -18167,13 +18146,6 @@
    "size": 7672
   },
   {
-   "blob": "61c9ee62bf611f01fe84798d466d8565b92c4f92",
-   "mode": "100644",
-   "path": "rust/src/core/feedback.rs",
-   "sha256": "201d305466c9ed265215c892001b9be0f58e49046a7c381844b2656da079fde1",
-   "size": 10173
-  },
-  {
    "blob": "877e1adea1422348a4e6453ef49a652c18d5265b",
    "mode": "100644",
    "path": "rust/src/core/file_lock.rs",
@@ -18223,11 +18195,11 @@
    "size": 6048
   },
   {
-   "blob": "e054e5d44223253fa5d8ca168f70640561870f38",
+   "blob": "d4d732c19bb4a20c306e92bbf2196c96808ece35",
    "mode": "100644",
    "path": "rust/src/core/firewall.rs",
-   "sha256": "7a88bd0c72b18ba2b6f6b5056fab0896194b80475ce277172e4ebbb3b29dd21c",
-   "size": 22560
+   "sha256": "79f696b5166974fe0cbc2181152f750a8bfe7a95420bf833b5dbcb4bc71343c5",
+   "size": 22843
   },
   {
    "blob": "afc32d02a194d5dd9de82a62fbbc9dcef6e9816c",
@@ -18475,11 +18447,11 @@
    "size": 12682
   },
   {
-   "blob": "a00b120bbc997dd575449af4a37bc20ae4e584fd",
+   "blob": "12716bc1640c3d9793b9a9cf9cd367e23e5342b2",
    "mode": "100644",
    "path": "rust/src/core/graph_coordinator.rs",
-   "sha256": "c133bbb31c5ca8733a69009bbbcde734153b3661694fe92cdaf28834ae56ec96",
-   "size": 2147
+   "sha256": "c8711865b0a1519ee47ef4cf9e684c2119c48bcd06fe6cea67d277322be28707",
+   "size": 2824
   },
   {
    "blob": "7a55a62d400ce9b21c6007976d6416dd4f9f1b4f",
@@ -18510,11 +18482,11 @@
    "size": 6450
   },
   {
-   "blob": "f55def587070f516f6edc8352bcaedbaf6aee650",
+   "blob": "c79e9139854a30e7e6a132831490fd513d74ee5a",
    "mode": "100644",
    "path": "rust/src/core/graph_index/mod.rs",
-   "sha256": "3fcfdd0cf5e9410fb2377e5c49244f313980c34c88d00cd0ea175f73dde73ee0",
-   "size": 51453
+   "sha256": "c5001976b771679e4a53cbb561512bf4ad04f8ca20161d5065255ef91ae78ea0",
+   "size": 51953
   },
   {
    "blob": "3ac2b71815dd58b7223051195cc405be359196a1",
@@ -18594,18 +18566,25 @@
    "size": 1181
   },
   {
-   "blob": "948c310fbaba77ac7e6cfaebf1299d69a68ff0b9",
+   "blob": "1125d39c7cc2e2ab47e875e353e50712ca1a88f9",
    "mode": "100644",
    "path": "rust/src/core/heatmap.rs",
-   "sha256": "9235abfb0274528687ad616f10768a8f1edc6a0bb4b0133a8f2963c962a2ef84",
-   "size": 16691
+   "sha256": "0648a1e1bce741d1be4309e078c203f067712ef961a9d2342c2a7ae011acd807",
+   "size": 15998
   },
   {
-   "blob": "441506f8e667b2501f1d978249829d7dee416493",
+   "blob": "4e37292fadb84562491fc5045692b7c0b719cb57",
    "mode": "100644",
    "path": "rust/src/core/hive/auth.rs",
-   "sha256": "289de09d5adfea002fb9a309d61e41c14688ac2986ff75235c098b46053abe0d",
-   "size": 17377
+   "sha256": "5d1d7f716cb07790e651e2d834e289c9391d096e16b857bb943c119b95d0bb15",
+   "size": 16656
+  },
+  {
+   "blob": "a318533d1e655764f865a98c1aa22557e7875994",
+   "mode": "100644",
+   "path": "rust/src/core/hive/background.rs",
+   "sha256": "3f2466f6204723f684ac73fe76479a1b45dedc259528714d67f0072d3bc51423",
+   "size": 6879
   },
   {
    "blob": "da469ddf13476d34ae2ac1e29139a86df141cefe",
@@ -18615,11 +18594,11 @@
    "size": 5282
   },
   {
-   "blob": "26778bf7e722a114c0e80e0a8e46b54e4bcf89ce",
+   "blob": "7b1a8bdfeb1fa4b9420276ff0eefddd40afdb433",
    "mode": "100644",
    "path": "rust/src/core/hive/bus/control.rs",
-   "sha256": "24cc87cfb1c9ae291695421f61a7e7d46fe1556dc738b19fdff88fb334acfe01",
-   "size": 36008
+   "sha256": "ba1f021c2ae64eb1cbd98ed453b4ad23fa0ca842f7c365576a84920e3c834299",
+   "size": 37273
   },
   {
    "blob": "fe3d34eb200d821a74c608d82bbb929654e7729f",
@@ -18636,11 +18615,11 @@
    "size": 20583
   },
   {
-   "blob": "da8e107544cf9d1c4332c8c1388d2f620b81672a",
+   "blob": "6e05621be8527c34dba34d83985bdda8197caaec",
    "mode": "100644",
    "path": "rust/src/core/hive/bus/leases.rs",
-   "sha256": "7370f899bff36d998aefb31d111458b6ab022a9818cfe7053e129b9082c51534",
-   "size": 21581
+   "sha256": "279e3b80078fc2130bc720a867d5cd01926d9fa76a3e53a849f4335b9f4c80fe",
+   "size": 25469
   },
   {
    "blob": "6f9325555154d2769782877287d91d77b7655add",
@@ -18657,11 +18636,11 @@
    "size": 25126
   },
   {
-   "blob": "e419764b652d97b6a4b2b9705ebb17876994dcbc",
+   "blob": "c3efe40436f767fa61e7ab1fc84e19ec9319ad64",
    "mode": "100644",
    "path": "rust/src/core/hive/bus/mod.rs",
-   "sha256": "3990b18f2bf0c4de7a482e8f24297f0924a868c1f396683d8d971c20e797834b",
-   "size": 5480
+   "sha256": "f9d2dcc0f2ddff09f092da610528f17b91b645bab2b1c1fda3526141ace72ccd",
+   "size": 5943
   },
   {
    "blob": "8cec8f7d391a6ab7b3b6a148eebc2a8e55a2635f",
@@ -18720,18 +18699,18 @@
    "size": 7712
   },
   {
-   "blob": "1bf0348ee0baf99e67342fa2330b3de70f33e100",
+   "blob": "8f5574bcd0dae2f1bcebbf943d47a745f845d131",
    "mode": "100644",
    "path": "rust/src/core/hive/bus/ws.rs",
-   "sha256": "98c0e16ddff651d4b9505381374795470e3e71878aa1e77d65deff03aaa1dfc4",
-   "size": 35691
+   "sha256": "960e42b01ec2ed372f76b8e2235031135a499372caf168b77f58bfe1e6f2de1e",
+   "size": 36368
   },
   {
-   "blob": "dd49370dcada2ecbaf7fd57de4ef687ac7ad7b3b",
+   "blob": "7bbff22b6fe74a1190ef12c32e8f253fb59b62ca",
    "mode": "100644",
    "path": "rust/src/core/hive/bus/ws_v2.rs",
-   "sha256": "995d00ab33639bb92e55e548be945b9b50354f3b0413a309f1a7980739c79741",
-   "size": 25391
+   "sha256": "eb9c0427681ac2431a8c9bd0dba22af90e7e79a6e2c819a7138caefd9ef76de1",
+   "size": 25690
   },
   {
    "blob": "428e99b41e8e623e927f9b96c70d54b85b1a1b5d",
@@ -18776,11 +18755,11 @@
    "size": 6898
   },
   {
-   "blob": "dcf8ac5ec217158c62306d365fdbfe1bb2f625a9",
+   "blob": "b8d2014566e7d3c9bb37ab789cc63a468d917c1b",
    "mode": "100644",
    "path": "rust/src/core/hive/capture/mod.rs",
-   "sha256": "c15715e8b48d0535679d1903eecc2a908589597cdcc30f9023e656b91c2da266",
-   "size": 20827
+   "sha256": "94f5c4650ad91c04f6670aad725d7aafc5d29c0b7083326a662b803ee2ca01a3",
+   "size": 20937
   },
   {
    "blob": "3c427717f9384abb2d3b9b3ebe614efbc5f1b7df",
@@ -18818,11 +18797,11 @@
    "size": 16023
   },
   {
-   "blob": "5e7ff6a9f72003df209771e514499d30e22d4eee",
+   "blob": "91148da0fb73b588fc6030871f6d4276507f9044",
    "mode": "100644",
    "path": "rust/src/core/hive/connect.rs",
-   "sha256": "4f321daccf36a5be7c0fec084e1d47ddf010f8c536fb15736026af50e050c715",
-   "size": 10350
+   "sha256": "65b4244b9bce8241813c6b3755371283c9bbf77080245ef4fd53271c338aa5de",
+   "size": 12259
   },
   {
    "blob": "4459f09307a620e52c182c7c93f1221eef42d47a",
@@ -18853,11 +18832,11 @@
    "size": 9298
   },
   {
-   "blob": "1e2103c6e131bf4f2dc42582b3b2b2946605480b",
+   "blob": "4fefcff06f59a548605061b5c4dbdebfaea36d88",
    "mode": "100644",
    "path": "rust/src/core/hive/consent/mod.rs",
-   "sha256": "d2a9044c0c1a89f0268d44fd3aece15fa7876128f421db68a6f6e5433fe9b1f5",
-   "size": 18476
+   "sha256": "0bd7b2ce8aca5515b5c071fe1215b0464d9f2114abbb923187b40fa9e4b4b827",
+   "size": 18979
   },
   {
    "blob": "1ebc4e32005bef6ea1dfd23b1b2dc39ceb10ed78",
@@ -19077,11 +19056,11 @@
    "size": 13481
   },
   {
-   "blob": "a09eaa2d943f79e6658e58f0064e6cebf01ec7a1",
+   "blob": "d489b316a0e54ea007e31a965eacbcb9d4f5a3ac",
    "mode": "100644",
    "path": "rust/src/core/hive/knowledge/code_graph.rs",
-   "sha256": "cae855fce7a5ecfa126c89569b5ef3e0cb29380d10a0c838dceabd1432d3eeb2",
-   "size": 16265
+   "sha256": "373db434a0e4d0a65b856d4b24e2c99d34d4d1775ddd516e69748ec4feea4c44",
+   "size": 18225
   },
   {
    "blob": "df8960a113914a14d1e683ad161d262a38df3871",
@@ -19133,11 +19112,11 @@
    "size": 2514
   },
   {
-   "blob": "8f684ed6e4c3980c74804e7c2baadf0504cbaff1",
+   "blob": "9fbed59cd9eb444e7578fb27f9a9a9fb30a9076e",
    "mode": "100644",
    "path": "rust/src/core/hive/knowledge/pull.rs",
-   "sha256": "35e81179ae997a7b0352a017fe448842f4a8805de0cabf78e42c954f2b981a59",
-   "size": 25475
+   "sha256": "017d07356f3cb1d2b1d4d3a05de2dd6fdc47cdb1d29a4865b2bb14a6cf8ed9e1",
+   "size": 25696
   },
   {
    "blob": "83f4d6e6c550d851219d14f511339e085553d28e",
@@ -19147,18 +19126,18 @@
    "size": 40641
   },
   {
-   "blob": "a04a9946b9490301c8fab17680d09fcf12cd0cc4",
+   "blob": "677eca017cfe3df03bdd73f33321ca60241d08bb",
    "mode": "100644",
    "path": "rust/src/core/hive/knowledge/screening.rs",
-   "sha256": "c01957d5a812eb666f03e742d9e0679cd4eff1f8b56f32e1dfde2205cdeb1dff",
-   "size": 6750
+   "sha256": "6067d2a315530df57b9fcf6212f6be2a7f81d32a7856e02d2251b8bdf62de68c",
+   "size": 9676
   },
   {
-   "blob": "0eb67428466d7b5178b7c220f97bbb1e0d694436",
+   "blob": "81635de7067e497749edc40de4b7292388ad095f",
    "mode": "100644",
    "path": "rust/src/core/hive/knowledge/states.rs",
-   "sha256": "37396f4acb58702d5b1e51b2fe0a191b507012809c91bce1e379d4a155d55397",
-   "size": 16341
+   "sha256": "f7352129434fa0661743d53e98ce16570ddf29278f2ef3210a92d52dcd1c1342",
+   "size": 21480
   },
   {
    "blob": "08257d94aeae48be2728ed83dbfe92c8dd648f73",
@@ -19182,60 +19161,46 @@
    "size": 26978
   },
   {
-   "blob": "a69d68a2b5a75b35d1a587182e6dbbde2f8e5cbb",
+   "blob": "d919488b5651e11514f9118c1ba2414b99ea7415",
    "mode": "100644",
    "path": "rust/src/core/hive/metrics/collect.rs",
-   "sha256": "684465cca216b343a957b93d4362bc0105b86c84287d68bfcb8c894f5f5e3a11",
-   "size": 29822
+   "sha256": "c6099cd22fb50bc67c26e9362fef70878c0bea211249735a97dc0e5edf5bb8a7",
+   "size": 5006
   },
   {
-   "blob": "829ab30e12c4e74bdffdfc56df7779eabe2be936",
+   "blob": "df118a9ed82634ee5be5e0f5b0b66826980ddf3f",
    "mode": "100644",
    "path": "rust/src/core/hive/metrics/hive_use.rs",
-   "sha256": "8cada284c6d0b765c207f459fcc84b303f57de778001eaf32b1b1e3a9c0a1f65",
-   "size": 16424
+   "sha256": "394cd729765f44faced87be06005bf8c47ee3068e9193b70cfae10065c6a3878",
+   "size": 14588
   },
   {
-   "blob": "8abf84d7cb343fb52bed920bec99c9b7f66fdb4a",
+   "blob": "555bb4c24978b0dd9c8a93693bbbf5cda7add6aa",
    "mode": "100644",
    "path": "rust/src/core/hive/metrics/hive_use_tests.rs",
-   "sha256": "42d1aea05a0567b2a4102826dd1a2de51878e23304db401fd89c459929c02eed",
-   "size": 6648
+   "sha256": "dc96f686f555604e91a0c16cbb1cfad108ddca5e5bae3e0f9b30244a816ea332",
+   "size": 6385
   },
   {
-   "blob": "2a20e559447f519c78e10760a50fed828a900713",
-   "mode": "100644",
-   "path": "rust/src/core/hive/metrics/k2_review_tests.rs",
-   "sha256": "2db2e2d68298f4afc0a283c47e92e143b2038901d4343715d2b7d1e7027809ab",
-   "size": 3856
-  },
-  {
-   "blob": "064ce8d1e77fbd42298485a91ad489fc841e6b46",
+   "blob": "93c2e050f8b04141c3b19f749bf67da4780a5f56",
    "mode": "100644",
    "path": "rust/src/core/hive/metrics/local_state.rs",
-   "sha256": "a99febbd20effe8388ab05e69f4864d905938cc7f18fc8b79b3d7bc2dba91ffc",
-   "size": 5441
+   "sha256": "f3d9d65b588c5e0c1482ac7c703d2ddf099515db170918c9a7c504b8209d4cc1",
+   "size": 1644
   },
   {
-   "blob": "09aa356c22d5c506cc0560dcc8d3cc0a6aa248d8",
+   "blob": "dda395eaaa65bd2d0f07738448c3e325cbb1df92",
    "mode": "100644",
    "path": "rust/src/core/hive/metrics/mod.rs",
-   "sha256": "1f40164feb5a00812becf250a776b99a508075a3c2ac921b328a33a7ecc8473d",
-   "size": 3794
+   "sha256": "c23b1877a0e5d54ba478547ac468e6d9ceec39b3719d72c705a5a29d361a11bc",
+   "size": 454
   },
   {
-   "blob": "3c59a94bca8872154733f6ff4720f47b1e83ce87",
-   "mode": "100644",
-   "path": "rust/src/core/hive/metrics/payload.rs",
-   "sha256": "7e31754aa2139f3e68045894a5a4edf55299c40f7aaacfbb0364da6f81798887",
-   "size": 22673
-  },
-  {
-   "blob": "050e4f45721a468509ad07fe240d69883c77185d",
+   "blob": "564d7e09bdbcb57d93852f739dc1129d88daadba",
    "mode": "100644",
    "path": "rust/src/core/hive/metrics/upload.rs",
-   "sha256": "beea60dbb7d827c381e6ebe583665df2f9a7d9aabead73a0d2ddfdb77f7c6b20",
-   "size": 9665
+   "sha256": "f390c3f86b244cabfa64abb5d6fc58e43d7ba4ad2989ecaf032bf441047b2c62",
+   "size": 4425
   },
   {
    "blob": "0f213d6c75c8a251bf5d295ca2cf79d145663a46",
@@ -19259,11 +19224,11 @@
    "size": 9932
   },
   {
-   "blob": "fede2b3f2938de8c3af3fad6895bb0c84db1e21b",
+   "blob": "660db3b3bfde1b3c6348ec756e7fb3b48c185fce",
    "mode": "100644",
    "path": "rust/src/core/hive/metrics_v2/k2_review_tests.rs",
-   "sha256": "5fdf5c65b4fe9afaea7695fb51dc060acef95bdd3ef154e97dfa75e0d52eda59",
-   "size": 16154
+   "sha256": "9813177ab168a1d2b80f83883fdbd3efbfcea8a03459082081f25f5254717ed5",
+   "size": 16128
   },
   {
    "blob": "40677dae51ec9271cb2800c217d5a731b4406b05",
@@ -19315,11 +19280,11 @@
    "size": 16173
   },
   {
-   "blob": "9be89ea57a2e06b173b1b6be663e5b5b560f1c84",
+   "blob": "68e9a89206ee889993df671adc5243ab2be711f6",
    "mode": "100644",
    "path": "rust/src/core/hive/mod.rs",
-   "sha256": "cb00bf7ad3d54cf1652c4a0600b70c75a14ca344f4f4d9d313b85212b4c72e70",
-   "size": 3940
+   "sha256": "a70935617d861edc6a46b7b151cbbd6e3e24a88c237f7985a9cf1bafb0a2b32f",
+   "size": 4492
   },
   {
    "blob": "03c3bf1c05eba7df3953b7243d8b46631f4a9d48",
@@ -19497,11 +19462,11 @@
    "size": 2986
   },
   {
-   "blob": "e9cfd2befef1edbd36a63ec1e82d4896773d2029",
+   "blob": "73afeca182188fd84fe7f835c1691371449a2143",
    "mode": "100644",
    "path": "rust/src/core/hive/scheduler.rs",
-   "sha256": "01a03c9e435c45f99b560a92971e5ffaaac87df09976fb2a384495a7d279724e",
-   "size": 7233
+   "sha256": "c89ff4c0bd2508ec6d0cd6491880a6219f89d9ea51c18ff72d5f48caeafe79cb",
+   "size": 7635
   },
   {
    "blob": "c1873c53e0ac466e00928d6162598c3c1370739a",
@@ -19588,18 +19553,25 @@
    "size": 4454
   },
   {
-   "blob": "d134a76a62dd13888560bb699412a5141f434f27",
+   "blob": "b7c8b277873fb1245f40d2cb4178c74d579f4ba3",
    "mode": "100644",
-   "path": "rust/src/core/hive/tasks/claims.rs",
-   "sha256": "01594c01d30924b15b90218f5fca8849c8c949d67c3f0b090e8556a14fcaed7c",
-   "size": 8521
+   "path": "rust/src/core/hive/tasks/cache.rs",
+   "sha256": "9cf07e1d8a6285d4428dcaeac8b5c96ddff08b892ebb61cc1ff0d11540593bb5",
+   "size": 10727
   },
   {
-   "blob": "0c2d90fb0de73848bdc64d38ed71672e78b655af",
+   "blob": "fa4da705ed4588aa06843f4300d724b49693230a",
+   "mode": "100644",
+   "path": "rust/src/core/hive/tasks/claims.rs",
+   "sha256": "722b72c641bda4dc54fd5edee4dfb7039372d9e9859934b7693a79f9915be87e",
+   "size": 9688
+  },
+  {
+   "blob": "7526e99eb24c725ff1a046dd6ae59bfed108a241",
    "mode": "100644",
    "path": "rust/src/core/hive/tasks/client.rs",
-   "sha256": "4cb574302773bf65a9d3a8220ac01c971ff9547f690282b08d41002e0043b9f3",
-   "size": 6507
+   "sha256": "179d394f8ea12e4b7fb0eabee077cfcc5048f9dbc08094b80b6c7b07f0805cdd",
+   "size": 6580
   },
   {
    "blob": "dfef41d72e860f610f95558e9dcfde6c573811bd",
@@ -19609,11 +19581,11 @@
    "size": 1589
   },
   {
-   "blob": "dffa5f54d94c276ae5b19b5dd4eed807eac9c8c9",
+   "blob": "b19b9412e8765a93d07c9b95b633f46809b26439",
    "mode": "100644",
    "path": "rust/src/core/hive/tasks/mod.rs",
-   "sha256": "d8b1d207e3af909659b25fc518f9822fbd6d2d4b5fa51d70840c939ca966093f",
-   "size": 39563
+   "sha256": "bd25791a1ccc62c2b5e655924d152e6ad1a405da38cf9d2e786789e7eebe82c7",
+   "size": 39625
   },
   {
    "blob": "48a62cd8bca0c6ea11ae18f765ec7c78b8899207",
@@ -19651,11 +19623,11 @@
    "size": 11592
   },
   {
-   "blob": "51a8b4c421ade101accf9f9d4b96368b3fd7d8d6",
+   "blob": "f7ef88aced8336010a8fff49d5ddf2f1b7c3d3ea",
    "mode": "100644",
    "path": "rust/src/core/hive/transport.rs",
-   "sha256": "2b5be3739012a00c0d12231922823a2c4644b0c1978247e1ed0d25586671cb78",
-   "size": 15808
+   "sha256": "2b25384d1f2ec79bb9b18f7307ccd451c22e081b0bbd4ef19c304319045813d2",
+   "size": 15701
   },
   {
    "blob": "d593e69385bf5d7a194c37367b07ae8c9b98000a",
@@ -19770,11 +19742,11 @@
    "size": 11021
   },
   {
-   "blob": "8640a51171ad099c9c0089e154306e33ab26e2ac",
+   "blob": "71f274a7722626abd349455dc490b50ba6c73fb8",
    "mode": "100644",
    "path": "rust/src/core/host_env.rs",
-   "sha256": "3a547f1a76cd6c14ec156650b903791e2abf2646e320987b60559017e3d471b6",
-   "size": 5316
+   "sha256": "892b8da25413a51ac710ae564949477a633b63bea59531f4ec0dca98efbe3023",
+   "size": 5824
   },
   {
    "blob": "c60fea9905b2b0fc0b7cc19d64e33fb1c77b9afd",
@@ -19952,18 +19924,18 @@
    "size": 9521
   },
   {
-   "blob": "d1b857439268470af5d3f6e56c30142514131155",
+   "blob": "79d2321b61c49cad19756ba93e4e6291d1c882e2",
    "mode": "100644",
    "path": "rust/src/core/index_namespace.rs",
-   "sha256": "6a22d6d17e2a1df9bd542eeaf881579e13c4269ea561bf3a0e9a0793227e2009",
-   "size": 8817
+   "sha256": "c6bf27425025cd7f28a51d49bf9f942511f9c211678fc24554cacce35913086a",
+   "size": 9333
   },
   {
-   "blob": "8bbb11215259d5420079b08d1dc2632446e7959b",
+   "blob": "7863e18aa41d7ffe982c7e405223b8216c13b4a3",
    "mode": "100644",
    "path": "rust/src/core/index_orchestrator.rs",
-   "sha256": "947a3e33961f2d0395962cf55b72bcd2b931931d5659e9cfc4d9cce05fb99851",
-   "size": 50922
+   "sha256": "ab68d74ac614b472446b9c768771a97e6876bfe1826b1793876b454bc771828d",
+   "size": 51193
   },
   {
    "blob": "bbbb484ed645be92b95f0e10f36c565cd38c2c8c",
@@ -20015,11 +19987,11 @@
    "size": 25955
   },
   {
-   "blob": "55f0c2eac9c773c0d75249cbfa800a63aff456e1",
+   "blob": "d44b7dc42f9d40f1513feea5ab805c237cd1f470",
    "mode": "100644",
    "path": "rust/src/core/installation_id.rs",
-   "sha256": "17b2bbb321830a4dd41de45196696e2dbf4e755caeb03d44bb189538a31e364a",
-   "size": 21244
+   "sha256": "f200ad34093c2ff086e6110476a9d4cba5f3104be8fc266b783ca49101a3131d",
+   "size": 22019
   },
   {
    "blob": "4546287adff8341238d10c5c2d36e7984eff1cb2",
@@ -20253,11 +20225,11 @@
    "size": 8405
   },
   {
-   "blob": "e09cb7ee18f8ae1618fbf868ff24a830432371da",
+   "blob": "6ec32c52a086778b3b171de43ab6dae00061d2ba",
    "mode": "100644",
    "path": "rust/src/core/intent_router.rs",
-   "sha256": "29c569ee54f9698283f1276f20b07517a91784d7aa4cc64502bbaa661ffb5b9e",
-   "size": 8201
+   "sha256": "d89a0a8c2465d21e7cbf4e6f2b243a77aa068bec460b61b8ed8298fc62bdcf8b",
+   "size": 8709
   },
   {
    "blob": "df112eb57486de41948eb5b47f407b281d3c946d",
@@ -20267,11 +20239,11 @@
    "size": 3217
   },
   {
-   "blob": "4a8b42c96e1c520c98dd46d4b428f5cfa4cd8b51",
+   "blob": "5fbadb9e2e4626cf25efec36019c392b2e4074d1",
    "mode": "100644",
    "path": "rust/src/core/introspect.rs",
-   "sha256": "b7cdf5b6c7f35230326421eeec64e0bb6bc6faaca932ffbcb4687572f0573d40",
-   "size": 10023
+   "sha256": "fb0515ff463082a1f18386d41ed76e6758388bbc8e0edef216c652e9eb25c2d7",
+   "size": 9359
   },
   {
    "blob": "304bca43a229a2f7e3f26457a34ebbc7133f7e63",
@@ -20323,11 +20295,11 @@
    "size": 5005
   },
   {
-   "blob": "64cdc69e4d0f92bf922169fecaff2195a5e9ba17",
+   "blob": "bb0709bb34a7b32ab7a3c04d8bfa4b5f8888011d",
    "mode": "100644",
    "path": "rust/src/core/knowledge/anchors.rs",
-   "sha256": "adeee96b7ed8a62fb333ebc715d3a8c4e32479d77c40895b52fb73d8802566eb",
-   "size": 27408
+   "sha256": "58566b530e026896055eb8f0ee88328149623059fdd89bc5b2687db95730a378",
+   "size": 27787
   },
   {
    "blob": "1c33c42b67424a82304ba9ab4b07c8539416a95d",
@@ -20337,11 +20309,11 @@
    "size": 11841
   },
   {
-   "blob": "6313132c3c47d7a7317e3878449aacb6903dfcfc",
+   "blob": "ea30ce7b5b22774b07c4fa413c2e5348dd712471",
    "mode": "100644",
    "path": "rust/src/core/knowledge/core.rs",
-   "sha256": "1df355e1f95a8268b27c8dde0c0a0d189373516fdcd22c827dcb4458ea2f9f58",
-   "size": 18991
+   "sha256": "266d4e7157c7a35774651b2fafd9d06a1ae119dbbdf875ea0ea84260ad341cd0",
+   "size": 17003
   },
   {
    "blob": "1ddfd30ca062602869b054f277783f3df5b1b9be",
@@ -20365,6 +20337,13 @@
    "size": 8417
   },
   {
+   "blob": "6df384e1788a826dc6e1110b624aa2553d08e34e",
+   "mode": "100644",
+   "path": "rust/src/core/knowledge/journal.rs",
+   "sha256": "28d0fabbb2f256c4c8112dc9baa76ac3e7fe2cf45649ce6560a7a43600355957",
+   "size": 11179
+  },
+  {
    "blob": "cf9191bf0601281e222c5555fbe5cb4dc1095a00",
    "mode": "100644",
    "path": "rust/src/core/knowledge/local_store.rs",
@@ -20379,11 +20358,11 @@
    "size": 8840
   },
   {
-   "blob": "f9ef2f21752f803912c24a16c7418e2571b2067c",
+   "blob": "cd5bbca5e3a0910143187b35b72b266b146ef7e2",
    "mode": "100644",
    "path": "rust/src/core/knowledge/mod.rs",
-   "sha256": "047cff7b8717d0560cf44e4e6f938663ffaa6f07e6c6229664955826d3716374",
-   "size": 40106
+   "sha256": "bce918255d411f1aba566751f6c358e840652ffdd978d67498d98398c5432bfb",
+   "size": 40165
   },
   {
    "blob": "3736b86a090de6b2d0af90a1b5987ad51f83d525",
@@ -20393,11 +20372,11 @@
    "size": 32698
   },
   {
-   "blob": "d9b4fd9a1cc3795904474cf683ddf8ebda79543e",
+   "blob": "67cd894e0411c2ad69209a085b83445fe4ffc6dd",
    "mode": "100644",
    "path": "rust/src/core/knowledge/persist.rs",
-   "sha256": "02b6d39d2f3b6a41f14090f9b8889d1d41d3f4b218e1ff7798e930f93a418074",
-   "size": 48100
+   "sha256": "5892c29814457d5805659888e3fd38ae553699929e7b35eeb64bd68ca142af71",
+   "size": 48615
   },
   {
    "blob": "c266acaeeb1410069e44cd053ae2b6d60b710027",
@@ -20407,11 +20386,11 @@
    "size": 15619
   },
   {
-   "blob": "f17b5eb5b0dc2681e4262f31f1f646f158ee11f8",
+   "blob": "12205e1f5aaf91cc1d5057a3a7d6f19c3ce6b9f5",
    "mode": "100644",
    "path": "rust/src/core/knowledge/protection_tests.rs",
-   "sha256": "93de8dab4eb2bf1dc66b94e498e1fd1cc13052e55061a75315838cece5f0a7ae",
-   "size": 24027
+   "sha256": "924c7b3d2fb886d59fb5665ea8b54741b0b9a18e5221fb1a3b429c926f9fa00f",
+   "size": 23308
   },
   {
    "blob": "80337d66c18772f902253e3c803a8eb301831373",
@@ -20505,18 +20484,18 @@
    "size": 43927
   },
   {
-   "blob": "220c1c2c11b3393417934177bb02c7ad349dd66b",
+   "blob": "14d595213d45a2222603c0200b4d957a47be3a74",
    "mode": "100644",
    "path": "rust/src/core/knowledge_provider_extract.rs",
-   "sha256": "9e31ed161d29e088a2fee3067dc45140089f8bbe41d834943dfa9ab28ac4c8b5",
-   "size": 11390
+   "sha256": "6a8a59813b27067b5228b5562555ac74ebc358018142090f4dfc9b2ae223a8fa",
+   "size": 12313
   },
   {
-   "blob": "11c5169ab13fdd3f27e3cd8c796c1fee412b2996",
+   "blob": "41380c6793a87dc86820d34e7fe8ce436c7b2403",
    "mode": "100644",
    "path": "rust/src/core/knowledge_relations.rs",
-   "sha256": "54dc6271ca9d15546a147220fbcbfef888408bfd9df803b55bac59c7164aede0",
-   "size": 16190
+   "sha256": "5f53eb9b33ac26c49a10099f3a30d65075e09764897bb9bea9c008b8821de49b",
+   "size": 18650
   },
   {
    "blob": "57d9b11625ca8282ad09210b42daa447bc7112a1",
@@ -20617,13 +20596,6 @@
    "size": 8014
   },
   {
-   "blob": "843b89ba4c6435119cdc22c571200c0af8408219",
-   "mode": "100644",
-   "path": "rust/src/core/learning_sync.rs",
-   "sha256": "d2c2341715542994b13a82b9c3e430042ef988047bd5e8f9070a31fa47f6e5d5",
-   "size": 4354
-  },
-  {
    "blob": "547b54b39a431a59af938d00aa6d5a980ac5945c",
    "mode": "100644",
    "path": "rust/src/core/legacy_adoption.rs",
@@ -20645,18 +20617,11 @@
    "size": 678
   },
   {
-   "blob": "eacdc68f46afb0ae92b1e33447229debaabd9cab",
+   "blob": "94acacd2c15c1addf99f70917d32460be5a28a32",
    "mode": "100644",
    "path": "rust/src/core/litm.rs",
-   "sha256": "b0bcd1ed1faa89b1c0c31bccf0fd1a20083fe47bf19893bd4def2f649c5b5665",
-   "size": 18794
-  },
-  {
-   "blob": "156adb56ca8c8d7d1fd9dd4dc91882122e162681",
-   "mode": "100644",
-   "path": "rust/src/core/litm_calibration.rs",
-   "sha256": "522d18181c60034298862aa7b95af47b74817df5bd8634c36fdc573b68dc5d7f",
-   "size": 11628
+   "sha256": "a842d35af328ccc1e9e7658838b422b547c3a73f34ef78fdbcb6aa70295576f3",
+   "size": 18796
   },
   {
    "blob": "5709ed460872b2f65c478699f6f3d826f016c33f",
@@ -20771,11 +20736,11 @@
    "size": 3625
   },
   {
-   "blob": "f1b23f054befcc72e293580bfcdc39090ea1a629",
+   "blob": "e7e166b6e6ffa582bec034b3ddea335076f4c97e",
    "mode": "100644",
    "path": "rust/src/core/mcp_catalog/mod.rs",
-   "sha256": "c88758afb5b545576d6719459dcb32d899fb12e5cadd6ed6f6ab94c064fc6db6",
-   "size": 16338
+   "sha256": "a5dd29f1e38e6f6d049018a9f2a556061f55965483ca1f289719ffc41bd68548",
+   "size": 16018
   },
   {
    "blob": "35203609aefec0e7c1d3a177863a4b499daf63ba",
@@ -20862,11 +20827,11 @@
    "size": 10831
   },
   {
-   "blob": "0e0e6931f7883b42728ba6a6c5439f88c874000a",
+   "blob": "b3ee61a2e74dd8de239ec2af5b389de0a1e030dc",
    "mode": "100644",
    "path": "rust/src/core/memory_consolidation.rs",
-   "sha256": "c3e93d02bd4d3301f0d50061c3fd615d5b34e225c91dc24dced5fc31e31921d3",
-   "size": 6969
+   "sha256": "98370d4ee88f0df84df24b33b45a00977dbf8901ddcaa831ea1e25e1c7eb892c",
+   "size": 919
   },
   {
    "blob": "52a4642ced3ff84b7511aee32e9d835572ce2513",
@@ -20876,18 +20841,18 @@
    "size": 39620
   },
   {
-   "blob": "ad8855d46d47f60b52b251e1ab1733a5bfb141a4",
+   "blob": "f30156920f0afa4380d2a4ab261787ef20bc6873",
    "mode": "100644",
    "path": "rust/src/core/memory_lifecycle.rs",
-   "sha256": "d54642e2828b90b9e5528e0be039791a45f46e026c9843efadcf99ebd04d04d8",
-   "size": 44192
+   "sha256": "00bbe3b294bb4ec8814bef619d34d1237954a38fdb1b758733b5663d3a2f1ff7",
+   "size": 32690
   },
   {
-   "blob": "56dcc24d2e4cff6362e389f76294def92b01854f",
+   "blob": "626c7d318cb9940ed4117c3de6e396edf9cc0068",
    "mode": "100644",
    "path": "rust/src/core/memory_policy.rs",
-   "sha256": "7df328ff6cd1e6b8e5cef4b04aeb33121c0d781ac43390752b79d394a8cdd27d",
-   "size": 27894
+   "sha256": "c81b8044a59112343ed71b30264aa50bd520afd43d1be215d42b26bba4b9716c",
+   "size": 25454
   },
   {
    "blob": "0e44c2128d37787594557b0712ff9e14ec79bc43",
@@ -20911,25 +20876,18 @@
    "size": 6885
   },
   {
-   "blob": "7106bb76dce5cf7ee5e95a6cf66fd51b9e381c4a",
+   "blob": "28d79e0686cded141bd4b21d17e7690ee84090e4",
    "mode": "100644",
    "path": "rust/src/core/mod.rs",
-   "sha256": "be82eca49b391f561c6091afb4bd23827decaa3934d435cf3cda6f8de7202e5e",
-   "size": 15155
+   "sha256": "bc3a8201f65887f1c0e5d928c4abc5059abccf2202b0ed37b4e0777244f11faa",
+   "size": 14937
   },
   {
-   "blob": "2e6f87fe6d754eb292e0d80d20eae44a81a15565",
-   "mode": "100644",
-   "path": "rust/src/core/mode_predictor.rs",
-   "sha256": "8e0c71a9377b880fa77526960e9ac651add3c977c7535aad6eaa2bd520906591",
-   "size": 18551
-  },
-  {
-   "blob": "b7a178b81afa87da6625f60f5b8f0ed31e4270d9",
+   "blob": "5583399b1e4aa3f1cc6330ed161ca9c7860e157a",
    "mode": "100644",
    "path": "rust/src/core/model_registry.rs",
-   "sha256": "c44d6ae0971df7b20f0af5df31eb4a28c62bffa97b8afddc07818aa81760f691",
-   "size": 8750
+   "sha256": "a1e590605a5c30eaa41b0e47c0770d05e704409a786f253b5a567cadf4eb389f",
+   "size": 11335
   },
   {
    "blob": "d2963ca824a1a3446f8e13d546520e7e9c0541de",
@@ -21009,11 +20967,11 @@
    "size": 17145
   },
   {
-   "blob": "21f003474e657b4bd63a028793f3439faa52a6c1",
+   "blob": "bfc1a6fc922e5ba6099a4a635dd96ec1c184f30a",
    "mode": "100644",
    "path": "rust/src/core/ocla/builtin/config_tuner.rs",
-   "sha256": "eb91943cd7dd5df4e3e1aa9cd8e7863f8d59abfaf897e66b6b4393c4b7eb9b7e",
-   "size": 5810
+   "sha256": "78e535d26d54884b7442374a9bfd2d30e6a1cf99307a955cc037149342ba015b",
+   "size": 3779
   },
   {
    "blob": "c76253a3160506d81dfeb0cfa2683aea36e63a8b",
@@ -21030,11 +20988,11 @@
    "size": 33498
   },
   {
-   "blob": "2dad70b2263a5c5995a466ecf674198af5e02d74",
+   "blob": "e82cccd440fabd138b1a1d233e829b36a4a21a42",
    "mode": "100644",
    "path": "rust/src/core/ocla/builtin/efficiency_analyzer.rs",
-   "sha256": "b8d47f49cc75cd480b434e49df98ef6c80ef3f484f1933b407187d4812d05f3c",
-   "size": 7357
+   "sha256": "bd0d16f1019f43cdf9718e67c19815f71a8178fa0d9022e3cc60a37d322eef37",
+   "size": 7322
   },
   {
    "blob": "e23238db9532440dddef9b32077054640179e29f",
@@ -21191,11 +21149,11 @@
    "size": 899
   },
   {
-   "blob": "30dd06e7c8941c3652b043ecd48658eae63b9163",
+   "blob": "df243778d8c1ff88210df0ab9f7d3d412afde0d4",
    "mode": "100644",
    "path": "rust/src/core/ocla/registry.rs",
-   "sha256": "188b4043a5d5970ced2ec97a3bf6d29b1b7d5ce0a0e78476a5e16e4168792f0a",
-   "size": 27534
+   "sha256": "5cc8d6f3ab04aa634a85d70e3d95ddea2218eab6adedba5dab8f15a1e59f51f2",
+   "size": 27652
   },
   {
    "blob": "6db0826c4f3e456aa961aa184660d406a48afc9b",
@@ -21331,11 +21289,11 @@
    "size": 7372
   },
   {
-   "blob": "f663d7d52fb5303e4f7b4037175cd3f5a1c23c92",
+   "blob": "b05463af1bf577c6ac7a9766c0385d3cc1cb320b",
    "mode": "100644",
    "path": "rust/src/core/output_echo.rs",
-   "sha256": "ddf5a9d48dfb16be4da46799ab8437fe44945e2689b76dea91694bd3554fd5f1",
-   "size": 17326
+   "sha256": "7d3b5910c2ebbe04af8909a13110ab468405df437326d28229a2b093834ec137",
+   "size": 17160
   },
   {
    "blob": "a45c453c95867c26d6a881d9c4ba1114352420a5",
@@ -21422,11 +21380,11 @@
    "size": 690
   },
   {
-   "blob": "341d923f02297a78703d9c0526585ed1e1fc0902",
+   "blob": "8a0bed993a5f8866a1ebfa35c41b82777ce9abf8",
    "mode": "100644",
    "path": "rust/src/core/paths.rs",
-   "sha256": "39a3b5723e1cc5123d091a927fde1cafaa3920c1aaabb7c9c6ef9e8d8bcd370f",
-   "size": 30115
+   "sha256": "aa94ddcb3b80bf7175ae4fa71671daff2ba7aabbbc00500b8ae38ea3123cb974",
+   "size": 30126
   },
   {
    "blob": "39eab90ef241c475be51fd3ac80d7526607434a4",
@@ -22052,18 +22010,18 @@
    "size": 30515
   },
   {
-   "blob": "07c4daa0a1318e86d1c391c165d90c2fe4c16161",
+   "blob": "8211812216e5a46e5803f0103c2bcce98bbcee64",
    "mode": "100644",
    "path": "rust/src/core/phase_timing.rs",
-   "sha256": "a4ffd8e3b92ceb4023eea852432f649396f47c58b8407d7f48226c9f2c735784",
-   "size": 2169
+   "sha256": "84647b7366f4a2d2c7dc74f5a5303761bb18fdba027885ccb4a721aad8c1ee86",
+   "size": 3316
   },
   {
-   "blob": "662e437675940a488c511daf3e0886c3c4c73236",
+   "blob": "7f308bce1be439feaf8ebc602ba75aaf70d4743f",
    "mode": "100644",
    "path": "rust/src/core/pipeline.rs",
-   "sha256": "086089fbb8c55c2a2b90dda78353a649e2fc34596805985129382a6b58765b21",
-   "size": 12065
+   "sha256": "8bbfb0b4906f9dc879a933c7c78bbbf52e97c5bf2a2994347c8e248b69d1fa95",
+   "size": 12216
   },
   {
    "blob": "5f5ac45ec0f2db00a9d598e94192ee0efd99a97d",
@@ -22444,11 +22402,11 @@
    "size": 55501
   },
   {
-   "blob": "cde2c50c5427ca5ac6224f02e0fda05783fb63ec",
+   "blob": "edc9d7fa5a0abfbbfd5c19faf32424a8e9a27180",
    "mode": "100644",
    "path": "rust/src/core/protocol.rs",
-   "sha256": "71f5a73f5298215af7943f27d963de1be4b5ac869501452bbdafde6a2df2c88d",
-   "size": 29517
+   "sha256": "bd67b1cb8af3f11299198cd417c3aad1a788362a18852e0aa02c9467d350b7b2",
+   "size": 32673
   },
   {
    "blob": "e0fd25f7f6e38da0a67508078a2cdd98a8aff344",
@@ -22458,25 +22416,25 @@
    "size": 585
   },
   {
-   "blob": "edf41c7d56216ee0631f4b73fc76fc1b28a5a7a6",
+   "blob": "22593ab798096238542ed328b6b029670d882ed2",
    "mode": "100644",
    "path": "rust/src/core/provenance/store.rs",
-   "sha256": "3e41f8faa7c204ed612d8b537fc3a6243df770e8df5f08db416a9a4b69cdad67",
-   "size": 10000
+   "sha256": "fb68059856cbf9750bfd329c0543bdde2e38235b1863899cc0314065afa1c0df",
+   "size": 10011
   },
   {
-   "blob": "6c8c7a2e5d142283fc8d136ee6ddcb3a10f0fe73",
+   "blob": "08e70805c12ce24a540f8f3fb5c15015a67cc557",
    "mode": "100644",
    "path": "rust/src/core/provenance/tests.rs",
-   "sha256": "2acc61129297267a3b9631216c03d5fc79a1c5f4930e1fb01879bac14c8431c8",
-   "size": 5965
+   "sha256": "87f8e58d5494705073ba4343397f7d7a21b405295624a0faf75775fafb789d4c",
+   "size": 7008
   },
   {
-   "blob": "dc75ee63fbdd0bedb4da77ca73be55ca2309f805",
+   "blob": "1b1e9d210d51dce533c3ab91e07c43244ebfc7a5",
    "mode": "100644",
    "path": "rust/src/core/provenance/tracker.rs",
-   "sha256": "d0c47797499cc79f982f1fc8c2224c9bb4d6906e3ec5fb9f1948bc3ebe306ed2",
-   "size": 7487
+   "sha256": "ec89b92ae1a8c25572dfa82cb36a66b0b62e36f6640b299f3846df227adeac64",
+   "size": 8624
   },
   {
    "blob": "ad9596dec3676ff84c36d87e62c218decdc6d0f5",
@@ -22563,11 +22521,11 @@
    "size": 13272
   },
   {
-   "blob": "7b31628e754675cb94046141b38f190999b3b63b",
+   "blob": "6e7c69017438bb7e12c9943b03e838dec03d1e98",
    "mode": "100644",
    "path": "rust/src/core/providers/emspace.rs",
-   "sha256": "f84ca020cb6ffdee9c5c45ff6620776e468a2297b8931fec847bfb896f755158",
-   "size": 38949
+   "sha256": "3550aa70f2a654c09e30d75589f73adb6f838d75d2bc87e5140dbdd5dc7f7552",
+   "size": 51241
   },
   {
    "blob": "b70e2e6c83f0666f9abb8fc26677de34f469a73a",
@@ -22675,11 +22633,11 @@
    "size": 9270
   },
   {
-   "blob": "e1852344e650da5406df239845b9e326f0eed3a8",
+   "blob": "e85b585b8fdc26e3031fd94bd70a0aed77ea5647",
    "mode": "100644",
    "path": "rust/src/core/providers/provider_trait.rs",
-   "sha256": "a4bdcdcbc411aeb42ab04706eaf3b2cd9d6f05779d0b28166a8f090800cedce9",
-   "size": 5719
+   "sha256": "caf4e83a269bc9a7590738ee37670b1d2beb5f2f837153b24ef82c5161457b47",
+   "size": 6082
   },
   {
    "blob": "b65cb5915ba9c9706817fa2c616a5c8681ca2f21",
@@ -22990,11 +22948,11 @@
    "size": 7282
   },
   {
-   "blob": "5a801072dd9e9dd6231b2a99242272eecf9c9606",
+   "blob": "5a4cd1e40feee9d2db8f0b95a8a3d0012bf63729",
    "mode": "100644",
    "path": "rust/src/core/scent_field.rs",
-   "sha256": "f5662a8dbef877a1ca6d639d81e4c5c579c8654183dbfc4c125edad8bbfdf15c",
-   "size": 18106
+   "sha256": "177f68672a21a217ac170859e986068938d9371ce793d8c653945f8b30fd8915",
+   "size": 19329
   },
   {
    "blob": "764a4ffc950ef76cab799116348f5633b9be70a9",
@@ -23445,25 +23403,32 @@
    "size": 30637
   },
   {
-   "blob": "e5771d0692d9977ce397c821b5791be663ef4a59",
+   "blob": "821d68c7716dac084744e0a19a0baf60c5774e3c",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/config.rs",
-   "sha256": "4985e4ae37bdfef87afbb16478322344bf6381cc013c3f6a74b87d637b1442f9",
-   "size": 22025
+   "sha256": "067f77d488c2319524df1aeaa852ee9c9b0101679c40ed350de2373da871a18f",
+   "size": 22373
   },
   {
-   "blob": "1a2244cbd2d5d8acda2f951aa2d17937cd4caa24",
+   "blob": "4cd75e288b4ae00c46edd7b9abaa5dc1495e602c",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/delegation_option_tests.rs",
-   "sha256": "f28b8efbcdb8796b671c82a32ff262ff48dcaf9628e133cc0c64776efb493be2",
-   "size": 6001
+   "sha256": "ce6d5f4d314b04233b869947841327802df22cf405582d0ff82e119beed78bff",
+   "size": 6559
   },
   {
-   "blob": "f4e25dc275129955fde2f769cb0fe9bfd042c7ab",
+   "blob": "538eb69f4304456a39defe772640d466459133b1",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/enforcement.rs",
-   "sha256": "9f59177738a3a8f5b6fb04d708b504f707b645653f9eaae58afcd313e8c3b727",
-   "size": 59272
+   "sha256": "b28c073d4ebb78b462dc3fe3c138ab3635c133e66c741c0d1f9a8de736f0d988",
+   "size": 62377
+  },
+  {
+   "blob": "315db668b1b9de55a431e17432886a9804b1d6e6",
+   "mode": "100644",
+   "path": "rust/src/core/shell_allowlist/enforcement_patterns.rs",
+   "sha256": "e1f7e43e19701fd8958b477dd7a5e60b98b6e7498bef1e682b68b69e02e71e8f",
+   "size": 3479
   },
   {
    "blob": "f5788621d3383b0d8c6885cad68be26d583a9121",
@@ -23487,11 +23452,11 @@
    "size": 8316
   },
   {
-   "blob": "a810f85b1a9522c9f709f3831e56c08fe5a00842",
+   "blob": "e8be3bf3c29e05f733ba024f67f7918998c356ae",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/lexer.rs",
-   "sha256": "02add3db6d69edc53586b7cdaf66d21ebaf27a429138bcf3a466f245076e869a",
-   "size": 20468
+   "sha256": "f8736521a33ecf434b0577fae5ebc41cb4b8cfd717ae42019c60a38314be8e24",
+   "size": 21643
   },
   {
    "blob": "73180415db8e613d2b0ceb192757052856f4e75d",
@@ -23501,18 +23466,18 @@
    "size": 6635
   },
   {
-   "blob": "4776b2ed1362922adda48f1d64aeb923e0d84466",
+   "blob": "3f6080106223ce9c06854516efaf8a241c828d4c",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/mod.rs",
-   "sha256": "54fc677b9d686a415afe1058e317e140c9994b0a6e153b62dbfa2e1cf0bdae59",
-   "size": 2184
+   "sha256": "37551027f5fdc83e6cf1fb680b37144730c2c1e9e6632332ec36b4e5061c6faa",
+   "size": 2279
   },
   {
-   "blob": "b71cb0102f795f6afabd88556a8aabbac0899655",
+   "blob": "a3a407427876ca2b459b0ea10051ef9e2711cb18",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/mode.rs",
-   "sha256": "faebccce77ea31a0913df777ec54995053b0fcf6230e4d45d681ca1fa9045c05",
-   "size": 5070
+   "sha256": "61d4a2599eafa70eb3ee284e9573d4e581bb35d83b54ed70a2a018072a5eb635",
+   "size": 5329
   },
   {
    "blob": "406759ba7b1108313e426768e61eaa26fcee3b6e",
@@ -23543,32 +23508,39 @@
    "size": 1728
   },
   {
-   "blob": "6342370f60705a54e44872d717f21f7e4e1d6ec3",
+   "blob": "2142d9d9336dd4aa49f303c890d75d57db624945",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/self_config.rs",
-   "sha256": "476c45c942522c8d205d03908aab154ee5951e57a6edaea558ddc4aabe5b24d9",
-   "size": 14289
+   "sha256": "4ceb82b197767f3ca314fbce49beb030be4f17784f3425c527c4e76fde07c627",
+   "size": 52057
   },
   {
-   "blob": "b7bdbf166a879284e6d3943f66dcd5bcfdd5b795",
+   "blob": "2ff2a6f0623a23fa361912644fa2a06474a420ee",
+   "mode": "100644",
+   "path": "rust/src/core/shell_allowlist/self_config_tests.rs",
+   "sha256": "842b3060dbe5460a2b8e83a79b8af7ff854572a2e5b25d9871678c55f37d391f",
+   "size": 7344
+  },
+  {
+   "blob": "55b6cf0457d6ee5e50e06bd82b4d9820b4a1c98e",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/side_door_tests.rs",
-   "sha256": "0abbdacaf59a63b582e412bc0dd4babb5506fdc6f0b3c6121e536a2aa540ae2b",
-   "size": 14353
+   "sha256": "e435b3d16d2b4a10cef6c38275dbbf283abbe57b2803b802dda87af60f8269fa",
+   "size": 28532
   },
   {
-   "blob": "31af8a934d2d84733e49e19e085a465962f0c018",
+   "blob": "de17c6beb27a75435966e1818ad6034c68ca392f",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/side_doors.rs",
-   "sha256": "5d37ddd35e9fd35ba30e104f66d4936ddf111b7f65d32e7b33bb3f5ac78578cd",
-   "size": 8052
+   "sha256": "5c4ceb44d492b2682ed27b5a32e76637ded7bfc894c11af3fd2a4b7b02c121e7",
+   "size": 13499
   },
   {
-   "blob": "2cb7dd274b936205a8f316b457c00acfe710f370",
+   "blob": "9c93a970369a694e842f73b5ba25ba133793ae0b",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/substitution.rs",
-   "sha256": "fc15efbab57befe9fa8865a2cba24352711cc30759065fc5c0db0555f0db0526",
-   "size": 5458
+   "sha256": "d5f19896f5fb4fba2e5c77b015ccc77660be1489e1dd5e9c06369973f4e938d0",
+   "size": 5466
   },
   {
    "blob": "01f5d528bed93d396d560f9537c96ba1aac8e669",
@@ -23655,11 +23627,11 @@
    "size": 28348
   },
   {
-   "blob": "a69a1af9f08306ed3dd7736e9f7edcb883fa56b8",
+   "blob": "f4a3f21fe481b314e3bfe89c0bdb7a2cf44ba49a",
    "mode": "100644",
    "path": "rust/src/core/shell_file_effects.rs",
-   "sha256": "82b9104c7dd8c4daefed3c4e7d4025158f0228f051e5215da35f1a3ad0bf56fa",
-   "size": 25045
+   "sha256": "91e1eb223062c95fcc31afff81c0057f8278cbfb79c46a80301ab67aad565c5f",
+   "size": 25627
   },
   {
    "blob": "aa18dde33c60c873b36804cc01417135af3999bf",
@@ -24047,11 +24019,11 @@
    "size": 15437
   },
   {
-   "blob": "edb7d6adb254c7e8c74f8ec0860cdf00a21f4874",
+   "blob": "34f79f0e2d7b17fc574f6f09f179bd75293d95d6",
    "mode": "100644",
    "path": "rust/src/core/tdd_schema.rs",
-   "sha256": "b4f47bb7d7edf3ddc5d9bcc4c89f14853bd59fc7df0625b546da8b7c39cca476",
-   "size": 3373
+   "sha256": "9113e777008260f75bd9d732141033e9f468140f464440f6a7871cc266b20d43",
+   "size": 3369
   },
   {
    "blob": "c65b58e55456ec637531431369703d7da572129e",
@@ -24075,11 +24047,11 @@
    "size": 4087
   },
   {
-   "blob": "82938ccdfbbadb778a22c5d380e7114e3a84ae87",
+   "blob": "b0591b1e21bb95b4cdf7de942fe4b91d99b9a118",
    "mode": "100644",
    "path": "rust/src/core/telemetry_aggregate/environment.rs",
-   "sha256": "6c9134380b7b775c49de520b43bdc59243f64d85b02033dc3893245756c28fc8",
-   "size": 14730
+   "sha256": "2f827e091179777b1006b7e32a81ccbc588c41cee88565a264dc3ca175334827",
+   "size": 14837
   },
   {
    "blob": "6699352f6a46cf5593f1fb78b5df17ea0772ec18",
@@ -24145,18 +24117,18 @@
    "size": 10266
   },
   {
-   "blob": "9eb392ac8d08833e0cbdd96492fa797a65d748a6",
+   "blob": "bea6c63cd83ff470e5e93085ef45372184db5bf6",
    "mode": "100644",
    "path": "rust/src/core/telemetry_send.rs",
-   "sha256": "1b16db8eba88ed4d4a49ed77db425a44be49fbdffb94ad04afce535db4106fdc",
-   "size": 9251
+   "sha256": "50a7d37ec58b4a3022e7f508320f53a3cee69a21d984f14a339abca2041552bf",
+   "size": 9788
   },
   {
-   "blob": "40826dc79f45f96f22139f6d5f11ffe8cf8dd3b1",
+   "blob": "2c60eb75cb384664270e1deab87debe5babcbefe",
    "mode": "100644",
    "path": "rust/src/core/telemetry_v2.rs",
-   "sha256": "480928987a4f8431a8d1932e6244883f2f5da74f29023537eb56a91adc7fb436",
-   "size": 49118
+   "sha256": "fb8ceeef7f901e4f38d3278c6bacb073b83af7e95c78d888247e55bbbf5aee52",
+   "size": 49892
   },
   {
    "blob": "4e61e501b21015e1acb5f826757b588a6d117c0d",
@@ -24180,11 +24152,11 @@
    "size": 12750
   },
   {
-   "blob": "9d679dae030f48a263e4c28f5c3b9f18a563d628",
+   "blob": "cfb9b1b285540ce169bc768b701731ad31cf9201",
    "mode": "100644",
    "path": "rust/src/core/terse/engine.rs",
-   "sha256": "2dbf6332e96d11d1cc52222133d8e2677a67b236abbb02d06f7be11823245c7c",
-   "size": 12216
+   "sha256": "af8cfdda5346946b66d6af91b06990100f9f9505bf5770219f74240a2ba17bfb",
+   "size": 13348
   },
   {
    "blob": "081b6f62d28acaf9c69a43a6783a00b0ace81607",
@@ -24222,11 +24194,11 @@
    "size": 3646
   },
   {
-   "blob": "102c93bc8eb96ed6f75f7e25d6eed0fdac85e1b7",
+   "blob": "eae7ac5abe507eac602c60a1d7002863e140c7a4",
    "mode": "100644",
    "path": "rust/src/core/terse/scoring.rs",
-   "sha256": "7f37c9c1248df5bbaffc56178244b92472c5d1104b44d59dbd6d1db848b72e2d",
-   "size": 9730
+   "sha256": "4f711d3e0e490e432081782fd01ff974a73e057adb602f1f75c87f0471146439",
+   "size": 10425
   },
   {
    "blob": "0ca6fd85346157d4a91b5d7099bc55bac0a1091a",
@@ -24257,11 +24229,11 @@
    "size": 29992
   },
   {
-   "blob": "87df023bd809ff7f6c9dfa830f020b99c833cf88",
+   "blob": "6cb2f54d216e9d85cd7675fa13c67b3b188453d7",
    "mode": "100644",
    "path": "rust/src/core/tool_lifecycle.rs",
-   "sha256": "d96ab270f5936ec2d946d2d3aeb6f740a608f6fb6c3467b63d171997b6821a95",
-   "size": 30758
+   "sha256": "ba6ce9b834426e277c11969f2f95ff65758c1231438659f813e2dd68a87875a4",
+   "size": 25014
   },
   {
    "blob": "0a15ae49d310857724caefc0cedd735a291e88f6",
@@ -24901,11 +24873,11 @@
    "size": 4659
   },
   {
-   "blob": "68b3deb32ecb1d651d54a90b8da6acec9a0b261c",
+   "blob": "02e5f3cfd698b737b2ddedec8ec536c80d796238",
    "mode": "100644",
    "path": "rust/src/core/workspace_trust.rs",
-   "sha256": "20511e2e5c10594f4ea2b5e94d8eafe5e62cc81f53afe7917421c77363ebe426",
-   "size": 14417
+   "sha256": "4afaca8e192cc6d99b69b99ef12f33a6ace3e13c25cbc6c6965800e5da6bba9b",
+   "size": 15112
   },
   {
    "blob": "586275ecb102365fe22f56bc2ba1b30e8ee6ba5e",
@@ -24943,11 +24915,11 @@
    "size": 11309
   },
   {
-   "blob": "92357c0c8bc80272e2dc14c630002cd5dfc33f75",
+   "blob": "e44e691e3edcd946d5cd343c9e1b7fb444a1bac7",
    "mode": "100644",
    "path": "rust/src/daemon.rs",
-   "sha256": "785d79623ea5c804e003380740d0783c5f1d50a54662d4a797feff33cbbd1a18",
-   "size": 11197
+   "sha256": "5cf2d1441f351cb0513773d305ce7dc84bd69ca8772d69157d69e8f52112c669",
+   "size": 12643
   },
   {
    "blob": "1fdbf48984f52ebc1bc8843d95fb2c678505e539",
@@ -24999,11 +24971,11 @@
    "size": 48852
   },
   {
-   "blob": "d2b3e4030cb625a8912f02dff17f57aeaecd438b",
+   "blob": "88eeff1e1ee8422e834b69d704bf2120f8f34ad1",
    "mode": "100644",
    "path": "rust/src/dashboard/project_binding.rs",
-   "sha256": "4d5eca149fbacd90e8487f4e5444f02922035d3e3392ba9762e5ae684a2a8ac1",
-   "size": 14794
+   "sha256": "328b7d4e8b499439524cca04061818183020fc24579f9ecfa9ecb45fc1205203",
+   "size": 14819
   },
   {
    "blob": "d2537e2af0ea704f247ebe89e987b6bc4d574b71",
@@ -25055,11 +25027,11 @@
    "size": 521
   },
   {
-   "blob": "f47a4524832ddbc71559dd6ddaf919b04a43fb02",
+   "blob": "7e33060d99bda7804af9b30a3de8ac9a289859df",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/context/overlay.rs",
-   "sha256": "d50a899c8c5812e7d5b5a21bd23610a7be70d1e88ac6f8478083276d19a1590c",
-   "size": 13052
+   "sha256": "8b466f5ff3210cbd9de77c69f7e61ce69744fc46831036d05d85393281112edc",
+   "size": 13081
   },
   {
    "blob": "daaf7320c1bdbe715329ebd3c2a0721b71de7963",
@@ -25069,11 +25041,11 @@
    "size": 8907
   },
   {
-   "blob": "dbe669a1b9f53325bfee3e8f434ad0c07211bdf7",
+   "blob": "e240c8a6a5c3bdad24341efbbf28db993f3d97f2",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/doctor.rs",
-   "sha256": "f294990503ff33b096a23f3ce42c420c6ddacf276818851188af35ce90b7f5a9",
-   "size": 4411
+   "sha256": "75e36046d0858e8862de099ace94748e021e6b7a989fd5db5e69d9933ae5d765",
+   "size": 5835
   },
   {
    "blob": "aa2b4566e2bb4db8b41afe6c7a54fe573ae83993",
@@ -25118,11 +25090,11 @@
    "size": 5121
   },
   {
-   "blob": "0078f8af52b87fd755406a6ab27af511cff88f94",
+   "blob": "7db9dc8c2abceebdb5ab7b9012777b5595b2ad06",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/graph/architecture.rs",
-   "sha256": "a789698d76390f2ea4826c63a9a2a71f1fe976e053ac5913eaa3566c00185119",
-   "size": 10826
+   "sha256": "5ed98e2e15fe71be6ea03b0a0ef5a3f2b2b21634bcfb35cd4fd89040d2730683",
+   "size": 11209
   },
   {
    "blob": "07ab5266a1a2eb38b4a9fc4543fc49241581da7a",
@@ -25139,18 +25111,18 @@
    "size": 3229
   },
   {
-   "blob": "b78a3569882db5eaef6bd2d51ea8c6478e371427",
+   "blob": "fa9aebc84286692b0e08ac9a90f00efdb815187a",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/graph/deps.rs",
-   "sha256": "28b2bfa3bc3852a642b9f7a8268435e1ffdfc95786bd88f42432cf028b544ca4",
-   "size": 13443
+   "sha256": "1bddabe67f44bf4d8fafffc375a8bdc0ee3b15c5337eda8b030861a3f346dfa5",
+   "size": 15532
   },
   {
-   "blob": "74cbfb544309f9bd65e749a5c3b009668c0a8f5e",
+   "blob": "b619fa2f4223a0dd4f2f72cc4b607fe56af88701",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/graph/mod.rs",
-   "sha256": "6bf3c6f9a5fdfe148471ab002b33a2897bfada3ca0fc0cc3e419bf7de17e016b",
-   "size": 1227
+   "sha256": "4ebb841a65bb84dfe91a6958eff3234c5ed03399e0edd36585d37783e5d1edb4",
+   "size": 1781
   },
   {
    "blob": "33e30c207ec3d49aa6ba00ead2e9ee2e2f1ab53a",
@@ -25167,11 +25139,11 @@
    "size": 4720
   },
   {
-   "blob": "0742b49e23df65d87dfda4d3143d66e5177d982e",
+   "blob": "3aa4fc4ada0ed607e5eb2ae35ce812d04201e054",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/helpers.rs",
-   "sha256": "41be16418612a7c293eb678600df1cb2b4f2f8f7f2dd2690d7650e7ac3716f13",
-   "size": 6420
+   "sha256": "205def06a910d6e3ba8877b01e303f0d8dbe6830847d69e698ccabdfb4aa7ac0",
+   "size": 6718
   },
   {
    "blob": "3e147593d14a72fb67b48148cd08da70a868e281",
@@ -25188,18 +25160,18 @@
    "size": 2749
   },
   {
-   "blob": "c0ec2f60655e6781c50c044bd65d2b5d0e6d7d6e",
+   "blob": "c8b9350a234ee5a972d55c03f9710850c6613db7",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/knowledge.rs",
-   "sha256": "909feb4dd4383f55ae7a7e5af9c74cb5f36b1fbc8aa50ccd8e115e86395ebc14",
-   "size": 21482
+   "sha256": "d16bb770bf245975f6033e7994c43528be9c10792adb722fa609b8ae6d25face",
+   "size": 23421
   },
   {
-   "blob": "a95d27b5a0df0a3d7f46542354cf5a404acaa21b",
+   "blob": "a504c000b13ecb438ea2cf4f0f4813f70356f77b",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/learning.rs",
-   "sha256": "82290da94b386af22504d6ceec7291ac2fe881719b08ba3070e2d9be63493bd7",
-   "size": 2669
+   "sha256": "ea1ec4e7e332699f960135e38d8422aeaa6f93b13ba89d7890f574334ca2d1ba",
+   "size": 2111
   },
   {
    "blob": "d8885bfa4e2a6442574f38bf36e9e2aca1c261f4",
@@ -25209,11 +25181,11 @@
    "size": 39693
   },
   {
-   "blob": "3a5a8306919ac151a1beacd3a755d76d96070fcc",
+   "blob": "1d22ade3ca9e33f9dd2b9c66289b9e4a2b5f4fee",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/mod.rs",
-   "sha256": "61facfc3882f16d054cb0a74e593e57a4983f77004da90a60b01869ba5e3125d",
-   "size": 4087
+   "sha256": "cc19fc65ebc296e4fee759a762db659d0fea41fda195afb1d21fda615a6da1f5",
+   "size": 5033
   },
   {
    "blob": "ec136a720452ea07b93710f4b34094190207f9d5",
@@ -25223,11 +25195,11 @@
    "size": 2085
   },
   {
-   "blob": "c0e08220b41ee1d252026e0d97954a8622559be7",
+   "blob": "ed19fc23adb0841d98f2a69632e26fbe80d3beb3",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/response_cache.rs",
-   "sha256": "4a145a132e197c749785e532fdbe6c10e6425d477cd8078ea034dae617c26c2a",
-   "size": 4963
+   "sha256": "40c6462152c672bece42b87ef577385d3ec3f71a875eb97e850a1240b91b53be",
+   "size": 7519
   },
   {
    "blob": "6262d54ba97c6c009b13721ab3c235c94895ca67",
@@ -25237,11 +25209,11 @@
    "size": 3526
   },
   {
-   "blob": "154f0723cd6d47d7b9ebcd43199a2f1d0470d88c",
+   "blob": "6e7de9c43eecc2ac7d503a87dff4879a44efabc6",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/roi.rs",
-   "sha256": "08b787a495d1feda45b44c576481c479cd7d403e3d0303fa290c5a9b1217ae34",
-   "size": 3774
+   "sha256": "32df553e2cf9dda308cd63535cd76984d9626652a7aabdf5544ecb01d22f26bf",
+   "size": 5382
   },
   {
    "blob": "70ab17a0d0564102a1d7481bf3668d8a611f6698",
@@ -25293,18 +25265,18 @@
    "size": 4961
   },
   {
-   "blob": "f15d968c4dba528551ac862de40ae92903757fa5",
+   "blob": "7c11a7a4355fddfd3090c8e27010775091ce0ef8",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/telemetry.rs",
-   "sha256": "bc3eb8ae309a4113b1c14f9517cf31c553d110f2e5d18a6ce9fd81d85f11962e",
-   "size": 3240
+   "sha256": "fb96803374e85da064066f5ec98c16112ba2eecc498b4748cc11d7c6e93d064b",
+   "size": 9180
   },
   {
-   "blob": "291b45e04159851b33ff1c84da0b792246592321",
+   "blob": "ee402d037718a5f89d3ba3507fa972e7b64963a2",
    "mode": "100644",
    "path": "rust/src/dashboard/routes/tools.rs",
-   "sha256": "9df5029fe5d7f02d275847fa74f5455f913cc06523075249f54b56dcc51c844e",
-   "size": 15523
+   "sha256": "3e6dbec8739ae880e86e47df71f5aa9e451d4b5594117b73a7af06e1a4e271c2",
+   "size": 15794
   },
   {
    "blob": "ffb3b37ce21def5d0ba3d623969675887f52dc42",
@@ -25314,11 +25286,11 @@
    "size": 7424
   },
   {
-   "blob": "5f779fd2015cef5b8193cac4bb2a781145739e04",
+   "blob": "8f0571695b8b55f351eed016507249d61005d421",
    "mode": "100644",
    "path": "rust/src/dashboard/tests.rs",
-   "sha256": "77a8c117c632194eec631f7424ff265784054a799af138fd8043abd24ca5bd48",
-   "size": 46534
+   "sha256": "fc5a4e8d07fea06a66b1fc5939482566fde2940a854a2af1cbb1c2ccfafe24e2",
+   "size": 58348
   },
   {
    "blob": "9598d8544a6fa56e06024cd642b634291e093932",
@@ -25384,11 +25356,11 @@
    "size": 14729
   },
   {
-   "blob": "7207774f3542e8ab807d67d1bbfe0f8438ce4ef4",
+   "blob": "b8c00d849fd946cf01ae3246a1f102067776535e",
    "mode": "100644",
    "path": "rust/src/doctor/checks/storage.rs",
-   "sha256": "19cdf796d0492a725bc822168d60af24dcf8ff93d00498d849ac1bc2c00e1f6d",
-   "size": 32252
+   "sha256": "a84591f6a615505d9da131376c78c778a6666a77bc6515d672ef09e687e13fac",
+   "size": 32245
   },
   {
    "blob": "cba6adb66037bf7d8d1a9c8a7f4eccde3ac93b06",
@@ -25566,11 +25538,11 @@
    "size": 12175
   },
   {
-   "blob": "302427c94e34f58aeaf0a55ef658853f6a66ef1b",
+   "blob": "2dffe7ae6490b0028d013b0e1c2dda26b63263e0",
    "mode": "100644",
    "path": "rust/src/hook_handlers/codex.rs",
-   "sha256": "9ca7100720d13415e014386a71e37270af9ffd96d52b7da8c558743adaebbd10",
-   "size": 20188
+   "sha256": "b1f09cf3879c106a96ba0310cec5b76f20937baada1c035641f131bb9e558e80",
+   "size": 22400
   },
   {
    "blob": "5bd0554df39c4a753a721b7fc9d5c953f92fbfb2",
@@ -25580,11 +25552,11 @@
    "size": 10604
   },
   {
-   "blob": "f0cb96eeeaa565bbb3f74ddf8452af9627f254bb",
+   "blob": "f47e225c3103de9fe40cf03d817e653e0b4424ee",
    "mode": "100644",
    "path": "rust/src/hook_handlers/deny.rs",
-   "sha256": "00f401f4f1ad6a6fca19664722276ee8ed45364b0b60789a49690c7d39a3557e",
-   "size": 44600
+   "sha256": "8bf488d76887c0c39c51f91307e606ecf11473f57023e1d25f9b445409b2c2fd",
+   "size": 48583
   },
   {
    "blob": "ba49ee813de9ddc98cf4b4f8a95977dda4aec352",
@@ -25594,11 +25566,11 @@
    "size": 16151
   },
   {
-   "blob": "055c03d9fa909a3bdb046205b29ac0e4e489cb14",
+   "blob": "3c1a7282ca242a65de2881b68deae768a79865a4",
    "mode": "100644",
    "path": "rust/src/hook_handlers/file_rewrite.rs",
-   "sha256": "8ed2bb461cd0c7f0df5dddf1c8808755a9491b92aa6da2ab049934ad12f6f933",
-   "size": 49749
+   "sha256": "2e107164a565793458f93f484a8678756e01d33c4304661fedc0bd74737c639d",
+   "size": 57039
   },
   {
    "blob": "ef95056da0b7a13f253b5e2a45e62dca7bd27e39",
@@ -25622,11 +25594,11 @@
    "size": 2403
   },
   {
-   "blob": "99b07491a6cfd8859510a31079c65bd9e6a2990f",
+   "blob": "6f8f8142c4fa3dac5a351ddbf2a19f52ce74c2fa",
    "mode": "100644",
    "path": "rust/src/hook_handlers/govern/enforce.rs",
-   "sha256": "0e37badcf957d29ef333618870cfa90be7f49801b2d1dafbf0d3ff56797308e1",
-   "size": 3577
+   "sha256": "93d221f8ddbbd328650ba375585d3199682a2d4ce3f1b9324d95818f6557d880",
+   "size": 4629
   },
   {
    "blob": "55e9aa15e465d3842812250683d92bd9e80bd749",
@@ -25636,18 +25608,18 @@
    "size": 10523
   },
   {
-   "blob": "c0d1b1f90e96918b7346113c7127b6a1cacccdf8",
+   "blob": "d5dc5454d88eea73e94bb19df9c8e1dae7fbfe67",
    "mode": "100644",
    "path": "rust/src/hook_handlers/govern/tests.rs",
-   "sha256": "5573f4de5b832aa19591e54c07c5537e4bf5d56674adfe5fb279ac4c3b237f23",
-   "size": 30655
+   "sha256": "7f9cca9ca5574de2a64a4d864e0be0b0af60d4d83943eccfef35c31a1cfba4fd",
+   "size": 31647
   },
   {
-   "blob": "77f62e2e903a020971fd01f52c42bb6d27c965a1",
+   "blob": "bf9ce09238652725b3ea976f02a5c7c89a32334b",
    "mode": "100644",
    "path": "rust/src/hook_handlers/mod.rs",
-   "sha256": "e60893c27e6e72797cd54c3cafe894047f57202139521a2e0d7975f5e165e7ee",
-   "size": 25779
+   "sha256": "2e34b42ec10e413e6561254ce8fe18a1f8986b598bf0e70307fb89bd0f637c81",
+   "size": 26098
   },
   {
    "blob": "4675769112ffb9cef13234676e638e0b592b6a78",
@@ -25671,11 +25643,11 @@
    "size": 8405
   },
   {
-   "blob": "88a85626e79d1700702ed6cc6cf126bc8bd68cf6",
+   "blob": "e646278131e340d46f28ca74def746316ab76895",
    "mode": "100644",
    "path": "rust/src/hook_handlers/powershell_rewrite.rs",
-   "sha256": "fcae98539d6039215da59926b80f5dfb30dbebc1064ded3a3a64226f0f18c39a",
-   "size": 10066
+   "sha256": "394ed25ab241c8f64f887b751eb495161d4059d30ef53330e27f0c78d5bfc5bb",
+   "size": 15556
   },
   {
    "blob": "07e0be4dac6c6885236167ae9e079c20fc2324a0",
@@ -25741,18 +25713,18 @@
    "size": 1623
   },
   {
-   "blob": "ad80a88f2a274c1c5ddac0eeecb23759b121af36",
+   "blob": "386fce5fc5dbbf22245f41baa3a12ab2fb68a9f5",
    "mode": "100644",
    "path": "rust/src/hook_handlers/tests_command_rewrites.rs",
-   "sha256": "63cc1fe4f8313432bb9d8ba6e903b310d9c41a9792a38b6d8dd380efe5a31fdf",
-   "size": 25411
+   "sha256": "ab6a302cd690aeda91932031c80f6f1e939ccb946577387a7d55de5b4ba5f661",
+   "size": 34462
   },
   {
-   "blob": "0ba3fa935c5f6e5cbbe698d29292921c3784a96a",
+   "blob": "d888ae08db55b1d820b97e7bacc7ac18470ad1fc",
    "mode": "100644",
    "path": "rust/src/hook_handlers/tests_file_rewrites.rs",
-   "sha256": "470406fac674e35bd92352cb33be17e9889e5f3923959f30f8e3df4b19a8f6c2",
-   "size": 18683
+   "sha256": "d7c3cc3d5e6b8d4c9479f2c8ca34d4c9a19e4150c845df3c456ca42655c7802d",
+   "size": 19591
   },
   {
    "blob": "5233605b6f5572601c9f0c0c0406ba9601a09edc",
@@ -25790,11 +25762,11 @@
    "size": 5522
   },
   {
-   "blob": "b9f546f0647d6d6384bd5ae59a264c106351b5a7",
+   "blob": "ac4fbf02a96ece8dc020c24e5280afd79188b87e",
    "mode": "100644",
    "path": "rust/src/hook_handlers/vibe.rs",
-   "sha256": "5e741db7a9593166014885650f3ec2af4b070d53f5214a7b23edb51cb3a73330",
-   "size": 10876
+   "sha256": "1975553577a48557309730a3f26aa40797dd67917a5cee01ba084fa438028659",
+   "size": 12764
   },
   {
    "blob": "c141692f23ae558e0c28a1c42f962f4f85a6b866",
@@ -25811,11 +25783,11 @@
    "size": 22185
   },
   {
-   "blob": "3cd80bb43fcf11c46319bdd9f71e08d1766705fe",
+   "blob": "bb817b6cbc7ec2885c991f16eb28e521df783f69",
    "mode": "100644",
    "path": "rust/src/hooks/agents/claude.rs",
-   "sha256": "806f1e876a75da55dbd8d22622bf267e2d35dabf323a5169b2e638d53c10ee1e",
-   "size": 60103
+   "sha256": "d32bae4b181c1e705f8ff0972e0ca7b2933bff1887538ff06b21487947d87420",
+   "size": 42981
   },
   {
    "blob": "f89fc2a2c0c75656b97566d2e41fe23dbdcd5d14",
@@ -25844,6 +25816,13 @@
    "path": "rust/src/hooks/agents/claude_statusline.rs",
    "sha256": "0264fd6d3438b1992e2c9ba683d2bd445341dad9e172c024493c40449392caa7",
    "size": 9837
+  },
+  {
+   "blob": "d963737362e8fb07a6b9380d242b0b592b8cf982",
+   "mode": "100644",
+   "path": "rust/src/hooks/agents/claude_tests.rs",
+   "sha256": "f2b1614f44fcda98f524f55bbeab20b69bc98ae47ec2a6489f14967ed3b5d194",
+   "size": 20882
   },
   {
    "blob": "078732c6d012b27434c6d76a7481e789a26e4305",
@@ -26070,11 +26049,11 @@
    "size": 23930
   },
   {
-   "blob": "b40d0cfd03fe76eac3efb512ea3d3d479af6927b",
+   "blob": "60d8c6b53ca668b612b1e0364de9dabc4989db0b",
    "mode": "100644",
    "path": "rust/src/http_server/mod.rs",
-   "sha256": "703f3857d84e5d2610149441726e0d817b15ed0a979a924278257f97d2061b6f",
-   "size": 44655
+   "sha256": "62648959d78c5b1eecaee63e2d792e11737a22d841745b4916b6de63c000b7e7",
+   "size": 44650
   },
   {
    "blob": "44fe67a1ef4a109ac1b51ac179a76c8132b0c0d3",
@@ -26154,11 +26133,11 @@
    "size": 12516
   },
   {
-   "blob": "1de8a53aa8c91b6c24b58e20a622756912e8834f",
+   "blob": "c80e3834c0ad3c3727c46c72913a08aef87363ee",
    "mode": "100644",
    "path": "rust/src/instructions.rs",
-   "sha256": "a728b9372a3be3c90b021c7aa044b7a687e45c5187f41c41706cb9ccee990f81",
-   "size": 43079
+   "sha256": "eae0766d3009c34cb95a195ce305e19646e92cf67fa82479206a5a58f0377341",
+   "size": 38635
   },
   {
    "blob": "225b097524d0aad41d21edc3406a8509901b61ac",
@@ -26168,11 +26147,11 @@
    "size": 4155
   },
   {
-   "blob": "40564d32e0d29ed551f65ed9f9c9df39fb43dd19",
+   "blob": "29abe6d5c7ddea904c1ce6c38b909df117d54fc4",
    "mode": "100644",
    "path": "rust/src/ipc/mod.rs",
-   "sha256": "7c9e7cc9c597bd9b067e1b904c3fa61c4127f7d9e501476ea8d005a61123c951",
-   "size": 4521
+   "sha256": "bfe6704d7e9238d0ab9f8566e7dfb027eff23e4fd5a7e5b146df3036fbec58fe",
+   "size": 6469
   },
   {
    "blob": "734d0d6dfd95435f908e1554c64dca9e1ef2cbb4",
@@ -26196,18 +26175,18 @@
    "size": 17213
   },
   {
-   "blob": "dcf4931a06cab9a55ed316ae2d35d416005e5c41",
+   "blob": "c24f0796c8880728381d1609ea57611e55da5ab1",
    "mode": "100644",
    "path": "rust/src/ipc/unix.rs",
-   "sha256": "130671363b382ba488b7e241eb7a71197f12684019e7e32c08cc834ee28ee517",
-   "size": 2469
+   "sha256": "21ae67045415680a9861a81afa2b4863190af4967f71e88a7b1b6e92dacf97fd",
+   "size": 5011
   },
   {
-   "blob": "0da1c87841aed199c6669ead5be048766c3d040c",
+   "blob": "bde098e58d5a36736aa88ab5ef7f6d7b215dfe0d",
    "mode": "100644",
    "path": "rust/src/ipc/windows.rs",
-   "sha256": "d09e65433dcdaaee4fba3babd1dd12b4dd0725052871062955f0c9d7b2597bac",
-   "size": 6297
+   "sha256": "e9f6c61d356de847d79b30faa85386edc53362f66cf0202cb68bf2c0736385c1",
+   "size": 8062
   },
   {
    "blob": "386ee0189c0e145eb421f4f65233b1caf8e1d698",
@@ -26371,11 +26350,11 @@
    "size": 49359
   },
   {
-   "blob": "0561ad73200730e4532fc69bd5ce3aa1e2b2fcb1",
+   "blob": "c8c4b17c2ca079c5a5dcd65cbdf725cdfb929b0e",
    "mode": "100644",
    "path": "rust/src/proxy/auth_tests.rs",
-   "sha256": "4b2476ba45f2d2684c8c34f69a14d91ed8be1a86716982678068567d9adf19e7",
-   "size": 23282
+   "sha256": "5b515c81aa40e2177dc02f2973a096fc12bef8f2f512f48ad538ba112bad62c5",
+   "size": 25935
   },
   {
    "blob": "060754fd5bab883ba93c0a1d5031339e9d4010f5",
@@ -26658,11 +26637,11 @@
    "size": 6111
   },
   {
-   "blob": "d2f79a50de7ddff78f3b3fb80fa29f0c947898cb",
+   "blob": "80f0dca4e3b6bebbbf33577ce1f63e156b8bdafc",
    "mode": "100644",
    "path": "rust/src/proxy/forward/mod.rs",
-   "sha256": "33614d2294caed38c85e8ae8b852e4cb747b76a0f898ff21a79c3d886ac367d6",
-   "size": 50584
+   "sha256": "99f5c7d68abcc17bd05cfe77e44f9299ed7ad8e81d8aec9a3011f3fbb9695aa6",
+   "size": 50576
   },
   {
    "blob": "9dbb83fccbc0eabb720e2448378651081b9d22ce",
@@ -26854,11 +26833,11 @@
    "size": 49795
   },
   {
-   "blob": "83f6f08a7e773691ae124979ee41d474b3177033",
+   "blob": "4577a74db6a21e366a5d28b129e9c04293e49b37",
    "mode": "100644",
    "path": "rust/src/proxy/openai_responses_ws.rs",
-   "sha256": "7525266531c1bb0cebc8f114aa8e761eb29557097af982f983c418032da73cd9",
-   "size": 29796
+   "sha256": "99680d6fa8abf416d0b92d0aa055177f847e2a8d657601445b5033cc177d4e79",
+   "size": 31102
   },
   {
    "blob": "51bbfdb0474bdcfb86885241f690b1de7cc318bf",
@@ -26868,11 +26847,11 @@
    "size": 50174
   },
   {
-   "blob": "8df5762d2bb8761c01df515721cc38e55ba48d9b",
+   "blob": "941c88ad779a164418fdfa8d249df94bd52b45ed",
    "mode": "100644",
    "path": "rust/src/proxy/outbound_model_policy.rs",
-   "sha256": "10ff899b5fda95255be74fdfa5b1b04b6205fbe1f2b6663bd20d15ff430ecbec",
-   "size": 4627
+   "sha256": "b572b4016cf185405bff38b83768f55c7f8a2725ba73133fd90be45f11bb079c",
+   "size": 6573
   },
   {
    "blob": "c445ac817bf500ab99e9321e925a77391d508c79",
@@ -27029,11 +27008,11 @@
    "size": 7649
   },
   {
-   "blob": "7daf37500da252de3c75730c8b5a8b53aef9cb83",
+   "blob": "48847eb06c9d2ae0aacebb070b83f5b43063913e",
    "mode": "100644",
    "path": "rust/src/proxy/server.rs",
-   "sha256": "fcb353f35eb9b0aaf303461fccf0bbddd79c2d50876eed282afaebec45067ce9",
-   "size": 56099
+   "sha256": "c8b334138162a3898202b34ff9c3e70d56f7400812cf124a95e03f1221494c66",
+   "size": 57936
   },
   {
    "blob": "b3836dfbc61d558a4dcc0893c49d4f7e22856797",
@@ -27120,11 +27099,11 @@
    "size": 6649
   },
   {
-   "blob": "4ce2b5ffc1d4996c97409789b743f8b002337107",
+   "blob": "7c08d6c2c7bc7b7ab192f4151de5b020ce10c6a7",
    "mode": "100644",
    "path": "rust/src/proxy/usage_meter.rs",
-   "sha256": "efaa73a41bb4f756535bdce762a3213332243b4bd6b432009de31240832ed9ea",
-   "size": 44676
+   "sha256": "6fb73761e12ec59ebf8846657d8ddddf1b1bf09e494d207e93b04c27570f0a4f",
+   "size": 46973
   },
   {
    "blob": "ce99804fb6a5f378e6caf122db74397b5c1bf946",
@@ -27372,11 +27351,11 @@
    "size": 24499
   },
   {
-   "blob": "fe926957f806bf4aef3d8932b1a8f10d2fe7c341",
+   "blob": "a35affac714d28c4bd496a54c0d9773fdbbb06dd",
    "mode": "100644",
    "path": "rust/src/server/call_tool/guarded.rs",
-   "sha256": "7b2088227a9e60f612576531dd1545ffc7fada298c328fa3eabca043356f52a5",
-   "size": 53736
+   "sha256": "8b75a045b41e16fae495398d9609f8f08345e2ffba69ec31aa7a6fcd29009360",
+   "size": 55552
   },
   {
    "blob": "6ef8bd7e434d2331471822ea896811746182b09a",
@@ -27386,11 +27365,11 @@
    "size": 5775
   },
   {
-   "blob": "6a71e17e1158ddb400fc3bfcc25317b7f7737e0b",
+   "blob": "e9af1d4b256a494a1233ff7ff8ea66229d661312",
    "mode": "100644",
    "path": "rust/src/server/call_tool/guarded/kernel/tests.rs",
-   "sha256": "19c069f9b86019593672e9cb069191e85d96dace9a4928d9b2344c610f0da32b",
-   "size": 28422
+   "sha256": "4188d10d8e34a9b00d9754580d68613ce9726e5b1f1faf4f75ab988bc2bcd2a4",
+   "size": 28525
   },
   {
    "blob": "1a3d450c9a3d8b522a528f1fa5167ee256dd1354",
@@ -27428,11 +27407,11 @@
    "size": 5172
   },
   {
-   "blob": "c5a4b2a1d556f180634181e8b330155e42894db2",
+   "blob": "bb391f7546251f052ffc490f2e98c73e66fefbec",
    "mode": "100644",
    "path": "rust/src/server/call_tool/pipeline.rs",
-   "sha256": "f604ee47c93b6bae68e25e55b724397ad54fddc28af3b8470bf19a0352632936",
-   "size": 60967
+   "sha256": "d23b0ad40762db8b4d4279315dbdbfbec0d6617434e1c1a155714fe15ee6394d",
+   "size": 60633
   },
   {
    "blob": "5df752eedab0c6c679eccfb9059e99a8aeba2e36",
@@ -27505,18 +27484,18 @@
    "size": 4368
   },
   {
-   "blob": "4a91bf76270cf187861610da32bb235ac655ce91",
+   "blob": "8410235832b964df8f44fbdf6035318a459bfc47",
    "mode": "100644",
    "path": "rust/src/server/call_tool/policy.rs",
-   "sha256": "a6bf4733379017b38bae94aebf9338a8aa5a1e4c02864f6901dfb8551df05c82",
-   "size": 23233
+   "sha256": "0c0759b98a67de9ba29c66ded09262da922e5a4b59440d59e9280cdec168ab1d",
+   "size": 24332
   },
   {
-   "blob": "5f685391ba6b605a83d82f1733b9700b5a60c203",
+   "blob": "3cf917a33dcb7e2bc000f5a7152708c0915e7091",
    "mode": "100644",
    "path": "rust/src/server/call_tool/tests.rs",
-   "sha256": "50b789ca4a1cee697792f9c7fd5cd143da1c5462ed61773f1d433936930960c1",
-   "size": 109832
+   "sha256": "925a10720c98da80fc127830acf84f7ca07efde7d45a30839e03610f36074176",
+   "size": 111300
   },
   {
    "blob": "504718dff996f2c231e04a1488330213cabe177f",
@@ -27624,18 +27603,18 @@
    "size": 1930
   },
   {
-   "blob": "5eb39c7f783fdb20bb5f07a2359e3bc6eaac29e1",
+   "blob": "0b43f5471675a5d13b1244190734ae9d37deb441",
    "mode": "100644",
    "path": "rust/src/server/permission_inheritance.rs",
-   "sha256": "d579d281d4501629702319eabeedbbca89498a432f635eba005e5d947e64aab8",
-   "size": 14088
+   "sha256": "7cbdf23578c8cf0763a0ce169857bd3f9356dba17f7d85711d91b7cb76127987",
+   "size": 14220
   },
   {
-   "blob": "a10371819773e4a3c3bf5d18c323afaacb8b4c51",
+   "blob": "de8674d353d0ad3dd9515042c03906c245db64a3",
    "mode": "100644",
    "path": "rust/src/server/policy_guard.rs",
-   "sha256": "30f0cc35321fbbf6691ee9c0dbeeba5c5f9d0f18f001310beaf579b694f6cbf1",
-   "size": 13296
+   "sha256": "d16c2e748150c482b781288d7701529ff8beb4b2bfd8163f240ca6458acd567a",
+   "size": 15742
   },
   {
    "blob": "13ae2d827d2a89ce87dd76c4e84dda834a098430",
@@ -27715,11 +27694,11 @@
    "size": 7930
   },
   {
-   "blob": "2654fe8465f1a200a18850cc449fb0e15c33dfcd",
+   "blob": "79a50ab0c8c3a929524de2bb50529768f77f3402",
    "mode": "100644",
    "path": "rust/src/server/role_guard.rs",
-   "sha256": "de9bb558efbfcdf87a92228770db438efb038db5dc5affaff77923ddcee9a0c5",
-   "size": 5455
+   "sha256": "9b60b61e870971eecdf6aa1c2957777e29ab271f7e61b4e96241c2e5d9cbe1f5",
+   "size": 7036
   },
   {
    "blob": "ca26462b02d813ec89fd1f6a31a563021088f68b",
@@ -27743,11 +27722,11 @@
    "size": 53710
   },
   {
-   "blob": "f007a4f26171ba997b981e5edacb73f85b8a2870",
+   "blob": "b5259d03356c3179c24904b199b064fc09069c8f",
    "mode": "100644",
    "path": "rust/src/server/shell_approval.rs",
-   "sha256": "7fc0e7fad0ea4296d87c859ba3d4be382abb637be0a23c01b7cef46fe49545f1",
-   "size": 23957
+   "sha256": "fe5412dd0c428792d61bee8fbecba488e56a779971d51ed07d9158d5da705e67",
+   "size": 23811
   },
   {
    "blob": "a07afb0535b4eafad019f1f77ae79bb12953d15b",
@@ -28037,11 +28016,11 @@
    "size": 15130
   },
   {
-   "blob": "eb7a57521d2b9ad275f1c7c44016be42de5692fd",
+   "blob": "1ba584cb457ea3e40627f36982e67b4ada825023",
    "mode": "100644",
    "path": "rust/src/shell/exec/execution.rs",
-   "sha256": "7b6428c72e496ddbee98ee718085d991116f77cb8d4bd6ffcadd9d14dc53f8a3",
-   "size": 41929
+   "sha256": "2896e607f0b2f8413d866aad75a3891beef7234ea8a3ec6102c28ec98ca50343",
+   "size": 43254
   },
   {
    "blob": "4fb9214aa2f2ec052cfd669a3fbb328df958a7bd",
@@ -28184,11 +28163,11 @@
    "size": 1626
   },
   {
-   "blob": "4115affeb81ba981d1d650c7ef48465306adb719",
+   "blob": "07bccb3d4d4402c69724c80458900b45386ca3b5",
    "mode": "100644",
    "path": "rust/src/templates/PI_AGENTS.md",
-   "sha256": "c76e681a77dfe0b01398d5d6e3861c98c5a0b39dd56cf31e85b1766cf049a0f0",
-   "size": 1975
+   "sha256": "5e147858e273ddd763bee7c6d18e0eb7326e8d03cf16949d8799029049831fab",
+   "size": 2106
   },
   {
    "blob": "529b91f972528a93594b0a79f9d50c0ddc7cf83a",
@@ -28247,11 +28226,11 @@
    "size": 14408
   },
   {
-   "blob": "40f4868496d30077291a954e32dcc462933d5116",
+   "blob": "28d553aa89cc27d63d222020f8a352b5e0e9b6b6",
    "mode": "100755",
    "path": "rust/src/templates/skill_install.sh",
-   "sha256": "7b42ea292086ea57dc6a1514e094fa37840b5a24ad8ebf5f26a7eb87fa1b03f0",
-   "size": 2468
+   "sha256": "1e18a56b61cc8fd81a4289ca78bd3c8ee7655755c7fcb620fccfdd8ed1fb12d7",
+   "size": 4213
   },
   {
    "blob": "098b4a52b98e363da2d10563f1742a912ef77f9d",
@@ -28282,11 +28261,11 @@
    "size": 8021
   },
   {
-   "blob": "6aa944e204c68a4ba855b9d2a5c9fe4bc36e4a73",
+   "blob": "ade65dd3888a6e4f8fadff0d86ee2283fb2dda4a",
    "mode": "100644",
    "path": "rust/src/tool_defs/granular.rs",
-   "sha256": "9868fc955f551058d63723c9c0743292fe5dd35deec25eb8500e239f69e4eba1",
-   "size": 13027
+   "sha256": "c83378a55c9f79e3826758ddcd2168cb9b5333b386e24238c8be0eb1983591dd",
+   "size": 13088
   },
   {
    "blob": "5ae1d516dbc8150fa12f3a6bc5d7341312ec39ba",
@@ -28310,11 +28289,11 @@
    "size": 11213
   },
   {
-   "blob": "cb21180d3011b04645408bfa9866773383c7869a",
+   "blob": "b77bc6aa8a74f5c6f686b4a3da511744af4c96ed",
    "mode": "100644",
    "path": "rust/src/tools/ctx_agent.rs",
-   "sha256": "13ed6443de01a1b7a3f36c66737165e28442b5f14886bc86653b26878e5983df",
-   "size": 62537
+   "sha256": "648a1c108c89c944dfd8e272c763eb7fac6f702e441396683f4e7f6df595b089",
+   "size": 54364
   },
   {
    "blob": "c83489baf21df77429a7ca6369d2ea62cd5e3eac",
@@ -28324,11 +28303,18 @@
    "size": 4895
   },
   {
-   "blob": "c3e04af73570f80cb78a686c8aaadb366b33b833",
+   "blob": "96a2ddca751d6a0bb9f4a9c87edfb231d663795f",
+   "mode": "100644",
+   "path": "rust/src/tools/ctx_agent_lease.rs",
+   "sha256": "80b28b92a8afd500144b5afa8cbc6bfc1bfc1c1e761895a079236ad138095ad2",
+   "size": 11159
+  },
+  {
+   "blob": "22dc8d6849fc15933f63359888ee57e2e9d4e9e8",
    "mode": "100644",
    "path": "rust/src/tools/ctx_agent_tests.rs",
-   "sha256": "d3f8cf3a05c4a731356dea40399e33d19822faceb8ebff61a1a393591207480b",
-   "size": 10204
+   "sha256": "b6e99940c85b1884e8022352e26b6dcb48d7e5e50523250568ee2439d0a36793",
+   "size": 13408
   },
   {
    "blob": "3ecc2592136092ce0a6d05b958f7be2c8a716f50",
@@ -28359,11 +28345,11 @@
    "size": 3839
   },
   {
-   "blob": "92ee5eb891e37ef9ae275d12271748e7fa3b45f0",
+   "blob": "4f9214061bdc04ae9a66335bd3d3d2b1f9e3599a",
    "mode": "100644",
    "path": "rust/src/tools/ctx_compose.rs",
-   "sha256": "5a778a51c26bbcf3eee3fec9cba2b8ead02fb40516468e86c85bacc97c7cc767",
-   "size": 29021
+   "sha256": "0e9fad27eb601b52c7c2b00990ade8c5164b57e768150ed08aa257c9eebcc0e5",
+   "size": 35941
   },
   {
    "blob": "f2d60d1a28d633ef810df9170f26077b9d239e9d",
@@ -28485,11 +28471,11 @@
    "size": 26784
   },
   {
-   "blob": "06b58b5d3384a2cebec51d8158a7b7935888332f",
+   "blob": "d9fc003768dc7f1884d6d651dac2ec90aca511cb",
    "mode": "100644",
    "path": "rust/src/tools/ctx_feedback.rs",
-   "sha256": "ead9177219f88b0619c091d4994477a09f120fbc5b34baaedfa0eb2fe9331e83",
-   "size": 2651
+   "sha256": "0674c599c956a2a7169ea0a49be1bd5c637ab5d236c61e5e24a464afa34fae52",
+   "size": 2153
   },
   {
    "blob": "4ef5e01674c419be8d6da5ee8ac71580bfcd9ef6",
@@ -28583,6 +28569,13 @@
    "size": 2608
   },
   {
+   "blob": "bee6a0c91d298db37553e8396357db2e2e096e2f",
+   "mode": "100644",
+   "path": "rust/src/tools/ctx_knowledge/changes.rs",
+   "sha256": "1538dd3fe63202084a119b98c675d7f8eadfa69931444fea2424ee63c593ace3",
+   "size": 13562
+  },
+  {
    "blob": "cccd44554a5e1279688ea9b3048d48575e62ebe4",
    "mode": "100644",
    "path": "rust/src/tools/ctx_knowledge/consolidate.rs",
@@ -28611,18 +28604,18 @@
    "size": 4664
   },
   {
-   "blob": "63d175922d46f16415ef7329c8c6a57f10ef660d",
+   "blob": "3ebc3b316e0a28c481780e3bf5eb4dbda836c896",
    "mode": "100644",
    "path": "rust/src/tools/ctx_knowledge/mod.rs",
-   "sha256": "1e95180d528483b6f2cb4999064562a881475a5f3369e79a57813fb37106f8e5",
-   "size": 49497
+   "sha256": "0468594587eb8a2f37be272796155f98cb3967bb956f9cf4afa1c3f9329f5dfd",
+   "size": 49818
   },
   {
-   "blob": "46e8ad3793468ef32dba9b0318cc80540006c6d0",
+   "blob": "1c444cf5e38b94194cecfec4d4c0d0cf0a698c8c",
    "mode": "100644",
    "path": "rust/src/tools/ctx_knowledge/remember.rs",
-   "sha256": "7d13c7e634315c816f346c70e63b900ee67255f1e8075cdce9ad4d29c6162241",
-   "size": 53982
+   "sha256": "4dbf66b1ae003322e73eb3a0d3a0303018127f6adbe5f3bde9cda900db8f7da0",
+   "size": 52713
   },
   {
    "blob": "64af09ed3a94b05ed9e108eedcca79131a6bcd30",
@@ -28646,18 +28639,18 @@
    "size": 23480
   },
   {
-   "blob": "91abfc944ea80f5175d8eb2c65ebe9aa7e407e34",
+   "blob": "82c7b5a02317f81543ea940cc27f04f42ebd29b2",
    "mode": "100644",
    "path": "rust/src/tools/ctx_knowledge_relations.rs",
-   "sha256": "c1f35c81b37b195f60e95882ab18654cfe7df91482e320a87e864a507fd01b42",
-   "size": 13878
+   "sha256": "18c14184c919c8d808fb520cbd9e14d0506a12286aaed1a16cd9c299864238af",
+   "size": 14090
   },
   {
-   "blob": "870f94a3671cfb136b81079dfebd34330ce114dd",
+   "blob": "7836e1dcc328c97e2a0012457baf95f662b8403e",
    "mode": "100644",
    "path": "rust/src/tools/ctx_metrics.rs",
-   "sha256": "b060e0f216653353561c86f3f25eb34d5b1c41c945d5a3d028d41ad2980f9d70",
-   "size": 19700
+   "sha256": "59ecf1424d96a51b0996d8eb510953d86a3e34f8fd57b73888c39e40ef2561a3",
+   "size": 19187
   },
   {
    "blob": "e77e4f11d18aa1361254667b73ccf9b219f1e1ca",
@@ -28730,11 +28723,11 @@
    "size": 6788
   },
   {
-   "blob": "0b77cc29d55a028ca5be7b1601b334aed160130b",
+   "blob": "9f8c07d80aeac1ffd4bab18d106c9ae573378863",
    "mode": "100644",
    "path": "rust/src/tools/ctx_patch/anchors.rs",
-   "sha256": "5ba687324cff50cf71fbbc73c587b3759aa5b50629d93ba8cfc5d1033165ef6a",
-   "size": 16892
+   "sha256": "c7ca05c8fd7742d5a626836a49946fad0d505d26f842a9175399d1130f6c992d",
+   "size": 18350
   },
   {
    "blob": "68447645ff9ee8f5a58c1d1298e89eab61413003",
@@ -28807,11 +28800,11 @@
    "size": 7424
   },
   {
-   "blob": "dd19d2bc879f4fa53daaa0ba81f05c941de90013",
+   "blob": "549c15235a39d078a97beceb15c76a554e03185a",
    "mode": "100644",
    "path": "rust/src/tools/ctx_provider.rs",
-   "sha256": "d748bff2489302a4b77f91e39a08ea6b912f0c61ef79cbfd85d403909c11911a",
-   "size": 35008
+   "sha256": "0be9da0b0e4b7295a7736e39bb4981fc19a032df2c328cc8affd8b3e2073a2c0",
+   "size": 36627
   },
   {
    "blob": "9b9f472b2503ad28df623d826280968c60bd436c",
@@ -28835,11 +28828,11 @@
    "size": 2465
   },
   {
-   "blob": "6e0ea3ef510b48adef0aa9bbf8d917ccbb3d558e",
+   "blob": "9f2ae2e0c529338d74f15e45de7c29d7840d9857",
    "mode": "100644",
    "path": "rust/src/tools/ctx_read/dispatch.rs",
-   "sha256": "dbcda0cc703782338b07d47dade2eede8316928d1a8188a10864f85919ff5168",
-   "size": 49835
+   "sha256": "6a265ee08c4072fe6f498f90eecae791d6324195cc38fab8764b9cf403d65a99",
+   "size": 48543
   },
   {
    "blob": "f79063909631d8531bc557536373456b9ba67852",
@@ -28877,11 +28870,11 @@
    "size": 2010
   },
   {
-   "blob": "95e85312c1c3bc531d6869271258bb64bb31df29",
+   "blob": "11ef04c48d68e9d29f048c7feffb6324d5615c55",
    "mode": "100644",
    "path": "rust/src/tools/ctx_read/mod.rs",
-   "sha256": "ace90410c25c635e1f51ce28fe3adffd913ea59b790eba55a832d5f40976a908",
-   "size": 1221
+   "sha256": "5d2f89451870247da290edf08051d3dff96772177b87c61d7b0c25c99c0ab6f3",
+   "size": 1241
   },
   {
    "blob": "c684d9e04f612c2d2811e9afda6a8848a0388262",
@@ -28891,11 +28884,18 @@
    "size": 34757
   },
   {
-   "blob": "545408973228cdaa8582ff6cbea59afb9ad2e417",
+   "blob": "23eab41bc9bd4638ab09c2d4dd5580359488f05a",
+   "mode": "100644",
+   "path": "rust/src/tools/ctx_read/outline_budget.rs",
+   "sha256": "797a9df3013a4165206a55e95d51326d8ba3d15235cdaeaf631fda91b741bbf7",
+   "size": 10365
+  },
+  {
+   "blob": "877beb5ab04447c70da4950bcbe2d84513a2a113",
    "mode": "100644",
    "path": "rust/src/tools/ctx_read/render.rs",
-   "sha256": "6b818ea9673d11c0192811a5fc4648e5939a84fb78396d37fdab0c870807f781",
-   "size": 48218
+   "sha256": "09ed8d4a8bdd3ac28caa02d2b898d7af6b0a275cfe9dd3ed4fad4fc945b977ab",
+   "size": 47797
   },
   {
    "blob": "6ffb031c47ed81b7d177fc1324ea1afbc8a94ba5",
@@ -29073,11 +29073,11 @@
    "size": 14794
   },
   {
-   "blob": "b8fd243baefe85cde40e9de95587decf4ff09c3d",
+   "blob": "74254cfd00bfa82110822b72031080651922a2da",
    "mode": "100644",
    "path": "rust/src/tools/ctx_session.rs",
-   "sha256": "f0009c80004463a88fcff7ec12d3c2dee58ddc5f1568001a01063c41b9c7b4fa",
-   "size": 50999
+   "sha256": "571ead0e3660340568c8f5de0c14edc1511d5390b413b576afcb535ee572f2c2",
+   "size": 51632
   },
   {
    "blob": "a178d6344696715e7a0d99b3097f90615b0e48a3",
@@ -29164,18 +29164,18 @@
    "size": 13834
   },
   {
-   "blob": "88ea858443432af05231a781d367d5d005ac0af1",
+   "blob": "d6ffca34e25e272f0defa73f8af2510f02e5a962",
    "mode": "100644",
    "path": "rust/src/tools/ctx_verify.rs",
-   "sha256": "2660a46143b7cf7730f0370a26107129d6aa5d17ce6237a9843f3249bba58459",
-   "size": 2637
+   "sha256": "9ebff1cc851004afd07194f622923e10d5644eb6c3df83076a178b66a3a1ff46",
+   "size": 3066
   },
   {
-   "blob": "7d71a5313cb8dddafa04cf2e7fe342b84ac61581",
+   "blob": "c7c6bc3ff2989e92b52b01c05fcf6492c0336651",
    "mode": "100644",
    "path": "rust/src/tools/ctx_work_graph.rs",
-   "sha256": "4d714b0e6cb77ee58ad80d0dccf016a3e3ad87b43b4315e63b34358d16bb4a51",
-   "size": 36289
+   "sha256": "f739e2dbcc52d90fc9ccf7160459141b38e545338e20ada542f6b7c17fcdea24",
+   "size": 36474
   },
   {
    "blob": "57fc78add638866284658ea3f319bacbff383ac3",
@@ -29227,11 +29227,11 @@
    "size": 1353
   },
   {
-   "blob": "1d974d26872000a348f6d390d926b2b5af90394e",
+   "blob": "8606b8f1ae8ea3f66984b858aef83ce496a36571",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_agent.rs",
-   "sha256": "d78a319cc1b4511dc746655bed7e46e452fd1ab615eda7637314d01f6a46a299",
-   "size": 23795
+   "sha256": "7174ef0bfbfc9222eeccf2d75ebd6ec6e0da0d05fa698c0bbca0b7432df88dc3",
+   "size": 28445
   },
   {
    "blob": "b9e09f1a137dd03e27f5c23926c14a7b085236fb",
@@ -29409,11 +29409,11 @@
    "size": 3834
   },
   {
-   "blob": "b39ad35c417c9dc626512202db078f47b2be2fe6",
+   "blob": "d264db065af90650c79f9c80a1b442167cb5654a",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_knowledge.rs",
-   "sha256": "aaa7afa8dfb097281df697b0bd284f52d674e1a6380ae10deb079519a710b1ab",
-   "size": 37516
+   "sha256": "bd9848e420a91c7ff77d47eb5aca0bd5fd634e6bb6dcc48f7e5267ab364909cc",
+   "size": 37562
   },
   {
    "blob": "43130da99f0b4ce6e2d151951a5f19dcb0198e2d",
@@ -29493,11 +29493,11 @@
    "size": 4105
   },
   {
-   "blob": "545a506d2868daf43519e00bf8234ca42810b310",
+   "blob": "a848be01acceac5fc6c996d4202c812d1e506f26",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_provider.rs",
-   "sha256": "9c0578175a30eca07701ffb1b6c5541803041e64276e7f38e5748c96460e827d",
-   "size": 3301
+   "sha256": "2a1f9a11fa4d33e839d92067a7b0f558ae1930f34800baa3e669ad0624dedfc5",
+   "size": 3328
   },
   {
    "blob": "7549217c1d5526415cfc09ae33c5ebeb7dcf21ab",
@@ -29521,18 +29521,18 @@
    "size": 21900
   },
   {
-   "blob": "c9638087bdb2daf98c1c3f92db1036fecdbcbe2d",
+   "blob": "7199479b6c09d862cf5563542ef9ea93c9f02846",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_read_delivery.rs",
-   "sha256": "b384ea2561c4d4314a7708c252d0ebf8e8c392a2b14dcb37dc5f3aaab6b6aecc",
-   "size": 17921
+   "sha256": "669991293215d8ef2d045a80e753b8606d58ba3affa0abbb2e9ff9050b7dd1f3",
+   "size": 16606
   },
   {
-   "blob": "01ffaa87995bc918edb4fccca63e02d0776635b1",
+   "blob": "d8558347e2ae72b3aea66246745bcf63dfcddd69",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_read_dispatch.rs",
-   "sha256": "a5c0bd9d42a03408f97404087e6ad4781f8fe714be5c96c3f591665f4f801c99",
-   "size": 8194
+   "sha256": "cc81e53f319dfa19c421d7e03588919076870e1733f0753ab689abc2f55c33fb",
+   "size": 8691
   },
   {
    "blob": "0c25847a270ae53737e0079e1efcee7a6c06eaa9",
@@ -29563,18 +29563,18 @@
    "size": 4067
   },
   {
-   "blob": "5dda14bc0ac294402107a269dca79344bd4ce43f",
+   "blob": "de84828d1325f3a5279b940f95429a8066581c9e",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_read_inline_tests.rs",
-   "sha256": "b401bbbdcf77f35b9132fb2b9e94d6d79231f06cdac6859c4d028005b887d17b",
-   "size": 49361
+   "sha256": "d544dbb28b2808e1ad3020730a39c37fa4ef939749374adb84114d0c24ded9a5",
+   "size": 49422
   },
   {
-   "blob": "3ebeef35f997721058af19436e87a1dd487817eb",
+   "blob": "22456c1afb7a650b7c060a7126d4e2435a0a17fa",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_read_override_tests.rs",
-   "sha256": "459fb3d05a7b378db4a1acd8822991150f9e5d8f5693c1dbe99836a8225a6997",
-   "size": 11857
+   "sha256": "5e0e15e3d9b395c8797682d66e27cbb4f4ec1fc2600b3d36d6eba49bace72070",
+   "size": 12107
   },
   {
    "blob": "9b4e21e1417e716305306d59951ed7a0a3576a89",
@@ -29598,11 +29598,11 @@
    "size": 3408
   },
   {
-   "blob": "979892fd4bb2779b8dcafdc2ff00a5d7ff080049",
+   "blob": "e073c0dbeba9a845897c025676bd43ec103eef27",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_read_symbol.rs",
-   "sha256": "73391fcdb722e0c32ba38115e9ddced46f61e647bebd25a2432f912d19894cfd",
-   "size": 5486
+   "sha256": "8f5374fc454f0b5fc81357922116c027a72a12d9fa5d4b9c01868a8830ce1854",
+   "size": 13080
   },
   {
    "blob": "cb7465d2398e362a472c120181450d133e7d4174",
@@ -29612,11 +29612,11 @@
    "size": 3530
   },
   {
-   "blob": "d0c2c23a582514f42b56dd34b812601e8249463d",
+   "blob": "19b7f4c190c4da094ca2f8276eb83df2ba4b4f45",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_read_window.rs",
-   "sha256": "4d2f109f67ab2b65990ddb3d4094e0158691ce6a50ecc82c66f5d1f0c65a98d0",
-   "size": 14856
+   "sha256": "52463386e0c67cd0cd16c0bd9441c7da95f61ee4a5e6f7002249c80ea7da8b76",
+   "size": 16082
   },
   {
    "blob": "f5c40c4e849950f02ce135318e95b568e9ad705b",
@@ -29661,11 +29661,11 @@
    "size": 3306
   },
   {
-   "blob": "e39560a5a301b4271429c438c875e83755e3c9fc",
+   "blob": "b04c0e2a61e46179f70480a7c7dd6428076be3e7",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_shell.rs",
-   "sha256": "3ad0acc262007e385eff8274f6ddecd57b6b5d6e4089ae135e4dbcd5cffcb71c",
-   "size": 53338
+   "sha256": "8138eb60d49e04a3d0cb2f861cc082c6c5360b4a7e6c3171eabe410d0b7d0a0b",
+   "size": 53591
   },
   {
    "blob": "0f315b43458e8a53bc1cecc5ffc4ac57f42e3c0e",
@@ -29675,18 +29675,18 @@
    "size": 15749
   },
   {
-   "blob": "67ff76bac2d46212a52a6cdcaefffc6961404587",
+   "blob": "81eff4dbb2316561e535f5797ee09c9226950f58",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_shell_tests.rs",
-   "sha256": "41b7406354c0cca2adca6f5ebf19490a5534724ddcb79821a7b84816592f0abf",
-   "size": 15297
+   "sha256": "122052bfd236124c097024bbd91f4348c704ce3a0cba0bda7823089ae2171792",
+   "size": 16049
   },
   {
-   "blob": "b943d8fc8720e3a4fe638dd458a0fc00ec3790d2",
+   "blob": "f89b48aeba3aebb3bd77b3bd490d43b217ec858d",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_tasks.rs",
-   "sha256": "ac7a082d60eddb914438c0769b13877d23df66ef4bccc4714609038768ba1a6a",
-   "size": 13725
+   "sha256": "73911bf307105b8a812b6d659c811196e0c0750200fbb955a07e3c16d2dd7651",
+   "size": 15784
   },
   {
    "blob": "d13ce0781636faf39e1731fe25c056839cccf228",
@@ -29717,11 +29717,11 @@
    "size": 8972
   },
   {
-   "blob": "95efaaafac8da4552b840c7e6dd7d2ac24730494",
+   "blob": "0cdb62be495c7f3b3f35fb530497fc07584b0950",
    "mode": "100644",
    "path": "rust/src/tools/registered/ctx_verify.rs",
-   "sha256": "ecaf6d3bc228e3d953624c21cbd68123056b2d249056428bad57f650e69af5d2",
-   "size": 3053
+   "sha256": "e1bb1d5237ae35a17abac9f4daf7f4ca56554f64444bd44a52760bca9e88a8e6",
+   "size": 3045
   },
   {
    "blob": "f79672f6c1624b4efca5648a9cfe134f55246017",
@@ -29745,11 +29745,11 @@
    "size": 6819
   },
   {
-   "blob": "15ec5f88700d1b5c601596e488f95fea6a675b0f",
+   "blob": "18b3cd16caa9cc3d4ce4db7a3bfb302604f337e0",
    "mode": "100644",
    "path": "rust/src/tools/registered/shell_alias.rs",
-   "sha256": "5d2ce2df52167d83a3bc55413f45487afe133317452c82ed86f3ec8a17859fb5",
-   "size": 3901
+   "sha256": "23c244673cd25a9aaf264c8b4b3b7f48efc48b70698e6f9d3462c817eed6276c",
+   "size": 3921
   },
   {
    "blob": "026424c0b566254de8404c729e31bf13c53605d5",
@@ -29822,11 +29822,11 @@
    "size": 15220
   },
   {
-   "blob": "a88c3546b220c8a5c907d94ce02cf45c9ee8ddcf",
+   "blob": "22413b2d931f6d878fc9b98a107f47b9592714be",
    "mode": "100644",
    "path": "rust/src/uninstall/mod.rs",
-   "sha256": "e4fae3231efb6f2f45fb1ce32654515023e99441d60d0b699c405108d4afbec6",
-   "size": 25683
+   "sha256": "413586b030989b07883e3fa48e8254547134fd6e6312da5e6da93fa2024169eb",
+   "size": 27408
   },
   {
    "blob": "d2257fbd443d3f518c7a674e65e33d0461ac2e00",
@@ -29864,11 +29864,11 @@
    "size": 17854
   },
   {
-   "blob": "e45fed8de6d4f5d0b92448de9ac6dbbb7e869c47",
+   "blob": "343bc71ce79f40dc77c222e3e6403e818fb6623d",
    "mode": "100644",
    "path": "rust/tests/ciso_great_filter_e2e.rs",
-   "sha256": "ef8eef55de5551ea812384154139f8fec73f26c29671d982e8db3bd110853c19",
-   "size": 8834
+   "sha256": "5b59887b699d6bf9501ff4baba8b7dee254f425400e6c5021250e8245a4cc5e3",
+   "size": 9134
   },
   {
    "blob": "5c6b38b2abfd0c1abea24b564c39f3dcab6e8fe4",
@@ -29920,11 +29920,11 @@
    "size": 4917
   },
   {
-   "blob": "0c007aab4a2cbfe290a956822c5d4af64be26480",
+   "blob": "c5052095166a37ba45208ebc7dbdd2cd7f130802",
    "mode": "100644",
    "path": "rust/tests/ctx_compose_scenarios.rs",
-   "sha256": "f5920379c336df93a8dda8db60d2bda3bb177a45d57bde05e41f1605c35ca342",
-   "size": 6778
+   "sha256": "9bae6fbedf84e65763b414bfdb3c598809aba9a5cf7c550c761f45d005c42caa",
+   "size": 6992
   },
   {
    "blob": "1f156830d3b99563eb9e5d3ff653ab7cf204ff9d",
@@ -30109,10 +30109,10 @@
    "size": 1354
   },
   {
-   "blob": "d65ce63a511940e02e85f547b341b7127ae07818",
+   "blob": "308af59534b156746d2d2c591ea59b02752ab745",
    "mode": "100644",
    "path": "rust/tests/fixtures/ocla_public_api.sha256",
-   "sha256": "c60f5619bbfab635914c793f5f5a1b8723828e0d43d47057f43e2936fb861127",
+   "sha256": "26d9a5bff1f9d3d217f7a543e16fc85a21f1238a42285842c1da9ef4299da689",
    "size": 65
   },
   {
@@ -30683,11 +30683,11 @@
    "size": 7263
   },
   {
-   "blob": "1c9eb091d010fe5c2ad26de1902ad6cd6156cbbf",
+   "blob": "a9573ac536f4b8b5b1f512fb1f9d3f42e9a8f610",
    "mode": "100644",
    "path": "rust/tests/output_contracts_knowledge.rs",
-   "sha256": "2011170542c18340b96fcbe048c6e0a9d0fca56e611d36c66e34e39b1127870a",
-   "size": 13388
+   "sha256": "3d294290c2553d3c053f4345e8526182732b8b1d00a7c60844e767f5c48538d9",
+   "size": 15120
   },
   {
    "blob": "cf10d145a99511ef86cbab8e98fbb7ba649a06f9",
@@ -30732,11 +30732,11 @@
    "size": 2531
   },
   {
-   "blob": "700add6751739e9b1c48cd8e9a423521c1d42b1f",
+   "blob": "21294b58387d55297e09ba36d8391da05c0efde3",
    "mode": "100644",
    "path": "rust/tests/p4_adaptive_mode_policy_eval.rs",
-   "sha256": "97ce050d899e3d405f0992d6ab77e52183b5dd54048ef02c703b59519f64275f",
-   "size": 2727
+   "sha256": "1b3d0b1af74a5ad6e2d69f3b5e5edefdf16373c43ad635ceeac7145d5e0c07fb",
+   "size": 2540
   },
   {
    "blob": "43c75676d9650dd0574e5d1c849c620ae51f6d68",
@@ -30865,11 +30865,11 @@
    "size": 1762
   },
   {
-   "blob": "f4040b7e4e49ac00afa5840a416650561c9539b9",
+   "blob": "502fa23c9c70b8796e7713833259c6a40ec332d5",
    "mode": "100644",
    "path": "rust/tests/suite/cli_characterization.rs",
-   "sha256": "87c819119b3d77e344f36ca64019b7f45cad8c18bbcc40bc5ae5e97f47e4e340",
-   "size": 16100
+   "sha256": "c86077cb7913d574597878cb2caca3b349a47bf05227e415d3cde489ccfaace8",
+   "size": 17365
   },
   {
    "blob": "c122f9b109fa9e0b726404952344897c4be5a831",
@@ -31103,32 +31103,32 @@
    "size": 4584
   },
   {
-   "blob": "78ff4b0da5220b4ef82bb9b7570842f77c73b97b",
+   "blob": "ce72389c0a605659a7a72ba37aa06dbc7ff36788",
    "mode": "100644",
    "path": "rust/tests/suite/hive_bus_control.rs",
-   "sha256": "587cbcd989c8f1c3ba7fb6707977405d00af39b2612b56e5456187dc393cad5c",
-   "size": 7573
+   "sha256": "c235fe43fb5f9c64a57847cdc4deae1b4daa4d844ea4098a2bebbda989c33edc",
+   "size": 8842
   },
   {
-   "blob": "58da83e2885cde4e329c0dcc11149694e8616538",
+   "blob": "62cfbcd3b5b6fa536a78f60a4c55fc6b6648f60d",
    "mode": "100644",
    "path": "rust/tests/suite/hive_bus_cross_instance.rs",
-   "sha256": "e494d87ca0dc47fc1e599bdf87601d9403806dbe1f5358d5b520d31290ef0d5d",
-   "size": 10935
+   "sha256": "eb833e8943b5eb5681f2dd4a28816d777504110ac4575540119ac5f7a0d70781",
+   "size": 17079
   },
   {
-   "blob": "4ae79f0d8d7f8f5969bca6a3c494533c2140ebaa",
+   "blob": "5c815a66bee23921de4c4adc86c91d3fc78a4f0e",
    "mode": "100644",
    "path": "rust/tests/suite/hive_connector_cli.rs",
-   "sha256": "1f88e47f099e2780f467c5e9588a49a2653d9916e490bdabec52e848662454aa",
-   "size": 96616
+   "sha256": "62b29616e6bd8561a66ca36e87c55d42186f760edc56201a7b803677adac8ab3",
+   "size": 100384
   },
   {
-   "blob": "6b2ee0b8d0c906b7f317028a17a7eae520f827f5",
+   "blob": "8a651fb1b00743acb68c6e87e785786973c4986b",
    "mode": "100644",
    "path": "rust/tests/suite/hive_contract_fake.rs",
-   "sha256": "5718ad97f3e5e62681c0e5bec8f7fc8bd42eafe8e1445ecdb0a4d10de7a3b7e9",
-   "size": 35111
+   "sha256": "fb382d6224ef3c264fabc7e90d2aa7afa2619aada2087bc01fba96d93c5a061c",
+   "size": 36014
   },
   {
    "blob": "815e251f28f141f4f37d7aa8d2d0f624a2c2a2cf",
@@ -31201,11 +31201,11 @@
    "size": 2576
   },
   {
-   "blob": "25f31470b9e81f64e5c43d647f6ebce036666145",
+   "blob": "69d96e839547efd15d6eb047cc611263699e0353",
    "mode": "100644",
    "path": "rust/tests/suite/legacy_path_firewall.rs",
-   "sha256": "424565759c8d7808a04a97e75c289806eaf71a61258073589d99ad345a52b70f",
-   "size": 6408
+   "sha256": "334ddd76a61d73bcb058f9bc30a67e1abe2df606855289668a3de3dbf13c5816",
+   "size": 6658
   },
   {
    "blob": "96425df223607685a4636207726ce0f26b279a15",
@@ -31306,11 +31306,11 @@
    "size": 18337
   },
   {
-   "blob": "4fb6d806a07c07bd895c69c358c1434f59c65b0e",
+   "blob": "fe2d595ecd384ae5e52b435d9fa59e460af2205f",
    "mode": "100644",
    "path": "rust/tests/suite/ocla_drift_check.rs",
-   "sha256": "f7332a10744d0ec4afb92847bbf80055686e72c8b5b8fd7a54ec01aa4965d069",
-   "size": 3010
+   "sha256": "91bce35a07bcf6a32c39f45aea2fb5a3e38127ea19b2a4633969facd7392026e",
+   "size": 4058
   },
   {
    "blob": "a6475c1d4f2461038efcc08094fb0bd8f36c4c21",
@@ -31446,11 +31446,11 @@
    "size": 3400
   },
   {
-   "blob": "dd5ccf9cb2df671a6e665daecce985f70419e468",
+   "blob": "c86c7174893e43c487840365300e27223f8ba635",
    "mode": "100644",
    "path": "rust/tests/suite/read_observation_acceptance.rs",
-   "sha256": "e31d735c02f030a1507ff20502de2351f8758206e03ec897375338ad1349198e",
-   "size": 8707
+   "sha256": "96abe7d7b3ac1f80497125505967a9f5c2d7335f819833969053bf8057309206",
+   "size": 8129
   },
   {
    "blob": "cb800aee88e81a80994044b33396096a71dbf5e3",
@@ -32041,11 +32041,11 @@
    "size": 44225
   },
   {
-   "blob": "0d70e525017822b3ada327f54cc75db170c7f6d3",
+   "blob": "22c3874e9dd35cc9545ec23feb4311c5ef018823",
    "mode": "100644",
    "path": "rust/tests/suite/uninstall_help_safety_476.rs",
-   "sha256": "983d695edf11351552cd3024813cc2edeba6495fd04071218d1ffec8eb857bc5",
-   "size": 3028
+   "sha256": "4a2800fdd610fbea11538ad58487aa8e43c462e860514ca271a5aaa05f557d53",
+   "size": 3781
   },
   {
    "blob": "b6a13795753ed1071b6fa72a86b8c993019b1f16",
@@ -32069,11 +32069,11 @@
    "size": 2053
   },
   {
-   "blob": "32ad992b8de98b28744ba65f7c7fd94268680919",
+   "blob": "cd20cd1b8927777de460e94d99bf758aed9506d5",
    "mode": "100644",
    "path": "rust/tests/support/fake_hive/mod.rs",
-   "sha256": "3882608819d7338dd983ad9eaceb2f3b2eb3159cc65596a6856db1e0385fb092",
-   "size": 102429
+   "sha256": "11e6c5841d6f755f73907a1a982fe29900aeeaac685d6110e107b6f6c30a5229",
+   "size": 103012
   },
   {
    "blob": "2020d3c961eaee8d2d25e20c476fe13cbd362adb",
@@ -32083,10 +32083,10 @@
    "size": 201
   },
   {
-   "blob": "3fa2c5190139655825c080351eb802d1970c39f9",
+   "blob": "8e8f0055bb5fad5a851609fae4d0d4b3075de161",
    "mode": "100755",
    "path": "rust/tests/tcc_sandbox.sh",
-   "sha256": "37acce13098db9a81acb6e1b8928ee45faed15df375c73bbb3fc950e6e85d462",
+   "sha256": "e4ad04dd68db4023f7fc40e2c6edb52f97238a2af7db97271020fac279fa1690",
    "size": 6795
   },
   {
@@ -32461,11 +32461,11 @@
    "size": 60673
   },
   {
-   "blob": "400a0071ef34a88b1738020cd7fc167366a7fa8f",
+   "blob": "252fa87b990fb99fac5ba446032caa28c4c3638d",
    "mode": "100755",
    "path": "scripts/check-package-versions.py",
-   "sha256": "38e9350e56130e427a4f3080514fabfb32dcb6661cab3b0b8f2aaa870a51d3fb",
-   "size": 4681
+   "sha256": "d1c5413893a8b0438de88f0160bd32734a4ac8cc7c17862a5075af6986c96290",
+   "size": 6308
   },
   {
    "blob": "b406c670943b29503c028d6c5b15652b644ff84f",
@@ -32734,11 +32734,11 @@
    "size": 22483
   },
   {
-   "blob": "eb5dfeff504214ffeb55de0a94c41bb9834ae5ad",
+   "blob": "c97031afb8904801d35ccd0c77a5ca5914f73b6d",
    "mode": "100644",
    "path": "scripts/tests/check_protected_hooks.py",
-   "sha256": "b976deed13aeacc1523fd9717aaf9bab0fa447f628481b6eac3ede1f8fb2b55b",
-   "size": 7765
+   "sha256": "de3774ab865f0bfb9bded477592bd74652a3e05a018e77cba710b5f4fc48846e",
+   "size": 7646
   },
   {
    "blob": "30c332000e3df98416ff34866698d3c140d4f5aa",
@@ -32895,6 +32895,13 @@
    "size": 41
   },
   {
+   "blob": "0a1648089486dba22c2c0c8921d02e734bb74e9f",
+   "mode": "100644",
+   "path": "scripts/tests/test_check_package_versions.py",
+   "sha256": "fed4bc25db19e2d4e584db9c2c273f9ddb859ff6a329aff3be5864dc2d97094e",
+   "size": 1722
+  },
+  {
    "blob": "f09f8286cd7b96ecd6bf50051cf77450b37c2258",
    "mode": "100644",
    "path": "scripts/tests/test_check_publish_dependency_graph.py",
@@ -32944,11 +32951,11 @@
    "size": 4305
   },
   {
-   "blob": "44aa709f8965a504d637b405dfdedb179b719701",
+   "blob": "ed15983047947b6843925b155a10439cb6ad555e",
    "mode": "100644",
    "path": "scripts/tests/test_ip_provenance_audit.py",
-   "sha256": "33c8bf3d6823acefe837860512eb4cda70dd206be9bd8d95e9fcff1771a956dd",
-   "size": 57009
+   "sha256": "30ca76e2d117f32c2f5796d4d6893a26ecc6bda35b537edc11b3dee97e8e0b25",
+   "size": 57094
   },
   {
    "blob": "d4195eb00780ea61a7825b23f76e01b8ab57a351",
@@ -33091,10 +33098,10 @@
    "size": 4960
   },
   {
-   "blob": "a01cae33e0bb855e06874ccab58ec6986d93746a",
+   "blob": "9ea37ccc8447fe0108d53eff3609067322a6b032",
    "mode": "100644",
    "path": "security/evidence/full-history-baseline-v1.json",
-   "sha256": "9a5b5578ced4944fc6dca380ff9d40a51b0397e80285965255d724fbc6b30783",
+   "sha256": "a7e3154e43c3aaa76b0d0567f341bc4012c8ccb037d2eabb3e6abc0e32b0dc53",
    "size": 74762
   },
   {
@@ -33182,10 +33189,10 @@
    "size": 2019
   },
   {
-   "blob": "cfe298036f052fca90018f65b0038f7f7d6e5775",
+   "blob": "4e83b7b57bd31f48090718c052a3675548d83761",
    "mode": "100644",
    "path": "security/history-policy-v1.json",
-   "sha256": "e0e90e57305534fafd53efbd81665182448f249cbff8d3429ef6f8a5b76ffffa",
+   "sha256": "cc616fc4f00742b2b53b011223ec4b4bb602a4863a130e6b0e6aeb0d5a19e28e",
    "size": 7171
   },
   {
@@ -33238,11 +33245,11 @@
    "size": 4338
   },
   {
-   "blob": "40f4868496d30077291a954e32dcc462933d5116",
+   "blob": "28d553aa89cc27d63d222020f8a352b5e0e9b6b6",
    "mode": "100755",
    "path": "skills/lean-ctx/scripts/install.sh",
-   "sha256": "7b42ea292086ea57dc6a1514e094fa37840b5a24ad8ebf5f26a7eb87fa1b03f0",
-   "size": 2468
+   "sha256": "1e18a56b61cc8fd81a4289ca78bd3c8ee7655755c7fcb620fccfdd8ed1fb12d7",
+   "size": 4213
   },
   {
    "blob": "aea1661d4eba879ddb2b1c6b620c8cf11df4d6e0",
@@ -33322,18 +33329,18 @@
    "size": 1899
   },
   {
-   "blob": "3f2bf4b7f7b5973b870ad711fc31e6b2c3756af8",
+   "blob": "87f5853a917001d2749b4c1e2cf7aa03280c336b",
    "mode": "100644",
    "path": "tests/build/test_dev_install.py",
-   "sha256": "f8a255574eca4a767a559598c97771f6b3b1596e0144478cfd39959091d26fff",
-   "size": 19575
+   "sha256": "80c840adfb5a94d3f307786167c5fa1301be8f1d71c632e36272343665e7175f",
+   "size": 20119
   },
   {
-   "blob": "dd44cd397b77c0499aa45b0b2bc6c6d318374491",
+   "blob": "18dd7cd46858ade8ec8aa26a1a2e98c29edb4447",
    "mode": "100644",
    "path": "tests/build/test_install_sh_checksum.py",
-   "sha256": "1be1a9dc931919030823abf36cefa1aed9ad8cb8a44ca7892d2701a3d376ab5a",
-   "size": 5241
+   "sha256": "12c4e635a39b6a92746970400381da64f67156182c87798103796d6be73d0993",
+   "size": 9378
   },
   {
    "blob": "c38ea50ca276eb20c4d86dcf1158acfcb9a0502e",
@@ -33348,6 +33355,13 @@
    "path": "tests/build/test_rust_build_script.py",
    "sha256": "42bb2fea0e66fd460b18ece2bb938b54205d2919097d318497a8b65a43fabd2e",
    "size": 2944
+  },
+  {
+   "blob": "8c8bb2e8e53449bbde2a5f0a45ad1d25dbc64d10",
+   "mode": "100644",
+   "path": "tests/build/test_skill_install_sh.py",
+   "sha256": "34e503a9ec6fed78832b269116e54af315ef3ad8ab854cb53df7bc9bfbb40f41",
+   "size": 5631
   },
   {
    "blob": "ca4d4a92fea4152d3ef4bf487783ffcfbe7159d7",
@@ -33962,9 +33976,9 @@
    "sha256": "d8ece87e85f847ba6ef03ac36623f3fa5675f01c3cd01ee22a4c8362eec48dda"
   }
  ],
- "manifest_sha256": "41abc93b8da57f4cfae8cca0c48512469f65e8013e754b35f603d66258a1448d",
+ "manifest_sha256": "0d45974d80507623415889b4c3ab4ff5cd7366f7076828f9e168a16d33691261",
  "schema": 1,
- "source_commit": "eda0ce3d4020c5b42ebd00969c4dab359e7846a1",
+ "source_commit": "79deb1c76049e7d99e33e26bd73c217fcb4afebc",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "f6bbf615b20ac2d07416c181ef02de7f752bdb7e18dec92bd1d1e1822094e0bf"
+ "tree_sha256": "f32375e49d77b8e22832ef39ecee7040891bc363e097803d68ee3e7a4c7ef300"
 }

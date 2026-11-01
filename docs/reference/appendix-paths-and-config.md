@@ -18,12 +18,14 @@ the **config dir can be mounted read-only**. Typed resolvers live in
 | **Config** | `$XDG_CONFIG_HOME/lean-ctx` (`~/.config/lean-ctx`) | `LEAN_CTX_CONFIG_DIR` | `config.toml`, `env.sh`, `shell-hook.*` — **RO-safe** |
 | **Data** | `$XDG_DATA_HOME/lean-ctx` (`~/.local/share/lean-ctx`) | `LEAN_CTX_DATA_DIR` | `sessions/`, `vectors/`, `graphs/`, `knowledge/`, `archives/`, `memory/`, `packages/`, `agents/`, `stats.json`, `client-id.json` |
 | **State** | `$XDG_STATE_HOME/lean-ctx` (`~/.local/state/lean-ctx`) | `LEAN_CTX_STATE_DIR` | `events.jsonl`, `journal.md`, `*.log`, `mcp-live.json`, `heatmap.json`, `pipeline_stats.json`, `cost_attribution.json`, `context_ledger.json`, `cooccurrence/`, `tee/`, `dashboard.token`, `agent_runtime_env.json` (`0600`) |
-| **Cache** | `$XDG_CACHE_HOME/lean-ctx` (`~/.cache/lean-ctx`) | `LEAN_CTX_CACHE_DIR` | `semantic_cache/`, `models/`, `*_learned.json`, `litm_calibration.json`, `context_ir_v1.json`, `latest-version.json`, `.first_run_wow_done` |
-| **Runtime** | `dirs::data_local_dir()/lean-ctx` | — | `daemon.pid`, `daemon.sock`, `daemon-*.log`, `*.lock` |
+| **Cache** | `$XDG_CACHE_HOME/lean-ctx` (`~/.cache/lean-ctx`) | `LEAN_CTX_CACHE_DIR` | `semantic_cache/`, `models/`, `*_learned.json`, `context_ir_v1.json`, `latest-version.json`, `.first_run_wow_done` |
+| **Runtime** | the **Data** dir | `LEAN_CTX_DATA_DIR` | `daemon.pid`, `daemon.sock`, `daemon-*.log`, `daemon.start.lock` |
 
-Unix dir permissions: `0700`. The **Runtime** dir is the OS data-local dir
-(`~/.local/share/lean-ctx` on Linux, `~/Library/Application Support/lean-ctx` on
-macOS); it holds only daemon IPC and is intentionally separate from the data dir.
+Unix dir permissions: `0700`. The daemon's endpoint files live in the data dir,
+so every data dir (`LEAN_CTX_DATA_DIR`, the XDG layout, a legacy `~/.lean-ctx`)
+gets its own daemon; on Windows the pipe name is derived from it. Releases up to
+3.12.0 kept them in the OS data-local dir (`~/Library/Application Support/lean-ctx`
+on macOS); a daemon started there is stopped when a new one starts.
 
 ### Resolution order (per category)
 
@@ -80,7 +82,7 @@ read-only while the writable categories live elsewhere:
 --rw    $XDG_DATA_HOME/lean-ctx       # sessions, vectors, graphs, knowledge
 --rw    $XDG_STATE_HOME/lean-ctx      # events, journals, logs, ledgers
 --tmpfs $XDG_CACHE_HOME/lean-ctx      # semantic cache, models (regenerable)
-#       runtime (daemon.pid/sock) lives in the OS data-local dir
+#       runtime (daemon.pid/sock) lives in the data dir
 ```
 
 Project-local lean-ctx data (in the repo, not these dirs): `.lean-ctx.toml`

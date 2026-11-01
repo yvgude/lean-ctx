@@ -1759,6 +1759,40 @@ mod response_cache_tests {
         );
     }
 
+    /// Benchmark replay (rename-vat-alias): `ctx_search pattern=calc_vat`
+    /// after two `ctx_patch` edits answered with the pre-edit matches, and the
+    /// model re-read the file to resolve the contradiction. An edit between
+    /// two identical calls must change the key.
+    #[test]
+    fn an_edit_between_identical_calls_changes_the_key() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let file = dir.path().join("vat.py");
+        std::fs::write(&file, "def calc_vat(net):\n    return net\n").unwrap();
+        let args = Map::from_iter([
+            ("pattern".to_owned(), json!("calc_vat")),
+            ("path".to_owned(), json!(".")),
+        ]);
+        let before = response_cache_key("ctx_search", Some(&args), &root).unwrap();
+        assert_eq!(
+            before,
+            response_cache_key("ctx_search", Some(&args), &root).unwrap()
+        );
+
+        std::fs::write(
+            &file,
+            "def vat_due(net):\n    return net\n\n\ndef calc_vat(net):\n    return vat_due(net)\n",
+        )
+        .unwrap();
+        let after = response_cache_key("ctx_search", Some(&args), &root).unwrap();
+        assert_ne!(
+            before, after,
+            "the cached pre-edit answer must not be served"
+        );
+    }
+
     #[test]
     fn successful_text_response_round_trips_through_cache() {
         let cache = ResponseCache::new(8, Duration::from_mins(1));

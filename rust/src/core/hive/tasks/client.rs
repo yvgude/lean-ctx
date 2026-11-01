@@ -23,7 +23,8 @@ pub struct ListFilter {
 }
 
 impl ListFilter {
-    fn query(&self) -> Result<String, HiveError> {
+    /// The query string of these filters (`""` without any).
+    pub(super) fn query(&self) -> Result<String, HiveError> {
         let mut parts = Vec::new();
         if let Some(state) = self.state {
             let state = serde_json::to_value(state)

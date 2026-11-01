@@ -74,16 +74,17 @@ function startLeanCtxServer(opts: {
     "--project-root",
     opts.projectRoot,
   ];
-  if (opts.authToken) {
-    args.push("--auth-token", opts.authToken);
-  }
   if (opts.maxRps !== undefined) args.push("--max-rps", String(opts.maxRps));
   if (opts.rateBurst !== undefined)
     args.push("--rate-burst", String(opts.rateBurst));
 
   const proc = spawn(opts.binPath, args, {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env },
+    // The token goes in the environment: `--auth-token` would put it in the
+    // process list (deprecated since 3.13.0).
+    env: opts.authToken
+      ? { ...process.env, LEAN_CTX_HTTP_TOKEN: opts.authToken }
+      : { ...process.env },
   });
 
   const stop = async () => {

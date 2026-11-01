@@ -282,31 +282,6 @@ pub fn thresholds_for_path(path: &str) -> CompressionThresholds {
     CompressionThresholds::default()
 }
 
-/// Selects the bandit arm for a read of `path`: its FieldWeights feed the
-/// adaptive context planner (`context_kernel::autopilot`), and a later bounce
-/// or edit failure penalizes it. The rendered text never depends on it (#498).
-fn select_threshold_arm(path: &str, content: &str) {
-    let Some(project_root) =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
-    else {
-        return;
-    };
-    let ext = Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    let bandit_key =
-        crate::core::bandit::bandit_key("threshold", ext, Some(token_bucket_label(content)));
-    let mut store = super::bandit::BanditStore::load(&project_root);
-    let bandit = store.get_or_create(&bandit_key);
-    // #4: deterministic argmax-of-mean by default (Thompson only under the
-    // stochastic flag).
-    let arm = bandit.choose_arm();
-    let arm_name = arm.name.clone();
-    super::context_field::set_active_weights(super::context_field::FieldWeights::from_arm(arm));
-    record_selected_arm(path, project_root, bandit_key, arm_name);
-}
-
 /// Shift the thresholds by the content's own compressibility (Kolmogorov
 /// proxy): a pure function of the text.
 fn apply_content_compressibility(base: &mut CompressionThresholds, content: &str) {
@@ -321,94 +296,12 @@ fn apply_content_compressibility(base: &mut CompressionThresholds, content: &str
 /// Thresholds for rendering a read: the per-language base adjusted by the
 /// content's compressibility, so the rendered text is a pure function of
 /// `(path, content)` (#498). Learned threshold shifts were retired on
-/// 2026-10-16: since #1910 the text ignored them, so they only cost a store
-/// load per read. The bandit arm is still selected for the planner weights.
+/// 2026-10-16 (since #1910 the text ignored them), and the threshold bandit
+/// with them.
 pub fn read_thresholds(path: &str, content: &str) -> CompressionThresholds {
-    select_threshold_arm(path, content);
     let mut base = thresholds_for_path(path);
     apply_content_compressibility(&mut base, content);
     base
-}
-
-/// The bandit arm selected for a file's most recent threshold-driven read, kept
-/// so a *deferred* real outcome (bounce, edit-fail) can penalize the arm that
-/// actually produced the compression — instead of a hardcoded success (#593).
-#[derive(Clone)]
-struct SelectedArm {
-    project_root: String,
-    bandit_key: String,
-    arm_name: String,
-}
-
-/// Bounded far above the bounce (5) and edit-force (10) detection windows, so
-/// evicting the oldest entry can never drop an arm a still-pending signal needs.
-const ARM_REGISTRY_CAP: usize = 64;
-
-static SELECTED_ARMS: std::sync::Mutex<Option<SelectedArmRegistry>> = std::sync::Mutex::new(None);
-
-#[derive(Default)]
-struct SelectedArmRegistry {
-    /// Insertion order of distinct paths, for O(1) oldest-first eviction.
-    order: std::collections::VecDeque<String>,
-    by_path: std::collections::HashMap<String, SelectedArm>,
-}
-
-fn record_selected_arm(path: &str, project_root: String, bandit_key: String, arm_name: String) {
-    let norm = crate::core::pathutil::normalize_tool_path(path);
-    let mut guard = SELECTED_ARMS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let reg = guard.get_or_insert_with(SelectedArmRegistry::default);
-    let arm = SelectedArm {
-        project_root,
-        bandit_key,
-        arm_name,
-    };
-    if reg.by_path.insert(norm.clone(), arm).is_none() {
-        reg.order.push_back(norm);
-        while reg.order.len() > ARM_REGISTRY_CAP {
-            if let Some(old) = reg.order.pop_front() {
-                reg.by_path.remove(&old);
-            }
-        }
-    }
-}
-
-/// A bounce or edit failure after a read of `path` (#593): penalize the bandit
-/// arm that produced the read. The positive signal comes from realized savings
-/// (`report_bandit_outcome_for_path` in entropy mode).
-pub fn penalize_read_arm(path: &str) {
-    report_bandit_outcome_for_path(path, false);
-}
-
-/// Reward (`success=true`) or penalize (`false`) the bandit arm recorded for
-/// `path`. No-op when no arm was registered (e.g. the file was never read in a
-/// threshold-driven mode), so attribution is never guessed.
-pub fn report_bandit_outcome_for_path(path: &str, success: bool) {
-    let norm = crate::core::pathutil::normalize_tool_path(path);
-    let selected = {
-        let guard = SELECTED_ARMS
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        guard.as_ref().and_then(|r| r.by_path.get(&norm).cloned())
-    };
-    if let Some(sel) = selected {
-        let mut store = super::bandit::BanditStore::load(&sel.project_root);
-        store
-            .get_or_create(&sel.bandit_key)
-            .update(&sel.arm_name, success);
-        let _ = store.save(&sel.project_root);
-    }
-}
-
-fn token_bucket_label(content: &str) -> &'static str {
-    let len = content.len();
-    match len {
-        0..=2000 => "sm",
-        2001..=10000 => "md",
-        10001..=50000 => "lg",
-        _ => "xl",
-    }
 }
 
 #[cfg(test)]
@@ -457,72 +350,5 @@ pub mod tests {
             k_rep < k_div,
             "repetitive content should have lower Kolmogorov proxy: {k_rep} vs {k_div}"
         );
-    }
-
-    fn arm_mean(project_root: &str, key: &str, arm: &str) -> f64 {
-        let mut store = crate::core::bandit::BanditStore::load(project_root);
-        store
-            .get_or_create(key)
-            .arms
-            .iter()
-            .find(|a| a.name == arm)
-            .map_or(0.5, crate::core::bandit::BanditArm::mean)
-    }
-
-    #[test]
-    fn real_failure_signal_penalizes_selected_arm() {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let root = "/fix1/penalize";
-        record_selected_arm(
-            "src/foo.rs",
-            root.into(),
-            "threshold:rs:md".into(),
-            "aggressive".into(),
-        );
-
-        let before = arm_mean(root, "threshold:rs:md", "aggressive");
-        for _ in 0..16 {
-            penalize_read_arm("src/foo.rs");
-        }
-        let after = arm_mean(root, "threshold:rs:md", "aggressive");
-
-        assert!(
-            after < before,
-            "bounce/edit-fail must lower the selected arm mean: {before} -> {after}"
-        );
-    }
-
-    #[test]
-    fn outcome_without_registered_arm_does_not_register_path() {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        // Attribution must never be guessed for a path we never selected an arm for.
-        report_bandit_outcome_for_path("fix1/never-seen-xyz.rs", false);
-        let norm = crate::core::pathutil::normalize_tool_path("fix1/never-seen-xyz.rs");
-        let guard = SELECTED_ARMS
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let registered = guard
-            .as_ref()
-            .is_some_and(|r| r.by_path.contains_key(&norm));
-        assert!(!registered, "no-op report must not create a registry entry");
-    }
-
-    #[test]
-    fn registry_evicts_oldest_beyond_cap() {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        for i in 0..(ARM_REGISTRY_CAP + 5) {
-            record_selected_arm(
-                &format!("evict/f{i}.rs"),
-                "/fix1/evict".into(),
-                "threshold:rs:md".into(),
-                "balanced".into(),
-            );
-        }
-        let guard = SELECTED_ARMS
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let reg = guard.as_ref().expect("registry initialized");
-        assert!(reg.order.len() <= ARM_REGISTRY_CAP);
-        assert_eq!(reg.order.len(), reg.by_path.len());
     }
 }

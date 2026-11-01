@@ -1,7 +1,7 @@
 {
   "contract": "team-seat-value-v1",
   "sha256": {
-    ".github/workflows/ci.yml": "a63cadcb477ba9427cfefc62dbf78414b21426c640adb6a08ea04136d0af6223",
+    ".github/workflows/ci.yml": "5b080d06c0983f8c5b155f1e4e3731d1ab1918c0bdc01f6ae3c42dafe228fcf5",
     "ci/gitlab-ci.yml": "5a1251f812a03c6ab97df01feda26942dc22d406b0e79374e4ff97c5c279178b",
     "docs/contracts/README.md": "e7012341f0448efe8570ed93d20772558f0245566b333b962f9dfabc1c1ff08a",
     "docs/contracts/team-seat-value-v1/README.md": "caecd3e67f1e9c0adacc272a9dae892ac0cddef42c5e17066c069d17a83505d6",

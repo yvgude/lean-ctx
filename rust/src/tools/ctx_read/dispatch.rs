@@ -479,14 +479,6 @@ fn handle_with_options_resolved_preread(
         );
     }
 
-    // Stigmergy (#540): deposit a Hot scent for this read in the background
-    // (the field file lock may briefly block; never stall the read path). The
-    // foreign-claim hint is intentionally NOT appended to the body: it carries a
-    // relative timestamp ("claimed Nm ago"), which would make the output a
-    // non-pure function of wall-clock time and defeat provider prompt caching
-    // (#498). The deposit remains so the field still reflects active work.
-    deposit_hot_scent(path);
-
     crate::core::context_gc::maybe_gc(cache);
 
     result
@@ -943,24 +935,6 @@ pub(crate) fn record_cross_agent_delivery(
     reg.delivery_registry.record_delivery(entry);
 }
 
-/// Deposit a Hot scent for `path` in the request's project from a worker
-/// thread. The project is resolved here: the request scope does not reach
-/// the thread, which would otherwise have no project at all.
-fn deposit_hot_scent(path: &str) -> Option<std::thread::JoinHandle<()>> {
-    let project_root = crate::core::scent_field::current_project()?;
-    let self_agent = crate::core::scent_field::scent_agent_id();
-    let scent_path = crate::core::pathutil::normalize_tool_path(path);
-    Some(std::thread::spawn(move || {
-        crate::core::scent_field::deposit_for(
-            &project_root,
-            self_agent,
-            crate::core::scent_field::ScentKind::Hot,
-            &scent_path,
-            0.3,
-        );
-    }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1343,24 +1317,24 @@ mod tests {
         );
     }
 
-    /// AP05-G6 review: the read's Hot scent was deposited from a worker
-    /// thread that resolved the project there, outside the request scope.
+    /// Owner decision 2026-10-31: a read leaves no scent in the field (the
+    /// per-read Hot deposit cost a thread and a file lock per read).
     #[test]
-    fn hot_scent_of_a_read_lands_in_the_request_project() {
+    fn a_read_deposits_no_scent() {
         let _data = crate::core::data_dir::isolated_data_dir();
         let project = tempfile::tempdir().unwrap();
-        let other = tempfile::tempdir().unwrap();
+        let file = project.path().join("scent_marker.rs");
+        std::fs::write(&file, "pub fn scent_marker() {}\n").unwrap();
         let root = project.path().to_str().unwrap();
-        crate::core::policy::runtime::REQUEST_PROJECT
-            .sync_scope(
-                std::cell::RefCell::new(Some(project.path().to_path_buf())),
-                || super::deposit_hot_scent("src/hot_scent_marker.rs"),
-            )
-            .expect("a bound request deposits")
-            .join()
-            .unwrap();
-        assert!(crate::core::scent_field::sync_block(root).contains("hot_scent_marker"));
-        assert!(crate::core::scent_field::sync_block(other.path().to_str().unwrap()).is_empty());
-        assert!(super::deposit_hot_scent("src/unbound.rs").is_none());
+        let mut cache = SessionCache::new();
+        let out = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(project.path().to_path_buf())),
+            || super::handle(&mut cache, file.to_str().unwrap(), "full", CrpMode::Off),
+        );
+        assert!(out.contains("scent_marker"), "{out}");
+        assert!(
+            crate::core::scent_field::sync_block(root).is_empty(),
+            "a read must not deposit a scent"
+        );
     }
 }

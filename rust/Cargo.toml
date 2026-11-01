@@ -533,7 +533,7 @@ harness = false
 name = "efficiency"
 harness = false
 
-# Protocol 0.2.0 is the in-tree migration release; keep workspace/root builds
+# Protocol 0.4.0 is the in-tree migration release; keep workspace/root builds
 # on these exact local bytes until that release is published to crates.io.
 # Remove this entry only after publication and registry-version verification.
 # rmcp 2.0.0 keeps completed response-send tasks in a JoinSet until shutdown,

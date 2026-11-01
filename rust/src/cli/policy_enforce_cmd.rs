@@ -220,13 +220,21 @@ pub(crate) fn run_enforce(
         let payload = crate::core::egress::write_payload(tool, Some(map)).map(|(p, _)| p);
         if let Some(payload) = payload {
             if let Some(reason) = active.egress.check_content(&payload, &active.redaction) {
-                policy_guard::audit_egress(tool, &reason);
+                policy_guard::audit_egress(
+                    tool,
+                    &reason,
+                    crate::core::agent_identity::current_agent_id(),
+                );
                 return EnforceOutcome::BlockedEgress(reason);
             }
             if let Some(max) = active.egress.max_writes_per_min
                 && !crate::core::egress::check_rate(max)
             {
-                policy_guard::audit_egress(tool, "rate-limit");
+                policy_guard::audit_egress(
+                    tool,
+                    "rate-limit",
+                    crate::core::agent_identity::current_agent_id(),
+                );
                 return EnforceOutcome::BlockedEgress("rate-limit".to_string());
             }
         }
@@ -255,13 +263,23 @@ pub(crate) fn run_enforce(
     if let Some(active) = runtime::active() {
         let outcome = crate::core::policy::content::evaluate_text(&text, &active);
         if outcome.blocked {
-            policy_guard::audit_filter(tool, &outcome.audit, true);
+            policy_guard::audit_filter_as(
+                tool,
+                &outcome.audit,
+                true,
+                crate::core::agent_identity::current_agent_id(),
+            );
             return EnforceOutcome::BlockedFilter(
                 outcome.block_reason.unwrap_or_else(|| "policy".into()),
             );
         }
         if !outcome.audit.is_empty() {
-            policy_guard::audit_filter(tool, &outcome.audit, false);
+            policy_guard::audit_filter_as(
+                tool,
+                &outcome.audit,
+                false,
+                crate::core::agent_identity::current_agent_id(),
+            );
             redactions = outcome
                 .audit
                 .iter()

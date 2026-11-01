@@ -20,6 +20,7 @@ pub use helpers::{
 mod fallback_banner;
 mod kernel;
 pub(crate) use kernel::kernel_trailer;
+mod outline_budget;
 pub(crate) mod render;
 pub(crate) use render::*;
 /// Type-safe read-mode vocabulary (#528): single source of truth for which

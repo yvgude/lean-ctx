@@ -101,7 +101,15 @@ class SourceInstallTests(unittest.TestCase):
         self.install_dir = self.directory / "installed"
         self.install_dir.mkdir()
         self.installed = self.install_dir / "lean-ctx"
-        self.installed.write_text("old binary", encoding="utf-8")
+        # The installed binary records its own calls: install.sh stops only its
+        # daemon, while the new binary waits beside it, never a full `stop`.
+        self.old_binary = (
+            f"#!{sys.executable}\nimport json, os, pathlib, sys\n"
+            "assert list(pathlib.Path(__file__).parent.glob('.lean-ctx.new.*'))\n"
+            "with pathlib.Path(os.environ['BUILD_FLOW_RECORD']).open('a') as stream:\n"
+            "    stream.write(json.dumps(['installed', *sys.argv[1:]]) + '\\n')\n"
+        )
+        self.write_old_binary()
         self.record = self.directory / "events.jsonl"
         self.bin_dir = self.directory / "bin"
         self.bin_dir.mkdir()
@@ -114,9 +122,6 @@ class SourceInstallTests(unittest.TestCase):
                 "else: sys.exit(int(os.environ.get('BUILD_FLOW_EXIT', '0')))\n"
             ),
             "lean-ctx": (
-                "installed = pathlib.Path(os.environ['LEAN_CTX_INSTALL_DIR']) / 'lean-ctx'\n"
-                "assert installed.read_text() == 'old binary'\n"
-                "assert list(installed.parent.glob('.lean-ctx.new.*'))\n"
                 "with record.open('a') as stream: stream.write(json.dumps(sys.argv[1:]) + '\\n')\n"
             ),
         }.items():
@@ -136,6 +141,10 @@ class SourceInstallTests(unittest.TestCase):
             "BUILD_FLOW_TARGET": str(self.target),
         })
 
+    def write_old_binary(self):
+        self.installed.write_text(self.old_binary, encoding="utf-8")
+        self.installed.chmod(0o755)
+
     def run_installer(self, args):
         return subprocess.run(
             ["sh", str(self.script), *args], cwd=self.directory, env=self.env,
@@ -151,8 +160,9 @@ class SourceInstallTests(unittest.TestCase):
             with self.subTest(args=args):
                 result = self.run_installer(args)
                 self.assertEqual(result.returncode, 79, result.stderr)
-                self.assertEqual(self.installed.read_text(), "old binary")
+                self.assertEqual(self.installed.read_text(), self.old_binary)
                 self.assertNotIn(["stop"], self.events())
+                self.assertNotIn(["installed", "daemon", "stop"], self.events())
         self.record.unlink()
         for args in (["--unknown"], ["--build-only", "--unknown"], ["--release", "--unknown"]):
             self.assertEqual(self.run_installer(args).returncode, 2)
@@ -172,18 +182,19 @@ class SourceInstallTests(unittest.TestCase):
                 binary.parent.mkdir(parents=True)
                 binary.write_text("#!/bin/sh\necho fixture\n", encoding="utf-8")
                 binary.chmod(0o755)
-                self.installed.write_text("old binary", encoding="utf-8")
+                self.write_old_binary()
                 self.record.unlink(missing_ok=True)
                 build_only = ["--build-only", *args]
                 result = self.run_installer(build_only)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(self.installed.read_text(), "old binary")
-                self.assertNotIn(["stop"], self.events())
+                self.assertEqual(self.installed.read_text(), self.old_binary)
+                self.assertNotIn(["installed", "daemon", "stop"], self.events())
                 expected = ["fast"] if profile == "dev-fast" else ["build", "--locked", "--release", "--timings"]
                 self.assertEqual(self.events()[0], expected)
                 result = self.run_installer(args)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(self.events()[-1], ["stop"])
+                self.assertEqual(self.events()[-1], ["installed", "daemon", "stop"])
+                self.assertNotIn(["stop"], self.events())
                 self.assertEqual(self.installed.read_bytes(), binary.read_bytes())
                 self.assertFalse(self.installed.is_symlink())
                 binary.write_text("changed build artifact", encoding="utf-8")

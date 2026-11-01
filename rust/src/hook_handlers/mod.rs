@@ -500,13 +500,8 @@ pub fn handle_rewrite() {
 /// Effective shell-hook mode is `deny` (#1278). Env wins over config so a
 /// single session can be forced either way without touching config.toml.
 fn shell_deny_mode_active() -> bool {
-    let mode = match std::env::var("LEAN_CTX_SHELL_HOOK_MODE") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => crate::core::config::Config::load()
-            .shell_hook_mode
-            .clone()
-            .unwrap_or_default(),
-    };
+    // Release builds read only the real user's config (`config::shell_policy`).
+    let mode = crate::core::config::shell_policy::shell_hook_mode();
     mode.trim().eq_ignore_ascii_case("deny")
 }
 
@@ -556,11 +551,21 @@ pub fn handle_copilot() {
     };
     // Copilot takes `modifiedArgs` only with an approval: rewrite only what
     // is in the side-effect-free set, leave everything else to Copilot.
+    let denial = || {
+        if powershell_rewrite::is_powershell_tool(&tool_name) {
+            powershell_rewrite::allowlist_denial(&cmd, &binary)
+        } else {
+            file_rewrite::native_allowlist_denial(&cmd, &binary)
+        }
+    };
     if let Some(rewrite) = rewrite.filter(|r| r.safety == RewriteSafety::ReadOnly) {
         print!(
             "{}",
             build_dual_rewrite_output(tool_args.as_ref(), &rewrite)
         );
+    } else if let Some(msg) = denial() {
+        // The command runs natively, unwrapped: enforce the allowlist here.
+        print!("{}", build_deny_output(&msg, &v));
     }
 }
 

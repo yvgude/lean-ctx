@@ -637,3 +637,76 @@ async fn gateway_credential_route_requires_lean_ctx_token() {
     stop.send(()).unwrap();
     server.await.unwrap();
 }
+
+// The proxy mounts no `/mcp/{id}` routes, so the startup banner must not
+// advertise them for a configured gateway MCP registry.
+#[test]
+fn mcp_registry_banner_reports_entries_as_not_served() {
+    assert_eq!(mcp_registry_banner(&[]), None);
+    let line = mcp_registry_banner(&[crate::core::config::ResolvedMcpServer {
+        id: "docs".into(),
+        url: "https://mcp.example.com/mcp".into(),
+        auth_env: None,
+    }])
+    .expect("banner for a configured entry");
+    assert!(line.contains("not served"), "{line}");
+    assert!(line.contains("docs"), "{line}");
+    assert!(!line.contains("any  /mcp/"), "{line}");
+}
+
+// The production guard stack checks the Host header before auth: a
+// DNS-rebinding request is refused with 403 and never reaches the token check
+// (which would answer 401 and name the credential it wants).
+#[tokio::test]
+async fn host_guard_runs_before_auth_in_the_production_stack() {
+    use tower::ServiceExt;
+    let (_sender, upstreams) = tokio::sync::watch::channel(Arc::new(
+        crate::core::config::Config::default()
+            .proxy
+            .resolve_all_disk(),
+    ));
+    let app = layer_request_guards(
+        axum::Router::new().route(
+            "/v1/chat/completions",
+            axum::routing::any(|| async { "reached" }),
+        ),
+        RequestGuards {
+            expected_token: "guard-fixture-token".into(),
+            require_token: true,
+            loopback_open: false,
+            #[cfg(feature = "enterprise")]
+            gateway_keys: Arc::new(gateway_identity::GatewayKeys::default()),
+            upstreams,
+            rate_limiter: None,
+            allowed_hosts: Arc::new(Vec::new()),
+        },
+    );
+    let status = |host: &'static str, bearer: Option<&'static str>| {
+        let app = app.clone();
+        async move {
+            let mut request = axum::http::Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("host", host);
+            if let Some(token) = bearer {
+                request = request.header("authorization", format!("Bearer {token}"));
+            }
+            app.oneshot(request.body(axum::body::Body::empty()).unwrap())
+                .await
+                .unwrap()
+                .status()
+                .as_u16()
+        }
+    };
+
+    assert_eq!(status("rebind.example", None).await, 403);
+    assert_eq!(
+        status("rebind.example", Some("guard-fixture-token")).await,
+        403
+    );
+    assert_eq!(status("127.0.0.1:4444", None).await, 401);
+    assert_eq!(
+        status("127.0.0.1:4444", Some("guard-fixture-token")).await,
+        200
+    );
+}

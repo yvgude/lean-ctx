@@ -68,7 +68,7 @@ impl ContextKernel {
 
     /// Create a new kernel with the given providers.
     pub fn new(providers: Vec<Box<dyn CandidateProvider>>) -> Self {
-        Self::with_field(providers, ContextField::active())
+        Self::with_field(providers, ContextField::new())
     }
 
     /// Create a kernel with default providers for a project.

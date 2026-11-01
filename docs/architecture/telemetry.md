@@ -181,8 +181,11 @@ geschrieben werden kann; daraus folgt keine Exactly-once-Garantie.
 
 ## Vorhandener Engine-Stand
 
-- 20 typisierte Ereignisvarianten von `heartbeat` bis
-  `orchestration_aggregate`.
+- 24 typisierte Ereignisvarianten von `heartbeat` bis `feature_aggregate`.
+  Die Engine sendet davon elf; neun (Testphase, Abonnement, Team,
+  `orchestration_aggregate`) gehören zur gehosteten Ebene und werden von der
+  Engine nie gebildet, vier haben einen Zähler ohne Aufrufer (Data Dictionary
+  §3).
 - Begrenzungen als Konstanten: `MAX_COUNT`, `MAX_HISTOGRAM_BUCKETS`,
   `MAX_BATCH_EVENTS`.
 - `PseudonymousId` akzeptiert ausschliesslich `hmac-sha256:<64 Hex>`; rohe

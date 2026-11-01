@@ -8,7 +8,7 @@ Maps design requirements (Pillars, Waves, Gates) to delivered implementation.
 |---|---|---|---|
 | P0 | IST-Hygiene | P0 | BanditStore, Gotcha, Double-Pull fixed |
 | P1 | Canonical Token Envelope | E12 | Payload types, Wire, Golden Traces |
-| P2 | Context Kernel | E13 | `enforce_plan`, ReceiptV1 |
+| P2 | Context Kernel | E13 | `ContextPolicy::candidate_violation_at` (admission before selection), ReceiptV1 |
 | P3 | Quality Lab + Policy | E7, E10, E15 | CLI/API/MCP surface, PDP/PEP, Fail Matrix |
 | P4 | Trait Adoption | E11 | `gateway_server` + `http_server` Strangler |
 | P5 | Unified Ledger | E2, E14 | Attribution, `reconcile_strict`, export/verify |

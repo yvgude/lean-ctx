@@ -39,11 +39,15 @@ pub const STATEMENT_SCHEMA: &str = "leanctx.hive.consent.v1";
 /// A request may be answered for 24 h.
 pub const REQUEST_TTL_MS: u64 = 24 * 60 * 60 * 1000;
 
-/// The nine consent kinds of 3.12.0 (RESOLUTIONS R107).
+/// The nine consent kinds of 3.12.0 (RESOLUTIONS R107). The values are a
+/// shared contract and stay, but no engine path requires two of them:
+/// [`Kind::PublicPresence`] and [`Kind::SealedGrant`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     LinkVault,
+    /// Never required: Hive removed public vaults, so there is no public
+    /// presence to consent to. Kept for the shared kind list.
     PublicPresence,
     SwarmJoin,
     PledgeChange,
@@ -51,6 +55,9 @@ pub enum Kind {
     ProcedureConfirm,
     ReviewerEnable,
     ApiKeySet,
+    /// Never required through the broker: a sealed vault key is granted by
+    /// `lean-ctx hive grant` (fingerprint confirmed by the person) or by
+    /// `[hive] sealed_grants = "auto"`. Kept for the shared kind list.
     SealedGrant,
 }
 

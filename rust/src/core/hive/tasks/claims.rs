@@ -19,8 +19,9 @@ use lean_ctx_protocol::hive::tasks::ClaimRefV1;
 
 const CLAIMS_FILE: &str = "task-claims.json";
 
-/// One claim held on this machine.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One claim held on this machine. Its `Debug` leaves out the lease id
+/// and fencing token (they are never printed, logs included).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HeldClaim {
     /// On disk as `project_id` (pre-VA name) for downgrades and mixed-version teams.
     #[serde(rename = "project_id", alias = "vault_id")]
@@ -35,6 +36,21 @@ pub struct HeldClaim {
     pub until: String,
     pub minutes: u32,
     pub pid: u32,
+}
+
+impl std::fmt::Debug for HeldClaim {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HeldClaim")
+            .field("vault_id", &self.vault_id)
+            .field("number", &self.number)
+            .field("root", &self.root)
+            .field("agent", &self.agent)
+            .field("claim", &"[redacted]")
+            .field("until", &self.until)
+            .field("minutes", &self.minutes)
+            .field("pid", &self.pid)
+            .finish()
+    }
 }
 
 impl HeldClaim {
@@ -248,5 +264,19 @@ mod vault_rename_tests {
             (read.vault_id.as_str(), read.claim.fencing_token),
             ("v1", 3)
         );
+    }
+
+    #[test]
+    fn debug_never_prints_the_lease_id_or_fencing_token() {
+        let held: HeldClaim = serde_json::from_str(
+            r#"{"project_id":"v1","number":7,"root":"/w","agent":"a","claim":{"lease_id":"lse_secret","fencing_token":987654},"until":"2026-10-22T10:00:00Z","minutes":30,"pid":1}"#,
+        )
+        .unwrap();
+        let shown = format!("{held:?}");
+        assert!(
+            !shown.contains("lse_secret") && !shown.contains("987654"),
+            "{shown}"
+        );
+        assert!(shown.contains("number: 7"), "{shown}");
     }
 }

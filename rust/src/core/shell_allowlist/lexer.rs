@@ -50,7 +50,16 @@ pub(super) struct Lexed<'a> {
     /// The first construct the shells disagree on, or that cannot be
     /// validated (an unterminated heredoc). The gate blocks when set.
     pub(super) problem: Option<&'static str>,
+    /// Nesting went past [`MAX_NESTING`]; the rest of that level was not
+    /// scanned (and `problem` is set).
+    pub(super) too_deep: bool,
 }
+
+/// Deepest nesting of substitutions, backticks and `${…}` the lexer follows.
+/// Each level is one recursive scan: without a bound, a line of thousands of
+/// nested `$(` overflowed the hook's worker stack, and a crashed hook fails
+/// open. Real commands stay far below it.
+const MAX_NESTING: usize = 64;
 
 /// Lex `command` as the shell would.
 pub(super) fn lex(command: &str) -> Lexed<'_> {
@@ -58,6 +67,7 @@ pub(super) fn lex(command: &str) -> Lexed<'_> {
         s: command,
         out: Lexed::default(),
         pending: Vec::new(),
+        nesting: 0,
     };
     lexer.scan(command.len(), 0, Mode::Shell, Close::Eof, true);
     // Operators with no line after them have an empty body.
@@ -107,6 +117,7 @@ const PROMPT_TRANSFORM: &str =
     "a `${…@P}` prompt expansion, which runs the substitutions in the value";
 const ATTACHED_PAREN: &str = "a `(` attached to a word, which zsh reads as glob qualifiers that can \
      run code (`*(e:…:)`, `*(+cmd)`) and bash as an extended glob";
+const TOO_DEEP: &str = "substitutions, backticks or `${…}` nested more than 64 levels deep";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -141,6 +152,8 @@ struct Lexer<'a> {
     out: Lexed<'a>,
     /// Heredocs whose body starts after the current line.
     pending: Vec<PendingHeredoc>,
+    /// Scans currently open (see [`MAX_NESTING`]).
+    nesting: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -159,7 +172,27 @@ impl<'a> Lexer<'a> {
     /// delimiter, or `None` when it is unterminated (the rest of the input
     /// was scanned). With [`Close::Eof`] it returns `Some(end)`. Expansions
     /// are collected only with `collect`; comments and heredocs always.
+    /// Past [`MAX_NESTING`] it flags the command and returns `None`.
     fn scan(
+        &mut self,
+        end: usize,
+        start: usize,
+        mode: Mode,
+        close: Close,
+        collect: bool,
+    ) -> Option<usize> {
+        if self.nesting >= MAX_NESTING {
+            self.out.too_deep = true;
+            self.flag(TOO_DEEP);
+            return None;
+        }
+        self.nesting += 1;
+        let after = self.scan_level(end, start, mode, close, collect);
+        self.nesting -= 1;
+        after
+    }
+
+    fn scan_level(
         &mut self,
         end: usize,
         start: usize,

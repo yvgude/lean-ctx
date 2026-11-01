@@ -83,7 +83,29 @@ impl McpTool for CtxAgentTool {
                     },
                     "privacy": {
                         "type": "string",
-                        "description": "public|team|private; poll_events accepts comma-separated event kinds"
+                        "description": "public|team|private (poll_events: deprecated alias of kinds)"
+                    },
+                    "workspace_id": {
+                        "type": "string",
+                        "description": "poll_events: event workspace (default: the project root; deprecated alias: to_agent)"
+                    },
+                    "channel_id": {
+                        "type": "string",
+                        "description": "poll_events: event channel (default: default; deprecated alias: category)"
+                    },
+                    "since_id": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "poll_events: return events after this id, the cursor of the previous poll (default 0; deprecated alias: message)"
+                    },
+                    "kinds": {
+                        "type": "string",
+                        "description": "poll_events: comma-separated event kinds to keep (deprecated alias: privacy)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "poll_events: maximum events read (default 50; deprecated alias: ttl_hours)"
                     },
                     "priority": {
                         "type": "string",
@@ -173,13 +195,23 @@ impl McpTool for CtxAgentTool {
         } else {
             None
         };
-        let message = get_str(args, "message");
-        let category = get_str(args, "category");
-        let to_agent = get_str(args, "to_agent");
+        let mut message = get_str(args, "message");
+        let mut category = get_str(args, "category");
+        let mut to_agent = get_str(args, "to_agent");
         let status = get_str(args, "status");
-        let privacy = get_str(args, "privacy");
+        let mut privacy = get_str(args, "privacy");
         let priority = get_str(args, "priority");
-        let ttl_hours: Option<u64> = args.get("ttl_hours").and_then(serde_json::Value::as_u64);
+        let mut ttl_hours: Option<u64> = args.get("ttl_hours").and_then(Value::as_u64);
+        if action == "poll_events" {
+            apply_poll_events_names(
+                args,
+                &mut to_agent,
+                &mut category,
+                &mut message,
+                &mut privacy,
+                &mut ttl_hours,
+            );
+        }
         let format = get_str(args, "format");
         let write = get_bool(args, "write").unwrap_or(false);
         let filename = get_str(args, "filename");
@@ -438,11 +470,97 @@ impl McpTool for CtxAgentTool {
     }
 }
 
+/// `poll_events` once borrowed unrelated parameters (`to_agent` = workspace,
+/// `category` = channel, `message` = since id, `privacy` = kinds, `ttl_hours`
+/// = limit). Its own names win; the borrowed ones stay accepted as deprecated
+/// aliases (`DEPRECATIONS.toml`: `mcp-ctx-agent-poll-events-aliases`).
+fn apply_poll_events_names(
+    args: &Map<String, Value>,
+    to_agent: &mut Option<String>,
+    category: &mut Option<String>,
+    message: &mut Option<String>,
+    privacy: &mut Option<String>,
+    ttl_hours: &mut Option<u64>,
+) {
+    if let Some(workspace) = get_str(args, "workspace_id") {
+        *to_agent = Some(workspace);
+    }
+    if let Some(channel) = get_str(args, "channel_id") {
+        *category = Some(channel);
+    }
+    if let Some(since) = args.get("since_id").and_then(|v| {
+        v.as_u64()
+            .map(|n| n.to_string())
+            .or_else(|| v.as_str().map(str::to_string))
+    }) {
+        *message = Some(since);
+    }
+    if let Some(kinds) = get_str(args, "kinds") {
+        *privacy = Some(kinds);
+    }
+    if let Some(limit) = args.get("limit").and_then(Value::as_u64) {
+        *ttl_hours = Some(limit);
+    }
+}
+
 #[cfg(test)]
 mod schema_tests {
     use super::*;
     use crate::server::tool_trait::McpTool;
     use crate::tools::ctx_agent::ACTIONS;
+
+    #[test]
+    fn poll_events_names_win_over_their_deprecated_aliases() {
+        let args = json!({
+            "action": "poll_events",
+            "workspace_id": "ws", "channel_id": "ch", "since_id": 7,
+            "kinds": "a,b", "limit": 5,
+            "to_agent": "old", "category": "old", "message": "1",
+            "privacy": "old", "ttl_hours": 9
+        });
+        let args = args.as_object().unwrap();
+        let (mut to, mut cat, mut msg, mut priv_, mut ttl) = (
+            get_str(args, "to_agent"),
+            get_str(args, "category"),
+            get_str(args, "message"),
+            get_str(args, "privacy"),
+            args.get("ttl_hours").and_then(Value::as_u64),
+        );
+        apply_poll_events_names(args, &mut to, &mut cat, &mut msg, &mut priv_, &mut ttl);
+        assert_eq!(
+            (
+                to.as_deref(),
+                cat.as_deref(),
+                msg.as_deref(),
+                priv_.as_deref(),
+                ttl
+            ),
+            (Some("ws"), Some("ch"), Some("7"), Some("a,b"), Some(5))
+        );
+
+        // Without the new names the deprecated aliases still work.
+        let old = json!({ "to_agent": "old", "message": "3", "ttl_hours": 9 });
+        let old = old.as_object().unwrap();
+        let (mut to, mut cat, mut msg, mut priv_, mut ttl) = (
+            get_str(old, "to_agent"),
+            None,
+            get_str(old, "message"),
+            None,
+            Some(9),
+        );
+        apply_poll_events_names(old, &mut to, &mut cat, &mut msg, &mut priv_, &mut ttl);
+        assert_eq!(
+            (to.as_deref(), msg.as_deref(), ttl),
+            (Some("old"), Some("3"), Some(9))
+        );
+        let schema = serde_json::to_value(CtxAgentTool.tool_def()).expect("tool schema");
+        for name in ["workspace_id", "channel_id", "since_id", "kinds", "limit"] {
+            assert!(
+                schema["inputSchema"]["properties"][name].is_object(),
+                "{name}"
+            );
+        }
+    }
 
     #[test]
     fn schema_advertises_optional_durable_identity_binding() {

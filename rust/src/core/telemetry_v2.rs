@@ -132,6 +132,10 @@ impl PseudonymousId {
     rename_all = "snake_case",
     deny_unknown_fields
 )]
+/// One telemetry event. The contract is shared with the hosted service, which
+/// deserializes the same type: variants marked *hosted plane* are never built
+/// by the OSS engine and stay only so both sides read one schema
+/// (`docs/privacy/TELEMETRY-DATA-DICTIONARY.md` §3).
 pub enum TelemetryEventV2 {
     Heartbeat(HeartbeatMetrics),
     SetupProfile(SetupProfileMetrics),
@@ -143,17 +147,26 @@ pub enum TelemetryEventV2 {
     AutopilotAggregate(DecisionMetrics),
     AutopilotFallbackAggregate(DecisionMetrics),
     SyncAggregate(SyncMetrics),
+    /// Hosted plane: never emitted by the OSS engine.
     TrialStarted(OccurrenceMetrics),
+    /// Hosted plane: never emitted by the OSS engine.
     TrialEnded(OutcomeMetrics),
+    /// Hosted plane: never emitted by the OSS engine.
     UpgradeViewed(OccurrenceMetrics),
     CheckoutStarted(OccurrenceMetrics),
+    /// Hosted plane: never emitted by the OSS engine.
     SubscriptionActivated(OccurrenceMetrics),
+    /// Hosted plane: never emitted by the OSS engine.
     SubscriptionCancelled(OccurrenceMetrics),
+    /// Hosted plane: never emitted by the OSS engine.
     TeamCreated(OccurrenceMetrics),
+    /// Hosted plane: never emitted by the OSS engine.
     TeamMemberInvited(OccurrenceMetrics),
+    /// Hosted plane: never emitted by the OSS engine.
     TeamContextPromoted(OutcomeMetrics),
     ErrorCategoryAggregate(ErrorMetrics),
     VersionUpgrade(VersionUpgradeMetrics),
+    /// Hosted plane: never emitted by the OSS engine.
     OrchestrationAggregate(Box<OrchestrationMetrics>),
     UsageHistory(UsageHistoryMetrics),
     /// Daily use of CLI commands and background features (3.11.1+).

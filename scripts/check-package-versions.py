@@ -23,6 +23,12 @@ Coupled *source constants* (must equal the engine version):
     key. If it lags a release that changed the advertised tool surface, the key
     is unchanged and the new version silently serves the old cached schemas.
 
+Trailing by at most one release:
+  * aur/lean-ctx/PKGBUILD pkgver — the recipe pins the published source
+    tarball's sha256, so it can only be bumped once that release exists. It
+    must name the engine version or the newest released version before it
+    (CHANGELOG `## [X.Y.Z] — date`); anything older is drift.
+
 Deliberately excluded:
   * vscode-extension          — decoupled cadence (vscode-v* tags, own workflow)
   * the cookbook example client — not a product surface (private: true)
@@ -55,11 +61,29 @@ COUPLED_SOURCE_CONSTANTS = [
     ),
 ]
 
+AUR_PKGBUILD = "aur/lean-ctx/PKGBUILD"
+
 FAILURES: list[str] = []
 
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def _key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+def aur_allowed_versions(engine: str, changelog: str) -> list[str]:
+    """The engine version and the newest released version older than it."""
+    released = re.findall(r"^## \[(\d+\.\d+\.\d+)\] — ", changelog, re.M)
+    older = [v for v in released if _key(v) < _key(engine)]
+    return [engine] + ([max(older, key=_key)] if older else [])
+
+
+def aur_pkgver(pkgbuild: str) -> str | None:
+    m = re.search(r"^pkgver=([0-9][0-9.]*)\s*$", pkgbuild, re.M)
+    return m.group(1) if m else None
 
 
 def engine_version() -> str:
@@ -111,6 +135,21 @@ def main() -> int:
         if got != engine:
             FAILURES.append(
                 f"{label} is {got} but the engine ships {engine} — bump it to {engine}"
+            )
+
+    try:
+        pkgver = aur_pkgver(read(AUR_PKGBUILD))
+        allowed = aur_allowed_versions(engine, read("CHANGELOG.md"))
+    except OSError as e:
+        FAILURES.append(f"{AUR_PKGBUILD}: could not read ({e})")
+    else:
+        status = "ok" if pkgver in allowed else "DRIFT"
+        print(f"  {AUR_PKGBUILD + ':pkgver':<38} {pkgver or '?':<12} {status}")
+        if pkgver not in allowed:
+            FAILURES.append(
+                f"{AUR_PKGBUILD} pkgver is {pkgver} but must be one of {', '.join(allowed)} — "
+                "bump pkgver, pkgrel=1 and the sha256 of the release's source tarball "
+                "(from its SHA256SUMS)"
             )
 
     for f in FAILURES:

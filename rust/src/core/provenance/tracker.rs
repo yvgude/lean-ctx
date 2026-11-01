@@ -18,11 +18,32 @@ pub struct ProvenanceTracker {
 }
 
 impl ProvenanceTracker {
-    /// Creates a tracker whose storage key is a SHA-256 hash of `project_root`.
+    /// Creates a tracker keyed like every other per-project store
+    /// (`project_hash::hash_project_root`: normalized path plus project identity).
     pub fn new(project_root: impl AsRef<Path>) -> Result<Self, String> {
+        let data_dir = crate::core::data_dir::lean_ctx_data_dir()?;
+        Self::open_in(&data_dir, project_root)
+    }
+
+    /// [`Self::new`] below an explicit data directory. Releases up to 3.12.0
+    /// keyed the store by a SHA-256 of the raw path; such a store is moved to
+    /// the new key on first open, and read in place if the move fails.
+    pub fn open_in(data_dir: &Path, project_root: impl AsRef<Path>) -> Result<Self, String> {
         let project_root = project_root.as_ref().to_path_buf();
-        let project_hash = sha256_hex(project_root.to_string_lossy().as_bytes());
-        let store = ProvenanceStore::new(project_hash)?;
+        let root = project_root.to_string_lossy();
+        let project_hash = crate::core::project_hash::hash_project_root(&root);
+        let store = ProvenanceStore::with_data_dir(data_dir, project_hash)?;
+        let legacy = ProvenanceStore::with_data_dir(data_dir, sha256_hex(root.as_bytes()))?;
+        let store = match (store.parent_dir(), legacy.parent_dir()) {
+            (Ok(current), Ok(old)) if !current.exists() && old.exists() => {
+                let moved = current
+                    .parent()
+                    .is_some_and(|parent| std::fs::create_dir_all(parent).is_ok())
+                    && std::fs::rename(&old, &current).is_ok();
+                if moved { store } else { legacy }
+            }
+            _ => store,
+        };
         Ok(Self {
             store,
             project_root,

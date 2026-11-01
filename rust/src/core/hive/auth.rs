@@ -287,23 +287,10 @@ impl Session {
         self.access_token(force).map(zeroize::Zeroizing::new)
     }
 
-    /// True when this Hive answered the instance card (C0 2.0): requests
-    /// then carry `Hive-Protocol: 2.0`. Against a 1.x Hive (prod before
-    /// the cutover) nothing changes.
-    fn speaks_v2(&self) -> bool {
-        super::bus::relay_v2::speaks_v2(&self.store)
-    }
-
     /// An authenticated client, minting an access token when needed.
     pub fn client(&self) -> Result<HiveClient, HiveError> {
-        self.client_as(self.speaks_v2())
-    }
-
-    fn client_as(&self, v2: bool) -> Result<HiveClient, HiveError> {
         let token = self.access_token(false)?;
-        Ok(HiveClient::new(&self.instance.url)?
-            .with_token(&self.instance.instance_id, &token)
-            .speaking_v2(v2))
+        Ok(HiveClient::new(&self.instance.url)?.with_token(&self.instance.instance_id, &token))
     }
 
     /// Run `call` with an authenticated client; on 401 mint a new token once.
@@ -311,20 +298,11 @@ impl Session {
         &self,
         call: impl Fn(&HiveClient) -> Result<T, HiveError>,
     ) -> Result<T, HiveError> {
-        self.with_client_as(self.speaks_v2(), call)
-    }
-
-    fn with_client_as<T>(
-        &self,
-        v2: bool,
-        call: impl Fn(&HiveClient) -> Result<T, HiveError>,
-    ) -> Result<T, HiveError> {
-        let result = match call(&self.client_as(v2)?) {
+        let result = match call(&self.client()?) {
             Err(HiveError::Unauthorized) => {
                 let token = self.access_token(true)?;
                 let client = HiveClient::new(&self.instance.url)?
-                    .with_token(&self.instance.instance_id, &token)
-                    .speaking_v2(v2);
+                    .with_token(&self.instance.instance_id, &token);
                 call(&client)
             }
             other => other,
@@ -355,10 +333,10 @@ impl Session {
         let mint = HiveClient::bounded(&self.instance.url, left("token")?)?;
         let token = self.access_token_via(false, &mint)?;
         Ok(HiveClient::bounded(&self.instance.url, left("request")?)?
-            .with_token(&self.instance.instance_id, &token)
-            .speaking_v2(self.speaks_v2()))
+            .with_token(&self.instance.instance_id, &token))
     }
 
+    /// The token is minted in C0 2.0 like every other request.
     fn access_token(&self, force: bool) -> Result<String, HiveError> {
         self.access_token_via(force, &HiveClient::new(&self.instance.url)?)
     }
@@ -400,13 +378,12 @@ impl Session {
         Ok(token.access_token)
     }
 
-    /// Renew the lease and persist it; returns the new lease. Always as 1.x:
-    /// the lease is checked against the v1 key set stored at enrollment
-    /// (which also feeds the runtime lease), and a 1.x request gets exactly
-    /// that set's signer (E13 negotiation).
+    /// Renew the lease and persist it; returns the new lease. Asked in C0
+    /// 2.0 like the enrollment whose lease it replaces, and checked against
+    /// the key set stored at enrollment (which also feeds the runtime lease).
     pub fn renew(&mut self) -> Result<&VerifiedLease, HiveError> {
         let path = format!("/instances/{}/lease/renew", self.instance.instance_id);
-        let body = self.with_client_as(false, |client| client.post(&path, &json!({})))?;
+        let body = self.with_client(|client| client.post(&path, &json!({})))?;
         let local_now = Utc::now();
         let envelope: HiveLeaseEnvelopeV1 = decode(body, "lease")?;
         let keys_raw: Value = self

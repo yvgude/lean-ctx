@@ -195,70 +195,6 @@ pub fn build_instructions_with_client_for_compiler(
     }
 }
 
-/// LITM calibration manifest rotation (#539).
-fn rotate_wakeup_manifest(session: &crate::core::session::SessionState, profile_name: &str) {
-    use crate::core::litm_calibration::{Position, record_outcome};
-
-    let mut updated = session.clone();
-
-    for entry in &updated.wakeup_manifest {
-        if !entry.missed
-            && let Some(pos) = Position::parse(&entry.position)
-        {
-            record_outcome(&entry.profile, pos, true);
-        }
-    }
-
-    updated.wakeup_manifest = wakeup_manifest(&updated, profile_name);
-    let _ = updated.save();
-}
-
-/// The manifest of what the next injected session block shows for `updated`:
-/// task, recent decisions, findings and next steps, each by its first 80
-/// characters.
-fn wakeup_manifest(
-    updated: &crate::core::session::SessionState,
-    profile_name: &str,
-) -> Vec<crate::core::session::ManifestEntry> {
-    use crate::core::session::ManifestEntry;
-
-    let mut manifest: Vec<ManifestEntry> = Vec::new();
-    let mut push = |key: &str, position: &str| {
-        let key = key.trim();
-        if !key.is_empty() {
-            manifest.push(ManifestEntry {
-                key: key.chars().take(80).collect(),
-                position: position.to_string(),
-                profile: profile_name.to_string(),
-                missed: false,
-            });
-        }
-    };
-
-    if let Some(ref task) = updated.task {
-        push(&task.description, "begin");
-    }
-    for d in updated.decisions.iter().rev().take(5) {
-        push(&d.summary, "begin");
-    }
-    // The same findings the injected block shows (`litm::position_optimize`):
-    // only those that may be delivered now.
-    for f in updated
-        .findings
-        .iter()
-        .rev()
-        .filter(|f| updated.finding_served(f))
-        .take(8)
-    {
-        push(&f.summary, "end");
-    }
-    for n in updated.next_steps.iter().take(3) {
-        push(n, "end");
-    }
-
-    manifest
-}
-
 /// Display path for the Claude config directory (respected by CLAUDE_CONFIG_DIR).
 #[must_use]
 pub fn claude_config_dir_display() -> String {
@@ -298,9 +234,7 @@ fn build_full_instructions(
 
     let (session_block, litm_end_block) = match loaded_session {
         Some(ref session) => {
-            rotate_wakeup_manifest(session, profile.name);
-            let share = crate::core::litm_calibration::begin_share(profile.name);
-            let mut positioned = crate::core::litm::position_optimize_with_share(session, share);
+            let mut positioned = crate::core::litm::position_optimize(session);
             // #962: hard token ceiling so the re-injected ACTIVE SESSION block can
             // never crowd out the user's task (deterministic, generous default).
             positioned.enforce_token_budget(crate::core::litm::active_session_budget());
@@ -1057,58 +991,5 @@ mod tests {
             );
         }
         crate::test_env::remove_var("LEAN_CTX_COMPRESSION");
-    }
-
-    fn with_two_findings(root: &str) -> crate::core::session::SessionState {
-        std::fs::write(format!("{root}/pool.rs"), "pub fn lease() {}\n").expect("source");
-        let mut session = crate::core::session::SessionState::new();
-        session.project_root = Some(root.to_owned());
-        session.add_finding_for_file(Some("pool.rs"), Some(1), "the pool leaks one lease");
-        session.add_finding_for_file(None, None, "noted without a file");
-        session
-    }
-
-    fn manifest_keys(session: &crate::core::session::SessionState) -> Vec<String> {
-        wakeup_manifest(session, "claude")
-            .into_iter()
-            .map(|entry| entry.key)
-            .collect()
-    }
-
-    /// The wake-up manifest names what the injected block shows: a finding
-    /// bound to a source while the source admits, and no longer once the
-    /// source is deleted. The finding without a file is named either way.
-    #[test]
-    fn a_finding_whose_source_is_gone_leaves_the_wakeup_manifest() {
-        use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
-        let _data = governed();
-        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
-        let (_directory, root) = project();
-        let session = with_two_findings(&root);
-
-        assert_eq!(
-            scoped(&root, || manifest_keys(&session)),
-            ["noted without a file", "the pool leaks one lease"]
-        );
-        std::fs::remove_file(format!("{root}/pool.rs")).expect("delete");
-        assert_eq!(
-            scoped(&root, || manifest_keys(&session)),
-            ["noted without a file"]
-        );
-    }
-
-    /// Developer mode: the manifest names every finding as before.
-    #[test]
-    fn findings_enter_the_wakeup_manifest_as_before_in_developer_mode() {
-        use crate::core::context_admission::stored::lineage_support::project;
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
-        let (_directory, root) = project();
-        let session = with_two_findings(&root);
-        std::fs::remove_file(format!("{root}/pool.rs")).expect("delete");
-        assert_eq!(
-            manifest_keys(&session),
-            ["noted without a file", "the pool leaks one lease"]
-        );
     }
 }

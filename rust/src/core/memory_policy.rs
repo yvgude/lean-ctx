@@ -22,7 +22,6 @@ impl MemoryPolicy {
         self.embeddings.apply_env_overrides();
         self.gotcha.apply_env_overrides();
         self.admission.apply_env_overrides();
-        self.compaction.apply_env_overrides();
     }
 
     pub fn apply_overrides(&mut self, o: &MemoryPolicyOverrides) {
@@ -38,7 +37,6 @@ impl MemoryPolicy {
         self.embeddings.validate()?;
         self.gotcha.validate()?;
         self.admission.validate()?;
-        self.compaction.validate()?;
         Ok(())
     }
 }
@@ -594,28 +592,16 @@ impl AdmissionPolicy {
     }
 }
 
-/// Cluster compaction (#971): the background cognition loop collapses piles of
-/// low-value, mutually-similar facts into a single recoverable digest, so a busy
-/// store's live fact count actually *drops* instead of churning at its cap. It is
-/// strictly guarded — only faded (`< max_confidence`), barely-confirmed
-/// (`<= max_confirmations`), never-frequently/recently-retrieved facts in a
-/// cluster of at least `min_cluster` qualify — and lossless, since the originals
-/// are archived and rehydrate on recall.
+/// `[memory.compaction]`: no effect. Cluster compaction (#971) ran only in the
+/// retired cognition loop (DEPRECATIONS.toml `config-memory-compaction`); the
+/// section stays accepted, unvalidated, so existing configs keep loading.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CompactionPolicy {
-    /// Master switch for cluster compaction in the cognition loop.
     pub enabled: bool,
-    /// Minimum number of facts in a same-category cluster before it is collapsed
-    /// into a digest. Must be `>= 2`.
     pub min_cluster: usize,
-    /// Average word-Jaccard similarity (0.0–1.0) a fact needs to join a cluster.
     pub similarity: f32,
-    /// Importance ceiling: only facts *below* this confidence are eligible, so a
-    /// high-confidence fact is never compacted.
     pub max_confidence: f32,
-    /// Only facts confirmed at most this many times are eligible — a
-    /// repeatedly-confirmed fact is structurally important and always kept.
     pub max_confirmations: u32,
 }
 
@@ -628,47 +614,6 @@ impl Default for CompactionPolicy {
             max_confidence: 0.5,
             max_confirmations: 1,
         }
-    }
-}
-
-impl CompactionPolicy {
-    fn apply_env_overrides(&mut self) {
-        if let Ok(v) = std::env::var("LEAN_CTX_COMPACTION_ENABLED") {
-            self.enabled = !(v == "0" || v.eq_ignore_ascii_case("false"));
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COMPACTION_MIN_CLUSTER")
-            && let Ok(n) = v.parse()
-        {
-            self.min_cluster = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COMPACTION_SIMILARITY")
-            && let Ok(n) = v.parse()
-        {
-            self.similarity = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COMPACTION_MAX_CONFIDENCE")
-            && let Ok(n) = v.parse()
-        {
-            self.max_confidence = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_COMPACTION_MAX_CONFIRMATIONS")
-            && let Ok(n) = v.parse()
-        {
-            self.max_confirmations = n;
-        }
-    }
-
-    fn validate(&self) -> Result<(), String> {
-        if self.min_cluster < 2 {
-            return Err("memory.compaction.min_cluster must be >= 2".to_string());
-        }
-        if !(0.0..=1.0).contains(&self.similarity) {
-            return Err("memory.compaction.similarity must be in [0.0, 1.0]".to_string());
-        }
-        if !(0.0..=1.0).contains(&self.max_confidence) {
-            return Err("memory.compaction.max_confidence must be in [0.0, 1.0]".to_string());
-        }
-        Ok(())
     }
 }
 
@@ -695,8 +640,6 @@ mod tests {
         let p = MemoryPolicy::default();
         assert!(p.admission.enabled, "admission on by default");
         assert_eq!(p.admission.min_salience, 0, "salience floor off (lossless)");
-        assert!(p.compaction.enabled, "cluster compaction on by default");
-        assert!(p.compaction.min_cluster >= 2);
         assert_eq!(
             p.lifecycle.prune_unretrieved_after_days,
             Some(90),
@@ -705,7 +648,7 @@ mod tests {
     }
 
     #[test]
-    fn admission_and_compaction_env_overrides_apply() {
+    fn admission_env_overrides_apply() {
         let _lock = crate::core::data_dir::test_env_lock();
 
         let prev = [
@@ -717,21 +660,15 @@ mod tests {
                 "LEAN_CTX_ADMISSION_MIN_SALIENCE",
                 std::env::var("LEAN_CTX_ADMISSION_MIN_SALIENCE").ok(),
             ),
-            (
-                "LEAN_CTX_COMPACTION_MIN_CLUSTER",
-                std::env::var("LEAN_CTX_COMPACTION_MIN_CLUSTER").ok(),
-            ),
         ];
         crate::test_env::set_var("LEAN_CTX_ADMISSION_ENABLED", "0");
         crate::test_env::set_var("LEAN_CTX_ADMISSION_MIN_SALIENCE", "42");
-        crate::test_env::set_var("LEAN_CTX_COMPACTION_MIN_CLUSTER", "7");
 
         let mut p = MemoryPolicy::default();
         p.apply_env_overrides();
 
         assert!(!p.admission.enabled);
         assert_eq!(p.admission.min_salience, 42);
-        assert_eq!(p.compaction.min_cluster, 7);
 
         for (key, val) in prev {
             restore_env(key, val);
@@ -739,14 +676,20 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_invalid_compaction() {
-        let mut p = MemoryPolicy::default();
-        p.compaction.min_cluster = 1;
-        assert!(p.validate().is_err());
-
+    fn validate_rejects_invalid_admission() {
         let mut p = MemoryPolicy::default();
         p.admission.auto_merge_similarity = 1.5;
         assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn retired_compaction_section_still_loads_and_validates() {
+        let p: MemoryPolicy =
+            toml::from_str("[compaction]\nenabled = true\nmin_cluster = 1\nsimilarity = 2.0\n")
+                .expect("a retired [compaction] section must keep loading");
+        assert_eq!(p.compaction.min_cluster, 1);
+        p.validate()
+            .expect("a retired [compaction] section is not validated");
     }
 
     #[test]

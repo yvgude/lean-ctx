@@ -95,6 +95,39 @@ fn mode(store: &HiveStore, agent: Option<&str>) -> Option<ControlAction> {
     control::admission(store, agent).map(|refusal| refusal.entry.action)
 }
 
+/// `hive.bus = "off"` reaches a running relay without a restart: it closes
+/// its socket, and comes back once the bus is on again.
+#[test]
+fn switching_the_bus_off_stops_a_running_relay_without_a_restart() {
+    let fake = FakeHive::start();
+    let machine = Machine::new();
+    let connect = machine.run(&["connect", "--url", &fake.url, "--no-browser"]);
+    assert!(connect.status.success(), "{connect:?}");
+    let config = home(&machine).join("config/config.toml");
+    let on = std::fs::read_to_string(&config).unwrap();
+    let mut relay = machine.relay("60");
+    wait_for("the relay to connect", || !fake.bus_connected().is_empty());
+    let off = if on.contains("[hive]") {
+        on.replacen("[hive]", "[hive]\nbus = \"off\"", 1)
+    } else {
+        format!("{on}\n[hive]\nbus = \"off\"\n")
+    };
+    std::fs::write(&config, off).unwrap();
+    wait_for("the relay to close its socket", || {
+        fake.bus_connected().is_empty()
+    });
+    assert!(
+        relay.try_wait().unwrap().is_none(),
+        "paused, not ended: it resumes when the bus is on again"
+    );
+    std::fs::write(&config, on).unwrap();
+    wait_for("the relay to reconnect", || {
+        !fake.bus_connected().is_empty()
+    });
+    relay.kill().ok();
+    relay.wait().ok();
+}
+
 #[test]
 fn control_frames_gate_agents_survive_replay_and_end_with_the_enrollment() {
     let fake = FakeHive::start();

@@ -313,8 +313,22 @@ fn handle_status(session: &SessionState) -> String {
 }
 
 fn handle_handoff(session: &SessionState) -> String {
+    // What this session changed in the knowledge store, from its journal:
+    // the successor reads the changeset instead of diffing the store.
+    let changeset = session
+        .project_root
+        .as_deref()
+        .map(|root| crate::tools::ctx_knowledge::session_change_count(root, &session.id))
+        .filter(|count| *count > 0)
+        .map(|count| {
+            format!(
+                "\nKnowledge written by this session: {count} change(s) — ctx_knowledge action=changes query=session:{}",
+                session.id
+            )
+        })
+        .unwrap_or_default();
     if session.handoff_context.is_empty() {
-        return "Handoff context: no recent cross-session decisions.".to_string();
+        return format!("Handoff context: no recent cross-session decisions.{changeset}");
     }
 
     let mut output = format!(
@@ -329,6 +343,7 @@ fn handle_handoff(session: &SessionState) -> String {
             fact.confidence * 100.0
         ));
     }
+    output.push_str(&changeset);
     output
 }
 

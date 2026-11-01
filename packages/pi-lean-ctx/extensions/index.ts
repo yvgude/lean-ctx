@@ -415,7 +415,7 @@ export default async function (pi: ExtensionAPI) {
   const bashSchemaWithRaw = Type.Object({
     command: Type.String({ description: "Bash command to execute" }),
     timeout: Type.Optional(Type.Number({ description: "Timeout in seconds to prevent hanging commands" })),
-    raw: Type.Optional(Type.Boolean({ description: "Skip compression, return full uncompressed output" })),
+    raw: Type.Optional(Type.Boolean({ description: "Exact bytes, uncompressed; only for diffs to apply, hashes, encoded output. For large logs narrow the command instead." })),
     env: Type.Optional(
       Type.Record(Type.String(), Type.String(), {
         description:

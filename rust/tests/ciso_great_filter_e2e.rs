@@ -160,7 +160,7 @@ fn great_filter_golden_path_enforces_and_attests() {
         .check_content(action, &active.redaction)
         .expect("forbidden prod-DB action is blocked");
     assert!(reason.starts_with("forbidden-pattern:"), "blocked by rule");
-    policy_guard::audit_egress("ctx_shell", &reason);
+    policy_guard::audit_egress("ctx_shell", &reason, "ciso-e2e-agent");
 
     // (c) #675 inbound filters: PII is detected and redacted (not blocked, since
     //     the pack chose `redact`), and the decision is audited.
@@ -188,6 +188,14 @@ fn great_filter_golden_path_enforces_and_attests() {
     assert_eq!(
         blocked, 3,
         "pre-trust denial + trusted tool-deny + egress block must each be recorded"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|e| matches!(e.event_type, AuditEventType::ToolDenied)
+                && e.tool == "ctx_shell"
+                && e.agent_id == "ciso-e2e-agent"),
+        "the egress block names the agent that attempted it"
     );
     assert!(
         entries

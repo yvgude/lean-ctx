@@ -14,8 +14,9 @@
 //!   users who accept the risk — **compression stays fully active**.
 //!
 //! Resolution precedence (first hit wins):
-//! 1. `LEAN_CTX_SHELL_SECURITY` env (`enforce` | `warn` | `off`)
-//! 2. `shell_security` in `config.toml`
+//! 1. `LEAN_CTX_SHELL_SECURITY` env (`enforce` | `warn` | `off`) — test and
+//!    debug builds only; release builds ignore it
+//! 2. `shell_security` in the real user's `config.toml` (`config::shell_policy`)
 //! 3. default → [`ShellSecurity::Enforce`]
 //!
 //! The default is `enforce` on purpose: lean-ctx mediates the agent's shell, so
@@ -60,12 +61,15 @@ impl ShellSecurity {
 
     /// Resolve the active mode: env override → config → secure default.
     pub fn resolve() -> Self {
-        if let Ok(raw) = std::env::var("LEAN_CTX_SHELL_SECURITY")
+        // Release builds read neither the env var nor a relocated config:
+        // see `config::shell_policy`.
+        use crate::core::config::shell_policy;
+        if let Some(raw) = shell_policy::env("LEAN_CTX_SHELL_SECURITY")
             && let Some(mode) = Self::parse(&raw)
         {
             return mode;
         }
-        crate::core::config::Config::load()
+        shell_policy::config()
             .shell_security
             .as_deref()
             .and_then(Self::parse)

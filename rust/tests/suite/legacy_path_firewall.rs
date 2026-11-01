@@ -38,6 +38,10 @@ const ALLOWLIST: &[&str] = &[
     // credentials — the legacy dir included — so the protected Codex session
     // cannot modify them. It never creates or reads the legacy path.
     "cli/codex_protected_cmd/write_guard.rs",
+    // Denies writes from agent shells: lists every directory that may hold
+    // lean-ctx state (the legacy dir included) so a command cannot write there.
+    // It never creates or reads the legacy path.
+    "core/shell_allowlist/self_config.rs",
     // Group 2: pre-existing direct home-writers/readers (tracked debt).
     "report.rs",
     "core/providers/config_provider/discovery.rs",

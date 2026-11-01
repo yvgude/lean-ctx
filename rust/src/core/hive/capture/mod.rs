@@ -141,7 +141,8 @@ impl ReasonCode {
             Blocked::Secret(_) => Self::ScreenSecret,
             Blocked::Pii(_) => Self::ScreenPii,
             Blocked::Redaction => Self::ScreenRedaction,
-            Blocked::Forbidden => Self::ScreenForbidden,
+            // A broken local rule refuses like a forbidden pattern (fails closed).
+            Blocked::Forbidden | Blocked::BrokenRules(_) => Self::ScreenForbidden,
             Blocked::LocalPath => Self::ScreenLocalPath,
         }
     }

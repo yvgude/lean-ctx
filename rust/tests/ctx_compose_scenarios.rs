@@ -166,10 +166,13 @@ fn compose_disambiguates_same_named_symbol_by_task_keywords() {
     // "Top symbols", not about suppressing the other file everywhere — the
     // "Ranked files" section may still list both. So scope the check
     // to the inlined-bodies section.
-    let symbols = out
+    // The section ends at the next `## ` heading: the small-files section that
+    // follows may carry whole ranked files, which is a separate claim.
+    let after = out
         .split("## Top symbols")
         .nth(1)
         .expect("compose must produce a Top symbols section for a resolvable symbol");
+    let symbols = after.split("\n## ").next().unwrap_or(after);
     assert!(
         symbols.contains("OCPP_OFFERED_CURRENT_MARKER"),
         "must inline the OCPP method's body, disambiguated by task keywords:\n{out}"

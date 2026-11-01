@@ -1,5 +1,8 @@
-# Runtime dependency: the dependency-free lean-ctx HTTP /v1 client.
-leanctx>=0.1.0
+# Runtime dependency: the dependency-free lean-ctx HTTP /v1 client, imported as
+# `leanctx`. It is published on PyPI as `lean-ctx-client` (its final release; the
+# client is retired and its source left this repository). The PyPI project named
+# `leanctx` is an unrelated third-party package: never install that one.
+lean-ctx-client==0.1.0
 
 # Optional: exact token counting that matches Hermes' tiktoken accounting.
 # The engine falls back to a deterministic char-based estimate when absent.

@@ -134,18 +134,45 @@ pub fn handle_codex_pretooluse() {
         return;
     };
 
-    // Package-manager install commands must always pass through —
-    // wrapping or denying them causes hangs and confuses users.
-    if super::file_rewrite::is_package_manager_install(cmd) {
-        print!("{}", codex_allow_output());
-        return;
+    // Replace mode: deny non-rewritable Bash calls (agent must use ctx_shell).
+    // Safety: fail-open if MCP server is unreachable (#1448).
+    let replace_denies = || {
+        crate::hooks::recommend_hook_mode("codex") == crate::hooks::HookMode::Replace
+            && super::deny::is_mcp_healthy()
+    };
+    let (output, runs) = codex_bash_output(cmd, &binary, replace_denies);
+    if runs {
+        // A command that will run natively may rewrite files (`sed -i`, `>`,
+        // `tee`, `cp`/`mv`); the MCP server's bounce tracker never sees it, so
+        // report the edits through the edit beacon. Denied commands never run.
+        let cwd = parsed.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
+        crate::core::bounce_tracker::note_host_shell_edits(cmd, cwd);
     }
+    print!("{output}");
+}
 
-    // A command that will run natively may rewrite files (`sed -i`, `>`,
-    // `tee`, `cp`/`mv`); the MCP server's bounce tracker never sees it, so
-    // report the edits through the edit beacon. Denied commands never run.
-    let cwd = parsed.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
-    let note_edits = || crate::core::bounce_tracker::note_host_shell_edits(cmd, cwd);
+/// The Codex PreToolUse stdout for a Bash `cmd`, and whether the command
+/// then runs. `replace_denies` reports whether Replace mode denies native
+/// Bash right now.
+///
+/// Codex has no enforcement wrap: a command it runs natively is checked
+/// against the shell allowlist here and denied on violation, whichever
+/// branch lets it run.
+fn codex_bash_output(
+    cmd: &str,
+    binary: &str,
+    replace_denies: impl FnOnce() -> bool,
+) -> (String, bool) {
+    let run_checked = || match super::file_rewrite::native_allowlist_denial(cmd, binary) {
+        Some(msg) => (codex_allowlist_deny_output(&msg), false),
+        None => (codex_allow_output(), true),
+    };
+
+    // Package-manager install commands are never wrapped or denied by
+    // Replace mode — that causes hangs and confuses users.
+    if super::file_rewrite::is_package_manager_install(cmd) {
+        return run_checked();
+    }
 
     // Codex applies `updatedInput` only with `permissionDecision: "allow"`
     // and rejects `"ask"`, so a Codex rewrite is always an approval. Only a
@@ -153,34 +180,36 @@ pub fn handle_codex_pretooluse() {
     // `ls`, …; see `safe_commands`) may carry it; any other command is not
     // rewritten and passes through to Codex's own approval and sandbox
     // policy unchanged.
-    if let Some(rewrite) = classify_rewrite(cmd, &binary) {
-        note_edits();
+    if let Some(rewrite) = classify_rewrite(cmd, binary) {
         if rewrite.safety == RewriteSafety::ReadOnly {
-            print!("{}", codex_rewrite_output(&rewrite.command));
-        } else {
-            print!("{}", codex_allow_output());
+            return (codex_rewrite_output(&rewrite.command), true);
         }
-        return;
+        return run_checked();
     }
 
     // Commands already routed through lean-ctx (e.g. `lean-ctx -c '...'` or
-    // `/opt/homebrew/bin/lean-ctx -c '...'`) must pass through — denying them
-    // blocks lean-ctx's own CLI surface (#801).
-    if super::file_rewrite::is_leanctx_call(cmd, &binary) {
-        note_edits();
-        print!("{}", codex_allow_output());
-        return;
+    // `/opt/homebrew/bin/lean-ctx -c '...'`) are not denied by Replace mode —
+    // that would block lean-ctx's own CLI surface (#801).
+    if super::file_rewrite::is_leanctx_call(cmd, binary) {
+        return run_checked();
     }
 
-    // Replace mode: deny non-rewritable Bash calls (agent must use ctx_shell).
-    // Safety: fail-open if MCP server is unreachable (#1448).
-    let mode = crate::hooks::recommend_hook_mode("codex");
-    if mode == crate::hooks::HookMode::Replace && super::deny::is_mcp_healthy() {
-        print!("{}", codex_deny_output(cmd));
-    } else {
-        note_edits();
-        print!("{}", codex_allow_output());
+    if replace_denies() {
+        return (codex_deny_output(cmd), false);
     }
+    run_checked()
+}
+
+/// A Codex deny carrying the shell allowlist's refusal.
+fn codex_allowlist_deny_output(msg: &str) -> String {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": msg
+        }
+    })
+    .to_string()
 }
 
 pub(super) fn codex_deny_output(original_cmd: &str) -> String {
@@ -413,6 +442,35 @@ mod tests {
         // A successful PreToolUse hook with no output allows the command.
         let allow_msg = codex_allow_output();
         assert!(allow_msg.is_empty(), "allow output must be empty");
+    }
+
+    /// Codex has no enforcement wrap, and the hook let every command it did
+    /// not rewrite run unchecked (a heredoc, a compound behind a `lean-ctx`
+    /// prefix or a package install). Each is now checked and denied on
+    /// violation; an allowlisted command still runs.
+    #[test]
+    fn codex_bash_that_fails_the_allowlist_is_denied() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        crate::test_env::set_var(
+            "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+            "git,cargo,npm,lean-ctx",
+        );
+        let outputs: Vec<_> = [
+            "python3 - <<'E'\nx\nE",
+            "lean-ctx gain; bash -c id",
+            "npm install x; bash -c id",
+            "cargo test",
+        ]
+        .into_iter()
+        .map(|cmd| codex_bash_output(cmd, "lean-ctx", || false))
+        .collect();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        for (output, runs) in &outputs[..3] {
+            assert!(!runs && output.contains("\"deny\""), "{output}");
+        }
+        assert_eq!(outputs[3], (codex_allow_output(), true));
     }
 
     #[test]

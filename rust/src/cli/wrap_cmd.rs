@@ -12,8 +12,6 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_PROXY_PORT: u16 = 4444;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WrapAgent {
     Claude,
@@ -119,7 +117,7 @@ pub(crate) struct WrapArgs {
 impl WrapArgs {
     fn parse(args: &[String], force_unwrap: bool) -> Result<Self, String> {
         let mut agent = None;
-        let mut port = DEFAULT_PROXY_PORT;
+        let mut port = None;
         let mut unwrap = force_unwrap;
         let mut index = 0;
 
@@ -132,9 +130,9 @@ impl WrapArgs {
                     let value = args
                         .get(index)
                         .ok_or_else(|| format!("{arg} requires a port number"))?;
-                    port = parse_port(value)?;
+                    port = Some(parse_port(value)?);
                 }
-                _ if arg.starts_with("--port=") => port = parse_port(&arg[7..])?,
+                _ if arg.starts_with("--port=") => port = Some(parse_port(&arg[7..])?),
                 _ if arg.starts_with('-') => return Err(format!("unknown flag '{arg}'")),
                 _ if agent.is_none() => agent = Some(arg.parse()?),
                 _ => return Err(format!("unexpected argument '{arg}'")),
@@ -145,7 +143,9 @@ impl WrapArgs {
         let agent = agent.ok_or_else(|| "missing agent".to_string())?;
         Ok(Self {
             agent,
-            port,
+            // Without `--port`, the port the proxy itself listens on:
+            // LEAN_CTX_PROXY_PORT, then `proxy_port`, then the per-UID port.
+            port: port.unwrap_or_else(crate::proxy_setup::default_port),
             unwrap,
         })
     }
@@ -842,10 +842,25 @@ mod tests {
 
     #[test]
     fn parses_default_port_and_agent() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let parsed = WrapArgs::parse(&args(&["codex"]), false).unwrap();
         assert_eq!(parsed.agent, WrapAgent::Codex);
-        assert_eq!(parsed.port, DEFAULT_PROXY_PORT);
+        assert_eq!(parsed.port, crate::proxy_setup::default_port());
         assert!(!parsed.unwrap);
+    }
+
+    /// Without `--port`, wrap points the agent at the port the proxy listens
+    /// on, not a hard-coded 4444; an explicit `--port` still wins.
+    #[test]
+    fn default_port_follows_the_configured_proxy_port() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _port = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_PORT", "9441");
+        assert_eq!(
+            WrapArgs::parse(&args(&["claude"]), false).unwrap().port,
+            9441
+        );
+        let explicit = WrapArgs::parse(&args(&["claude", "--port", "9555"]), false).unwrap();
+        assert_eq!(explicit.port, 9555);
     }
 
     /// GH #1520: a supported-but-not-wrappable agent (opencode et al.) must be

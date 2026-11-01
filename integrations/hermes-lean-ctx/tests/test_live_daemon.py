@@ -1,8 +1,9 @@
 """Live integration against a real lean-ctx daemon.
 
-Skipped unless ``LEANCTX_LIVE_URL`` is set (no mocks — these hit a real daemon).
-Run locally / in CI with::
+Skipped unless ``LEANCTX_LIVE_URL`` is set and the ``leanctx`` client is
+installed (no mocks — these hit a real daemon). Run locally / in CI with::
 
+    pip install lean-ctx-client==0.1.0
     LEANCTX_LIVE_URL=http://127.0.0.1:<port> \
     LEANCTX_LIVE_TOKEN=<token> \
     python -m pytest integrations/hermes-lean-ctx/tests/test_live_daemon.py -v
@@ -10,6 +11,7 @@ Run locally / in CI with::
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 
@@ -18,7 +20,13 @@ import pytest
 LIVE_URL = os.environ.get("LEANCTX_LIVE_URL", "").strip()
 LIVE_TOKEN = os.environ.get("LEANCTX_LIVE_TOKEN", "").strip() or None
 
-pytestmark = pytest.mark.skipif(not LIVE_URL, reason="LEANCTX_LIVE_URL not set")
+pytestmark = [
+    pytest.mark.skipif(not LIVE_URL, reason="LEANCTX_LIVE_URL not set"),
+    pytest.mark.skipif(
+        importlib.util.find_spec("leanctx") is None,
+        reason="leanctx client not installed: pip install lean-ctx-client==0.1.0",
+    ),
+]
 
 
 def _engine():

@@ -13,7 +13,9 @@ pub(crate) struct IntentRouteV2 {
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct IntentRouteInputsV2 {
-    pub query_md5: String,
+    /// BLAKE3 hex; the serialized name keeps its historical `_md5` suffix.
+    #[serde(rename = "query_md5")]
+    pub query_hash: String,
     pub query_redacted: String,
     pub role: String,
     pub profile: String,
@@ -21,7 +23,9 @@ pub(crate) struct IntentRouteInputsV2 {
     pub confidence: f64,
     pub dimension: IntentDimension,
     pub pressure: PressureSummaryV1,
-    pub policy_md5: String,
+    /// BLAKE3 hex; the serialized name keeps its historical `_md5` suffix.
+    #[serde(rename = "policy_md5")]
+    pub policy_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -92,8 +96,8 @@ fn route_v2_with(
     let classification = classify(query);
     let base = route_intent(query, &classification);
     let query_redacted = truncate(&crate::core::redaction::redact_text(query), 180);
-    let query_md5 = crate::core::hasher::hash_str(query);
-    let policy_md5 = crate::core::hasher::hash_str(&format!(
+    let query_hash = crate::core::hasher::hash_str(query);
+    let policy_hash = crate::core::hasher::hash_str(&format!(
         "context_strategy_v2;degrade_under_pressure={}",
         routing.degrade_under_pressure_effective()
     ));
@@ -116,7 +120,7 @@ fn route_v2_with(
 
     IntentRouteV2 {
         inputs: IntentRouteInputsV2 {
-            query_md5,
+            query_hash,
             query_redacted,
             role: role_name.to_string(),
             profile: profile_name.to_string(),
@@ -128,7 +132,7 @@ fn route_v2_with(
                 remaining_tokens: inputs.pressure_remaining_tokens,
                 action: PressureActionV1::from_action(inputs.pressure_action),
             },
-            policy_md5,
+            policy_hash,
         },
         decision: IntentRouteDecisionV2 {
             recommended_read_mode,
@@ -212,6 +216,12 @@ mod tests {
             let payload = serde_json::to_value(&route).unwrap();
             assert!(payload.get("created_at").is_none());
             assert!(payload["inputs"].get("budgets").is_none());
+            // The wire keeps the historical names of the BLAKE3 hashes.
+            assert_eq!(
+                payload["inputs"]["query_md5"],
+                crate::core::hasher::hash_str(query)
+            );
+            assert!(payload["inputs"]["policy_md5"].is_string());
             for removed in [
                 "recommended_model_tier",
                 "effective_model_tier",

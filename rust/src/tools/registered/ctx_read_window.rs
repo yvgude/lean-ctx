@@ -11,25 +11,54 @@ use serde_json::{Map, Value};
 /// the lines asked for. A `mode` the caller also passed wins; a string or pair
 /// becomes `mode="lines:…"` (malformed payloads fail loudly through the normal
 /// `lines:` validation), a bare number becomes `start_line`.
+///
+/// Pilot P10 added two shapes: the range passed as a *key*
+/// (`{"lines:1939-1952": "lines:1939-1952"}`, answered with the 13k-char
+/// outline of a 4,188-line file) and `lines` next to a bare `mode="anchored"`
+/// (answered with the whole file anchored). A `lines:<range>` key now reads
+/// as `lines`, and a range next to a bare `anchored`/`full`/`auto` mode narrows
+/// that mode (`anchored:<range>` resp. `lines:<range>`); other modes still win.
 pub(super) fn apply_lines_alias(args: &Map<String, Value>) -> Option<Map<String, Value>> {
-    if args.contains_key("mode") {
-        return None;
-    }
     let mut rewritten = args.clone();
+    if !rewritten.contains_key("lines")
+        && let Some(key) = rewritten
+            .keys()
+            .find(|k| k.len() > "lines:".len() && k.starts_with("lines:"))
+            .cloned()
+    {
+        rewritten.remove(&key);
+        rewritten.insert("lines".into(), Value::String(key));
+    }
+    let base_mode = match rewritten.get("mode") {
+        None => None,
+        Some(Value::String(m)) if matches!(m.trim(), "anchored" | "full" | "auto") => {
+            Some(m.trim().to_string())
+        }
+        Some(_) => return None,
+    };
+    let range_mode = |payload: String| {
+        let prefix = if base_mode.as_deref() == Some("anchored") {
+            "anchored"
+        } else {
+            "lines"
+        };
+        Value::String(format!("{prefix}:{payload}"))
+    };
     match rewritten.remove("lines")? {
         Value::String(text) => {
             let payload = text.trim();
             let payload = payload.strip_prefix("lines:").unwrap_or(payload);
             let payload = payload.trim_start_matches(':');
-            rewritten.insert("mode".into(), Value::String(format!("lines:{payload}")));
+            rewritten.insert("mode".into(), range_mode(payload.to_string()));
         }
         Value::Array(pair) => match pair.as_slice() {
             [start, end] => {
                 let (start, end) = (start.as_i64()?, end.as_i64()?);
-                rewritten.insert("mode".into(), Value::String(format!("lines:{start}-{end}")));
+                rewritten.insert("mode".into(), range_mode(format!("{start}-{end}")));
             }
             _ => return None,
         },
+        Value::Number(_) if base_mode.is_some() => return None,
         Value::Number(start) => {
             if !(rewritten.contains_key("start_line") || rewritten.contains_key("offset")) {
                 rewritten.insert("start_line".into(), Value::from(start.as_i64()?));

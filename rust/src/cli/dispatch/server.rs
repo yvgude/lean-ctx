@@ -18,6 +18,9 @@ pub(super) fn run_mcp_server() -> Result<()> {
     let started_at = std::time::Instant::now();
 
     crate::core::runtime_flags::enable_mcp_server();
+    // Apply the `LEAN_CTX_KERNEL_*` switches once, so kernel health reports
+    // the configuration this process actually runs with.
+    crate::core::context_kernel::startup::initialize();
 
     // Per-process RSS target, installed before the server starts the memory
     // guardian. Long-lived hosts keep many of these servers alive at once.

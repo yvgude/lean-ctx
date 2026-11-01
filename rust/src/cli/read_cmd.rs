@@ -18,6 +18,8 @@ mod policy_read;
 
 #[path = "read_cmd_carrier.rs"]
 mod carrier;
+#[cfg(unix)]
+use carrier::released_daemon_result;
 use carrier::{Stdout, deliver_carrier, tool_arguments};
 
 /// Detect legacy daemon read failures for the exit status. A completed daemon
@@ -291,10 +293,19 @@ pub(crate) fn observe_read<'a>(
             crate::daemon_client::DaemonToolCallOutcome::Unavailable => {}
             crate::daemon_client::DaemonToolCallOutcome::Completed { text, is_error } => {
                 let filtered = super::common::filter_daemon_output(&text);
-                if !filtered.trim().is_empty() {
-                    println!("{filtered}");
-                }
                 let exit_code = i32::from(is_error || is_failed_daemon_result(&filtered));
+                if !filtered.trim().is_empty()
+                    && let Some(released) = released_daemon_result(
+                        "ctx_read",
+                        &project_root,
+                        Some(&read_arguments),
+                        false,
+                        filtered,
+                        exit_code != 0,
+                    )
+                {
+                    super::common::print_released(&released);
+                }
                 return CommandOutput::daemon(exit_code);
             }
             crate::daemon_client::DaemonToolCallOutcome::Uncertain { message } => {
@@ -805,8 +816,19 @@ pub(crate) fn observe_grep<'a>(
             crate::daemon_client::DaemonToolCallOutcome::Unavailable => {}
             crate::daemon_client::DaemonToolCallOutcome::Completed { text, is_error } => {
                 let out = super::common::filter_daemon_output(&text);
-                println!("{out}");
                 let exit_code = if is_error { 2 } else { grep_exit_status(&out) };
+                let arguments =
+                    tool_arguments(serde_json::json!({ "pattern": pattern, "path": path }));
+                if let Some(released) = released_daemon_result(
+                    "ctx_search",
+                    &super::common::detect_project_root(&[]),
+                    Some(&arguments),
+                    false,
+                    out,
+                    is_error,
+                ) {
+                    super::common::print_released(&released);
+                }
                 return CommandOutput::daemon(exit_code);
             }
             crate::daemon_client::DaemonToolCallOutcome::Uncertain { message } => {
@@ -898,6 +920,17 @@ pub fn cmd_glob(args: &[String]) {
     }
 }
 
+/// Print the daemon's `glob` / `ls` listing: released like the local listing,
+/// never a delivery record.
+#[cfg(unix)]
+fn print_daemon_listing(tool: &str, text: String, is_error: bool) {
+    let project_root = super::common::detect_project_root(&[]);
+    if let Some(released) = released_daemon_result(tool, &project_root, None, true, text, is_error)
+    {
+        super::common::print_released(&released);
+    }
+}
+
 pub(crate) fn observe_glob<'a>(
     args: &'a [String],
     run_local: impl FnOnce(LocalOperation<'a>) -> CommandOutput,
@@ -923,7 +956,7 @@ pub(crate) fn observe_glob<'a>(
             crate::daemon_client::DaemonToolCallOutcome::Unavailable => {}
             crate::daemon_client::DaemonToolCallOutcome::Completed { text, is_error } => {
                 let out = super::common::filter_daemon_output(&text);
-                println!("{out}");
+                print_daemon_listing("ctx_glob", out, is_error);
                 return CommandOutput::daemon(i32::from(is_error));
             }
             crate::daemon_client::DaemonToolCallOutcome::Uncertain { message } => {
@@ -1096,7 +1129,7 @@ pub(crate) fn observe_ls<'a>(
             crate::daemon_client::DaemonToolCallOutcome::Unavailable => {}
             crate::daemon_client::DaemonToolCallOutcome::Completed { text, is_error } => {
                 let out = super::common::filter_daemon_output(&text);
-                println!("{out}");
+                print_daemon_listing("ctx_tree", out, is_error);
                 return CommandOutput::daemon(i32::from(is_error));
             }
             crate::daemon_client::DaemonToolCallOutcome::Uncertain { message } => {

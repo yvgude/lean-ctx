@@ -9,8 +9,8 @@
 //!
 //! 1. rolling stats (`~/.lean-ctx/output_echo.json`) for `ctx_metrics`,
 //!    `ctx_session output_stats` and the dashboard,
-//! 2. an automatic `LlmFeedbackEvent` so the adaptive mode policy finally
-//!    receives continuous data instead of voluntary `ctx_feedback` calls,
+//! 2. an automatic `LlmFeedbackEvent` so the LLM feedback store receives
+//!    continuous data instead of voluntary `ctx_feedback` calls,
 //! 3. a stable, cache-friendly CEP nudge the MCP server appends to a tool
 //!    result when echo stays high (cooldown-limited).
 
@@ -276,7 +276,7 @@ pub(crate) fn analyze_and_record(response: &str) {
     emit_feedback_event(response, turn_input_tokens);
 }
 
-/// Automatic `LlmFeedbackEvent` (#501): the adaptive mode policy used to
+/// Automatic `LlmFeedbackEvent` (#501): the LLM feedback store used to
 /// depend on voluntary `ctx_feedback` calls that practically never happened.
 /// Mode attribution comes from the session's `files_touched.last_mode`
 /// aggregation — a session-window approximation, honest and available.
@@ -316,9 +316,6 @@ fn emit_feedback_event(response: &str, turn_input_tokens: u64) {
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
 
-    let mut policy = crate::core::adaptive_mode_policy::AdaptiveModePolicyStore::load();
-    policy.update_from_feedback(&ev);
-    let _ = policy.save();
     let _ = crate::core::llm_feedback::LlmFeedbackStore::record(ev);
 }
 

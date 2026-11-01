@@ -100,7 +100,8 @@ finish() {
   esac
 
   echo ""
-  echo "Done! lean-ctx $(\"$INSTALL_DIR/lean-ctx\" --version 2>/dev/null || echo 'installed')."
+  # `--version` prints "lean-ctx X.Y.Z (...)"; the name is not repeated.
+  echo "Done! $("$INSTALL_DIR/lean-ctx" --version 2>/dev/null || echo 'lean-ctx installed')."
 
   # --- Auto-onboard unless opted out ---
   if [ "${LEAN_CTX_NO_ONBOARD:-}" = "1" ]; then
@@ -211,16 +212,30 @@ verify_checksum() {
   echo "  Checksum verified ✓"
 }
 
-# Stop any running lean-ctx before swapping the binary. The proxy runs as a
-# LaunchAgent/systemd unit with KeepAlive, so without this it keeps a stale
-# binary alive (and may respawn mid-swap); `lean-ctx stop` boots it out so the
-# freshly installed binary is picked up cleanly on next use. No-op on a first
-# install (nothing on PATH yet). Best-effort — never fails the install.
-stop_running_instance() {
-  if command -v lean-ctx >/dev/null 2>&1; then
-    echo "Stopping running lean-ctx (if any)..."
-    lean-ctx stop >/dev/null 2>&1 || true
+# Stop only the daemon of the binary about to be replaced, right before the
+# swap: `lean-ctx daemon stop` ends the daemon in its PID file and its
+# autostart unit. A full `lean-ctx stop` would sweep every lean-ctx process by
+# name and unload the user's proxy service as well. No-op on a first install
+# (no binary at the install path yet). Best-effort — never fails the install.
+stop_installed_daemon() {
+  restore_daemon=0
+  installed="$INSTALL_DIR/lean-ctx"
+  [ -x "$installed" ] || return 0
+  # Restore afterwards what ran before: a running daemon or its autostart unit.
+  if "$installed" daemon status 2>/dev/null | grep -Eq 'running \(PID|Autostart: +enabled'; then
+    restore_daemon=1
   fi
+  echo "Stopping the installed lean-ctx daemon (if any)..."
+  "$installed" daemon stop >/dev/null 2>&1 || true
+}
+
+# After the swap: start the daemon again on the new binary, through its
+# autostart unit when one is installed (`daemon restart`), only if it ran before.
+restore_installed_daemon() {
+  [ "${restore_daemon:-0}" = "1" ] || return 0
+  echo "Restarting the lean-ctx daemon..."
+  "$INSTALL_DIR/lean-ctx" daemon restart >/dev/null 2>&1 \
+    || echo "  Could not restart the daemon; start it with: lean-ctx daemon start"
 }
 
 sha256_of() {
@@ -252,7 +267,10 @@ install_cockpit() {
     echo "Cockpit: not installed (download failed); the engine works without it. Retry later: lean-ctx cockpit"
     return 0
   fi
-  cockpit_expected="$(awk -v f="$cockpit_asset" '$2 == f || $2 == "*" f { print $1; exit }' "$cockpit_dir/COCKPIT_SHA256SUMS")"
+  # Exactly one entry for the bundle, as for the engine archive.
+  cockpit_expected="$(awk -v name="$cockpit_asset" \
+    '{ f = $2; sub(/^\*/, "", f) } f == name { print $1; n++ } END { if (n != 1) exit 1 }' \
+    "$cockpit_dir/COCKPIT_SHA256SUMS")" || cockpit_expected=""
   cockpit_actual="$(sha256_of "$cockpit_dir/$cockpit_asset")"
   if [ -z "$cockpit_expected" ] || [ "$cockpit_actual" != "$cockpit_expected" ]; then
     echo "Cockpit: not installed (checksum missing or mismatched — refusing an unverified Cockpit)." >&2
@@ -346,9 +364,10 @@ install_download() {
     xattr -cr "$tmp_bin" 2>/dev/null || true
     codesign --force --sign - "$tmp_bin" 2>/dev/null || true
   fi
-  stop_running_instance
+  stop_installed_daemon
   mv -f "$tmp_bin" "$INSTALL_DIR/lean-ctx"
   tmp_bin=""
+  restore_installed_daemon
 
   echo "  Installed: $INSTALL_DIR/lean-ctx"
 
@@ -412,9 +431,10 @@ install_from_source() {
     xattr -cr "$tmp_bin" 2>/dev/null || true
     codesign --force --sign - "$tmp_bin" 2>/dev/null || true
   fi
-  stop_running_instance
+  stop_installed_daemon
   mv -f "$tmp_bin" "$INSTALL_DIR/lean-ctx"
   tmp_bin=""
+  restore_installed_daemon
   echo "  Installed: $INSTALL_DIR/lean-ctx"
 
   finish

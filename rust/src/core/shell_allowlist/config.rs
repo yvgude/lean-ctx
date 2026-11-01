@@ -6,27 +6,29 @@ pub(super) fn effective_allowlist() -> Vec<String> {
 /// filtering — shared with the invalid-entry and upgrade-advisory doctor
 /// checks, which need to see entries `effective_allowlist()` would drop.
 fn raw_allowlist_entries() -> Vec<String> {
-    // LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE completely replaces the config (for testing)
-    if let Ok(ov) = std::env::var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE") {
+    use crate::core::config::shell_policy;
+    // LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE completely replaces the config (test
+    // and debug builds only; see `config::shell_policy`).
+    if let Some(ov) = shell_policy::env("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE") {
         return ov
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
     }
-    let cfg = crate::core::config::Config::load();
-    let mut list = cfg.shell_allowlist;
+    let cfg = shell_policy::config();
+    let mut list = cfg.shell_allowlist.clone();
     // `shell_allowlist_extra` is purely additive (written by `lean-ctx allow <cmd>`),
     // so users can permit a command without nuking the built-in defaults. It only
     // matters in restricted mode — when the base list is empty all commands pass anyway.
     if !list.is_empty() {
-        for entry in cfg.shell_allowlist_extra {
-            if !entry.is_empty() && !list.contains(&entry) {
-                list.push(entry);
+        for entry in &cfg.shell_allowlist_extra {
+            if !entry.is_empty() && !list.contains(entry) {
+                list.push(entry.clone());
             }
         }
     }
-    if let Ok(env_val) = std::env::var("LEAN_CTX_SHELL_ALLOWLIST") {
+    if let Some(env_val) = shell_policy::env("LEAN_CTX_SHELL_ALLOWLIST") {
         for entry in env_val
             .split(',')
             .map(|s| s.trim().to_string())
@@ -59,7 +61,7 @@ pub fn invalid_allowlist_entries_pub() -> Vec<String> {
 /// false`, since those entries' meaning didn't change under the compat path.
 #[must_use]
 pub fn narrowed_allowlist_entries_pub() -> Vec<String> {
-    if !crate::core::config::Config::load().shell_allowlist_subcommand_scoping {
+    if !crate::core::config::shell_policy::config().shell_allowlist_subcommand_scoping {
         return Vec::new();
     }
     raw_allowlist_entries()
@@ -171,7 +173,7 @@ pub(super) fn is_plausible_command_name(base: &str) -> bool {
 /// case lean-ctx is on defaults, which is the usual reason an allowlist edit "did
 /// nothing"). That last signal is otherwise invisible over an MCP/stdio transport.
 pub(super) fn allowlist_block_message(base: &str, tokens: &[String], entries: &[String]) -> String {
-    let cfg_path = crate::core::config::Config::path().map_or_else(
+    let cfg_path = crate::core::config::shell_policy::config_path().map_or_else(
         || "~/.lean-ctx/config.toml".to_string(),
         |p| p.display().to_string(),
     );
@@ -235,7 +237,7 @@ pub(super) fn allowlist_block_message(base: &str, tokens: &[String], entries: &[
          Config in effect: {cfg_path}\n\
          Or disable the allowlist entirely: set  shell_allowlist = []\n\
          Or turn off all shell gating (you own the risk): set  shell_security = \"off\"  \
-         (or env LEAN_CTX_SHELL_SECURITY=off) — compression still applies.\n\
+         in that file — compression still applies.\n\
          Do NOT reroute through ctx_execute(language=\"shell\"): both tools enforce the same \
          policy. Allow the command explicitly or change shell_security deliberately."
     );
@@ -252,13 +254,16 @@ pub(super) fn allowlist_block_message(base: &str, tokens: &[String], entries: &[
         );
     }
 
-    if let Some(parse_err) = crate::core::config::last_config_parse_error() {
+    // The notes below describe `Config::load`'s file; a release build's gate
+    // reads only the file named above (`config::shell_policy`).
+    let ambient = !crate::core::config::shell_policy::pinned();
+    if ambient && let Some(parse_err) = crate::core::config::last_config_parse_error() {
         msg.push_str(&format!(
             "\n\n⚠ Your config.toml currently FAILS to parse, so lean-ctx is running on the \
              built-in defaults — this is almost certainly why editing the allowlist had no \
              effect. Fix the TOML error below, then retry:\n  {parse_err}\n  File: {cfg_path}"
         ));
-    } else if let Some(missing) = crate::core::config::Config::missing_config_path() {
+    } else if ambient && let Some(missing) = crate::core::config::Config::missing_config_path() {
         // The resolved config doesn't exist → lean-ctx is on defaults. An edit
         // made to a config.toml in a different dir (XDG vs legacy ~/.lean-ctx) or
         // under a sandboxed/container HOME is never read — say so over MCP (#540).
@@ -373,7 +378,7 @@ fn collect_claude_bash_permissions(out: &mut Vec<String>) {
 fn claude_settings_paths() -> Vec<std::path::PathBuf> {
     let mut paths = Vec::with_capacity(2);
 
-    if let Some(home) = crate::core::home::resolve_home_dir() {
+    if let Some(home) = crate::core::config::shell_policy::settings_home() {
         paths.push(home.join(".claude").join("settings.json"));
     }
 

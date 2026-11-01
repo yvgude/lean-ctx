@@ -32,16 +32,33 @@ pub(super) fn compute_rewrite() -> String {
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return build_passthrough_output();
     };
+    compute_rewrite_for(&input, &binary)
+}
 
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
+/// [`compute_rewrite`] for one hook payload, read from stdin by the caller.
+pub(super) fn compute_rewrite_for(input: &str, binary: &str) -> String {
+    let binary = binary.to_string();
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
         tracing::warn!("[hook rewrite] invalid JSON payload, allowing passthrough");
         return build_passthrough_output();
     };
+    // Relative paths in the command resolve in the directory the host runs
+    // it in (the payload's `cwd`), not the hook's own.
+    let run_cwd = v
+        .get("cwd")
+        .and_then(serde_json::Value::as_str)
+        .filter(|c| !c.is_empty())
+        .map(std::path::PathBuf::from);
+    crate::core::shell_allowlist::with_run_cwd(run_cwd, || rewrite_for_payload(&v, &binary))
+}
+
+fn rewrite_for_payload(v: &serde_json::Value, binary: &str) -> String {
+    let binary = binary.to_string();
 
     // Resolve across host shapes: Claude/Cursor send snake_case `tool_name` +
     // `tool_input`; Copilot CLI sends camelCase `toolName` + `toolArgs` (a
     // JSON-encoded string). Before #551 only the snake_case path was read.
-    let Some(tool_name) = payload::resolve_tool_name(&v) else {
+    let Some(tool_name) = payload::resolve_tool_name(v) else {
         return build_passthrough_output();
     };
 
@@ -49,8 +66,8 @@ pub(super) fn compute_rewrite() -> String {
         return build_passthrough_output();
     }
 
-    let tool_args = payload::resolve_tool_args(&v);
-    let Some(cmd) = payload::resolve_command(&v, tool_args.as_ref()) else {
+    let tool_args = payload::resolve_tool_args(v);
+    let Some(cmd) = payload::resolve_command(v, tool_args.as_ref()) else {
         return build_passthrough_output();
     };
 
@@ -68,12 +85,22 @@ pub(super) fn compute_rewrite() -> String {
     // command) so the second fire replays the decision instead of re-logging.
     // The output dialect is part of the key: a replayed Cursor-shaped deny is
     // invalid for Claude Code.
-    let claude = is_claude_pretooluse_payload(&v);
-    let gemini = is_gemini_beforetool_payload(&v);
+    let claude = is_claude_pretooluse_payload(v);
+    let gemini = is_gemini_beforetool_payload(v);
     let key_material = format!("{tool_name}\u{0}{cmd}\u{0}{claude}\u{0}{gemini}");
     dedup::deduped("rewrite", &key_material, || {
         if is_powershell_tool(&tool_name) {
-            return powershell_output(&cmd, &binary, &tool_name, tool_args.as_ref(), &v);
+            return powershell_output(&cmd, &binary, &tool_name, tool_args.as_ref(), v);
+        }
+        if let Some(msg) = unwrappable_allowlist_denial(&cmd, &binary) {
+            debug_log::log_hook_decision(
+                "rewrite",
+                &tool_name,
+                Route::Native,
+                &cmd,
+                "denied by the shell allowlist (cannot be wrapped)",
+            );
+            return build_deny_output(&msg, v);
         }
         // #1408: Commands that bypass compression-routing but violate the shell
         // allowlist must still be wrapped for enforcement. Without this,
@@ -92,7 +119,7 @@ pub(super) fn compute_rewrite() -> String {
         if let Some((rewrite, reason)) = rewrite {
             // "Mirror, don't grant": each host gets the rewrite only where it
             // neither grants nor adds a prompt (see `deliver_rewrite`).
-            if let Some(out) = deliver_rewrite(&tool_name, &cmd, tool_args.as_ref(), &rewrite, &v) {
+            if let Some(out) = deliver_rewrite(&tool_name, &cmd, tool_args.as_ref(), &rewrite, v) {
                 debug_log::log_hook_decision("rewrite", &tool_name, Route::LeanCtx, &cmd, reason);
                 return out;
             }
@@ -107,7 +134,7 @@ pub(super) fn compute_rewrite() -> String {
                     &cmd,
                     "denied by the shell allowlist (rewrite left to the host)",
                 );
-                return build_deny_output(&msg.to_string(), &v);
+                return build_deny_output(&msg.to_string(), v);
             }
             debug_log::log_hook_decision(
                 "rewrite",
@@ -250,6 +277,55 @@ pub(super) fn needs_enforcement_wrap(cmd: &str, binary: &str) -> bool {
         return false;
     }
     !passes_enforced(cmd)
+}
+
+/// The allowlist verdict for a command the enforcement wrap cannot carry.
+///
+/// [`needs_enforcement_wrap`] never wraps three kinds of command, and the
+/// hook used to let them run natively unchecked:
+/// - a heredoc, which does not survive the `lean-ctx -c` quoting round-trip
+///   (`python -I - <<'EOF' … EOF` ran inline code `python -c` is refused for);
+/// - a command whose program is lean-ctx, since wrapping it nests `-c`
+///   layers (#2088) — a compound behind a `lean-ctx …` prefix ran unchecked,
+///   and so did `lean-ctx allow …`, which loosens the agent's own policy;
+/// - a command beyond the gate's size or nesting limits.
+///
+/// Such a command is checked here instead, with the active security mode
+/// (`warn` reports, `off` passes); `Some` carries the refusal for a deny. A
+/// plain `lean-ctx …` call gets only the lean-ctx checks
+/// ([`check_leanctx_invocation`](crate::core::shell_allowlist::check_leanctx_invocation)),
+/// any other the full allowlist. Body-aware: quoted heredoc bodies are data
+/// to the allowlist, so a `git commit -m "$(cat <<'EOF' … EOF)"` still passes.
+pub(crate) fn unwrappable_allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
+    use crate::core::shell_allowlist::{self, ShellSecurity};
+    if ShellSecurity::resolve() == ShellSecurity::Off {
+        return None;
+    }
+    let verdict = match leanctx_call(cmd, binary) {
+        Some(LeanCtxCall::Plain) => shell_allowlist::check_leanctx_invocation(cmd),
+        Some(LeanCtxCall::Other) => shell_allowlist::check_shell_allowlist(cmd),
+        None if cmd.contains("<<") || shell_allowlist::exceeds_validation_limits(cmd) => {
+            shell_allowlist::check_shell_allowlist(cmd)
+        }
+        None => return None,
+    };
+    verdict.err().map(|msg| msg.to_string())
+}
+
+/// The allowlist verdict for a command that will run natively, unwrapped:
+/// [`unwrappable_allowlist_denial`] for the commands the wrap cannot carry,
+/// the full allowlist for every other. For the hooks of hosts that do not
+/// take the enforcement wrap (Codex, Vibe, PowerShell, `hook copilot`).
+pub(super) fn native_allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
+    if let Some(msg) = unwrappable_allowlist_denial(cmd, binary) {
+        return Some(msg);
+    }
+    if is_leanctx_call(cmd, binary) {
+        return None;
+    }
+    crate::core::shell_allowlist::check_shell_allowlist(cmd)
+        .err()
+        .map(|msg| msg.to_string())
 }
 
 /// True when `cmd` carries a top-level shell operator (`&&`, `||`, `;`, `|`),
@@ -450,11 +526,96 @@ pub(super) fn passes_rewrite_guards(cmd: &str, binary: &str) -> bool {
 }
 
 /// `cmd` already runs lean-ctx: bare, by path, or by a quoted path as our own
-/// rewrites emit it (#1865).
+/// rewrites emit it (#1865). Such a command is never wrapped again (#2088);
+/// it is checked by [`unwrappable_allowlist_denial`] instead.
 pub(super) fn is_leanctx_call(cmd: &str, binary: &str) -> bool {
-    cmd.starts_with("lean-ctx ")
-        || cmd.starts_with(&format!("{binary} "))
-        || cmd.starts_with(&format!("{} ", shell_quote(binary)))
+    leanctx_call(cmd, binary).is_some()
+}
+
+/// How a command whose program is lean-ctx runs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LeanCtxCall {
+    /// `[VAR=value …] lean-ctx …` or the resolved binary (quoted or not),
+    /// and nothing the calling shell runs or expands besides it.
+    Plain,
+    /// Any other form: an `env` prefix, another path to a `lean-ctx`
+    /// binary, or a line with operators, substitutions, redirects, heredocs
+    /// or line breaks.
+    Other,
+}
+
+/// `Some` when the program word of `cmd` — after `VAR=value` assignments and
+/// an optional `env` with assignments only — is lean-ctx: exactly
+/// `lean-ctx`/`lean-ctx.exe`, the resolved `binary`, or a path ending in
+/// one of those names. `lean-ctx-evil` is not lean-ctx. Any form it does not
+/// recognise is `None`, which leaves the command to the ordinary checks.
+pub(super) fn leanctx_call(cmd: &str, binary: &str) -> Option<LeanCtxCall> {
+    fn is_assignment(word: &str) -> bool {
+        word.split_once('=').is_some_and(|(name, _)| {
+            let mut bytes = name.bytes();
+            bytes
+                .next()
+                .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        })
+    }
+    let words = shell_tokenize(cmd);
+    let mut words = words.iter().map(String::as_str).peekable();
+    while words.next_if(|w| is_assignment(w)).is_some() {}
+    let via_env = words.next_if_eq(&"env").is_some();
+    while words.next_if(|w| is_assignment(w)).is_some() {}
+    let program = words.next()?;
+    let exact = matches!(program, "lean-ctx" | "lean-ctx.exe") || program == binary;
+    let by_name = matches!(
+        program.rsplit(['/', '\\']).next(),
+        Some("lean-ctx" | "lean-ctx.exe")
+    );
+    if !exact && !by_name {
+        return None;
+    }
+    Some(if exact && !via_env && runs_nothing_else(cmd) {
+        LeanCtxCall::Plain
+    } else {
+        LeanCtxCall::Other
+    })
+}
+
+/// True when the calling shell runs nothing but the one command in `cmd`, with
+/// the words as written: no operator, redirect, subshell, substitution,
+/// expansion, brace expansion or glob (`lean-ctx {yolo,}` runs `lean-ctx
+/// yolo`) or line break outside single quotes, and no non-ASCII character
+/// (PowerShell reads the typographic quotes `‘ ’ “ ”` as quotes).
+/// Conservative on purpose — anything else gets the full check.
+fn runs_nothing_else(cmd: &str) -> bool {
+    if !cmd.is_ascii() {
+        return false;
+    }
+    let mut single = false;
+    let mut double = false;
+    let mut chars = cmd.chars();
+    while let Some(c) = chars.next() {
+        if single {
+            single = c != '\'';
+            continue;
+        }
+        match c {
+            '\'' if !double => single = true,
+            '"' => double = !double,
+            '\\' => {
+                if matches!(chars.next(), None | Some('\n' | '\r')) {
+                    return false;
+                }
+            }
+            '$' | '`' | '\n' | '\r' => return false,
+            ';' | '&' | '|' | '<' | '>' | '(' | ')' | '{' | '}' | '*' | '?' | '[' | '~'
+                if !double =>
+            {
+                return false;
+            }
+            _ => {}
+        }
+    }
+    !single && !double
 }
 
 /// A single read/search/list command mapped onto the matching `lean-ctx`
@@ -911,9 +1072,9 @@ pub(super) fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> 
     // the compound violates the allowlist (#1408: enforcement). The #589 "no
     // new block" concern only applies when the user has shell_security = off —
     // in that case lean-ctx -c won't enforce anyway.
+    let enforce = needs_enforcement_wrap(cmd, binary);
     if commands.iter().any(|c| is_rewritable(c))
-        && (crate::core::shell_allowlist::passes_enforced(cmd)
-            || needs_enforcement_wrap(cmd, binary))
+        && (enforce || crate::core::shell_allowlist::passes_enforced(cmd))
     {
         return Some(wrap_single_command(cmd, binary));
     }
@@ -923,7 +1084,15 @@ pub(super) fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> 
     // rewritable tail stayed native. For `&&`/`||`/`;` chains without pipes,
     // rewrite each directly-mappable file-read segment in place and keep the
     // rest native.
-    rewrite_segments_in_place(&segments, &shell_quote(binary))
+    let in_place = rewrite_segments_in_place(&segments, &shell_quote(binary))?;
+    // The in-place form runs its other segments natively, unwrapped: when the
+    // chain violates the allowlist, the form that runs must pass it, or the
+    // whole chain takes the enforcement wrap — `bash -c 'id' && cat f` would
+    // otherwise run `bash -c` unchecked.
+    if enforce && !crate::core::shell_allowlist::passes_enforced(&in_place) {
+        return Some(wrap_single_command(cmd, binary));
+    }
+    Some(in_place)
 }
 
 /// Rewrites file-read segments of a `&&`/`||`/`;` chain in place (#1279).

@@ -440,3 +440,49 @@ fn ctx_knowledge_recall_as_of_time_travels() {
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
+
+#[test]
+fn ctx_knowledge_cognition_loop_is_a_retired_no_op() {
+    let _g = lean_ctx::core::data_dir::test_env_lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let data_dir = tmp.path().join("data");
+    std::fs::create_dir_all(&data_dir).expect("create data dir");
+    // SAFETY: serialized by `test_env_lock()`.
+    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string()) };
+
+    let project_root = tmp.path().join("proj");
+    std::fs::create_dir_all(&project_root).expect("create project root");
+    let project_root_str = project_root.to_string_lossy().to_string();
+
+    let policy = MemoryPolicy::default();
+    let mut knowledge = ProjectKnowledge::load_or_create(&project_root_str);
+    knowledge.remember("arch", "db", "PostgreSQL", "s1", 0.2, &policy);
+    knowledge.save().expect("save knowledge");
+    let before = serde_json::to_value(&ProjectKnowledge::load_or_create(&project_root_str).facts)
+        .expect("serialize facts");
+
+    let out = lean_ctx::tools::ctx_knowledge::handle(
+        &project_root_str,
+        "cognition_loop",
+        None,
+        None,
+        None,
+        None,
+        "s1",
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    assert!(
+        out.contains("retired") && out.contains("action=consolidate"),
+        "the retired action must say so and name the replacement: {out}"
+    );
+    let after = serde_json::to_value(&ProjectKnowledge::load_or_create(&project_root_str).facts)
+        .expect("serialize facts");
+    assert_eq!(before, after, "the retired action must not touch the store");
+
+    // SAFETY: serialized by `test_env_lock()`.
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+}

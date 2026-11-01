@@ -252,6 +252,10 @@ fn unranged_reads_outline_large_files_and_ranges_stay_exact() {
         serde_json::json!({"lines": "4:6"}),
         serde_json::json!({"lines": [4, 6]}),
         serde_json::json!({"lines": 4, "limit": 3}),
+        // P10: the range as a key, and a range next to a bare mode.
+        serde_json::json!({"lines:4-6": "lines:4-6"}),
+        serde_json::json!({"mode": "anchored", "lines": "4-6"}),
+        serde_json::json!({"mode": "full", "lines": "4-6"}),
         serde_json::json!({"symbol": "function_1"}),
     ] {
         let text = read(&ctx, extra.clone());

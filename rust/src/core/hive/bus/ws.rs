@@ -185,10 +185,11 @@ fn needs_rehello(last: &BusFrameV1, fresh: &BusFrameV1, since: Duration) -> bool
 }
 
 /// Reconnect until a fatal error (returned, see [`stopped`]), or until
-/// `limit` has passed (`None`).
+/// `limit` has passed (`None`). `[hive]` as it was at start is not kept:
+/// every connect reads it again.
 pub(super) async fn run(
     store: HiveStore,
-    config: HiveConfig,
+    _started_with: HiveConfig,
     limit: Option<Duration>,
 ) -> Option<HiveError> {
     let _friction = FrictionEmitter::start(store.clone());
@@ -196,6 +197,15 @@ pub(super) async fn run(
     // Connects that failed since the last session that was up.
     let mut failures: u32 = 0;
     loop {
+        // `[hive]` is read again before every connect: `bus = "off"` or
+        // `enabled = false` pauses the relay without a daemon restart, and
+        // switching it back on resumes it.
+        let Some(config) = super::relay_config() else {
+            tokio::select! {
+                () = tokio::time::sleep(TICK) => continue,
+                () = sleep_until(deadline) => return None,
+            }
+        };
         // A C0 2.0 Hive (its instance card answered) gets the v2 hello.
         let v2 = super::relay_v2::speaks_v2(&store);
         let mut connected = false;
@@ -320,10 +330,6 @@ async fn session_once(
     );
     headers.insert(HEADER_INSTANCE, header(&instance.instance_id)?);
     headers.insert(HEADER_PROTOCOL, header(&protocol_header_value())?);
-    headers.insert(
-        crate::core::hive::transport::HEADER_PROTOCOL_HIVE,
-        header(&protocol_header_value())?,
-    );
     headers.insert(HEADER_NAMES, header(NAMES_VAULT)?);
     headers.insert("User-Agent", header(&user_agent())?);
     let (socket, _) = open_socket(request).await.map_err(handshake_error)?;
@@ -420,6 +426,12 @@ async fn session_once(
                 }
             }
             _ = tick.tick() => {
+                // Switched off in `[hive]` meanwhile: close; `run` waits.
+                if super::relay_config().is_none() {
+                    state.save(&data)?;
+                    let _ = sink.send(Message::Close(None)).await;
+                    return Ok(SessionEnd::Closed);
+                }
                 map = VaultMap::load(&data);
                 let registry = AgentRegistry::load_or_create();
                 // An agent registered after the hello cannot send until a

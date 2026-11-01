@@ -96,56 +96,45 @@ fn create_and_trust(
     )?;
 
     // 2. Bundle key + cert into a PKCS#12 protected by the keychain password.
-    run(
+    //    The password is read from standard input, never from the arguments.
+    run_with_input(
         "openssl",
         &[
-            "pkcs12",
-            "-export",
-            "-inkey",
-            &key,
-            "-in",
-            &cert,
-            "-out",
-            &p12s,
-            "-passout",
-            &format!("pass:{pw}"),
+            "pkcs12", "-export", "-inkey", &key, "-in", &cert, "-out", &p12s, "-passout", "stdin",
         ],
+        format!("{pw}\n").as_bytes(),
     )?;
 
     // 3. Fresh dedicated keychain (clean slate if a stale one exists).
+    //    Every step that needs the password runs as `security -i`, which
+    //    reads the command line from standard input.
     let _ = run("security", &["delete-keychain", kc]);
-    run("security", &["create-keychain", "-p", &pw, kc])?;
+    run_security(&["create-keychain", "-p", &pw, kc])?;
     // No auto-lock: codesign must reach the key on every future build.
     run("security", &["set-keychain-settings", kc])?;
-    run("security", &["unlock-keychain", "-p", &pw, kc])?;
+    run_security(&["unlock-keychain", "-p", &pw, kc])?;
 
     // 4. Import identity; pre-authorise codesign so it never shows an ACL prompt.
-    run(
-        "security",
-        &[
-            "import",
-            &p12s,
-            "-k",
-            kc,
-            "-P",
-            &pw,
-            "-T",
-            "/usr/bin/codesign",
-            "-A",
-        ],
-    )?;
-    let _ = run(
-        "security",
-        &[
-            "set-key-partition-list",
-            "-S",
-            "apple-tool:,apple:,codesign:",
-            "-s",
-            "-k",
-            &pw,
-            kc,
-        ],
-    );
+    run_security(&[
+        "import",
+        &p12s,
+        "-k",
+        kc,
+        "-P",
+        &pw,
+        "-T",
+        "/usr/bin/codesign",
+        "-A",
+    ])?;
+    let _ = run_security(&[
+        "set-key-partition-list",
+        "-S",
+        "apple-tool:,apple:,codesign:",
+        "-s",
+        "-k",
+        &pw,
+        kc,
+    ]);
 
     // 5. Add to the user search list so codesign / find-identity see it.
     add_to_search_list(kc)?;
@@ -161,16 +150,37 @@ fn create_and_trust(
 }
 
 fn run(bin: &str, args: &[&str]) -> Result<(), String> {
-    let out = Command::new(bin)
-        .args(args)
+    let label = format!("{bin} {}", args.first().copied().unwrap_or_default());
+    finish(&label, Command::new(bin).args(args))
+}
+
+/// As [`run`], with `input` as the tool's whole standard input.
+fn run_with_input(bin: &str, args: &[&str], input: &[u8]) -> Result<(), String> {
+    let label = format!("{bin} {}", args.first().copied().unwrap_or_default());
+    let stdin = super::piped_input(input).map_err(|e| format!("{label}: prepare input: {e}"))?;
+    finish(&label, Command::new(bin).args(args).stdin(stdin))
+}
+
+/// One `security` command whose words carry a secret, given to
+/// `security -i` on standard input. Its exit status is that command's.
+fn run_security(words: &[&str]) -> Result<(), String> {
+    let label = format!("security {}", words.first().copied().unwrap_or_default());
+    let line = super::security_command(words)
+        .ok_or_else(|| format!("{label}: an argument holds a line break"))?;
+    let stdin =
+        super::piped_input(line.as_bytes()).map_err(|e| format!("{label}: prepare input: {e}"))?;
+    finish(&label, Command::new("security").arg("-i").stdin(stdin))
+}
+
+fn finish(label: &str, command: &mut Command) -> Result<(), String> {
+    let out = command
         .output()
-        .map_err(|e| format!("spawn {bin}: {e}"))?;
+        .map_err(|e| format!("spawn {label}: {e}"))?;
     if out.status.success() {
         return Ok(());
     }
     Err(format!(
-        "{bin} {}: {}",
-        args.first().copied().unwrap_or_default(),
+        "{label}: {}",
         String::from_utf8_lossy(&out.stderr).trim()
     ))
 }

@@ -152,7 +152,11 @@ pub fn sync(session: &Session, config: &HiveConfig, cwd_root: Option<&Path>) -> 
     pull_all(&resolver, &mut report);
     // 1.x proposal merges (§7) and fact states (J2) have no C0 2.0 route:
     // a 2.0 Hive decides through review items and folded maintenance events.
-    if !crate::core::hive::bus::relay_v2::speaks_v2(&session.store) {
+    // Both are outbound and named in the sharing question: a "no" at
+    // connect keeps them off (`connect::declined`).
+    if !crate::core::hive::bus::relay_v2::speaks_v2(&session.store)
+        && !crate::core::hive::connect::declined(&session.store, &session.lease.lease.org_id)
+    {
         merge_ready_all(&resolver, &mut report);
         report_states(&resolver, &mut report);
     }

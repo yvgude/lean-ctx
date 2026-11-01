@@ -3,9 +3,6 @@ use std::sync::Mutex;
 
 use crate::core::cache::SessionCache;
 use crate::core::context_ledger::PressureAction;
-use crate::core::mode_predictor::{FileSignature, ModePredictor};
-use crate::core::ocla::registry::OclaRegistry;
-use crate::core::ocla::types::{ConfigTuningRequest, OclaRequestContext};
 
 /// Per-process counters of which signal decided each auto-mode resolution.
 /// Surfaced by `ctx_metrics` so the learning loops are observable (#496).
@@ -321,17 +318,6 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         }
     }
 
-    // Adaptive learning signals (predictor, bandit, heatmap, adaptive policy,
-    // in-session bounce rates) are opt-in (#683). Off by default, the capability
-    // guards above plus the deterministic heuristic below make `auto` a pure
-    // function of (file, task) — byte-stable for provider prompt caching (#498)
-    // and free of the per-read disk I/O these stores incur.
-    if crate::core::config::Config::load().auto_mode_learning_effective()
-        && let Some(r) = resolve_adaptive(ctx)
-    {
-        return r;
-    }
-
     // Science-driven mode selection: when cognitive science features are enabled,
     // use semantic chunking (cognitive mode) instead of structural-only modes.
     // Cognitive mode returns 7±2 task-relevant code chunks with bodies — more
@@ -374,103 +360,6 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         "heuristic"
     };
     resolved(&heuristic, source)
-}
-
-/// The opt-in adaptive block (#683): in-session bounce rates plus the predictor /
-// OSS: adaptive read-mode selection. Not related to commercial
-// Adaptive Intensity (Solution Intelligence Section 8).
-/// bandit / heatmap / adaptive-policy learning loop. Returns `Some` when a
-/// learning signal decides the mode, `None` to fall through to the deterministic
-/// heuristic. Only invoked when `auto_mode_learning` is enabled, so its disk I/O
-/// and non-determinism never touch the default cascade.
-fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
-    if let Ok(bt) = crate::core::bounce_tracker::global().lock()
-        && bt.should_force_full(ctx.path)
-    {
-        return Some(resolved("full", "bounce_tracker"));
-    }
-
-    // Per-path long-term memory (#496) is not consulted here: `resolve_inner`
-    // applies it unconditionally, ahead of this opt-in block.
-
-    let sig = FileSignature::from_path(ctx.path, ctx.token_count);
-    let predictor = ModePredictor::new();
-    let mut predicted = predictor
-        .predict_best_mode(&sig)
-        .unwrap_or_else(|| "full".to_string());
-    if predicted == "auto" {
-        predicted = "full".to_string();
-    }
-
-    if predicted != "full"
-        && let Some(bandit_override) = bandit_explore(ctx.path, ctx.token_count)
-    {
-        predicted = bandit_override;
-    }
-
-    // Heatmap signal (#496): a frequently-read file where compression barely
-    // saves anything will likely trigger a follow-up read — step one mode more
-    // conservative. avg_compression_ratio is the historical fraction saved.
-    if predicted != "full"
-        && let Some((access_count, avg_ratio)) = crate::core::heatmap::entry_stats(ctx.path)
-        && access_count >= 5
-        && avg_ratio < 0.30
-    {
-        let conservative = match predicted.as_str() {
-            "signatures" | "aggressive" | "entropy" => "map".to_string(),
-            "map" if ctx.token_count <= 6000 => "full".to_string(),
-            other => other.to_string(),
-        };
-        if conservative != predicted {
-            return Some(resolved(&conservative, "heatmap_conservative"));
-        }
-    }
-
-    let request_id = "auto-mode-resolution";
-    let request = ConfigTuningRequest {
-        context: OclaRequestContext {
-            request_id: request_id.to_string(),
-            session_id: "auto-mode".to_string(),
-            agent_id: "lean-ctx".to_string(),
-            content_ref: ctx.path.to_string(),
-            tenant_id: None,
-            trace_id: "tr-unit".into(),
-            task_id: None,
-            parent_task_id: None,
-        },
-        config_ref: predicted.clone(),
-        objective_ref: ctx.task.unwrap_or_default().to_string(),
-    };
-    let chosen = match OclaRegistry::global().config_tuner.propose_tuning(request) {
-        Ok(proposal) => proposal
-            .proposal_ref
-            .strip_prefix(&format!("proposal:{predicted}->"))
-            .and_then(|value| value.strip_suffix(&format!(":{request_id}")))
-            .map_or_else(|| predicted.clone(), ToString::to_string),
-        Err(_) => predicted.clone(),
-    };
-
-    if ctx.token_count > 2000 {
-        if (predicted == "map" || predicted == "signatures")
-            && chosen != "map"
-            && chosen != "signatures"
-        {
-            return Some(resolved(&predicted, "predictor_guard"));
-        }
-        if chosen == "full" && predicted != "full" {
-            return Some(resolved(&predicted, "predictor_override"));
-        }
-    }
-
-    if chosen != predicted {
-        return Some(resolved(&chosen, "adaptive_policy"));
-    }
-
-    if predicted != "full" {
-        return Some(resolved(&predicted, "predictor"));
-    }
-
-    None
 }
 
 /// Unified pressure downgrade table.
@@ -528,31 +417,6 @@ fn intent_recommended_mode(task: Option<&str>) -> Option<String> {
         return None;
     }
     Some(mode)
-}
-
-fn bandit_explore(file_path: &str, token_count: usize) -> Option<String> {
-    let project_root =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)?;
-    let ext = std::path::Path::new(file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    let bucket = match token_count {
-        0..=2000 => "sm",
-        2001..=10000 => "md",
-        10001..=50000 => "lg",
-        _ => "xl",
-    };
-    let bandit_key = crate::core::bandit::bandit_key("mode", ext, Some(bucket));
-    let mut store = crate::core::bandit::BanditStore::load(&project_root);
-    let bandit = store.get_or_create(&bandit_key);
-    // #4: deterministic argmax-of-mean by default; Thompson only under the flag.
-    let arm = bandit.choose_arm();
-    if arm.budget_ratio < 0.25 && token_count > 2000 {
-        Some("aggressive".to_string())
-    } else {
-        None
-    }
 }
 
 fn heuristic_mode(ext: &str, token_count: usize, structure_first: bool) -> String {
@@ -914,10 +778,9 @@ mod tests {
     }
 
     #[test]
-    fn learned_path_force_full_applies_without_auto_mode_learning() {
-        // `auto_mode_learning` is off by default; the per-path bounce memory
-        // must still widen a repeatedly bouncing file to `full`, cold or warm.
-        assert!(!crate::core::config::Config::default().auto_mode_learning);
+    fn learned_path_force_full_applies() {
+        // The per-path bounce memory widens a repeatedly bouncing file to
+        // `full`, cold or warm.
         // The path memory may flush to the cache dir: keep it out of the real one.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
@@ -1181,16 +1044,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// #683: with learning off (the default), a medium code file with no task
-    /// resolves through the deterministic size heuristic — never a learning
-    /// source — and is byte-stable across repeated calls.
+    /// #683: a medium code file with no task resolves through the deterministic
+    /// size heuristic — never a learning source — and is byte-stable across
+    /// repeated calls. The retired `LEAN_CTX_AUTO_MODE_LEARNING` switch is
+    /// accepted and changes nothing.
     #[test]
-    fn learning_off_by_default_is_deterministic() {
+    fn auto_resolution_is_deterministic() {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!("lctx-amr-det-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        crate::test_env::remove_var("LEAN_CTX_AUTO_MODE_LEARNING");
+        crate::test_env::set_var("LEAN_CTX_AUTO_MODE_LEARNING", "1");
         crate::test_env::remove_var("LEAN_CTX_STRUCTURE_FIRST");
         crate::test_env::set_var("LEAN_CTX_PROGRESSIVE_DISCLOSURE", "0");
 
@@ -1208,21 +1072,10 @@ mod tests {
         assert_eq!((a.mode.as_str(), a.source), ("signatures", "heuristic"));
         assert_eq!((a.mode, a.source), (b.mode, b.source));
 
+        crate::test_env::remove_var("LEAN_CTX_AUTO_MODE_LEARNING");
         crate::test_env::remove_var("LEAN_CTX_PROGRESSIVE_DISCLOSURE");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// #683: the `LEAN_CTX_AUTO_MODE_LEARNING` env var gates the adaptive block
-    /// and wins over the (default-off) config field.
-    #[test]
-    fn auto_mode_learning_env_opt_in_is_honored() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_AUTO_MODE_LEARNING", "1");
-        assert!(crate::core::config::Config::default().auto_mode_learning_effective());
-        crate::test_env::set_var("LEAN_CTX_AUTO_MODE_LEARNING", "0");
-        assert!(!crate::core::config::Config::default().auto_mode_learning_effective());
-        crate::test_env::remove_var("LEAN_CTX_AUTO_MODE_LEARNING");
     }
 
     #[test]

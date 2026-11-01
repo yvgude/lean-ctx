@@ -4,6 +4,16 @@ set -euo pipefail
 REPO="yvgude/lean-ctx"
 INSTALL_DIR="${HOME}/.local/bin"
 
+# Global, not `local`: the EXIT trap runs after install_binary has returned,
+# where a function-local name is unset and `set -u` would fail the install.
+TMP_DIR=""
+cleanup() {
+    if [ -n "$TMP_DIR" ]; then
+        rm -rf "$TMP_DIR"
+    fi
+}
+trap cleanup EXIT
+
 already_installed() {
     command -v lean-ctx >/dev/null 2>&1
 }
@@ -30,24 +40,60 @@ detect_platform() {
 
 latest_version() {
     curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-        | grep '"tag_name"' | head -1 | sed 's/.*"v\?\([^"]*\)".*/\1/'
+        | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//'
+}
+
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    else
+        shasum -a 256 "$1" | cut -d' ' -f1
+    fi
+}
+
+# Fails closed like install.sh (GHSA-rxv5-4c3x-g4q6 D): no hash tool, no
+# SHA256SUMS, no unique entry or a different digest aborts before anything
+# is extracted or installed.
+verify_checksum() {
+    local archive="$1" asset="$2" sums="$3" expected actual
+    expected="$(awk -v name="$asset" \
+        '{ f = $2; sub(/^\*/, "", f) } f == name { print $1; n++ } END { if (n != 1) exit 1 }' \
+        "$sums")" || expected=""
+    if [ -z "$expected" ]; then
+        echo "ERROR: SHA256SUMS has no unique entry for ${asset}; refusing to install." >&2
+        exit 1
+    fi
+    actual="$(sha256_of "$archive")"
+    if [ "$actual" != "$expected" ]; then
+        echo "ERROR: checksum mismatch for ${asset} (expected ${expected}, got ${actual}); refusing to install." >&2
+        exit 1
+    fi
+    echo "Checksum verified."
 }
 
 install_binary() {
     local platform="$1" version="$2"
-    local asset="lean-ctx-${platform}"
-    local url="https://github.com/${REPO}/releases/download/v${version}/${asset}.tar.gz"
+    local asset="lean-ctx-${platform}.tar.gz"
+    local base="https://github.com/${REPO}/releases/download/v${version}"
+
+    if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+        echo "ERROR: neither sha256sum nor shasum is available; refusing to install an unverified binary." >&2
+        exit 1
+    fi
 
     echo "Downloading lean-ctx v${version} for ${platform}..."
-    local tmp
-    tmp="$(mktemp -d)"
-    trap 'rm -rf "$tmp"' EXIT
+    TMP_DIR="$(mktemp -d)"
 
-    curl -fsSL "$url" -o "${tmp}/lean-ctx.tar.gz"
-    tar -xzf "${tmp}/lean-ctx.tar.gz" -C "$tmp"
+    curl -fsSL "${base}/${asset}" -o "${TMP_DIR}/lean-ctx.tar.gz"
+    if ! curl -fsSL "${base}/SHA256SUMS" -o "${TMP_DIR}/SHA256SUMS"; then
+        echo "ERROR: could not download SHA256SUMS for v${version}; refusing to install an unverified binary." >&2
+        exit 1
+    fi
+    verify_checksum "${TMP_DIR}/lean-ctx.tar.gz" "$asset" "${TMP_DIR}/SHA256SUMS"
+    tar -xzf "${TMP_DIR}/lean-ctx.tar.gz" -C "$TMP_DIR"
 
     mkdir -p "$INSTALL_DIR"
-    mv "${tmp}/lean-ctx" "${INSTALL_DIR}/lean-ctx"
+    mv "${TMP_DIR}/lean-ctx" "${INSTALL_DIR}/lean-ctx"
     chmod +x "${INSTALL_DIR}/lean-ctx"
     echo "Installed to ${INSTALL_DIR}/lean-ctx"
 }

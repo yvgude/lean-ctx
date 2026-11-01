@@ -13,6 +13,11 @@ fn knowledge_dir(project_hash: &str) -> Result<PathBuf, String> {
         .join(project_hash))
 }
 
+/// The directory of `project_root`'s store (`knowledge.json`, its journal).
+pub(crate) fn knowledge_dir_of(project_root: &str) -> Result<PathBuf, String> {
+    knowledge_dir(&hash_project_root(project_root))
+}
+
 /// How long a knowledge write waits for the project's in-process and file
 /// locks. Bounded, so a stuck holder cannot hang a tool call; long enough that
 /// parallel `remember` calls on a loaded machine queue instead of failing,
@@ -459,6 +464,13 @@ impl ProjectKnowledge {
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         admission.authorize_gateway()?;
         write_json_atomic(&path, &json)?;
+        // Every save comes through here under the project lock, so the
+        // journal sees each write path in save order (`journal`).
+        super::journal::append(
+            &dir,
+            &super::journal::diff(&existing.facts, &self.facts),
+            &Utc::now().to_rfc3339(),
+        );
         Ok(())
     }
 

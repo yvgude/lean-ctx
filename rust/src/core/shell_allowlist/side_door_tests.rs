@@ -29,6 +29,36 @@ fn assert_all_pass(allowlist: &str, commands: &[&str]) {
     }
 }
 
+/// lean-ctx's own policy lives in `LEAN_CTX_*` variables and in its config
+/// directory. A command line that sets them for the lean-ctx it starts — or
+/// for a nested one — turned the gate off for itself; only the run-control
+/// switches (`LEAN_CTX_DISABLED`, …) may be set from a command line.
+#[test]
+fn a_command_cannot_set_lean_ctx_policy_through_the_environment() {
+    assert_all_block(
+        "ls,git,echo,lean-ctx,bash,npm,env",
+        &[
+            "LEAN_CTX_SHELL_SECURITY=off bash -c id",
+            "LEAN_CTX_SHELL_SECURITY=off lean-ctx -c 'bash -c id'",
+            "export LEAN_CTX_SHELL_SECURITY=off && lean-ctx -c 'bash -c id'",
+            "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE=bash lean-ctx -c 'bash -c id'",
+            "LEAN_CTX_CONFIG_DIR=./x lean-ctx -c ls",
+            "env LEAN_CTX_DATA_DIR=./x lean-ctx gain",
+            "HOME=/tmp/x lean-ctx -c ls",
+            "env XDG_CONFIG_HOME=/tmp/x lean-ctx -c ls",
+            "export HOME=/tmp/x; lean-ctx -c ls",
+        ],
+    );
+    assert_all_pass(
+        "ls,git,echo,lean-ctx,bash,npm,env",
+        &[
+            "LEAN_CTX_DISABLED=1 git status",
+            "LEAN_CTX_RAW=1 lean-ctx -c 'git status'",
+            "HOME=/tmp/x npm test",
+        ],
+    );
+}
+
 #[test]
 fn every_assignment_to_a_hijacking_variable_is_blocked() {
     assert_all_block(
@@ -413,4 +443,311 @@ fn input_descriptor_duplication_is_not_a_background_operator() {
     );
     assert_eq!(split_on_operators("cat <&3").len(), 1);
     assert_eq!(split_on_operators("cat 0<&-").len(), 1);
+}
+
+const STRUCTURAL_ALLOWLIST: &str =
+    "ls,git,echo,cat,lean-ctx,npm,env,cargo,sed,awk,rm,ln,printf,xargs,id,head,mv";
+
+/// A lean-ctx call from an agent shell runs only the listed subcommands, and
+/// the words that pick what runs must be literal: the shell expands `$k`,
+/// `{a,}` or a word fed by `xargs` after the check.
+#[test]
+fn leanctx_from_an_agent_shell_runs_listed_subcommands_with_literal_words() {
+    assert_all_block(
+        STRUCTURAL_ALLOWLIST,
+        &[
+            "k=shell_security; lean-ctx config set \"$k\" off --yes",
+            "y=yolo; lean-ctx $y --yes",
+            "m=__session-starter; lean-ctx $m prog",
+            "echo 'yolo --yes' | xargs lean-ctx",
+            "lean-ctx {yolo,} --yes",
+            "lean-ctx",
+            "lean-ctx setup",
+            "lean-ctx init --global",
+            "lean-ctx hook rewrite",
+            "lean-ctx daemon start",
+            "lean-ctx proxy enable",
+            "lean-ctx doctor --fix",
+            "lean-ctx profile set loose",
+            "lean-ctx -c 'bash -c id'",
+            "lean-ctx -c 'git status; curl -s x'",
+            // A refused flag behind an expansion.
+            "f=--fix; lean-ctx doctor $f",
+            "lean-ctx doctor ${F:---fix}",
+            "w=--web; lean-ctx gain $w",
+        ],
+    );
+    assert_all_pass(
+        STRUCTURAL_ALLOWLIST,
+        &[
+            "lean-ctx read src/main.rs",
+            "lean-ctx search 'foo*'",
+            "lean-ctx read __init__.py",
+            "lean-ctx gain",
+            "lean-ctx -c 'cargo test'",
+            "lean-ctx -c 'cargo test && git status'",
+            "lean-ctx doctor",
+            "lean-ctx doctor --json",
+            "lean-ctx --version",
+            "lean-ctx knowledge recall auth",
+            "lean-ctx session status",
+            "lean-ctx config show",
+        ],
+    );
+}
+
+/// `config set` from an agent shell reaches presentation and compression
+/// keys only; everything that can loosen security is the person's.
+#[test]
+fn agent_shell_config_set_is_limited_to_safe_keys() {
+    assert_all_block(
+        STRUCTURAL_ALLOWLIST,
+        &[
+            "lean-ctx config set shell_allow_writes true",
+            "lean-ctx config set hook_binary /tmp/x",
+            "lean-ctx config set read_redirect off",
+            "lean-ctx config set allowed_destinations x",
+            "lean-ctx config set policy_floor off",
+        ],
+    );
+    assert_all_pass(
+        STRUCTURAL_ALLOWLIST,
+        &["lean-ctx config set compression_level max"],
+    );
+    let msg = verdicts(
+        STRUCTURAL_ALLOWLIST,
+        &["lean-ctx config set shell_allow_writes true"],
+    )
+    .remove(0)
+    .1
+    .expect_err("refused")
+    .to_string();
+    assert!(msg.contains("own terminal"), "{msg}");
+}
+
+/// Writes into lean-ctx's state through any redirect form, a path inside a
+/// sed/awk script, an abbreviated long option, a link, a glob or a `cd`.
+#[test]
+fn every_spelling_of_a_state_write_is_refused() {
+    let cfg = "~/.config/lean-ctx/config.toml";
+    let blocked = [
+        format!("echo x 1<>{cfg}"),
+        format!("echo x >&{cfg}"),
+        format!("sed -n '1w {cfg}' README.md"),
+        format!("awk '{{print > \"{cfg}\"}}' README.md"),
+        format!("sed --in-pl s/a/b/ {cfg}"),
+        "ln -s ~/.config/lean-ctx /tmp/lc".to_string(),
+        "rm ~/.config/lean-*/config.toml".to_string(),
+        "cd ~/.config/lean-ctx && rm config.toml".to_string(),
+        "rm ${HOME}/.config/lean-ctx/config.toml".to_string(),
+    ];
+    let blocked: Vec<&str> = blocked.iter().map(String::as_str).collect();
+    assert_all_block(STRUCTURAL_ALLOWLIST, &blocked);
+    let read = [
+        format!("cat {cfg}"),
+        format!("sed -n 1,3p {cfg}"),
+        format!("head -5 {cfg}"),
+        "echo x >&2".to_string(),
+        "lean-ctx read README.md".to_string(),
+    ];
+    let read: Vec<&str> = read.iter().map(String::as_str).collect();
+    assert_all_pass(STRUCTURAL_ALLOWLIST, &read);
+    // The redirect reaches the state check in the real gate, not only the
+    // helper.
+    let _lock = crate::core::data_dir::test_env_lock();
+    let _list = crate::test_env::VarGuard::set("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
+    let _mode = crate::test_env::VarGuard::set("LEAN_CTX_SHELL_SECURITY", "enforce");
+    assert!(check_shell_allowlist(&format!("echo x 1<>{cfg}")).is_err());
+}
+
+/// Every way a line can set a lean-ctx policy variable for the lean-ctx it
+/// starts: clustered and abbreviated `env` options, a bare `export` after a
+/// `${N:=…}` default, a name built at run time, a nameref, and `HOME` in
+/// another segment.
+#[test]
+fn policy_variables_cannot_be_set_by_any_spelling() {
+    assert_all_block(
+        STRUCTURAL_ALLOWLIST,
+        &[
+            "env -vS 'LEAN_CTX_SHELL_SECURITY=off lean-ctx -c id'",
+            "env --split-s='LEAN_CTX_SHELL_SECURITY=off lean-ctx -c id'",
+            ": ${LEAN_CTX_SHELL_SECURITY:=off}; export LEAN_CTX_SHELL_SECURITY; lean-ctx -c id",
+            "export LEAN_CTX_SHELL_SECURITY; lean-ctx -c id",
+            "v=LEAN_CTX_SHELL_SECURITY; printf -v \"$v\" off; lean-ctx -c id",
+            "n=LEAN_CTX_SHELL_SECURITY; export \"$n=off\"; lean-ctx -c id",
+            "env \"${N}=off\" lean-ctx -c id",
+            "declare -n r=LEAN_CTX_SHELL_SECURITY; r=off; lean-ctx -c id",
+            "HOME=/tmp/x; lean-ctx -c ls",
+            "XDG_CONFIG_HOME=/tmp/x && lean-ctx -c ls",
+        ],
+    );
+    assert_all_pass(
+        STRUCTURAL_ALLOWLIST,
+        &[
+            "export PATH=/opt/bin:$PATH && cargo test",
+            "HOME=/tmp/x npm test",
+            "cargo test && git status",
+            "read -r -p \"$prompt\" answer",
+        ],
+    );
+}
+
+const REACH_ALLOWLIST: &str =
+    "ls,git,echo,cat,lean-ctx,cargo,gh,cp,mv,rm,ln,tar,unzip,mkdir,printf,tr";
+
+/// lean-ctx's state is reached through the directories above it, through
+/// relative paths after a `cd`, and through lean-ctx's own writing
+/// subcommands — not only through paths inside it.
+#[test]
+fn state_is_reached_through_ancestors_relative_paths_and_leanctx_writers() {
+    assert_all_block(
+        REACH_ALLOWLIST,
+        &[
+            "mkdir -p /tmp/e/lean-ctx && printf 'x\\n' > /tmp/e/lean-ctx/config.toml && cp -r /tmp/e/lean-ctx ~/.config/",
+            "cd ~/.config && cp /tmp/e.toml lean-ctx/config.toml",
+            "cd ~ && rm .local/share/lean-ctx/hive/worker.json",
+            "tar xf e.tar -C ~",
+            "unzip -o e.zip -d ~/.config",
+            "mv ~/.config /tmp/old && cp -r /tmp/e ~/.config",
+            "ln -sfn ~/.config /tmp/l && cp e.toml /tmp/l/lean-ctx/config.toml",
+            "lean-ctx graph export-html --out ~/.config/lean-ctx/config.toml",
+            "lean-ctx roi --export ~/.local/share/lean-ctx/hive/worker.json",
+            "lean-ctx knowledge export --output ~/.config/lean-ctx/x",
+            "lean-ctx knowledge export-agents-md --write --file ~/.local/share/lean-ctx/hive/worker.json",
+        ],
+    );
+    assert_all_pass(
+        REACH_ALLOWLIST,
+        &[
+            "cp a.txt ./x",
+            "cp -r src/ /tmp/out",
+            "tar xf a.tar -C /tmp/x",
+            "lean-ctx read ~/.config/lean-ctx/config.toml",
+            "git commit -m \"fix: read ~/.config/lean-ctx/config.toml first\"",
+            "gh pr create --body \"see ~/.config/lean-ctx/config.toml\"",
+            "cargo run -- read ~/.config/lean-ctx/config.toml",
+            "tr / _",
+            "cd src && ls",
+        ],
+    );
+}
+
+const WRITER_ALLOWLIST: &str = "ls,git,echo,cat,lean-ctx,cargo,cp,mv,rm,ln,tar,unzip,mkdir,\
+     curl,wget,gcc,sort,find,mvn,tree,fd,df,code,open,printf,bat,rsync,cpio,pax,chmod,npm,docker";
+
+/// Conservative default: a program not known to only read is refused when
+/// any word (attached option values included) is inside lean-ctx's state or
+/// a directory above it. Narrow exceptions: git reads, viewers without
+/// their writing flags, curl/wget output files outside the state, and
+/// plain non-recursive copies judged by the path they create.
+#[test]
+fn writers_options_and_extractions_reach_state_only_where_they_land() {
+    assert_all_block(
+        WRITER_ALLOWLIST,
+        &[
+            "curl -o$HOME/.config/lean-ctx/config.toml https://x",
+            "wget -O$HOME/.local/share/lean-ctx/hive/worker.json x",
+            "gcc -o$HOME/.config/lean-ctx/x a.c",
+            "sort -o$HOME/.config/lean-ctx/config.toml f",
+            "tar -xf e.tar -C$HOME",
+            "unzip -o e.zip -d$HOME/.config",
+            "echo y | find /tmp/e -name e.toml -ok cp {} ~/.config/lean-ctx/config.toml \\;",
+            "mvn -Dmaven.repo.local=$HOME/.config/lean-ctx/x install",
+            "cd ~ && tar xf /tmp/e.tar",
+            "cd ~/.config && unzip -o /tmp/e.zip",
+            "tar -xPf e.tar",
+            "unzip -: e.zip",
+            "D=~/.config/lean-ctx; lean-ctx graph export-html --out \"$D/config.toml\"",
+            "cd \"$D\" && lean-ctx knowledge export --output config.toml",
+            "mkdir -p /tmp/e/lean-ctx && printf 'x\\n' > /tmp/e/lean-ctx/config.toml && cp -r /tmp/e/lean-ctx ~/.config/",
+            "mv ~/.config /tmp/old && cp -r /tmp/e ~/.config",
+            "ln -sfn ~/.config /tmp/l && cp e.toml /tmp/l/lean-ctx/config.toml",
+            "tar xf e.tar -C ~",
+            "tree -o ~/.config/lean-ctx/config.toml",
+            "fd . ~/.config/lean-ctx -x rm",
+            "fd -x cp /tmp/e {} . ~/.local/share/lean-ctx/hive",
+            "code --user-data-dir ~/.config/lean-ctx",
+            "open --stdout ~/.config/lean-ctx/config.toml -a TextEdit",
+            "bat cache --build --target ~/.config/lean-ctx",
+            "curl -sSLo ~/.config/lean-ctx/config.toml https://x",
+            "curl -o /tmp/a https://x -o ~/.config/lean-ctx/config.toml https://y",
+            "curl -D ~/.config/lean-ctx/config.toml https://x",
+            "wget -qO ~/.local/share/lean-ctx/hive/worker.json x",
+            "wget -o ~/.config/lean-ctx/config.toml x",
+            "cp -r /tmp/e/ ~/.config/",
+            "cp -r /tmp/e/. ~/.config/",
+            "cp -r /tmp/e/* ~/.config/",
+            "cp -rT /tmp/e ~/.config",
+            "rsync -a /tmp/e/ ~/.config/",
+            "rsync -a --delete /tmp/empty/ ~/.config/",
+            "find . | cpio -pdm ~/.config",
+            "pax -rw /tmp/e ~/.config",
+            "chmod 000 ~/.config",
+            "chmod -x ~/.local/share",
+            "cd ~ && git checkout -- .",
+        ],
+    );
+    assert_all_pass(
+        WRITER_ALLOWLIST,
+        &[
+            "Get-Content ~/.config/lean-ctx/config.toml",
+            "git -C ~ status",
+            "git -C .. log",
+            "df -h ~",
+            "tree ~",
+            "fd x ~",
+            "code ~",
+            "open ~/.config",
+            "cp file ~",
+            "mv build ~/",
+            "cp x ~/.local/",
+            "git add .",
+            "cargo build --target-dir ~/target",
+            "mkdir -p ~/.config/foo",
+            "rm -rf ./target",
+            "curl -o out.json https://x",
+            "npm ci",
+            "docker run -v ~:/h img",
+            "wget -P ~ https://x/y",
+            "git commit -m \"fix: read ~/.config/lean-ctx/config.toml first\"",
+        ],
+    );
+}
+
+/// Relative paths resolve in the directory the command runs in (ctx_shell's
+/// `cwd`, a hook payload's `cwd`), not where the gate's process runs.
+#[test]
+fn relative_paths_resolve_in_the_run_directory() {
+    let Some(home) = crate::core::config::shell_policy::real_user_home() else {
+        return;
+    };
+    let _lock = crate::core::data_dir::test_env_lock();
+    let _list = crate::test_env::VarGuard::set("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "cp,git,tar");
+    let _mode = crate::test_env::VarGuard::set("LEAN_CTX_SHELL_SECURITY", "enforce");
+    let project = tempfile::tempdir().expect("project");
+    let up = "../".repeat(40);
+    // Without the root and the drive (`C:` on Windows): the temp dir and home
+    // share a drive, so 40 `../` reach its root on every platform.
+    let home_rel = home
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    let into_state = format!("cp /tmp/e {up}{home_rel}/.config/lean-ctx/config.toml");
+    let grant: Vec<String> = Vec::new();
+    let in_project = |cmd: &str| {
+        super::with_run_cwd(Some(project.path().to_path_buf()), || {
+            check_shell_allowlist_granted(cmd, &grant)
+        })
+    };
+    assert!(in_project(&into_state).is_err(), "{into_state}");
+    // The gate's own process sits in the home directory; the command runs
+    // in the project.
+    let _cwd = crate::test_env::CurrentDirGuard::enter(&home);
+    assert!(in_project("git add .").is_ok());
+    assert!(in_project("tar xf a.tar").is_ok());
+    assert!(check_shell_allowlist("tar xf a.tar").is_err());
 }

@@ -342,12 +342,26 @@ fn parse_format(value: &str) -> Result<ReportFormat, String> {
     }
 }
 
+/// The `benchmark <sub>` forms `config_cmd::cmd_benchmark` runs. `benchmark
+/// --help` reaches only this module, so its help lists them too.
+pub(crate) const SUBCOMMAND_USAGE: &str = concat!(
+    "       lean-ctx benchmark run [path] [--json]\n",
+    "       lean-ctx benchmark report [path]\n",
+    "       lean-ctx benchmark scorecard [--json] [--output file]\n",
+    "       lean-ctx benchmark dual-arm [--json] [--output file]",
+);
+
 fn usage() {
-    println!(
+    println!("{}", usage_text());
+}
+
+fn usage_text() -> String {
+    format!(
         "Run the proxy compression benchmark and save a shareable report.\n\n\
-         Usage: lean-ctx benchmark [--real] [--format markdown|json|text] [--output <path>] [--share]\n\n\
+         Usage: lean-ctx benchmark [--real] [--format markdown|json|text] [--output <path>] [--share]\n\
+         {SUBCOMMAND_USAGE}\n\n\
          The default Markdown report is saved to ~/.local/share/lean-ctx/reports/."
-    );
+    )
 }
 
 #[cfg(test)]
@@ -418,6 +432,23 @@ mod tests {
         assert_eq!(value["summary"]["average_savings_pct"], 75.0);
         assert_eq!(value["scenarios"].as_array().map(Vec::len), Some(2));
         assert_eq!(value["stages"].as_array().map(Vec::len), Some(3));
+    }
+
+    /// `benchmark --help` only ever reaches this module; the subcommands'
+    /// longer usage was unreachable. The one help now lists every form.
+    #[test]
+    fn help_lists_every_benchmark_form() {
+        let help = usage_text();
+        for form in [
+            "--format",
+            "run [path]",
+            "report [path]",
+            "scorecard",
+            "dual-arm",
+        ] {
+            assert!(help.contains(form), "{form} missing from:\n{help}");
+        }
+        assert!(help.contains("\n       lean-ctx benchmark run"), "{help}");
     }
 
     #[test]

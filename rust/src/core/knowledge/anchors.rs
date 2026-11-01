@@ -378,7 +378,9 @@ pub const MAX_RESOLVED_PER_PASS: usize = 20_000;
 /// engine may read for knowledge (source admission), and in a git checkout
 /// only tracked ones, are ever read. Any other path is `Missing` without a
 /// read, whether it exists or not, so a crafted anchor on `.env` learns
-/// neither its content nor its existence. Reads are memoised for the pass;
+/// neither its content nor its existence. Such an anchor (a moved file's old
+/// path is gone, so it is never readable) is only looked for elsewhere through
+/// the code graph, among readable files. Reads are memoised for the pass;
 /// past [`MAX_RESOLVED_PER_PASS`] an anchor has no state (`None`).
 pub struct GuardedResolver<'a> {
     root: &'a Path,
@@ -430,9 +432,10 @@ impl<'a> GuardedResolver<'a> {
 
     /// Where `anchor` stands now; `None` only past the per-pass cap.
     pub fn resolve(&mut self, anchor: &CodeAnchor) -> Option<AnchorState> {
-        if check_path(&anchor.path).is_err() || !self.may_read(&anchor.path) {
+        if check_path(&anchor.path).is_err() {
             return Some(AnchorState::Missing);
         }
+        let readable = self.may_read(&anchor.path);
         let key = (
             anchor.path.clone(),
             anchor.symbol.clone(),
@@ -445,7 +448,13 @@ impl<'a> GuardedResolver<'a> {
             return None;
         }
         self.resolved += 1;
-        let state = match resolve(self.root, anchor) {
+        let found = if readable {
+            resolve(self.root, anchor)
+        } else {
+            moved_to(self.root, anchor)
+                .map_or(AnchorState::Missing, |path| AnchorState::Moved { path })
+        };
+        let state = match found {
             // A move found through the index points at another file: that
             // one must be readable too, or the move tells nothing.
             AnchorState::Moved { path } if !self.may_read(&path) => AnchorState::Missing,

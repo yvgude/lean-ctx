@@ -15,38 +15,47 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 static DOCTOR_CACHE: Mutex<Option<(Instant, String)>> = Mutex::new(None);
+/// The report probes the installation, so polls are answered from this cache;
+/// an explicit refresh (`_refresh=1`, the Cockpit's "Run again") re-runs it.
 const DOCTOR_TTL_SECS: u64 = 600;
 
 pub(super) fn handle(
     path: &str,
-    _query_str: &str,
+    query_str: &str,
     method: &str,
     _body: &str,
 ) -> Option<(&'static str, &'static str, String)> {
     match path {
         "/api/doctor/fix" if method.eq_ignore_ascii_case("POST") => {
-            if let Ok(mut guard) = DOCTOR_CACHE.lock() {
-                *guard = None;
-            }
-            Some(post_fix())
+            let report = post_fix();
+            // Also drops a report a read cached while the fix was running.
+            invalidate();
+            Some(report)
         }
         "/api/doctor/fix" => Some((
             "405 Method Not Allowed",
             "application/json",
             json_err("use POST to run doctor --fix"),
         )),
-        "/api/doctor" => Some(get_doctor_cached()),
+        "/api/doctor" => Some(get_doctor_cached(super::helpers::wants_refresh(query_str))),
         _ => None,
     }
 }
 
-fn get_doctor_cached() -> (&'static str, &'static str, String) {
-    if let Ok(guard) = DOCTOR_CACHE.lock() {
-        if let Some((ts, ref body)) = *guard {
-            if ts.elapsed().as_secs() < DOCTOR_TTL_SECS {
-                return ("200 OK", "application/json", body.clone());
-            }
-        }
+/// Forget the cached report (after a write the report reflects).
+pub(super) fn invalidate() {
+    if let Ok(mut guard) = DOCTOR_CACHE.lock() {
+        *guard = None;
+    }
+}
+
+fn get_doctor_cached(refresh: bool) -> (&'static str, &'static str, String) {
+    if let Ok(guard) = DOCTOR_CACHE.lock()
+        && !refresh
+        && let Some((ts, ref body)) = *guard
+        && ts.elapsed().as_secs() < DOCTOR_TTL_SECS
+    {
+        return ("200 OK", "application/json", body.clone());
     }
     let result = get_doctor();
     if result.0 == "200 OK" {
@@ -97,6 +106,8 @@ mod tests {
 
     #[test]
     fn get_doctor_returns_structured_health_json() {
+        // Serialized with the test that seeds the shared report cache.
+        let _lock = crate::core::data_dir::test_env_lock();
         let (status, mime, body) = handle("/api/doctor", "", "GET", "").expect("route matches");
         assert_eq!(status, "200 OK");
         assert_eq!(mime, "application/json");
@@ -108,6 +119,23 @@ mod tests {
         );
         assert!(v["total"].as_u64().is_some(), "total must be present");
         assert!(v["checks"].is_array(), "checks must be an array");
+    }
+
+    #[test]
+    fn run_again_re_runs_the_cached_report() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let stale = r#"{"stale":true}"#.to_string();
+        *DOCTOR_CACHE.lock().unwrap() = Some((Instant::now(), stale.clone()));
+        let (_, _, polled) = handle("/api/doctor", "", "GET", "").unwrap();
+        assert_eq!(polled, stale, "a poll is answered from the cache");
+
+        let (status, _, fresh) = handle("/api/doctor", "_refresh=1", "GET", "").unwrap();
+        assert_eq!(status, "200 OK");
+        assert_ne!(fresh, stale, "an explicit refresh re-runs the checks");
+        assert!(serde_json::from_str::<serde_json::Value>(&fresh).unwrap()["checks"].is_array());
+        let (_, _, cached) = handle("/api/doctor", "", "GET", "").unwrap();
+        assert_eq!(cached, fresh, "the fresh report replaces the cached one");
+        invalidate();
     }
 
     #[test]

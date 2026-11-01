@@ -119,8 +119,7 @@ impl ContextLedger {
 
         let (signals, _costs) =
             compute_signals_for_path(path, task, None, window_size, original_tokens);
-        // #4: use the learned (bandit-selected) field weights when available.
-        let phi = ContextField::active().compute_phi(&signals);
+        let phi = ContextField::new().compute_phi(&signals);
         if phi > 0.0 {
             return phi;
         }
@@ -143,7 +142,7 @@ impl ContextLedger {
             token_cost_norm,
             redundancy: 0.0,
         };
-        ContextField::active().compute_phi(&signals)
+        ContextField::new().compute_phi(&signals)
     }
 
     /// Record with full CFT metadata including source hash and provenance.

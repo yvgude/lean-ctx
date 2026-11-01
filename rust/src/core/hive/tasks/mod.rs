@@ -3,8 +3,10 @@
 //! report short summaries, submit one result with evidence, give it back.
 //!
 //! The rules the engine keeps:
-//! - Every call made from a tool call ends within [`BUDGET`]; offline or a
-//!   lapsed lease answers at once, local work is never blocked.
+//! - No tool call waits for Hive ([`cache`]): reads answer from the last
+//!   data Hive sent and say when it is stale; changes are queued, and what
+//!   Hive answered comes with the caller's next call. Each queued request
+//!   ends within [`BUDGET`]; offline or a lapsed lease answers at once.
 //! - A claim passes the worker gate first ([`worker::admit_claim`], L1:
 //!   the engine's opt-in for the repo, pause, today's budget) and goes out
 //!   under that opt-in; a result passes [`worker::admit_submit`]. Hive
@@ -24,6 +26,7 @@
 //! - Hive announces claims, releases and results on the bus itself; the
 //!   engine sends no task frames.
 
+pub mod cache;
 pub mod claims;
 mod client;
 mod keeper;
@@ -61,10 +64,8 @@ use lean_ctx_protocol::hive::tasks::{
 pub use client::ListFilter;
 pub use render::{render_list, render_result_ack, render_task};
 
-/// The time one task call made from a tool call may take in all.
+/// The time one task call may take in all.
 pub const BUDGET: Duration = Duration::from_secs(5);
-/// The session-start briefing waits less: it delays the first tool call.
-pub const BRIEFING_BUDGET: Duration = Duration::from_secs(2);
 /// Claim length when the caller names none.
 pub const DEFAULT_CLAIM_MINUTES: u32 = 10;
 
@@ -444,6 +445,13 @@ pub fn show(project_root: &Path, number: u64) -> Result<TaskView, HiveError> {
 
 fn show_via(link: &Link<'_>, number: u64) -> Result<TaskView, HiveError> {
     let task = link.call(|api| api.show(number))?;
+    Ok(view_of(link, task))
+}
+
+/// `task` as the caller sees it: sealed parts opened with the keys this
+/// machine holds, its local claim (no request).
+fn view_of(link: &Link<'_>, task: TaskV1) -> TaskView {
+    let number = task.number;
     let content = task
         .sealed
         .as_ref()
@@ -462,12 +470,12 @@ fn show_via(link: &Link<'_>, number: u64) -> Result<TaskView, HiveError> {
         })
         .collect();
     let held_until = claims::find(link.data_dir, link.vault_id, number).map(|held| held.until);
-    Ok(TaskView {
+    TaskView {
         task,
         content,
         update_summaries,
         held_until,
-    })
+    }
 }
 
 /// A granted claim, as the caller may see it (no lease id, no token).
@@ -1074,37 +1082,28 @@ fn claim_root_in(data_dir: &Path, project_root: &Path, number: u64, agent: &str)
 }
 
 /// What a session starts with (H2): the claims this machine holds in the
-/// project, then its open tasks. `None` when Hive does not apply or there
-/// is nothing to say. Bounded by [`BRIEFING_BUDGET`].
+/// project, then its open tasks from the task cache (a refresh is queued
+/// when they are stale; [`cache`]). `None` when Hive does not apply or
+/// there is nothing to say. Never waits for Hive.
 pub fn briefing(project_root: &Path) -> Option<String> {
     let c = connected(project_root, HiveRight::TasksRead).ok()?;
-    let mut link = c.link();
-    link.budget = BRIEFING_BUDGET;
-    let now = link.now();
-    let mut lines: Vec<String> = claims::all(link.data_dir)
-        .into_iter()
-        .filter(|held| {
-            held.vault_id == link.vault_id && held.until().is_some_and(|until| until > now)
-        })
-        .map(|held| {
-            format!(
-                "Hive task #{} is claimed on this machine for agent {} until {}.",
-                held.number, held.agent, held.until
-            )
-        })
-        .collect();
-    let open = list_via(
-        &link,
-        &ListFilter {
-            state: Some(lean_ctx_protocol::hive::tasks::TaskState::Open),
-            ..ListFilter::default()
-        },
-    )
-    .ok()
-    .filter(|list| !list.tasks.is_empty());
-    if let Some(open) = open {
-        lines.push(render_list(&open, 5));
-    }
+    let mut lines: Vec<String> = {
+        let link = c.link();
+        let now = link.now();
+        claims::all(link.data_dir)
+            .into_iter()
+            .filter(|held| {
+                held.vault_id == link.vault_id && held.until().is_some_and(|until| until > now)
+            })
+            .map(|held| {
+                format!(
+                    "Hive task #{} is claimed on this machine for agent {} until {}.",
+                    held.number, held.agent, held.until
+                )
+            })
+            .collect()
+    };
+    lines.extend(cache::open_tasks(c));
     (!lines.is_empty()).then(|| lines.join("\n"))
 }
 

@@ -892,10 +892,15 @@ pub fn run() {
                     uninstall::print_help();
                     return;
                 }
-                let dry_run = rest.iter().any(|a| a == "--dry-run");
-                let keep_config = rest.iter().any(|a| a == "--keep-config");
-                let keep_binary = rest.iter().any(|a| a == "--keep-binary");
-                uninstall::run(dry_run, keep_config, keep_binary);
+                match uninstall::parse_args(&rest) {
+                    Ok((dry_run, keep_config, keep_binary)) => {
+                        uninstall::run(dry_run, keep_config, keep_binary);
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        std::process::exit(2);
+                    }
+                }
                 return;
             }
             // `raw` is the primary name; `bypass` is kept as a back-compat alias.
@@ -1042,8 +1047,8 @@ fn is_server_mode(args: &[String]) -> bool {
         })
 }
 
-/// Extract `KEY=VALUE` prefixes from a command string and promote lean-ctx control variables
-/// (`LEAN_CTX_*`) into the process environment.
+/// Extract `KEY=VALUE` prefixes from a command string and promote lean-ctx run-control
+/// variables (`LEAN_CTX_DISABLED`, `LEAN_CTX_RAW`, …) into the process environment.
 /// Returns the remaining command string without the extracted prefixes.
 ///
 /// Only `LEAN_CTX_*` variables are set in the process env — arbitrary user vars like `FOO=bar`
@@ -1063,7 +1068,10 @@ fn extract_and_apply_env_prefix(cmd: &str) -> String {
                 let after_eq = &rest[eq_pos + 1..];
                 if let Some(space_pos) = after_eq.find(' ') {
                     let value = &after_eq[..space_pos];
-                    if key.starts_with("LEAN_CTX_") {
+                    // Only the run-control keys: the shell security mode, the
+                    // allowlist or the config directory set here would loosen
+                    // the gate this very process applies next.
+                    if crate::core::shell_allowlist::LEAN_CTX_RUN_CONTROL_ENV.contains(&key) {
                         // SAFETY: runs before tokio runtime spawns threads.
                         unsafe { std::env::set_var(key, value) };
                     }

@@ -565,3 +565,46 @@ fn upsert_sets_source_hash_and_kind() {
         Some(crate::core::context_field::ContextKind::File)
     );
 }
+
+/// #498: an entropy read must not change the ledger's Phi. The threshold
+/// bandit used to install its first (tied → `conservative`) arm's field
+/// weights process-wide on every `mode=entropy` read, so the same inputs
+/// scored and ordered differently depending on the process history.
+#[test]
+fn ledger_phi_and_order_are_unchanged_by_an_entropy_read() {
+    fn snapshot() -> (Vec<(String, Option<f64>)>, Vec<String>) {
+        let mut ledger = ContextLedger::with_window_size(10_000);
+        ledger.record("phi-det/a.rs", "full", 4000, 4000);
+        ledger.record("phi-det/b.rs", "map", 4000, 900);
+        ledger.record("phi-det/c.rs", "signatures", 4000, 150);
+        let phis = ledger
+            .entries
+            .iter()
+            .map(|e| (e.path.clone(), e.phi))
+            .collect();
+        (phis, ledger.eviction_candidates_by_phi(0))
+    }
+
+    let _data = crate::core::data_dir::isolated_data_dir();
+    // The arm selection only ran for a session with a project root.
+    let project = tempfile::tempdir().expect("project dir");
+    std::fs::write(
+        project.path().join("Cargo.toml"),
+        "[package]\nname = \"p\"\n",
+    )
+    .expect("marker");
+    let mut session = crate::core::session::SessionState::new();
+    session.project_root = Some(project.path().to_string_lossy().into_owned());
+    session.save().expect("save session");
+
+    let before = snapshot();
+    let content = (0..200).fold(String::new(), |mut s, i| {
+        use std::fmt::Write;
+        let _ = writeln!(s, "fn f{i}() -> u32 {{ {i} }}");
+        s
+    });
+    let _ = crate::core::entropy::entropy_compress_adaptive(&content, "phi-det/src.rs", &[]);
+    let after = snapshot();
+
+    assert_eq!(before, after, "an entropy read changed the ledger Phi");
+}

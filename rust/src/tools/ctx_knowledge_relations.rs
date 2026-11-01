@@ -127,15 +127,17 @@ pub fn handle_relate(
         );
     }
 
-    let mut graph = KnowledgeRelationGraph::load_or_create(&knowledge.project_hash);
-    let created = graph.upsert_edge(from.clone(), to.clone(), kind, session_id);
     let max_edges = crate::core::knowledge_relations::edge_bound(
         knowledge.facts.iter().filter(|f| f.is_current()).count(),
     );
-    let capped = graph.enforce_cap(max_edges);
+    let saved =
+        KnowledgeRelationGraph::mutate_locked(project_root, &knowledge.project_hash, |graph| {
+            let created = graph.upsert_edge(from.clone(), to.clone(), kind, session_id);
+            Some((created, graph.enforce_cap(max_edges)))
+        });
 
-    match graph.save() {
-        Ok(()) => {
+    match saved.map(Option::unwrap_or_default) {
+        Ok((created, capped)) => {
             let verb = if created { "added" } else { "reinforced" };
             let mut out = format!(
                 "Relation {verb}: {} -({})-> {}",
@@ -149,7 +151,7 @@ pub fn handle_relate(
             out
         }
         Err(e) => format!(
-            "Relation recorded but save failed: {e} ({} -({})-> {})",
+            "Relation not saved: {e} ({} -({})-> {}); retry once the knowledge store is free",
             from.id(),
             kind.as_str(),
             to.id()
@@ -188,17 +190,17 @@ pub fn handle_unrelate(
     };
 
     let knowledge = ProjectKnowledge::load_or_create(project_root);
-    let mut graph = KnowledgeRelationGraph::load_or_create(&knowledge.project_hash);
-    let removed = graph.remove_edge(&from, &to, kind);
+    let removed =
+        KnowledgeRelationGraph::mutate_locked(project_root, &knowledge.project_hash, |graph| {
+            let removed = graph.remove_edge(&from, &to, kind);
+            (removed > 0).then_some(removed)
+        });
 
-    if removed == 0 {
-        return format!("No matching relation found: {} -> {}", from.id(), to.id());
-    }
-
-    match graph.save() {
-        Ok(()) => format!("Relation removed ({removed}): {} -> {}", from.id(), to.id()),
+    match removed {
+        Ok(Some(removed)) => format!("Relation removed ({removed}): {} -> {}", from.id(), to.id()),
+        Ok(None) => format!("No matching relation found: {} -> {}", from.id(), to.id()),
         Err(e) => format!(
-            "Relation removed ({removed}) but save failed: {e} ({} -> {})",
+            "Relation not removed: {e} ({} -> {}); retry once the knowledge store is free",
             from.id(),
             to.id()
         ),

@@ -45,12 +45,12 @@ fn unified_tool_defs_raw() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_shell",
-            "Run shell (replaces native Shell). Compressed output (~95 patterns). raw=true for verbatim. cwd sets working dir (default: project root).",
+            "Run shell (replaces native Shell). Compressed output (~95 patterns). Big logs: narrow the command (grep, sed -n, head/tail). cwd sets working dir (default: project root).",
             json!({
                 "type": "object",
                 "properties": {
                     "command": { "type": "string", "description": "Shell command" },
-                    "raw": { "type": "boolean", "description": "Skip compression for full output" },
+                    "raw": { "type": "boolean", "description": "Exact bytes; only for diffs to apply, hashes, encoded output" },
                     "cwd": { "type": "string", "description": "Working directory (defaults to last cd or project root)" }
                 },
                 "required": ["command"]

@@ -67,8 +67,8 @@ framing but not redaction. The `[lean-ctx gateway: …]` line counts only the
 masked values in the returned content.
 
 **Under the hood:** `ctx_read` consults the `SessionCache`; a cache hit returns a
-file reference instead of content. The mode predictor (`mode_stats.json`) learns
-which mode works best for which file over time.
+file reference instead of content. `auto` picks the mode deterministically from
+the file's size and type and the task; a file that keeps bouncing is read `full`.
 
 **Golden output — the same file in three modes.** Reading
 `rust/src/hooks/agents/jetbrains.rs` (66 lines):

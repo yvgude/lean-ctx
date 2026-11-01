@@ -57,6 +57,16 @@ pub fn handle_stats(format: Option<&str>) -> Result<String, String> {
 mod tests {
     use super::handle_proof;
 
+    /// The proof carries PathJail claims only; the description promised
+    /// budget claims that were never produced.
+    #[test]
+    fn description_promises_no_budget_claims() {
+        use crate::server::tool_trait::McpTool;
+        let def = crate::tools::registered::ctx_verify::CtxVerifyTool.tool_def();
+        let text = serde_json::to_string(&def).unwrap();
+        assert!(!text.contains("budget"), "{text}");
+    }
+
     #[test]
     fn proof_reports_only_claims_checked_at_runtime() {
         let _data = crate::core::data_dir::isolated_data_dir();

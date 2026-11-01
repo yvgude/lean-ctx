@@ -30,7 +30,7 @@ const HEAVY_READ_TOKEN_FLOOR: usize = 1500;
 const CHAIN_WINDOW: Duration = Duration::from_mins(2);
 
 /// Cumulative detection counters, persisted across sessions for
-/// `tools health` (mirrors the adaptive-mode policy store pattern).
+/// `tools health`.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub(crate) struct BehaviorStore {
     /// Explicit full/raw reads at or above [`HEAVY_READ_TOKEN_FLOOR`].

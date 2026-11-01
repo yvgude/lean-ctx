@@ -143,27 +143,22 @@ pub(super) fn cmd_pack_send(args: &[String], project_root: &str) {
     let secret = parse_flag(args, "--secret");
 
     let Some(f) = file else {
-        eprintln!(
+        super::exit_usage(&format!(
             "Usage: lean-ctx pack send <file.{ext}> [--target <url>] [--to <agent>] [--secret <key>]",
             ext = crate::core::contracts::PACKAGE_EXTENSION
-        );
-        return;
+        ));
     };
     let pkg_file = PathBuf::from(f);
 
     let json = match send_envelope(&pkg_file, recipient.as_deref(), secret.as_deref()) {
         Ok(json) => json,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(e),
     };
 
     if let Some(ref url) = target_url {
         let endpoint = format!("{}/v1/a2a/handoff", url.trim_end_matches('/'));
         if let Err(e) = admit_send(Path::new(project_root), &endpoint, &json) {
-            eprintln!("ERROR: {e}");
-            return;
+            super::exit_failed(e);
         }
         let body = json.as_bytes().to_vec();
         match ureq::post(&endpoint)
@@ -175,10 +170,10 @@ pub(super) fn cmd_pack_send(args: &[String], project_root: &str) {
                 if (200..300).contains(&status.as_u16()) {
                     eprintln!("Sent to {endpoint} — HTTP {status}");
                 } else {
-                    eprintln!("ERROR: server returned HTTP {status} for {endpoint}");
+                    super::exit_failed(format!("server returned HTTP {status} for {endpoint}"));
                 }
             }
-            Err(e) => eprintln!("Send failed: {e}"),
+            Err(e) => super::exit_failed(format!("send failed: {e}")),
         }
     } else {
         let out_path = pkg_file.with_extension(format!(
@@ -187,7 +182,7 @@ pub(super) fn cmd_pack_send(args: &[String], project_root: &str) {
         ));
         match std::fs::write(&out_path, &json) {
             Ok(()) => eprintln!("Envelope written: {}", out_path.display()),
-            Err(e) => eprintln!("Write failed: {e}"),
+            Err(e) => super::exit_failed(format!("write failed: {e}")),
         }
     }
 }
@@ -208,37 +203,28 @@ pub(super) fn cmd_pack_receive(args: &[String], project_root: &str) {
     let apply = args.iter().any(|a| a == "--apply");
 
     let Some(f) = file else {
-        eprintln!(
-            "Usage: lean-ctx pack receive <envelope.json> [--secret <key>] [--apply] [--allow-unsigned]"
+        super::exit_usage(
+            "Usage: lean-ctx pack receive <envelope.json> [--secret <key>] [--apply] [--allow-unsigned]",
         );
-        return;
     };
     let envelope_file = PathBuf::from(f);
 
     let json = match std::fs::read_to_string(&envelope_file) {
         Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error reading {}: {e}", envelope_file.display());
-            return;
-        }
+        Err(e) => super::exit_failed(format!("cannot read {}: {e}", envelope_file.display())),
     };
 
     let envelope = match parse_envelope(&json) {
         Ok(env) => env,
-        Err(e) => {
-            eprintln!("Error parsing envelope: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(format!("cannot parse the envelope: {e}")),
     };
 
     if let Some(ref s) = secret {
         if s.is_empty() {
-            eprintln!("ERROR: --secret must not be empty");
-            return;
+            super::exit_usage("ERROR: --secret must not be empty");
         }
         if !envelope.verify_signature(s.as_bytes()) {
-            eprintln!("ERROR: Signature verification failed. Envelope may be tampered.");
-            return;
+            super::exit_failed("Signature verification failed. Envelope may be tampered.");
         }
         eprintln!("Signature verified.");
     } else if envelope.signature.is_some() {
@@ -260,16 +246,12 @@ pub(super) fn cmd_pack_receive(args: &[String], project_root: &str) {
                 crate::core::contracts::PACKAGE_EXTENSION
             ));
             if let Err(e) = std::fs::write(&tmp, &envelope.payload_json) {
-                eprintln!("Error writing temp file: {e}");
-                return;
+                super::exit_failed(format!("cannot write the temp file: {e}"));
             }
             if apply {
                 let registry = match crate::core::context_package::LocalRegistry::open() {
                     Ok(r) => r,
-                    Err(e) => {
-                        eprintln!("ERROR: {e}");
-                        return;
-                    }
+                    Err(e) => super::exit_failed(e),
                 };
                 match registry
                     .import_from_file_checked(&tmp, super::management::local_signature_policy(args))
@@ -277,9 +259,11 @@ pub(super) fn cmd_pack_receive(args: &[String], project_root: &str) {
                     Ok((manifest, coverage)) => {
                         eprintln!("Imported: {} v{}", manifest.name, manifest.version);
                         super::management::warn_signature_gap(coverage);
-                        apply_or_report(&manifest.name, &manifest.version, project_root);
+                        if !apply_or_report(&manifest.name, &manifest.version, project_root) {
+                            std::process::exit(1);
+                        }
                     }
-                    Err(e) => eprintln!("ERROR: import failed: {e}"),
+                    Err(e) => super::exit_failed(format!("import failed: {e}")),
                 }
             } else {
                 eprintln!("Package saved to {}. Use --apply to import.", tmp.display());
@@ -295,7 +279,7 @@ pub(super) fn cmd_pack_receive(args: &[String], project_root: &str) {
             }
             match std::fs::write(&out_path, &envelope.payload_json) {
                 Ok(()) => eprintln!("Handoff bundle saved: {}", out_path.display()),
-                Err(e) => eprintln!("Write failed: {e}"),
+                Err(e) => super::exit_failed(format!("write failed: {e}")),
             }
         }
         _ => {
@@ -303,9 +287,21 @@ pub(super) fn cmd_pack_receive(args: &[String], project_root: &str) {
                 "Content type {:?} — payload printed to stdout.",
                 envelope.content_type
             );
-            println!("{}", envelope.payload_json);
+            // A peer's payload passes the release point like every output.
+            crate::cli::common::print_released(&released_payload(
+                project_root,
+                envelope.payload_json,
+            ));
         }
     }
+}
+
+/// A received payload printed for the person at the terminal: released, never
+/// recorded as a delivery.
+fn released_payload(project_root: &str, payload: String) -> String {
+    crate::cli::common::CliToolRun::new("ctx_pack", project_root, None)
+        .human_facing()
+        .deliver_text(|| payload)
 }
 
 #[cfg(test)]

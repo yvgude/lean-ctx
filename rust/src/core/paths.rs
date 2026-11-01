@@ -135,7 +135,7 @@ pub(crate) fn data_pin_diverges_config(pin: &Path) -> bool {
 }
 
 /// Filesystem half of [`single_dir_override`], parameterized for hermetic tests.
-fn single_dir_override_fs(
+pub(crate) fn single_dir_override_fs(
     home: &Path,
     xdg_config_base: &Path,
     xdg_data_base: Option<&Path>,

@@ -1166,6 +1166,9 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     cfg.validate()?;
     let receipt_authority = crate::server::native_receipts::load_configured_host_authority()
         .map_err(anyhow::Error::msg)?;
+    // Apply the `LEAN_CTX_KERNEL_*` switches once, so kernel health
+    // (`/v1/kernel/health`) reports the configuration this server runs with.
+    crate::core::context_kernel::startup::initialize();
 
     // Surface any path-jail relaxation inherited from the launch env or config,
     // so a loosened boundary is never silent (GH security audit, finding 3).
@@ -1208,15 +1211,8 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
         })
         .await
         .context("http server")?;
-
-    fire_session_end();
     Ok(())
 }
-
-/// Fire the `on_session_end` plugin hook synchronously (best-effort, bounded by
-/// each plugin's own timeout) so listeners run before the process exits. A
-/// no-op unless a plugin declares the hook.
-pub(crate) fn fire_session_end() {}
 
 #[cfg(windows)]
 impl axum::serve::Listener for crate::ipc::NamedPipeListener {
@@ -1246,6 +1242,7 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: crate::ipc::DaemonAddr) -> R
     cfg.validate()?;
     let receipt_authority = crate::server::native_receipts::load_configured_host_authority()
         .map_err(anyhow::Error::msg)?;
+    crate::core::context_kernel::startup::initialize();
 
     crate::core::telemetry_send::spawn_daemon_telemetry();
     crate::core::context_admission::receipt_store::retention::maintain_at_startup();

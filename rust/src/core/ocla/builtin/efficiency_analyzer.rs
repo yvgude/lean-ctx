@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! BuiltinEfficiencyAnalyzer — computes ETPAO and duplication metrics.
 //!
-//! Wraps `core/mode_predictor.rs` behind the OCLA trait. Computes Effective
-//! Tokens Per Accepted Outcome (ETPAO) from a sample of compression results
-//! paired with acceptance signals.
+//! Computes Effective Tokens Per Accepted Outcome (ETPAO) behind the OCLA
+//! trait, from a sample of compression results paired with acceptance signals.
 
 use crate::core::ocla::traits::{EfficiencyAnalyzer, OclaService};
 use crate::core::ocla::types::{

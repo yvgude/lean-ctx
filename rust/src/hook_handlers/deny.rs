@@ -98,10 +98,6 @@ fn should_allow(tool_name: &str, file_path: Option<&str>, payload: &str) -> bool
         return true;
     }
 
-    if !is_mcp_server_reachable() {
-        return true;
-    }
-
     if file_path.is_some_and(is_binary_file) {
         return true;
     }
@@ -126,7 +122,14 @@ fn should_allow(tool_name: &str, file_path: Option<&str>, payload: &str) -> bool
     // default must not block anything unless the user chose Replace — or,
     // for native shell calls, `shell_hook_mode = "deny"` (#1278).
     let shell_deny = super::is_shell_tool(tool_name) && super::shell_deny_mode_active();
-    !crate::hooks::replace_mode_chosen() && !shell_deny
+    if !crate::hooks::replace_mode_chosen() && !shell_deny {
+        return true;
+    }
+
+    // MCP-down fallback, checked last because it reads the agent registry: a
+    // denial points to a `ctx_*` tool, so with no LeanCTX MCP server to answer
+    // it the native tool passes.
+    !is_mcp_server_reachable()
 }
 
 /// Claude Code's `Bash` with `run_in_background: true` re-invokes the model when
@@ -240,18 +243,43 @@ fn is_replaceable_native_tool(tool_name: &str) -> bool {
         )
 }
 
+#[cfg(not(test))]
 fn is_mcp_server_reachable() -> bool {
-    let path = crate::daemon::daemon_pid_path();
-    if !path.exists() {
-        return true;
-    }
-    if let Ok(pid_str) = std::fs::read_to_string(&path)
-        && let Ok(pid) = pid_str.trim().parse::<u32>()
-        && !crate::ipc::process::is_alive(pid)
-    {
-        return false;
-    }
-    true
+    mcp_server_reachable(
+        &crate::daemon::daemon_pid_path(),
+        crate::core::agents::AgentRegistry::any_live_mcp_transport,
+    )
+}
+
+#[cfg(test)]
+thread_local! {
+    /// What the allow rules see as reachability in a test thread: a
+    /// reachable server unless a test says otherwise, so the outcome does not
+    /// depend on a daemon or MCP server running on the test machine.
+    /// `mcp_server_reachable` itself is tested directly.
+    static TEST_MCP_REACHABLE: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
+}
+
+#[cfg(test)]
+fn is_mcp_server_reachable() -> bool {
+    TEST_MCP_REACHABLE.get()
+}
+
+/// Whether a LeanCTX MCP server can answer the `ctx_*` call a denial names.
+///
+/// A server runs in one of two ways: as the daemon, which writes its PID
+/// file, or as the stdio server the host starts, which writes no PID file
+/// but registers its transport presence (`live_presence`). A missing PID file
+/// therefore says only that no daemon runs; the server is reachable when the
+/// daemon's PID is alive or a live MCP presence is listed, and unreachable
+/// when neither holds — no daemon was ever started (or it died) and no host
+/// runs a LeanCTX MCP server.
+fn mcp_server_reachable(pid_file: &std::path::Path, live_presence: impl FnOnce() -> bool) -> bool {
+    let daemon_alive = std::fs::read_to_string(pid_file)
+        .ok()
+        .and_then(|pid| pid.trim().parse::<u32>().ok())
+        .is_some_and(crate::ipc::process::is_alive);
+    daemon_alive || live_presence()
 }
 
 /// Whether the shadow-only tool surface is explicitly configured. The deny guard
@@ -999,6 +1027,58 @@ mod tests {
                 "{name} must not be refused in the default mode"
             );
         }
+    }
+
+    /// A missing daemon PID file counted as "reachable", so the MCP-down
+    /// fallback never fired when no daemon was ever started. Without a PID
+    /// file the stdio server's live presence decides; a dead daemon PID with
+    /// no presence is down.
+    #[test]
+    fn reachability_needs_a_live_daemon_or_a_live_mcp_presence() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("daemon.pid");
+        assert!(!mcp_server_reachable(&missing, || false), "nothing runs");
+        assert!(
+            mcp_server_reachable(&missing, || true),
+            "a stdio MCP server writes no PID file but is reachable"
+        );
+
+        let live = dir.path().join("live.pid");
+        std::fs::write(&live, format!("{}\n", std::process::id())).expect("write pid");
+        assert!(mcp_server_reachable(&live, || false), "a live daemon");
+
+        let garbage = dir.path().join("garbage.pid");
+        std::fs::write(&garbage, "not a pid").expect("write pid");
+        assert!(!mcp_server_reachable(&garbage, || false));
+        assert!(mcp_server_reachable(&garbage, || true));
+    }
+
+    /// The presence a stdio MCP server registers is what tells the hook that
+    /// a server runs without a daemon.
+    #[test]
+    fn a_registered_mcp_process_is_a_live_presence() {
+        use crate::core::agents::AgentRegistry;
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        assert!(!AgentRegistry::any_live_mcp_transport());
+        AgentRegistry::register_mcp_process("/workspace/deny-reachability", None)
+            .expect("register this process");
+        assert!(AgentRegistry::any_live_mcp_transport());
+    }
+
+    /// Under Replace, a native read is denied while a server can answer the
+    /// `ctx_*` call the denial names, and passes when none can.
+    #[test]
+    fn replace_mode_lets_native_tools_through_when_no_mcp_server_runs() {
+        let _env = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "replace");
+        let payload = r#"{"tool_name":"Read","tool_input":{"file_path":"/p/src/main.rs"}}"#;
+        let up = should_allow("Read", Some("/p/src/main.rs"), payload);
+        TEST_MCP_REACHABLE.set(false);
+        let down = should_allow("Read", Some("/p/src/main.rs"), payload);
+        TEST_MCP_REACHABLE.set(true);
+        crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+        assert!(!up, "a reachable server: Replace denies the native read");
+        assert!(down, "no server: the native read passes");
     }
 
     #[test]

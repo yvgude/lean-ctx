@@ -175,3 +175,18 @@ fn a_wrapper_cannot_reach_an_unconditionally_blocked_builtin() {
         );
     }
 }
+
+/// Without an allowlist (blocklist-only mode) the self-reconfiguration check
+/// never ran: `lean-ctx yolo` behind a wrapper, a path or a pipe went through.
+#[test]
+fn without_an_allowlist_lean_ctx_still_cannot_loosen_itself() {
+    for cmd in [
+        "env lean-ctx yolo",
+        "/opt/x/lean-ctx yolo",
+        "lean-ctx yolo | cat",
+        "lean-ctx config set shell_security off",
+    ] {
+        assert!(check_unconditional_blocked_only(cmd).is_err(), "{cmd}");
+    }
+    assert!(check_unconditional_blocked_only("lean-ctx gain | cat").is_ok());
+}

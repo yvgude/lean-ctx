@@ -52,7 +52,7 @@ fi
 
 SOAK="${LEAN_CTX_TCC_SOAK_SECS:-10}"
 # Keep this base path SHORT: the daemon binds a Unix domain socket under
-# "$HOME/Library/Application Support/lean-ctx/daemon.sock", and sun_path caps at
+# the data dir ("$HOME/.local/share/lean-ctx/daemon.sock"), and sun_path caps at
 # ~104 bytes on macOS. TMPDIR (/var/folders/...) is already long enough to blow
 # that budget, so anchor under /tmp.
 ROOT_TMP="$(mktemp -d /tmp/lc.XXXXXX)"

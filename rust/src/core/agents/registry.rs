@@ -529,6 +529,23 @@ impl AgentRegistry {
         })
     }
 
+    /// Whether any LeanCTX MCP server runs on this machine: a transport
+    /// presence that is not finished and whose recorded process is still the
+    /// one that registered it. Every MCP connection registers one, the stdio
+    /// server a host starts as well as the daemon's sessions. Read-only; the
+    /// deny hook uses it to tell "no daemon" from "no MCP server at all".
+    pub(crate) fn any_live_mcp_transport() -> bool {
+        let Some(registry) = Self::load() else {
+            return false;
+        };
+        let identities = ProcessIdentityIndex::load();
+        registry.agents.iter().any(|agent| {
+            agent.transport.is_some()
+                && agent.status != AgentStatus::Finished
+                && process_identity_matches(agent, &identities)
+        })
+    }
+
     /// Atomically refreshes a registered MCP process heartbeat. The caller is
     /// the transport itself, so a presence that only lost its worker lease is
     /// revived rather than rejected (an older binary in another process still

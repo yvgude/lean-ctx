@@ -18,7 +18,15 @@ pub struct StartupStatus {
 }
 
 /// Loads Context Kernel configuration and marks startup initialization complete.
+///
+/// Called once by every long-lived process that records kernel evidence (MCP
+/// stdio server, HTTP server and daemon, proxy). Later calls are no-ops, so a
+/// feature change made at runtime (`POST /v1/kernel/config`) is never reset;
+/// [`reinitialize`] reloads explicitly.
 pub fn initialize() {
+    if is_initialized() {
+        return;
+    }
     super::config_bridge::apply_config();
     INITIALIZED.store(true, Ordering::Release);
     tracing::info!(
@@ -106,5 +114,18 @@ pub mod tests {
         initialize();
         initialize();
         assert!(is_initialized());
+    }
+
+    #[test]
+    fn second_initialize_keeps_runtime_feature_changes() {
+        let _guard = isolated();
+        initialize();
+        let changed = super::super::kernel_config::KernelFeatures {
+            content_dedup: false,
+            ..super::super::kernel_config::KernelFeatures::default()
+        };
+        super::super::kernel_config::update_features(changed);
+        initialize();
+        assert!(!super::super::kernel_config::features().content_dedup);
     }
 }
