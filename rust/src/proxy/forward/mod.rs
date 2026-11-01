@@ -632,8 +632,8 @@ async fn prepare_upstream_request(
             |before| guard.verify(before, before),
         );
     }
-    if !super::outbound_model_policy::allows_outbound(prepared.parsed.as_ref()) {
-        let refusal = admitted::GatewayRefusal::withheld("destination.model_not_allowed");
+    if let Some(code) = super::outbound_model_policy::outbound_violation(prepared.parsed.as_ref()) {
+        let refusal = admitted::GatewayRefusal::withheld(code);
         tracing::warn!("lean-ctx proxy: {}", refusal.message());
         return Ok(admission::refused(
             &refusal,

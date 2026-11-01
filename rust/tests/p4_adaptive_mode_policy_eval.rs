@@ -2,7 +2,7 @@ use serde_json::json;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[allow(clippy::await_holding_lock)]
-async fn ctx_feedback_updates_adaptive_mode_policy() {
+async fn ctx_feedback_no_longer_writes_the_retired_adaptive_mode_policy() {
     let _g = lean_ctx::core::data_dir::test_env_lock();
     let dir = tempfile::tempdir().expect("tempdir");
     let data_dir = dir.path().join("data");
@@ -67,12 +67,10 @@ async fn ctx_feedback_updates_adaptive_mode_policy() {
     let policy_path = lean_ctx::core::data_dir::lean_ctx_data_dir()
         .expect("data dir2")
         .join("adaptive_mode_policy.json");
-    let raw = std::fs::read_to_string(&policy_path).expect("policy exists");
-    let v: serde_json::Value = serde_json::from_str(&raw).expect("policy json");
-    let p = v["global"]["modes"]["aggressive"]["ema_badness"]
-        .as_f64()
-        .unwrap_or(0.0);
-    assert!(p > 0.0, "expected penalty > 0, got {p} ({raw})");
+    assert!(
+        !policy_path.exists(),
+        "feedback must not train the retired adaptive mode policy"
+    );
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };

@@ -20,12 +20,20 @@ pub(super) fn get_route(
 fn architecture() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
     let project = super::project_basename(&root);
-    let Some(open) = crate::core::graph_provider::open_or_build(&root) else {
-        let val = serde_json::json!({
-            "project": project,
-            "markdown": format!("# Architecture Report — {project}\n\n_No graph index yet. Build the index to generate this report._\n"),
-        });
-        return ("200 OK", "application/json", val.to_string());
+    let open = match crate::core::graph_coordinator::get_or_start_build(&root) {
+        Ok(open) => open,
+        // The building answer, plus the report fields a reader renders.
+        Err(progress) => {
+            let mut val = serde_json::to_value(&progress).unwrap_or_default();
+            if let Some(obj) = val.as_object_mut() {
+                obj.insert("project".into(), project.clone().into());
+                obj.insert(
+                    "markdown".into(),
+                    format!("# Architecture Report — {project}\n\n_The project index is being built; this report follows when it is ready._\n").into(),
+                );
+            }
+            return ("202 Accepted", "application/json", val.to_string());
+        }
     };
     let gp = &open.provider;
 

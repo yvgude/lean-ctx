@@ -33,6 +33,14 @@ pub fn extract_facts(chunks: &[ContentChunk]) -> Vec<ExtractedFact> {
         }
 
         let provider = chunk.provider_id().unwrap_or("unknown");
+        // An emspace space is the curated source itself: its pages reach
+        // agents as `ctx_read` hints and provider search. Copying them into
+        // facts would duplicate the space without its freshness (a page goes
+        // stale there, its fact copy would not), and `documented_files` keyed
+        // by path kept only the last page of several documenting one file.
+        if provider == "emspace" {
+            continue;
+        }
         let start = facts.len();
         match chunk.kind {
             crate::core::bm25_index::ChunkKind::Issue
@@ -300,6 +308,21 @@ mod tests {
         let facts = extract_facts(&[chunk]);
         assert!(facts.iter().any(|f| f.category == "documentation"));
         assert!(facts.iter().any(|f| f.category == "documented_files"));
+    }
+
+    #[test]
+    fn emspace_pages_stay_in_the_space_and_are_not_copied_into_facts() {
+        let page = ContentChunk::from_provider(
+            "emspace",
+            "pages",
+            "core/patterns",
+            "Core: Shell Output Patterns",
+            ChunkKind::WikiPage,
+            "Compresses CLI output".into(),
+            vec!["rust/src/core/patterns/mod.rs".into()],
+            None,
+        );
+        assert!(extract_facts(&[page]).is_empty());
     }
 
     #[test]

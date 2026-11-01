@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 "use strict";
 
-// Stop running lean-ctx processes before npm replaces the binary.
-// On Windows, a running .exe cannot be deleted — this prevents EBUSY / orphan files.
+// Stop this package's own lean-ctx daemon before npm replaces the binary.
+// Only the installed binary is asked to stop the daemon recorded in its PID
+// file (`lean-ctx daemon stop`); a machine-wide `pkill -f lean-ctx` or
+// `taskkill /IM lean-ctx.exe` would also end the proxy, the dashboard, other
+// installs and every command line that merely mentions lean-ctx. A fresh
+// install has no binary yet and stops nothing. On Windows, postinstall moves a
+// still-open binary aside (`.old`) instead of killing its holders.
 
-const { execFileSync, execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -13,57 +18,34 @@ const BIN_DIR = path.join(__dirname, "bin");
 const BINARY_NAME = IS_WIN ? "lean-ctx.exe" : "lean-ctx";
 const BINARY_PATH = path.join(BIN_DIR, BINARY_NAME);
 
-function cleanOrphans() {
-  if (!fs.existsSync(BIN_DIR)) return;
+function cleanOrphans(binDir = BIN_DIR) {
+  if (!fs.existsSync(binDir)) return;
   try {
-    const entries = fs.readdirSync(BIN_DIR);
+    const entries = fs.readdirSync(binDir);
     for (const entry of entries) {
       if (entry.endsWith(".old") || entry.endsWith(".old.exe") || entry.endsWith(".tmp")) {
         try {
-          fs.unlinkSync(path.join(BIN_DIR, entry));
+          fs.unlinkSync(path.join(binDir, entry));
         } catch {}
       }
     }
   } catch {}
 }
 
-function stopViaLeanCtx() {
-  if (!fs.existsSync(BINARY_PATH)) return false;
+function stopInstalledDaemon(binaryPath = BINARY_PATH, run = execFileSync) {
+  if (!fs.existsSync(binaryPath)) return false;
   try {
-    execFileSync(BINARY_PATH, ["stop"], { stdio: "ignore", timeout: 10000 });
+    run(binaryPath, ["daemon", "stop"], { stdio: "ignore", timeout: 10000, windowsHide: true });
     return true;
   } catch {
     return false;
   }
 }
 
-function stopViaTaskkill() {
-  try {
-    execSync('taskkill /F /IM "lean-ctx.exe" /T', { stdio: "ignore", timeout: 5000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function stopViaPkill() {
-  try {
-    execSync("pkill -f lean-ctx", { stdio: "ignore", timeout: 5000 });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-if (IS_WIN) {
-  stopViaLeanCtx();
-  // taskkill fallback catches processes missed by `lean-ctx stop`
-  stopViaTaskkill();
-  // Brief pause so Windows releases file handles
-  try { execSync("timeout /T 1 /NOBREAK >NUL 2>&1", { stdio: "ignore" }); } catch {}
+if (require.main !== module) {
+  // Loaded by tests: expose the pieces, run nothing.
+  module.exports = { stopInstalledDaemon, cleanOrphans };
 } else {
-  stopViaLeanCtx();
-  stopViaPkill();
+  stopInstalledDaemon();
+  cleanOrphans();
 }
-
-cleanOrphans();

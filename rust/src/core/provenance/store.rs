@@ -242,7 +242,7 @@ impl ProvenanceStore {
             .map_err(|error| format!("replace provenance records: {error}"))
     }
 
-    fn parent_dir(&self) -> Result<PathBuf, String> {
+    pub(super) fn parent_dir(&self) -> Result<PathBuf, String> {
         self.path
             .parent()
             .map(Path::to_path_buf)

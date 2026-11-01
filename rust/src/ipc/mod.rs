@@ -8,7 +8,6 @@ mod windows;
 #[cfg(windows)]
 pub use windows::NamedPipeListener;
 
-#[cfg(unix)]
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -16,6 +15,23 @@ use anyhow::Result;
 use anyhow::anyhow;
 #[cfg(unix)]
 use tokio::io::AsyncWriteExt;
+
+/// Directory of the daemon's endpoint files (`daemon.pid`, `daemon.sock`, the
+/// start lock and stderr log): the data directory, so `LEAN_CTX_DATA_DIR`, the
+/// XDG layout and a legacy `~/.lean-ctx` install each get their own daemon.
+/// The Windows pipe name is derived from it for the same reason.
+pub fn endpoint_dir() -> PathBuf {
+    crate::core::data_dir::lean_ctx_data_dir().unwrap_or_else(|_| legacy_endpoint_dir())
+}
+
+/// Where releases up to 3.12.0 kept the endpoint files: the OS data-local
+/// directory, whatever the data directory was. Read only to stop a daemon that
+/// such a release started.
+pub fn legacy_endpoint_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"))
+        .join("lean-ctx")
+}
 
 /// Platform-independent daemon address.
 #[derive(Debug, Clone)]
@@ -111,6 +127,16 @@ pub fn bind_listener(addr: &DaemonAddr) -> Result<NamedPipeListener> {
     }
 }
 
+/// The security descriptor (SDDL) of every daemon pipe instance: owned by
+/// `sid`, with a protected DACL that grants `sid` alone full access. Without
+/// one a named pipe gets the default DACL, which also lets Everyone and
+/// Anonymous open it for reading; the daemon's routes take no token, so the
+/// pipe's ACL is their only guard, as the socket's 0600 mode is on Unix.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn owner_only_pipe_sddl(sid: &str) -> String {
+    format!("O:{sid}D:P(A;;GA;;;{sid})")
+}
+
 /// Connect to the daemon at the given address.
 #[cfg(windows)]
 pub async fn connect(
@@ -130,6 +156,20 @@ mod tests {
         let addr = DaemonAddr::default_for_current_os();
         let display = addr.display();
         assert!(!display.is_empty(), "`display` is empty");
+    }
+
+    // The daemon pipe used the default DACL (Everyone and Anonymous may read).
+    // Its descriptor names one owner, one access entry for that owner, and
+    // protects the DACL from inherited entries.
+    #[test]
+    fn the_daemon_pipe_descriptor_grants_its_owner_alone() {
+        let sid = "S-1-5-21-1-2-3-1001";
+        let sddl = owner_only_pipe_sddl(sid);
+        assert_eq!(sddl, format!("O:{sid}D:P(A;;GA;;;{sid})"));
+        assert_eq!(sddl.matches("(A;").count(), 1, "one access entry");
+        for broad in ["WD", "AN", "AU", "BU", "IU"] {
+            assert!(!sddl.contains(&format!(";;;{broad})")), "{broad}: {sddl}");
+        }
     }
 
     #[test]

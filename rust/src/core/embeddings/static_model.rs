@@ -3,9 +3,10 @@
 //!
 //! A static model is a token-embedding table: a text's vector is the weighted
 //! mean of its tokens' rows, L2-normalised. There is no attention pass, so it
-//! needs no ONNX Runtime and embeds a code chunk in microseconds — semantic
-//! search works in every build, including those without the `embeddings`
-//! feature.
+//! needs no ONNX Runtime at run time and embeds a code chunk in microseconds.
+//! Like the rest of the dense engine it is compiled only with the
+//! `embeddings` feature (on by default); builds without it fall back to BM25
+//! search.
 //!
 //! The file format is safetensors, read here directly (8-byte little-endian
 //! header length, a JSON header, then raw little-endian tensors). The model

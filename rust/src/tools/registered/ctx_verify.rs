@@ -16,7 +16,7 @@ impl McpTool for CtxVerifyTool {
         tool_def(
             "ctx_verify",
             "Verification observability — tool call statistics and claim-based verification.\n\
-             WORKFLOW: action=stats to monitor tool usage; action=proof|v2 for a ContextProofV2 of runtime-checked policy claims (PathJail per touched file, budget).\n\
+             WORKFLOW: action=stats to monitor tool usage; action=proof|v2 for a ContextProofV2 of runtime-checked policy claims (PathJail per touched file).\n\
              Actions: stats (format=summary|json|both, default summary) | proof|v2 (format=summary|json, default json).\n\
              ANTIPATTERN: not for runtime verification during active development — use for periodic audit.",
             json!({

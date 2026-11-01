@@ -423,9 +423,7 @@ impl LeanCtxServer {
     /// Settles whether the `ctx_shell` `command` about to be dispatched runs
     /// with an approval, is refused by the user, or needs none.
     pub(crate) async fn shell_approval(&self, command: &str) -> Outcome {
-        let cfg = crate::core::config::Config::load();
-        if crate::core::config::ShellApproval::effective(&cfg)
-            == crate::core::config::ShellApproval::Off
+        if crate::core::config::shell_policy::approval() == crate::core::config::ShellApproval::Off
         {
             return Outcome::NotNeeded;
         }
@@ -447,9 +445,7 @@ impl LeanCtxServer {
     /// need none here (the handler then refuses any language that needs one).
     /// One decision per distinct language; a refusal of any refuses all.
     pub(crate) async fn execute_approval(&self, items: &[(String, String)]) -> Outcome {
-        let cfg = crate::core::config::Config::load();
-        if crate::core::config::ShellApproval::effective(&cfg)
-            == crate::core::config::ShellApproval::Off
+        if crate::core::config::shell_policy::approval() == crate::core::config::ShellApproval::Off
         {
             return Outcome::NotNeeded;
         }

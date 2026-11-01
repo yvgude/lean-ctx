@@ -3,10 +3,7 @@ use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOpti
 
 pub(super) fn default_pipe_name() -> String {
     let username = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-    let data_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("AppData/Local"))
-        .join("lean-ctx");
-    let seed = format!("{username}:{}", data_dir.display());
+    let seed = format!("{username}:{}", super::endpoint_dir().display());
     let hash = blake3::hash(seed.as_bytes());
     let short = &hash.to_hex()[..16];
     format!(r"\\.\pipe\lean-ctx-{short}")
@@ -60,12 +57,59 @@ pub struct NamedPipeListener {
     name: String,
 }
 
+/// One instance of the daemon pipe that only this user can open, from this
+/// machine only (`super::owner_only_pipe_sddl`). Tokio's plain `create`
+/// passes no security attributes, which leaves the default DACL.
+fn create_instance(name: &str, first: bool) -> std::io::Result<NamedPipeServer> {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
+
+    let sid = crate::core::windows_private::current_user_sid_string()?;
+    let sid = String::from_utf16(&sid)
+        .map_err(|_| std::io::Error::other("the current user's SID is not valid UTF-16"))?;
+    let sddl: Vec<u16> = format!("{}\0", super::owner_only_pipe_sddl(&sid))
+        .encode_utf16()
+        .collect();
+    let mut descriptor = null_mut();
+    // SAFETY: `sddl` is NUL terminated and the output slot is writable.
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &raw mut descriptor,
+            null_mut(),
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    let mut attributes = SECURITY_ATTRIBUTES {
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor,
+        bInheritHandle: 0,
+    };
+    // SAFETY: `attributes` and its descriptor stay alive throughout creation;
+    // Windows copies the descriptor, and Tokio owns the returned handle.
+    let server = unsafe {
+        ServerOptions::new()
+            .first_pipe_instance(first)
+            .reject_remote_clients(true)
+            .create_with_security_attributes_raw(name, (&raw mut attributes).cast())
+    };
+    // SAFETY: the conversion returned a LocalAlloc-owned descriptor, which
+    // nothing uses after the pipe was created.
+    unsafe { LocalFree(descriptor) };
+    server
+}
+
 impl NamedPipeListener {
     pub fn bind(name: &str) -> Result<Self> {
-        let server = ServerOptions::new()
-            .first_pipe_instance(true)
-            .create(name)
-            .with_context(|| format!("bind named pipe {name}"))?;
+        let server =
+            create_instance(name, true).with_context(|| format!("bind named pipe {name}"))?;
         Ok(Self {
             current: server,
             name: name.to_string(),
@@ -75,9 +119,7 @@ impl NamedPipeListener {
     /// Wait for a client, return the connected pipe, prepare the next instance.
     pub async fn accept_pipe(&mut self) -> std::io::Result<NamedPipeServer> {
         self.current.connect().await?;
-        let next = ServerOptions::new()
-            .first_pipe_instance(false)
-            .create(&self.name)?;
+        let next = create_instance(&self.name, false)?;
         Ok(std::mem::replace(&mut self.current, next))
     }
 

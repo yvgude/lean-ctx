@@ -11,5 +11,4 @@ pub mod remote_transport;
 pub mod task;
 pub mod task_control;
 pub mod task_response;
-pub mod telemetry;
 pub mod transfer;

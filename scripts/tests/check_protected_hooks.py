@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -41,9 +40,8 @@ def main():
         data = Path(env['LEAN_CTX_DATA_DIR'])
         data.mkdir(parents=True)
         # Explicit dead daemon: the legacy deny hook would pass through on outage.
-        daemon_data = home / 'Library/Application Support/lean-ctx' if sys.platform == 'darwin' else data
-        daemon_data.mkdir(parents=True, exist_ok=True)
-        daemon_data.joinpath('daemon.pid').write_text('2147483647')
+        # The daemon's endpoint files live in the data dir.
+        data.joinpath('daemon.pid').write_text('2147483647')
 
         def run(name, action, payload=b'', expected='deny', extra=None, cwd=None, hold_stdin=False):
             started = time.monotonic()

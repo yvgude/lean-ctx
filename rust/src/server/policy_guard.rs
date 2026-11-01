@@ -28,9 +28,15 @@ pub struct PolicyCheckResult {
     pub message: Option<String>,
 }
 
-/// Check whether `tool_name` is allowed by the active policy pack, recording an
-/// audit entry on denial (same APIs as [`super::role_guard`]).
+/// [`check_tool_access_as`] for this process's agent identity
+/// (`LEAN_CTX_AGENT_ID`, else `local`), for callers without an MCP session.
 pub fn check_tool_access(tool_name: &str) -> PolicyCheckResult {
+    check_tool_access_as(tool_name, crate::core::agent_identity::current_agent_id())
+}
+
+/// Check whether `tool_name` is allowed by the active policy pack, recording an
+/// audit entry for `agent_id` on denial (same APIs as [`super::role_guard`]).
+pub fn check_tool_access_as(tool_name: &str, agent_id: &str) -> PolicyCheckResult {
     let check = evaluate_with_exemptions(
         runtime::active().as_deref(),
         tool_name,
@@ -45,7 +51,7 @@ pub fn check_tool_access(tool_name: &str) -> PolicyCheckResult {
             "tool denied by context policy pack",
         );
         crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-            agent_id: "unknown".into(),
+            agent_id: agent_id.to_string(),
             tool: tool_name.to_string(),
             action: None,
             input_hash: String::new(),
@@ -107,9 +113,10 @@ fn evaluate_with_exemptions(
     }
 }
 
+/// The denial as a tool error the agent can read; `None` when allowed.
 pub fn into_call_tool_result(check: &PolicyCheckResult) -> Option<CallToolResult> {
     check.blocked.then(|| {
-        CallToolResult::success(vec![ContentBlock::text(
+        CallToolResult::error(vec![ContentBlock::text(
             check
                 .message
                 .as_deref()
@@ -171,7 +178,26 @@ pub fn redact_model_text(text: &str) -> String {
 /// only the detector classes and counts (e.g. `pii:iban×2`) — never the matched
 /// values. A `blocked` decision additionally surfaces a policy-violation event;
 /// redactions are recorded as `SecretDetected` for the compliance ledger.
+///
+/// The entry names this process's agent attribution
+/// (`core::agent_identity::ledger_agent_id`: `LEAN_CTX_AGENT_ID`,
+/// else the MCP client and bus id of a single-client server, else the host),
+/// for content readers that run without the calling agent in scope; a caller
+/// that has it uses [`audit_filter_as`].
 pub fn audit_filter(tool: &str, audit: &[(String, usize)], blocked: bool) {
+    if audit.is_empty() {
+        return;
+    }
+    audit_filter_as(
+        tool,
+        audit,
+        blocked,
+        &crate::core::agent_identity::ledger_agent_id(),
+    );
+}
+
+/// [`audit_filter`] for the agent `agent_id`.
+pub fn audit_filter_as(tool: &str, audit: &[(String, usize)], blocked: bool, agent_id: &str) {
     if audit.is_empty() {
         return;
     }
@@ -190,7 +216,7 @@ pub fn audit_filter(tool: &str, audit: &[(String, usize)], blocked: bool) {
         );
     }
     crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-        agent_id: "unknown".into(),
+        agent_id: agent_id.to_string(),
         tool: tool.to_string(),
         action: None,
         input_hash: String::new(),
@@ -206,13 +232,14 @@ pub fn audit_filter(tool: &str, audit: &[(String, usize)], blocked: bool) {
 
 /// Audit a blocked egress (write/action) DLP decision (GL #676).
 /// **Privacy-preserving**: records the rule/class label (`forbidden-pattern:…`,
-/// `secret`, `pii:…`, `rate-limit`) — never the matched content.
-pub fn audit_egress(tool: &str, reason: &str) {
+/// `secret`, `pii:…`, `rate-limit`) — never the matched content — for the
+/// agent `agent_id` that attempted it.
+pub fn audit_egress(tool: &str, reason: &str, agent_id: &str) {
     let policy =
         runtime::active().map_or_else(|| "policy".to_string(), |a| a.resolved.name.clone());
     crate::core::events::emit_policy_violation(&policy, tool, &format!("egress blocked: {reason}"));
     crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-        agent_id: "unknown".into(),
+        agent_id: agent_id.to_string(),
         tool: tool.to_string(),
         action: None,
         input_hash: String::new(),
@@ -292,9 +319,44 @@ mod tests {
     fn into_result_renders_denial() {
         let p = active(None, vec!["ctx_shell"]);
         let r = evaluate(Some(&p), "ctx_shell");
-        assert!(into_call_tool_result(&r).is_some());
+        // A denial is a tool error, not a successful result.
+        assert_eq!(
+            into_call_tool_result(&r).and_then(|denied| denied.is_error),
+            Some(true)
+        );
         let allowed = evaluate(None, "ctx_shell");
         assert!(into_call_tool_result(&allowed).is_none());
+    }
+
+    // A content-filter decision was audited for agent "unknown".
+    #[test]
+    fn a_filter_decision_is_audited_for_the_named_agent() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        audit_filter_as(
+            "ctx_read",
+            &[("pii:iban".to_string(), 2)],
+            false,
+            "policy-guard-test-agent",
+        );
+        audit_filter("ctx_search", &[("pii:iban".to_string(), 1)], true);
+        let entries = crate::core::audit_trail::load_recent(50);
+        assert!(entries.iter().any(|entry| {
+            entry.agent_id == "policy-guard-test-agent"
+                && entry.tool == "ctx_read"
+                && matches!(
+                    entry.event_type,
+                    crate::core::audit_trail::AuditEventType::SecretDetected
+                )
+        }));
+        let unnamed = entries
+            .iter()
+            .find(|entry| entry.tool == "ctx_search")
+            .expect("the unnamed decision is audited");
+        assert_eq!(
+            unnamed.agent_id,
+            crate::core::agent_identity::ledger_agent_id()
+        );
+        assert!(entries.iter().all(|entry| entry.agent_id != "unknown"));
     }
 
     /// End-to-end through the global runtime cache: the public allow path and

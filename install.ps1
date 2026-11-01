@@ -70,13 +70,17 @@ function Install-Cockpit {
         catch {
             throw 'download failed'
         }
-        $expected = $null
-        foreach ($line in Get-Content -LiteralPath $sums -ErrorAction Stop) {
-            $fields = $line -split '\s+', 2
+        # Exactly one well-formed entry for the bundle, as for the engine
+        # archive: a second entry (the first match used to win) refuses it.
+        $matching = @(foreach ($line in Get-Content -LiteralPath $sums -ErrorAction Stop) {
+            $fields = $line.Trim() -split '\s+'
             if ($fields.Count -eq 2 -and ($fields[1] -eq $asset -or $fields[1] -eq "*$asset")) {
-                $expected = $fields[0].ToLowerInvariant()
-                break
+                $fields[0].ToLowerInvariant()
             }
+        })
+        $expected = $null
+        if ($matching.Count -eq 1 -and $matching[0] -match '^[0-9a-f]{64}$') {
+            $expected = $matching[0]
         }
         $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
         if (-not $expected -or $actual -ne $expected) {
@@ -112,15 +116,44 @@ function Get-CargoBinDir {
     return Join-Path $HOME '.cargo\bin'
 }
 
-function Stop-RunningLeanCtx {
-    $existing = Get-Command lean-ctx -ErrorAction SilentlyContinue
-    if ($null -ne $existing) {
-        Write-Host 'Stopping running lean-ctx (if any)...'
-        try {
-            & $existing.Source stop | Out-Null
-        }
-        catch {
-        }
+# Stops only the daemon of the binary about to be replaced, right before the
+# swap (`lean-ctx daemon stop`: the daemon in its PID file). A full
+# `lean-ctx stop` would end every lean-ctx process by name and the user's
+# proxy as well. Returns whether the daemon ran, so it can be restarted on the
+# new binary. A first install has no binary yet and stops nothing.
+function Stop-InstalledDaemon {
+    param([string]$Binary)
+
+    if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) {
+        return $false
+    }
+    $wasRunning = $false
+    try {
+        $status = (& $Binary daemon status 2>$null) -join "`n"
+        $wasRunning = $status -match 'running \(PID|Autostart: +enabled'
+        Write-Host 'Stopping the installed lean-ctx daemon (if any)...'
+        & $Binary daemon stop 2>$null | Out-Null
+    }
+    catch {
+    }
+    return $wasRunning
+}
+
+# Replaces the installed binary. A binary that another process (an editor's
+# MCP server, the proxy) still holds open cannot be overwritten on Windows but
+# can be renamed: it is moved aside to `.old`, as the npm postinstall does,
+# instead of ending its holders.
+function Install-Binary {
+    param([string]$Source, [string]$Destination)
+
+    try {
+        Move-Item -LiteralPath $Source -Destination $Destination -Force -ErrorAction Stop
+    }
+    catch {
+        $aside = "$Destination.old"
+        Remove-Item -LiteralPath $aside -Force -ErrorAction SilentlyContinue
+        Move-Item -LiteralPath $Destination -Destination $aside -Force -ErrorAction Stop
+        Move-Item -LiteralPath $Source -Destination $Destination -Force -ErrorAction Stop
     }
 }
 
@@ -168,10 +201,24 @@ New-Item -ItemType Directory -Path $cargoBinDir -Force | Out-Null
 
 $tempBinary = Join-Path $cargoBinDir ('.lean-ctx.new.' + $PID + '.exe')
 Copy-Item -Path $builtBinary -Destination $tempBinary -Force
-Stop-RunningLeanCtx
-Move-Item -Path $tempBinary -Destination $installedBinary -Force
+$restoreDaemon = Stop-InstalledDaemon -Binary $installedBinary
+Install-Binary -Source $tempBinary -Destination $installedBinary
 
 Write-Host "Installed: $installedBinary"
+
+if ($restoreDaemon) {
+    Write-Host 'Restarting the lean-ctx daemon...'
+    $restarted = $false
+    try {
+        & $installedBinary daemon restart 2>$null | Out-Null
+        $restarted = $LASTEXITCODE -eq 0
+    }
+    catch {
+    }
+    if (-not $restarted) {
+        Write-Host '  Could not restart the daemon; start it with: lean-ctx daemon start'
+    }
+}
 
 Install-Cockpit -Engine $installedBinary
 

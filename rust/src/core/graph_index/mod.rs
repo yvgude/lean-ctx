@@ -812,6 +812,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         return (ProjectIndex::new(project_root), HashMap::new());
     }
 
+    let progress_root = project_root.to_string();
     let project_root = normalize_project_root(project_root);
 
     if !is_safe_scan_root(&project_root) {
@@ -1015,6 +1016,14 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     let parallel = admission.parallel_ok && !crate::core::memory_guard::is_under_pressure();
     // One gateway policy snapshot for the whole scan (E3: stored excerpts are admitted).
     let store_admission = StoreAdmission::current();
+    // File counts for the dashboard's "building" answer, under the root the
+    // caller named (the orchestrator's key); cleared when the scan returns.
+    let progress = crate::core::index_progress::ProgressGuard::new(
+        progress_root,
+        crate::core::index_progress::IndexComponent::Graph,
+    );
+    let files_total = targets.len() as u64;
+    progress.report(0, files_total);
     let mut files_done = 0;
     while files_done < targets.len() {
         if crate::core::memory_guard::abort_requested() {
@@ -1058,6 +1067,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
             }
         }
         files_done = batch_end;
+        progress.report(files_done as u64, files_total);
         crate::core::memory_guard::jemalloc_purge();
     }
 

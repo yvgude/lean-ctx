@@ -349,7 +349,8 @@ fn run_build_worker(root: &str) {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             start_component(&mut s.graph);
         }
-        // Graph scan has no reliable unit total → indeterminate. Guard clears on exit.
+        // Indeterminate while the scan walks the tree; the scan reports its
+        // file counts once it knows them. Guard clears on exit.
         let guard = crate::core::index_progress::ProgressGuard::new(
             graph_root.clone(),
             crate::core::index_progress::IndexComponent::Graph,
@@ -363,6 +364,9 @@ fn run_build_worker(root: &str) {
             crate::core::code_health::persist::refresh_if_stale(&graph_root, &idx);
         });
         if graph_result.is_ok() {
+            // A resident call graph predates the rebuilt index: the next
+            // request compares the persisted one with the files again.
+            crate::core::call_graph::CallGraph::invalidate(&graph_root);
             // Evidence-graded call/implements edges on top of the fresh
             // structure; a no-op unless a semantic backend can contribute.
             let _ = std::panic::catch_unwind(|| {

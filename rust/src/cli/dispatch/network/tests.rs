@@ -112,6 +112,39 @@ fn task_authority_policy_reader_rejects_symlinks() {
     assert!(super::read_a2a_task_authority(&link).is_err());
 }
 
+// `serve --a2a-signing-key <key>` put the key in the process list; the key
+// file keeps it out and drops only the trailing line break.
+#[cfg(feature = "http-server")]
+#[test]
+fn a2a_signing_key_file_is_read_without_its_line_break_and_refused_when_empty() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("a2a.key");
+    std::fs::write(&path, " key with spaces \r\n").expect("write key");
+    assert_eq!(
+        super::read_secret_file(&path).as_deref(),
+        Ok(" key with spaces ")
+    );
+    std::fs::write(&path, "\n").expect("write empty key");
+    assert!(super::read_secret_file(&path).is_err());
+    assert!(super::read_secret_file(&dir.path().join("missing")).is_err());
+    assert!(super::A2A_SIGNING_KEY_ARGV_WARNING.contains("--a2a-signing-key-file"));
+}
+
+// `serve --auth-token <token>` put the Bearer token in the process list; the
+// token file keeps it out and the warning names the replacements.
+#[cfg(feature = "http-server")]
+#[test]
+fn auth_token_file_is_read_without_its_line_break_and_the_argv_form_warns() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("http.token");
+    std::fs::write(&path, "tok-123\n").expect("write token");
+    assert_eq!(super::read_secret_file(&path).as_deref(), Ok("tok-123"));
+    std::fs::write(&path, "  \r\n").expect("write blank token");
+    assert!(super::read_secret_file(&path).is_err());
+    assert!(super::AUTH_TOKEN_ARGV_WARNING.contains("--auth-token-file"));
+    assert!(super::AUTH_TOKEN_ARGV_WARNING.contains("LEAN_CTX_HTTP_TOKEN"));
+}
+
 // The owner's `lean-ctx cockpit --project <dir>` was silently ignored.
 #[test]
 fn cockpit_project_flag_takes_both_forms_and_refuses_a_missing_dir() {

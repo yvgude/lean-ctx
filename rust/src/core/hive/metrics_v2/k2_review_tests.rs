@@ -186,7 +186,7 @@ fn no_ledger_metering_or_audit_content_reaches_the_hours_body() {
 }
 
 /// Any MCP client may announce any `clientInfo.name`. An unrecognised one is
-/// "sanitized" (`metrics::payload::name`: other characters become `-`) and
+/// "sanitized" (other characters become `-`) and
 /// sent as `hosts[].host`: a client named after a machine, a person or a
 /// project, or a command line turned into dashes, leaves the engine.
 #[test]

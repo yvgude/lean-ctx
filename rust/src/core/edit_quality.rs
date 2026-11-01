@@ -360,9 +360,6 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
                 Escalation::Full => store.set_pending_escalation(&norm, now),
                 Escalation::Anchored => store.set_pending_anchored_escalation(&norm, now),
             }
-            // Edit failures after a stale read are the strongest "the model's
-            // view was wrong" evidence: penalize the arm that produced it (#593).
-            crate::core::adaptive_thresholds::penalize_read_arm(path);
             // Stigmergy (#540): edit failures mark the path as Stuck ("context
             // drifted"), the explicit anchor-miss signal called for in #1008.
             // The request's project is resolved before the thread starts.

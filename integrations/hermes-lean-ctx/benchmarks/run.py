@@ -21,19 +21,15 @@ from typing import Any, Dict, List, Optional
 
 # Allow direct execution (`python benchmarks/run.py`) without installation.
 _PLUGIN_DIR = Path(__file__).resolve().parent.parent
-_REPO_ROOT = _PLUGIN_DIR.parent.parent
 _PKG = "hermes_lean_ctx"
 
 
 def _bootstrap_package() -> None:
     """Make the hyphenated plugin dir importable as ``hermes_lean_ctx``.
 
-    Mirrors the test conftest so the runner works standalone, and wires the
-    monorepo ``leanctx`` SDK onto the path when it is checked out alongside.
+    Mirrors the test conftest so the runner works standalone. The ``leanctx``
+    client comes from the installed ``lean-ctx-client`` package.
     """
-    clients_python = _REPO_ROOT / "clients" / "python"
-    if clients_python.is_dir() and str(clients_python) not in sys.path:
-        sys.path.insert(0, str(clients_python))
     if _PKG in sys.modules:
         return
     spec = importlib.util.spec_from_file_location(

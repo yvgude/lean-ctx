@@ -138,8 +138,9 @@ class WorkflowProvenanceGateTests(unittest.TestCase):
                     self.assertNotIn("continue-on-error: true", job, job_name)
 
             expected_publish_jobs = {
+                # The cookbook TypeScript client is private (`private: true`)
+                # and has no publish job.
                 "publish-clients.yml": {
-                    "publish-npm",
                     "publish-pypi",
                     "publish-crates",
                 },

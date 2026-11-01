@@ -72,8 +72,22 @@ pub(crate) fn cmd_pack(args: &[String]) {
         other => {
             eprintln!("Unknown pack subcommand: {other}");
             print_usage();
+            std::process::exit(2);
         }
     }
+}
+
+/// A usage error of a `pack` subcommand: `usage` on stderr, exit 2.
+fn exit_usage(usage: &str) -> ! {
+    eprintln!("{usage}");
+    std::process::exit(2)
+}
+
+/// A failed `pack` subcommand: the error on stderr, exit 1. Before, most
+/// subcommands printed their error and exited 0 (F9c: an error never exits 0).
+fn exit_failed(error: impl std::fmt::Display) -> ! {
+    eprintln!("ERROR: {error}");
+    std::process::exit(1)
 }
 
 fn print_usage() {

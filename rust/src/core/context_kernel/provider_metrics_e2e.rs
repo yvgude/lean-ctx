@@ -126,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn envelope_bridge_records_usage() {
+    fn envelope_bridge_records_measured_usage_without_recounting_the_request() {
         let _guard = isolated();
         record(
             "https://api.anthropic.com",
@@ -138,13 +138,23 @@ mod tests {
                 "cache_read_input_tokens": 6
             }),
         );
-        let usage = usage_normalizer::session_usage();
-        assert!(usage.total_requests >= 1);
-        assert!(usage.total_tokens >= 39);
-        let model = &usage.per_model["claude-sonnet"];
-        assert!(model.input_tokens >= 30);
-        assert!(model.output_tokens >= 9);
-        assert!(model.cache_read_tokens >= 6);
+        let stats = envelope_bridge::provider_stats();
+        assert_eq!(
+            (
+                stats[0].total_input,
+                stats[0].total_output,
+                stats[0].total_cache_read
+            ),
+            (30, 9, 6)
+        );
+        // The forward path's Context IR stage already counted this request.
+        assert_eq!(usage_normalizer::session_usage().total_requests, 0);
+        assert_eq!(super::super::receipt_chain::chain_length(), 0);
+        assert_eq!(super::super::proxy_bridge::etpao_summary().total_tokens, 0);
+        assert_eq!(
+            super::super::proxy_bridge::identity_summary().total_tokens,
+            0
+        );
     }
 
     #[test]

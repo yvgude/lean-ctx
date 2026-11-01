@@ -2,13 +2,21 @@
 //! Cross-instance leases through Hive (C5c).
 //!
 //! `ctx_agent lease_acquire` takes the local lease first (same-machine
-//! contention needs no network), then asks Hive with one bounded request
-//! ([`acquire`]): plan C rule 3 exception, at most [`BUDGET`] in total, no
-//! retries, and only while this machine is enrolled with a Valid or Grace
-//! lease that has `bus.relay` and the project is linked. Otherwise the
-//! answer is [`Outcome::Local`] at once, without a request, and the agent is
-//! told the lease does not exclude other machines. There is no background
-//! upgrade.
+//! contention needs no network), then asks Hive off the tool call
+//! ([`acquire`], connector rule "Hive never blocks a tool call"): one
+//! request of at most [`BUDGET`] in the in-process queue
+//! ([`crate::core::hive::background`]), only while this machine is
+//! enrolled with a Valid or Grace lease that has `bus.relay` and the project
+//! is linked. Otherwise the answer is [`Outcome::Local`] at once, and the
+//! agent is told the lease does not exclude other machines.
+//!
+//! Until Hive answered `granted` the Hive side is pending
+//! ([`Outcome::Pending`]): no fencing token, nothing bound or announced.
+//! What Hive answered (granted, held by another agent, vetoed, unreachable)
+//! comes with the agent's next `ctx_agent` call, and a refusal releases the
+//! local lease. A renewal or release needs Hive's `lease_id`, so it is
+//! queued behind the grant. `POST /v1/bus/leases` is idempotent for the
+//! holder (a re-acquire extends the same lease and token).
 //!
 //! The Hive side of a local lease is kept in `<data>/hive/bus/leases.json`
 //! (beside, not inside, the machine-wide lease store, whose schema other
@@ -18,8 +26,9 @@
 //! and never hold that lock across a request (RB8 E5): read, ask Hive,
 //! then apply the answer to what is on disk by then.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -36,7 +45,7 @@ use lean_ctx_protocol::hive::bus::{
 };
 use lean_ctx_protocol::hive::lease::{HiveRight, LeaseState};
 
-/// Whole budget of one acquire or renew made from a tool call.
+/// Whole budget of one acquire or renew a tool call queued.
 pub const BUDGET: Duration = Duration::from_secs(3);
 const LEASES_FILE: &str = "leases.json";
 /// Queued releases kept at most; the oldest go first, the service lets
@@ -65,6 +74,23 @@ pub enum Outcome {
     Superseded,
     /// Hive was not asked or did not answer in time: local only.
     Local(String),
+    /// Hive is being asked off the tool call; its answer comes with the
+    /// agent's next `ctx_agent` call. No fencing token yet.
+    Pending,
+}
+
+/// Local lease refs whose Hive acquire is queued or running in this
+/// process: their renewal and release wait behind it.
+static PENDING: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+fn pending() -> MutexGuard<'static, BTreeSet<String>> {
+    PENDING.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The queue caller of `agent_id`'s `ctx_agent` calls
+/// ([`crate::core::hive::background::with_answers`]).
+pub fn caller(agent_id: &str) -> String {
+    format!("ctx_agent:{agent_id}")
 }
 
 /// The Hive lease behind a local one.
@@ -276,28 +302,40 @@ fn outcome(answer: Result<BusLeaseV1, HiveError>) -> Outcome {
     }
 }
 
-/// Ask Hive for the lease the agent already holds locally (`local_ref`).
-/// A grant is bound to `local_ref`; the caller releases the local lease on
-/// anything but [`Outcome::Granted`] and [`Outcome::Local`].
+/// Ask Hive, off the tool call, for the lease the agent already holds
+/// locally (`local_ref`). [`Outcome::Local`] at once when Hive does not
+/// apply (no request); otherwise [`Outcome::Pending`], and `settle` runs in
+/// the queue with Hive's answer and returns the line the agent gets with
+/// its next `ctx_agent` call. A grant is bound to `local_ref` before
+/// `settle` runs; `settle` releases the local lease on a refusal.
 pub fn acquire(
     project_root: &Path,
     agent_id: &str,
     target: &str,
     duration_ms: u64,
     local_ref: &str,
+    settle: impl FnOnce(Outcome) -> Option<String> + Send + 'static,
 ) -> Outcome {
     let connected = match connected(project_root) {
         Ok(connected) => connected,
         Err(why) => return Outcome::Local(why),
     };
-    acquire_with(
-        &connected,
-        project_root,
-        agent_id,
-        target,
-        duration_ms,
-        local_ref,
-    )
+    if normalize_target(project_root, target).is_none() {
+        return Outcome::Local("the target is outside the project".into());
+    }
+    let (root, agent, target, local) = (
+        project_root.to_path_buf(),
+        agent_id.to_string(),
+        target.to_string(),
+        local_ref.to_string(),
+    );
+    pending().insert(local.clone());
+    crate::core::hive::background::submit(&caller(agent_id), move || {
+        let outcome = acquire_with(&connected, &root, &agent, &target, duration_ms, &local);
+        pending().remove(&local);
+        settle(outcome)
+    });
+    Outcome::Pending
 }
 
 fn acquire_with(
@@ -349,22 +387,41 @@ fn acquire_with(
     result
 }
 
-/// Renew the Hive lease bound to `local_ref` (bounded like [`acquire`]).
-/// A local-only lease gets [`Outcome::Local`] without a request.
-pub fn renew(project_root: &Path, local_ref: &str, duration_ms: u64) -> Outcome {
+/// Renew the Hive lease bound to `local_ref`, off the tool call and behind
+/// a pending acquire (it needs Hive's `lease_id`). A local-only lease gets
+/// [`Outcome::Local`] at once; otherwise [`Outcome::Pending`], and `settle`
+/// gets Hive's answer as [`acquire`]'s does.
+pub fn renew(
+    project_root: &Path,
+    agent_id: &str,
+    local_ref: &str,
+    duration_ms: u64,
+    settle: impl FnOnce(Outcome) -> Option<String> + Send + 'static,
+) -> Outcome {
     let Ok(store) = HiveStore::open() else {
         return Outcome::Local("no Hive state".into());
     };
-    let Some(binding) = Bindings::load(store.data_dir())
+    let bound = Bindings::load(store.data_dir())
         .leases
-        .get(local_ref)
-        .cloned()
-    else {
+        .contains_key(local_ref);
+    if !bound && !pending().contains(local_ref) {
         return Outcome::Local("this lease is local only".into());
-    };
+    }
     let connected = match connected(project_root) {
         Ok(connected) => connected,
         Err(why) => return Outcome::Local(why),
+    };
+    let local = local_ref.to_string();
+    crate::core::hive::background::submit(&caller(agent_id), move || {
+        settle(renew_with(&connected, &local, duration_ms))
+    });
+    Outcome::Pending
+}
+
+fn renew_with(c: &Connected, local_ref: &str, duration_ms: u64) -> Outcome {
+    let data = c.store.data_dir();
+    let Some(binding) = Bindings::load(data).leases.get(local_ref).cloned() else {
+        return Outcome::Local("Hive did not grant this lease".into());
     };
     let deadline = Instant::now() + BUDGET;
     let body = json!({
@@ -374,15 +431,14 @@ pub fn renew(project_root: &Path, local_ref: &str, duration_ms: u64) -> Outcome 
     });
     let path = format!("/bus/leases/{}/renew", binding.lease_id);
     let result = outcome(
-        connected
-            .session
+        c.session
             .bounded_client(deadline)
             .and_then(|client| client.post(&path, &body))
             .and_then(decode_lease),
     );
     // Applied to the binding as it is now, and only while it is still the
     // lease that was renewed (a release or a new grant may have come since).
-    let applied = Bindings::mutate(store.data_dir(), |bindings| {
+    let applied = Bindings::mutate(data, |bindings| {
         let same = |b: &Binding| b.lease_id == binding.lease_id;
         match &result {
             Outcome::Granted { expires_at, .. } => {
@@ -414,12 +470,27 @@ pub fn binding(local_ref: &str) -> Option<Binding> {
 }
 
 /// Queue the release of the Hive lease bound to `local_ref` (the relay
-/// sends it). No network in the tool call.
-pub fn queue_release(local_ref: &str) {
+/// sends it). No network in the tool call; while the acquire is still
+/// pending, the release is queued behind it and applies to its grant.
+pub fn release(agent_id: &str, local_ref: &str) {
     let Ok(store) = HiveStore::open() else {
         return;
     };
-    let queued = Bindings::mutate(store.data_dir(), |bindings| {
+    // Checked first: a pending acquire that ends meanwhile has bound its
+    // grant before it leaves `PENDING`, so one of the two releases sees it.
+    let was_pending = pending().contains(local_ref);
+    queue_release_in(store.data_dir(), local_ref);
+    if was_pending {
+        let (data, local) = (store.data_dir().to_path_buf(), local_ref.to_string());
+        crate::core::hive::background::submit(&caller(agent_id), move || {
+            queue_release_in(&data, &local);
+            None
+        });
+    }
+}
+
+fn queue_release_in(data_dir: &Path, local_ref: &str) {
+    let queued = Bindings::mutate(data_dir, |bindings| {
         if let Some(b) = bindings.leases.remove(local_ref) {
             bindings.releases.push(Release {
                 lease_id: b.lease_id,
@@ -463,16 +534,19 @@ pub fn send_releases(store: &HiveStore, session: &Session) {
     }
 }
 
-/// One line for `ctx_agent`: where the lease holds.
+/// One line for `ctx_agent`: where the lease holds. The Hive fencing token
+/// stays in `leases.json` (0600) and is never printed, like a task claim's.
 pub fn scope_line(outcome: &Outcome) -> String {
     match outcome {
-        Outcome::Granted { fencing_token, .. } => {
-            format!("scope=hive fencing_token={fencing_token}")
+        Outcome::Granted { .. } | Outcome::Held { .. } | Outcome::Vetoed | Outcome::Superseded => {
+            "scope=hive".into()
         }
         Outcome::Local(why) => {
             format!("scope=local ({why}; other machines are not excluded)")
         }
-        Outcome::Held { .. } | Outcome::Vetoed | Outcome::Superseded => "scope=hive".into(),
+        Outcome::Pending => "scope=pending (Hive is asked off this call; until it grants, \
+             other machines are not excluded; its answer comes with your next ctx_agent call)"
+            .into(),
     }
 }
 
@@ -543,7 +617,14 @@ mod tests {
             "lease_id": "bl_1", "fencing_token": 4, "expires_at": "2026-10-21T12:10:00Z",
             "server_time": "2026-10-21T12:00:00Z"});
         let out = outcome(decode_lease(granted));
-        assert_eq!(scope_line(&out), "scope=hive fencing_token=4");
+        assert!(matches!(
+            out,
+            Outcome::Granted {
+                fencing_token: 4,
+                ..
+            }
+        ));
+        assert_eq!(scope_line(&out), "scope=hive", "the token is never printed");
         let held = serde_json::json!({"schema": "leanctx.hive.bus-lease/v1", "granted": false,
             "holder": {"agent_id": "beta", "instance_id": "inst_b", "expires_at": "2026-10-21T12:10:00Z"},
             "server_time": "2026-10-21T12:00:00Z"});
@@ -555,6 +636,8 @@ mod tests {
         let offline = outcome(Err(HiveError::Offline("timeout".into())));
         assert!(scope_line(&offline).starts_with("scope=local (Hive unreachable (timeout)"));
         assert!(scope_line(&offline).ends_with("other machines are not excluded)"));
+        let pending = scope_line(&Outcome::Pending);
+        assert!(pending.starts_with("scope=pending (") && !pending.contains("fencing"));
     }
 
     #[test]

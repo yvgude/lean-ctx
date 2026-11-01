@@ -176,7 +176,16 @@ fn symbol_request(
         .map_err(|e| ErrorData::invalid_params(e, None))?
     {
         super::symbol::SymbolRead::Window { mode, note } => (mode, note),
-        super::symbol::SymbolRead::NotFound(note) => ("signatures".to_string(), Some(note)),
+        // A miss serves the lines that mention the name (or the one-line
+        // reference view when none does) through the ordinary read path, so
+        // admission, redaction and lineage stay the same as for any window.
+        super::symbol::SymbolRead::NotFound { note, hits } if hits.is_empty() => {
+            ("reference".to_string(), Some(note))
+        }
+        super::symbol::SymbolRead::NotFound { note, hits } => {
+            let lines: Vec<String> = hits.iter().map(usize::to_string).collect();
+            (format!("lines:{}", lines.join(",")), Some(note))
+        }
     };
     let mut rewritten = args.clone();
     for key in ["symbol", "start_line", "offset", "limit"] {

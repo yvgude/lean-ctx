@@ -645,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    fn cli_file_read_projects_to_efficiency_and_savings_spies() {
+    fn cli_file_read_projects_to_the_savings_spy_only() {
         let _dir = crate::core::data_dir::isolated_data_dir();
         let efficiency_calls = Arc::new(AtomicUsize::new(0));
         let savings_calls = Arc::new(AtomicUsize::new(0));
@@ -664,7 +664,9 @@ mod tests {
             "fn main() {}",
         );
 
-        assert_eq!(efficiency_calls.load(Ordering::Relaxed), 1);
+        // The efficiency analysis of a read fed only the retired mode
+        // predictor, so a read no longer asks for it.
+        assert_eq!(efficiency_calls.load(Ordering::Relaxed), 0);
         assert_eq!(savings_calls.load(Ordering::Relaxed), 1);
     }
 

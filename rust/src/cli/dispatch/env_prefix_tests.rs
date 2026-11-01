@@ -62,3 +62,28 @@ fn mixed_vars_extracts_only_lean_ctx() {
     assert!(std::env::var("FOO").is_err());
     crate::test_env::remove_var("LEAN_CTX_DISABLED");
 }
+
+/// `lean-ctx -c 'LEAN_CTX_SHELL_SECURITY=off …'` applied the prefix to its own
+/// process before the allowlist gate ran, so the gate read `off`. Only the
+/// run-control keys are applied.
+#[test]
+#[serial]
+fn security_and_config_keys_are_never_applied() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
+    let keys = [
+        "LEAN_CTX_SHELL_SECURITY",
+        "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+        "LEAN_CTX_CONFIG_DIR",
+    ];
+    for key in keys {
+        crate::test_env::remove_var(key);
+    }
+    let result = extract_and_apply_env_prefix(
+        "LEAN_CTX_SHELL_SECURITY=off LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE=bash \
+         LEAN_CTX_CONFIG_DIR=/tmp/x bash -c id",
+    );
+    assert_eq!(result, "bash -c id");
+    for key in keys {
+        assert!(std::env::var(key).is_err(), "{key} must not be applied");
+    }
+}

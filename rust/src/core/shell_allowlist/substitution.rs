@@ -52,7 +52,7 @@ pub(crate) fn check_substitution_in_args(command: &str) -> Result<(), ShellError
     if allowlist.is_empty() {
         return Ok(());
     }
-    let scoping = crate::core::config::Config::load().shell_allowlist_subcommand_scoping;
+    let scoping = crate::core::config::shell_policy::config().shell_allowlist_subcommand_scoping;
     let allowlist = super::enforcement::Allowlist::new(allowlist, scoping);
     for inner in &inner_cmds {
         super::enforcement::check_all_segments(inner, &allowlist).map_err(|err| {

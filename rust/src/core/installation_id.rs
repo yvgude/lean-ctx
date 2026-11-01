@@ -122,6 +122,24 @@ fn with_deletion_lock<T>(
     result
 }
 
+/// The installation ID `get_or_create` would return, if one exists, without
+/// creating, migrating or adopting anything: for read-only views such as the
+/// dashboard. `None` while no ID was ever created.
+pub(crate) fn existing() -> Option<String> {
+    let path = identity_path().ok()?;
+    if let Some(identity) = read_identity(&path) {
+        return Some(identity.installation_id);
+    }
+    let dir = path.parent()?;
+    // A legacy sidecar is this directory's own ID; an invalid one is replaced
+    // on creation, so no ID exists yet.
+    if let Ok(raw) = std::fs::read_to_string(dir.join(ID_FILE)) {
+        let id = raw.trim();
+        return is_valid_uuid(id).then(|| id.to_string());
+    }
+    sibling_identity(&path).map(|identity| identity.installation_id)
+}
+
 /// Return the existing installation ID or generate a fresh UUID v4.
 pub(crate) fn get_or_create() -> Result<String, String> {
     Ok(get_or_create_identity()?.0)

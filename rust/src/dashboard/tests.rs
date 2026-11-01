@@ -1179,3 +1179,292 @@ async fn ledger_figures_follow_the_requested_project() {
         "the worktree's calls count for alpha"
     );
 }
+
+/// A map view of a project without an index answers `202 building` at once
+/// (the Cockpit polls it) instead of waiting for a scan and answering empty.
+#[test]
+fn map_routes_answer_building_without_waiting_for_an_index() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let project = tempdir().expect("project");
+    std::fs::create_dir_all(project.path().join(".git")).unwrap();
+    std::fs::write(project.path().join("main.rs"), "fn main() {}\n").unwrap();
+    let root = project.path().to_string_lossy().into_owned();
+    for route in [
+        "/api/graph",
+        "/api/graph-files",
+        "/api/heatmap",
+        "/api/routes",
+        "/api/architecture",
+        "/api/tree",
+        "/api/symbols",
+        "/api/call-graph",
+    ] {
+        let started = std::time::Instant::now();
+        let (status, _, body) = super::project_binding::in_request_project(Some(&root), || {
+            routes::route_response(route, "", None, None, true, "GET", "")
+        });
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "{route} waited"
+        );
+        assert_eq!(status, "202 Accepted", "{route}: {body}");
+        let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["status"], "building", "{route}: {body}");
+        assert!(
+            v["files_total"].is_u64() && v["files_done"].is_u64(),
+            "{route}"
+        );
+    }
+}
+
+/// The building answer carries the scan's file counts while this process
+/// runs the scan.
+#[test]
+fn the_building_answer_reports_the_scan_progress() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let project = tempdir().expect("project");
+    let root = project.path().to_string_lossy().into_owned();
+    let _scan = crate::core::index_progress::ProgressGuard::new(
+        root.clone(),
+        crate::core::index_progress::IndexComponent::Graph,
+    );
+    _scan.report(7, 40);
+    let (status, _, body) = super::project_binding::in_request_project(Some(&root), || {
+        routes::route_response("/api/tree", "", None, None, true, "GET", "")
+    });
+    assert_eq!(status, "202 Accepted", "{body}");
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        (v["files_done"].as_u64(), v["files_total"].as_u64()),
+        (Some(7), Some(40))
+    );
+}
+
+/// `/api/compression-demo` errors carry their status with the error JSON.
+#[test]
+fn compression_demo_errors_are_not_200() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let project = tempdir().expect("project");
+    let root = project.path().to_string_lossy().into_owned();
+    let demo = |query: &str| {
+        super::project_binding::in_request_project(Some(&root), || {
+            routes::route_response("/api/compression-demo", query, None, None, true, "GET", "")
+        })
+    };
+    let (status, _, body) = demo("");
+    assert_eq!(status, "400 Bad Request");
+    assert!(body.contains("missing path"), "{body}");
+    let (status, _, body) = demo("path=src/absent.rs");
+    assert_eq!(status, "404 Not Found");
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["error"], "failed to read file");
+    assert_eq!(v["requested_path"], "src/absent.rs");
+}
+
+fn get_json(root: &str, route: &str, query: &str) -> (&'static str, serde_json::Value) {
+    let (status, _, body) = super::project_binding::in_request_project(Some(root), || {
+        routes::route_response(route, query, None, None, true, "GET", "")
+    });
+    let value = serde_json::from_str(&body).unwrap_or_else(|e| panic!("{route}: {e}: {body}"));
+    (status, value)
+}
+
+/// The Project Map routes over an indexed project: each answers its
+/// documented shape from the real index.
+#[test]
+fn map_routes_answer_from_the_index() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let project = tempdir().expect("project");
+    let src = project.path().join("src");
+    std::fs::create_dir_all(project.path().join(".git")).unwrap();
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(
+        src.join("lib.rs"),
+        "pub mod util;\n\npub fn entry() -> u32 {\n    util::helper() + 1\n}\n",
+    )
+    .unwrap();
+    std::fs::write(src.join("util.rs"), "pub fn helper() -> u32 {\n    41\n}\n").unwrap();
+    let root = project.path().to_string_lossy().into_owned();
+    crate::core::graph_provider::build_property_graph(&root).expect("index the project");
+
+    let (status, graph) = get_json(&root, "/api/graph", "");
+    assert_eq!(status, "200 OK", "{graph}");
+    let files: Vec<&str> = graph["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["path"].as_str())
+        .collect();
+    assert!(files.iter().any(|f| f.ends_with("util.rs")), "{files:?}");
+    assert!(graph["edges"].is_array() && graph["language_matrix"].is_array());
+
+    let (status, listed) = get_json(&root, "/api/graph-files", "");
+    assert_eq!(status, "200 OK");
+    assert_eq!(listed["files"].as_array().map(Vec::len), Some(files.len()));
+
+    let (status, heat) = get_json(&root, "/api/heatmap", "");
+    assert_eq!(status, "200 OK");
+    assert_eq!(heat.as_array().map(Vec::len), Some(files.len()));
+
+    let (status, symbols) = get_json(&root, "/api/symbols", "q=helper");
+    assert_eq!(status, "200 OK");
+    let names: Vec<&str> = symbols
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|s| s["name"].as_str())
+        .collect();
+    assert_eq!(names, ["helper"], "{symbols}");
+
+    let (status, tree) = get_json(&root, "/api/tree", "");
+    assert_eq!(status, "200 OK");
+    assert_eq!(tree["file_count"].as_u64(), Some(files.len() as u64));
+    assert!(tree["symbol_count"].as_u64() >= Some(2), "{tree}");
+
+    let (status, report) = get_json(&root, "/api/architecture", "");
+    assert_eq!(status, "200 OK");
+    assert!(
+        report["markdown"]
+            .as_str()
+            .is_some_and(|md| md.starts_with("# Architecture Report")),
+        "{report}"
+    );
+
+    let (status, found) = get_json(&root, "/api/routes", "");
+    assert_eq!(status, "200 OK");
+    assert!(found["routes"].is_array());
+    assert_eq!(
+        found["indexed_file_count"].as_u64(),
+        Some(files.len() as u64)
+    );
+
+    // The call graph builds in the background: `202` until it is ready.
+    let started = std::time::Instant::now();
+    let calls = loop {
+        let (status, calls) = get_json(&root, "/api/call-graph", "");
+        if status == "200 OK" {
+            break calls;
+        }
+        assert_eq!(status, "202 Accepted", "{calls}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(30));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_eq!(calls["status"], "ready");
+    assert!(
+        calls["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["callee_name"]
+                .as_str()
+                .is_some_and(|c| c.ends_with("helper"))),
+        "{calls}"
+    );
+    let (status, progress) = get_json(&root, "/api/call-graph/status", "");
+    assert_eq!(status, "200 OK");
+    assert_eq!(progress["status"], "ready");
+}
+
+/// `/api/learning`, `/api/solution` and `/api/snapshots` answer their
+/// documented shapes on a fresh installation.
+#[test]
+fn learning_solution_and_snapshot_routes_answer_their_shapes() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let project = tempdir().expect("project");
+    std::fs::create_dir_all(project.path().join(".git")).unwrap();
+    let root = project.path().to_string_lossy().into_owned();
+
+    let (status, learning) = get_json(&root, "/api/learning", "");
+    assert_eq!(status, "200 OK");
+    for key in ["playbook", "scents"] {
+        assert!(learning[key].is_array(), "{key}: {learning}");
+    }
+    assert!(learning.get("litm").is_none(), "{learning}");
+    assert!(learning.get("efficacy").is_some());
+
+    let (status, solution) = get_json(&root, "/api/solution", "");
+    assert_eq!(status, "200 OK");
+    assert!(solution["enabled"].is_boolean() && solution["intensity"].is_string());
+    for key in ["output_savings", "loc", "decisions"] {
+        assert!(solution[key].is_object(), "{key}: {solution}");
+    }
+    assert!(solution["trend_7d"].is_array() && solution["top_patterns"].is_array());
+
+    let (status, timeline) = get_json(&root, "/api/snapshots", "");
+    assert_eq!(status, "200 OK");
+    assert_eq!(timeline["project_root"], root.as_str());
+    assert_eq!(timeline["count"], 0);
+    assert!(timeline["head"].is_null() && timeline["entries"].is_array());
+    let (status, missing) = get_json(&root, "/api/snapshot", "");
+    assert_eq!(status, "400 Bad Request");
+    assert!(missing["error"].is_string());
+    let (status, unknown) = get_json(&root, "/api/snapshot", "id=deadbeef");
+    assert_eq!(status, "404 Not Found");
+    assert!(unknown["error"].is_string());
+}
+
+/// Every file under `dirs` with its size and mtime, except `*.lock` files: a
+/// read takes the stores' cross-process locks, which hold no state.
+fn files_under(
+    dirs: &[&std::path::Path],
+) -> std::collections::BTreeMap<std::path::PathBuf, (u64, std::time::SystemTime)> {
+    dirs.iter()
+        .flat_map(|dir| {
+            walkdir::WalkDir::new(dir)
+                .into_iter()
+                .filter_map(Result::ok)
+        })
+        .filter(|entry| entry.file_type().is_file())
+        .filter(|entry| entry.path().extension().is_none_or(|ext| ext != "lock"))
+        .filter_map(|entry| {
+            let meta = entry.metadata().ok()?;
+            Some((entry.into_path(), (meta.len(), meta.modified().ok()?)))
+        })
+        .collect()
+}
+
+/// A GET only reads: the context-control list saves neither the ledger nor
+/// the overlay store, the telemetry status creates no installation ID, and
+/// the graph enrichment, which writes, answers only a POST.
+#[test]
+fn get_routes_write_nothing() {
+    let data = crate::core::data_dir::isolated_data_dir();
+    let project = tempdir().expect("project");
+    std::fs::create_dir_all(project.path().join(".git")).unwrap();
+    let root = project.path().to_string_lossy().into_owned();
+    let get = |route: &str| {
+        super::project_binding::in_request_project(Some(&root), || {
+            routes::route_response(route, "", None, None, true, "GET", "")
+        })
+    };
+    // The config loader's one-time migration marker is written by the first
+    // config load of any process, not by a route.
+    let _ = crate::core::config::Config::try_load_global();
+    let _ = crate::core::config::Config::load();
+    let before = files_under(&[data.path(), project.path()]);
+
+    let (status, _, body) = get("/api/context-control");
+    assert_eq!(status, "200 OK", "{body}");
+    let control: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(control["result"].is_string() && control["overlays"].is_array());
+
+    let (status, _, body) = get("/api/telemetry");
+    assert_eq!(status, "200 OK", "{body}");
+    let telemetry: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(telemetry["installation_id"].is_null(), "{body}");
+
+    let (status, _, body) = get("/api/graph/enrich");
+    assert_eq!(status, "405 Method Not Allowed");
+    assert!(body.contains("POST"), "{body}");
+
+    let after = files_under(&[data.path(), project.path()]);
+    let changed: Vec<_> = after
+        .iter()
+        .filter(|(path, stamp)| before.get(*path) != Some(stamp))
+        .map(|(path, _)| path)
+        .collect();
+    assert!(changed.is_empty(), "a GET wrote {changed:?}");
+    assert_eq!(after.len(), before.len(), "a GET removed files");
+    assert!(crate::core::installation_id::existing().is_none());
+}

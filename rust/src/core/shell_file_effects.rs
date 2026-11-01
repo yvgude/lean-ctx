@@ -41,9 +41,21 @@ pub(crate) struct ShellFileEffects {
     pub(crate) edits: Vec<String>,
 }
 
-/// Classify the file reads and edits of `command`.
+/// Nested `sh -c`/`lean-ctx -c` levels followed; deeper ones are not read.
+const MAX_NESTED_SHELLS: usize = 16;
+
+/// Classify the file reads and edits of `command`. A command longer than the
+/// shell gate validates is not analysed: the hooks run this before the gate,
+/// and each nested `sh -c` level is another recursive pass.
 #[must_use]
 pub(crate) fn analyze(command: &str) -> ShellFileEffects {
+    if command.len() > crate::core::shell_allowlist::MAX_VALIDATED_COMMAND_BYTES {
+        return ShellFileEffects::default();
+    }
+    analyze_nested(command, 0)
+}
+
+fn analyze_nested(command: &str, depth: usize) -> ShellFileEffects {
     let mut effects = ShellFileEffects::default();
     // Patch bodies live inside heredocs or quoted arguments; scan them before
     // the heredoc bodies are stripped for segmenting.
@@ -104,8 +116,9 @@ pub(crate) fn analyze(command: &str) -> ShellFileEffects {
             "lean-ctx" | "sh" | "bash" | "zsh" | "dash" => {
                 if let [flag, inner, ..] = args
                     && *flag == "-c"
+                    && depth < MAX_NESTED_SHELLS
                 {
-                    let nested = analyze(inner);
+                    let nested = analyze_nested(inner, depth + 1);
                     for (path, kind) in nested.reads {
                         push_read(&mut effects.reads, join(cwd.as_deref(), &path), kind);
                     }

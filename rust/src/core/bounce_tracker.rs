@@ -351,8 +351,6 @@ impl BounceTracker {
             // Long-term per-path memory (#496): remember which exact
             // files keep bouncing so auto-mode learns across restarts.
             crate::core::path_mode_memory::record_bounce(&norm_path);
-            // A bounce penalizes the bandit arm that produced the read (#593).
-            crate::core::adaptive_thresholds::penalize_read_arm(&norm_path);
             // Stigmergy (#540): a bounce marks this path as Stuck so
             // other agents see friction here. Background: lock may block.
             // The project was resolved at detection, inside the request.

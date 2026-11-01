@@ -132,9 +132,21 @@ pub(super) fn response_cache_key(
     {
         return None;
     }
-    CACHEABLE_TOOLS.contains(&tool_name).then(|| {
+    if !CACHEABLE_TOOLS.contains(&tool_name) {
+        return None;
+    }
+    // The answer is a function of the files too: an edit between two identical
+    // calls must miss, or the model sees its own change undone and re-reads
+    // the file to resolve the contradiction (benchmark replay: `ctx_search`
+    // after `ctx_patch` returned the pre-edit matches). The stat-only corpus
+    // signature notices edits by any tool; a scan root it cannot fingerprint
+    // is not cached.
+    let revision = corpus_revision(arguments, project_root)?;
+    Some({
         let mut input = Vec::with_capacity(project_root.len() + 1);
         input.extend_from_slice(project_root.as_bytes());
+        input.push(0);
+        input.extend_from_slice(&revision.to_be_bytes());
         input.push(0);
         input.extend_from_slice(
             &serde_json::to_vec(&arguments).expect("JSON arguments must serialize"),
@@ -151,6 +163,26 @@ pub(super) fn response_cache_key(
         let arguments_hash = u64::from_be_bytes(hash_bytes);
         ResponseCacheKey::new(tool_name, arguments_hash, 0.0, 0)
     })
+}
+
+/// Stat-only signature of the tree a cacheable call scans: its `path`
+/// argument resolved against the project root, else the project root.
+fn corpus_revision(arguments: Option<&Map<String, Value>>, project_root: &str) -> Option<u64> {
+    let arg = arguments
+        .and_then(|args| args.get("path"))
+        .and_then(Value::as_str)
+        .filter(|path| !path.trim().is_empty());
+    let root = match arg {
+        Some(path) if std::path::Path::new(path).is_absolute() => std::path::PathBuf::from(path),
+        Some(path) if !project_root.is_empty() => std::path::Path::new(project_root).join(path),
+        None if !project_root.is_empty() => std::path::PathBuf::from(project_root),
+        Some(_) | None => return None,
+    };
+    if !root.exists() {
+        // Nothing on disk to drift; the path is part of the key already.
+        return Some(0);
+    }
+    crate::core::search_index::corpus_signature(&root.to_string_lossy(), true, false)
 }
 
 fn cache_allowed_for_current_egress(config: &crate::core::config::Config) -> bool {
@@ -505,7 +537,8 @@ impl LeanCtxServer {
         let name = resolved_name.as_str();
         let args = resolved_args.as_ref();
         let config = entitlements.config;
-        if let Some(denied) = Self::guard_role_and_policy(name) {
+        let audit_agent = self.audit_agent_id().await;
+        if let Some(denied) = Self::guard_role_and_policy(name, &audit_agent) {
             return Ok(PreparedCallResult::Terminal(
                 denied,
                 "role or policy denied",
@@ -539,7 +572,7 @@ impl LeanCtxServer {
         // A wrapper must not plan for a tool that direct admission forbids.
         // Dispatch still rechecks the inner role/rate/workflow boundaries.
         if inner_call.is_some() {
-            if let Some(denied) = Self::guard_role_and_policy(guard_name) {
+            if let Some(denied) = Self::guard_role_and_policy(guard_name, &audit_agent) {
                 return Ok(PreparedCallResult::Terminal(
                     denied,
                     "inner role or policy denied",
@@ -587,9 +620,9 @@ impl LeanCtxServer {
             }
         }
 
-        // Hive bus control (C5b): `hold`/`stop` refuse mutating tools,
-        // including via ctx_call. The agent id is copied out first so no
-        // lock is held across the file check.
+        // Hive bus control (C5b): `hold`/`stop` pause Hive tools only,
+        // including via ctx_call; local tools are never gated. The agent id
+        // is copied out first so no lock is held across the file check.
         let agent = match self.agent_id.read().await.clone() {
             Some(agent) => Some(agent),
             None => self.presence_agent_id.read().await.clone(),
@@ -613,7 +646,7 @@ impl LeanCtxServer {
             ));
         }
 
-        if let Some(blocked) = Self::guard_egress(guard_name, guard_args) {
+        if let Some(blocked) = Self::guard_egress(guard_name, guard_args, &audit_agent) {
             return Ok(PreparedCallResult::Terminal(blocked, "egress denied"));
         }
 
@@ -1004,8 +1037,11 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
                 // including the inner tool carried by ctx_call, is dispatched.
                 let (guard_name, guard_args) =
                     crate::tools::registered::ctx_call::resolve(&call.name, call.args.as_ref())?;
-                if let Some(mut denied) = LeanCtxServer::guard_role_and_policy(&guard_name)
-                    .or_else(|| LeanCtxServer::guard_egress(&guard_name, guard_args.as_ref()))
+                let audit_agent = self.server.audit_agent_id().await;
+                if let Some(mut denied) =
+                    LeanCtxServer::guard_role_and_policy(&guard_name, &audit_agent).or_else(|| {
+                        LeanCtxServer::guard_egress(&guard_name, guard_args.as_ref(), &audit_agent)
+                    })
                 {
                     if crate::server::dynamic_tools::INTERNAL_HOST_TOOLS
                         .contains(&guard_name.as_str())

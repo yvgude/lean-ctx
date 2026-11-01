@@ -237,12 +237,12 @@ fn load_policy(client_id: &str, project_root: Option<&str>) -> IdePermissionPoli
     }
 }
 
-/// Convert a check into a blocking tool result (like `role_guard`): a successful
-/// result carrying the explanation, so the agent reads *why* it was held back.
+/// Convert a check into a blocking tool result (like `role_guard`): a tool
+/// error carrying the explanation, so the agent reads *why* it was held back.
 #[must_use]
 pub fn into_call_tool_result(check: &PermissionCheck) -> Option<CallToolResult> {
     if check.blocked {
-        Some(CallToolResult::success(vec![ContentBlock::text(
+        Some(CallToolResult::error(vec![ContentBlock::text(
             check
                 .message
                 .clone()
@@ -328,7 +328,10 @@ mod tests {
     #[test]
     fn into_result_only_when_blocked() {
         assert!(into_call_tool_result(&PermissionCheck::allow()).is_none());
-        assert!(into_call_tool_result(&PermissionCheck::blocked("x".into())).is_some());
+        // A block is a tool error, like a role or policy denial.
+        let blocked =
+            into_call_tool_result(&PermissionCheck::blocked("x".into())).expect("blocked");
+        assert_eq!(blocked.is_error, Some(true));
     }
 
     #[test]

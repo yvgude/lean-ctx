@@ -8,6 +8,29 @@ use super::{
     ProvenanceStore, ProvenanceTracker,
 };
 
+/// A store keyed by the SHA-256 of the raw path (releases up to 3.12.0) is
+/// moved to the `hash_project_root` key and keeps its records.
+#[test]
+fn tracker_adopts_a_store_under_the_legacy_path_hash() {
+    use sha2::{Digest, Sha256};
+    let data = tempdir().expect("data dir");
+    let project = tempdir().expect("project dir");
+    let root = project.path().to_string_lossy().into_owned();
+    let legacy_key = hex::encode(Sha256::digest(root.as_bytes()));
+    let legacy = ProvenanceStore::with_data_dir(data.path(), &legacy_key).expect("legacy store");
+    legacy
+        .record_file_touch(record("src/old.rs", "session-1", "op-legacy"))
+        .expect("legacy record");
+
+    let tracker = ProvenanceTracker::open_in(data.path(), project.path()).expect("tracker");
+    assert_eq!(
+        tracker.store().project_hash(),
+        crate::core::project_hash::hash_project_root(&root)
+    );
+    assert_eq!(tracker.store().query_by_path("src/old.rs").len(), 1);
+    assert!(!data.path().join("provenance").join(&legacy_key).exists());
+}
+
 fn store() -> (tempfile::TempDir, ProvenanceStore) {
     let directory = tempdir().expect("create temporary provenance directory");
     let store = ProvenanceStore::with_data_dir(directory.path(), "test-project")

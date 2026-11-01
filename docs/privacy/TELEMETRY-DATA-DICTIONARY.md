@@ -43,6 +43,10 @@ Grenzen: höchstens `MAX_BATCH_EVENTS` Ereignisse; leerer Batch ist ungültig.
 | `app_version` | Build | Versionsverteilung | Backend-Politik | nein | nein | keine | mit Installation |
 | `event` | Client | typisierte Nutzlast | siehe unten | siehe unten | nein | siehe unten | mit Installation |
 
+`account_id` und `organization_id` setzt LeanCTX | OSS nie: Seine Sendungen
+tragen keine Konto- oder Organisationsbindung. Die Felder gehören zum
+gemeinsamen Vertrag mit dem gehosteten Dienst.
+
 Rohe Bezeichner sind als pseudonyme ID unzulässig: Nur das Präfix
 `hmac-sha256:` mit 64 Kleinbuchstaben-Hexzeichen wird akzeptiert, sowohl vom
 Konstruktor als auch beim Deserialisieren. Fehlermeldungen geben die abgewiesene
@@ -59,23 +63,34 @@ Felder werden bereits beim Deserialisieren abgewiesen, auch innerhalb eines
 Envelopes. Sie werden nicht stillschweigend entfernt. Die gültigen V2-Wire-Bytes
 bleiben unverändert; die Korrektur erweitert das erlaubte Schema nicht.
 
-| Ereignis | Metrik-Typ |
-|---|---|
-| `heartbeat` | `HeartbeatMetrics` |
-| `setup_profile` | `SetupProfileMetrics` |
-| `setup_completed`, `integration_detected` | `OccurrenceMetrics` |
-| `session_aggregate` | `SessionMetrics` |
-| `tool_usage_aggregate` | `ToolUsageMetrics` |
-| `tool_call_aggregate` | `ToolCallMetrics` |
-| `autopilot_aggregate`, `autopilot_fallback_aggregate` | `DecisionMetrics` |
-| `sync_aggregate` | `SyncMetrics` |
-| `trial_started`, `upgrade_viewed`, `checkout_started`, `subscription_activated`, `subscription_cancelled`, `team_created`, `team_member_invited` | `OccurrenceMetrics` |
-| `trial_ended`, `team_context_promoted` | `OutcomeMetrics` |
-| `error_category_aggregate` | `ErrorMetrics` |
-| `version_upgrade` | `VersionUpgradeMetrics` |
-| `orchestration_aggregate` | `OrchestrationMetrics` |
-| `usage_history` | `UsageHistoryMetrics` (ab 3.11.1) |
-| `feature_aggregate` | `FeatureMetrics` (ab 3.11.1) |
+Der Vertrag ist mit dem gehosteten Dienst geteilt, der denselben Typ liest.
+Die Spalte „LeanCTX | OSS" sagt, ob die Engine das Ereignis sendet:
+
+- **ja** — wird gebildet, sobald es etwas zu zählen gibt;
+- **nie (Zähler ohne Aufrufer)** — der Zähler existiert in
+  `core::telemetry_aggregate`, wird aber von keinem Code-Pfad der Engine
+  erhöht; das Ereignis bleibt deshalb aus;
+- **nie (gehostete Ebene)** — gehört zu Testphase, Abonnement, Team und
+  bezahlter Orchestrierung des gehosteten Dienstes; die Engine bildet es nie.
+
+| Ereignis | Metrik-Typ | LeanCTX \| OSS |
+|---|---|---|
+| `heartbeat` | `HeartbeatMetrics` | ja |
+| `setup_profile` | `SetupProfileMetrics` | ja |
+| `setup_completed`, `integration_detected` | `OccurrenceMetrics` | ja (nach `setup`) |
+| `session_aggregate` | `SessionMetrics` | ja |
+| `tool_usage_aggregate` | `ToolUsageMetrics` | ja |
+| `tool_call_aggregate` | `ToolCallMetrics` | ja |
+| `autopilot_aggregate`, `autopilot_fallback_aggregate` | `DecisionMetrics` | nie (Zähler ohne Aufrufer) |
+| `sync_aggregate` | `SyncMetrics` | nie (Zähler ohne Aufrufer) |
+| `checkout_started` | `OccurrenceMetrics` | nie (Zähler ohne Aufrufer) |
+| `trial_started`, `upgrade_viewed`, `subscription_activated`, `subscription_cancelled`, `team_created`, `team_member_invited` | `OccurrenceMetrics` | nie (gehostete Ebene) |
+| `trial_ended`, `team_context_promoted` | `OutcomeMetrics` | nie (gehostete Ebene) |
+| `error_category_aggregate` | `ErrorMetrics` | ja |
+| `version_upgrade` | `VersionUpgradeMetrics` | ja (beim Wechsel der Hauptversion) |
+| `orchestration_aggregate` | `OrchestrationMetrics` | nie (gehostete Ebene) |
+| `usage_history` | `UsageHistoryMetrics` (ab 3.11.1) | ja |
+| `feature_aggregate` | `FeatureMetrics` (ab 3.11.1) | ja |
 
 ## 4. Metrikfelder
 
@@ -89,7 +104,7 @@ Löschung mit der Installation. Abweichungen sind vermerkt.
 | Feld | Werte | Zweck | Optional |
 |---|---|---|---|
 | `distribution_channel` | `cargo`, `homebrew`, `npm`, `docker`, `source`, `aur`, `pypi`, `binary`, `unknown` | Kanalverteilung. Ab 3.11.1 aus dem Speicherort der laufenden Datei abgeleitet (z. B. `node_modules` → `npm`); der Pfad selbst verlässt den Rechner nie | nein |
-| `client_family` | `claude`, `codex`, `cursor`, `gemini`, `windsurf`, `zed`, `vscode_copilot`, `kiro`, `antigravity`, `codebuddy`, `codewhale`; ab 3.11.1 zusätzlich `cline`, `roo_code`, `kilo_code`, `continue_dev`, `opencode`, `goose`, `amp`, `augment`, `jetbrains`, `warp`, `trae`, `qwen_code`, `crush`, `claude_desktop`, `chatgpt`, `lm_studio`, `copilot_cli`, `visual_studio`, `neovim`, `emacs`, `factory` und `none`; ab 3.11.5 zusätzlich `pi` (Pi Coding Agent über seine MCP-Erweiterungen wie `pi-lean-ctx` oder `pi-mcp-adapter`) und `oh_my_pi`; sonst `other` | Client-Kohorte (aus dem MCP-Handshake, sonst Umgebungsvariablen). `none` = kein MCP-Client gesehen (nur CLI und Shell-Hooks), `other` = ein MCP-Client, den LeanCTX nicht kennt; sein Name wird nie gesendet | nein |
+| `client_family` | `claude`, `codex`, `cursor`, `gemini`, `windsurf`, `zed`, `vscode_copilot`, `kiro`, `antigravity`, `codebuddy`, `codewhale`; ab 3.11.1 zusätzlich `cline`, `roo_code`, `kilo_code`, `continue_dev`, `opencode`, `goose`, `amp`, `augment`, `jetbrains`, `warp`, `trae`, `qwen_code`, `crush`, `claude_desktop`, `chatgpt`, `lm_studio`, `copilot_cli`, `visual_studio`, `neovim`, `emacs`, `factory` und `none`; ab 3.11.5 zusätzlich `pi` (Pi Coding Agent über seine MCP-Erweiterungen wie `pi-lean-ctx` oder `pi-mcp-adapter`) und `oh_my_pi`; sonst `other` | Client-Kohorte: aus dem MCP-Handshake dieses Prozesses, sonst dem zuletzt gespeicherten Handshake (höchstens 7 Tage alt), sonst aus den Markern `CLAUDECODE`, `CODEX_HOME`, `CURSOR_TRACE_ID`, `GEMINI_CLI` (unter Linux auch aus einem Elternprozess, wenn der Client die Umgebung seines MCP-Servers filtert; nur ob sie gesetzt sind, nie ihr Wert). `none` = kein MCP-Client gesehen (nur CLI und Shell-Hooks), `other` = ein MCP-Client, den LeanCTX nicht kennt; sein Name wird nie gesendet | nein |
 | `operating_system` | `macos`, `linux`, `windows`, `other` | Plattformverteilung | nein |
 | `architecture` | `x86_64`, `aarch64`, `other` | Build-Priorisierung | nein |
 | `install_age` | `lt_1h`, `lt_1d`, `lt_7d`, `lt_30d`, `gte_30d` | Alter der lokalen Installationskennung als Bereich; trennt Menschen von kurzlebigen Agent-Sandboxes (ab 3.11.1) | ja |

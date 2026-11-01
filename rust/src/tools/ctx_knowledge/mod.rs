@@ -7,6 +7,8 @@ use crate::core::consolidation_engine::ConsolidateOptions;
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::memory_policy::MemoryPolicy;
 use crate::core::session::SessionState;
+mod changes;
+pub(crate) use changes::session_change_count;
 pub(crate) mod embeddings;
 pub(crate) use embeddings::*;
 mod linked;
@@ -133,6 +135,9 @@ pub fn handle_outcome(
             query,
         ),
         "status" => handle_status(project_root),
+        "changes" => changes::handle_changes(project_root, query, session_id),
+        "repin" => changes::handle_repin(project_root, category, key),
+        "coverage" => changes::handle_coverage(project_root),
         "health" => handle_health(project_root),
         "lifecycle_report" => handle_lifecycle_report(project_root),
         "remove" => handle_remove(project_root, category, key),
@@ -146,12 +151,13 @@ pub fn handle_outcome(
         "embeddings_reset" => handle_embeddings_reset(project_root),
         "embeddings_reindex" => handle_embeddings_reindex(project_root),
         "judge" => handle_judge(project_root, category, key, value, query),
-        "cognition_loop" => handle_cognition_loop(project_root),
+        // Deprecated no-op (rust/data/DEPRECATIONS.toml): accepted until removal.
+        "cognition_loop" => "ctx_knowledge action=cognition_loop is retired and has no effect: scheduled consolidation already runs the memory lifecycle (decay, merge, archival). Use action=consolidate to run it now.".to_string(),
         "bridge_publish" => handle_bridge_publish(project_root, session_id),
         "bridge_pull" => handle_bridge_pull(project_root, session_id),
         "bridge_status" => handle_bridge_status(project_root),
         _ => format!(
-            "Unknown action: {action}. Use: policy, remember, recall, pattern, feedback, judge, relate, unrelate, relations, relations_diagram, status, health, lifecycle_report, remove, export, consolidate, consolidate_preview, restore, timeline, rooms, search, wakeup, embeddings_status, embeddings_reset, embeddings_reindex, cognition_loop, bridge_publish, bridge_pull, bridge_status"
+            "Unknown action: {action}. Use: policy, remember, recall, pattern, feedback, judge, relate, unrelate, relations, relations_diagram, status, health, lifecycle_report, remove, export, consolidate, consolidate_preview, restore, timeline, rooms, search, wakeup, embeddings_status, embeddings_reset, embeddings_reindex, bridge_publish, bridge_pull, bridge_status"
         ),
         },
     };
@@ -890,19 +896,25 @@ fn handle_import_okf(
         .collect();
     let mut relations_added = 0usize;
     if !imp.edges.is_empty() {
-        let mut graph = crate::core::knowledge_relations::KnowledgeRelationGraph::load_or_create(
+        let saved = crate::core::knowledge_relations::KnowledgeRelationGraph::mutate_locked(
+            project_root,
             &knowledge.project_hash,
+            |graph| {
+                let mut added = 0usize;
+                for e in imp.edges {
+                    let endpoints_current = current
+                        .contains(&(e.from.category.clone(), e.from.key.clone()))
+                        && current.contains(&(e.to.category.clone(), e.to.key.clone()));
+                    if endpoints_current && graph.upsert_edge(e.from, e.to, e.kind, session_id) {
+                        added += 1;
+                    }
+                }
+                Some(added)
+            },
         );
-        for e in imp.edges {
-            let endpoints_current = current
-                .contains(&(e.from.category.clone(), e.from.key.clone()))
-                && current.contains(&(e.to.category.clone(), e.to.key.clone()));
-            if endpoints_current && graph.upsert_edge(e.from, e.to, e.kind, session_id) {
-                relations_added += 1;
-            }
-        }
-        if let Err(err) = graph.save() {
-            tracing::warn!("OKF import: relations save failed: {err}");
+        match saved {
+            Ok(added) => relations_added = added.unwrap_or_default(),
+            Err(err) => tracing::warn!("OKF import: relations save failed: {err}"),
         }
     }
 
@@ -1063,16 +1075,6 @@ fn handle_rooms(project_root: &str) -> String {
         out.push_str(&format!("  [{cat}] {count} fact(s)\n"));
     }
     out
-}
-
-fn handle_cognition_loop(project_root: &str) -> String {
-    let cfg = crate::core::config::Config::load().autonomy;
-    if !cfg.cognition_loop_enabled {
-        return "Cognition loop is disabled (autonomy.cognition_loop_enabled=false).".to_string();
-    }
-    let max_steps = cfg.cognition_loop_max_steps;
-    let report = crate::core::cognition_loop::run_cognition_loop(project_root, max_steps);
-    format!("{report}")
 }
 
 fn handle_bridge_publish(project_root: &str, session_id: &str) -> String {

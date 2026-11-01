@@ -168,17 +168,68 @@ pub(crate) fn context_window_for_model(model: &str) -> usize {
     200_000
 }
 
-/// Small models hosts use for background work (titles, summaries, sub-steps).
-/// They are never the model the user works with, so they never become the
-/// detected or last-seen model.
+/// Model ids hosts send for background work (titles, summaries, routing,
+/// sub-steps): Claude Code's Haiku, the OpenAI title/summary models and the
+/// Gemini CLI router. Matched exactly, so a primary model that merely contains
+/// "mini" (`gemini-2.5-pro`, `minimax-m2`) or "fast" (`grok-code-fast-1`) is
+/// still recorded.
+const BACKGROUND_MODELS: &[&str] = &[
+    "claude-3-haiku",
+    "claude-3-5-haiku",
+    "claude-3.5-haiku",
+    "claude-haiku-4-5",
+    "claude-haiku-4.5",
+    "gpt-4o-mini",
+    "gpt-4.1-nano",
+    "gpt-5-nano",
+    "gemini-2.0-flash-lite",
+    "gemini-2.5-flash-lite",
+];
+
+/// Small models hosts use for background work. They are never the model the
+/// user works with, so they never become the detected or last-seen model.
+///
+/// The id is compared after removing what hosts add around it: a provider
+/// route (`anthropic/…`, `us.anthropic.…`), a `[1m]` window marker, a Bedrock
+/// `-v1:0` revision and a `-latest` or date snapshot suffix.
 pub(crate) fn is_background_model(model: &str) -> bool {
-    let m = model.to_lowercase();
-    m.contains("flash")
-        || m.contains("mini")
-        || m.contains("haiku")
-        || m.contains("fast")
-        || m.contains("nano")
-        || m.contains("small")
+    let mut m = model.trim().to_lowercase();
+    if let Some((_, last)) = m.rsplit_once('/') {
+        m = last.to_string();
+    }
+    if let Some((_, rest)) = m.split_once("anthropic.") {
+        m = rest.to_string();
+    }
+    if let Some((base, _)) = split_window_suffix(&m) {
+        m = base.to_string();
+    }
+    if let Some((base, rev)) = m.rsplit_once("-v")
+        && rev.contains(':')
+    {
+        m = base.to_string();
+    }
+    if let Some(base) = m.strip_suffix("-latest") {
+        m = base.to_string();
+    }
+    if let Some((base, date)) = m.rsplit_once('-')
+        && date.len() == 8
+        && date.bytes().all(|b| b.is_ascii_digit())
+    {
+        m = base.to_string();
+    }
+    let parts: Vec<&str> = m.split('-').collect();
+    if parts.len() > 3
+        && let [.., y, mo, d] = parts.as_slice()
+        && y.len() == 4
+        && mo.len() == 2
+        && d.len() == 2
+        && [y, mo, d]
+            .iter()
+            .all(|p| p.bytes().all(|b| b.is_ascii_digit()))
+    {
+        m = parts[..parts.len() - 3].join("-");
+    }
+    BACKGROUND_MODELS.contains(&m.as_str())
 }
 
 #[cfg(test)]
@@ -249,6 +300,35 @@ mod tests {
     fn unknown_marker_falls_back_to_base_lookup() {
         // A non-window bracket suffix must not break base-model resolution.
         assert_eq!(context_window_for_model("gpt-5.5[thinking]"), 1_048_576);
+    }
+
+    #[test]
+    fn background_models_match_exact_ids_only() {
+        for id in [
+            "claude-haiku-4-5-20251001",
+            "claude-3-5-haiku-20241022",
+            "anthropic/claude-haiku-4.5",
+            "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+            "gpt-4o-mini",
+            "gpt-4o-mini-2024-07-18",
+            "gpt-5-nano",
+            "gemini-2.5-flash-lite",
+            "claude-3-5-haiku-latest",
+        ] {
+            assert!(is_background_model(id), "{id} is a background model");
+        }
+        for id in [
+            "gemini-2.5-pro",
+            "gemini-3.1-pro",
+            "minimax-m2",
+            "grok-code-fast-1",
+            "gpt-5-mini",
+            "gpt-5.4-mini",
+            "claude-opus-4-8[1m]",
+            "claude-sonnet-4-5-20250929",
+        ] {
+            assert!(!is_background_model(id), "{id} is a primary model");
+        }
     }
 
     #[test]

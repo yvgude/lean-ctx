@@ -247,7 +247,7 @@ fn bound_handoff_posts_before_finishing_presence() {
 }
 
 #[test]
-fn hive_vetoes_refuse_the_named_lease_and_handoff_only() {
+fn hive_vetoes_pause_only_the_hive_side_of_a_lease_and_handoff() {
     use crate::core::hive::bus::control;
     use lean_ctx_protocol::hive::bus::{BusFrameV1, ControlAction};
     let iso = crate::core::data_dir::isolated_data_dir();
@@ -280,6 +280,8 @@ fn hive_vetoes_refuse_the_named_lease_and_handoff_only() {
     };
     let registered = call("register", None, None, None);
     let agent = registered.split_whitespace().nth(2).unwrap().to_string();
+    let peer = call("register", None, None, None);
+    let peer = peer.split_whitespace().nth(2).unwrap().to_string();
     let (_, vetoed_ref) = super::lease_resource(root, "a.rs").unwrap();
     let veto = |seq: u64, target_ref: String| BusFrameV1::Control {
         control_id: format!("ctl_{seq}"),
@@ -292,19 +294,98 @@ fn hive_vetoes_refuse_the_named_lease_and_handoff_only() {
         server_time: lean_ctx_protocol::UtcTimestamp::new("2026-10-21T12:00:00Z").unwrap(),
     };
     control::record(&store, &veto(1, vetoed_ref)).unwrap();
-    control::record(&store, &veto(2, format!("handoff:{agent}:peer"))).unwrap();
+    control::record(&store, &veto(2, format!("handoff:{agent}:{peer}"))).unwrap();
+    control::record(
+        &store,
+        &BusFrameV1::Control {
+            control_id: "ctl_3".into(),
+            target_agent: None,
+            target_ref: None,
+            action: ControlAction::Stop,
+            reason: "Owner review.".into(),
+            issued_by: "admin@acme".into(),
+            seq: 3,
+            server_time: lean_ctx_protocol::UtcTimestamp::new("2026-10-21T12:00:00Z").unwrap(),
+        },
+    )
+    .unwrap();
 
-    let refused = call("lease_acquire", Some(&agent), Some("a.rs"), None);
-    assert!(
-        refused.starts_with("Lease rejected: Hive control"),
-        "{refused}"
-    );
+    // Local work is never gated: the vetoed lease holds on this machine and
+    // says that Hive was not asked; the handoff here completes.
+    let local = call("lease_acquire", Some(&agent), Some("a.rs"), None);
+    assert!(local.starts_with("Lease granted:"), "{local}");
+    assert!(local.contains("scope=local (Hive control:"), "{local}");
     std::fs::write(project.join("b.rs"), "fn b() {}\n").unwrap();
     let granted = call("lease_acquire", Some(&agent), Some("b.rs"), None);
     assert!(granted.starts_with("Lease granted:"), "{granted}");
-    let handoff = call("handoff", Some(&agent), Some("done"), Some("peer"));
+    assert!(!granted.contains("Hive control"), "{granted}");
+    let handoff = call("handoff", Some(&agent), Some("done"), Some(&peer));
+    assert!(handoff.starts_with("Handoff complete:"), "{handoff}");
+}
+
+/// A refusal or veto Hive sends after the call answered releases the local
+/// lease and reaches the agent once, with its next `ctx_agent` call.
+#[test]
+fn a_late_hive_veto_releases_the_local_lease_and_reaches_the_next_call() {
+    use crate::core::hive::background;
+    use crate::core::hive::bus::leases::{Outcome, caller};
+    let iso = crate::core::data_dir::isolated_data_dir();
+    let project = iso.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(project.join("a.rs"), "fn a() {}\n").unwrap();
+    let root = project.to_str().unwrap();
+    let call = |action: &str, agent: Option<&str>, message: Option<&str>| {
+        handle(
+            action,
+            Some("codex"),
+            Some("dev"),
+            None,
+            root,
+            agent,
+            message,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+        )
+    };
+    let agent = call("register", None, None);
+    let agent = agent.split_whitespace().nth(2).unwrap().to_string();
+    let peer = call("register", None, None);
+    let peer = peer.split_whitespace().nth(2).unwrap().to_string();
+    let granted = call("lease_acquire", Some(&agent), Some("a.rs"));
+    let lease_ref = granted
+        .strip_prefix("Lease granted: ")
+        .and_then(|rest| rest.split_whitespace().next())
+        .unwrap_or_else(|| panic!("{granted}"))
+        .to_string();
+    let (kind, resource_ref) = super::lease_resource(root, "a.rs").unwrap();
+    let settle = super::LeaseSettle {
+        kind,
+        resource_ref,
+        agent_id: agent.clone(),
+        lease_ref,
+    };
+    background::submit(&caller(&agent), move || settle.acquired(Outcome::Vetoed));
+    assert!(background::wait_idle(std::time::Duration::from_secs(30)));
+
+    let next = call("control_status", Some(&agent), None);
     assert!(
-        handoff.starts_with("Handoff rejected: Hive control"),
-        "{handoff}"
+        next.starts_with("Hive answered your earlier requests:"),
+        "{next}"
     );
+    assert!(next.contains("a workspace veto bars this agent"), "{next}");
+    let taken = call("lease_acquire", Some(&peer), Some("a.rs"));
+    assert!(
+        taken.starts_with("Lease granted:"),
+        "the local lease was released: {taken}"
+    );
+    let again = call("control_status", Some(&agent), None);
+    assert!(!again.contains("Hive answered"), "shown once: {again}");
 }

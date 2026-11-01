@@ -81,19 +81,32 @@ remotes); a glob is expanded against the checkout to the files it selects
 there (at most 256 per pin). `search` is `emspace search` over pages (`query`
 required); `tasks` is `emspace task list` (`state` = backlog, todo, doing, done
 or dropped); `sessions` is `emspace session list` (`state` = open, the default,
-closed or all). Without the link or the CLI the provider is unavailable and
-runs nothing.
+closed or all); `page` reads one page with `mode=text`: `id=<slug>` the whole
+body, `query=outline` its sections with their line counts, `query=<section>`
+one section by slug path, last segment or heading text. Only `pages` is
+consolidated (`ContextProvider::consolidates`); the other resources read and
+add no second copy to the stores. Pages are not copied into knowledge facts:
+the space is the curated source, and a copy would not go stale with it.
+Without the link or the CLI the provider is unavailable and runs nothing.
 
 In a linked project the provider needs no call. While
 `output_hints.cross_source_hint` is on (the default in every built-in profile
-since 3.12.1), `ctx_read` starts a background index of the space on its first
-read and again after ten minutes, and shows the resulting hints; `false` turns
-both off. The pass is detached from the read, bounded like every provider call
-(30 s, 16 MiB), and runs at most once at a time per project across processes
-(a lock file beside the project's graph). Each pass replaces the previous one
+since 3.12.1), `ctx_read` keeps an index of the space current and shows the
+resulting hints; `false` turns both off. At most once a minute per process a
+background pass reads the journal's newest LSN (one read-only program) and
+re-reads the pages only when it moved since the last completed pass of any
+process, or an hour after it (for what the journal does not record, such as a
+new checkout file a glob pin selects); the LSN and time of that pass are kept
+beside the project's graph (`emspace-index.state`). The pass is detached from
+the read, bounded like every provider call (30 s, 16 MiB), and runs at most
+once at a time per project across processes (a lock file beside the project's
+graph). Each pass that reads pages replaces the previous one
 (chunks under `emspace://pages/` and every cross-source edge with an end
 there), and a failed read keeps it. It honours `providers.enabled` and
-`providers.auto_index` and the strict screen of an untrusted workspace.
+`providers.auto_index` and the strict screen of an untrusted workspace. A
+hint names the page's freshness in its relation: `documents, stale` when a
+pinned source moved under the page, `documents, noted` when a note accounts
+for that.
 `ctx_agent read` and `list` append the space's open sessions (title, author,
 plan up to 240 characters) after redaction, admitted and recorded as the
 source `provider:emspace/sessions`, fetched at most once a minute.
@@ -130,7 +143,7 @@ Each bridge registers with unique ID `mcp:<name>`. Supports:
 
 | Action | Parameters | Description |
 |---|---|---|
-| `query` | provider, resource, mode | Registry query; `mode=snapshot` returns the bounded versioned JSON contract below |
+| `query` | provider, resource, mode | Registry query; `mode=snapshot` returns the bounded versioned JSON contract below; `mode=text` lists each item with its body (admitted per item, not consolidated into the stores) |
 | `gitlab_issues` | state, labels, limit | List issues (sorted by updated_at desc) |
 | `gitlab_issue` | iid | Show single issue with description |
 | `gitlab_mrs` | state, limit | List merge requests |

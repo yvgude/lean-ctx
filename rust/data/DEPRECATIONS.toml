@@ -51,3 +51,93 @@ announced_in = "3.13.0"
 earliest_removal = "3.15.0"
 replacement = ""
 note = "The flag never changed what setup writes. It is accepted, warns on stderr and has no effect."
+
+[[deprecation]]
+id = "cli-serve-a2a-signing-key-argv"
+surface = "cli"
+subject = "lean-ctx serve --a2a-signing-key <key>"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx serve --a2a-signing-key-file <path> (or LEAN_CTX_A2A_SIGNING_KEY / LEAN_CTX_A2A_SIGNING_KEY_FILE)"
+note = "The key on the command line is visible in the process list. The flag still works and warns on stderr."
+
+[[deprecation]]
+id = "cli-serve-auth-token-argv"
+surface = "cli"
+subject = "lean-ctx serve --auth-token <token>"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx serve --auth-token-file <path> (or LEAN_CTX_HTTP_TOKEN / LEAN_CTX_HTTP_TOKEN_FILE)"
+note = "The token on the command line is visible in the process list. The flag still works and warns on stderr."
+
+[[deprecation]]
+id = "mcp-ctx-agent-poll-events-aliases"
+surface = "mcp-tool"
+subject = "ctx_agent action=poll_events with to_agent, category, message, privacy or ttl_hours"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "ctx_agent action=poll_events with workspace_id, channel_id, since_id, kinds, limit"
+note = "The borrowed parameters stay accepted as aliases; the named ones win when both are given."
+
+[[deprecation]]
+id = "config-auto-mode-learning"
+surface = "config"
+subject = "auto_mode_learning (env LEAN_CTX_AUTO_MODE_LEARNING)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "The learned auto-mode signals (mode predictor, mode bandit, adaptive mode policy) are retired; `auto` is always the deterministic capability-guard and size/task cascade. The key and the env var are accepted and have no effect."
+
+[[deprecation]]
+id = "config-env-stochastic"
+surface = "config"
+subject = "env LEAN_CTX_STOCHASTIC"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "It enabled Thompson sampling in the threshold and mode bandits, which are retired; decisions are always deterministic. The env var is ignored."
+
+[[deprecation]]
+id = "mcp-ctx-knowledge-cognition-loop"
+surface = "mcp-tool"
+subject = "ctx_knowledge action=cognition_loop"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "ctx_knowledge action=consolidate"
+note = "The cognition loop is retired; scheduled consolidation already runs the memory lifecycle. The action answers that it was retired and has no effect."
+
+[[deprecation]]
+id = "config-autonomy-cognition-loop"
+surface = "config"
+subject = "autonomy.cognition_loop_enabled, autonomy.cognition_loop_interval_secs, autonomy.cognition_loop_max_steps, autonomy.cognition_synthesis_min_cluster (and LEAN_CTX_COGNITION_LOOP_ENABLED, LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS, LEAN_CTX_COGNITION_LOOP_MAX_STEPS, LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER, LEAN_CTX_COGNITION_IDLE_SECS)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "The background cognition loop and its idle replay are retired. The keys and variables are accepted so existing configs keep loading; they have no effect."
+
+[[deprecation]]
+id = "config-memory-compaction"
+surface = "config"
+subject = "memory.compaction (enabled, min_cluster, similarity, max_confidence, max_confirmations; LEAN_CTX_COMPACTION_*)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "Cluster compaction ran only in the retired cognition loop. The section is accepted without validation so existing configs keep loading; it has no effect."
+
+[[deprecation]]
+id = "cli-learning-export-import"
+surface = "cli"
+subject = "lean-ctx learning export|import"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx learning status"
+note = "The bundles carried the retired LITM placement calibration. Both commands are accepted, say on stderr that they were retired and have no effect."
+
+[[deprecation]]
+id = "env-leanctx-kernel-mode"
+surface = "config"
+subject = "LEANCTX_KERNEL_MODE (environment variable)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "LEAN_CTX_KERNEL_MODE"
+note = "Still read and warns once per process; LEAN_CTX_KERNEL_MODE wins when both are set."

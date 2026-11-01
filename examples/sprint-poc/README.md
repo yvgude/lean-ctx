@@ -1,5 +1,13 @@
 # Sprint POC — 15-minute evidence harness
 
+> **Unmaintained.** The `leanctx` arm uses `LeanCTX.wrap()` from the retired
+> Python SDK (`lean_ctx`, formerly `packages/python-lean-ctx`), which is no longer
+> in this repository, so `run --arm leanctx` cannot run.
+> The `stock` arm and the quality tests still run. The supported SDK is the
+> separately released `thinkery-leanctx-sdk`
+> ([SDK surface](../../docs/reference/sdk-surface.md)); this harness has not
+> been ported to it. It is kept as a record of the sprint method.
+
 Pinned code-review fixture + `LeanCTX.wrap()` for the paid Agent Tuning Sprint.
 Operator script: [RUNBOOK.md](RUNBOOK.md). Live model run is GitLab #1270 and stays open.
 

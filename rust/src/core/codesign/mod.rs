@@ -19,7 +19,8 @@
 //! attempt, not that a signature was made.
 
 //!
-//! Every tool this module starts is one bounded child process: no input, a
+//! Every tool this module starts is one bounded child process: no input
+//! (the unlock alone reads its command, password included, from a pipe), a
 //! capped output, a time budget of its own and the one deadline of the whole
 //! signing, which keeps a slice in reserve for the ad-hoc fallback. A tool
 //! that does not answer in time is ended by the shared capture, with its
@@ -151,6 +152,71 @@ fn run(
     budget: Duration,
     deadline: Instant,
 ) -> Result<Option<std::process::Output>, SigningStopped> {
+    command.stdin(Stdio::null());
+    capture(command, budget, deadline)
+}
+
+/// As [`run`], with `input` as the tool's whole standard input. A secret
+/// given this way is in neither the tool's arguments nor its environment,
+/// which other processes can read. A pipe that cannot be prepared counts as
+/// a tool that could not be started.
+fn run_with_input(
+    command: &mut Command,
+    input: &[u8],
+    budget: Duration,
+    deadline: Instant,
+) -> Result<Option<std::process::Output>, SigningStopped> {
+    let stdin = piped_input(input).map_err(|_| {
+        #[cfg(test)]
+        test_scope::note_run(RunReason::CaptureRejected);
+        SigningStopped
+    })?;
+    command.stdin(stdin);
+    capture(command, budget, deadline)
+}
+
+/// The largest input [`piped_input`] takes: one page, which the pipe buffer
+/// of every supported platform holds, so writing it before the reader exists
+/// cannot block.
+const PIPED_INPUT_LIMIT: usize = 4096;
+
+/// A pipe holding `input`, its writing end already closed: the reader sees
+/// `input` and then the end of input. Nothing is written to disk.
+fn piped_input(input: &[u8]) -> std::io::Result<std::io::PipeReader> {
+    use std::io::Write;
+    if input.len() > PIPED_INPUT_LIMIT {
+        return Err(std::io::Error::other("input does not fit the pipe buffer"));
+    }
+    let (reader, mut writer) = std::io::pipe()?;
+    writer.write_all(input)?;
+    Ok(reader)
+}
+
+/// One command line for `security -i`, which reads its commands from
+/// standard input: every word in double quotes, `"` and `\` escaped. `None`
+/// when a word holds a line break or NUL, which no quoting carries.
+fn security_command(words: &[&str]) -> Option<String> {
+    let mut line = String::new();
+    for word in words {
+        if word.contains(['\n', '\r', '\0']) {
+            return None;
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push('"');
+        line.push_str(&word.replace('\\', "\\\\").replace('"', "\\\""));
+        line.push('"');
+    }
+    line.push('\n');
+    Some(line)
+}
+
+fn capture(
+    command: &mut Command,
+    budget: Duration,
+    deadline: Instant,
+) -> Result<Option<std::process::Output>, SigningStopped> {
     let now = Instant::now();
     let accept_by = deadline.min(now + budget);
     let left = accept_by.saturating_duration_since(now);
@@ -159,7 +225,6 @@ fn run(
         test_scope::note_run(RunReason::DeadlineElapsed);
         return Ok(None);
     }
-    command.stdin(Stdio::null());
     let captured = crate::core::process_capture::run_with_output_limits(
         command,
         Some(left),
@@ -302,16 +367,19 @@ fn sign_with_identity(
     let Some(keychain) = &context.keychain else {
         return Ok(false);
     };
-    if let Some(password) = context.password() {
+    let unlock = context.password().and_then(|password| {
+        security_command(&["unlock-keychain", "-p", &password, keychain.to_str()?])
+    });
+    if let Some(unlock) = unlock {
         // Best-effort unlock: whether it unlocked is not consulted, signing
         // fails below if the keychain is still locked. That its process is
-        // over is not best effort.
+        // over is not best effort. The password goes in on standard input
+        // (`security -i`), never in the arguments.
         #[cfg(test)]
         let _phase = test_scope::phase(Stage::Unlock);
-        run(
-            Command::new(&context.security)
-                .args(["unlock-keychain", "-p", &password])
-                .arg(keychain),
+        run_with_input(
+            Command::new(&context.security).arg("-i"),
+            unlock.as_bytes(),
             context.budgets.unlock,
             deadline,
         )?;
@@ -739,9 +807,13 @@ mod bounded_tests {
             let calls = at("calls");
             script(
                 "security",
+                // `security -i` reads its command from standard input: that
+                // line is recorded as `stdin …`, its first word is `$cmd`.
                 format!(
-                    "echo \"security $*\" >> '{calls}'\n{before_answer}\n\
-                     [ \"$1\" = find-identity ] && cat '{listing}'\nexit ${{status:-0}}",
+                    "echo \"security $*\" >> '{calls}'\ncmd=$1\n\
+                     if [ \"$1\" = -i ]; then input=$(cat); echo \"stdin $input\" >> '{calls}'; \
+                     cmd=${{input%% *}}; cmd=${{cmd#\\\"}}; cmd=${{cmd%\\\"}}; fi\n{before_answer}\n\
+                     [ \"$cmd\" = find-identity ] && cat '{listing}'\nexit ${{status:-0}}",
                     calls = calls.display(),
                     listing = at("listing").display()
                 ),
@@ -824,8 +896,9 @@ mod bounded_tests {
                     "security find-identity -v -p codesigning {}",
                     keychain.display()
                 ),
+                "security -i".to_string(),
                 format!(
-                    "security unlock-keychain -p {PASSWORD} {}",
+                    "stdin \"unlock-keychain\" \"-p\" \"{PASSWORD}\" \"{}\"",
                     keychain.display()
                 ),
                 format!(
@@ -836,11 +909,29 @@ mod bounded_tests {
                 ),
             ]
         );
-        // The password goes to the unlock and nowhere else.
+        // The password goes to the unlock's standard input and nowhere else:
+        // no tool's arguments carry it.
         assert_eq!(
             calls.iter().filter(|call| call.contains(PASSWORD)).count(),
             1
         );
+        assert!(
+            calls
+                .iter()
+                .filter(|call| !call.starts_with("stdin "))
+                .all(|call| !call.contains(PASSWORD))
+        );
+    }
+
+    #[test]
+    fn security_commands_quote_every_word_and_refuse_line_breaks() {
+        assert_eq!(
+            security_command(&["unlock-keychain", "-p", "a\"b\\c d", "/k c/x"]).as_deref(),
+            Some("\"unlock-keychain\" \"-p\" \"a\\\"b\\\\c d\" \"/k c/x\"\n")
+        );
+        assert_eq!(security_command(&["unlock-keychain", "-p", "a\nb"]), None);
+        assert_eq!(security_command(&["unlock-keychain", "-p", "a\0b"]), None);
+        assert!(piped_input(&[b'x'; PIPED_INPUT_LIMIT + 1]).is_err());
     }
 
     #[test]
@@ -926,7 +1017,7 @@ mod bounded_tests {
         // The unlock never answers: it is cut at its own budget and the
         // stable signature is still attempted with the time that is left.
         let tools = Tools::with_slow_query(
-            "[ \"$1\" = unlock-keychain ] && exec sleep 600",
+            "[ \"$cmd\" = unlock-keychain ] && exec sleep 600",
             IDENTITY.as_bytes(),
             "exit 0",
             Budgets {

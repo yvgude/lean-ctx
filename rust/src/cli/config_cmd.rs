@@ -584,13 +584,9 @@ pub fn cmd_benchmark(args: &[String]) {
 
     let action = args.first().map_or("run", std::string::String::as_str);
 
+    // `benchmark --help` is answered by `benchmark_cmd`, whose help lists
+    // these subcommands as well.
     match action {
-        "--help" | "-h" => {
-            println!("Usage: lean-ctx benchmark run [path] [--json]");
-            println!("       lean-ctx benchmark report [path]");
-            println!("       lean-ctx benchmark scorecard [--json] [--output file]");
-            println!("       lean-ctx benchmark dual-arm [--json] [--output file]");
-        }
         "dual-arm" => {
             let is_json = args.iter().any(|a| a == "--json");
             let output = parse_flag_value(args, "--output");
@@ -656,10 +652,12 @@ pub fn cmd_benchmark(args: &[String]) {
                 let result = benchmark::run_project_benchmark(action);
                 println!("{}", benchmark::format_terminal(&result));
             } else {
-                eprintln!("Usage: lean-ctx benchmark run [path] [--json]");
-                eprintln!("       lean-ctx benchmark report [path]");
-                eprintln!("       lean-ctx benchmark scorecard [--json] [--output file]");
-                std::process::exit(1);
+                eprintln!("lean-ctx benchmark: unknown subcommand or path '{action}'");
+                eprintln!(
+                    "Usage: lean-ctx benchmark [--format markdown|json|text] [--output <path>] [--share]\n{}",
+                    super::benchmark_cmd::SUBCOMMAND_USAGE
+                );
+                std::process::exit(2);
             }
         }
     }

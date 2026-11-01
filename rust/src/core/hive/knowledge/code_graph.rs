@@ -21,6 +21,7 @@ use std::path::Path;
 use crate::core::graph_index::ProjectIndex;
 use crate::core::hive::HiveError;
 use crate::core::hive::auth::Session;
+use crate::core::hive::knowledge::screening::Screen;
 use crate::core::hive::sealed;
 use crate::core::hive::vault::VaultRecord;
 use lean_ctx_protocol::hive::anchor::{MAX_ANCHOR_SYMBOL_CHARS, validate_anchor_path};
@@ -75,14 +76,21 @@ fn symbol_ok(name: &str) -> bool {
             .any(|c| c.is_control() || c.is_whitespace() || c == '#')
 }
 
-/// The graph of `index`, keeping only files `admit` lets through.
-pub fn export(index: &ProjectIndex, admit: impl Fn(&str) -> bool) -> CodeGraph {
+/// The graph of `index`, keeping only files `admit` lets through. Every
+/// path and symbol name passes the outbound `screen` (connector rule:
+/// every outbound content item is screened); a path it refuses withholds
+/// the file, a name it refuses drops the symbol.
+pub fn export(
+    index: &ProjectIndex,
+    admit: impl Fn(&str) -> bool,
+    screen: &mut Screen,
+) -> CodeGraph {
     let mut graph = CodeGraph::default();
     let mut files: BTreeMap<&str, &str> = BTreeMap::new();
     let mut paths: Vec<&String> = index.files.keys().collect();
     paths.sort();
     for path in paths {
-        if validate_anchor_path(path).is_err() || !admit(path) {
+        if validate_anchor_path(path).is_err() || !admit(path) || screen.check(path).is_err() {
             graph.withheld_files += 1;
             continue;
         }
@@ -91,7 +99,10 @@ pub fn export(index: &ProjectIndex, admit: impl Fn(&str) -> bool) -> CodeGraph {
 
     let mut symbols: BTreeMap<&str, BTreeMap<&str, &str>> = BTreeMap::new();
     for symbol in index.symbols.values() {
-        if files.contains_key(symbol.file.as_str()) && symbol_ok(&symbol.name) {
+        if files.contains_key(symbol.file.as_str())
+            && symbol_ok(&symbol.name)
+            && screen.check(&symbol.name).is_ok()
+        {
             symbols
                 .entry(symbol.file.as_str())
                 .or_default()
@@ -171,10 +182,12 @@ fn sort_edges(edges: &mut Vec<CodeEdgeV1>) {
 
 /// The graph of the checkout at `root`, through the same source admission
 /// as a fact's anchors (a file that may not become knowledge is left out).
-pub fn export_checkout(root: &str, index: &ProjectIndex) -> CodeGraph {
-    export(index, |path| {
-        crate::core::archive::bindings::sources_at(root, &[path], "ctx_knowledge").is_some()
-    })
+pub fn export_checkout(root: &str, index: &ProjectIndex, screen: &mut Screen) -> CodeGraph {
+    export(
+        index,
+        |path| crate::core::archive::bindings::sources_at(root, &[path], "ctx_knowledge").is_some(),
+        screen,
+    )
 }
 
 /// The commit the checkout at `root` is on (`git rev-parse HEAD`), when
@@ -217,7 +230,13 @@ pub fn publish(
     let root_str = root.to_string_lossy();
     let index =
         ProjectIndex::load(&root_str).unwrap_or_else(|| crate::core::graph_index::scan(&root_str));
-    let exported = export_checkout(&root_str, &index);
+    // A broken screening rule sends nothing, not an empty graph that would
+    // replace the stored one.
+    let mut screen = Screen::for_installation();
+    if let Some(problem) = screen.problem() {
+        return Err(HiveError::Config(problem));
+    }
+    let exported = export_checkout(&root_str, &index, &mut screen);
     let (truncated, withheld_files) = (exported.truncated, exported.withheld_files);
     let revision_hint = head_commit(root);
     let graph = exported.into_v1(revision_hint.clone());
@@ -353,9 +372,39 @@ mod tests {
         index
     }
 
+    fn screen() -> Screen {
+        Screen::with_rules(Vec::new(), std::sync::Arc::new(Vec::new()), Vec::new())
+    }
+
+    /// Paths and symbol names pass the outbound screen: a forbidden one
+    /// withholds its file or drops its symbol, and a broken rule sends
+    /// nothing readable.
+    #[test]
+    fn paths_and_symbol_names_pass_the_outbound_screen() {
+        let mut strict = Screen::with_rules(
+            Vec::new(),
+            std::sync::Arc::new(Vec::new()),
+            vec![regex::Regex::new("hook\\.rs|^run$").unwrap()],
+        );
+        let graph = export(&index(), |path| path != ".env", &mut strict);
+        let ids: Vec<&str> = graph.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, vec!["code:src/lib.rs"]);
+        assert_eq!(
+            graph.withheld_files, 3,
+            "hook.rs joins .env and ../escape.rs"
+        );
+        #[allow(clippy::invalid_regex)] // the broken rule is the point of the test
+        let mut broken = Screen::with_compiled(
+            Vec::new(),
+            std::sync::Arc::new(Vec::new()),
+            vec![regex::Regex::new("(")],
+        );
+        assert!(export(&index(), |_| true, &mut broken).nodes.is_empty());
+    }
+
     #[test]
     fn the_graph_holds_structure_only_for_admitted_files() {
-        let graph = export(&index(), |path| path != ".env");
+        let graph = export(&index(), |path| path != ".env", &mut screen());
         let ids: Vec<&str> = graph.nodes.iter().map(|n| n.id.as_str()).collect();
         assert_eq!(
             ids,
@@ -410,7 +459,7 @@ mod tests {
             .expect("the export is a valid section 8 graph");
         assert_eq!(
             graph,
-            export(&index(), |path| path != ".env"),
+            export(&index(), |path| path != ".env", &mut screen()),
             "deterministic"
         );
     }
@@ -444,7 +493,7 @@ mod tests {
                 },
             );
         }
-        let graph = export(&index, |_| true);
+        let graph = export(&index, |_| true, &mut screen());
         assert!(graph.truncated);
         assert!(graph.nodes.len() <= MAX_CODE_GRAPH_NODES);
         assert_eq!(graph.nodes.len() % 2, 0, "every kept file keeps its symbol");

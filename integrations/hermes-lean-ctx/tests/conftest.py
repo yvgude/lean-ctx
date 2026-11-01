@@ -1,13 +1,14 @@
 """Test bootstrap for hermes-lean-ctx.
 
 Makes the plugin importable as the ``hermes_lean_ctx`` package (the on-disk dir
-name is hyphenated), wires the monorepo ``leanctx`` SDK onto ``sys.path`` so
-tests use the real client, and installs the documented ``ContextEngine`` ABC
-under ``agent.context_engine`` when no Hermes checkout is available.
+name is hyphenated) and installs the documented ``ContextEngine`` ABC under
+``agent.context_engine`` when no Hermes checkout is available. The ``leanctx``
+client comes from the installed ``lean-ctx-client`` package
+(``requirements.txt``); its source is no longer in this repository.
 
 No application data is mocked: pure-logic tests use real functions; the live
 integration test (``test_live_daemon.py``) runs against a real daemon and skips
-when ``LEANCTX_LIVE_URL`` is unset.
+when ``LEANCTX_LIVE_URL`` is unset or the client is not installed.
 """
 
 from __future__ import annotations
@@ -21,14 +22,7 @@ from pathlib import Path
 import pytest
 
 PLUGIN_DIR = Path(__file__).resolve().parent.parent          # integrations/hermes-lean-ctx
-REPO_ROOT = PLUGIN_DIR.parent.parent                          # monorepo root
-CLIENTS_PYTHON = REPO_ROOT / "clients" / "python"
 PKG = "hermes_lean_ctx"
-
-
-def _ensure_leanctx_on_path() -> None:
-    if CLIENTS_PYTHON.is_dir() and str(CLIENTS_PYTHON) not in sys.path:
-        sys.path.insert(0, str(CLIENTS_PYTHON))
 
 
 def _load_plugin_package() -> None:
@@ -64,7 +58,6 @@ def _ensure_agent_context_engine() -> None:
     setattr(agent_mod, "context_engine", ce_mod)
 
 
-_ensure_leanctx_on_path()
 _load_plugin_package()
 _ensure_agent_context_engine()
 

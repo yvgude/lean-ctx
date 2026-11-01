@@ -20,13 +20,13 @@ use crate::core::hive::auth::Session;
 use crate::core::hive::config::HiveConfig;
 use crate::core::hive::knowledge::screening::Screen;
 use crate::core::hive::state::HiveStore;
-use crate::core::hive::transport::user_agent;
+use crate::core::hive::transport::{PROTOCOL_V2, user_agent};
 use crate::core::hive::vault::VaultMap;
 use crate::core::hive::workers::attach::{self, LocalWorker, detect_host_app};
 use crate::core::hive::workers::card::{Availability, Budget, WorkerCard};
 use crate::core::hive::workers::register::ensure_registered;
 use lean_ctx_protocol::hive::lease::HiveRight;
-use lean_ctx_protocol::hive::{HEADER_INSTANCE, HEADER_PROTOCOL, protocol_header_value};
+use lean_ctx_protocol::hive::{HEADER_INSTANCE, HEADER_PROTOCOL};
 
 /// The worker a local agent attaches to (host app from its transport or
 /// agent type, role from `ctx_agent register`).
@@ -211,11 +211,9 @@ pub(super) async fn session_once(
         header(&format!("Bearer {}", token.as_str()))?,
     );
     headers.insert(HEADER_INSTANCE, header(&instance.instance_id)?);
-    headers.insert(HEADER_PROTOCOL, header(&protocol_header_value())?);
-    headers.insert(
-        crate::core::hive::transport::HEADER_PROTOCOL_HIVE,
-        header(&protocol_header_value())?,
-    );
+    // The request header decides the protocol Hive answers in: this session
+    // speaks C0 2.0 (bus v2 frames), so the upgrade says so.
+    headers.insert(HEADER_PROTOCOL, header(PROTOCOL_V2)?);
     headers.insert("User-Agent", header(&user_agent())?);
     let (socket, _) = open_socket(request).await.map_err(handshake_error)?;
     *connected = true;
@@ -343,6 +341,12 @@ pub(super) async fn session_once(
                 state.save(&data)?;
             }
             _ = tick.tick() => {
+                // Switched off in `[hive]` meanwhile: close; `run` waits.
+                if super::super::relay_config().is_none() {
+                    state.save(&data)?;
+                    let _ = sink.send(Message::Close(None)).await;
+                    return Ok(SessionEnd::Closed);
+                }
                 map = VaultMap::load(&data);
                 let (fresh_agents, fresh_subscribe) = local_view(&map);
                 let fresh_ids: BTreeSet<&str> = fresh_agents.iter().map(|a| a.agent_id.as_str()).collect();

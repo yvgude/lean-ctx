@@ -16,7 +16,9 @@
 //! - **Translation**: Token shorthand (TDD), symbol replacement
 //! - **Delivery**: LITM positioning, CRP formatting, final output assembly
 //!
-//! `PipelineStats` aggregates per-layer metrics across all runs for observability.
+//! `PipelineStats` is the aggregate shape for per-layer metrics. No production
+//! path records layer metrics, so its readers (`ctx_metrics`, `ctx_proof`,
+//! `lean-ctx gain --pipeline`) report it only as "0 runs" or "not collected".
 
 use std::collections::HashMap;
 

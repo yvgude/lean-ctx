@@ -9,6 +9,9 @@
 //! so repeated requests within the window return instantly. The hash-based
 //! `/api/pulse` mechanism still detects real changes; this just prevents
 //! redundant recomputation within a single poll cycle.
+//!
+//! A successful write clears the cache ([`invalidate_all`]), and a read with
+//! `_refresh=1` (the Cockpit's forced reload) is computed fresh.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -89,11 +92,14 @@ pub(super) fn put(key: &str, content_type: &str, body: &str) {
     }
 }
 
-/// Invalidate a specific route (e.g. after a POST/mutation).
-#[allow(dead_code)]
-pub(super) fn invalidate(path: &str) {
+/// Drop every cached response, for every project. Called after each
+/// successful write: the cached reads are derived from the ledger, overlays,
+/// sessions and config that the writes change (a settings write changes them
+/// for every project), and entries live for seconds, so clearing all is
+/// cheaper and safer than a per-route map that misses a route added later.
+pub(super) fn invalidate_all() {
     if let Ok(mut cache) = CACHE.lock() {
-        cache.remove(path);
+        cache.clear();
     }
 }
 
@@ -115,8 +121,11 @@ fn leak_content_type(ct: &str) -> &'static str {
 mod tests {
     use super::*;
 
+    // Tests that read back what they stored hold the env lock: a route test
+    // that writes (and so clears the cache) holds it too.
     #[test]
     fn cache_stores_and_retrieves() {
+        let _lock = crate::core::data_dir::test_env_lock();
         put("/api/signals", "application/json", r#"{"test":true}"#);
         let result = get("/api/signals");
         assert!(result.is_some());
@@ -129,6 +138,7 @@ mod tests {
     #[test]
     fn a_read_for_one_project_never_answers_another_from_cache() {
         use crate::core::policy::runtime::in_project;
+        let _lock = crate::core::data_dir::test_env_lock();
         in_project("/work/alpha", || {
             put(
                 &key("/api/context-risk"),
@@ -142,6 +152,51 @@ mod tests {
         assert!(beta.is_none());
         assert!(unscoped.is_none());
         assert_eq!(alpha.map(|r| r.2).as_deref(), Some(r#"{"p":"alpha"}"#));
+    }
+
+    #[test]
+    fn invalidate_all_drops_every_project_entry() {
+        use crate::core::policy::runtime::in_project;
+        let _lock = crate::core::data_dir::test_env_lock();
+        put(&key("/api/session"), "application/json", "{}");
+        in_project("/work/gamma", || {
+            put(&key("/api/session"), "application/json", "{}");
+        });
+        invalidate_all();
+        assert!(get(&key("/api/session")).is_none());
+        assert!(in_project("/work/gamma", || get(&key("/api/session"))).is_none());
+    }
+
+    /// The router drops the cached reads after a successful write, so a
+    /// context read shows a new rule at once; a refused write keeps them.
+    #[test]
+    fn a_successful_write_drops_the_cached_reads() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().expect("project");
+        let root = project.path().to_string_lossy().into_owned();
+        let post = |body: &str| {
+            crate::dashboard::routes::route_response(
+                "/api/context-policy",
+                "",
+                None,
+                None,
+                true,
+                "POST",
+                body,
+            )
+        };
+        crate::dashboard::project_binding::in_request_project(Some(&root), || {
+            let cached = key("/api/context-risk");
+            put(&cached, "application/json", r#"{"cached":true}"#);
+            assert_eq!(post("{}").0, "400 Bad Request");
+            assert!(get(&cached).is_some(), "a refused write changes nothing");
+
+            let rule =
+                r#"{"action":"add","rule":{"name":"docs","match":"*.md","action":"exclude"}}"#;
+            let (status, _, body) = post(rule);
+            assert_eq!(status, "200 OK", "{body}");
+            assert!(get(&cached).is_none(), "the write dropped the cached read");
+        });
     }
 
     #[test]

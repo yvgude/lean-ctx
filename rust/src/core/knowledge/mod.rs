@@ -5,6 +5,7 @@ mod core;
 mod fact;
 mod format;
 mod import_export;
+pub mod journal;
 pub mod local_store;
 pub mod maintenance;
 pub mod okf;
@@ -21,6 +22,7 @@ mod types;
 
 pub use import_export::{ImportMerge, ImportResult, SimpleFactEntry, parse_import_data};
 pub(crate) use persist::is_machine_derived;
+pub(crate) use persist::knowledge_dir_of;
 pub use query::KnowledgeQuery;
 pub(crate) use ranking::sort_fact_for_output;
 pub use ranking::{SimilarFact, find_cross_key_similar};

@@ -45,7 +45,9 @@ const all = P.slug === null ? space.pages.list() : [space.pages.get(P.slug)].fil
 const pages = all.filter(p => P.status === null || p.status === P.status
   || (P.status === 'stale' && p.stale) || (P.status === 'noted' && p.noted));
 const listed = pages.slice(0, P.limit);
+const head = space.journal({ limit: 1 });
 return {
+  lsn: head.length ? head[0].lsn : 0,
   dirs: space.dirs.list().map(d => ({ name: d.name, localPath: d.localPath || null, remote: d.remote || null })),
   total: pages.length,
   pages: listed.map(p => ({
@@ -56,6 +58,12 @@ return {
   })),
 };
 ";
+
+/// Read-only program for the newest journal LSN: every write to the space
+/// (pages, their sources, dirs, tasks, notes, sessions) advances it, so an
+/// unchanged LSN means an unchanged space. About 40 ms.
+const HEAD_PROGRAM: &str =
+    "const head = space.journal({ limit: 1 }); return { lsn: head.length ? head[0].lsn : 0 };";
 
 pub struct EmspaceProvider {
     project_root: PathBuf,
@@ -130,6 +138,21 @@ impl EmspaceProvider {
     }
 
     fn pages(&self, params: &ProviderParams) -> Result<ProviderResult, String> {
+        self.pages_at(params).map(|(result, _)| result)
+    }
+
+    /// The newest journal LSN of the space, without reading any page.
+    fn head_lsn(&self) -> Result<u64, String> {
+        let answer = self.run_cli(&["run", "--query"], Some(HEAD_PROGRAM))?;
+        answer
+            .pointer("/result/lsn")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| "unexpected emspace journal answer".to_owned())
+    }
+
+    /// [`Self::pages`] and the journal LSN the listing was read at, from the
+    /// same read-only transaction.
+    fn pages_at(&self, params: &ProviderParams) -> Result<(ProviderResult, u64), String> {
         let slug = params.id.as_deref().filter(|s| !s.is_empty());
         let status = params.state.as_deref().filter(|s| !s.is_empty());
         if let Some(status) = status
@@ -164,13 +187,16 @@ impl EmspaceProvider {
             .into_iter()
             .map(|page| page_item(page, &repo_dirs, &self.project_root))
             .collect();
-        Ok(ProviderResult {
-            provider: "emspace".into(),
-            resource_type: "pages".into(),
-            truncated: listing.total > items.len(),
-            total_count: Some(listing.total),
-            items,
-        })
+        Ok((
+            ProviderResult {
+                provider: "emspace".into(),
+                resource_type: "pages".into(),
+                truncated: listing.total > items.len(),
+                total_count: Some(listing.total),
+                items,
+            },
+            listing.lsn,
+        ))
     }
 
     fn search(&self, params: &ProviderParams) -> Result<ProviderResult, String> {
@@ -222,6 +248,42 @@ impl EmspaceProvider {
 }
 
 impl EmspaceProvider {
+    /// One page to read (`mode="text"`): `id=<slug>`, and in `query`
+    /// nothing (the whole body), `outline` (its sections with their sizes),
+    /// or one section — by its slug path (`purpose`, `how-it-works`), its
+    /// last segment or its heading text. Reading the outline and then the
+    /// section a hint points at costs a fraction of the whole body.
+    fn page(&self, params: &ProviderParams) -> Result<ProviderResult, String> {
+        let slug = params
+            .id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or("page needs id=<slug>")?;
+        let one = ProviderParams {
+            id: Some(slug.to_owned()),
+            ..ProviderParams::default()
+        };
+        let (listing, _) = self.pages_at(&one)?;
+        let mut item = listing
+            .items
+            .into_iter()
+            .next()
+            .ok_or_else(|| format!("no page '{slug}'"))?;
+        let body = item.body.take().unwrap_or_default();
+        item.body = Some(match params.query.as_deref().map(str::trim) {
+            None | Some("") => body,
+            Some("outline") => page_outline(&body),
+            Some(section) => page_section(&body, section)?,
+        });
+        Ok(ProviderResult {
+            provider: "emspace".into(),
+            resource_type: "page".into(),
+            total_count: Some(1),
+            truncated: false,
+            items: vec![item],
+        })
+    }
+
     /// The space's sessions: the open ones (what other agents declared they
     /// are doing) unless `state` is `closed` or `all`.
     fn sessions(&self, params: &ProviderParams) -> Result<ProviderResult, String> {
@@ -262,12 +324,13 @@ impl ContextProvider for EmspaceProvider {
     }
 
     fn supported_actions(&self) -> &[&str] {
-        &["pages", "search", "tasks", "sessions"]
+        &["pages", "page", "search", "tasks", "sessions"]
     }
 
     fn execute(&self, action: &str, params: &ProviderParams) -> Result<ProviderResult, String> {
         match action {
             "pages" => self.pages(params),
+            "page" => self.page(params),
             "search" => self.search(params),
             "tasks" => self.tasks(params),
             "sessions" => self.sessions(params),
@@ -277,6 +340,12 @@ impl ContextProvider for EmspaceProvider {
 
     fn cache_ttl_secs(&self) -> u64 {
         60
+    }
+
+    /// Only the page listing is a source pass; a page, search hit, task or
+    /// session read would index a second copy beside it.
+    fn consolidates(&self, action: &str) -> bool {
+        action == "pages"
     }
 
     fn descriptor(&self) -> ConnectorDescriptor {
@@ -313,6 +382,8 @@ pub(crate) fn descriptor() -> ConnectorDescriptor {
 
 #[derive(Debug, Deserialize)]
 struct PagesAnswer {
+    #[serde(default)]
+    lsn: u64,
     #[serde(default)]
     dirs: Vec<DirRecord>,
     #[serde(default)]
@@ -455,6 +526,59 @@ fn task_item(task: TaskRecord) -> ProviderItem {
     }
 }
 
+/// A page's `##`… sections, one line each: the slug path to ask for and the
+/// section's size, so a reader picks one before reading anything.
+fn page_outline(body: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for (path, range) in section_paths(body) {
+        let lines = body[range].lines().count();
+        let _ = writeln!(out, "  {path} ({lines} lines)");
+    }
+    if out.is_empty() {
+        out.push_str("  (no sections)\n");
+    }
+    out
+}
+
+/// The section `wanted` names: its slug path, its last segment or its
+/// heading text.
+fn page_section(body: &str, wanted: &str) -> Result<String, String> {
+    let sections = section_paths(body);
+    let slug = crate::core::knowledge::anchors::heading_slug(wanted);
+    let wanted = wanted.trim_start_matches('#');
+    sections
+        .iter()
+        .find(|(path, _)| {
+            path == wanted || path == &slug || path.rsplit('/').next() == Some(slug.as_str())
+        })
+        .map(|(_, range)| body[range.clone()].to_owned())
+        .ok_or_else(|| {
+            let known: Vec<&str> = sections.iter().map(|(path, _)| path.as_str()).collect();
+            format!("no section '{wanted}'; sections: {}", known.join(", "))
+        })
+}
+
+/// [`crate::core::knowledge::anchors::markdown_sections`] without the page
+/// title: an emspace body opens with one `# ` heading that every section path
+/// would otherwise repeat (`core-shell-output-patterns/purpose`).
+fn section_paths(body: &str) -> Vec<(String, std::ops::Range<usize>)> {
+    let sections = crate::core::knowledge::anchors::markdown_sections(body);
+    let title = sections
+        .first()
+        .filter(|(path, _)| !path.contains('/'))
+        .map(|(path, _)| format!("{path}/"));
+    sections
+        .into_iter()
+        .filter_map(|(path, range)| match &title {
+            Some(title) => path
+                .strip_prefix(title.as_str())
+                .map(|rest| (rest.to_owned(), range)),
+            None => Some((path, range)),
+        })
+        .collect()
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionRecord {
@@ -498,8 +622,17 @@ fn session_item(session: SessionRecord) -> ProviderItem {
 
 /// URI prefix of indexed pages (chunks and cross-source edges).
 pub(crate) const PAGES_URI_PREFIX: &str = "emspace://pages/";
-/// How often an indexed space is re-read in the background.
-const INDEX_INTERVAL: Duration = Duration::from_mins(10);
+/// The last completed pass, beside the project's graph (`lsn unix_secs`).
+const MARKER_FILE: &str = "emspace-index.state";
+/// How often the link and the CLI are looked for again.
+const LINK_RECHECK_INTERVAL: Duration = Duration::from_mins(10);
+/// How often a process asks the space whether it changed (one journal read,
+/// about 40 ms, in the background).
+const CHANGE_CHECK_INTERVAL: Duration = Duration::from_mins(1);
+/// The longest an index pass is skipped while the journal stands still: it
+/// covers what the journal does not record, such as a new checkout file that
+/// a glob pin now selects, or stores rebuilt without the index marker.
+const FULL_PASS_INTERVAL: Duration = Duration::from_hours(1);
 /// How long the open sessions shown on the bus are reused.
 const SESSIONS_TTL: Duration = Duration::from_secs(60);
 /// Characters of a session plan shown on the bus.
@@ -524,7 +657,7 @@ fn with_root_state<T>(project_root: &str, f: impl FnOnce(&mut RootState) -> T) -
     let state = states.entry(project_root.to_owned()).or_default();
     if state
         .checked_at
-        .is_none_or(|at| at.elapsed() >= INDEX_INTERVAL)
+        .is_none_or(|at| at.elapsed() >= LINK_RECHECK_INTERVAL)
     {
         state.available = !project_root.is_empty()
             && find_link(Path::new(project_root)).is_some()
@@ -539,17 +672,19 @@ pub(crate) fn is_linked(project_root: &str) -> bool {
     with_root_state(project_root, |state| state.available)
 }
 
-/// Index the linked space in the background when it was never indexed in
-/// this process or [`INDEX_INTERVAL`] has passed, so `ctx_read` hints need no
-/// provider call. The re-index replaces the previous pass (removed pages lose
-/// their chunks and edges); a failed read leaves the previous pass in place.
+/// Keep the linked space's index current in the background, so `ctx_read`
+/// hints need no provider call. At most once per [`CHANGE_CHECK_INTERVAL`]
+/// a detached pass asks the journal for its newest LSN and re-reads the
+/// pages only when it moved since the last pass of any process (or after
+/// [`FULL_PASS_INTERVAL`]). A re-index replaces the previous pass (removed
+/// pages lose their chunks and edges); a failed read leaves it in place.
 /// Returns immediately; respects `providers.enabled` and `providers.auto_index`.
 pub(crate) fn refresh_index_if_due(project_root: &str) {
     let due = with_root_state(project_root, |state| {
         let due = state.available
             && state
                 .indexed_at
-                .is_none_or(|at| at.elapsed() >= INDEX_INTERVAL);
+                .is_none_or(|at| at.elapsed() >= CHANGE_CHECK_INTERVAL);
         if due {
             // Claimed before the thread starts, so concurrent reads spawn one pass.
             state.indexed_at = Some(std::time::Instant::now());
@@ -577,9 +712,21 @@ fn index_pages(project_root: &str) {
         tracing::debug!("[emspace] another process is indexing {project_root}");
         return;
     };
+    let dir = crate::core::property_graph::graph_dir(project_root);
     let provider = EmspaceProvider::new(Path::new(project_root));
-    let result = match provider.pages(&ProviderParams::default()) {
-        Ok(result) => result,
+    let head = match provider.head_lsn() {
+        Ok(lsn) => lsn,
+        Err(error) => {
+            tracing::debug!("[emspace] background index skipped: {error}");
+            return;
+        }
+    };
+    let now = unix_secs();
+    if !pass_needed(read_marker(&dir), head, now) {
+        return;
+    }
+    let (result, lsn) = match provider.pages_at(&ProviderParams::default()) {
+        Ok(read) => read,
         Err(error) => {
             tracing::debug!("[emspace] background index skipped: {error}");
             return;
@@ -591,18 +738,75 @@ fn index_pages(project_root: &str) {
         chunks
             .retain(|chunk| crate::core::immune_detector::screen_strict(&chunk.content).is_none());
     }
-    let artifacts = crate::core::consolidation::consolidate(&chunks);
+    let mut artifacts = crate::core::consolidation::consolidate(&chunks);
+    mark_page_freshness(&mut artifacts.edges, &result.items);
     let prune = crate::core::consolidation::PrunePrior {
         bm25_prefix: Some(PAGES_URI_PREFIX.to_owned()),
         edge_uri_prefix: Some(PAGES_URI_PREFIX.to_owned()),
         ..crate::core::consolidation::PrunePrior::default()
     };
     crate::core::consolidation::apply_artifacts_to_stores(&artifacts, project_root, &prune);
+    write_marker(&dir, lsn, now);
     tracing::debug!(
-        "[emspace] indexed {} pages ({} edges)",
+        "[emspace] indexed {} pages ({} edges) at lsn {lsn}",
         result.items.len(),
         artifacts.edges.len()
     );
+}
+
+/// Carry a page's freshness into the relation its hint shows: a page whose
+/// pinned source moved is `documents, stale` (knowledge to repair, not to
+/// trust), one whose drift a note accounts for is `documents, noted`. The
+/// agent reads that next to the page name and needs no `emspace status`.
+fn mark_page_freshness(edges: &mut [crate::core::graph_index::IndexEdge], pages: &[ProviderItem]) {
+    let label = |uri: &str| -> Option<&'static str> {
+        let slug = uri.strip_prefix(PAGES_URI_PREFIX)?;
+        match pages.iter().find(|p| p.id == slug)?.state.as_deref()? {
+            "stale" => Some("stale"),
+            "noted" => Some("noted"),
+            _ => None,
+        }
+    };
+    for edge in edges.iter_mut() {
+        let page = if edge.from.starts_with(PAGES_URI_PREFIX) {
+            &edge.from
+        } else {
+            &edge.to
+        };
+        if let Some(state) = label(page) {
+            edge.kind = format!("{}, {state}", edge.kind);
+        }
+    }
+}
+
+/// The `(lsn, unix seconds)` of the last completed pass of any process,
+/// kept beside the project's graph so it goes when the graph goes.
+fn read_marker(dir: &Path) -> Option<(u64, u64)> {
+    let text = std::fs::read_to_string(dir.join(MARKER_FILE)).ok()?;
+    let (lsn, at) = text.trim().split_once(' ')?;
+    Some((lsn.parse().ok()?, at.parse().ok()?))
+}
+
+fn write_marker(dir: &Path, lsn: u64, at: u64) {
+    let _ = crate::core::atomic_fs::try_atomic_write(
+        &dir.join(MARKER_FILE),
+        format!("{lsn} {at}\n").as_bytes(),
+        None,
+    );
+}
+
+/// Whether a pass has work: never indexed, the journal moved past the last
+/// pass, or the last pass is older than [`FULL_PASS_INTERVAL`].
+fn pass_needed(marker: Option<(u64, u64)>, head: u64, now: u64) -> bool {
+    marker.is_none_or(|(lsn, at)| {
+        head != lsn || now.saturating_sub(at) >= FULL_PASS_INTERVAL.as_secs()
+    })
+}
+
+fn unix_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// The exclusive index lock of `project_root`, held while the returned file
@@ -975,6 +1179,115 @@ mod tests {
             assert!(!block.contains(&tail[..len]), "secret leaked:\n{block}");
         }
         assert!(block.contains("[REDACTED"), "{block}");
+    }
+
+    const BODY: &str = "Shell output engine\n\n# Core: Shell Output Patterns\n\nLede.\n\n\
+## Purpose\n\nCompresses output.\n\n## How It Works\n\nSteps.\n\n### Dispatch\n\nTable.\n\n\
+```md\n## not a heading\n```\n\n## Known Gaps\n\nNone.\n";
+
+    #[test]
+    fn a_page_outline_names_each_section_once_without_the_title() {
+        let outline = page_outline(BODY);
+        let paths: Vec<&str> = outline
+            .lines()
+            .map(|l| l.trim().split(' ').next().unwrap())
+            .collect();
+        assert_eq!(
+            paths,
+            vec![
+                "purpose",
+                "how-it-works",
+                "how-it-works/dispatch",
+                "known-gaps"
+            ]
+        );
+        assert_eq!(page_outline("no headings at all"), "  (no sections)\n");
+    }
+
+    #[test]
+    fn a_section_is_found_by_path_last_segment_or_heading_text() {
+        let by_path = page_section(BODY, "how-it-works/dispatch").unwrap();
+        assert!(by_path.starts_with("### Dispatch") && by_path.contains("Table."));
+        assert_eq!(page_section(BODY, "dispatch").unwrap(), by_path);
+        assert_eq!(
+            page_section(BODY, "## Known Gaps").unwrap(),
+            page_section(BODY, "known-gaps").unwrap()
+        );
+        // A section runs to the next heading of its level, nested ones included.
+        let how = page_section(BODY, "How It Works").unwrap();
+        assert!(how.contains("### Dispatch") && !how.contains("## Known Gaps"));
+        let missing = page_section(BODY, "nope").unwrap_err();
+        assert!(
+            missing.contains("sections: purpose, how-it-works"),
+            "{missing}"
+        );
+    }
+
+    #[test]
+    fn a_stale_or_noted_page_says_so_in_its_hint_relation() {
+        let edge = |from: &str, to: &str, kind: &str| crate::core::graph_index::IndexEdge {
+            from: from.into(),
+            to: to.into(),
+            kind: kind.into(),
+            weight: 0.8,
+        };
+        let page = |id: &str, state: &str| ProviderItem {
+            id: id.into(),
+            state: Some(state.into()),
+            ..ProviderItem::default()
+        };
+        let mut edges = vec![
+            edge("emspace://pages/core/patterns", "src/a.rs", "documents"),
+            edge("src/a.rs", "emspace://pages/core/patterns", "mentioned_in"),
+            edge("emspace://pages/cockpit", "src/b.rs", "documents"),
+            edge("emspace://pages/build", "src/c.rs", "documents"),
+        ];
+        let pages = [
+            page("core/patterns", "stale"),
+            page("cockpit", "noted"),
+            page("build", "draft"),
+        ];
+        mark_page_freshness(&mut edges, &pages);
+        let kinds: Vec<&str> = edges.iter().map(|e| e.kind.as_str()).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                "documents, stale",
+                "mentioned_in, stale",
+                "documents, noted",
+                "documents"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_pass_reads_pages_only_when_the_journal_moved_or_an_hour_passed() {
+        let hour = FULL_PASS_INTERVAL.as_secs();
+        assert!(pass_needed(None, 7, 1_000), "never indexed");
+        assert!(
+            !pass_needed(Some((7, 1_000)), 7, 1_000 + 60),
+            "unchanged space"
+        );
+        assert!(
+            pass_needed(Some((7, 1_000)), 8, 1_000 + 60),
+            "the journal moved"
+        );
+        assert!(
+            pass_needed(Some((7, 1_000)), 7, 1_000 + hour),
+            "the hourly full pass"
+        );
+        // A clock that went back never blocks the next change.
+        assert!(pass_needed(Some((7, 5_000)), 9, 1_000));
+    }
+
+    #[test]
+    fn the_index_marker_round_trips_and_a_damaged_one_reads_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(read_marker(dir.path()), None);
+        write_marker(dir.path(), 5167, 1_761_900_000);
+        assert_eq!(read_marker(dir.path()), Some((5167, 1_761_900_000)));
+        std::fs::write(dir.path().join(MARKER_FILE), "garbage").unwrap();
+        assert_eq!(read_marker(dir.path()), None);
     }
 
     #[test]

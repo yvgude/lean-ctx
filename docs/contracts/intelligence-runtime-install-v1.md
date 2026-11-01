@@ -537,11 +537,16 @@ Missing configuration starts disabled. Neither operation changes context data.
 ## Outbound model policy
 
 The proxy rechecks the final outgoing body, after alias rewrites and the
-determinism guard, against `router-policy.toml` and answers HTTP 403 on a
-violation. Missing `router-policy.toml` keeps its permissive default;
-unreadable, malformed or unknown policy fields fail closed. A configured cost
-ceiling fails closed because no verified per-request cost estimate exists.
-Reasoning-budget policy checks the actual outgoing `thinking.budget_tokens`.
+determinism guard, against `router-policy.toml` and answers a violation like
+every gateway refusal: HTTP 400 with a reason code (never 403, which hosts read
+as an authentication failure). Missing `router-policy.toml` keeps its
+permissive default; unreadable, malformed or unknown policy fields fail closed
+(`destination.model_policy_invalid`). A model outside the allowlist or on the
+denylist is refused with `destination.model_not_allowed`. Any configured
+`max_cost_micros` refuses every request (`destination.cost_ceiling_unverifiable`)
+because no verified per-request cost estimate exists before sending.
+Reasoning-budget policy checks the actual outgoing `thinking.budget_tokens`
+(`destination.reasoning_budget_missing`).
 
 ## Transaction and compatibility contract
 

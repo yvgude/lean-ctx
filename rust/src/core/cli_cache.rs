@@ -178,19 +178,38 @@ pub(crate) fn check_admitted(
     let original_tokens = crate::core::tokens::count_tokens(content);
     let nonce = process_nonce();
     let now = now_secs();
-    let Ok(mut transaction) = CacheTransaction::load() else {
-        return CacheResult::Miss {
-            content: content.clone(),
-        };
+    let is_hit = |entry: &CliCacheEntry| {
+        entry.hash == hash
+            && entry.nonce == nonce
+            && now.saturating_sub(entry.timestamp) < CACHE_TTL_SECS
+    };
+    let mut transaction = match CacheTransaction::load() {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            // The hit only depends on this process having delivered the same
+            // content; a busy lock must not cost the caller a full re-send.
+            // Atomic writes keep the file readable without the lock.
+            tracing::warn!("CLI cache unavailable, counters not updated: {error}");
+            let store: Option<CliCacheStore> = cache_file()
+                .and_then(|path| std::fs::read(path).ok())
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+            return match store {
+                Some(store) if store.entries.get(&key).is_some_and(is_hit) => CacheResult::Hit {
+                    entry: store.entries[&key].clone(),
+                    file_ref: file_ref(&key, &store),
+                },
+                _ => CacheResult::Miss {
+                    content: content.clone(),
+                },
+            };
+        }
     };
     let store = &mut transaction.store;
 
     store.total_reads = store.total_reads.saturating_add(1);
 
     if let Some(entry) = store.entries.get_mut(&key)
-        && entry.hash == hash
-        && entry.nonce == nonce
-        && now.saturating_sub(entry.timestamp) < CACHE_TTL_SECS
+        && is_hit(entry)
     {
         entry.read_count = entry.read_count.saturating_add(1);
         entry.timestamp = now;
@@ -199,13 +218,11 @@ pub(crate) fn check_admitted(
             entry: entry.clone(),
             file_ref: file_ref(&key, store),
         };
-        return if transaction.save().is_ok() {
-            result
-        } else {
-            CacheResult::Miss {
-                content: content.clone(),
-            }
-        };
+        // The hit stands even if the counters cannot be persisted.
+        if let Err(error) = transaction.save() {
+            tracing::warn!("CLI cache hit counters not saved: {error}");
+        }
+        return result;
     }
 
     let entry = CliCacheEntry {
@@ -535,7 +552,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_lock_timeout_preserves_bytes_and_returns_full_content() {
+    fn cache_lock_timeout_preserves_bytes_and_still_serves_the_hit() {
         let _data = crate::core::data_dir::isolated_data_dir();
         let file = tempfile::NamedTempFile::new().unwrap();
         let content = "cache timeout content\n";
@@ -548,9 +565,26 @@ mod tests {
             crate::core::agents::FileLock::acquire(&cache_path.with_extension("lock")).unwrap();
         assert!(invalidate(path).is_err());
         assert!(
-            matches!(check_and_read(path), CacheResult::Miss { content: full } if full == content)
+            matches!(check_and_read(path), CacheResult::Hit { .. }),
+            "a busy lock must not turn this process's hit into a miss"
         );
         assert_eq!(std::fs::read(&cache_path).unwrap(), before);
+    }
+
+    #[test]
+    fn cache_lock_timeout_without_an_entry_returns_full_content() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let content = "never cached\n";
+        std::fs::write(file.path(), content).unwrap();
+        let path = file.path().to_str().unwrap();
+        let cache_path = cache_file().unwrap();
+        std::fs::create_dir_all(cache_path.parent().unwrap()).unwrap();
+        let _lock =
+            crate::core::agents::FileLock::acquire(&cache_path.with_extension("lock")).unwrap();
+        assert!(
+            matches!(check_and_read(path), CacheResult::Miss { content: full } if full == content)
+        );
     }
 
     #[test]

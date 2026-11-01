@@ -12,10 +12,27 @@ fn at(text: &str) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-/// Hits and first-context samples land on their day; the median is the
-/// contract's p50, present exactly when samples are.
+/// The held tasks' usage over the UTC day starting at `day`.
+fn day_tasks(
+    data: &Path,
+    day: &str,
+    now: DateTime<Utc>,
+    usage: &WindowUsage<'_>,
+) -> Vec<MetricsTaskUsageV1> {
+    let start = at(&format!("{day}T00:00:00Z"));
+    window_tasks(
+        data,
+        PROJECT,
+        start,
+        start + chrono::Duration::days(1),
+        now,
+        usage,
+    )
+}
+
+/// Hits and first-context samples land on their project and day.
 #[test]
-fn hits_and_first_context_times_make_the_day_entry() {
+fn hits_and_first_context_times_make_the_day_counters() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path();
     let now = at("2026-10-22T12:00:00Z");
@@ -23,15 +40,11 @@ fn hits_and_first_context_times_make_the_day_entry() {
     record_at(data, PROJECT, now, None, Some(1200));
     record_at(data, PROJECT, now, Some(1), Some(800));
     record_at(data, "other", now, Some(9), None);
-    let none = |_: DateTime<Utc>, _: DateTime<Utc>| -> Rows { Vec::new() };
-    let entry = day_entry(data, PROJECT, "2026-10-22", now, &none).unwrap();
-    assert_eq!(entry.knowledge_hits_referenced, 4);
-    assert_eq!(entry.first_context_sessions, 3);
-    assert_eq!(entry.first_context_ms_p50, Some(800));
-    assert!(entry.task_usage.is_empty());
-    assert_eq!(day_entry(data, PROJECT, "2026-10-21", now, &none), None);
-    assert_eq!(median(&[10, 20]), Some(15));
-    assert_eq!(median(&[u64::MAX, u64::MAX]), Some(u64::MAX));
+    assert_eq!(
+        day_counters(data, PROJECT, "2026-10-22"),
+        (4, vec![400, 1200, 800])
+    );
+    assert_eq!(day_counters(data, PROJECT, "2026-10-21"), (0, Vec::new()));
 }
 
 /// A claim's usage is what the host sessions recorded inside its window,
@@ -53,7 +66,7 @@ fn claim_windows_bound_the_task_usage() {
         windows.borrow_mut().push((from, to));
         vec![("claude-opus-5-5".to_owned(), 1_000, 200, 0, 0)]
     };
-    let entry = day_entry(data, PROJECT, "2026-10-22", now, &usage).unwrap();
+    let tasks = day_tasks(data, "2026-10-22", now, &usage);
     assert_eq!(
         windows.into_inner(),
         [
@@ -61,16 +74,14 @@ fn claim_windows_bound_the_task_usage() {
             (at("2026-10-22T10:00:00Z"), now),
         ]
     );
-    let numbers: Vec<u64> = entry.task_usage.iter().map(|row| row.number).collect();
+    let numbers: Vec<u64> = tasks.iter().map(|row| row.number).collect();
     assert_eq!(numbers, [7, 9]);
-    assert_eq!(entry.task_usage[0].input_tokens, 1_000);
-    assert_eq!(entry.task_usage[0].output_tokens, 200);
-    assert_eq!(entry.knowledge_hits_referenced, 0);
-    assert_eq!(entry.first_context_ms_p50, None);
+    assert_eq!(tasks[0].input_tokens, 1_000);
+    assert_eq!(tasks[0].output_tokens, 200);
 
-    // No usage inside the windows: no rows, and no entry at all.
+    // No usage inside the windows: no rows.
     let idle = |_: DateTime<Utc>, _: DateTime<Utc>| -> Rows { Vec::new() };
-    assert_eq!(day_entry(data, PROJECT, "2026-10-22", now, &idle), None);
+    assert!(day_tasks(data, "2026-10-22", now, &idle).is_empty());
 }
 
 /// M2 counts each minute once: claims held at the same time share its
@@ -92,9 +103,7 @@ fn overlapping_and_adjacent_claims_share_their_minutes() {
         let minutes = u64::try_from((to - from).num_minutes() + 1).unwrap();
         vec![("claude-opus-5-5".to_owned(), 1_001 * minutes, 0, 0, 0)]
     };
-    let entry = day_entry(data, PROJECT, "2026-10-22", now, &usage).unwrap();
-    let input: Vec<(u64, u64)> = entry
-        .task_usage
+    let input: Vec<(u64, u64)> = day_tasks(data, "2026-10-22", now, &usage)
         .iter()
         .map(|row| (row.number, row.input_tokens))
         .collect();

@@ -176,7 +176,12 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
                 println!("No pipeline stats available yet (corrupt data).");
             }
         } else {
-            println!("No pipeline stats available yet. Use MCP tools to generate data.");
+            // No production path records per-layer metrics; MCP use does not
+            // create this file, so do not promise that it will.
+            println!(
+                "No per-layer pipeline stats recorded: LeanCTX does not collect them. \
+                 `lean-ctx gain` shows the measured savings."
+            );
         }
     } else if rest.iter().any(|a| a == "--deep") {
         // Body first, then the extra themed sections, then the footer — so the

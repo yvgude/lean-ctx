@@ -9,7 +9,24 @@ use super::{Config, ConfigCacheSlot, default_shell_allowlist};
 
 const CONFIG_PROFILE_ENV: &str = "LEAN_CTX_CONFIG_PROFILE";
 
+thread_local! {
+    /// Set while the shell-security policy is merged: no environment-selected
+    /// profile applies to it (`shell_policy`).
+    static IGNORE_ENV_PROFILE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `f` with the environment's config profile ignored.
+pub(super) fn without_env_profile<T>(f: impl FnOnce() -> T) -> T {
+    let previous = IGNORE_ENV_PROFILE.with(|c| c.replace(true));
+    let out = f();
+    IGNORE_ENV_PROFILE.with(|c| c.set(previous));
+    out
+}
+
 pub(super) fn environment_config_profile() -> Option<String> {
+    if IGNORE_ENV_PROFILE.with(std::cell::Cell::get) {
+        return None;
+    }
     std::env::var(CONFIG_PROFILE_ENV)
         .ok()
         .map(|name| name.trim().to_string())

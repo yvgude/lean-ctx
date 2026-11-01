@@ -44,6 +44,14 @@ pub trait ContextProvider: Send + Sync {
         120
     }
 
+    /// Whether a result of `action` is consolidated into the stores (BM25,
+    /// cross-source edges, knowledge). A provider whose actions include
+    /// reads of something one listing already indexes says `false` for
+    /// them, so a read does not add a second copy and its own hints.
+    fn consolidates(&self, _action: &str) -> bool {
+        true
+    }
+
     /// What this connector actually guarantees (strategy package 2026-10-14,
     /// doc 17). The default claims nothing it cannot prove: it lists, and it
     /// cannot re-check a stored item, so its content stays personal-local and

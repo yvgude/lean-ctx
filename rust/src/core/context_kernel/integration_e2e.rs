@@ -49,18 +49,22 @@ mod tests {
             evidence_wiring::record_from_tool_dispatch(&format!("tool_{index}"), 100, 40, 60);
         }
         for _ in 0..2 {
-            evidence_wiring::record_from_proxy_dispatch(
-                200,
-                80,
-                120,
-                Some("gpt-5"),
-                Some("openai"),
-            );
+            // The forward path's Context IR stage, then the measured-usage dispatch.
+            let data = super::super::proxy_bridge::ProxyRequestData {
+                input_tokens: 200,
+                output_tokens: 80,
+                tokens_saved: 120,
+                request_count: 1,
+                ..Default::default()
+            };
+            let result = super::super::proxy_bridge::process_proxy_request(&data);
+            envelope_wiring::process_proxy_evidence(&data, &result);
+            evidence_wiring::record_from_proxy_dispatch(200, 80, 120);
         }
 
         let report = health::kernel_health();
         assert!(report.initialized);
-        assert!(report.evidence_total_envelopes >= 5);
+        assert_eq!(report.evidence_total_envelopes, 5);
         assert!(dedup_wiring::dedup_stats().cache_hits >= 1);
     }
 
@@ -71,7 +75,7 @@ mod tests {
             evidence_wiring::record_from_tool_dispatch(&format!("tool_{index}"), 100, 40, 60);
         }
         for _ in 0..2 {
-            evidence_wiring::record_from_proxy_dispatch(200, 80, 120, None, None);
+            evidence_wiring::record_from_proxy_dispatch(200, 80, 120);
         }
         search_kernel::record_search("query1", 10, 500);
         search_kernel::record_search("query2", 8, 400);
@@ -147,7 +151,7 @@ mod tests {
             original
         );
         evidence_wiring::record_from_tool_dispatch("ctx_read", 100, 40, 60);
-        evidence_wiring::record_from_proxy_dispatch(200, 80, 120, None, None);
+        evidence_wiring::record_from_proxy_dispatch(200, 80, 120);
         search_kernel::record_search("disabled", 10, 500);
 
         assert_eq!(

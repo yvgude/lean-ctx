@@ -117,27 +117,45 @@ fn file_read_rewrite_awk_nr() {
 }
 
 /// #1279: chains whose lead segment is not rewritable used to escape whole.
-/// Now the rewritable file-read segments are rewritten in place.
+/// Now the rewritable file-read segments are rewritten in place — but only
+/// when the form that runs passes the allowlist: the in-place form runs the
+/// other segments natively, so `bash -c 'id' && cat f` became
+/// `bash -c 'id' && lean-ctx read f` and the `bash -c` ran unchecked. Such a
+/// chain takes the enforcement wrap instead.
 #[test]
 fn compound_segments_rewritten_in_place() {
+    let [cat, sed, violating, piped, nothing] = with_test_allowlist(|| {
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo,cat,sed,lean-ctx");
+        let out = [
+            build_rewrite_compound("echo hi && cat src/main.rs", "lean-ctx"),
+            build_rewrite_compound("echo hi && sed -n '1,30p' src/main.rs", "lean-ctx"),
+            build_rewrite_compound("bash -c 'id' && cat src/main.rs", "lean-ctx"),
+            super::file_rewrite::rewrite_segments_in_place(
+                &crate::compound_lexer::split_compound("cat f.rs | grep foo"),
+                "lean-ctx",
+            ),
+            build_rewrite_compound("echo a && echo b", "lean-ctx"),
+        ];
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        out
+    });
+    assert_eq!(cat.as_deref(), Some("echo hi && lean-ctx read src/main.rs"));
     assert_eq!(
-        build_rewrite_compound("echo hi && cat src/main.rs", "lean-ctx"),
-        Some("echo hi && lean-ctx read src/main.rs".to_string())
+        sed.as_deref(),
+        Some("echo hi && lean-ctx read src/main.rs -m lines:1-30")
     );
     assert_eq!(
-        build_rewrite_compound("echo hi && sed -n '1,30p' src/main.rs", "lean-ctx"),
-        Some("echo hi && lean-ctx read src/main.rs -m lines:1-30".to_string())
+        violating,
+        Some(expect_wrapped(
+            "bash -c 'id' && cat src/main.rs",
+            "lean-ctx"
+        ))
     );
     // Pipes change consumer semantics — segment-wise rewriting must decline.
-    assert_eq!(
-        super::file_rewrite::rewrite_segments_in_place(
-            &crate::compound_lexer::split_compound("cat f.rs | grep foo"),
-            "lean-ctx"
-        ),
-        None
-    );
+    assert_eq!(piped, None);
     // A chain with nothing rewritable stays untouched.
-    assert_eq!(build_rewrite_compound("echo a && echo b", "lean-ctx"), None);
+    assert_eq!(nothing, None);
 }
 
 #[test]

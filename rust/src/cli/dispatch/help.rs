@@ -143,7 +143,7 @@ COMMANDS:
     gain --by-tool [--json]        Per-tool local context breakdown (calls, tokens, USD, %)
     gain --heatmap                 Top files by observed token reduction
     gain --json                    Raw JSON export of all stats
-    gain --pipeline                Pipeline compression stats
+    gain --pipeline                Per-layer pipeline stats (not collected; legacy file only)
     gain --opportunity             Find missed savings in shell history (replaces discover/ghost)
     gain --raw [--json]            Plain stats output (machine-friendly)
     gain --reset                   Clear all token savings data
@@ -162,7 +162,7 @@ COMMANDS:
     gateway why|list|allow-once|revoke <id>  A withheld block of a model request: why, and the human-only override
     claude-mod [status|install|uninstall]  Claude Code mod: wake-not-poll, Bash shaping, /leanctx (opt-in)
     prompt-segment [--shell zsh|bash|fish|plain]  Shell prompt segment (set up by `init --prompt`)
-    learning [status|export|import]  Local adaptive-learning state: inspect, export, import
+    learning [status]                Local learning-efficacy evidence (export/import: retired, no effect)
     autopilot [status|explain|history|export|evidence|reset]  Personal receipt-validated learning; evidence: per-workload strategy evidence (help for options)
     codex-protected --project <DIR> [--codex <PATH>|--check]  One Codex session that reaches <DIR> only through lean-ctx
     token-report [--json]          Token + memory report (project + session + CEP)

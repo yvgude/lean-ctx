@@ -6,6 +6,9 @@ use crate::core::tokens::count_tokens;
 /// is unchanged while a pathological session can no longer crowd out the task.
 pub const DEFAULT_ACTIVE_SESSION_BUDGET: usize = 800;
 
+/// Share of items placed at the begin position (the static layout).
+pub const DEFAULT_BEGIN_SHARE: f64 = 0.7;
+
 /// Effective ACTIVE SESSION token budget (`LEAN_CTX_ACTIVE_SESSION_BUDGET` overrides).
 #[must_use]
 pub fn active_session_budget() -> usize {
@@ -116,11 +119,11 @@ fn trim_lines_to_budget(block: &str, budget: usize) -> String {
 ///   P2 (end): recent findings, test results, next steps
 ///   P3 (dropped): old completed tasks, historical reads beyond limit
 pub fn position_optimize(session: &SessionState) -> PositionedOutput {
-    position_optimize_with_share(session, crate::core::litm_calibration::DEFAULT_BEGIN_SHARE)
+    position_optimize_with_share(session, DEFAULT_BEGIN_SHARE)
 }
 
-/// Calibrated variant (#539): `begin_share` < 0.6 means the begin position
-/// empirically under-performs for this client — progress moves to the end
+/// Variant with an explicit `begin_share`: < 0.6 means the begin position
+/// under-performs for this client — progress moves to the end
 /// block and the task line is duplicated there (recency rescue for the most
 /// critical item). At the default share the layout is byte-identical to the
 /// uncalibrated version.
@@ -385,10 +388,7 @@ pub mod tests {
             progress_pct: Some(50),
         });
         let a = position_optimize(&session);
-        let b = position_optimize_with_share(
-            &session,
-            crate::core::litm_calibration::DEFAULT_BEGIN_SHARE,
-        );
+        let b = position_optimize_with_share(&session, DEFAULT_BEGIN_SHARE);
         assert_eq!(a.begin_block, b.begin_block);
         assert_eq!(a.end_block, b.end_block);
     }

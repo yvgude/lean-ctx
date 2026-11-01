@@ -26,7 +26,7 @@ impl McpTool for CtxShellTool {
         tool_def(
             "ctx_shell",
             "WORKFLOW: preferred — auto-compresses output (build/test/log).\n\
-              raw=true for verbatim output; inline=true for moderately-sized verbatim output.\n\
+             Big logs: narrow the command (grep, sed -n, head/tail).\n\
              [exit:N] on errors (lossless).\n\
              POLICY: allowlisted read-only path.\n\
              A [BLOCKED] command is permanent; ctx_execute shares the same allowlist — fix with \
@@ -37,8 +37,8 @@ impl McpTool for CtxShellTool {
                 "type": "object",
                 "properties": {
                     "command": { "type": "string", "description": "Shell command" },
-                    "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
-                    "inline": { "type": "boolean", "description": "Return verbatim output inline up to archive.inline_max_bytes; larger output uses the archive/firewall" },
+                    "raw": { "type": "boolean", "description": "Exact bytes; only for diffs to apply, hashes, encoded output" },
+                    "inline": { "type": "boolean", "description": "Verbatim up to archive.inline_max_bytes, else archived" },
                     "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
                     "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms. Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
@@ -133,7 +133,7 @@ impl McpTool for CtxShellTool {
             &ctx.extra_roots,
             &config,
         ));
-        if !config.shell_allow_writes_effective()
+        if !crate::core::config::shell_policy::allow_writes()
             && let Some(rejection) = crate::tools::ctx_shell::validate_command_in_cwd(
                 &command,
                 &write_allow_paths,
@@ -157,9 +157,14 @@ impl McpTool for CtxShellTool {
         }
 
         let grant = crate::server::shell_approval::current_grant();
-        if let Err(msg) =
+        // Relative paths in the command resolve where it runs, not where
+        // this server runs.
+        let run_cwd = resolved_cwd
+            .as_ref()
+            .map(|(cwd, _)| std::path::PathBuf::from(cwd));
+        if let Err(msg) = crate::core::shell_allowlist::with_run_cwd(run_cwd, || {
             crate::core::shell_allowlist::check_shell_allowlist_granted(&command, &grant)
-        {
+        }) {
             // Independent `;`/newline statements: run the allowed ones and
             // name each skipped one, instead of refusing the whole line.
             if let Some(plan) = crate::core::shell_allowlist::partial_run(&command, &grant) {

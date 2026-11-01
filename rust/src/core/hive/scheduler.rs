@@ -100,11 +100,19 @@ fn tick_once(store: &HiveStore, config: &HiveConfig) -> TickOutcome {
             }
         }
     }
-    if due(store, config, "knowledge", now) {
-        crate::core::hive::knowledge::pull::sync(&session, config, None);
-    }
-    for problem in crate::core::hive::tasks::propose::drain(&session).problems {
-        store.record_error(&format!("tasks: {problem}"));
+    // A local screening rule that does not compile pauses every content
+    // channel (fails closed) and says so each pass; the policy pull that
+    // may bring fixed rules goes on.
+    let screen_problem = super::knowledge::screening::Screen::for_installation().problem();
+    if let Some(problem) = &screen_problem {
+        store.record_error(problem);
+    } else {
+        if due(store, config, "knowledge", now) {
+            crate::core::hive::knowledge::pull::sync(&session, config, None);
+        }
+        for problem in crate::core::hive::tasks::propose::drain(&session).problems {
+            store.record_error(&format!("tasks: {problem}"));
+        }
     }
     if due(store, config, "policy", now)
         && session

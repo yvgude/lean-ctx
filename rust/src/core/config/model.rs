@@ -378,13 +378,10 @@ pub struct Config {
     /// Files above get map (manifest) mode. Default: 500 lines.
     #[serde(default = "serde_defaults::default_progressive_signatures_max")]
     pub progressive_signatures_max: u32,
-    /// Opt-in: let the adaptive *learning* signals (predictor, bandit, heatmap,
-    /// adaptive policy, in-session bounce rates) participate in `auto` mode
-    /// resolution. Off by default (#683): the default cascade is a deterministic
-    /// function of (file, task) — only capability guards and the size/task
-    /// heuristic decide — which keeps output byte-stable for provider prompt
-    /// caching (#498) and avoids per-read disk I/O from the learning stores.
-    /// Override via the LEAN_CTX_AUTO_MODE_LEARNING env var.
+    /// Retired, no effect (kept so existing configs load; `DEPRECATIONS.toml`).
+    /// The learned `auto` signals it switched on are gone: `auto` is always the
+    /// deterministic capability-guard and size/task cascade (#498). The
+    /// `LEAN_CTX_AUTO_MODE_LEARNING` env var is ignored as well.
     #[serde(default)]
     pub auto_mode_learning: bool,
     /// Team content sharing (strategy 2026-10-14, acceptance T07). When false,
@@ -412,8 +409,8 @@ pub struct Config {
     /// AI session-summary settings (#292): periodic, semantically-recallable summaries.
     #[serde(default)]
     pub summaries: SummariesConfig,
-    /// Optional local LLM for the background knowledge loop's observation
-    /// synthesis (`[autonomy] cognition_loop_enabled`, off by default).
+    /// Optional local LLM settings (`llm_enhance`). Their only consumer, the
+    /// cognition loop's observation synthesis, is retired.
     #[serde(default)]
     pub llm: crate::core::llm_enhance::LlmConfig,
     /// Semantic-embedding engine settings (which local ONNX model to use).

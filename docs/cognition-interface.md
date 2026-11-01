@@ -27,13 +27,12 @@ Evidence:
 ### 2) Orchestration (routing + budgets)
 
 - Profile-driven pipelines (“Context as Code”): read modes, budgets, verification, autonomy.
-- Intent/mode prediction and adaptive thresholds (bandits) to keep cost/quality stable.
+- Intent classification and deterministic per-language thresholds to keep cost/quality stable.
 - Client constraints compilation: the same policy must compile into client-safe instruction blocks.
 
 Evidence:
 - `rust/src/core/profiles.rs`
 - `rust/src/core/intent_engine.rs`
-- `rust/src/core/mode_predictor.rs`
 - `rust/src/core/adaptive_thresholds.rs`
 - `rust/src/core/instruction_compiler.rs`
 - `docs/integrations/client-constraints-matrix-v1.md`

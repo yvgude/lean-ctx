@@ -339,6 +339,124 @@ fn exact_matches_section(
     out
 }
 
+/// Small-file inlining (owner decision 2026-10-31). Benchmark transcripts
+/// (Claude Code + Haiku, ledgerlite + Dispatch edit tasks): after an
+/// orientation call the agent spent its next model step reading the files the
+/// overview had named — every full read there was a file of at most 61 lines /
+/// ~520 tokens, at most four per step, ~1.6k tokens together; larger files were
+/// read by symbol or line range instead. Those small files are delivered here
+/// in full, verbatim, so the overview call already carries them.
+const SMALL_FILE_MAX_LINES: usize = 150;
+const SMALL_FILE_MAX_TOKENS: usize = 800;
+const SMALL_FILES_MAX: usize = 4;
+/// Token budget of the whole section. `LEAN_CTX_COMPOSE_INLINE_TOKENS`
+/// overrides it; `0` turns inlining off.
+const DEFAULT_SMALL_FILES_BUDGET_TOKENS: usize = 2_000;
+
+fn small_files_budget_tokens() -> usize {
+    std::env::var("LEAN_CTX_COMPOSE_INLINE_TOKENS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_SMALL_FILES_BUDGET_TOKENS)
+}
+
+/// Files the sections above name, in the order they name them: ranked
+/// results (`path :: symbol`), exact matches (`path:line …`) and symbol
+/// bodies (`File: path (…)`).
+fn named_files(composed: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut files = Vec::new();
+    for line in composed.lines() {
+        let candidate = if let Some((path, _)) = line.split_once(" :: ") {
+            path.trim()
+        } else if let Some(rest) = line.strip_prefix("File: ") {
+            rest.split(" (").next().unwrap_or("").trim()
+        } else {
+            let Some((path, rest)) = line.split_once(':') else {
+                continue;
+            };
+            if !rest.starts_with(|c: char| c.is_ascii_digit()) {
+                continue;
+            }
+            path.trim()
+        };
+        if candidate.is_empty()
+            || candidate.contains(char::is_whitespace)
+            || !candidate.contains('.')
+            || candidate.starts_with('[')
+        {
+            continue;
+        }
+        if seen.insert(candidate.to_string()) {
+            files.push(candidate.to_string());
+        }
+    }
+    files
+}
+
+/// The named files that are small, admitted exactly as `ctx_read` admits a
+/// read (path jail, binary and policy checks, secret-like paths only for a
+/// role that may read them), in full and byte-exact inside a fence. Empty when
+/// none qualifies. Deterministic: order and selection depend only on the
+/// sections above and the file contents.
+fn small_files_section(composed: &str, project_root: &str, allow_secret: bool) -> String {
+    let budget = small_files_budget_tokens();
+    if budget == 0 {
+        return String::new();
+    }
+    let mut used = 0usize;
+    let mut inlined = 0usize;
+    let mut section = String::new();
+    let mut remaining_bytes = crate::core::limits::max_read_bytes();
+    for rel in named_files(composed) {
+        if inlined >= SMALL_FILES_MAX {
+            break;
+        }
+        let path = std::path::Path::new(project_root).join(&rel);
+        if !allow_secret && crate::core::io_boundary::is_secret_like(&path).is_some() {
+            continue;
+        }
+        let Ok(meta) = std::fs::metadata(&path) else {
+            continue;
+        };
+        // Cheap pre-filter before reading: 150 lines of code stay far below this.
+        if !meta.is_file() || meta.len() > 16 * 1024 {
+            continue;
+        }
+        let Ok(content) = crate::tools::ctx_read::read_file_for_tool_rooted_budgeted(
+            &path.to_string_lossy(),
+            project_root,
+            "ctx_read",
+            &mut remaining_bytes,
+        ) else {
+            continue;
+        };
+        let lines = content.lines().count();
+        let tokens = count_tokens(&content);
+        if lines == 0
+            || lines > SMALL_FILE_MAX_LINES
+            || tokens > SMALL_FILE_MAX_TOKENS
+            || used + tokens > budget
+        {
+            continue;
+        }
+        let longest_run = content.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+        let fence = "`".repeat(longest_run.max(2) + 1);
+        if section.is_empty() {
+            section.push_str("\n## Small files (full, verbatim)\n");
+        }
+        section.push_str(&format!("File: {rel} ({lines} lines)\n{fence}\n{content}"));
+        if !content.ends_with('\n') {
+            section.push('\n');
+        }
+        section.push_str(&fence);
+        section.push('\n');
+        used += tokens;
+        inlined += 1;
+    }
+    section
+}
+
 /// Compose a single rich response for `task`.
 pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usize) {
     crate::core::policy::runtime::with_project_source_view(project_root, || {
@@ -470,6 +588,12 @@ fn handle_in_view(task: &str, project_root: &str, crp_mode: CrpMode) -> (String,
     //    ~10 % precision and ~110 tokens when shown.)
     drop(symbols_phase);
 
+    // 4b. Small files in full: the bodies the agent would read next anyway.
+    {
+        let _phase = crate::core::phase_timing::enter("ctx_compose: small files");
+        out.push_str(&small_files_section(&out, project_root, allow_secret));
+    }
+
     // 5. Context Kernel enrichment — cross-store context from Knowledge,
     //    Episodic, and Procedural memory that the lexical pipeline misses.
     //    Budget: 20% of symbol budget. Graceful no-op if kernel returns None.
@@ -580,6 +704,50 @@ mod tests {
         let ranked = rank_by_doc_freq(&keywords, &doc_freqs);
         assert_eq!(ranked.first().unwrap(), "GetMaxCurrent");
         assert_eq!(ranked.last().unwrap(), "Current");
+    }
+
+    /// Benchmark replay (feature-export-csv): after `ctx_compose` the agent's
+    /// next step read cli.py and test_core.py in full. Named small files now
+    /// come with the overview, verbatim; a large one and a secret-like one
+    /// named by the same sections do not.
+    #[test]
+    fn named_small_files_are_inlined_verbatim_within_budget() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"x\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir(dir.path().join("pkg")).unwrap();
+        let cli = "import argparse\n\n\ndef main():\n    return \"```\"\n";
+        std::fs::write(dir.path().join("pkg/cli.py"), cli).unwrap();
+        let big: String = (0..400).fold(String::new(), |mut acc, i| {
+            use std::fmt::Write as _;
+            let _ = writeln!(acc, "value_{i} = {i}");
+            acc
+        });
+        std::fs::write(dir.path().join("pkg/big.py"), &big).unwrap();
+        std::fs::write(dir.path().join(".env"), "TOKEN=abc\n").unwrap();
+        let composed = "## Ranked files (local BM25)\n\
+                        pkg/big.py :: value_1 [Variable] (L2-2)\n\
+                        pkg/cli.py :: main [Function] (L4-5)\n\
+                        ## Exact matches: 'main'\n\
+                        .env:1 TOKEN=abc\n\
+                        pkg/cli.py:4 def main():\n";
+        let root = dir.path().to_str().unwrap();
+        let section = crate::core::policy::runtime::with_project_source_view(root, || {
+            small_files_section(composed, root, false)
+        })
+        .unwrap();
+        assert!(
+            section.contains(&format!("File: pkg/cli.py (5 lines)\n````\n{cli}````\n")),
+            "{section}"
+        );
+        assert!(!section.contains("value_399"), "{section}");
+        assert!(!section.contains("TOKEN=abc"), "{section}");
+        assert_eq!(section.matches("File: ").count(), 1, "{section}");
     }
 
     #[test]

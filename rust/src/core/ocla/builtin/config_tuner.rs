@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! BuiltinConfigTuner — proposes configuration adjustments.
 //!
-//! Wraps `core/config/mod.rs` tuning logic behind the OCLA trait. Generates
-//! deterministic proposal refs and signals whether the change requires user
-//! approval before application.
+//! The built-in tuner is the identity: it proposes the requested config ref
+//! unchanged (the learned mode-penalty policy it once consulted is retired).
+//! It generates deterministic proposal refs and signals whether the change
+//! requires user approval before application; an external tuner can replace it
+//! through the OCLA registry.
 
-use crate::core::adaptive_mode_policy::AdaptiveModePolicyStore;
 use crate::core::ocla::traits::{ConfigTuner, OclaService};
 use crate::core::ocla::types::{
     ConfigProposal, ConfigTuningRequest, OclaCapability, OclaCapabilityKind, OclaResult,
@@ -28,23 +29,11 @@ impl BuiltinConfigTuner {
         }
     }
 
-    pub fn tune(&self, request: ConfigTuningRequest) -> OclaResult<ConfigProposal> {
-        let policy = AdaptiveModePolicyStore::load();
-        self.tune_with_policy(request, &policy)
-    }
-
     #[allow(clippy::unnecessary_wraps, clippy::needless_pass_by_value)]
-    fn tune_with_policy(
-        &self,
-        request: ConfigTuningRequest,
-        policy: &AdaptiveModePolicyStore,
-    ) -> OclaResult<ConfigProposal> {
-        let intent =
-            (!request.objective_ref.trim().is_empty()).then_some(request.objective_ref.as_str());
-        let tuned_mode = policy.choose_auto_mode(intent, &request.config_ref);
+    pub fn tune(&self, request: ConfigTuningRequest) -> OclaResult<ConfigProposal> {
         let proposal_ref = format!(
             "proposal:{}->{}:{}",
-            request.config_ref, tuned_mode, request.context.request_id
+            request.config_ref, request.config_ref, request.context.request_id
         );
         let rollback_ref = format!("rollback:{}", request.config_ref);
 
@@ -103,70 +92,17 @@ mod tests {
     #[test]
     fn default_requires_approval() {
         let tuner = BuiltinConfigTuner::new();
-        let proposal = tuner
-            .tune_with_policy(
-                tuning_req("aggressive"),
-                &AdaptiveModePolicyStore::default(),
-            )
-            .unwrap();
+        let proposal = tuner.tune(tuning_req("aggressive")).unwrap();
         assert!(proposal.requires_approval);
-        assert!(proposal.proposal_ref.contains("aggressive->aggressive"));
+        assert_eq!(proposal.proposal_ref, "proposal:aggressive->aggressive:r1");
+        assert_eq!(proposal.rollback_ref, "rollback:aggressive");
     }
 
     #[test]
     fn auto_apply_mode() {
         let tuner = BuiltinConfigTuner::auto_apply();
-        let proposal = tuner
-            .tune_with_policy(tuning_req("mode"), &AdaptiveModePolicyStore::default())
-            .unwrap();
+        let proposal = tuner.tune(tuning_req("mode")).unwrap();
         assert!(!proposal.requires_approval);
-    }
-
-    #[test]
-    fn tune_uses_penalty_for_predicted_mode() {
-        let tuner = BuiltinConfigTuner::new();
-        let mut policy = AdaptiveModePolicyStore::default();
-        policy.global.modes.insert(
-            "aggressive".to_string(),
-            crate::core::adaptive_mode_policy::ModePenalty {
-                ema_badness: 1.0,
-                samples: 1,
-                last_ts: Some("t".to_string()),
-            },
-        );
-
-        let proposal = tuner
-            .tune_with_policy(tuning_req("aggressive"), &policy)
-            .unwrap();
-
-        assert!(!proposal.proposal_ref.contains("aggressive->aggressive"));
-        assert!(proposal.proposal_ref.starts_with("proposal:aggressive->"));
-    }
-
-    #[test]
-    fn tune_honors_intent_specific_policy() {
-        let tuner = BuiltinConfigTuner::new();
-        let mut policy = AdaptiveModePolicyStore::default();
-        let intent = "minimize_tokens".to_string();
-        policy
-            .by_intent
-            .entry(intent.clone())
-            .or_default()
-            .modes
-            .insert(
-                "aggressive".to_string(),
-                crate::core::adaptive_mode_policy::ModePenalty {
-                    ema_badness: 1.0,
-                    samples: 1,
-                    last_ts: Some("t".to_string()),
-                },
-            );
-
-        let proposal = tuner
-            .tune_with_policy(tuning_req("aggressive"), &policy)
-            .unwrap();
-
-        assert!(!proposal.proposal_ref.contains("aggressive->aggressive"));
     }
 
     #[test]

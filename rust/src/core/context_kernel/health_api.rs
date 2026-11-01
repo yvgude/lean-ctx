@@ -36,29 +36,9 @@ pub fn health_json() -> String {
         .unwrap_or_else(|error| serde_json::json!({ "error": error.to_string() }).to_string())
 }
 
-/// Formats the key kernel signals as a compact one-line status.
-#[must_use]
-pub fn one_line_status() -> String {
-    let report = super::health::kernel_health();
-    let health = if super::health::is_healthy() {
-        "OK"
-    } else {
-        "DEGRADED"
-    };
-    let kernel = if report.kernel_enabled { "ON" } else { "OFF" };
-    let adaptive = super::adaptive_bridge::adaptive_summary();
-    let search = crate::tools::search_kernel::search_summary();
-    format!(
-        "Kernel: {kernel} | Health: {health} | Dedup: {:.0}% hit | Adaptive: {:?} | Searches: {}",
-        report.dedup_hit_rate * 100.0,
-        adaptive.advice,
-        search.total_searches,
-    )
-}
-
 #[cfg(test)]
 pub mod tests {
-    use super::{enhanced_dashboard, health_json, one_line_status};
+    use super::{enhanced_dashboard, health_json};
     use crate::core::context_kernel::{adaptive_bridge, evidence_wiring, kernel_config};
     use crate::tools::search_kernel;
 
@@ -93,11 +73,5 @@ pub mod tests {
     fn health_json_valid() {
         let _guard = isolated();
         assert!(serde_json::from_str::<serde_json::Value>(&health_json()).is_ok());
-    }
-
-    #[test]
-    fn one_line_contains_kernel() {
-        let _guard = isolated();
-        assert!(one_line_status().contains("Kernel:"));
     }
 }

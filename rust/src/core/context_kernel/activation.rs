@@ -14,8 +14,8 @@ const MAX_SUPPLEMENT_TOKENS: usize = 150;
 /// Configuration for kernel activation mode.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ActivationConfig {
-    /// Kernel operating mode: Shadow (log only), Enforce (apply decisions),
-    /// or Explain (log + annotate).
+    /// Configured kernel mode. Reported only: every mode removes policy
+    /// violations before selection, none suppresses or annotates more.
     pub mode: KernelModeConfig,
     /// Accepted from existing configuration files; outcome learning runs
     /// through validated execution receipts whatever this says.
@@ -26,16 +26,16 @@ pub struct ActivationConfig {
     pub feedback_loop: bool,
 }
 
-/// Serializable kernel operating mode.
+/// Serializable kernel mode; see [`ActivationConfig::mode`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum KernelModeConfig {
-    /// Log kernel decisions but don't enforce them. Safe default.
+    /// Default.
     #[default]
     Shadow,
-    /// Apply kernel decisions: suppress low-value context, enforce budget.
+    /// Accepted and reported; filters exactly like `Shadow`.
     Enforce,
-    /// Like Shadow but annotate output with kernel reasoning.
+    /// Accepted and reported; filters exactly like `Shadow`.
     Explain,
 }
 
@@ -97,11 +97,6 @@ pub fn supplement_budget(config: &ActivationConfig) -> usize {
     config.max_supplement_tokens.min(MAX_SUPPLEMENT_TOKENS)
 }
 
-/// Returns whether the selected mode may suppress low-value context.
-pub fn should_suppress_in_mode(mode: KernelModeConfig) -> bool {
-    matches!(KernelMode::from(mode), KernelMode::Enforce)
-}
-
 fn safe_defaults() -> ActivationConfig {
     ActivationConfig {
         mode: KernelModeConfig::Shadow,
@@ -145,9 +140,7 @@ fn apply_overrides(config: &mut ActivationConfig, overrides: &KernelOverrides) {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{
-        ActivationConfig, KernelModeConfig, load_config, should_suppress_in_mode, supplement_budget,
-    };
+    use super::{ActivationConfig, KernelModeConfig, load_config, supplement_budget};
 
     fn config(mode: KernelModeConfig, max_supplement_tokens: usize) -> ActivationConfig {
         ActivationConfig {
@@ -171,15 +164,5 @@ pub mod tests {
             supplement_budget(&config(KernelModeConfig::Enforce, 500)),
             150
         );
-    }
-
-    #[test]
-    fn shadow_mode_never_suppresses() {
-        assert!(!should_suppress_in_mode(KernelModeConfig::Shadow));
-    }
-
-    #[test]
-    fn enforce_mode_suppresses() {
-        assert!(should_suppress_in_mode(KernelModeConfig::Enforce));
     }
 }

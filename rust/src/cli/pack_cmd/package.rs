@@ -230,8 +230,7 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
     } = parsed;
 
     let Some(pkg_name) = name else {
-        eprintln!("ERROR: --name is required for pack create");
-        return;
+        super::exit_usage("ERROR: --name is required for pack create");
     };
 
     // kind=skills (GH #727): a content pack built from a directory of files,
@@ -241,10 +240,9 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
         Some("skills") => {
             let Some(dir) = from_dir else {
                 eprintln!("ERROR: --from <dir> is required for --kind skills");
-                eprintln!(
-                    "Usage: lean-ctx pack create --kind skills --name @ns/name --from ./skills-dir"
+                super::exit_usage(
+                    "Usage: lean-ctx pack create --kind skills --name @ns/name --from ./skills-dir",
                 );
-                return;
             };
             create_skills_pack(
                 &pkg_name,
@@ -260,8 +258,9 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
             eprintln!(
                 "ERROR: unsupported --kind `{other}` for pack create (supported: context, skills)"
             );
-            eprintln!("  kind=addon packs are built with `lean-ctx addon publish --check`.");
-            return;
+            super::exit_usage(
+                "  kind=addon packs are built with `lean-ctx addon publish --check`.",
+            );
         }
     }
 
@@ -309,10 +308,7 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
         Ok(Some((manifest, content))) => {
             let registry = match crate::core::context_package::LocalRegistry::open() {
                 Ok(r) => r,
-                Err(e) => {
-                    eprintln!("ERROR: cannot open registry: {e}");
-                    return;
-                }
+                Err(e) => super::exit_failed(format!("cannot open registry: {e}")),
             };
 
             match registry.install_local_build(&manifest, &content) {
@@ -398,10 +394,10 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
                         }
                     }
                 }
-                Err(e) => eprintln!("ERROR: install failed: {e}"),
+                Err(e) => super::exit_failed(format!("install failed: {e}")),
             }
         }
-        Err(e) => eprintln!("ERROR: build failed: {e}"),
+        Err(e) => super::exit_failed(format!("build failed: {e}")),
     }
 }
 
@@ -426,18 +422,12 @@ fn create_skills_pack(
         tags,
     ) {
         Ok(p) => p,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(e),
     };
 
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
-        Err(e) => {
-            eprintln!("ERROR: cannot open registry: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(format!("cannot open registry: {e}")),
     };
     match registry.install_local_build(&plan.manifest, &plan.content) {
         Ok(pkg_dir) => {
@@ -459,7 +449,7 @@ fn create_skills_pack(
                 plan.name, plan.version
             );
         }
-        Err(e) => eprintln!("ERROR: install failed: {e}"),
+        Err(e) => super::exit_failed(format!("install failed: {e}")),
     }
 }
 
@@ -515,14 +505,12 @@ pub(super) fn cmd_pack_export(args: &[String]) {
     }
 
     let Some(pkg_ref) = pkg_ref else {
-        eprintln!(
-            "Usage: lean-ctx pack export <name>[@version] [--output=path] [--sign] [--private] [--allow-secrets]"
+        super::exit_usage(
+            "Usage: lean-ctx pack export <name>[@version] [--output=path] [--sign] [--private] [--allow-secrets]",
         );
-        return;
     };
     if private && !sign {
-        eprintln!("ERROR: --private only applies to signed exports — add --sign");
-        return;
+        super::exit_usage("ERROR: --private only applies to signed exports — add --sign");
     }
 
     let (parsed_name, parsed_ver) = parse_pkg_ref(pkg_ref);
@@ -531,10 +519,7 @@ pub(super) fn cmd_pack_export(args: &[String]) {
     } else {
         let registry = match crate::core::context_package::LocalRegistry::open() {
             Ok(r) => r,
-            Err(e) => {
-                eprintln!("ERROR opening registry: {e}");
-                return;
-            }
+            Err(e) => super::exit_failed(format!("cannot open registry: {e}")),
         };
         let ver = registry
             .list()
@@ -555,10 +540,7 @@ pub(super) fn cmd_pack_export(args: &[String]) {
 
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(e),
     };
 
     // Pre-flight secret scan.
@@ -576,7 +558,7 @@ pub(super) fn cmd_pack_export(args: &[String]) {
             );
             eprintln!("  rotate them if they were live, then re-create and export.");
             eprintln!("  `--allow-secrets` forces a local-only export.");
-            return;
+            std::process::exit(1);
         }
         eprintln!("WARNING: continuing because of --allow-secrets — do NOT publish this artifact.");
     }
@@ -584,10 +566,7 @@ pub(super) fn cmd_pack_export(args: &[String]) {
     if sign {
         let (key, created) = match crate::core::context_package::keys::load_or_create() {
             Ok(k) => k,
-            Err(e) => {
-                eprintln!("ERROR: signing key: {e}");
-                return;
-            }
+            Err(e) => super::exit_failed(format!("signing key: {e}")),
         };
         if created {
             println!(
@@ -614,7 +593,7 @@ pub(super) fn cmd_pack_export(args: &[String]) {
                     crate::core::context_package::keys::public_key_hex(&key)
                 );
             }
-            Err(e) => eprintln!("ERROR: {e}"),
+            Err(e) => super::exit_failed(e),
         }
         return;
     }
@@ -623,7 +602,7 @@ pub(super) fn cmd_pack_export(args: &[String]) {
         Ok(bytes) => {
             println!("Exported: {out_path} ({})", format_bytes(bytes));
         }
-        Err(e) => eprintln!("ERROR: {e}"),
+        Err(e) => super::exit_failed(e),
     }
 }
 

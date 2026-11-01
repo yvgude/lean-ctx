@@ -132,8 +132,19 @@ pub(super) fn run(config: &HiveConfig, args: &[String]) -> Result<(), HiveError>
     let code = start_device_flow(&client, chosen.as_deref())
         .map_err(|error| unreachable(error, &origin))?;
     // C0 2.1: the approval page also asks "Share this project" (one code).
+    // The folder name and git remote reach Hive only after the person's
+    // yes here (or `--yes`); without one the page names no project.
     let here = project_here();
-    let announced = announce_setup(&client, &code, &setup_announcement(config, here.as_deref()));
+    let early = here
+        .as_ref()
+        .filter(|_| code.offers_device_setup())
+        .and_then(|_| share_before_approval(config, args));
+    let mut announce_config = config.clone();
+    if early == Some(false) {
+        steps::without_sharing(&mut announce_config);
+    }
+    let named = here.as_deref().filter(|_| early == Some(true));
+    let announced = announce_setup(&client, &code, &setup_announcement(&announce_config, named));
     println!("\nStep 1 of 3 · Approve this machine in your browser");
     if args.iter().any(|a| a == "--no-browser") || std::env::var_os("LEAN_CTX_NO_BROWSER").is_some()
     {
@@ -211,23 +222,23 @@ pub(super) fn run(config: &HiveConfig, args: &[String]) -> Result<(), HiveError>
     // answer, so no session asks again; a no switches every upload off.
     // E2E 27.10. E3: outside a project the page offers no share choice, so
     // whatever it sent is no answer and nothing is recorded or switched off.
-    let sharing = sharing.filter(|_| project_here().is_some());
+    // The page asks only about a project it was named; otherwise the
+    // answer given here before the approval stands.
+    let sharing = sharing.filter(|_| project_here().is_some() && named.is_some());
+    let answer = match sharing {
+        Some(Some(share)) => Some((share, Some(steps::SOURCE_BROWSER))),
+        _ => early.map(|share| (share, None)),
+    };
     let mut device = false;
-    if let Some(Some(share)) = sharing {
+    if let Some((share, source)) = answer {
         if !share {
             crate::core::config::Config::update_global(|c| steps::without_sharing(&mut c.hive))
                 .map_err(|e| HiveError::Local(format!("record the answer: {e}")))?;
         }
-        steps::record_from(
-            &session.store,
-            &instance.org_id,
-            share,
-            Utc::now(),
-            Some(steps::SOURCE_BROWSER),
-        )?;
-        device = share;
+        steps::record_from(&session.store, &instance.org_id, share, Utc::now(), source)?;
+        device = share && source.is_some();
     }
-    let config = if sharing == Some(Some(false)) {
+    let config = if answer.is_some_and(|(share, _)| !share) {
         let mut off = config.clone();
         steps::without_sharing(&mut off);
         off
@@ -498,6 +509,26 @@ fn asks_again(decided: &steps::SharingDecision, terminal: bool) -> bool {
 /// a Hive that took the setup (C0 2.1) asks on the approval page.
 fn yes_answers_sharing(args: &[String], announced: bool) -> bool {
     !announced && super::prompt::wants_yes(args)
+}
+
+/// Against a Hive that offers the device setup (C0 2.1): ask before the
+/// approval, because only a yes may send the project's folder name and git
+/// remote to Hive (`/device/setup`). `None` when nobody can answer (no
+/// terminal, no `--yes`): the project is then not named.
+fn share_before_approval(config: &HiveConfig, args: &[String]) -> Option<bool> {
+    let assume_yes = super::prompt::wants_yes(args);
+    if !assume_yes && !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        return None;
+    }
+    println!("\nBefore you approve · Share this project");
+    println!("  With the workspace you choose, this machine would share:");
+    for item in steps::shared_items(config) {
+        println!("  - {item}");
+    }
+    Some(super::prompt::confirm(
+        "Share this project? A yes sends its folder name and git remote to Hive now, so the approval page can show it",
+        assume_yes,
+    ))
 }
 
 /// The sharing answer for the instance's workspace: the recorded one, or

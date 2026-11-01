@@ -61,23 +61,10 @@ fn assert_observations(root: &Path, legacy: Option<&[u8]>) {
     assert_eq!(access.access_count, 1, "one read must be accounted once");
     assert!(access.total_original_tokens > 0, "source tokens missing");
 
-    let stats: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(root.join("data/mode_stats.json")).unwrap()).unwrap();
-    let history: Vec<(
-        lean_ctx::core::mode_predictor::FileSignature,
-        Vec<lean_ctx::core::mode_predictor::ModeOutcome>,
-    )> = serde_json::from_value(stats["history"].clone()).unwrap();
+    // The retired mode predictor is no longer trained by a read.
     assert!(
-        history.iter().any(|(signature, outcomes)| {
-            signature.ext == "rs"
-                && outcomes.iter().any(|outcome| {
-                    outcome.mode == "full"
-                        && outcome.tokens_in > 0
-                        && outcome.tokens_out > 0
-                        && outcome.density.is_finite()
-                })
-        }),
-        "real full-read observation missing"
+        !root.join("data/mode_stats.json").exists(),
+        "read wrote the retired mode-predictor store"
     );
 }
 

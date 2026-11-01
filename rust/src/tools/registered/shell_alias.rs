@@ -26,7 +26,7 @@ impl McpTool for ShellAliasTool {
         tool_def(
             "shell",
             "Shell command with auto-compression (~95 patterns). Alias for ctx_shell.\n\
-             Output is compressed for token savings. For verbatim output pass raw=true.\n\
+             Output is compressed for token savings. Big logs: narrow the command (grep, sed -n, head/tail).\n\
              Use when your MCP client prefers shell/bash over ctx_shell — transparently\n\
              delegates to ctx_shell internals.",
             json!({
@@ -42,7 +42,7 @@ impl McpTool for ShellAliasTool {
                     },
                     "raw": {
                         "type": "boolean",
-                        "description": "Return verbatim output (skip compression). Default false — pass true for the exact bytes."
+                        "description": "Exact bytes, uncompressed; only for diffs to apply, hashes, encoded output. Default false."
                     }
                 },
                 "required": ["command"]

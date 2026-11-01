@@ -3,7 +3,7 @@
 //! `lean-ctx hive connect|status|disconnect|link` end to end against the
 //! fake Hive service, each run in its own throwaway home.
 
-use crate::support::fake_hive::{FakeHive, FakeOptions};
+use crate::support::fake_hive::{FakeHive, FakeOptions, RecordedRequest};
 use base64::Engine as _;
 use lean_ctx::core::hive::auth::Session;
 use lean_ctx::core::hive::status::report;
@@ -451,41 +451,91 @@ fn connect_takes_the_sharing_answer_from_the_approval_page() {
     }
 }
 
-/// The owner's engine talks to a 1.x Hive (prod answers 426 to major 2):
-/// against the 1.x-only fake, connect probes the instance card once (404),
-/// records bus protocol 1, never sends Hive-Protocol 2.x and never opens a
-/// v2 bus session.
+/// The folder name and git remote reach Hive only after a yes: without a
+/// terminal and without `--yes`, the device setup names no project and
+/// announces only the channels this version really sends.
 #[test]
-fn against_a_1x_only_hive_the_engine_stays_on_1x() {
+fn connect_names_no_project_to_hive_before_a_yes() {
+    let fake = FakeHive::start_with(FakeOptions {
+        device_setup: Some(true),
+        ..FakeOptions::default()
+    });
+    let machine = Machine::new();
+    let repo = git_project(&machine, "payments", "git@github.com:acme/payments.git");
+    let out = machine.run_in(
+        &repo,
+        &[
+            "hive",
+            "connect",
+            "--url",
+            &fake.url,
+            "--no-browser",
+            "--label",
+            "test-box",
+        ],
+    );
+    assert!(out.status.success(), "{out:?}");
+    for request in fake.requests() {
+        assert!(
+            !request.body.contains("acme/payments") && !request.body.contains("\"payments\""),
+            "{} {} named the project before a yes: {}",
+            request.method,
+            request.path,
+            request.body
+        );
+    }
+    let setup = fake
+        .requests()
+        .into_iter()
+        .find(|r| r.path == "/v1/device/setup")
+        .expect("the setup still announces the channels");
+    let body: serde_json::Value = serde_json::from_str(&setup.body).unwrap();
+    assert!(
+        body.get("project").is_none_or(serde_json::Value::is_null),
+        "{body}"
+    );
+    let shares = body["shares"].to_string();
+    assert!(
+        !shares.contains("receipts") && !shares.contains("usage"),
+        "{shares}"
+    );
+}
+
+/// The `Hive-Protocol` header `request` was sent with.
+fn sent_protocol(request: &RecordedRequest) -> Option<&str> {
+    request
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(lean_ctx_protocol::hive::HEADER_PROTOCOL))
+        .map(|(_, value)| value.as_str())
+}
+
+/// Hive 1.x is retired: every request, enrollment and session alike,
+/// sends `Hive-Protocol: 2.0`, also when the instance card was not
+/// answered (this fake has none), and the fake answers 1.x with `426`.
+#[test]
+fn every_request_sends_protocol_2_even_without_an_instance_card() {
     let fake = FakeHive::start();
     let machine = Machine::new();
     let output = machine.connect(&fake);
     assert!(output.status.success(), "{output:?}");
     let requests = fake.requests();
-    let probes: Vec<_> = requests
-        .iter()
-        .filter(|r| r.method == "PATCH" && r.path.ends_with("/card"))
-        .collect();
-    assert_eq!(probes.len(), 1, "one instance card probe at connect");
+    assert!(
+        requests
+            .iter()
+            .any(|r| r.method == "PATCH" && r.path.ends_with("/card")),
+        "connect asks for the instance card"
+    );
+    assert!(requests.iter().any(|r| r.path == "/v1/device/code"));
     for request in &requests {
-        for (name, value) in &request.headers {
-            if name.eq_ignore_ascii_case(lean_ctx_protocol::hive::HEADER_PROTOCOL) {
-                assert!(
-                    !value.trim_start().starts_with('2'),
-                    "{} {} sent Hive-Protocol {value}",
-                    request.method,
-                    request.path
-                );
-            }
-        }
+        assert_eq!(
+            sent_protocol(request),
+            Some("2.0"),
+            "{} {}",
+            request.method,
+            request.path
+        );
     }
-    let store = machine.store();
-    assert!(!lean_ctx::core::hive::bus::relay_v2::speaks_v2(&store));
-    let recorded: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(store.config_dir().join("bus_protocol.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(recorded, serde_json::json!({"bus": 1}));
     assert!(machine.status_json().connected);
     // Hive swarms and Task Compute were removed (owner decision
     // 2026-10-30): their commands say so and nothing asks Hive.
@@ -507,6 +557,71 @@ fn against_a_1x_only_hive_the_engine_stays_on_1x() {
         .filter(|r| r.path.contains("/compute/") || r.path.contains("/swarms/"))
         .count();
     assert_eq!(removed_requests, 0, "removed features never ask Hive");
+}
+
+/// Against a Hive that speaks C0 2.0 the request header decides how Hive
+/// answers: every authenticated request, the token mint included, sends
+/// `Hive-Protocol: 2.x` (Hive 1.x is retired), and so does the enrollment
+/// before it (device code, token and setup), from the first request.
+#[test]
+fn against_a_2x_hive_every_session_request_sends_protocol_2() {
+    let fake = FakeHive::start_with(FakeOptions {
+        device_setup: Some(true),
+        ..FakeOptions::default()
+    });
+    let machine = Machine::new();
+    assert!(machine.connect(&fake).status.success());
+    let enrollment: Vec<_> = fake
+        .requests()
+        .into_iter()
+        .filter(|r| r.path.starts_with("/v1/device/") && r.path != "/v1/device/setup/result")
+        .collect();
+    for path in ["/v1/device/code", "/v1/device/token", "/v1/device/setup"] {
+        assert!(
+            enrollment.iter().any(|r| r.path == path),
+            "{path}: {:?}",
+            enrollment.iter().map(|r| &r.path).collect::<Vec<_>>()
+        );
+    }
+    for request in &enrollment {
+        assert!(
+            sent_protocol(request).is_some_and(|v| v.trim_start().starts_with('2')),
+            "{} {} sent Hive-Protocol {:?}",
+            request.method,
+            request.path,
+            sent_protocol(request)
+        );
+    }
+    let store = machine.store();
+    std::fs::remove_file(store.config_dir().join("token.json")).ok();
+    let before = fake.requests().len();
+    // `disconnect` tells Hive through the session, minting a token first.
+    let _ = machine.run(&["disconnect"]);
+    let sent = fake.requests().split_off(before);
+    assert!(
+        sent.iter().any(|r| r.path.ends_with("/token")),
+        "a token was minted: {:?}",
+        sent.iter().map(|r| &r.path).collect::<Vec<_>>()
+    );
+    let session_requests = sent.iter().filter(|r| {
+        r.path.ends_with("/token")
+            || r.headers
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+    });
+    for request in session_requests {
+        let protocol = request
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(lean_ctx_protocol::hive::HEADER_PROTOCOL))
+            .map(|(_, value)| value.as_str());
+        assert!(
+            protocol.is_some_and(|v| v.trim_start().starts_with('2')),
+            "{} {} sent Hive-Protocol {protocol:?}",
+            request.method,
+            request.path
+        );
+    }
 }
 
 /// Another root key than the one the fake signs with (32 bytes of 7).
@@ -1260,12 +1375,8 @@ fn metrics_follow_the_engine_lease_and_organization_switches() {
     let sync = machine.run(&["sync"]);
     assert!(sync.status.success(), "{sync:?}");
     assert!(
-        text(&sync.stdout).contains("Metrics not sent: switched off by the workspace."),
-        "{sync:?}"
-    );
-    assert!(
         fake.requests().iter().all(|r| r.path != "/v1/metrics"),
-        "nothing was sent"
+        "the retired daily upload is never sent"
     );
 
     // An organization that allows it, and an engine that does not.

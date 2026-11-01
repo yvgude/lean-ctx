@@ -195,17 +195,6 @@ impl ContextPolicy {
         self.retention_violation(candidate, evaluation_time)
     }
 
-    /// Returns the reason a plan entry violates this policy, or `None` if compliant.
-    pub fn violation_reason(&self, entry: &super::types::PlanEntry) -> Option<String> {
-        if self.retention_days.is_some() {
-            return Some(
-                "retention requires candidate timestamp evaluation before plan enforcement"
-                    .to_owned(),
-            );
-        }
-        self.source_violation(&entry.provider)
-    }
-
     /// Retention keeps candidates strictly newer than the configured cutoff.
     ///
     /// For `retention_days = N`, a candidate is retained only when its age is

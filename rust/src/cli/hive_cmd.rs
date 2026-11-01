@@ -1080,13 +1080,6 @@ fn sync(config: &HiveConfig) -> Result<(), HiveError> {
     for (repo, revision) in &report.merged_ready {
         println!("Merged the confirmed sealed proposals of {repo} into revision {revision}.");
     }
-    use crate::core::hive::metrics::upload::{self, MetricsRun};
-    match upload::run(&session, config, Utc::now(), true) {
-        Ok(MetricsRun::Sent { days }) => println!("Sent metrics ({days} vault days)."),
-        Ok(MetricsRun::Off(reason)) => println!("Metrics not sent: {reason}."),
-        Ok(MetricsRun::Empty | MetricsRun::NotDue) => {}
-        Err(error) => say.refusal(&format!("hive: metrics not sent: {error}")),
-    }
     use crate::core::hive::metrics_v2::upload::{self as hours, MetricsV2Run};
     match hours::run(&session, config, Utc::now(), true) {
         Ok(MetricsV2Run::Sent { buckets, refused }) => {

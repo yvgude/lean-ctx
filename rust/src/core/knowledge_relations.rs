@@ -150,6 +150,26 @@ impl KnowledgeRelationGraph {
         Self::load(project_hash).unwrap_or_else(|| Self::new(project_hash))
     }
 
+    /// Load, change and save the graph under the project's knowledge lock,
+    /// the in-process and cross-process lock fact edits and the cognition loop
+    /// hold, so a concurrent writer (another process, the dashboard, the
+    /// cognition loop) never loses an edge. `change` returns `None` when it
+    /// changed nothing; the graph is then not written. Must not be called while
+    /// that lock is held.
+    pub fn mutate_locked<T>(
+        project_root: &str,
+        project_hash: &str,
+        change: impl FnOnce(&mut Self) -> Option<T>,
+    ) -> Result<Option<T>, String> {
+        crate::core::knowledge::ProjectKnowledge::with_project_lock_checked(project_root, || {
+            let mut graph = Self::load_or_create(project_hash);
+            match change(&mut graph) {
+                Some(output) => graph.save().map(|()| Some(output)),
+                None => Ok(None),
+            }
+        })?
+    }
+
     pub fn save(&mut self) -> Result<(), String> {
         let path = Self::path(&self.project_hash)?;
         if let Some(dir) = path.parent() {
@@ -397,6 +417,43 @@ pub fn format_mermaid(edges: &[KnowledgeEdge]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Parallel writers each add their own edge; under the knowledge lock no
+    /// read-modify-write drops another writer's edge.
+    #[test]
+    fn concurrent_locked_writers_keep_every_edge() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let hash = crate::core::project_hash::hash_project_root(&root);
+        std::thread::scope(|s| {
+            for i in 0..16 {
+                let (root, hash) = (&root, &hash);
+                s.spawn(move || {
+                    KnowledgeRelationGraph::mutate_locked(root, hash, |graph| {
+                        graph.upsert_edge(
+                            KnowledgeNodeRef::new("a", &format!("{i}")),
+                            KnowledgeNodeRef::new("b", "target"),
+                            KnowledgeEdgeKind::RelatedTo,
+                            "s1",
+                        );
+                        Some(())
+                    })
+                    .expect("locked write");
+                });
+            }
+        });
+        let graph = KnowledgeRelationGraph::load(&hash).expect("saved graph");
+        assert_eq!(
+            graph.edges.len(),
+            16,
+            "an edge was lost to a concurrent write"
+        );
+
+        // A change that changes nothing writes nothing.
+        let untouched = KnowledgeRelationGraph::mutate_locked(&root, &hash, |_| None::<()>);
+        assert_eq!(untouched, Ok(None));
+    }
 
     #[test]
     fn strengthen_edge_saturating() {

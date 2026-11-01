@@ -653,3 +653,204 @@ fn rewrite_candidate_wraps_non_allowlisted_compound_for_enforcement() {
     let result = with_test_allowlist(|| rewrite_candidate(cmd, "lean-ctx"));
     assert_eq!(result, Some(expect_wrapped(cmd, "lean-ctx")));
 }
+
+/// Bypass found in benchmark p9 (tmb/change-filter-reason r03): a heredoc is
+/// never wrapped for enforcement, so `python -I - <<'EOF'` ran natively
+/// unchecked right after `python -c` had been refused. The hook now checks
+/// what it cannot wrap; a heredoc of allowlisted programs still passes.
+#[test]
+fn heredoc_that_fails_the_allowlist_is_denied_not_passed_through() {
+    let (interpreter, commit) = with_test_allowlist(|| {
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        let interpreter = file_rewrite::unwrappable_allowlist_denial(
+            "python3 -I - <<'EOF'\nimport os\nprint(os.getcwd())\nEOF",
+            "lean-ctx",
+        );
+        let commit = file_rewrite::unwrappable_allowlist_denial(
+            "git commit -m \"$(cat <<'EOF'\nfix: keep the verdict line\nEOF\n)\"",
+            "lean-ctx",
+        );
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        (interpreter, commit)
+    });
+    assert!(interpreter.is_some(), "the heredoc must not run unchecked");
+    assert_eq!(commit, None);
+}
+
+/// A command whose program is lean-ctx is never wrapped (#2088), and the hooks
+/// used to skip it altogether on a bare `starts_with("lean-ctx ")`: a compound
+/// behind the prefix, or `lean-ctx allow …` loosening the agent's own policy,
+/// ran unchecked. Every spelling of the program is recognised and checked; a
+/// plain lean-ctx call and an allowlisted compound still pass.
+#[test]
+fn leanctx_prefixed_command_is_checked_not_skipped() {
+    let verdicts = with_test_allowlist(|| {
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        crate::test_env::set_var(
+            "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+            "git,cargo,cat,echo,lean-ctx,env,emspace",
+        );
+        let verdicts: Vec<_> = [
+            ("lean-ctx gain; python3 - <<'E'\nx\nE", true),
+            ("lean-ctx gain && bash -c id", true),
+            ("FOO=1 lean-ctx gain && bash -c id", true),
+            ("env X=1 lean-ctx gain && bash -c id", true),
+            ("'lean-ctx' gain && bash -c id", true),
+            ("\"lean-ctx\" gain; bash -c id", true),
+            ("/usr/local/bin/lean-ctx gain && bash -c id", true),
+            ("~/.local/bin/lean-ctx gain && bash -c id", true),
+            ("/opt/lc/bin/lean-ctx gain && bash -c id", true),
+            ("lean-ctx read $(bash -c id)", true),
+            ("lean-ctx allow curl", true),
+            ("env lean-ctx allow curl", true),
+            ("lean-ctx config set shell_security off", true),
+            // The shell expands braces and globs after the check.
+            ("lean-ctx {yolo,} --yes", true),
+            ("lean-ctx {allow,} curl", true),
+            ("lean-ctx config set {shell_security,} off", true),
+            ("lean-ctx {__session-starter,} prog", true),
+            ("lean-ctx yol?", true),
+            ("lean-ctx __session-starter prog", true),
+            // Only the first argument selects a hidden mode.
+            ("lean-ctx grep __version__ .", false),
+            ("lean-ctx read __init__.py", false),
+            ("lean-ctx read src/main.rs", false),
+            ("/opt/lc/bin/lean-ctx read src/main.rs", false),
+            ("lean-ctx read x && cargo test", false),
+            ("lean-ctx -c 'cargo test && git status'", false),
+            // `emspace` is on the default allowlist (owner 31.10.).
+            ("emspace page show --body hooks", false),
+            ("emspace status && git status", false),
+            ("lean-ctx gain && emspace task list --json", false),
+        ]
+        .into_iter()
+        .map(|(cmd, denied)| {
+            let verdict = file_rewrite::unwrappable_allowlist_denial(cmd, "/opt/lc/bin/lean-ctx");
+            (cmd, denied, verdict)
+        })
+        .collect();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        verdicts
+    });
+    for (cmd, denied, verdict) in verdicts {
+        assert_eq!(verdict.is_some(), denied, "{cmd}: {verdict:?}");
+    }
+    // A program that merely starts with `lean-ctx` is not lean-ctx: it keeps
+    // the ordinary enforcement wrap.
+    assert!(!file_rewrite::is_leanctx_call(
+        "lean-ctx-evil gain && bash -c id",
+        "lean-ctx"
+    ));
+}
+
+/// The gate refuses what it cannot validate — nesting deeper than the lexer
+/// follows, or more than 64 KiB — and the hook denies it instead of passing it
+/// on. Unbounded, this nesting overflowed the hook's stack, and a crashed hook
+/// fails open.
+#[test]
+fn command_beyond_the_validation_limits_is_denied() {
+    let deep = format!("echo {}{}", "$(".repeat(10_000), ")".repeat(10_000));
+    let long = format!("echo {}", "a".repeat(70 * 1024));
+    let (checked, hooked) = with_test_allowlist(|| {
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        let checked =
+            [&deep, &long].map(|c| crate::core::shell_allowlist::check_shell_allowlist(c));
+        let hooked =
+            [&deep, &long].map(|c| file_rewrite::unwrappable_allowlist_denial(c, "lean-ctx"));
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        (checked, hooked)
+    });
+    // Each refusal names its own limit and the way forward, and never echoes
+    // the (deep or long) command back.
+    for (result, limit) in checked.iter().zip(["64 levels", "65536 bytes"]) {
+        let msg = result.as_ref().expect_err("refused").to_string();
+        assert!(msg.contains(limit) && msg.contains("Split it"), "{msg}");
+        assert!(!msg.contains("$($(") && !msg.contains("aaaa"), "{msg}");
+    }
+    assert!(hooked.iter().all(Option::is_some));
+}
+
+/// End to end through the Claude Code PreToolUse payload: a line that sets
+/// the shell-security variable through a `${…:=}` default and a bare
+/// `export` before calling `lean-ctx -c` is denied, and so is a state write
+/// through a `<>` redirect. A plain read passes.
+#[test]
+fn pretooluse_payload_cannot_loosen_the_gate_or_write_lean_ctx_state() {
+    let outputs = with_test_allowlist(|| {
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        crate::test_env::set_var(
+            "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+            "git,cargo,cat,echo,lean-ctx,id",
+        );
+        let outputs: Vec<_> = [
+            ": ${LEAN_CTX_SHELL_SECURITY:=off}; export LEAN_CTX_SHELL_SECURITY; lean-ctx -c id",
+            "echo x 1<>~/.config/lean-ctx/config.toml",
+            "k=yolo; lean-ctx $k --yes",
+            "git status --short",
+        ]
+        .into_iter()
+        .map(|cmd| {
+            let payload = serde_json::json!({
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": { "command": cmd },
+            });
+            let out = file_rewrite::compute_rewrite_for(&payload.to_string(), "lean-ctx");
+            (cmd, out)
+        })
+        .collect();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        outputs
+    });
+    for (cmd, out) in &outputs[..3] {
+        assert!(out.contains("\"deny\""), "{cmd} must be denied: {out}");
+    }
+    assert!(!outputs[3].1.contains("\"deny\""), "{}", outputs[3].1);
+}
+
+/// Every command a rewrite emits still passes the gate it will meet: the
+/// lean-ctx subcommand allowlist must cover the hooks' own targets, with the
+/// inner command of a `lean-ctx -c` wrap checked like any other line.
+#[test]
+fn every_rewrite_output_passes_the_gate() {
+    let failures = with_test_allowlist(|| {
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        crate::test_env::set_var(
+            "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+            "git,cargo,npm,head,tail,grep,wc,cat,rg,echo,cd,ls,find,tree,lean-ctx,sed",
+        );
+        let mut failures = Vec::new();
+        for cmd in [
+            "cat src/main.rs",
+            "head -50 src/lib.rs",
+            "tail -n 20 Cargo.toml",
+            "sed -n 1,40p src/main.rs",
+            "grep -rn TODO src",
+            "rg -n 'fn main' src",
+            "ls -la src",
+            "find src -name '*.rs'",
+            "tree src",
+            "git status",
+            "git diff HEAD~1",
+            "git log --oneline -5",
+            "cargo test --lib",
+            "cargo test && git status",
+            "npm run build",
+            "git log | head -5",
+        ] {
+            for binary in ["lean-ctx", "/opt/lc/bin/lean-ctx"] {
+                // An enforcement wrap carries a command the gate refuses on
+                // purpose; only the compression rewrites must pass.
+                let emitted = file_rewrite::classify_rewrite(cmd, binary).map(|r| r.command);
+                if let Some(emitted) = emitted
+                    && let Err(err) = crate::core::shell_allowlist::check_shell_allowlist(&emitted)
+                {
+                    failures.push(format!("{cmd} → {emitted}: {err}"));
+                }
+            }
+        }
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        failures
+    });
+    assert!(failures.is_empty(), "{failures:#?}");
+}

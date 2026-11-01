@@ -112,23 +112,9 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
         }
     }
 
-    // LITM placement calibration (#539): observed begin/end hit rates and the
-    // calibrated begin-share per client profile.
-    let litm_cal = crate::core::litm_calibration::report();
-    if !litm_cal.is_empty() {
-        out.push(String::new());
-        if crp_mode.is_tdd() {
-            out.push("§litm-calibration".to_string());
-        } else {
-            out.push("LITM Placement Calibration:".to_string());
-        }
-        out.extend(litm_cal);
-    }
-
     // Learning efficacy (#549): proof the learning loops work — bounce-rate
-    // trend, placement-hit movement, prevented duplicate work, playbook
-    // survival. Capturing here keeps the daily snapshot ring fresh without
-    // any timer.
+    // trend, prevented duplicate work, playbook survival. Capturing here keeps
+    // the daily snapshot ring fresh without any timer.
     crate::core::efficacy::capture();
     let efficacy = crate::core::efficacy::report();
     if !efficacy.is_empty() {
@@ -333,7 +319,7 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
     out.push(format!("  Task complexity:   {complexity:?}"));
 
     // Which signals decided auto-mode this session — makes the learning
-    // loops (bounce memory, heatmap, predictor, policy) observable (#496).
+    // loops (bounce memory, edit quality) observable (#496).
     let sources = crate::core::auto_mode_resolver::source_counts();
     if !sources.is_empty() {
         let line = sources

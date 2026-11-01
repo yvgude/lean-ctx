@@ -1220,8 +1220,8 @@ pub(in crate::server) async fn reversible_post_process(
     // The cloud/telemetry flush is scheduled at the top of `call_tool_guarded`
     // (see `background_tick`): this function is skipped for guard-denied and
     // response-cached calls, so counting here would miss them. Archive cleanup
-    // and knowledge consolidation stay on the dispatch path, where they only
-    // have work when a call actually produced output.
+    // stays on the dispatch path, where it only has work when a call actually
+    // produced output.
     let current_count = server
         .background_tick
         .load(std::sync::atomic::Ordering::Relaxed);
@@ -1232,11 +1232,6 @@ pub(in crate::server) async fn reversible_post_process(
         std::thread::spawn(|| {
             let _ = crate::core::archive::cleanup();
         });
-        // Self-managing memory: opportunistically consolidate knowledge in the
-        // background (time-gated + single-flight inside `maybe_run`).
-        if let Some(root) = server.session.read().await.project_root.clone() {
-            crate::core::cognition_scheduler::maybe_run(&root);
-        }
     }
 
     // #990: a machine-readable invocation (e.g. ctx_outline format=json) must

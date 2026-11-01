@@ -29,7 +29,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "remember|recall|search|pattern|gotcha|relate|relations|consolidate|restore|status|timeline|rooms|wakeup|remove|export|import (also: feedback, unrelate, relations_diagram, health, lifecycle_report, policy, embeddings_*)"
+                        "description": "remember|recall|search|pattern|gotcha|relate|relations|consolidate|restore|status|timeline|rooms|wakeup|remove|export|import (also: feedback, unrelate, relations_diagram, health, lifecycle_report, policy, embeddings_*; changes query=<lsn>|session, repin, coverage)"
                     },
                     "trigger": { "type": "string", "description": "gotcha trigger pattern" },
                     "resolution": { "type": "string", "description": "gotcha resolution/fix" },

@@ -82,7 +82,7 @@ pub(super) const PROJECT_KEYS: &[&str] = &[
     "turn_fresh_limit_verbatim",
 ];
 
-fn is_project_key(path: &str) -> bool {
+pub(crate) fn is_project_key(path: &str) -> bool {
     PROJECT_KEYS.iter().any(|key| {
         path.strip_prefix(key)
             .is_some_and(|rest| rest.is_empty() || rest.starts_with('.'))

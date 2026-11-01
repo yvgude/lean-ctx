@@ -70,7 +70,6 @@ mod tests {
         assert!(report.kernel_enabled);
         assert!(report.subsystem_count > 0);
         assert!(health::is_healthy());
-        assert!(health::format_health().contains("Kernel: ON"));
     }
 
     #[test]

@@ -50,47 +50,6 @@ impl ProjectKnowledge {
         report
     }
 
-    /// Cluster compaction (#971): collapse piles of low-value, mutually-similar
-    /// facts into recoverable digests, returning the number of clusters
-    /// collapsed. Heavier than [`Self::run_memory_lifecycle`], so it runs only
-    /// from the background cognition loop (hourly), never on every write. The
-    /// originals are archived and rehydrate on recall — nothing is lost.
-    ///
-    /// A digest is a new text built from several facts and has no source
-    /// binding of its own (`archive::bindings`). While protection is active
-    /// in any layer it would turn the text of a bound, revocable fact into an
-    /// originless one that outlives its source, so nothing is compacted then.
-    pub fn compact_low_value_clusters(&mut self, policy: &MemoryPolicy) -> u32 {
-        if !policy.compaction.enabled
-            || crate::core::context_admission::stored::source_authority_required()
-            || super::protection::current(&self.project_root).is_err()
-        {
-            return 0;
-        }
-        let cfg = crate::core::memory_lifecycle::ClusterCompactionConfig {
-            min_cluster: policy.compaction.min_cluster,
-            similarity: policy.compaction.similarity,
-            max_confidence: policy.compaction.max_confidence,
-            max_confirmations: policy.compaction.max_confirmations,
-        };
-        let before = self.facts.clone();
-        let (collapsed, archived) =
-            crate::core::memory_lifecycle::compact_clusters(&mut self.facts, &cfg);
-        if !archived.is_empty()
-            && crate::core::policy::runtime::REQUEST_PROJECT
-                .sync_scope(
-                    std::cell::RefCell::new(Some(std::path::PathBuf::from(&self.project_root))),
-                    || crate::core::memory_lifecycle::archive_facts(&archived),
-                )
-                .is_err()
-        {
-            self.facts = before;
-            return 0;
-        }
-        self.rebuild_index();
-        collapsed as u32
-    }
-
     pub fn new(project_root: &str) -> Self {
         Self {
             project_root: project_root.to_string(),

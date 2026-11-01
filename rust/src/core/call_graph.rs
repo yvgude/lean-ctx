@@ -28,7 +28,23 @@ pub struct CallGraph {
     pub project_root: String,
     pub edges: Vec<CallEdge>,
     pub file_hashes: HashMap<String, String>,
+    /// Size and mtime of each analyzed or skipped file when it was read, so a
+    /// persisted graph is rebuilt when a file changed in place. Missing in
+    /// older caches → empty → such a cache counts as stale once.
+    #[serde(default)]
+    pub file_stamps: HashMap<String, FileStamp>,
+    /// Indexed files the build skipped because they are not UTF-8 text. They
+    /// count as covered, so the cache is not rebuilt for them on every load.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_files: Vec<String>,
 }
+
+/// `(size in bytes, mtime in ns since the Unix epoch)` of a file.
+pub type FileStamp = (u64, u64);
+
+/// One read file: relative path, stamp, and its content hash with call edges,
+/// or `None` when it is not UTF-8 text and was skipped.
+type FileResult = (String, Option<FileStamp>, Option<(String, Vec<CallEdge>)>);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CallEdge {
@@ -315,6 +331,8 @@ impl CallGraph {
             project_root: normalize_project_root(project_root),
             edges: Vec::new(),
             file_hashes: HashMap::new(),
+            file_stamps: HashMap::new(),
+            skipped_files: Vec::new(),
         }
     }
 
@@ -330,11 +348,16 @@ impl CallGraph {
         let symbols_by_file = group_symbols_by_file_owned(inputs);
         let file_keys: Vec<String> = inputs.file_paths.clone();
 
-        let results: Vec<(String, String, Vec<CallEdge>)> = file_keys
+        let results: Vec<FileResult> = file_keys
             .par_iter()
             .filter_map(|rel_path| {
                 let abs_path = resolve_path(rel_path, project_root);
-                let content = std::fs::read_to_string(&abs_path).ok()?;
+                // Stamped before the read: an edit during the build leaves a
+                // stamp that no longer matches, so the next request rebuilds.
+                let stamp = file_stamp(&abs_path);
+                let Ok(content) = read_source(&abs_path)? else {
+                    return Some((rel_path.clone(), stamp, None));
+                };
                 let hash = simple_hash(&content);
 
                 let ext = Path::new(rel_path)
@@ -352,19 +375,37 @@ impl CallGraph {
                     edge_count.fetch_add(edges.len(), Ordering::Relaxed);
                 }
 
-                Some((rel_path.clone(), hash, edges))
+                Some((rel_path.clone(), stamp, Some((hash, edges))))
             })
             .collect();
 
+        Self::from_results(project_root, results)
+    }
+
+    /// Assemble a graph from per-file build results.
+    fn from_results(project_root: &str, results: Vec<FileResult>) -> Self {
         let mut graph = Self::new(project_root);
-        let edge_capacity: usize = results.iter().map(|(_, _, e)| e.len()).sum();
+        let edge_capacity: usize = results
+            .iter()
+            .filter_map(|(_, _, r)| r.as_ref().map(|(_, e)| e.len()))
+            .sum();
         graph.edges.reserve(edge_capacity);
         graph.file_hashes.reserve(results.len());
+        graph.file_stamps.reserve(results.len());
 
-        for (path, hash, edges) in results {
-            graph.file_hashes.insert(path, hash);
-            graph.edges.extend(edges);
+        for (path, stamp, result) in results {
+            if let Some(stamp) = stamp {
+                graph.file_stamps.insert(path.clone(), stamp);
+            }
+            match result {
+                Some((hash, edges)) => {
+                    graph.file_hashes.insert(path, hash);
+                    graph.edges.extend(edges);
+                }
+                None => graph.skipped_files.push(path),
+            }
         }
+        graph.skipped_files.sort();
 
         graph
     }
@@ -384,11 +425,14 @@ impl CallGraph {
 
         let prev_edges_by_file = group_edges_by_file(&previous.edges);
 
-        let results: Vec<(String, String, Vec<CallEdge>)> = file_keys
+        let results: Vec<FileResult> = file_keys
             .par_iter()
             .filter_map(|rel_path| {
                 let abs_path = resolve_path(rel_path, project_root);
-                let content = std::fs::read_to_string(&abs_path).ok()?;
+                let stamp = file_stamp(&abs_path);
+                let Ok(content) = read_source(&abs_path)? else {
+                    return Some((rel_path.clone(), stamp, None));
+                };
                 let hash = simple_hash(&content);
                 let changed = previous.file_hashes.get(rel_path.as_str()) != Some(&hash);
 
@@ -414,21 +458,11 @@ impl CallGraph {
                     edge_count.fetch_add(edges.len(), Ordering::Relaxed);
                 }
 
-                Some((rel_path.clone(), hash, edges))
+                Some((rel_path.clone(), stamp, Some((hash, edges))))
             })
             .collect();
 
-        let mut graph = Self::new(project_root);
-        let edge_capacity: usize = results.iter().map(|(_, _, e)| e.len()).sum();
-        graph.edges.reserve(edge_capacity);
-        graph.file_hashes.reserve(results.len());
-
-        for (path, hash, edges) in results {
-            graph.file_hashes.insert(path, hash);
-            graph.edges.extend(edges);
-        }
-
-        graph
+        Self::from_results(project_root, results)
     }
 
     // -----------------------------------------------------------------------
@@ -585,11 +619,16 @@ impl CallGraph {
         }
     }
 
-    /// Force-invalidate every resident result so the next request of any
-    /// project triggers a rebuild.
-    pub fn invalidate() {
+    /// Drop the resident graphs of `project_root` (in every protection state)
+    /// so its next request checks the persisted graph against the files again
+    /// and rebuilds what changed. Called after the project's index was
+    /// rebuilt; a build in flight is kept.
+    pub fn invalidate(project_root: &str) {
+        let root = normalize_project_root(project_root);
         if let Ok(mut g) = global_state().lock() {
-            g.entries.clear();
+            g.entries.retain(|(key, state)| {
+                key.root != root || matches!(state, BuildState::Building { .. })
+            });
         }
     }
 
@@ -878,14 +917,39 @@ impl CallGraph {
 // ---------------------------------------------------------------------------
 
 fn cache_looks_stale(cached: &CallGraph, inputs: &CallGraphInputs) -> bool {
-    if cached.file_hashes.len() != inputs.file_paths.len() {
+    if cached.file_hashes.len() + cached.skipped_files.len() != inputs.file_paths.len() {
         return true;
     }
-    let cached_files: std::collections::HashSet<&str> =
-        cached.file_hashes.keys().map(String::as_str).collect();
+    let cached_files: std::collections::HashSet<&str> = cached
+        .file_hashes
+        .keys()
+        .chain(&cached.skipped_files)
+        .map(String::as_str)
+        .collect();
     let index_files: std::collections::HashSet<&str> =
         inputs.file_paths.iter().map(String::as_str).collect();
-    cached_files != index_files
+    if cached_files != index_files {
+        return true;
+    }
+    // A file edited in place keeps its path: its size or mtime moved.
+    inputs.file_paths.iter().any(|rel| {
+        let stamp = file_stamp(&resolve_path(rel, &inputs.project_root));
+        stamp.is_none() || cached.file_stamps.get(rel) != stamp.as_ref()
+    })
+}
+
+/// The [`FileStamp`] of `path`; `None` when it cannot be read.
+fn file_stamp(path: &str) -> Option<FileStamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    Some((
+        meta.len(),
+        u64::try_from(mtime.as_nanos()).unwrap_or(u64::MAX),
+    ))
 }
 
 /// Whether `cached` was built from a file that is not among `inputs` — the
@@ -959,6 +1023,12 @@ fn resolve_path(relative: &str, project_root: &str) -> String {
     let relative = relative.trim_start_matches(['/', '\\']);
     let joined = Path::new(project_root).join(relative);
     joined.to_string_lossy().to_string()
+}
+
+/// Text of an indexed file: `None` when it cannot be read, `Some(Err(_))` when
+/// it is not UTF-8 (recorded in [`CallGraph::skipped_files`]).
+fn read_source(abs_path: &str) -> Option<Result<String, std::string::FromUtf8Error>> {
+    std::fs::read(abs_path).ok().map(String::from_utf8)
 }
 
 fn simple_hash(content: &str) -> String {

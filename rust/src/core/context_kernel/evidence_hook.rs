@@ -33,30 +33,6 @@ pub fn record_tool_call(tool_name: &str, input_tokens: usize, output_tokens: usi
     super::envelope_wiring::process_mcp_evidence(&data);
 }
 
-/// Records evidence for one proxy-forwarded request when the kernel is enabled.
-pub fn record_proxy_call(
-    input_tokens: usize,
-    output_tokens: usize,
-    tokens_saved: usize,
-    model: Option<&str>,
-    provider: Option<&str>,
-) {
-    if !super::kernel_config::is_enabled() {
-        return;
-    }
-    let data = super::proxy_bridge::ProxyRequestData {
-        input_tokens,
-        output_tokens,
-        tokens_saved,
-        model: model.map(str::to_owned),
-        provider: provider.map(str::to_owned),
-        request_count: 1,
-        ..Default::default()
-    };
-    let result = super::proxy_bridge::process_proxy_request(&data);
-    super::envelope_wiring::process_proxy_evidence(&data, &result);
-}
-
 /// Returns unified evidence totals for the current process.
 #[must_use]
 pub fn evidence_report() -> EvidenceReport {
@@ -94,7 +70,24 @@ pub fn reset() {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{EvidenceReport, evidence_report, record_proxy_call, record_tool_call, reset};
+    use super::{EvidenceReport, evidence_report, record_tool_call, reset};
+
+    /// One forwarded request: the forward path's Context IR stage, then its
+    /// measured usage arriving through the usage meter.
+    fn record_forwarded_request(input_tokens: usize, tokens_saved: usize) {
+        let data = super::super::proxy_bridge::ProxyRequestData {
+            input_tokens,
+            output_tokens: 5,
+            tokens_saved,
+            request_count: 1,
+            ..Default::default()
+        };
+        let result = super::super::proxy_bridge::process_proxy_request(&data);
+        super::super::envelope_wiring::process_proxy_evidence(&data, &result);
+        super::super::envelope_bridge::record_proxy_envelope(
+            &super::super::token_envelope::from_proxy_data(&data),
+        );
+    }
 
     fn isolated() -> std::sync::MutexGuard<'static, ()> {
         let guard = super::super::kernel_config::KERNEL_TEST_LOCK
@@ -118,13 +111,21 @@ pub mod tests {
     }
 
     #[test]
-    fn proxy_call_records_evidence() {
+    fn forwarded_request_counts_once() {
         let _guard = isolated();
         for _ in 0..2 {
-            record_proxy_call(20, 5, 8, Some("gpt-test"), Some("openai"));
+            record_forwarded_request(20, 8);
         }
         let report = evidence_report();
-        assert!(report.proxy_calls >= 2);
+        assert_eq!(report.proxy_calls, 2);
+        assert_eq!(report.evidence_chain_entries, 2);
+        assert_eq!(report.total_input_tokens, 40);
+        assert_eq!(report.total_output_tokens, 10);
+        assert_eq!(report.total_tokens_saved, 16);
+        assert_eq!(
+            super::super::usage_normalizer::session_usage().total_requests,
+            2
+        );
     }
 
     #[test]
@@ -134,7 +135,6 @@ pub mod tests {
         features.enabled = false;
         super::super::kernel_config::update_features(features);
         record_tool_call("ctx_read", 10, 4);
-        record_proxy_call(20, 5, 8, None, None);
         assert_eq!(evidence_report(), EvidenceReport::default());
     }
 
@@ -142,7 +142,7 @@ pub mod tests {
     fn reset_clears_state() {
         let _guard = isolated();
         record_tool_call("ctx_read", 10, 4);
-        record_proxy_call(20, 5, 8, None, None);
+        record_forwarded_request(20, 8);
         reset();
         assert_eq!(evidence_report(), EvidenceReport::default());
     }

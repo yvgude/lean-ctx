@@ -1,5 +1,12 @@
 use std::path::{Path, PathBuf};
 
+// MD5 stays here on purpose: these digests are names, not integrity checks.
+// `namespace_hash` names hosted index bundles that other devices and older
+// releases look up, `partition_hash` and `legacy_vectors_hash` name the
+// existing `vectors/` directories. Changing the hash would orphan every index
+// (a full rebuild per project, and a missed restore of every hosted bundle)
+// for no security gain: the seed is the user's own path and repository
+// identity, so a collision cannot be forced on another user.
 use md5::{Digest, Md5};
 
 /// The local index directory of `project_root`: one per checkout. Two

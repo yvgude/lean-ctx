@@ -380,7 +380,7 @@ Parameters: `action`*, `keep_recent_turns`, `session_id`, `tag`, `value`
 ## `ctx_shell`
 
 WORKFLOW: preferred — auto-compresses output (build/test/log).
-raw=true for verbatim output; inline=true for moderately-sized verbatim output.
+Big logs: narrow the command (grep, sed -n, head/tail).
 [exit:N] on errors (lossless).
 POLICY: allowlisted read-only path.
 A [BLOCKED] command is permanent; ctx_execute shares the same allowlist — fix with `lean-ctx allow <cmd>`.
@@ -428,7 +428,7 @@ Parameters: `max_items`, `max_tokens`, `mode`, `query`, `timeout_secs`, `url`*
 ## `ctx_verify`
 
 Verification observability — tool call statistics and claim-based verification.
-WORKFLOW: action=stats to monitor tool usage; action=proof|v2 for a ContextProofV2 of runtime-checked policy claims (PathJail per touched file, budget).
+WORKFLOW: action=stats to monitor tool usage; action=proof|v2 for a ContextProofV2 of runtime-checked policy claims (PathJail per touched file).
 Actions: stats (format=summary|json|both, default summary) | proof|v2 (format=summary|json, default json).
 ANTIPATTERN: not for runtime verification during active development — use for periodic audit.
 
@@ -443,7 +443,7 @@ Parameters: `accepted_nodes`, `action`*, `capsule_ref`, `claims`, `cost_micros`,
 ## `shell`
 
 Shell command with auto-compression (~95 patterns). Alias for ctx_shell.
-Output is compressed for token savings. For verbatim output pass raw=true.
+Output is compressed for token savings. Big logs: narrow the command (grep, sed -n, head/tail).
 Use when your MCP client prefers shell/bash over ctx_shell — transparently
 delegates to ctx_shell internals.
 

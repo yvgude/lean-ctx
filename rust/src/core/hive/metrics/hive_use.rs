@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! How Hive helped in a project (X4, C0 1.9 `MetricsHiveV1`), per Hive
-//! project and UTC day: counts and durations only, the same for sealed
-//! projects. `<data>/hive/metrics/hive-use.json`, 0600, the last
+//! How Hive helped in a project (X4), per Hive project and UTC day, as
+//! engine metrics v2 sample it: counts and durations only, the same for
+//! sealed projects. `<data>/hive/metrics/hive-use.json`, 0600, the last
 //! `KEEP_DAYS` days.
 //!
 //! - M1 `knowledge_hits_referenced`: Hive facts an agent asked for and got
@@ -20,11 +20,11 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::core::hive::state::{HiveStore, write_private};
-use lean_ctx_protocol::hive::telemetry::{MAX_METRIC_TASK_ROWS, MetricsHiveV1, MetricsTaskUsageV1};
+use lean_ctx_protocol::hive::telemetry::MetricsTaskUsageV1;
 
 const FILE: &str = "hive-use.json";
 /// Serializes the read-modify-write of [`FILE`] across processes.
@@ -228,20 +228,6 @@ pub fn claim_ended(data_dir: &Path, vault_id: &str, number: u64, at: DateTime<Ut
     });
 }
 
-fn median(values: &[u64]) -> Option<u64> {
-    let mut sorted = values.to_vec();
-    sorted.sort_unstable();
-    let n = sorted.len();
-    match n {
-        0 => None,
-        _ if n % 2 == 1 => Some(sorted[n / 2]),
-        _ => {
-            let pair = u128::from(sorted[n / 2 - 1]) + u128::from(sorted[n / 2]);
-            u64::try_from(pair / 2).ok()
-        }
-    }
-}
-
 /// M2 rows per task number: the usage of `[start, end)` per minute,
 /// shared among the claims held in it.
 fn task_rows(
@@ -411,45 +397,6 @@ pub(crate) fn window_tasks(
         .into_values()
         .filter(|row| row.input_tokens + row.output_tokens > 0)
         .collect()
-}
-
-/// The `hive` entry of `vault_id` on `date`, or `None` when Hive did
-/// nothing measurable there. `usage` reads the project's host sessions in
-/// a time window; `now` closes a claim still held.
-pub(crate) fn day_entry(
-    hive_data: &Path,
-    vault_id: &str,
-    date: &str,
-    now: DateTime<Utc>,
-    usage: &WindowUsage<'_>,
-) -> Option<MetricsHiveV1> {
-    let state = load(hive_data);
-    let day = state
-        .days
-        .get(date)
-        .and_then(|projects| projects.get(vault_id))
-        .cloned()
-        .unwrap_or_default();
-    let date_naive = NaiveDate::parse_from_str(date, "%Y-%m-%d").ok()?;
-    let start = date_naive.and_hms_opt(0, 0, 0)?.and_utc();
-    let end = start + chrono::Duration::days(1);
-    let tasks = task_rows(&state.claims, vault_id, start, end, now, usage);
-    let task_usage: Vec<MetricsTaskUsageV1> = tasks
-        .into_values()
-        .filter(|row| row.input_tokens + row.output_tokens > 0)
-        .take(MAX_METRIC_TASK_ROWS)
-        .collect();
-    let first_context_sessions = day.first_context_ms.len() as u64;
-    let entry = MetricsHiveV1 {
-        knowledge_hits_referenced: day.hits,
-        task_usage,
-        first_context_ms_p50: median(&day.first_context_ms),
-        first_context_sessions,
-    };
-    (entry.knowledge_hits_referenced > 0
-        || !entry.task_usage.is_empty()
-        || entry.first_context_sessions > 0)
-        .then_some(entry)
 }
 
 #[cfg(test)]

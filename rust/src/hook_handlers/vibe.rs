@@ -91,10 +91,17 @@ fn decide(
                 ));
             }
 
-            // Commands already routed through lean-ctx must pass through —
-            // denying them would block lean-ctx's own CLI surface (#801).
+            // A command left to native bash runs without the enforcement
+            // wrap, so the shell allowlist is checked here.
+            let checked = || {
+                super::file_rewrite::native_allowlist_denial(cmd, binary)
+                    .map(|msg| vibe_deny_output(&msg))
+            };
+
+            // Commands already routed through lean-ctx are not denied by
+            // Replace mode — that would block lean-ctx's own CLI surface (#801).
             if super::file_rewrite::is_leanctx_call(cmd, binary) {
-                return None;
+                return checked();
             }
 
             // Replace mode: deny non-rewritable native bash (agent must use ctx_shell).
@@ -104,7 +111,7 @@ fn decide(
                      instead of native bash for: {cmd:.80}"
                 )));
             }
-            None
+            checked()
         }
         // read_file / grep cannot be arg-rewritten into a lean-ctx call (their
         // inputs are a path / pattern, not a shell command), so they are only
@@ -244,6 +251,31 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["decision"], "deny");
         assert!(v["reason"].as_str().unwrap().contains("ctx_shell"));
+    }
+
+    /// Native bash that Vibe runs unwrapped was never checked: a heredoc or a
+    /// compound behind a `lean-ctx` prefix ran in every mode.
+    #[test]
+    fn bash_that_fails_the_allowlist_is_denied() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "git,cat,lean-ctx");
+        let outputs: Vec<_> = ["python3 - <<'E'\nx\nE", "lean-ctx gain; bash -c id"]
+            .into_iter()
+            .map(|cmd| {
+                decide(
+                    &inv("bash", &serde_json::json!({ "command": cmd })),
+                    "lean-ctx",
+                    HookMode::Hybrid,
+                )
+            })
+            .collect();
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        for out in outputs {
+            let v: serde_json::Value = serde_json::from_str(&out.expect("denied")).unwrap();
+            assert_eq!(v["decision"], "deny");
+        }
     }
 
     #[test]

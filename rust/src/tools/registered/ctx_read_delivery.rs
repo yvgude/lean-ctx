@@ -148,7 +148,6 @@ impl PendingReadDelivery {
         }
         // Session updates (bounded lock — 10s timeout, read already succeeded)
         let mut ensured_root: Option<String> = None;
-        let project_root_snapshot;
         {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
             let session_guard = loop {
@@ -202,30 +201,22 @@ impl PendingReadDelivery {
                     session.project_root = Some(root.clone());
                     ensured_root = Some(root);
                 }
-                project_root_snapshot = session
-                    .project_root
-                    .clone()
-                    .unwrap_or_else(|| ".".to_string());
             } else {
                 tracing::warn!(
                     "session write-lock timeout (5s) in ctx_read post-update for {path}"
                 );
-                project_root_snapshot = ctx.project_root.clone();
             }
         }
         if let Some(root) = ensured_root.as_deref() {
             crate::core::index_orchestrator::ensure_all_background(root);
         }
 
-        // Telemetry + learning are pure side-effects that never influence this
-        // response, yet they did synchronous disk I/O on every read
-        // (ModePredictor load+save). Push them off
+        // Telemetry is a pure side-effect that never influences this response,
+        // yet it did synchronous disk I/O on every read. Push it off
         // the hot path so reads — especially cache-hit stubs — return without
         // waiting on disk (#149).
         {
             let path_bg = path.to_string();
-            let resolved_mode_bg = resolved_mode.clone();
-            let project_root_bg = project_root_snapshot.clone();
             // #685: model-correct verified-ledger inputs, computed off the hot path.
             // The default O200kBase model reuses the o200k `original`/`saved` below
             // (byte-identical, no clone). Only a resolved Claude/Gemini/Llama model
@@ -267,24 +258,6 @@ impl PendingReadDelivery {
                         };
                         ledger::record_read_event(lbase, lsaved, None, None);
                     }
-
-                    let sig =
-                        crate::core::mode_predictor::FileSignature::from_path(&path_bg, original);
-                    let density = if output_tokens > 0 {
-                        original as f64 / output_tokens as f64
-                    } else {
-                        1.0
-                    };
-                    let outcome = crate::core::mode_predictor::ModeOutcome {
-                        mode: resolved_mode_bg,
-                        tokens_in: original,
-                        tokens_out: output_tokens,
-                        density: density.min(1.0),
-                    };
-                    let mut predictor = crate::core::mode_predictor::ModePredictor::new();
-                    predictor.set_project_root(&project_root_bg);
-                    predictor.record(sig, outcome);
-                    predictor.save();
 
                     // A read supplies observed metrics, not task acceptance.
                     // Outcome-based learning requires the canonical execution

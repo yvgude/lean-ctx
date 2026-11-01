@@ -14,10 +14,17 @@ pub(super) enum SymbolRead {
     /// Serve this mode (`lines:S-E[,S-E…]` or `anchored:S-E`); `note` names
     /// the matches an `anchored` window could not include.
     Window { mode: String, note: Option<String> },
-    /// The name is not a symbol of this file: serve the outline instead, so
-    /// the caller gets the available names in the same call.
-    NotFound(String),
+    /// The name is not defined in this file. P10: answering with the outline
+    /// cost 12k chars on a 4,188-line file; the answer is now the closest
+    /// names (in `note`) plus the lines that mention the name (`hits`, 1-based,
+    /// at most [`MAX_HITS`]), served as a `lines:` multi-select.
+    NotFound { note: String, hits: Vec<usize> },
 }
+
+/// Lines that mention a missing symbol, shown instead of the outline.
+const MAX_HITS: usize = 8;
+/// Closest defined names offered for a missing symbol.
+const MAX_SUGGESTIONS: usize = 5;
 
 /// Resolve `symbol` (`name`, `Class.method` or `Class::method`) in `content`.
 /// Errors when the file has no tree-sitter grammar: the regex fallback only
@@ -32,8 +39,13 @@ pub(super) fn resolve(
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
-    let (sigs, backend) = extract_signatures_with_backend(content, ext);
+    let (mut sigs, backend) = extract_signatures_with_backend(content, ext);
     if !matches!(backend, SigBackend::TreeSitter) {
+        // A file of bindings only (no functions) falls back to the regex
+        // extractor; its bindings still resolve through the grammar below.
+        sigs.clear();
+    }
+    if !matches!(backend, SigBackend::TreeSitter) && !has_grammar(ext) {
         return Err(format!(
             "symbol reads need a tree-sitter grammar; .{ext} has none here. \
              Use mode=\"lines:N-M\" or ctx_search(action=\"symbol\")"
@@ -62,12 +74,15 @@ pub(super) fn resolve(
         .filter(|&&(n, s, e)| n == *target && parents.iter().all(|p| encloses(p, s, e)))
         .map(|&(_, s, e)| (s, e))
         .collect();
+    if ranges.is_empty() && parents.is_empty() {
+        // Module-level constants and variables are no signatures (P10:
+        // `_SIZE_UNITS = {...}` fell back to the whole outline).
+        ranges = top_level_bindings(content, ext, target);
+    }
     ranges.sort_unstable();
     ranges.dedup();
     if ranges.is_empty() {
-        return Ok(SymbolRead::NotFound(format!(
-            "[lean-ctx: symbol `{symbol}` not in this file — outline instead]"
-        )));
+        return Ok(not_found(content, symbol, target, &spans));
     }
     if anchored {
         let (s, e) = ranges[0];
@@ -88,6 +103,147 @@ pub(super) fn resolve(
         mode: format!("lines:{}", joined.join(",")),
         note: None,
     })
+}
+
+/// The small answer for a name the file does not define: the closest defined
+/// names and the first lines that mention it as a whole word.
+fn not_found(
+    content: &str,
+    symbol: &str,
+    target: &str,
+    spans: &[(&str, usize, usize)],
+) -> SymbolRead {
+    let hits: Vec<usize> = content
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| mentions_word(line, target))
+        .map(|(i, _)| i + 1)
+        .take(MAX_HITS)
+        .collect();
+    let lower = target.to_ascii_lowercase();
+    let mut names: Vec<&str> = spans.iter().map(|&(n, _, _)| n).collect();
+    names.sort_unstable();
+    names.dedup();
+    names.sort_by_cached_key(|n| {
+        let candidate = n.to_ascii_lowercase();
+        let unrelated = !(candidate.contains(&lower) || lower.contains(&candidate));
+        (unrelated, edit_distance(&candidate, &lower), *n)
+    });
+    let closest = if names.is_empty() {
+        String::new()
+    } else {
+        let shown: Vec<&str> = names.iter().take(MAX_SUGGESTIONS).copied().collect();
+        format!("; closest: {}", shown.join(", "))
+    };
+    let where_ = if hits.is_empty() {
+        "no line mentions it".to_string()
+    } else {
+        format!("lines mentioning it above ({} shown)", hits.len())
+    };
+    SymbolRead::NotFound {
+        note: format!("[lean-ctx: symbol `{symbol}` not defined in this file{closest}; {where_}]"),
+        hits,
+    }
+}
+
+fn mentions_word(line: &str, word: &str) -> bool {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
+    line.match_indices(word).any(|(at, _)| {
+        let before = line[..at].chars().next_back();
+        let after = line[at + word.len()..].chars().next();
+        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
+    })
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            let substitution = diagonal + usize::from(ca != cb);
+            diagonal = row[j + 1];
+            row[j + 1] = substitution.min(row[j] + 1).min(row[j + 1] + 1);
+        }
+    }
+    row[b.len()]
+}
+
+/// Line spans of the top-level statements that bind `name`: Python
+/// assignments, Rust `const`/`static`, JS/TS `const`/`let`/`var` (also
+/// exported), Go `const`/`var`.
+#[cfg(feature = "tree-sitter")]
+fn top_level_bindings(content: &str, ext: &str, name: &str) -> Vec<(usize, usize)> {
+    use tree_sitter::Node;
+
+    fn named(n: Node<'_>) -> Vec<Node<'_>> {
+        let mut cursor = n.walk();
+        n.named_children(&mut cursor).collect()
+    }
+
+    fn binds(node: Node, src: &str, name: &str) -> bool {
+        let text = |n: Node| &src[n.byte_range()];
+        match node.kind() {
+            "expression_statement" | "export_statement" => {
+                named(node).into_iter().any(|c| binds(c, src, name))
+            }
+            "assignment" | "assignment_expression" => {
+                node.child_by_field_name("left").is_some_and(|left| {
+                    text(left) == name
+                        || matches!(left.kind(), "pattern_list" | "tuple_pattern")
+                            && named(left).into_iter().any(|c| text(c) == name)
+                })
+            }
+            "lexical_declaration"
+            | "variable_declaration"
+            | "const_declaration"
+            | "var_declaration" => named(node)
+                .into_iter()
+                .any(|declarator| binds(declarator, src, name)),
+            "variable_declarator" | "const_item" | "static_item" => node
+                .child_by_field_name("name")
+                .is_some_and(|n| text(n) == name),
+            "const_spec" | "var_spec" => {
+                let mut cursor = node.walk();
+                node.children_by_field_name("name", &mut cursor)
+                    .any(|n| text(n) == name)
+            }
+            _ => false,
+        }
+    }
+
+    let Some(language) = crate::core::deep_queries::get_language(ext) else {
+        return Vec::new();
+    };
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(content.as_bytes(), None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let mut cursor = root.walk();
+    root.named_children(&mut cursor)
+        .filter(|node| binds(*node, content, name))
+        .map(|node| (node.start_position().row + 1, node.end_position().row + 1))
+        .collect()
+}
+
+#[cfg(feature = "tree-sitter")]
+fn has_grammar(ext: &str) -> bool {
+    crate::core::deep_queries::get_language(ext).is_some()
+}
+
+#[cfg(not(feature = "tree-sitter"))]
+fn has_grammar(_ext: &str) -> bool {
+    false
+}
+
+#[cfg(not(feature = "tree-sitter"))]
+fn top_level_bindings(_content: &str, _ext: &str, _name: &str) -> Vec<(usize, usize)> {
+    Vec::new()
 }
 
 #[cfg(test)]
@@ -119,7 +275,36 @@ class Other:
     fn window(read: SymbolRead) -> (String, Option<String>) {
         match read {
             SymbolRead::Window { mode, note } => (mode, note),
-            SymbolRead::NotFound(n) => panic!("expected a window, got {n}"),
+            SymbolRead::NotFound { note, .. } => panic!("expected a window, got {note}"),
+        }
+    }
+
+    /// P10: module-level bindings are symbols too (`_SIZE_UNITS = {...}`
+    /// returned the whole 12k-char outline).
+    #[test]
+    fn top_level_bindings_resolve_to_their_statement() {
+        let py = "import re\n\n_SIZE_UNITS = {\n    \"kb\": 1024,\n}\nA, LIMIT = 1, 2\n\ndef f():\n    _SIZE_UNITS = 0\n";
+        let (mode, _) = window(resolve(py, "m.py", "_SIZE_UNITS", false).unwrap());
+        assert_eq!(mode, "lines:3-5", "the nested rebinding is not top-level");
+        let (mode, _) = window(resolve(py, "m.py", "LIMIT", false).unwrap());
+        assert_eq!(mode, "lines:6-6");
+        for (src, path, name, expected) in [
+            (
+                "const MAX: usize = 3;\nstatic NAME: &str = \"x\";\n",
+                "m.rs",
+                "NAME",
+                "lines:2-2",
+            ),
+            (
+                "import x from 'y';\nexport const limits = {\n  a: 1,\n};\nlet n = 2;\n",
+                "m.ts",
+                "limits",
+                "lines:2-4",
+            ),
+            ("let n = 2;\nvar m = {\n};\n", "m.js", "m", "lines:2-3"),
+        ] {
+            let (mode, _) = window(resolve(src, path, name, false).unwrap());
+            assert_eq!(mode, expected, "{path} {name}");
         }
     }
 
@@ -149,9 +334,23 @@ class Other:
     }
 
     #[test]
-    fn unknown_name_falls_back_to_the_outline() {
-        let read = resolve(PY, "m.py", "missing", false).unwrap();
-        assert!(matches!(read, SymbolRead::NotFound(n) if n.contains("`missing`")));
+    fn unknown_name_answers_with_closest_names_and_mentions() {
+        let SymbolRead::NotFound { note, hits } = resolve(PY, "m.py", "Ledgr", false).unwrap()
+        else {
+            panic!("Ledgr is not defined");
+        };
+        assert!(
+            note.contains("`Ledgr`") && note.contains("closest: Ledger"),
+            "{note}"
+        );
+        assert!(hits.is_empty(), "{hits:?}");
+        // Mentions are whole words: `total` is on 10-11, never inside `totals`.
+        let src = format!("{PY}totals = 1\n");
+        let SymbolRead::NotFound { hits, .. } = resolve(&src, "m.py", "total", false).unwrap()
+        else {
+            panic!("total is a local, not a symbol");
+        };
+        assert_eq!(hits, vec![10, 11]);
     }
 
     #[test]

@@ -406,3 +406,22 @@ fn detect_heredoc_reroute_rejects_compound_prefix() {
     assert!(detect_heredoc_reroute("python3 -c 'print(1)'").is_none());
     assert!(detect_heredoc_reroute("python3 <<'PY' | cat\nx\nPY").is_none());
 }
+
+/// The `env` parameter reaches a lean-ctx the command starts just like an
+/// inline `KEY=value` would: lean-ctx's own policy keys (the shell security
+/// mode, its config location) are refused by name, so the call does not run.
+#[test]
+fn env_refuses_lean_ctx_policy_keys() {
+    for (key, value) in [("LEAN_CTX_SHELL_SECURITY", "off"), ("HOME", "/tmp/x")] {
+        let mut args = env_args(&[(key, value)]);
+        args.insert(
+            "command".to_string(),
+            Value::String("lean-ctx -c 'bash -c id'".to_string()),
+        );
+        let error = collect_extra_env(&args).expect_err(key);
+        assert!(
+            error.contains(&format!("`{key}`")) && error.contains("nothing was run"),
+            "{error}"
+        );
+    }
+}

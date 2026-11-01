@@ -42,6 +42,8 @@ pub(crate) struct ContextProofV1 {
     pub project: ProjectIdentity,
     pub role: RoleIdentity,
     pub profile: ProfileIdentity,
+    /// Kept for the proof's wire shape. Per-layer metrics are not collected,
+    /// so this is `runs: 0` unless a legacy `pipeline_stats.json` exists.
     pub pipeline: crate::core::pipeline::PipelineStats,
     pub verification: crate::core::output_verification::VerificationSnapshot,
     pub ledger: LedgerSummary,
@@ -57,13 +59,17 @@ pub(crate) struct ProjectIdentity {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct RoleIdentity {
     pub name: String,
-    pub policy_md5: String,
+    /// BLAKE3 hex; the serialized name keeps its historical `_md5` suffix.
+    #[serde(rename = "policy_md5")]
+    pub policy_blake3: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ProfileIdentity {
     pub name: String,
-    pub policy_md5: String,
+    /// BLAKE3 hex; the serialized name keeps its historical `_md5` suffix.
+    #[serde(rename = "policy_md5")]
+    pub policy_blake3: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -118,9 +124,9 @@ pub(crate) fn collect_v1(sources: ProofSources, opts: ProofOptions) -> ContextPr
     let profile_name = crate::core::profiles::active_profile_name();
     let profile = crate::core::profiles::active_profile();
 
-    let role_policy_md5 =
+    let role_policy_blake3 =
         crate::core::hasher::hash_str(&serde_json::to_string(&role).unwrap_or_default());
-    let profile_policy_md5 =
+    let profile_policy_blake3 =
         crate::core::hasher::hash_str(&serde_json::to_string(&profile).unwrap_or_default());
 
     let project_root = sources.project_root.clone().or_else(|| {
@@ -211,11 +217,11 @@ pub(crate) fn collect_v1(sources: ProofSources, opts: ProofOptions) -> ContextPr
         },
         role: RoleIdentity {
             name: role_name,
-            policy_md5: role_policy_md5,
+            policy_blake3: role_policy_blake3,
         },
         profile: ProfileIdentity {
             name: profile_name,
-            policy_md5: profile_policy_md5,
+            policy_blake3: profile_policy_blake3,
         },
         pipeline,
         verification,
@@ -282,6 +288,9 @@ mod tests {
         assert_eq!(v["schema_version"], 1);
         assert!(v["created_at"].as_str().unwrap_or_default().contains('T'));
         assert!(v["lean_ctx_version"].as_str().unwrap_or_default().len() >= 3);
+        // The BLAKE3 policy hashes keep their historical wire name.
+        assert!(v["role"]["policy_md5"].is_string(), "{v}");
+        assert!(v["profile"]["policy_md5"].is_string(), "{v}");
     }
 
     #[test]

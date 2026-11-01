@@ -14,8 +14,7 @@ use super::HiveError;
 use super::config::normalize_origin;
 use lean_ctx_protocol::hive::{
     HEADER_IDEMPOTENCY_KEY, HEADER_INSTANCE, HEADER_MIN_ENGINE, HEADER_NAMES, HEADER_PROTOCOL,
-    HIVE_API_PREFIX, MAX_BODY_BYTES, NAMES_VAULT, parse_protocol_header, protocol_compatible,
-    protocol_header_value,
+    HIVE_API_PREFIX, MAX_BODY_BYTES, NAMES_VAULT, parse_protocol_header,
 };
 
 /// `User-Agent` of every request.
@@ -28,21 +27,37 @@ pub struct HiveClient {
     origin: String,
     agent: ureq::Agent,
     auth: Option<(String, Zeroizing<String>)>,
-    /// `Hive-Protocol` sent; `None` = this engine's 1.x version.
-    protocol: Option<&'static str>,
 }
 
-/// Hive name of `Hive-Protocol` (same value). Sent alongside it; a response
-/// may carry either, `Hive-Protocol` is read first.
-pub const HEADER_PROTOCOL_HIVE: &str = "Hive-Protocol";
-
-/// The C0 2.0 protocol, spoken only to a Hive that answered the instance
-/// card (`bus::relay_v2::speaks_v2`).
+/// The C0 2.0 protocol every request carries, the enrollment included.
+/// Hive accepts only major 2 and answers `426` for a missing or malformed
+/// header or another major (Hive 1.x is retired).
 pub const PROTOCOL_V2: &str = "2.0";
 
-/// The protocol major of a header value.
-fn major(value: &str) -> Option<u16> {
-    parse_protocol_header(value).map(|(major, _)| major)
+/// The protocol major this engine speaks and accepts in an answer.
+const PROTOCOL_MAJOR: u16 = 2;
+
+/// The answer header the deployed Hive still sends to every request, a 2.0
+/// one included, until its guard mirrors the request's major (lean-ctx-e0,
+/// 31.10.). Accepted from a Hive that took the 2.0 request; remove once that
+/// Hive is deployed.
+const DEPLOYED_ANSWER_1X: (u16, u16) = (1, 9);
+
+/// Why an answer's `Hive-Protocol` is refused: only a 2.x Hive is spoken
+/// to (Hive 1.x is retired), and the error names the protocol required.
+fn incompatible(peer: &str) -> Option<HiveError> {
+    match parse_protocol_header(peer) {
+        Some((PROTOCOL_MAJOR, _)) => None,
+        Some(version) if version == DEPLOYED_ANSWER_1X => None,
+        Some((major, minor)) => Some(HiveError::Protocol(format!(
+            "Hive speaks protocol {major}.{minor}; this engine requires Hive-Protocol \
+             {PROTOCOL_MAJOR}.x (Hive 1.x is retired): upgrade the Hive server"
+        ))),
+        None => Some(HiveError::Protocol(format!(
+            "Hive sent no valid protocol version; this engine requires Hive-Protocol \
+             {PROTOCOL_MAJOR}.x"
+        ))),
+    }
 }
 
 /// A 2xx or 304 answer.
@@ -70,7 +85,6 @@ impl HiveClient {
             origin,
             agent,
             auth: None,
-            protocol: None,
         })
     }
 
@@ -90,15 +104,7 @@ impl HiveClient {
             origin,
             agent,
             auth: None,
-            protocol: None,
         })
-    }
-
-    /// Speak C0 2.0 (`Hive-Protocol: 2.0`) with this client. Only for an
-    /// Hive known to speak it; the 1.x default never changes on its own.
-    pub fn speaking_v2(mut self, v2: bool) -> Self {
-        self.protocol = v2.then_some(PROTOCOL_V2);
-        self
     }
 
     /// Authenticate subsequent requests as `instance_id`.
@@ -257,16 +263,13 @@ impl HiveClient {
         max_body: usize,
     ) -> Result<(u16, Option<String>, Vec<u8>, Value), HiveError> {
         let url = format!("{}{HIVE_API_PREFIX}{path}", self.origin);
-        let protocol = self
-            .protocol
-            .map_or_else(protocol_header_value, str::to_string);
         let user_agent = user_agent();
         let bearer = self
             .auth
             .as_ref()
             .map(|(_, token)| Zeroizing::new(format!("Bearer {}", token.as_str())));
         let mut headers: Vec<(&str, &str)> = vec![
-            (HEADER_PROTOCOL, &protocol),
+            (HEADER_PROTOCOL, PROTOCOL_V2),
             (HEADER_NAMES, NAMES_VAULT),
             ("User-Agent", &user_agent),
         ];
@@ -276,20 +279,6 @@ impl HiveClient {
         }
         headers.retain(|(name, _)| !extra.iter().any(|(e, _)| e.eq_ignore_ascii_case(name)));
         headers.extend_from_slice(extra);
-        // The major this request was sent with (an explicit header wins).
-        let sent_protocol = headers
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case(HEADER_PROTOCOL))
-            .map(|(_, value)| *value);
-        let sent_major = sent_protocol.and_then(major);
-        // The Hive name of the same header, same value (Hive servers read it first).
-        if let Some(value) = sent_protocol
-            && !headers
-                .iter()
-                .any(|(name, _)| name.eq_ignore_ascii_case(HEADER_PROTOCOL_HIVE))
-        {
-            headers.insert(0, (HEADER_PROTOCOL_HIVE, value));
-        }
 
         let result = match (method, body) {
             ("GET", _) => with_headers(self.agent.get(&url), &headers).call(),
@@ -315,7 +304,7 @@ impl HiveClient {
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_string)
         };
-        let peer_protocol = header(HEADER_PROTOCOL_HIVE).or_else(|| header(HEADER_PROTOCOL));
+        let peer_protocol = header(HEADER_PROTOCOL);
         let min_engine = header(HEADER_MIN_ENGINE);
         let etag = header("etag");
         let retry_after = header("retry-after");
@@ -336,16 +325,8 @@ impl HiveClient {
                 min_engine.or_else(|| value["error"]["min_engine"].as_str().map(str::to_string));
             return Err(HiveError::UpgradeRequired { min });
         }
-        // A 2.x answer is right for a 2.x request; anything else must be the
-        // 1.x major this engine speaks.
-        if let Some(peer) = &peer_protocol
-            && !protocol_compatible(peer)
-            && !(sent_major == Some(2) && major(peer) == Some(2))
-        {
-            return Err(HiveError::Protocol(match parse_protocol_header(peer) {
-                Some((major, _)) => format!("Hive speaks protocol {major}, this engine 1"),
-                None => "Hive sent no valid protocol version".into(),
-            }));
+        if let Some(refused) = peer_protocol.as_deref().and_then(incompatible) {
+            return Err(refused);
         }
         Ok((status, etag, bytes, value))
     }
@@ -421,6 +402,21 @@ mod tests {
         assert!(HiveClient::new("http://hive.example.com").is_err());
         assert!(HiveClient::new("https://hive.example.com").is_ok());
         assert!(HiveClient::new("http://127.0.0.1:9").is_ok());
+    }
+
+    #[test]
+    fn a_2x_or_the_deployed_1_9_answer_is_accepted_and_a_refusal_names_the_protocol() {
+        assert!(incompatible("2.0").is_none());
+        assert!(incompatible("2.7").is_none());
+        // The deployed Hive answers 1.9 to a 2.0 request until its guard
+        // mirrors the request's major.
+        assert!(incompatible("1.9").is_none());
+        for peer in ["1.8", "1.0", "3.0", "", "two"] {
+            let Some(HiveError::Protocol(message)) = incompatible(peer) else {
+                panic!("{peer:?} must be refused");
+            };
+            assert!(message.contains("Hive-Protocol 2.x"), "{message}");
+        }
     }
 
     #[test]

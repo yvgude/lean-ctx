@@ -8,6 +8,37 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Security
 
+- **The skill's `curl | bash` installer verifies the binary.** It installed whatever archive
+  it downloaded; like `install.sh` it now checks it against the release's `SHA256SUMS` and
+  refuses to install without a hash tool, without the sums file, without exactly one entry for
+  the archive or on a different digest.
+- **A Cockpit bundle with two checksum entries is refused.** `install.sh`, `install.ps1` and the
+  npm postinstall took the first matching line of `COCKPIT_SHA256SUMS`; they now require exactly
+  one entry for the bundle, as for the engine archive.
+- **`npm install lean-ctx-bin@X` installs engine X.** The postinstall downloaded whatever
+  release was newest on GitHub; it now fetches the release that matches the package's own
+  version and refuses another.
+- **The Hermes plugin names its own client.** Its `requirements.txt` asked for `leanctx`, which
+  on PyPI is an unrelated third-party package; it now pins `lean-ctx-client==0.1.0`, the final
+  release of the retired HTTP `/v1` client the plugin imports as `leanctx`.
+
+- **Hive connect names no project before a yes and lists exactly what it shares.** Against a
+  Hive with the C0 2.1 device setup, `hive connect` sent the folder name and git remote to
+  Hive before anyone agreed, and the sharing question named daily usage totals and context
+  receipts, which this version never sends, but not fact states, the automatic 1.x merges
+  and objections, friction counts or task traffic. It now asks before the approval and sends
+  the project only after a yes (or `--yes`); the question lists exactly what leaves the
+  machine, the device setup announces only `knowledge` and `bus`, and a no also keeps fact
+  states and the automatic 1.x merges and objections on the machine.
+- **Hive screening fails closed on a broken rule.** A forbidden pattern
+  (`[egress] forbidden_patterns` or a Hive filter pack) that did not compile was dropped
+  silently, so what it should have blocked went to Hive. Such a rule now pauses every Hive
+  content channel until it is fixed, and the Hive status names it; the policy pull that may
+  bring a fixed rule goes on. The paths and symbol names of the code graph and the new place
+  of a moved fact anchor now pass the same screen.
+- **Hive fencing tokens are no longer printed.** `ctx_agent lease_acquire` answered
+  `scope=hive fencing_token=…`, and the debug output of a task claim carried its lease id and
+  token. Both stay in their 0600 files; the answer says `scope=hive`.
 - **A dashboard request that names a project is answered for that project or refused.**
   The dashboard accepted an `X-LeanCTX-Project` header on routes outside its project list
   (`/api/tree`, `/api/architecture`, `/api/compression-demo`, `/api/tools-health` and others)
@@ -34,6 +65,85 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   certificates or a `.npmrc` are now denied under the default role; allow them through the
   role. Not covered: a directory-wide search, shell reads (`cat .env`), Windsurf and
   Antigravity; see Security & Governance §4.0.
+- **The shell hooks check every command they let run without the `lean-ctx -c` wrap.**
+  The PreToolUse hooks enforce the shell allowlist by wrapping a violating command in
+  `lean-ctx -c`. Several kinds of command were neither wrapped nor checked and ran natively
+  without any allowlist check:
+  - a command with a heredoc (`<<`), which cannot be wrapped: inline code ran that
+    `python -c` is blocked for (since v3.10.0);
+  - a command whose program is lean-ctx, which is never wrapped again. The hooks recognised
+    it by its first word alone, so a compound behind a `lean-ctx …` prefix ran unchecked
+    (since v3.10.0), and `lean-ctx allow …`, `lean-ctx yolo` or
+    `lean-ctx config set shell_security …` could loosen the agent's own policy from the
+    host's shell, which `ctx_shell` refuses (since v3.11.1);
+  - a `&&`/`;` chain with a file read in it, whose read was rewritten to `lean-ctx read` in
+    place while the other commands of the chain ran natively (since v3.10.0);
+  - every Bash command on Mistral Vibe (`hook vibe-pre-tool`, since v3.10.0), and on Codex
+    (`hook codex-pretooluse`) and `hook copilot` every command the hook did not rewrite to a
+    read-only one (since the hooks enforce the allowlist, v3.10.0);
+  - PowerShell, and any command whose wrap the host's permissions did not let through, in
+    the governor's `hook rewrite-enforce` (new in 3.12).
+
+  All of these are now checked in the hook and denied when they violate the allowlist, in
+  `enforce` mode; `warn` logs and `off` lets them run, as configured. lean-ctx is recognised
+  by its program word, with or without a path, quotes, `VAR=value` or `env`; `lean-ctx-x` is
+  another program. A plain `lean-ctx …` call needs no allowlist entry; one with braces, globs,
+  substitutions, operators or non-ASCII characters (PowerShell reads `“ ”` as quotes) gets
+  the full check. Quoted heredoc bodies still count as data, so
+  `git commit -m "$(cat <<'EOF' … EOF)"` and allowlisted chains such as
+  `cargo test && git status` are still allowed.
+- **The shell gate's policy no longer comes from the agent's environment.** lean-ctx read
+  its shell security mode and allowlist from `LEAN_CTX_SHELL_*` variables and its config from
+  `HOME`/`XDG_*`/`LEAN_CTX_CONFIG_DIR`, so a command could set them for the lean-ctx it
+  started and turn the check off for itself. This affects all releases that read
+  `LEAN_CTX_SHELL_*` from the environment (the allowlist since v3.6.4, the security mode
+  since v3.8.12). Release builds now take shell-security settings only from the built-in
+  defaults and the `config.toml` in the account's home as the operating system records it,
+  and ignore those variables, in the hooks, inside `lean-ctx -c` and in `ctx_shell`;
+  `lean-ctx -c` from an agent's shell also enforces when it has a terminal. Command lines may
+  still set only the run-control switches (`LEAN_CTX_DISABLED`, `LEAN_CTX_NO_HOOK`,
+  `LEAN_CTX_RAW`, `LEAN_CTX_COMPRESS`, `LEAN_CTX_QUIET`, `LEAN_CTX_ACTIVE`); other
+  `LEAN_CTX_*` assignments, names built at run time, `declare -n`, and `HOME`/`XDG_*_HOME`
+  in a line that starts lean-ctx are refused. Behaviour change: set shell-security options
+  in that `config.toml` (see the 3.12 upgrade guide); `LEAN_CTX_PROFILE=… lean-ctx …` and
+  similar settings from an agent's shell are refused. Remaining limit: the allowlist is not a
+  sandbox (#1367). Code it admits — a script, a compiled program, `cargo run` in a lean-ctx
+  checkout, a copied lean-ctx binary — can still write that config; only an OS sandbox closes
+  that. Known limits, also covered by "not a sandbox": `cd` sequences that do not take effect
+  as written (a failed `cd`, a `cd` in a subshell or pipeline), `command cd`/`builtin cd`,
+  `CDPATH` and `pushd +N`, paths through a symlink followed by `..`, and write operands that
+  come from variables or brace expansion.
+- **lean-ctx calls from an agent's shell follow an allowlist.** Instead of refusing known
+  widening subcommands, the gate lets an agent's shell run only reads, views and searches,
+  `-c`/`-t` (whose inner command is checked like any other line), the read actions of
+  `config`, `knowledge` and `session`, the forms that tighten, and `config set` of
+  presentation and compression keys. The words that select what runs must be literal, and
+  lean-ctx cannot run as an `xargs`/`parallel` target or without a subcommand. Other
+  subcommands are refused with a note to run them in the person's own terminal.
+- **Writes to lean-ctx's state are recognised in more spellings.** `<>` and `>&FILE`
+  redirects, a state path inside a `sed`/`awk` script, abbreviated GNU options (`--in-pl`),
+  `ln` with a state path as either operand, globs, `cd`/`pushd` into the state directories,
+  programs that are not known to only read and name the state or a directory above it
+  (plain single-file copies are judged by the file they create), attached
+  option values (`-o…`), `-Dkey=…` words, `find -ok`, paths relative to the directory the
+  command runs in (including a literal `cd` on the same line), lean-ctx's own writing
+  subcommands (`--out`, `--export`, `--output` into the state),
+  `$XDG_CONFIG_HOME`/`~user`/Windows path forms and symlinked paths now count; macOS and
+  Windows compare paths case-insensitively. On PowerShell, `\` is read as an ordinary
+  character and unquoted `,`/`@` in a lean-ctx call are refused.
+- **lean-ctx's own guardrails hold in more cases.** A subcommand written with an unquoted
+  brace or glob (which the shell expands after the check) is refused; the guardrails also
+  apply with an empty allowlist (blocklist-only mode), where `env lean-ctx yolo` and
+  `lean-ctx yolo | cat` passed (since v3.11.1); and `config set shell_hook_mode`/
+  `hook_mode`/`shell_strict_mode`, `uninstall`, `unwrap`, `wrap --unwrap`,
+  `addon install` and `policy org install/uninstall/untrust` are refused from an agent's
+  shell like `lean-ctx allow`. Only the first argument selects one of lean-ctx's internal
+  `__` modes, so `lean-ctx read __init__.py` is no longer refused.
+- **The shell gate refuses what it cannot validate in time.** In `enforce` mode it refuses
+  commands longer than 64 KiB and substitutions nested more than 64 levels deep; before,
+  deep nesting could crash the hook, which then let the command run. Each refusal names its
+  limit and what to do instead: split the command, write long content to a file with the
+  host's file-write tool, or put deeply nested logic in a script file.
 
 - **LeanCTX approves a shell command only when your AI tool would have run it without
   asking.** The shell and file hooks answered "allow" for every call they passed through or
@@ -108,15 +218,57 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   signature from any other key is reported as `SELF-SIGNED / UNPINNED` (exit code 3), a
   mismatch with `--pubkey` as invalid. An unverified plan no longer reports a 0-day retention
   coverage; it shows as unverified.
+- **Secrets stay off command lines.** The macOS signing keychain's password was passed to
+  `security` and `openssl` as an argument, where any local process can read it from the
+  process list; `codesign-setup` and every signed build now hand it over on standard input
+  (`security -i`, `openssl -passout stdin`). `serve` reads the A2A signing key from a file
+  with the new `--a2a-signing-key-file <path>` (or `LEAN_CTX_A2A_SIGNING_KEY_FILE`) besides
+  `LEAN_CTX_A2A_SIGNING_KEY`. The Rust client's `Debug` output of `LeanCtxClient` and its
+  builder shows a set bearer token as `<redacted>`.
+- **`serve` reads its HTTP auth token from a file.** `--auth-token <token>` left the Bearer
+  token in the process list; the new `--auth-token-file <path>` (or `LEAN_CTX_HTTP_TOKEN_FILE`)
+  reads it from a bounded regular file, besides `LEAN_CTX_HTTP_TOKEN`. Giving both the token
+  and a token file is refused.
+- **Role and policy denials are tool errors.** A tool blocked by the active role, a context
+  policy pack or its egress rules came back as a successful result; it now carries
+  `isError: true` with the same reason, and its audit entry names the calling agent instead
+  of `unknown`. The daemon socket is bound in a private directory and moved into place
+  already `0600`, so no umask leaves a reachable moment before the mode is set.
+- **The Windows daemon pipe is the user's own.** Its named pipe was created with the default
+  DACL, which also lets Everyone and Anonymous open it for reading, while the daemon's routes
+  take no token. Every pipe instance now carries an explicit security descriptor: owned by
+  the current user, a protected DACL that grants that user alone access, and local clients
+  only.
+- **Workflow and IDE-permission refusals are tool errors too.** A tool held back by the active
+  workflow or by inherited IDE permissions (OpenCode) came back as a successful result; it now
+  carries `isError: true` with the same reason. Content-filter audit entries name this
+  process's agent attribution (`LEAN_CTX_AGENT_ID`, else the MCP client and bus id) instead
+  of `unknown`, and `policy enforce` names its agent id.
+- **The Replace-mode deny hook lets native tools through when no LeanCTX MCP server runs.**
+  A missing daemon PID file counted as reachable; now a live daemon or a live MCP presence
+  (the stdio server registers one) is required, otherwise native tools pass.
+- **Claude Code `settings.json` permission writes are atomic and keep a backup**, and are
+  refused instead of overwriting a concurrent change.
 
 ### Added
 
 - **A project linked to an emspace space uses it without setup.** `ctx_read` indexes the
   space in the background (detached, bounded, one pass per project at a time) and names the
-  page that documents the file; `ctx_agent read`/`list` show the space's open sessions,
-  screened for secrets; `ctx_shell` shortens the header of a single `emspace page show` and
-  passes page bodies, `--json`, `schema` and `run` output unchanged. Needs the optional
-  `emspace` CLI; without a `.emspace` link nothing runs.
+  page that documents the file, `stale` when its sources moved; a once-a-minute journal check
+  re-reads the pages only after the space changed, so an idle space costs one 40 ms read a
+  minute. `ctx_provider` reads a page's outline or one section (`resource=page`,
+  `mode=text`) instead of the whole body. `ctx_agent read`/`list` show the space's open
+  sessions, screened for secrets; `ctx_shell` shortens the header of a single
+  `emspace page show` and passes page bodies, `--json`, `schema` and `run` output unchanged.
+  Pages are no longer copied into `ctx_knowledge` facts. Needs the optional `emspace` CLI;
+  without a `.emspace` link nothing runs.
+- **The knowledge store keeps a change journal.** Every save appends the facts it added,
+  changed or removed under a growing LSN (identity and changed field names, never a value;
+  local only). `ctx_knowledge action=changes query=<lsn>` lists what changed since then and
+  `query=session` what a session wrote, which a `ctx_session` handoff now names.
+  `action=repin` re-anchors a fact marked to verify to its code as it is now without
+  retyping it, and `action=coverage` lists the most edited files that no fact is anchored to.
+- **`ctx_provider query mode=text`** lists each item with its body, for every provider.
 - **Governor rule R4: template collapse for large Bash output.** R2 folds only
   byte-identical lines, so real logs, lint output and exports, whose lines differ in a
   timestamp, sequence number or id, never shrank and the governor wrote no receipts. R4
@@ -178,6 +330,33 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Changed
 
+- **The telemetry data dictionary says which events LeanCTX | OSS sends.** Of the 24
+  contract events the engine sends eleven; nine (trial, subscription, team and
+  orchestration) belong to the hosted service and are never built by the engine, and four
+  (`autopilot_aggregate`, `autopilot_fallback_aggregate`, `sync_aggregate`,
+  `checkout_started`) have a counter nothing increments. The engine never sets `account_id`
+  or `organization_id`. The contract itself is unchanged.
+- **The daemon keeps its endpoint files in the data directory.** `daemon.pid`,
+  `daemon.sock`, the start lock and the stderr log lived in the OS data-local directory
+  whatever `LEAN_CTX_DATA_DIR` or the XDG layout said, so an isolated data directory reached
+  the default install's daemon. They now live in the data directory (the Windows pipe name
+  follows it); a daemon an earlier release started in the old place is stopped when a new
+  one starts and by `daemon stop`.
+- **`ctx_shell` steers large logs to a narrower command, not to `raw=true`.** The tool
+  description and the `raw` parameter now say `raw=true` is for exact bytes only (a diff to
+  apply, hashes, encoded output) and that a large log is read by narrowing the command
+  (`grep`, `sed -n`, `head`/`tail`); the firewall digest's guidance names the same narrowing
+  next to `ctx_expand(search=…)`. In pilot P10 an agent answered its first firewalled log
+  grep by passing `raw=true` on every later call, which by contract skips the firewall: six
+  outputs of 6.7k–15.7k chars. `raw` itself is unchanged. Same wording for the `shell`
+  alias, the granular tool set, the Pi template and the Pi extension.
+- **`ctx_read` outlines (`signatures`, `map`, and a read without a range of a large file)
+  stay within ~1,500 tokens.** The outline of a 4,188-line module with 260 decoders was
+  13k chars. Above the budget, runs of three or more consecutive symbols sharing a name
+  prefix fold into one line (`fn pub decode_cart_{created,paid,voided}(payload) @L206-327`),
+  keeping every name; then the shorter prefix; then methods collapse into a count on
+  their class; only then is the tail cut, with the count and the line it starts at. A note
+  says so and points at `symbol=` and `lines:N-M`. Smaller outlines are unchanged.
 - **`emspace` is on the default shell allowlist**, so agents in a checkout linked to an emspace
   space can query it directly without an approval prompt.
 - **`ctx_read` names the issues, PRs and pages that reference a file by default.**
@@ -313,9 +492,18 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   line continuations, control structures, and any use of `exit`, `return`, `set`,
   `command`, `builtin`, `eval`, `exec`, `source` or `trap`. What runs is checked again
   as one command. Inline-script blocks are two lines instead of seven.
+- **A read no longer leaves a Hot scent.** Every `ctx_read` started a thread that took the
+  scent-field file lock to record the read. Reads now leave nothing in the field; claims,
+  releases, handoffs and the Stuck scents of bounces and failed edits are unchanged, and
+  `ctx_agent sync` and the dashboard drop Hot entries a field file still holds.
 
 ### Removed
 
+- **Dormant Context Kernel code without a caller:** `enforce_plan` (the mode never reached
+  filtering), `activation::should_suppress_in_mode`, `health::format_health` and
+  `health_api::one_line_status`. No command, route or tool output changes.
+- **The unused A2A transport counters** (`core::a2a::telemetry`): nothing recorded a
+  delivery or read the snapshot. The A2A health view keeps its own delivery outcomes.
 - **Research and evaluation tooling** leaves the engine (owner decision 2026-10-30):
   `lean-ctx eval` (`init`, `ab`, `verify`, `footprint`, `frontier`, `testbench`),
   `quality-lab`, `measure`, `prove speed`, and the `benchmark` subcommands `tasks`,
@@ -333,6 +521,16 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `hive replica --swarm`; such calls are refused instead of reaching the org channel. Hive
   tasks, worker mode and its opt-in, durable workers and the agent bus stay.
 
+- **The Hive 1.x protocol fallback** (owner decision 2026-10-31; Hive has not shipped, keeps
+  no 1.x compatibility and answers `Hive-Protocol: 1.x` with `426`). A session no longer
+  drops to `Hive-Protocol: 1.9` when the instance card was not answered: every request
+  sends 2.0, and an answer that names another major is an error saying the engine requires
+  `Hive-Protocol 2.x`, instead of being accepted as 1.x.
+- **The client of the retired daily Hive metrics upload** (`POST /v1/metrics`, a 1.x route
+  Hive drops). It was always off; `hive sync` no longer prints its "Metrics not sent" line,
+  and `hive status` keeps naming why it does not run. Engine metrics v2 (hourly) carry the
+  same figures.
+
 - Internal clean-up, no behaviour change: modules and functions without a production
   caller are gone from the Engine (among them the process-slot guard, the recovery
   verifier, the cognitive chunker, the context-checkpoint adapters, branch/merge and
@@ -345,9 +543,39 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   nothing, so the board has one check fewer.
 - The Cargo features `experimental` and `context_kernel` are removed. Neither switched
   any code; a build that names them must drop them.
+- The compression-feedback store (`core/feedback.rs`) is gone. Nothing recorded into it,
+  so the bandit and mode-predictor paths that read it never received data. An existing
+  `feedback.json` is left untouched.
+- **Learned `auto` read modes** (opt-in since #683): the mode predictor, the mode bandit
+  and the adaptive mode policy are gone, and the built-in OCLA config tuner proposes the
+  requested mode unchanged. On the MCP path the learned choice could only switch
+  `map`/`signatures` for files over 300 lines; `auto` is now always the deterministic
+  capability-guard and size/task cascade. Reads and `ctx_feedback` no longer write
+  `mode_stats.json` or `adaptive_mode_policy.json` (existing files are left alone), and
+  `ctx_feedback reset` clears only the LLM feedback log.
+- **Threshold bandit and learned field weights:** `core/bandit.rs`, the arm selection,
+  reward and bounce/edit-failure penalties in `adaptive_thresholds` and the field-weight
+  presets in `context_field` are gone, with the `field_weights_bandit` entry of
+  `lean-ctx introspect cognition`. The per-language and compressibility thresholds of
+  `mode=entropy` stay. Entropy reads no longer load and save `bandits.json` (an existing
+  file is left alone).
+- **The background cognition loop** (off by default) and its idle replay are removed, with
+  cluster compaction into digests, replay consolidation and observation synthesis. The
+  scheduled consolidation keeps running the memory lifecycle (decay, merge, archival), so
+  a default install behaves as before. `lean-ctx introspect cognition` no longer lists the
+  memory consolidation, idle replay and observation synthesis subsystems.
+- **LITM placement calibration** is removed. It only acted with `minimal_overhead = false`,
+  where it moved session items between the begin and end blocks over time; that block now
+  always uses the static layout. `ctx_metrics` no longer prints the calibration section,
+  `lean-ctx learning status` and the efficacy snapshots drop the placement hit rate, and
+  `/api/learning` no longer has a `litm` field.
 
 ### Deprecated
 
+- `ctx_agent action=poll_events` has its own parameters: `workspace_id`, `channel_id`,
+  `since_id`, `kinds` and `limit`. The parameters it borrowed for them (`to_agent`,
+  `category`, `message`, `privacy`, `ttl_hours`) stay accepted as aliases; the new names win
+  when both are given; earliest removal 3.15.0 (`rust/data/DEPRECATIONS.toml`).
 - `lean-ctx autopilot policy`, `lean-ctx autopilot evidence --learn` and the config key
   `intelligence_runtime.context_policy_apply` have no effect any more: learned
   read-strategy policies are retired and the read strategy is chosen locally. They stay
@@ -356,8 +584,197 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - `lean-ctx setup --no-auto-approve` never changed what setup writes. It stays accepted,
   warns on stderr and has no effect; earliest removal 3.15.0. The interactive setup no
   longer suggests it.
+- `lean-ctx serve --a2a-signing-key <key>` puts the key in the process list. It still works
+  and warns on stderr; use `--a2a-signing-key-file <path>` or `LEAN_CTX_A2A_SIGNING_KEY`
+  instead. Earliest removal 3.15.0.
+- The config key `auto_mode_learning` and its env var `LEAN_CTX_AUTO_MODE_LEARNING` have no
+  effect any more: the learned `auto` signals they switched on are retired. Both stay
+  accepted; earliest removal 3.15.0 (`rust/data/DEPRECATIONS.toml`).
+- The env var `LEAN_CTX_STOCHASTIC` has no effect any more: the bandits whose sampling it
+  enabled are retired. Earliest removal 3.15.0.
+- `ctx_knowledge action=cognition_loop`, the config keys `autonomy.cognition_loop_enabled`,
+  `cognition_loop_interval_secs`, `cognition_loop_max_steps` and
+  `cognition_synthesis_min_cluster`, the `[memory.compaction]` section and the variables
+  `LEAN_CTX_COGNITION_*` and `LEAN_CTX_COMPACTION_*` have no effect any more: the cognition
+  loop is retired. They stay accepted (the action answers that it was retired; use
+  `action=consolidate`); earliest removal 3.15.0 (`rust/data/DEPRECATIONS.toml`).
+- `lean-ctx learning export` and `learning import` carried the retired LITM calibration.
+  They stay accepted, say on stderr that they were retired and have no effect; earliest
+  removal 3.15.0.
+- The kernel mode variable is now `LEAN_CTX_KERNEL_MODE`, like every other variable. The
+  old `LEANCTX_KERNEL_MODE` is still read and warns once per process; the new name wins when
+  both are set. Earliest removal 3.15.0 (`rust/data/DEPRECATIONS.toml`).
 
 ### Fixed
+
+- **The context ledger's Phi no longer depends on earlier entropy reads (#498).** Every
+  `mode=entropy` read picked a threshold-bandit arm and installed its field weights for
+  the whole process; with tied arms the first read switched the ledger from the default
+  to the `conservative` weights, so the same files scored, ordered and were evicted
+  differently depending on what had been read before. Phi now always uses the fixed
+  default weights, for the ledger and the context kernel.
+- `lean-ctx serve --auth-token <token>` puts the Bearer token in the process list. It still
+  works and warns on stderr; use `--auth-token-file <path>`, `LEAN_CTX_HTTP_TOKEN_FILE` or
+  `LEAN_CTX_HTTP_TOKEN` instead. Earliest removal 3.15.0.
+
+- **A Claude Code `settings.json` that does not parse is left alone.** The permission writers
+  replaced it with an empty object plus the lean-ctx entries, dropping every other setting
+  (only the `.bak` kept them), and the hook installer skipped it while reporting the hooks as
+  installed. Both now refuse: the file stays unchanged, and the error names the file, the
+  parse error and that `lean-ctx init --agent claude` sets it up once it is fixed. The same
+  holds for a project's `.claude/settings.local.json`.
+- **Dashboard relation edits no longer drop concurrent edges.** `POST
+  /api/knowledge-relations/edit` loaded and saved the relation graph without the knowledge
+  lock, so an edge the MCP server wrote at the same time could be lost; it now edits under
+  the same cross-process lock as `ctx_knowledge relate`/`unrelate`.
+- **A failed `POST /api/graph/enrich` answers an error status.** It answered `200 OK` with
+  `{"error": …}`; it now answers `503` when the project graph cannot be opened and `500`
+  when enrichment fails, with the dashboard's usual `{"error": "<message>"}` body.
+- **The config-keys reference puts `/mcp/{id}` on the right server.** It said the
+  `[[gateway_server.mcp_servers]]` route is served on the proxy port; the enterprise gateway
+  server serves it, the local proxy mounts no `/mcp/{id}` routes.
+- **The Hermes plugin tests no longer look for the removed `clients/python`.** The test
+  bootstrap and the benchmark runner put that directory on `sys.path`; the client now comes
+  only from the installed `lean-ctx-client`, and the live test skips when it is missing.
+- **A moved fact anchor is reported as moved.** The guarded anchor resolver refused an
+  anchor as soon as its path was not readable, and a moved file's old path never is, so
+  every move read as `missing`. An unreadable anchor path is still never read; the anchor is
+  now looked for elsewhere through the code graph, among readable files only.
+- **Each proxied request is counted once in the kernel evidence.** A forwarded request was
+  recorded by the forward path and again when its measured usage arrived, so the usage
+  normalizer counted it three times and the receipt chain, identity attribution and ETPAO
+  twice. The forward path (and the Responses WebSocket bridge, per turn) now records it once;
+  measured usage only updates the per-provider statistics and dispatch counters. The
+  savings ledger is untouched: earlier entries keep their bytes and still verify.
+  `lean-ctx gain --pipeline` no longer promises per-layer stats that nothing records.
+- **Proxy routes and policies match their docs.** The startup banner listed
+  `/mcp/{id}` routes for `[[gateway_server.mcp_servers]]` that this proxy does not serve
+  (404); it now says the entries are not served here. The DNS-rebinding Host check now runs
+  before token auth and rate limiting, so a foreign Host gets `403` before any credential
+  check. An outbound `router-policy.toml` refusal names its rule:
+  `destination.model_policy_invalid`, `destination.model_not_allowed`,
+  `destination.cost_ceiling_unverifiable` (any `max_cost_micros` refuses every request
+  until a verified cost estimate exists) or `destination.reasoning_budget_missing`; the
+  docs now say `400`, which is what the proxy answers.
+- **Context Kernel startup and selection tell the truth.** The MCP server, the HTTP server and
+  daemon, and the proxy now initialize the kernel once at start, so the
+  `LEAN_CTX_KERNEL_*` switches apply and kernel health no longer reports "not initialized".
+  With `retention_days` in `kernel-policy.toml`, enrichment outside an MCP task is
+  evaluated at the current time instead of rejecting every candidate. Code-search and
+  code-graph selections, which spent supplement budget, are now delivered ("Relevant Code",
+  "Related Files"). The kernel mode (`shadow`, `enforce`, `explain`) is documented as
+  reported only: every mode removes policy violations before selection.
+- **`/api/telemetry` reports what the sender does.** `enabled` was the config flag alone,
+  which is on by default, so `DO_NOT_TRACK=1`, `LEAN_CTX_TELEMETRY=off` and CI showed as on.
+  It now says whether telemetry is sent right now, decided like the sender, and the new
+  `blocked_by` names why not (`preference`, `environment`, `ci`, `config_unreadable`).
+  `current_payload` is the exact batch the next send would carry (as
+  `lean-ctx telemetry show` prints it), with the installation ID masked and the deletion-token
+  hash left out, instead of four fields; `payload_error` says why no preview is available.
+- **Cockpit map views say "building" or the error instead of showing nothing.**
+  `/api/graph`, `/api/graph-files`, `/api/heatmap`, `/api/routes` and `/api/architecture`
+  waited up to 30 s for a cold index while the Cockpit gave up after 8–20 s, then answered
+  `200` with an empty list; they now answer `202 {"status":"building",…}` at once, like
+  `/api/tree` and `/api/symbols`, while the shared indexer builds. The building answer carries
+  the scan's real file counts instead of `0/0`. `/api/compression-demo` answers `400` without
+  a path and `404` for a file it cannot read (same error JSON) instead of `200`.
+- **Dashboard GETs no longer write.** `GET /api/context-control` saved the context ledger
+  and the project's overlay store, and `GET /api/telemetry` created the installation ID; both
+  now only read (`installation_id` is `null` until an ID exists). Graph enrichment, which
+  writes commits, tests and knowledge into the project graph, moved to
+  `POST /api/graph/enrich` with the same answer; a GET answers `405`.
+- **Dashboard reads show a write at once.** After a successful dashboard write (an overlay,
+  a pin or eviction, a knowledge edit, a policy, settings) the cached reads such as
+  `/api/context-risk` and `/api/session` were served for up to 5 s more; they are now
+  dropped. `/api/roi` (300 s) and `/api/doctor` (600 s) honour the Cockpit's explicit reload
+  (`_refresh=1`, "Re-check" / "Run again") instead of answering from the cache, and a settings
+  write clears both. The call graph is rebuilt when a file changed in place: its persisted
+  copy compared file paths only and its resident copy outlived index rebuilds.
+- **Knowledge relation edits no longer lose each other's edges.** `ctx_knowledge relate`,
+  `unrelate` and the OKF import loaded and saved the relation graph without the lock fact
+  edits and the cognition loop hold, so a concurrent writer could drop an edge. They now
+  change the graph under that in-process and cross-process lock
+  (`KnowledgeRelationGraph::mutate_locked`).
+- **A stale BM25 index is reloaded once, not once per search.** While a stale index was
+  served, every search started another background reload of the same index. One reload per
+  project now runs at a time.
+- **The telemetry ledger records the endpoint the batch went to.** It read
+  `LEAN_CTX_API_URL` itself, so a test or cargo-launched process whose send went to the
+  loopback sink recorded the production URL. It now uses the same `api_url()` as the send.
+- **The telemetry aggregate recognises a client that filters its MCP server's environment.**
+  `client_family` read the client markers (`CLAUDECODE`, `CODEX_HOME`, `CURSOR_TRACE_ID`,
+  `GEMINI_CLI`) from the process environment only; like the CI and consent markers it now
+  also finds them in the nearest ancestor on Linux.
+- **A stray `Makefile` or `package.json` in a parent directory no longer becomes the project
+  root.** Project detection took the outermost ancestor with any marker, so
+  `~/code/Makefile` made `~/code` the project of every repository below it. Now the
+  outermost `.git` wins (monorepos stay one project), else the outermost workspace
+  (`go.work`, `pnpm-workspace.yaml`, a `[workspace]` `Cargo.toml`, …), else the innermost
+  generic marker.
+- **Edit provenance is keyed by project like every other per-project store.** It was keyed
+  by a SHA-256 of the raw path, so `D:/repo` and `D:\repo`, or two projects mounted at one
+  path, were mixed up or split. It now uses the project key (normalized path plus project
+  identity); an existing store is moved to the new key on first open and read in place if
+  the move fails.
+- **`ctx_verify` no longer promises budget claims.** Its description listed a budget claim
+  the proof never produced; the proof carries one PathJail claim per touched file.
+- **A2A transport health reports delivery failures.** `check_transport_health` always
+  reported zero consecutive failures and no last delivery, so `readiness` could never mark a
+  failing transport unavailable. Work-graph capsule deliveries now record their outcome, and
+  the snapshot carries the count and both timestamps.
+- **Archive ids stay the same across builds.** An archived output was named by
+  `DefaultHasher`, which Rust does not keep stable, so the same content could get another id
+  after an update. New ids are the first 16 hex digits of its BLAKE3 hash; existing ids keep
+  resolving.
+- **A project with a non-UTF-8 source file keeps its cached call graph.** The build skipped
+  such files silently, so the cached graph never matched the file list and was rebuilt on
+  every load. Skipped files are now recorded in the graph (`skipped_files`) and count as
+  covered.
+- **A CLI cache hit stays a hit when the cache is busy.** `lean-ctx read` re-sent the full
+  file when the cache lock timed out or the hit counters could not be saved. It now serves
+  the hit and logs the failure.
+- **Primary models whose names contain "mini" or "fast" are recorded again.** The
+  background-model filter matched substrings, so `gemini-2.5-pro`, `minimax-m2` or `grok-
+  code-fast-1` never became the detected or last-seen model. It now matches the known
+  background model ids (Haiku, `gpt-4o-mini`, `gpt-4.1-nano`, `gpt-5-nano`, the Gemini
+  flash-lite models) exactly.
+- **`lean-ctx call` names the phase that is actually running.** Concurrent calls shared one
+  phase slot, so a finished call could leave its phase behind or clear another call's; every
+  phase now owns its own entry.
+- **Hive bus controls no longer stop local work.** A Hive `hold` or `stop`, and a damaged or
+  unknown-version `control.json`, refused every mutating tool, lease and handoff on the
+  machine, also offline, until Hive replayed its controls. They now pause Hive traffic only:
+  `ctx_tasks`, bus messages, the Hive side of a lease and a handoff through Hive. Local tools,
+  local leases (the answer says `scope=local (Hive control: …)`) and handoffs on the same
+  machine go ahead.
+- **Switching the Hive bus off reaches a running relay.** The bus relay read `[hive]` once at
+  start and kept relaying after `bus = "off"` or `enabled = false` until the daemon
+  restarted. It now reads it before every connect and on every tick, closes its socket when
+  switched off and connects again when switched back on.
+- **The engine speaks Hive protocol 2.0 from the first request.** The enrollment
+  (`/v1/device/code`, `/token`, `/setup`), the token mint and the v2 bus upgrade sent
+  `Hive-Protocol: 1.9` also to a 2.0 Hive, a path that ends with the 1.x sunset. Every request
+  now sends 2.0.
+- **Hive never holds up a tool call.** `ctx_tasks`, the Hive side of a `ctx_agent` lease and
+  the first-call briefing waited for Hive inside the call (up to 3-5 s each). Task lists, tasks
+  and the briefing now answer at once from the last data Hive sent and say when it is stale or
+  not loaded yet; claims, updates, results, releases and reviews are queued, and Hive's answer
+  comes with the agent's next call. A Hive lease is pending (`scope=pending`, no fencing
+  token) until Hive grants it; a refusal or veto that arrives later reaches the agent with its
+  next `ctx_agent` call and releases the local lease, and a renewal or release waits for the
+  grant.
+- **`ctx_read` reads a range passed as a key or next to a bare mode.** A call such as
+  `{"path": "schema.py", "lines:1939-1952": "lines:1939-1952"}` ignored the range and
+  returned the 13k-char outline of a 4,188-line file; `{"mode": "anchored", "lines": "22-30"}`
+  returned the whole file anchored. A `lines:<range>` key now reads like the `lines`
+  argument, and a range next to a bare `anchored`, `full` or `auto` mode narrows it
+  (`anchored:<range>` resp. `lines:<range>`); any other mode still wins.
+- **`ctx_read(symbol=…)` finds module-level constants and answers a miss briefly.**
+  A top-level binding (Python assignment, Rust `const`/`static`, JS/TS `const`/`let`/`var`,
+  Go `const`/`var`) was not a symbol, and any miss returned the whole outline (12k chars
+  for `_SIZE_UNITS` in a 4,188-line module). Bindings now resolve to their statement; a
+  name the file does not define returns the closest defined names and the first lines
+  that mention it (at most eight), read through the ordinary `lines:` path.
 
 - **A failed background `ctx_shell` job keeps its output when it leaves a process running.**
   If the command exited while a process it started still held its output pipe, the status
@@ -374,6 +791,18 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   admitting files, persisted external items) instead of "BM25 index", and
   `LEAN_CTX_PHASE_TIMING=1` prints each stage as it starts and every source that takes
   longer than 500 ms. (#2063)
+- **Reading lean-ctx's own config from an agent shell is no longer refused as a change.**
+  The check that keeps agents from changing lean-ctx's config and data directories decided by
+  program name, so `sed -n 1,3p ~/.config/lean-ctx/config.toml` was blocked as "changes
+  lean-ctx's own state" while `head` on the same file ran. It now judges what the command
+  does: `sed` without `-i`/`--in-place` and without a `w`/`e` command reads, and so do `awk`
+  without output redirection or `system()`, and `cp` from those directories elsewhere.
+  Writes stay refused: `sed -i`, `perl -i`, `tee`, `rm`, `mv`, a copy onto those files, any
+  `ln` that names them (a link lets a later write reach them), and
+  now also a `>`/`>>` redirect into them, which passed before when the program itself only
+  reads. A program whose effect cannot be told from the command, such as a script, is still
+  refused, with a message that says it may change the state and how to read the file
+  instead (#2165).
 - **`plan`, `compile`, `overview` and `ledger` work again.** They asked the daemon for the
   MCP tools `ctx_plan`, `ctx_compile`, `ctx_overview` and `ctx_ledger`, which 3.12.0 removed,
   so with a running daemon they printed "was removed" instead of a result. They now render
@@ -385,6 +814,24 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   their errors (bad options, unknown source or action, unwritable config or store) and exited
   0; usage errors now exit 2, failures 1. `status` and `token-report` report a report file they
   could not save as an error and exit 1.
+- **Fewer extra model steps on edit tasks.** Four causes of extra steps that benchmark
+  transcripts showed against the native tools are gone. A passing `python -m unittest` run
+  through `ctx_shell` keeps its `OK` line; before, the output ended at `Ran N tests` and the
+  agent ran the suite again to learn the result. `ctx_search`, `ctx_tree` and `ctx_glob` no
+  longer answer a repeated call from the response cache after the files changed. Before, a
+  search after an edit could return the matches from before the edit, and the agent read the
+  file again. `ctx_patch` `insert_after` accepts a line number without `hash`, like
+  `replace_lines` already does. The edit is then not checked for conflicts. An
+  `insert_after` that passes anchor text instead of a line number gets an error that points
+  to `replace_unique`. The message for a blocked inline script now says to write the snippet
+  with the host's file-write tool, because `ctx_patch` cannot write to `/tmp`.
+- **`ctx_compose` includes the small files it names.** Files from its ranked results,
+  exact matches and symbol bodies are added in full and unchanged when they have at most
+  150 lines and 800 tokens. At most four files and 2,000 tokens are added per call.
+  `LEAN_CTX_COMPOSE_INLINE_TOKENS` sets the limit, and `0` turns this off. The files pass
+  the same checks as `ctx_read`: path jail, binary detection and policy. Secret-like
+  files are left out. In the benchmark, agents read these files in the step right after
+  the overview.
 - **`policy org uninstall` restores the endpoint.** It now also removes the trust pins of the
   removed policy's organization. Before, `install --trust` followed by `uninstall` left the
   pin behind, and a pinned organization without a policy refuses every governed call, so
@@ -475,6 +922,48 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   optimizer for these clients re-sorts and trims its list; descriptions were then paired with
   tools by position, so tools got another tool's description and the tail of the list lost its
   text. They are now matched by name, and a tool the optimizer skipped keeps its own description.
+- **Upgrading the npm package no longer stops unrelated processes.** Its preinstall step ran
+  `pkill -f lean-ctx` (`taskkill /IM lean-ctx.exe` on Windows), which ended the proxy, the
+  dashboard, other installs and any command whose line mentioned lean-ctx. It now asks the
+  installed binary to stop only its own daemon (`lean-ctx daemon stop`) and does nothing on a
+  fresh install; on Windows a binary that is still open is moved aside as before.
+- **Upgrading with `install.sh` or `install.ps1` no longer stops unrelated processes.** Both
+  ran the full `lean-ctx stop` before replacing the binary, which ended every lean-ctx process
+  by name and unloaded the user's proxy and daemon services. They now stop only the daemon of
+  the binary they replace, right before the swap, and restart it on the new binary when it ran
+  or had autostart before; `install.ps1` moves a binary that is still open aside (`.old`).
+- **`lean-ctx uninstall` refuses unknown arguments.** A typo such as `--dry-rnu` was ignored
+  and ran a full, irreversible uninstall; it now exits 2 with a usage hint and removes nothing.
+- **`install.sh` names the installed version.** Its closing line always read "Done! lean-ctx
+  installed." because the version call was quoted wrongly; it now prints the version, e.g.
+  "Done! lean-ctx 3.12.1 (…)".
+- **The skill's `curl | bash` installer succeeds again.** Its cleanup trap referred to a
+  variable that no longer existed once the install step returned, so under `set -u` it exited 1
+  after a successful install and left its temp directory behind; on macOS it also misread the
+  release tag. It now exits 0 and removes the temp directory.
+- **`lean-ctx wrap` uses the proxy's port.** Without `--port` it pointed the agent at 4444,
+  ignoring `LEAN_CTX_PROXY_PORT`, the `proxy_port` setting and the per-user port on multi-user
+  systems, so the agent missed a proxy listening elsewhere. It now resolves the port the same
+  way the proxy does; `--port` still overrides it.
+- **Every CLI output passes the release point.** `knowledge contradict` and `retract`,
+  `autopilot`, `gotchas`, `pack receive` (a peer's payload) and the daemon answers of `read`,
+  `grep`, `glob` and `ls` printed their text directly, past the policy and the masking every
+  other CLI output goes through; a secret in a gotcha, a Hive refusal reason or a daemon answer
+  could reach the terminal unmasked. They now print through the shared CLI run; `autopilot` and
+  `gotchas export` keep valid JSON with the masked value in place.
+- **`pack` errors exit non-zero.** Its subcommands printed their errors (missing arguments, an
+  unknown subcommand, a registry that cannot be opened, a failed import, export, send or write)
+  and exited 0, and `pack remove` exited 0 when no package matched. Usage errors now exit 2,
+  failures 1.
+- **`benchmark --help` lists every form.** It showed only the pipeline benchmark; the usage of
+  `benchmark run`, `report`, `scorecard` and `dual-arm` was unreachable. An unknown subcommand
+  now prints the full usage and exits 2.
+- **Packaging matches the release.** The AUR recipe in `aur/lean-ctx` named 3.10.5; it now
+  names 3.12.0, and `scripts/check-package-versions.py` fails when it trails the engine by more
+  than one release. The cookbook TypeScript client carries the repository's Apache-2.0 license
+  (its `package.json` said MIT) and `publish-clients.yml` no longer has a job that would publish
+  this private example. `examples/sprint-poc` is marked unmaintained: it needs the retired
+  Python SDK, which is no longer in this repository.
 
 ## [3.12.0] — 2026-10-28
 

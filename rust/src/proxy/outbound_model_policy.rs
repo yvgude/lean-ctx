@@ -5,13 +5,27 @@
 //! installs) and rechecks the **final** outgoing body after alias rewrites and
 //! the determinism guard. A missing file is permissive; an unreadable or
 //! malformed file, or an unknown field, fails closed. A cost ceiling fails
-//! closed too, because no verified per-request cost estimate exists here.
-//! `require_reasoning_budget` checks the real `thinking.budget_tokens`.
+//! closed too: no verified per-request cost estimate exists before the
+//! request is sent, so any `max_cost_micros` refuses every request until one
+//! does. `require_reasoning_budget` checks the real `thinking.budget_tokens`.
+//!
+//! A refusal is answered like every gateway refusal: HTTP 400 with a reason
+//! code (never 403, which hosts read as an authentication failure).
 
 use serde::Deserialize;
 
+/// The policy file could not be read or parsed; nothing is allowed.
+const POLICY_INVALID: &str = "destination.model_policy_invalid";
+/// The outgoing model is denylisted, not allowlisted, or missing.
+const MODEL_NOT_ALLOWED: &str = "destination.model_not_allowed";
+/// A `max_cost_micros` ceiling is set, but no verified cost estimate exists.
+const COST_CEILING_UNVERIFIABLE: &str = "destination.cost_ceiling_unverifiable";
+/// `require_reasoning_budget` is set and the body carries no positive budget.
+const REASONING_BUDGET_MISSING: &str = "destination.reasoning_budget_missing";
+
 #[derive(Debug, Default, PartialEq)]
 struct OutboundModelPolicy {
+    invalid: bool,
     max_cost_micros: Option<u64>,
     model_allowlist: Option<Vec<String>>,
     model_denylist: Vec<String>,
@@ -47,6 +61,7 @@ impl OutboundModelPolicy {
             return Self::deny_all();
         };
         Self {
+            invalid: false,
             max_cost_micros: file.max_cost_micros,
             model_allowlist: file.model_allowlist,
             model_denylist: file.model_denylist,
@@ -56,12 +71,17 @@ impl OutboundModelPolicy {
 
     fn deny_all() -> Self {
         Self {
+            invalid: true,
             model_allowlist: Some(Vec::new()),
             ..Self::default()
         }
     }
 
-    fn allows(&self, body: Option<&serde_json::Value>) -> bool {
+    /// The reason code of the first violated rule, or `None` when allowed.
+    fn violation(&self, body: Option<&serde_json::Value>) -> Option<&'static str> {
+        if self.invalid {
+            return Some(POLICY_INVALID);
+        }
         let model = body
             .and_then(|body| body.get("model"))
             .and_then(serde_json::Value::as_str);
@@ -75,6 +95,12 @@ impl OutboundModelPolicy {
             }
             None => self.model_allowlist.is_none() && self.model_denylist.is_empty(),
         };
+        if !model_ok {
+            return Some(MODEL_NOT_ALLOWED);
+        }
+        if self.max_cost_micros.is_some() {
+            return Some(COST_CEILING_UNVERIFIABLE);
+        }
         let budget_ok = !self.require_reasoning_budget
             || body
                 .and_then(|body| body.get("thinking"))
@@ -82,47 +108,70 @@ impl OutboundModelPolicy {
                 .and_then(serde_json::Value::as_u64)
                 .unwrap_or(0)
                 > 0;
-        model_ok && self.max_cost_micros.is_none() && budget_ok
+        (!budget_ok).then_some(REASONING_BUDGET_MISSING)
     }
 }
 
 /// Rechecks the actual outgoing body against `router-policy.toml`.
-/// `false` means the proxy must refuse the request (HTTP 403).
-pub(crate) fn allows_outbound(body: Option<&serde_json::Value>) -> bool {
-    OutboundModelPolicy::load().allows(body)
+/// `Some(code)` means the proxy must refuse the request (HTTP 400 with that
+/// reason code).
+pub(crate) fn outbound_violation(body: Option<&serde_json::Value>) -> Option<&'static str> {
+    OutboundModelPolicy::load().violation(body)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::OutboundModelPolicy;
+    use super::{
+        COST_CEILING_UNVERIFIABLE, MODEL_NOT_ALLOWED, OutboundModelPolicy, POLICY_INVALID,
+        REASONING_BUDGET_MISSING,
+    };
     use serde_json::json;
 
     #[test]
     fn the_outgoing_model_must_satisfy_the_policy_file() {
         let body = |model: &str| json!({"model": model});
-        assert!(OutboundModelPolicy::default().allows(Some(&body("any"))));
+        assert_eq!(
+            OutboundModelPolicy::default().violation(Some(&body("any"))),
+            None
+        );
 
         let policy = OutboundModelPolicy::parse(
             "model_allowlist = [\"claude-sonnet-4-5\"]\nmodel_denylist = [\"gpt-4o\"]\n",
         );
-        assert!(policy.allows(Some(&body("claude-sonnet-4-5"))));
-        assert!(
-            !policy.allows(Some(&body("gpt-4o-mini"))),
+        assert_eq!(policy.violation(Some(&body("claude-sonnet-4-5"))), None);
+        assert_eq!(
+            policy.violation(Some(&body("gpt-4o-mini"))),
+            Some(MODEL_NOT_ALLOWED),
             "not allowlisted"
         );
-        assert!(
-            !policy.allows(None),
+        assert_eq!(
+            policy.violation(None),
+            Some(MODEL_NOT_ALLOWED),
             "a body without a model cannot be checked"
         );
 
-        // Unknown fields and a cost ceiling without an estimate fail closed.
-        assert!(!OutboundModelPolicy::parse("allow = 1\n").allows(Some(&body("any"))));
-        assert!(!OutboundModelPolicy::parse("max_cost_micros = 5\n").allows(Some(&body("any"))));
+        // Unknown fields fail closed and say the policy itself is invalid.
+        assert_eq!(
+            OutboundModelPolicy::parse("allow = 1\n").violation(Some(&body("any"))),
+            Some(POLICY_INVALID)
+        );
+        // A cost ceiling without a verified estimate refuses every request,
+        // and the refusal names the ceiling rather than the model.
+        assert_eq!(
+            OutboundModelPolicy::parse("max_cost_micros = 5\n").violation(Some(&body("any"))),
+            Some(COST_CEILING_UNVERIFIABLE)
+        );
 
         let budget = OutboundModelPolicy::parse("require_reasoning_budget = true\n");
-        assert!(!budget.allows(Some(&body("m"))));
-        assert!(budget.allows(Some(
-            &json!({"model": "m", "thinking": {"budget_tokens": 1024}})
-        )));
+        assert_eq!(
+            budget.violation(Some(&body("m"))),
+            Some(REASONING_BUDGET_MISSING)
+        );
+        assert_eq!(
+            budget.violation(Some(
+                &json!({"model": "m", "thinking": {"budget_tokens": 1024}})
+            )),
+            None
+        );
     }
 }

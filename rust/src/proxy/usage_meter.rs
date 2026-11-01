@@ -814,6 +814,54 @@ mod tests {
         );
     }
 
+    /// 3.12.1: counting each proxied request once in the kernel evidence must
+    /// not rewrite what the savings ledger already holds. A pre-existing legacy
+    /// entry and the caching event of an earlier turn keep their exact bytes and
+    /// still verify; the next turn appends exactly one event.
+    #[test]
+    fn recording_a_turn_leaves_earlier_savings_ledger_entries_unchanged() {
+        use crate::core::savings_ledger::{self, event::SavingsEvent, store};
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let path = store::default_path().expect("ledger path");
+        let legacy: SavingsEvent = serde_json::from_value(serde_json::json!({
+            "ts": "2026-06-01T12:00:00+00:00",
+            "tool": "ctx_read",
+            "model_id": "claude-3.5-sonnet",
+            "tokenizer": "o200k_base",
+            "baseline_tokens": 1000,
+            "actual_tokens": 300,
+            "saved_tokens": 700,
+            "bounce_adjustment": 0,
+            "unit_price_per_m_usd": 3.0,
+            "saved_usd": 0.0021,
+            "repo_hash": "repo",
+            "agent_id": "local",
+            "prev_hash": "",
+            "entry_hash": ""
+        }))
+        .expect("legacy fixture");
+        store::append(&path, legacy).expect("append fixture");
+        record(&usage("claude-sonnet-4.5", 1_000, 50, 400));
+        let before = std::fs::read(&path).expect("ledger bytes");
+        let before_events = savings_ledger::all_events();
+        assert_eq!(before_events.len(), 2, "fixture plus one caching event");
+
+        record(&usage("claude-sonnet-4.5", 2_000, 80, 600));
+
+        let after = std::fs::read(&path).expect("ledger bytes");
+        assert!(after.starts_with(&before), "earlier entries are untouched");
+        let after_events = savings_ledger::all_events();
+        assert_eq!(after_events.len(), 3, "one turn appends one event");
+        for (old, new) in before_events.iter().zip(&after_events) {
+            assert_eq!(old.entry_hash, new.entry_hash);
+            assert_eq!(old.saved_tokens, new.saved_tokens);
+            assert_eq!(old.saved_usd.to_bits(), new.saved_usd.to_bits());
+        }
+        let verified = savings_ledger::verify();
+        assert!(verified.valid, "{verified:?}");
+        assert_eq!(verified.total, 3);
+    }
+
     /// #701: the verified pair is recorded only when the probe answered — both
     /// sides of the pair or neither, never a half row.
     #[test]

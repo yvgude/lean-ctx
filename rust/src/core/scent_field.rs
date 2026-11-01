@@ -4,7 +4,7 @@
 //! "scent" deposits instead of reading each other's scratchpad messages
 //! (Many Tems: 3.4x fewer coordination tokens; Pressure Fields 2601.08129:
 //! temporal decay prevents premature convergence). Deposits happen as side
-//! effects of normal work — reads, bounces, claims, handoffs — and the `sync`
+//! effects of normal work — bounces, edit failures, claims, handoffs — and the `sync`
 //! view is pure arithmetic over the field: no LLM calls, no message reads.
 //!
 //! Storage: one JSON file under `data_dir/agents/scent_field.json`, guarded by
@@ -40,7 +40,8 @@ pub enum ScentKind {
     Done,
     /// Agent hit a wall here (edit failures, bounces).
     Stuck,
-    /// Target is being read/touched a lot right now.
+    /// Retired: deposited on every read until 3.13.0. Kept so a field file
+    /// that still holds such scents parses; loading the field drops them.
     Hot,
     /// Target should not be touched (e.g. broken generated file).
     Avoid,
@@ -139,8 +140,9 @@ pub fn scent_agent_id() -> &'static str {
 impl ScentField {
     fn load_unlocked(path: &PathBuf) -> Self {
         if let Ok(content) = std::fs::read_to_string(path)
-            && let Ok(f) = serde_json::from_str::<ScentField>(&content)
+            && let Ok(mut f) = serde_json::from_str::<ScentField>(&content)
         {
+            f.scents.retain(|s| s.kind != ScentKind::Hot);
             return f;
         }
         ScentField {
@@ -366,8 +368,7 @@ pub fn active_scents() -> Vec<(Scent, f64)> {
     v
 }
 
-/// Release a claim (and any Hot scent) on `target` held by `agent_id` in
-/// `project_root`.
+/// Release a claim on `target` held by `agent_id` in `project_root`.
 pub fn release(project_root: &str, agent_id: &str, target: &str) {
     let project = partition(project_root);
     let _ = with_field(|field, now| {
@@ -401,7 +402,7 @@ pub mod tests {
     fn decay_halves_at_half_life() {
         let s = Scent {
             agent_id: "a1".into(),
-            kind: ScentKind::Hot,
+            kind: ScentKind::Claimed,
             target: "src/x.rs".into(),
             intensity: 1.0,
             deposited_at: NOW,
@@ -417,7 +418,7 @@ pub mod tests {
     fn superposition_caps_intensity() {
         let mut f = ScentField::default();
         for _ in 0..20 {
-            f.deposit(P, "a1", ScentKind::Hot, "src/x.rs", 0.3, NOW);
+            f.deposit(P, "a1", ScentKind::Claimed, "src/x.rs", 0.3, NOW);
         }
         assert_eq!(f.scents.len(), 1);
         assert!(f.scents[0].intensity <= INTENSITY_CAP + f64::EPSILON);
@@ -426,7 +427,7 @@ pub mod tests {
     #[test]
     fn gc_drops_dead_scents() {
         let mut f = ScentField::default();
-        f.deposit(P, "a1", ScentKind::Hot, "src/x.rs", 0.3, NOW);
+        f.deposit(P, "a1", ScentKind::Claimed, "src/x.rs", 0.3, NOW);
         f.gc(NOW + 6 * 600); // six half-lives: 0.3 -> ~0.0047
         assert!(f.scents.is_empty());
     }
@@ -456,9 +457,9 @@ pub mod tests {
     fn sync_view_caps_lines_and_superposes() {
         let mut f = ScentField::default();
         for i in 0..50 {
-            f.deposit(P, "a1", ScentKind::Hot, &format!("src/f{i}.rs"), 0.5, NOW);
+            f.deposit(P, "a1", ScentKind::Stuck, &format!("src/f{i}.rs"), 0.5, NOW);
         }
-        f.deposit(P, "a2", ScentKind::Hot, "src/f0.rs", 0.5, NOW);
+        f.deposit(P, "a2", ScentKind::Stuck, "src/f0.rs", 0.5, NOW);
         let view = f.render_sync(P, NOW);
         let lines: Vec<&str> = view.lines().collect();
         assert!(
@@ -477,6 +478,33 @@ pub mod tests {
             let found = &f.render_sync(P, NOW);
             assert!(found.is_empty(), "{found:?}");
         }
+    }
+
+    /// Owner decision 2026-10-31: reads no longer deposit Hot scents. A field
+    /// file written before still parses, keeps its claims and counter, and
+    /// shows no Hot trail.
+    #[test]
+    fn loading_an_older_field_drops_hot_scents() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scent_field.json");
+        let mut old = ScentField {
+            schema_version: 1,
+            claims_rejected: 2,
+            ..Default::default()
+        };
+        old.deposit(P, "a1", ScentKind::Hot, "src/read.rs", 0.3, NOW);
+        old.deposit(P, "a1", ScentKind::Claimed, "src/x.rs", 2.0, NOW);
+        old.save_unlocked(&path).unwrap();
+
+        let loaded = ScentField::load_unlocked(&path);
+        assert_eq!(loaded.claims_rejected, 2);
+        assert_eq!(loaded.scents.len(), 1);
+        assert_eq!(loaded.scents[0].kind, ScentKind::Claimed);
+        let view = loaded.render_sync(P, NOW);
+        assert!(
+            view.contains("CLAIMED src/x.rs") && !view.contains("HOT"),
+            "{view}"
+        );
     }
 
     #[test]

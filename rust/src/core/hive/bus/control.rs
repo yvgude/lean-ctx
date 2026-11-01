@@ -14,6 +14,10 @@
 //!   `resume` with that `target_ref` lifts it.
 //! - An agent is refused when its own entry or `*` refuses it; `stop` wins
 //!   over `hold`. Resuming one agent does not lift a control on `*`.
+//! - A control only pauses Hive traffic: Hive tools (`ctx_tasks`), bus
+//!   messages, the Hive side of a lease and a handoff through Hive. Local
+//!   tools, local leases and handoffs on this machine are never refused
+//!   (connector rule "local work is never gated"), online or offline.
 //! - The state belongs to the enrolled instance it arrived for: after
 //!   `hive disconnect --keep-local` or a new enrollment it no longer applies,
 //!   and while the lease is lapsed it is inactive (plan C rule 2: local work
@@ -31,8 +35,8 @@
 //! A damaged `control.json`, or one of a version this build does not know,
 //! is moved aside and never read as "no controls" (RB8 M12): until the relay
 //! has received Hive's replay of the active controls after its `hello`
-//! ([`rebuilt`]), every mutating tool, lease and handoff is refused with a
-//! "waiting for Hive" hold. Changes go through `control.json.lock` (M11).
+//! ([`rebuilt`]), Hive traffic waits under a "waiting for Hive" hold; local
+//! work goes on. Changes go through `control.json.lock` (M11).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -129,7 +133,7 @@ impl Refusal {
             ControlAction::Resume => "resumed",
         };
         format!(
-            "Hive control: {who} is {what} (by {}: {}). Read-only tools still work.",
+            "Hive control: {who} is {what} (by {}: {}). Hive traffic waits; local tools keep working.",
             self.entry.issued_by, self.entry.reason
         )
     }
@@ -575,26 +579,28 @@ pub fn status_view(
     )
 }
 
-/// Tools that stay available under `hold` and `stop`: the read-only ones,
-/// the bus itself (to read the control and report back) and the session
-/// record (to save progress before ending).
-fn exempt(tool: &str) -> bool {
-    crate::tool_defs::READONLY_TOOL_NAMES.contains(&tool)
-        || matches!(tool, "ctx_agent" | "ctx_session")
+/// The tools `hold` and `stop` pause: those whose every call is Hive
+/// traffic. Every other tool is local work and is never refused; the bus
+/// (`ctx_agent`) pauses only its Hive side ([`veto_refusal`], `messages`).
+fn hive_traffic(tool: &str) -> bool {
+    crate::server::dynamic_tools::HIVE_TOOLS.contains(&tool)
 }
 
 /// The admission hook of the tool pipeline: `Some(message)` refuses `tool`
-/// for `agent_id`. Missing or unreadable local state never refuses.
+/// for `agent_id`. Only Hive tools are ever refused; missing or unreadable
+/// local state never refuses.
 pub fn tool_refusal(agent_id: Option<&str>, tool: &str) -> Option<String> {
-    if exempt(tool) {
+    if !hive_traffic(tool) {
         return None;
     }
     let store = HiveStore::open().ok()?;
     admission(&store, agent_id).map(|refusal| refusal.message())
 }
 
-/// The veto hook of lease acquisition/renewal and handoffs: refused when
-/// any of `refs` (lease ref, resource ref, handoff id) is vetoed.
+/// The veto hook of the Hive side of a lease (acquire, renew) and of a
+/// handoff through Hive: `Some` when any of `refs` (lease ref, resource
+/// ref, handoff id) is vetoed. The caller then skips the Hive request; the
+/// local lease or handoff goes ahead.
 pub fn veto_refusal(agent_id: Option<&str>, refs: &[&str]) -> Option<String> {
     let store = HiveStore::open().ok()?;
     let state = current(&store);
@@ -867,11 +873,29 @@ mod tests {
         assert!(state.admission(Some("b")).is_none());
     }
 
+    /// Local work is never gated: a stop on every agent and a damaged
+    /// control file pause Hive tools only, never a local mutating tool.
     #[test]
-    fn read_only_tools_the_bus_and_the_session_stay_available() {
-        assert!(exempt("ctx_read") && exempt("ctx_search") && exempt("ctx_agent"));
-        assert!(exempt("ctx_session"));
-        assert!(!exempt("ctx_edit") && !exempt("ctx_shell") && !exempt("ctx_patch"));
+    fn controls_and_a_damaged_file_pause_hive_tools_only() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let store = HiveStore::open().unwrap();
+        enroll_for_tests(&store, 1);
+        assert!(record(&store, &frame(1, None, ControlAction::Stop, None)).unwrap());
+        for tool in [
+            "ctx_edit",
+            "ctx_shell",
+            "ctx_patch",
+            "ctx_agent",
+            "ctx_read",
+        ] {
+            assert_eq!(tool_refusal(Some("a"), tool), None, "{tool}");
+        }
+        assert!(tool_refusal(Some("a"), "ctx_tasks").is_some());
+        let path = store.data_dir().join("bus/control.json");
+        std::fs::write(&path, b"{ not json").unwrap();
+        assert_eq!(tool_refusal(None, "ctx_edit"), None, "offline, damaged");
+        let waiting = tool_refusal(None, "ctx_tasks").expect("Hive traffic waits");
+        assert!(waiting.contains("local tools keep working"), "{waiting}");
     }
 
     #[test]

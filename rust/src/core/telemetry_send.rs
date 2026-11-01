@@ -131,10 +131,10 @@ fn daemon_telemetry_tick() {
     send_telemetry(crate::core::telemetry_aggregate::SendTrigger::Periodic);
 }
 
+/// The endpoint the send actually used: `api_url()`, so a test or
+/// cargo-launched process records the loopback sink, not production.
 fn telemetry_ledger_endpoint() -> String {
-    let raw =
-        std::env::var("LEAN_CTX_API_URL").unwrap_or_else(|_| "https://api.leanctx.com".to_string());
-    sanitized_telemetry_endpoint(&raw)
+    sanitized_telemetry_endpoint(&crate::telemetry_transport::api_url())
 }
 
 fn sanitized_telemetry_endpoint(raw: &str) -> String {
@@ -166,6 +166,16 @@ mod tests {
             sanitized_telemetry_endpoint("file:///private/path"),
             "https://api.leanctx.com/api/telemetry/v2/batch"
         );
+    }
+
+    #[test]
+    fn telemetry_ledger_records_the_endpoint_the_send_used() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_API_URL", "https://api.leanctx.com");
+        let endpoint = telemetry_ledger_endpoint();
+        crate::test_env::remove_var("LEAN_CTX_API_URL");
+        // A test process sends to the loopback sink, so it records that.
+        assert_eq!(endpoint, "http://127.0.0.1:9/api/telemetry/v2/batch");
     }
 
     #[test]

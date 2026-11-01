@@ -87,6 +87,33 @@ fn uninstall_long_help_shows_usage_and_removes_nothing() {
 }
 
 #[test]
+fn uninstall_unknown_flag_exits_2_and_removes_nothing() {
+    let sandbox = Sandbox::new();
+    let out = sandbox.run_uninstall("--dry-rnu");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'--dry-rnu'") && stderr.contains("Usage:"),
+        "{stderr}"
+    );
+    for needle in REMOVAL_MARKERS {
+        assert!(
+            !stdout.contains(needle),
+            "a typo ran a removal step {needle:?}:\n{stdout}"
+        );
+    }
+    assert!(
+        sandbox.marker.exists(),
+        "a typo deleted the data dir marker"
+    );
+}
+
+#[test]
 fn uninstall_short_help_shows_usage_and_removes_nothing() {
     let sandbox = Sandbox::new();
     let out = sandbox.run_uninstall("-h");

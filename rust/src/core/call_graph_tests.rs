@@ -623,3 +623,70 @@ fn a_resident_call_graph_is_not_handed_to_another_project() {
         .expect("resident graph of the first project");
     assert_eq!(again.file_hashes, built_a.file_hashes);
 }
+
+/// A file edited in place keeps its path, so the persisted graph is compared
+/// by size and mtime too: after the index rebuild invalidates the resident
+/// graph, the next request rebuilds instead of serving the old edges.
+#[test]
+fn an_edited_file_invalidates_the_persisted_call_graph() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let dir = tempfile::tempdir().expect("project");
+    let source = dir.path().join("lib.rs");
+    std::fs::write(&source, "fn first() { helper(); }\n").expect("source");
+    let inputs = Arc::new(CallGraphInputs {
+        project_root: normalize_project_root(&dir.path().to_string_lossy()),
+        file_paths: vec!["lib.rs".to_owned()],
+        ..Default::default()
+    });
+    let built = CallGraph::build(&inputs);
+    assert!(built.file_stamps.contains_key("lib.rs"));
+    built.save().expect("persisted");
+    let root = inputs.project_root.clone();
+
+    let resident =
+        CallGraph::get_or_start_build(&root, Arc::clone(&inputs)).expect("persisted graph");
+    assert_eq!(resident.file_hashes, built.file_hashes);
+
+    std::fs::write(&source, "fn first() { helper(); other(); }\n").expect("edit");
+    // The resident graph is served until the index rebuild invalidates it.
+    assert!(CallGraph::get_or_start_build(&root, Arc::clone(&inputs)).is_ok());
+    CallGraph::invalidate(&root);
+
+    let started = std::time::Instant::now();
+    let rebuilt = loop {
+        match CallGraph::get_or_start_build(&root, Arc::clone(&inputs)) {
+            Ok(graph) => break graph,
+            Err(progress) => assert_eq!(progress.status, "building"),
+        }
+        assert!(started.elapsed() < std::time::Duration::from_secs(30));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert_ne!(rebuilt.file_hashes, built.file_hashes);
+    assert!(rebuilt.edges.iter().any(|edge| edge.callee_name == "other"));
+}
+
+/// A non-UTF-8 file is recorded as skipped and stamped like any other, so a
+/// graph built from inputs that contain one does not look stale against the
+/// same inputs.
+#[test]
+fn non_utf8_files_are_skipped_and_do_not_make_the_cache_stale() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.rs"), "fn a() {}\n").unwrap();
+    std::fs::write(dir.path().join("latin1.rs"), b"// caf\xe9\nfn b() {}\n").unwrap();
+    let inputs = CallGraphInputs {
+        project_root: dir.path().to_string_lossy().to_string(),
+        file_paths: vec!["a.rs".into(), "latin1.rs".into()],
+        ..Default::default()
+    };
+
+    for graph in [
+        CallGraph::build(&inputs),
+        CallGraph::build_incremental(&inputs, &CallGraph::build(&inputs)),
+    ] {
+        assert!(graph.file_hashes.contains_key("a.rs"));
+        assert_eq!(graph.skipped_files, vec!["latin1.rs".to_string()]);
+        assert!(graph.file_stamps.contains_key("latin1.rs"));
+        assert!(!cache_looks_stale(&graph, &inputs));
+    }
+}

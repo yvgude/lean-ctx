@@ -95,14 +95,43 @@ The engine crate `lean_ctx` is large; every compile with codegen costs
 8–17 GB RAM and queues behind the machine's compile gate. With many agents
 per machine, memory runs out. Therefore:
 
-- **Workers** iterate with `cargo check --locked --all-targets` only (type
-  checks code and tests, no codegen). A worker runs affected tests at most once
-  per task, filtered, and only when the task needs behaviour evidence.
+- **Workers** iterate with
+  `cargo check --locked --all-targets --config build.incremental=true` only
+  (type checks code and tests, no codegen). Incremental is off in the global
+  Cargo config to save disk, but for this edit loop it pays: measured
+  2026-10-31 after a one-line edit, `--all-targets` 95 s → 18 s and plain
+  `check` 40 s → 11 s; the first incremental check of a worktree builds the
+  cache (minutes) and keeps about 5.5 GB under its target dir. A worker runs
+  affected tests at most once per task, filtered, and only when the task needs
+  behaviour evidence.
 - **Workers do not run** `cargo fast`, `cargo build`, `--release`,
   `dev-install`/`make dev`, or the full `cargo test --lib`.
 - **The integrator** (lead) runs `cargo fast`, `dev-install` and the full gates
   once per integrated batch, on one machine at a time.
 - A worker that needs a runnable binary asks the lead instead of building one.
+
+### Split before you grow (owner 2026-11-01)
+
+The engine crate `lean_ctx` is being split into workspace crates; Rust stays
+the language. Every change and every new feature is checked for that split
+before it is written, and the check is part of the handover:
+
+- **New code goes into a crate, not into the monolith,** whenever it has a
+  clear boundary: its own crate under `rust/crates/`, or the crate of the area
+  it belongs to once that exists. New code in `rust/src/` needs a reason in the
+  handover (what it needs from the monolith, and why it cannot depend on a
+  crate instead).
+- **Changes to existing code do not deepen the coupling:** no new
+  `crate::` edges from a module that is already split out or scheduled for a
+  split; shared types move down into a lower crate rather than up.
+- **A new heavy dependency** (a parser, ML runtime, HTTP stack, database
+  client) lands behind a feature in its own crate, never directly in
+  `lean_ctx`.
+- **The handover names the decision:** "crate: <name>" or "monolith: <reason>".
+  The integrator rejects a batch without it.
+- Another language only where the component does not need Rust and an ADR
+  shows the benefit (the plan's §10 gates); signed, crypto and policy logic is
+  never implemented twice.
 
 Published artifacts and release rehearsals keep the production `--release`
 profile. Do not use `cargo clean` in the normal edit/build loop. Use one shared
@@ -155,14 +184,26 @@ Step 2 (`ctx_session` progress) stays, since it is per-agent session state.
 
 Working the space economically:
 - read `emspace schema` at most once per session;
-- read pages with `emspace page show --body <slug>…` (several slugs in one
-  call) unless the source/notes header is the point;
+- read the part of a page you need: `ctx_provider(action="query",
+  provider="emspace", resource="page", id="<slug>", mode="text",
+  query="outline")`, then the one section (`query="<section>"`); the whole
+  body is `emspace page show --body <slug>…` (several slugs in one call);
 - before documenting, check the checkout is the base the space documents, and
   rescan only what `emspace coverage` and `emspace status` (stale) name;
 - find a page for a file through the `ctx_read` hint rather than a separate
   `emspace search` → `page show` chain;
 - check open sessions through `ctx_agent read` instead of a separate
   `emspace orient` when only the in-flight work matters.
+
+Keeping knowledge current without rewriting it:
+- `ctx_knowledge(action="changes", query="<lsn>")` lists what changed since
+  an LSN (every save is journaled); `query="session"` lists what this session
+  wrote, and a `ctx_session` handoff names that changeset;
+- a fact marked *to verify* because its anchored code changed but the fact
+  still holds: `ctx_knowledge(action="repin", category=…, key=…)` re-anchors
+  it to the code as it is, without retyping its text;
+- `ctx_knowledge(action="coverage")` lists the most edited files (90 days)
+  no fact is anchored to: what to record next.
 
 After 30+ tool calls without documentation:
 - lean-ctx will prompt with `[CHECKPOINT: please document current progress]`
@@ -182,12 +223,13 @@ and `ctx_read` shows cross-source hints (e.g. "Issue #42 references this file");
 turn them off with `output_hints.cross_source_hint = false`.
 
 **Emspace:** a linked checkout needs no setup. `ctx_read` indexes the space in
-the background (first read, then every ten minutes) and, with
+the background (a page change shows within about a minute) and, with
 `output_hints.cross_source_hint` on (the default), names the page that
-documents the file: `emspace://pages/<slug> [documents]` — read it with
-`emspace page show --body <slug>`. Right after pages were added or repinned,
-`ctx_provider(action="query", provider="emspace", resource="pages")` indexes
-at once. `ctx_agent read`/`list` show the space's open sessions beside the bus,
+documents the file: `emspace://pages/<slug> [documents]`, or
+`[documents, stale]` when its sources moved (knowledge to repair, not to
+trust). No manual indexing is needed. Emspace pages are not copied into
+`ctx_knowledge`; the space stays their one source.
+`ctx_agent read`/`list` show the space's open sessions beside the bus,
 so the directive check also shows what other agents declared there.
 `resource="search"` (with `query`), `"tasks"` (with `state`) and `"sessions"`
 answer without leaving lean-ctx. The provider only reads; writes stay with the

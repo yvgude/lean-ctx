@@ -128,6 +128,29 @@ EXAMPLES:
     );
 }
 
+/// Options of `lean-ctx uninstall`: `(dry_run, keep_config, keep_binary)`.
+///
+/// Every argument must be a known flag. A typo such as `--dry-rnu` used to be
+/// ignored and ran a full, irreversible uninstall; it is now an error.
+pub fn parse_args(rest: &[String]) -> Result<(bool, bool, bool), String> {
+    let (mut dry_run, mut keep_config, mut keep_binary) = (false, false, false);
+    for arg in rest {
+        match arg.as_str() {
+            "--dry-run" => dry_run = true,
+            "--keep-config" => keep_config = true,
+            "--keep-binary" => keep_binary = true,
+            other => {
+                return Err(format!(
+                    "lean-ctx uninstall: unknown argument '{other}'; nothing was removed.\n\
+                     Usage: lean-ctx uninstall [--dry-run] [--keep-config] [--keep-binary] \
+                     (see: lean-ctx uninstall --help)"
+                ));
+            }
+        }
+    }
+    Ok((dry_run, keep_config, keep_binary))
+}
+
 // ---------------------------------------------------------------------------
 // Main entry
 // ---------------------------------------------------------------------------
@@ -656,6 +679,25 @@ fn sweep_empty_installer_dirs(home: &Path) {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn parse_args_accepts_known_flags_and_rejects_typos() {
+        assert_eq!(parse_args(&[]), Ok((false, false, false)));
+        assert_eq!(
+            parse_args(&args(&["--keep-binary", "--dry-run", "--keep-config"])),
+            Ok((true, true, true))
+        );
+        for bad in ["--dry-rnu", "--keep", "yes", "-y"] {
+            let err = parse_args(&args(&["--dry-run", bad])).unwrap_err();
+            assert!(err.contains(&format!("'{bad}'")), "{err}");
+            assert!(err.contains("nothing was removed"), "{err}");
+            assert!(err.contains("lean-ctx uninstall --help"), "{err}");
+        }
+    }
 
     #[test]
     fn data_dirs_to_remove_covers_canonical_xdg_categories() {

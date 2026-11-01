@@ -125,7 +125,11 @@ Alle neuen Felder sind `#[serde(default)]` für backward compatibility.
 - **Directed Events**: Events mit `target_agents` sind nur für gelistete Agents sichtbar.
 - **Filtered Subscriptions**: `subscribe_filtered()` liefert nur passende Events (spart Tokens).
 - **Runtime**: `rust/src/core/context_os/context_bus.rs` (`TopicFilter`, `FilteredSubscription`)
-- **Poll-Endpoint**: `ctx_agent(action=poll_events)` — cursor-basiertes Polling mit Filtern.
+- **Poll-Endpoint**: `ctx_agent(action=poll_events)` — cursor-basiertes Polling mit Filtern:
+  `workspace_id` (Standard: Projekt-Root), `channel_id` (Standard: `default`), `since_id`
+  (Cursor der letzten Abfrage), `kinds` (kommagetrennte Event-Arten), `limit` (Standard 50).
+  Die früher entliehenen Parameter `to_agent`, `category`, `message`, `privacy` und `ttl_hours`
+  bleiben als veraltete Aliase gültig (Entfernung frühestens 3.15.0).
 
 ## Transport Layer (Phase 2)
 

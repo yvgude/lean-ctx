@@ -1,5 +1,9 @@
 # Sprint POC operator runbook
 
+> **Unmaintained** — the retired Python SDK this runbook needs
+> (`packages/python-lean-ctx`) is no longer in this repository; see
+> [README.md](README.md).
+
 15-minute stock vs `LeanCTX.wrap()` on the pinned fixture. No dashboard.
 Live model call is **#1270** and stays open until `OPENAI_API_KEY` is set.
 

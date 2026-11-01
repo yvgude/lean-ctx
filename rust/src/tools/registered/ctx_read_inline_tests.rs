@@ -220,12 +220,12 @@ async fn mcp_symbol_read_returns_exactly_the_symbol() {
 
     let missing = read("nope");
     assert!(
-        missing.contains("symbol `nope` not in this file"),
+        missing.contains("symbol `nope` not defined in this file"),
         "{missing}"
     );
     assert!(
-        missing.contains("remove"),
-        "outline lists the names: {missing}"
+        missing.contains("remove") && !missing.contains("@L"),
+        "a miss names the closest symbols, not the outline: {missing}"
     );
 }
 

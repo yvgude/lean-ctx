@@ -201,23 +201,50 @@ fn exec_direct(args: &[String]) -> i32 {
 /// Warn-only when a human runs `lean-ctx -c` at an interactive terminal (they
 /// can run the command without lean-ctx anyway, so blocking adds friction, not
 /// a boundary) or when `LEAN_CTX_ALLOWLIST_WARN_ONLY=1` explicitly opts out.
+///
+/// An agent shell always enforces, also when it hands lean-ctx a terminal
+/// (`script -q /dev/null lean-ctx -c …`): a host marker in the environment
+/// counts like hook-child mode, and a terminal only counts when stdin and
+/// stderr both are one. `LEAN_CTX_ALLOWLIST_WARN_ONLY` is honoured by test
+/// and debug builds only (`config::shell_policy`).
 fn allowlist_must_enforce() -> bool {
     let hook_child = crate::core::runtime_flags::hook_child_enabled();
-    let warn_only = std::env::var("LEAN_CTX_ALLOWLIST_WARN_ONLY")
-        .is_ok_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-    allowlist_must_enforce_inner(hook_child, warn_only, io::stderr().is_terminal())
+    let warn_only = crate::core::config::shell_policy::cli_warn_only_requested();
+    let interactive = io::stderr().is_terminal() && io::stdin().is_terminal();
+    allowlist_must_enforce_inner(hook_child, agent_host_marker(), warn_only, interactive)
+}
+
+/// True when an agent host's marker is in this process's environment.
+fn agent_host_marker() -> bool {
+    [
+        "CLAUDECODE",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CODEX_THREAD_ID",
+        "CODEX_SANDBOX",
+        "CURSOR_TASK_ID",
+        "CURSOR_AGENT",
+        "GEMINI_CLI",
+    ]
+    .iter()
+    .any(|key| std::env::var_os(key).is_some_and(|v| !v.is_empty()))
 }
 
 /// Pure decision core of [`allowlist_must_enforce`] (unit-testable without
 /// process-global env/TTY state).
-fn allowlist_must_enforce_inner(hook_child: bool, warn_only: bool, stderr_is_tty: bool) -> bool {
+#[allow(clippy::fn_params_excessive_bools)]
+fn allowlist_must_enforce_inner(
+    hook_child: bool,
+    agent_shell: bool,
+    warn_only: bool,
+    interactive: bool,
+) -> bool {
     if hook_child {
         return true;
     }
     if warn_only {
         return false;
     }
-    !stderr_is_tty
+    agent_shell || !interactive
 }
 
 /// True when this process's stdout is a **regular file** — i.e. the caller
@@ -329,8 +356,8 @@ pub(crate) fn allowlist_gate(command: &str) -> Option<i32> {
             eprintln!("{msg}");
             eprintln!(
                 "lean-ctx: command blocked by shell allowlist. \
-                 Allow it permanently: lean-ctx allow <cmd> — or set \
-                 LEAN_CTX_ALLOWLIST_WARN_ONLY=1 to downgrade to a warning."
+                 To allow it, run `lean-ctx allow <cmd>` in your own terminal \
+                 (or set shell_security = \"warn\" in your config.toml)."
             );
             return Some(126);
         }
@@ -907,27 +934,46 @@ mod exec_tests {
     #[test]
     fn allowlist_enforces_in_hook_child_mode() {
         // Hook-child wins over everything, even an interactive TTY.
-        assert!(super::allowlist_must_enforce_inner(true, false, true));
-        assert!(super::allowlist_must_enforce_inner(true, true, true));
+        assert!(super::allowlist_must_enforce_inner(
+            true, false, false, true
+        ));
+        assert!(super::allowlist_must_enforce_inner(true, false, true, true));
     }
 
     #[test]
     fn allowlist_enforces_for_non_interactive_callers() {
         // Agent/script invocation: stderr is a pipe → enforce.
-        assert!(super::allowlist_must_enforce_inner(false, false, false));
+        assert!(super::allowlist_must_enforce_inner(
+            false, false, false, false
+        ));
+    }
+
+    /// An agent shell that hands lean-ctx a terminal (`script -q /dev/null
+    /// lean-ctx -c …`) still enforces.
+    #[test]
+    fn allowlist_enforces_for_agent_shells_with_a_terminal() {
+        assert!(super::allowlist_must_enforce_inner(
+            false, true, false, true
+        ));
     }
 
     #[test]
     fn allowlist_warns_for_interactive_humans() {
         // Human at a TTY → warn-only (they can bypass lean-ctx anyway).
-        assert!(!super::allowlist_must_enforce_inner(false, false, true));
+        assert!(!super::allowlist_must_enforce_inner(
+            false, false, false, true
+        ));
     }
 
     #[test]
     fn allowlist_warn_only_opt_out_downgrades_non_interactive() {
         // Explicit LEAN_CTX_ALLOWLIST_WARN_ONLY=1 opt-out (but never in hook-child mode).
-        assert!(!super::allowlist_must_enforce_inner(false, true, false));
-        assert!(super::allowlist_must_enforce_inner(true, true, false));
+        assert!(!super::allowlist_must_enforce_inner(
+            false, false, true, false
+        ));
+        assert!(super::allowlist_must_enforce_inner(
+            true, false, true, false
+        ));
     }
 
     // --- #1303: command_has_file_redirect ---

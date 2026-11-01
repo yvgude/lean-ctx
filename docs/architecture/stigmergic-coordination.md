@@ -17,15 +17,17 @@ execution.
 
 ## Signal model
 
-The current local implementation defines five signal kinds:
+The current local implementation defines four signal kinds:
 
 | Signal | Meaning | Current half-life |
 | --- | --- | --- |
 | `claimed` | Agent is actively working on a target. | 10 minutes |
-| `hot` | Target is receiving active attention. | 10 minutes |
 | `stuck` | Agent encountered friction or a blocker. | 30 minutes |
 | `done` | Work related to the target completed. | 60 minutes |
 | `avoid` | Target should not currently be touched. | 60 minutes |
+
+Reads deposited a `hot` signal until 3.13.0. Field files that still hold one
+load without it.
 
 Signals are keyed by agent, kind and normalized target. Repeated deposits
 superpose with a bounded intensity. Effective intensity decays exponentially;
@@ -80,7 +82,7 @@ cross-platform evidence before product acceptance.
 
 LeanCTX OSS includes manual handoff, the open interoperability contracts and the
 local Scent Field for multiple agents on one machine, free and without an
-account. It may expose bounded claim, done, stuck, hot and avoid signals through
+account. It may expose bounded claim, done, stuck and avoid signals through
 the Local Agent Bus and the local Cockpit. It must work without transmitting
 message or source payloads.
 

@@ -842,3 +842,25 @@ fn enforce_only_rewrite_never_compresses() {
         }
     }
 }
+
+/// The governor's hook let PowerShell through with no check at all; the
+/// `lean-ctx -c` wrap cannot carry it, so it is checked and denied instead.
+#[test]
+fn enforce_hook_denies_powershell_that_fails_the_allowlist() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "git,cargo");
+    let out = enforce::enforce_decision(
+        &serde_json::json!({ "tool_name": "PowerShell", "hook_event_name": "PreToolUse",
+            "transcript_path": "/t", "tool_input": { "command": "python -c 'x'" } })
+        .to_string(),
+        "lean-ctx",
+    );
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+    crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        v["hookSpecificOutput"]["permissionDecision"], "deny",
+        "{out}"
+    );
+}

@@ -550,15 +550,14 @@ pub struct AutonomyConfig {
     pub auto_consolidate: bool,
     pub consolidate_every_calls: u32,
     pub consolidate_cooldown_secs: u64,
-    /// Background knowledge maintenance loop. Off by default (see `Default`);
-    /// an `[autonomy]` section without this key keeps it off.
+    /// No effect: the background cognition loop is retired (DEPRECATIONS.toml
+    /// `config-autonomy-cognition-loop`). The four `cognition_*` keys stay
+    /// accepted so existing configs keep loading.
     pub cognition_loop_enabled: bool,
     #[serde(default = "serde_defaults::default_cognition_loop_interval")]
     pub cognition_loop_interval_secs: u64,
     #[serde(default = "serde_defaults::default_cognition_loop_max_steps")]
     pub cognition_loop_max_steps: u8,
-    /// Minimum facts an entity needs before observation synthesis (#802) writes a
-    /// summary. Synthesis itself is gated by `cognition_loop_max_steps >= 9`.
     #[serde(default = "serde_defaults::default_cognition_synthesis_min_cluster")]
     pub cognition_synthesis_min_cluster: usize,
 }
@@ -570,10 +569,6 @@ impl Default for AutonomyConfig {
             auto_consolidate: true,
             consolidate_every_calls: 25,
             consolidate_cooldown_secs: 120,
-            // Off since the focus release (2026-10-15): the background loop
-            // rewrote stored knowledge (synthesis, decay, compaction) without
-            // a recorded decision — a Prove problem. Explicit maintenance
-            // stays available through `ctx_knowledge`.
             cognition_loop_enabled: false,
             cognition_loop_interval_secs: 3600,
             cognition_loop_max_steps: 9,
@@ -1155,7 +1150,8 @@ pub struct GatewayServerConfig {
     pub pseudonymize_persons: Option<bool>,
     /// MCP upstream registry (GL#91/#99, Doc 15 §7 — the observe stage of MCP
     /// context governance). Each entry publishes a governed reverse-proxy
-    /// route `/mcp/{id}` on the proxy port: same per-person key auth as the
+    /// route `/mcp/{id}` on the enterprise gateway server's port (the local
+    /// proxy mounts no `/mcp/{id}` routes): same per-person key auth as the
     /// LLM channel, tool calls metered into `mcp_events`, tool definitions
     /// inventoried + hash-tracked (rug-pull detection). Observe-only: the
     /// gateway never blocks or rewrites MCP traffic in this stage.

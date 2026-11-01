@@ -98,7 +98,38 @@ pub fn peek(cache: &SharedBm25Cache, root: &Path) -> Option<Arc<BM25Index>> {
         .map(|entry| Arc::clone(&entry.index))
 }
 
+/// Roots whose background refresh is running. A stale entry is served to
+/// every caller until the refresh lands, so without this each call in that
+/// window started one more full reload of the same index.
+static REFRESHING: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+/// Exclusive right to refresh one root; released on drop, also after a panic.
+struct RefreshClaim(PathBuf);
+
+impl RefreshClaim {
+    fn try_claim(root: &Path) -> Option<Self> {
+        let mut running = REFRESHING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if running.iter().any(|claimed| claimed == root) {
+            return None;
+        }
+        running.push(root.to_path_buf());
+        Some(Self(root.to_path_buf()))
+    }
+}
+
+impl Drop for RefreshClaim {
+    fn drop(&mut self) {
+        REFRESHING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|claimed| *claimed != self.0);
+    }
+}
+
 /// Get index from cache (fresh or stale), triggering background rebuild if stale.
+/// At most one rebuild per root runs at a time.
 /// Returns None only if no cache entry exists at all.
 pub fn get_or_background(cache: &SharedBm25Cache, root: &Path) -> Option<Arc<BM25Index>> {
     let guard = cache
@@ -111,11 +142,14 @@ pub fn get_or_background(cache: &SharedBm25Cache, root: &Path) -> Option<Arc<BM2
 
     let idx = Arc::clone(&entry.index);
 
-    if !entry.is_fresh() {
+    if !entry.is_fresh()
+        && let Some(claim) = RefreshClaim::try_claim(root)
+    {
         let root_str = root.to_string_lossy().to_string();
         let cache_clone = cache.clone();
         let root_clone = root.to_path_buf();
         std::thread::spawn(move || {
+            let _claim = claim;
             // Isolate panics (corrupt index file, FS race): a panic here must not
             // kill the worker silently — the stale index keeps serving and the
             // next call retries the refresh.
@@ -249,6 +283,24 @@ pub mod tests {
         let cache: SharedBm25Cache = Arc::new(std::sync::Mutex::new(None));
         let tmp = tempfile::tempdir().unwrap();
         assert!(get_or_background(&cache, tmp.path()).is_none());
+    }
+
+    #[test]
+    fn one_refresh_per_root_runs_at_a_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let claim = RefreshClaim::try_claim(tmp.path()).expect("first claim");
+        assert!(
+            RefreshClaim::try_claim(tmp.path()).is_none(),
+            "a second refresh of the same root must not start"
+        );
+        let other_claim = RefreshClaim::try_claim(other.path()).expect("another root");
+        drop(claim);
+        assert!(
+            RefreshClaim::try_claim(tmp.path()).is_some(),
+            "a finished refresh releases its root"
+        );
+        drop(other_claim);
     }
 
     #[test]

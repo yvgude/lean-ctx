@@ -337,50 +337,61 @@ fn post_knowledge_relations_edit(body: &str) -> (&'static str, &'static str, Str
         );
     };
 
-    let project_root = detect_project_root_for_dashboard();
-    let knowledge = crate::core::knowledge::ProjectKnowledge::load_or_create(&project_root);
-    let mut graph = crate::core::knowledge_relations::KnowledgeRelationGraph::load_or_create(
-        &knowledge.project_hash,
-    );
-
-    match req.action.as_str() {
-        "add" => {
-            let _ = graph.upsert_edge(from, to, kind, "dashboard");
-            let max_edges = crate::core::knowledge_relations::edge_bound(
-                knowledge.facts.iter().filter(|f| f.is_current()).count(),
-            );
-            let _ = graph.enforce_cap(max_edges);
-            if let Err(e) = graph.save() {
-                return (
-                    "500 Internal Server Error",
-                    "application/json",
-                    json_err(&e),
-                );
-            }
-            ("200 OK", "application/json", json_ok())
-        }
-        "delete" => {
-            let n = graph.remove_edge(&from, &to, Some(kind));
-            if n == 0 {
-                return (
-                    "400 Bad Request",
-                    "application/json",
-                    json_err("no matching relation"),
-                );
-            }
-            if let Err(e) = graph.save() {
-                return (
-                    "500 Internal Server Error",
-                    "application/json",
-                    json_err(&e),
-                );
-            }
-            ("200 OK", "application/json", json_ok())
-        }
-        _ => (
+    if !matches!(req.action.as_str(), "add" | "delete") {
+        return (
             "400 Bad Request",
             "application/json",
             json_err("unknown action"),
+        );
+    }
+    apply_relation_edit(
+        &detect_project_root_for_dashboard(),
+        &req.action,
+        from,
+        to,
+        kind,
+    )
+}
+
+/// Applies one dashboard relation edit as a read-modify-write under the
+/// cross-process knowledge lock, so it cannot drop an edge that the MCP
+/// server or another dashboard request writes at the same time.
+fn apply_relation_edit(
+    project_root: &str,
+    action: &str,
+    from: crate::core::knowledge_relations::KnowledgeNodeRef,
+    to: crate::core::knowledge_relations::KnowledgeNodeRef,
+    kind: crate::core::knowledge_relations::KnowledgeEdgeKind,
+) -> (&'static str, &'static str, String) {
+    let knowledge = crate::core::knowledge::ProjectKnowledge::load_or_create(project_root);
+    let max_edges = crate::core::knowledge_relations::edge_bound(
+        knowledge.facts.iter().filter(|f| f.is_current()).count(),
+    );
+    let saved = crate::core::knowledge_relations::KnowledgeRelationGraph::mutate_locked(
+        project_root,
+        &knowledge.project_hash,
+        |graph| {
+            if action == "add" {
+                graph.upsert_edge(from, to, kind, "dashboard");
+                graph.enforce_cap(max_edges);
+                Some(())
+            } else {
+                (graph.remove_edge(&from, &to, Some(kind)) > 0).then_some(())
+            }
+        },
+    );
+
+    match saved {
+        Ok(Some(())) => ("200 OK", "application/json", json_ok()),
+        Ok(None) => (
+            "400 Bad Request",
+            "application/json",
+            json_err("no matching relation"),
+        ),
+        Err(e) => (
+            "500 Internal Server Error",
+            "application/json",
+            json_err(&e),
         ),
     }
 }
@@ -546,5 +557,48 @@ mod tests {
         let sb: std::collections::HashSet<_> = b.into_iter().collect();
         let shared: Vec<_> = sa.intersection(&sb).collect();
         assert!(shared.contains(&&"core/community.rs".to_string()));
+    }
+
+    /// Parallel dashboard edits each add their own edge; under the knowledge
+    /// lock no read-modify-write drops another request's edge.
+    #[test]
+    fn concurrent_relation_edits_keep_every_edge() {
+        use crate::core::knowledge_relations::{
+            KnowledgeEdgeKind, KnowledgeNodeRef, KnowledgeRelationGraph,
+        };
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        std::thread::scope(|s| {
+            for i in 0..16 {
+                let root = &root;
+                s.spawn(move || {
+                    let (status, _, body) = apply_relation_edit(
+                        root,
+                        "add",
+                        KnowledgeNodeRef::new("a", &format!("{i}")),
+                        KnowledgeNodeRef::new("b", "target"),
+                        KnowledgeEdgeKind::RelatedTo,
+                    );
+                    assert_eq!(status, "200 OK", "{body}");
+                });
+            }
+        });
+        let hash = crate::core::project_hash::hash_project_root(&root);
+        let graph = KnowledgeRelationGraph::load(&hash).expect("saved graph");
+        assert_eq!(
+            graph.edges.len(),
+            16,
+            "an edge was lost to a concurrent edit"
+        );
+
+        let (status, _, _) = apply_relation_edit(
+            &root,
+            "delete",
+            KnowledgeNodeRef::new("a", "missing"),
+            KnowledgeNodeRef::new("b", "target"),
+            KnowledgeEdgeKind::RelatedTo,
+        );
+        assert_eq!(status, "400 Bad Request");
     }
 }

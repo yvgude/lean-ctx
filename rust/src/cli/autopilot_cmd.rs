@@ -132,15 +132,24 @@ pub(super) fn cmd_autopilot(rest: &[String]) -> i32 {
         return 0;
     }
     match execute(rest) {
-        Ok(output) => {
-            println!("{output}");
-            0
-        }
+        Ok(output) => match released(&super::common::detect_project_root(&[]), output) {
+            Ok(document) => {
+                super::common::print_released(&document);
+                0
+            }
+            Err(reason) => super::common::exit_withheld(&reason),
+        },
         Err(error) => {
             eprintln!("Autopilot: {error}");
             1
         }
     }
+}
+
+/// The JSON document passes the release point like every CLI output; a
+/// masked value stands in its place, so the document stays valid.
+fn released(project_root: &str, document: String) -> Result<String, String> {
+    super::common::CliToolRun::new("ctx_metrics", project_root, None).deliver_json(|| document)
 }
 
 fn execute(rest: &[String]) -> Result<String> {
@@ -259,6 +268,26 @@ mod tests {
         .unwrap();
         assert_eq!(options.project.as_str(), "exact-project");
         assert_eq!(options.tenant.unwrap().as_str(), "tenant");
+    }
+
+    /// The document was printed directly; it now passes the release point
+    /// and stays valid JSON when a value is masked.
+    #[test]
+    fn the_document_is_released() {
+        use crate::cli::common::carrier_tests_support::{AWS_KEY, governed, project};
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let (_project, root) = project();
+        let clean = serde_json::to_string_pretty(&json!({"schema_version": 1})).unwrap();
+        assert_eq!(released(&root, clean.clone()), Ok(clean));
+        let keyed = json!({"project_id": format!("p {AWS_KEY}")}).to_string();
+        let document = released(&root, keyed).expect("masked, not withheld");
+        assert!(!document.contains(AWS_KEY), "{document}");
+        assert!(
+            serde_json::from_str::<Value>(&document).is_ok(),
+            "{document}"
+        );
     }
 
     #[test]

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `ctx_tasks`: the project's Hive tasks (H2, C0 1.9 §1). Every call that
-//! reaches Hive ends within `core::hive::tasks::BUDGET`.
+//! `ctx_tasks`: the project's Hive tasks (H2, C0 1.9 §1). No call waits
+//! for Hive (`core::hive::tasks::cache`): `list` and `show` answer from the
+//! last data Hive sent, every change is queued, and what Hive answered comes
+//! in front of the caller's next `ctx_tasks` answer.
 
 use std::path::Path;
 
@@ -8,9 +10,10 @@ use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-use crate::core::hive::tasks::{self, EvidenceInput, ListFilter};
+use crate::core::hive::tasks::{self, EvidenceInput, ListFilter, cache};
 use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str};
 use crate::tool_defs::tool_def;
+use lean_ctx_protocol::hive::lease::HiveRight;
 use lean_ctx_protocol::hive::tasks::{TaskOutcome, TaskState, UsageV1};
 
 pub struct CtxTasksTool;
@@ -128,6 +131,9 @@ impl McpTool for CtxTasksTool {
                 )
             })
         };
+        // What Hive answered to this caller's queued changes comes first.
+        let caller = cache::caller(agent.as_deref().unwrap_or(&session_id));
+        let owned_root = root.to_path_buf();
         let answer = match action.as_str() {
             "list" => {
                 let state = get_str(args, "state")
@@ -143,28 +149,42 @@ impl McpTool for CtxTasksTool {
                     role: get_str(args, "role"),
                     mine: get_bool(args, "mine").unwrap_or(false),
                 };
-                tasks::list(root, &filter).map(|list| tasks::render_list(&list, 50))
+                cache::list(root, &filter, &caller)
             }
-            "show" => tasks::show(root, number()?).map(|view| tasks::render_task(&view)),
+            "show" => cache::show(root, number()?, &caller),
             "claim" => {
-                let agent = registered()?;
+                let (agent, number) = (registered()?, number()?);
                 let minutes = get_int(args, "minutes").and_then(|m| u32::try_from(m).ok());
-                tasks::claim(root, number()?, &agent, &session_id, minutes).map(|granted| {
-                    format!(
-                        "Claimed Hive task #{} until {} ({} min, renewed while this session runs). Report with action=update, finish with action=submit.",
-                        granted.number, granted.until, granted.minutes
-                    )
-                })
+                cache::queue(
+                    root,
+                    HiveRight::TasksWork,
+                    &caller,
+                    &format!("claim of task #{number}"),
+                    move || {
+                        tasks::claim(&owned_root, number, &agent, &session_id, minutes).map(
+                            |granted| {
+                                format!(
+                                    "Claimed Hive task #{} until {} ({} min, renewed while this session runs). Report with action=update, finish with action=submit.",
+                                    granted.number, granted.until, granted.minutes
+                                )
+                            },
+                        )
+                    },
+                )
             }
-            "update" => tasks::update(
-                root,
-                number()?,
-                &registered()?,
-                &session_id,
-                &text("summary")?,
-                usage,
-            )
-            .map(|ack| format!("Update recorded on task #{}.", ack.number)),
+            "update" => {
+                let (agent, number, summary) = (registered()?, number()?, text("summary")?);
+                cache::queue(
+                    root,
+                    HiveRight::TasksWork,
+                    &caller,
+                    &format!("update of task #{number}"),
+                    move || {
+                        tasks::update(&owned_root, number, &agent, &session_id, &summary, usage)
+                            .map(|ack| format!("Update recorded on task #{}.", ack.number))
+                    },
+                )
+            }
             "submit" => {
                 let evidence: Vec<EvidenceInput> = args
                     .get("evidence")
@@ -185,24 +205,40 @@ impl McpTool for CtxTasksTool {
                         ));
                     }
                 };
-                tasks::submit(
+                let (agent, number, summary) = (registered()?, number()?, text("summary")?);
+                cache::queue(
                     root,
-                    number()?,
-                    &registered()?,
-                    &text("summary")?,
-                    evidence,
-                    usage,
-                    outcome,
+                    HiveRight::TasksWork,
+                    &caller,
+                    &format!("result of task #{number}"),
+                    move || {
+                        tasks::submit(
+                            &owned_root,
+                            number,
+                            &agent,
+                            &summary,
+                            evidence,
+                            usage,
+                            outcome,
+                        )
+                        .map(|ack| tasks::render_result_ack(&ack))
+                    },
                 )
-                .map(|ack| tasks::render_result_ack(&ack))
             }
-            "release" => tasks::release(
-                root,
-                number()?,
-                &registered()?,
-                get_str(args, "reason").as_deref(),
-            )
-            .map(|ack| format!("Task #{} released.", ack.number)),
+            "release" => {
+                let (agent, number) = (registered()?, number()?);
+                let reason = get_str(args, "reason");
+                cache::queue(
+                    root,
+                    HiveRight::TasksWork,
+                    &caller,
+                    &format!("release of task #{number}"),
+                    move || {
+                        tasks::release(&owned_root, number, &agent, reason.as_deref())
+                            .map(|ack| format!("Task #{} released.", ack.number))
+                    },
+                )
+            }
             "propose" => {
                 let (title, acceptance) = (text("title")?, text("acceptance")?);
                 crate::core::hive::HiveStore::open().and_then(|store| {
@@ -226,18 +262,22 @@ impl McpTool for CtxTasksTool {
                     .and_then(|n| u64::try_from(n).ok())
                     .filter(|n| *n > 0)
                     .ok_or_else(|| ErrorData::invalid_params("proposal is required", None))?;
-                tasks::connected(
+                cache::queue(
                     root,
-                    lean_ctx_protocol::hive::lease::HiveRight::KnowledgeDraft,
+                    HiveRight::KnowledgeDraft,
+                    &caller,
+                    &format!("read of proposal #{proposal}"),
+                    move || {
+                        tasks::connected(&owned_root, HiveRight::KnowledgeDraft).and_then(|c| {
+                            crate::core::hive::knowledge::review::read_for_review(
+                                &c.session,
+                                &c.project,
+                                proposal,
+                                &session_id,
+                            )
+                        })
+                    },
                 )
-                .and_then(|c| {
-                    crate::core::hive::knowledge::review::read_for_review(
-                        &c.session,
-                        &c.project,
-                        proposal,
-                        &session_id,
-                    )
-                })
             }
             action @ ("confirm" | "object") => {
                 let proposal = get_int(args, "proposal")
@@ -249,35 +289,13 @@ impl McpTool for CtxTasksTool {
                 } else {
                     crate::core::hive::knowledge::review::Verdict::Object(text("reason")?)
                 };
-                tasks::connected(root, lean_ctx_protocol::hive::lease::HiveRight::KnowledgeDraft)
-                    .and_then(|c| {
-                        crate::core::hive::knowledge::review::confirm(
-                            &c.session,
-                            &c.project,
-                            proposal,
-                            &session_id,
-                            &verdict,
-                            Some(std::time::Instant::now() + tasks::BUDGET),
-                        )
-                    })
-                    .map(|ack| {
-                        if ack.objected {
-                            format!("Objection recorded on proposal #{proposal}; a person decides.")
-                        } else if let Some(revision) = ack.merged_revision {
-                            format!("Confirmed proposal #{proposal}; the threshold merged it into revision {revision}.")
-                        } else {
-                            format!(
-                                "Confirmed proposal #{proposal} ({} of {}){}.",
-                                ack.confirmations,
-                                ack.required,
-                                if ack.state == lean_ctx_protocol::hive::knowledge::ProposalState::Ready {
-                                    "; ready, merged by the next engine that may merge"
-                                } else {
-                                    ""
-                                }
-                            )
-                        }
-                    })
+                cache::queue(
+                    root,
+                    HiveRight::KnowledgeDraft,
+                    &caller,
+                    &format!("{action} on proposal #{proposal}"),
+                    move || review_verdict(&owned_root, proposal, &session_id, &verdict),
+                )
             }
             other => {
                 return Err(ErrorData::invalid_params(
@@ -287,7 +305,44 @@ impl McpTool for CtxTasksTool {
             }
         };
         Ok(ToolOutput::simple(
-            answer.unwrap_or_else(|error| format!("Hive tasks: {error}")),
+            crate::core::hive::background::with_answers(
+                &caller,
+                answer.unwrap_or_else(|error| format!("Hive tasks: {error}")),
+            ),
         ))
     }
+}
+
+/// Confirm or object to knowledge proposal `proposal` (run in the queue).
+fn review_verdict(
+    root: &Path,
+    proposal: u64,
+    session_id: &str,
+    verdict: &crate::core::hive::knowledge::review::Verdict,
+) -> Result<String, crate::core::hive::HiveError> {
+    let c = tasks::connected(root, HiveRight::KnowledgeDraft)?;
+    let ack = crate::core::hive::knowledge::review::confirm(
+        &c.session,
+        &c.project,
+        proposal,
+        session_id,
+        verdict,
+        Some(std::time::Instant::now() + tasks::BUDGET),
+    )?;
+    Ok(if ack.objected {
+        format!("Objection recorded on proposal #{proposal}; a person decides.")
+    } else if let Some(revision) = ack.merged_revision {
+        format!("Confirmed proposal #{proposal}; the threshold merged it into revision {revision}.")
+    } else {
+        format!(
+            "Confirmed proposal #{proposal} ({} of {}){}.",
+            ack.confirmations,
+            ack.required,
+            if ack.state == lean_ctx_protocol::hive::knowledge::ProposalState::Ready {
+                "; ready, merged by the next engine that may merge"
+            } else {
+                ""
+            }
+        )
+    })
 }

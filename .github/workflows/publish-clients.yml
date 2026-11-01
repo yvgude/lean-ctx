@@ -3,7 +3,8 @@ name: Historical /v1 client publishing
 # This workflow preserves publication mechanics for archived thin-client
 # prototypes. It is not an SDK release path at all: the one LeanCTX SDK is
 # `thinkery-leanctx-sdk`, developed and released in Thinkery-AG/leanctx-sdk.
-# See docs/reference/sdk-surface.md.
+# See docs/reference/sdk-surface.md. The TypeScript client in cookbook/sdk is
+# a private cookbook example (`private: true`) and is never published here.
 
 on:
   workflow_dispatch:
@@ -11,8 +12,8 @@ on:
       targets:
         description: "Which registries to publish to"
         type: choice
-        default: npm
-        options: [all, npm, pypi, crates]
+        default: crates
+        options: [all, pypi, crates]
   push:
     tags:
       - 'client-v[0-9]*'
@@ -43,33 +44,6 @@ jobs:
           name: ip-provenance-publish-clients-report
           path: ${{ runner.temp }}/ip-provenance-publish-clients-report.json
           if-no-files-found: ignore
-
-  publish-npm:
-    name: Historical TypeScript client (disabled)
-    needs: ip-provenance-gate
-    if: false
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4 # v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-      - name: Build, test, publish
-        working-directory: cookbook
-        run: |
-          set -euo pipefail
-          npm ci
-          npm --workspace lean-ctx-client run build
-          npm --workspace lean-ctx-client test
-          PKG_VERSION="$(node -p "require('./sdk/package.json').version")"
-          if npm view "lean-ctx-client@${PKG_VERSION}" version >/dev/null 2>&1; then
-            echo "npm already has lean-ctx-client@${PKG_VERSION} — skipping publish."
-            exit 0
-          fi
-          npm publish --workspace lean-ctx-client --access public
 
   publish-pypi:
     name: Historical Python client (disabled)

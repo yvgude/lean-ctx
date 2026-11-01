@@ -186,11 +186,6 @@ fn failed_archival_restores_the_active_fact_collection() {
     let root = tempfile::tempdir().unwrap();
     let mut k = ProjectKnowledge::new(root.path().to_str().unwrap());
     let mut memory = MemoryPolicy::default();
-    memory.compaction.enabled = true;
-    memory.compaction.min_cluster = 3;
-    memory.compaction.similarity = 0.5;
-    memory.compaction.max_confidence = 0.5;
-    memory.compaction.max_confirmations = 2;
     for key in ["a", "b", "c", "d"] {
         k.remember(
             "finding",
@@ -205,25 +200,10 @@ fn failed_archival_restores_the_active_fact_collection() {
     // New writes under that policy are now rejected at ingestion itself.
     policy(root.path(), "[filters]\nclassification='block'\n");
     let before = serde_json::to_value(&k.facts).unwrap();
-    let mut candidate = k.facts.clone();
-    let (collapsed, archived) = crate::core::memory_lifecycle::compact_clusters(
-        &mut candidate,
-        &crate::core::memory_lifecycle::ClusterCompactionConfig {
-            min_cluster: 3,
-            similarity: 0.5,
-            max_confidence: 0.5,
-            max_confirmations: 2,
-        },
-    );
-    assert!(
-        collapsed > 0 && !archived.is_empty(),
-        "fixture must attempt archival"
-    );
+    assert!(!k.facts.is_empty(), "fixture must hold facts to archive");
     let active = current(root.path().to_str().unwrap()).unwrap().unwrap();
-    assert!(crate::core::policy::content::evaluate_text(&archived[0].value, &active).blocked);
+    assert!(crate::core::policy::content::evaluate_text(&k.facts[0].value, &active).blocked);
     // The object itself supplies project authority even without an MCP scope.
-    assert_eq!(k.compact_low_value_clusters(&memory), 0);
-    assert_eq!(serde_json::to_value(&k.facts).unwrap(), before);
     memory.lifecycle.low_confidence_threshold = 0.9;
     assert!(k.run_memory_lifecycle(&memory).is_err());
     assert_eq!(serde_json::to_value(&k.facts).unwrap(), before);

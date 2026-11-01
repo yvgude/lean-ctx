@@ -57,10 +57,7 @@ pub(super) fn cmd_pack_install(args: &[String], project_root: &str) {
     if let Some(file_path) = from_file {
         let registry = match crate::core::context_package::LocalRegistry::open() {
             Ok(r) => r,
-            Err(e) => {
-                eprintln!("ERROR: {e}");
-                return;
-            }
+            Err(e) => super::exit_failed(e),
         };
         match registry.import_from_file_checked(
             std::path::Path::new(&file_path),
@@ -73,17 +70,20 @@ pub(super) fn cmd_pack_install(args: &[String], project_root: &str) {
                     crate::core::context_package::registry::describe_package_signature(&manifest)
                 );
                 warn_signature_gap(coverage);
-                apply_or_report(&manifest.name, &manifest.version, project_root);
+                if !apply_or_report(&manifest.name, &manifest.version, project_root) {
+                    std::process::exit(1);
+                }
             }
-            Err(e) => eprintln!("ERROR: import failed: {e}"),
+            Err(e) => super::exit_failed(format!("import failed: {e}")),
         }
         return;
     }
 
     let Some(name) = pkg_name else {
         eprintln!("ERROR: package name is required");
-        eprintln!("Usage: lean-ctx pack install <name>[@version] [--file=path [--allow-unsigned]]");
-        return;
+        super::exit_usage(
+            "Usage: lean-ctx pack install <name>[@version] [--file=path [--allow-unsigned]]",
+        );
     };
 
     // Hosted registries are gone; a scoped `ns/name` is not a local package.
@@ -96,10 +96,7 @@ pub(super) fn cmd_pack_install(args: &[String], project_root: &str) {
 
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(e),
     };
 
     let resolved_version;
@@ -159,10 +156,7 @@ fn apply_package(name: &str, version: &str, project_root: &str) -> bool {
 pub(super) fn cmd_pack_list() {
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(e),
     };
 
     match registry.list() {
@@ -192,25 +186,21 @@ pub(super) fn cmd_pack_list() {
             }
             println!("\n{} package(s) installed.", entries.len());
         }
-        Err(e) => eprintln!("ERROR: {e}"),
+        Err(e) => super::exit_failed(e),
     }
 }
 
 pub(super) fn cmd_pack_info(args: &[String]) {
     let pkg_ref = args.iter().find(|a| !a.starts_with("--") && *a != "info");
     let Some(pkg_ref) = pkg_ref else {
-        eprintln!("Usage: lean-ctx pack info <name>[@version]");
-        return;
+        super::exit_usage("Usage: lean-ctx pack info <name>[@version]");
     };
 
     let (name, version) = parse_pkg_ref(pkg_ref);
 
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(e),
     };
 
     let resolved_ver;
@@ -325,7 +315,7 @@ pub(super) fn cmd_pack_info(args: &[String]) {
             let out = out.strip_suffix('\n').unwrap_or(&out).to_owned();
             crate::cli::common::print_released(&released_info(out));
         }
-        Err(e) => eprintln!("ERROR: {e}"),
+        Err(e) => super::exit_failed(e),
     }
 }
 
@@ -347,24 +337,23 @@ pub(super) fn cmd_pack_remove(args: &[String]) {
         .find(|a| !a.starts_with("--") && *a != "remove" && *a != "rm");
 
     let Some(pkg_ref) = pkg_ref else {
-        eprintln!("Usage: lean-ctx pack remove <name>[@version]");
-        return;
+        super::exit_usage("Usage: lean-ctx pack remove <name>[@version]");
     };
 
     let (name, version) = parse_pkg_ref(pkg_ref);
 
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(e),
     };
 
     match registry.remove(name, version) {
-        Ok(0) => eprintln!("No matching package found: {name}"),
+        Ok(0) => {
+            eprintln!("No matching package found: {name}");
+            std::process::exit(1);
+        }
         Ok(n) => println!("Removed {n} package(s)."),
-        Err(e) => eprintln!("ERROR: {e}"),
+        Err(e) => super::exit_failed(e),
     }
 }
 
@@ -396,19 +385,15 @@ pub(super) fn cmd_pack_import(args: &[String], project_root: &str) {
     let apply = args.iter().any(|a| a == "--apply");
 
     let Some(file_path) = file_path else {
-        eprintln!(
+        super::exit_usage(
             "Usage: lean-ctx pack import <file.ctxpkg> [--apply] [--allow-untrusted-signer] \
-             [--allow-unsigned]"
+             [--allow-unsigned]",
         );
-        return;
     };
 
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(e),
     };
 
     match registry.import_from_file_checked(
@@ -434,13 +419,15 @@ pub(super) fn cmd_pack_import(args: &[String], project_root: &str) {
             println!("  Size:   {}", format_bytes(manifest.integrity.byte_size));
 
             if apply {
-                apply_or_report(&manifest.name, &manifest.version, project_root);
+                if !apply_or_report(&manifest.name, &manifest.version, project_root) {
+                    std::process::exit(1);
+                }
             } else {
                 println!("\nTo apply this package to the current project:");
                 println!("  lean-ctx pack install {}", manifest.name);
             }
         }
-        Err(e) => eprintln!("ERROR: import failed: {e}"),
+        Err(e) => super::exit_failed(format!("import failed: {e}")),
     }
 }
 
@@ -462,10 +449,7 @@ pub(super) fn cmd_pack_auto_load(args: &[String], project_root: &str) {
     let Some(pkg_ref) = pkg_ref else {
         let registry = match crate::core::context_package::LocalRegistry::open() {
             Ok(r) => r,
-            Err(e) => {
-                eprintln!("ERROR: {e}");
-                return;
-            }
+            Err(e) => super::exit_failed(e),
         };
         match registry.auto_load_packages(project_root) {
             Ok(entries) => {
@@ -478,7 +462,7 @@ pub(super) fn cmd_pack_auto_load(args: &[String], project_root: &str) {
                     }
                 }
             }
-            Err(e) => eprintln!("ERROR: {e}"),
+            Err(e) => super::exit_failed(e),
         }
         print_unbound_auto_load(&registry);
         return;
@@ -489,8 +473,7 @@ pub(super) fn cmd_pack_auto_load(args: &[String], project_root: &str) {
         (parsed_name, v.to_string())
     } else {
         let Ok(registry) = crate::core::context_package::LocalRegistry::open() else {
-            eprintln!("Failed to open package registry");
-            return;
+            super::exit_failed("cannot open the package registry");
         };
         let ver = registry
             .list()
@@ -508,10 +491,7 @@ pub(super) fn cmd_pack_auto_load(args: &[String], project_root: &str) {
 
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
+        Err(e) => super::exit_failed(e),
     };
 
     match registry.set_auto_load(name, &version, enable, project_root) {
@@ -522,7 +502,7 @@ pub(super) fn cmd_pack_auto_load(args: &[String], project_root: &str) {
                 println!("Auto-load disabled for {name}@{version} in this project");
             }
         }
-        Err(e) => eprintln!("ERROR: {e}"),
+        Err(e) => super::exit_failed(e),
     }
 }
 

@@ -154,3 +154,59 @@ fn single_shell_input_executes_through_the_shared_adapter() {
         assert!(guard.is_some());
     });
 }
+
+/// The gate inside `lean-ctx -c` takes its policy only from the real user's
+/// config: an agent shell that sets the policy variables, points `HOME`,
+/// `XDG_CONFIG_HOME` and `LEAN_CTX_CONFIG_DIR` at a config it wrote, and asks
+/// for warn-only cannot get a non-allowlisted command run. Exercised with the
+/// release resolution pinned to a temp "real home" (`shell_policy`).
+#[test]
+fn dash_c_gate_ignores_policy_set_by_the_agent_environment() {
+    let _lock = core::data_dir::test_env_lock();
+    let real = tempfile::tempdir().expect("real home");
+    let forged = tempfile::tempdir().expect("forged home");
+    let forged_dir = forged.path().join(".config").join("lean-ctx");
+    std::fs::create_dir_all(&forged_dir).expect("forged config dir");
+    std::fs::write(
+        forged_dir.join("config.toml"),
+        "shell_security = \"off\"\nshell_allowlist = []\n",
+    )
+    .expect("forged config");
+    let _pin = core::config::shell_policy::pin_for_test(real.path());
+    let forged_home = forged.path().to_string_lossy().into_owned();
+    let forged_xdg = forged.path().join(".config").to_string_lossy().into_owned();
+    let forged_cfg = forged_dir.to_string_lossy().into_owned();
+    let _env: Vec<crate::test_env::VarGuard> = [
+        ("LEAN_CTX_SHELL_SECURITY", "off"),
+        ("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "bash"),
+        ("LEAN_CTX_ALLOWLIST_WARN_ONLY", "1"),
+        ("HOME", forged_home.as_str()),
+        ("XDG_CONFIG_HOME", forged_xdg.as_str()),
+        ("LEAN_CTX_CONFIG_DIR", forged_cfg.as_str()),
+        ("LEAN_CTX_SHELL", "/bin/sh"),
+        ("CLAUDECODE", "1"),
+    ]
+    .into_iter()
+    .map(|(key, value)| crate::test_env::VarGuard::set(key, value))
+    .collect();
+    let _clear: Vec<crate::test_env::VarGuard> =
+        ["LEAN_CTX_ACTIVE", "LEAN_CTX_WRAPPED", "LEAN_CTX_DISABLED"]
+            .into_iter()
+            .map(|key| {
+                let guard = crate::test_env::VarGuard::set(key, "");
+                crate::test_env::remove_var(key);
+                guard
+            })
+            .collect();
+    let command = "LEAN_CTX_SHELL_SECURITY=off bash -c id";
+    // The same two steps `handle_exec` takes before it runs the command.
+    let _ = super::extract_and_apply_env_prefix(command);
+    assert!(matches!(
+        execute_cli_shell("exec", command, None, false),
+        Err(126)
+    ));
+    assert!(matches!(
+        execute_cli_shell("exec", "bash -c id", None, false),
+        Err(126)
+    ));
+}

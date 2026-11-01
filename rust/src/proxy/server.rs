@@ -38,9 +38,10 @@ pub struct ProxyState {
     /// that the reqwest rail accumulated (#597).
     pub(crate) chatgpt_cookies: Arc<chatgpt_cookies::ChatGptCloudflareCookieStore>,
     /// Resolved `[[gateway_server.mcp_servers]]` registry snapshot (GL#100).
-    /// Empty when none are registered; the `/mcp/{server}` routes are only
-    /// mounted with the `gateway-server` feature. Startup snapshot, restart
-    /// to reload — the same lifecycle as `gateway-keys.toml`.
+    /// Empty when none are registered. This proxy mounts no `/mcp/{server}`
+    /// routes (the enterprise gateway server does); startup only reports the
+    /// entries as not served here. Startup snapshot, restart to reload — the
+    /// same lifecycle as `gateway-keys.toml`.
     pub mcp_servers: Arc<Vec<crate::core::config::ResolvedMcpServer>>,
 }
 
@@ -376,6 +377,9 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
 
     // Must run before any WebSocket passthrough opens a wss:// upstream (#597).
     install_default_crypto_provider();
+    // The proxy records kernel evidence; apply the `LEAN_CTX_KERNEL_*`
+    // switches once so they take effect and kernel health reports them.
+    crate::core::context_kernel::startup::initialize();
 
     let auth_token = effective_auth_token(auth_token);
 
@@ -457,9 +461,9 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     } = initial;
 
     // Governed MCP reverse proxy registry (GL#91/#100): resolved once at
-    // startup (restart to reload — the gateway-keys.toml lifecycle). The
-    // `/mcp/{server}` routes are mounted below with the gateway-server
-    // feature; the snapshot lives in ProxyState either way.
+    // startup (restart to reload — the gateway-keys.toml lifecycle). This
+    // proxy mounts no `/mcp/{server}` routes; the enterprise gateway server
+    // serves them. The banner says so instead of advertising a 404.
     let mcp_servers = Arc::new(
         cfg.gateway_server
             .resolve_mcp_servers(cfg.proxy.allows_insecure_http_upstream()),
@@ -539,13 +543,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         .route("/providers/{id}/{*rest}", any(providers::handler))
         .fallback(fallback_router);
 
-    let mut app = app
-        .layer(axum::middleware::from_fn(move |req, next| {
-            let allowed = allowed_hosts.clone();
-            host_guard(req, next, allowed)
-        }))
-        .with_state(state);
-
     // Per-person gateway keys (enterprise#11): sha256(bearer) → person/team/
     // default_project. Loaded once at startup; rotation = restart (the standard
     // secret-mount flow). A malformed file fails the start loudly.
@@ -564,44 +561,19 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         Err(e) => anyhow::bail!("gateway-keys.toml: {e}"),
     };
 
-    #[cfg(feature = "enterprise")]
-    {
-        let expected = auth_token.clone();
-        let keys = gateway_keys.clone();
-        let upstreams = auth_upstreams;
-        app = app.layer(axum::middleware::from_fn(move |req, next| {
-            let expected = expected.clone();
-            let keys = keys.clone();
-            let upstreams = upstreams.clone();
-            proxy_auth_guard(
-                req,
-                next,
-                expected,
-                require_token,
-                loopback_open,
-                keys,
-                upstreams,
-            )
-        }));
-    }
-
-    #[cfg(not(feature = "enterprise"))]
-    {
-        let expected = auth_token.clone();
-        let upstreams = auth_upstreams;
-        app = app.layer(axum::middleware::from_fn(move |req, next| {
-            let expected = expected.clone();
-            let upstreams = upstreams.clone();
-            proxy_auth_guard(req, next, expected, require_token, loopback_open, upstreams)
-        }));
-    }
-
-    if let Some(limiter) = rate_limiter {
-        app = app.layer(axum::middleware::from_fn(move |req, next| {
-            let limiter = limiter.clone();
-            rate_limit_guard(req, next, limiter)
-        }));
-    }
+    let mut app = layer_request_guards(
+        app.with_state(state),
+        RequestGuards {
+            expected_token: auth_token.clone(),
+            require_token,
+            loopback_open,
+            #[cfg(feature = "enterprise")]
+            gateway_keys: gateway_keys.clone(),
+            upstreams: auth_upstreams,
+            rate_limiter,
+            allowed_hosts,
+        },
+    );
 
     // Outermost layer (runs first): normalize bare provider endpoints to their
     // canonical `/v1/...` form so auth, routing and upstream forwarding all agree,
@@ -650,17 +622,8 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
             }
         );
     }
-    for s in mcp_servers.iter() {
-        println!(
-            "  MCP:       any  /mcp/{} → {} (observed{})",
-            s.id,
-            s.url,
-            if s.auth_env.is_some() {
-                ", gateway-held credential"
-            } else {
-                ""
-            }
-        );
+    if let Some(line) = mcp_registry_banner(&mcp_servers) {
+        println!("{line}");
     }
     if openai_upstream.starts_with("http://") && !is_local_proxy_url(&openai_upstream) {
         println!(
@@ -682,6 +645,86 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
 
     println!("lean-ctx proxy shut down cleanly.");
     Ok(())
+}
+
+/// Startup line for a configured `[[gateway_server.mcp_servers]]` registry.
+/// This proxy mounts no `/mcp/{id}` routes, so it reports the entries as not
+/// served here instead of advertising routes that answer 404.
+pub(super) fn mcp_registry_banner(
+    servers: &[crate::core::config::ResolvedMcpServer],
+) -> Option<String> {
+    if servers.is_empty() {
+        return None;
+    }
+    let ids = servers
+        .iter()
+        .map(|server| server.id.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!(
+        "  ⚠ MCP:     {} [[gateway_server.mcp_servers]] entr{} ({ids}) not served: \
+         this proxy has no /mcp/{{id}} routes; the enterprise gateway server serves them",
+        servers.len(),
+        if servers.len() == 1 { "y" } else { "ies" },
+    ))
+}
+
+/// Inputs of the request guard stack around every proxy route.
+pub(super) struct RequestGuards {
+    pub(super) expected_token: String,
+    pub(super) require_token: bool,
+    pub(super) loopback_open: bool,
+    #[cfg(feature = "enterprise")]
+    pub(super) gateway_keys: Arc<gateway_identity::GatewayKeys>,
+    pub(super) upstreams: tokio::sync::watch::Receiver<Arc<Upstreams>>,
+    pub(super) rate_limiter: Option<Arc<RateLimiter>>,
+    pub(super) allowed_hosts: Arc<Vec<String>>,
+}
+
+/// Layers auth, rate limit and the DNS-rebinding Host check. Axum runs the
+/// layer added last first, so `host_guard` (added last) refuses a foreign
+/// Host (403) before any token check or bucket accounting, and a rebinding
+/// page never learns which credential a route wants.
+pub(super) fn layer_request_guards(mut app: Router, guards: RequestGuards) -> Router {
+    let RequestGuards {
+        expected_token,
+        require_token,
+        loopback_open,
+        #[cfg(feature = "enterprise")]
+        gateway_keys,
+        upstreams,
+        rate_limiter,
+        allowed_hosts,
+    } = guards;
+
+    app = app.layer(axum::middleware::from_fn(move |req, next| {
+        let expected = expected_token.clone();
+        #[cfg(feature = "enterprise")]
+        let keys = gateway_keys.clone();
+        let upstreams = upstreams.clone();
+        proxy_auth_guard(
+            req,
+            next,
+            expected,
+            require_token,
+            loopback_open,
+            #[cfg(feature = "enterprise")]
+            keys,
+            upstreams,
+        )
+    }));
+
+    if let Some(limiter) = rate_limiter {
+        app = app.layer(axum::middleware::from_fn(move |req, next| {
+            let limiter = limiter.clone();
+            rate_limit_guard(req, next, limiter)
+        }));
+    }
+
+    app.layer(axum::middleware::from_fn(move |req, next| {
+        let allowed = allowed_hosts.clone();
+        host_guard(req, next, allowed)
+    }))
 }
 
 async fn shutdown_signal() {
@@ -934,7 +977,8 @@ pub(super) async fn proxy_auth_guard(
         return Ok(next.run(req).await);
     }
 
-    // Accept provider API keys on provider routes (host_guard runs first).
+    // Accept provider API keys on provider routes (host_guard has already
+    // refused foreign Host headers; it is layered outside this guard).
     // Client-auth registry rails (`/providers/{id}` with api_key_env=None,
     // e.g. Grok dual-rail) stay open even when require_token is set — the
     // Authorization / x-xai-token-auth header must carry the upstream session

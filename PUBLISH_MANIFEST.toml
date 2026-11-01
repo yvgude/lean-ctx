@@ -265,6 +265,10 @@ new_paths = [
   # output. Own code, Apache-2.0 SPDX-headed.
   "rust/src/core/patterns/emspace.rs",
   "rust/src/core/providers/emspace.rs",
+  # Knowledge change journal and the ctx_knowledge actions on it (changes,
+  # repin, coverage; owner go 2026-10-31). Own code, Apache-2.0 SPDX-headed.
+  "rust/src/core/knowledge/journal.rs",
+  "rust/src/tools/ctx_knowledge/changes.rs",
   "rust/src/core/root_selection.rs",
   "rust/src/core/audit_trail/checkpoint.rs",
   "rust/src/core/workspace_authority.rs",
@@ -373,6 +377,7 @@ new_paths = [
   "rust/src/cli/hive_cmd.rs",
   "rust/src/cli/gotchas_cmd.rs",
   "rust/src/core/hive/auth.rs",
+  "rust/src/core/hive/background.rs",
   "rust/src/core/hive/bus/control.rs",
   "rust/src/core/hive/bus/frames.rs",
   "rust/src/core/hive/bus/handoff.rs",
@@ -396,7 +401,6 @@ new_paths = [
   "rust/src/core/hive/metrics/collect.rs",
   "rust/src/core/hive/metrics/local_state.rs",
   "rust/src/core/hive/metrics/mod.rs",
-  "rust/src/core/hive/metrics/payload.rs",
   "rust/src/core/hive/metrics/upload.rs",
   "rust/src/core/hive/mod.rs",
   "rust/src/core/hive/outbox.rs",
@@ -1340,7 +1344,6 @@ new_paths = [
   "rust/src/core/hive/mapping.rs",
   "rust/src/core/hive/metrics/hive_use.rs",
   "rust/src/core/hive/metrics/hive_use_tests.rs",
-  "rust/src/core/hive/metrics/k2_review_tests.rs",
   "rust/src/core/hive/metrics_v2/buffer.rs",
   "rust/src/core/hive/metrics_v2/collect.rs",
   "rust/src/core/hive/metrics_v2/gate.rs",
@@ -1381,6 +1384,7 @@ new_paths = [
   "rust/src/core/hive/sync/records.rs",
   "rust/src/core/hive/sync/records_tests.rs",
   "rust/src/core/hive/sync/writer.rs",
+  "rust/src/core/hive/tasks/cache.rs",
   "rust/src/core/hive/tasks/claims.rs",
   "rust/src/core/hive/tasks/client.rs",
   "rust/src/core/hive/tasks/keeper.rs",
@@ -1422,6 +1426,8 @@ new_paths = [
   "rust/src/server/shell_approval.rs",
   "rust/src/server/shell_approval_tests.rs",
   "rust/src/tools/ctx_agent_control.rs",
+  "rust/src/tools/ctx_agent_lease.rs",
+  "rust/src/hooks/agents/claude_tests.rs",
   "rust/src/tools/registered/ctx_tasks.rs",
   "rust/tests/agent_wait_roundtrip.rs",
   "rust/tests/suite/hive_fake_wire_conformance.rs",
@@ -1457,10 +1463,22 @@ new_paths = [
   "rust/src/tools/registered/ctx_read_symbol.rs",
   # 3.12.1 optplan R4: template collapse of repetitive output (lean-ctx-af).
   "rust/src/core/patterns/template_collapse.rs",
+  # 3.12.1 shell-security policy resolved from the real user config (lean-ctx-af).
+  "rust/src/core/config/shell_policy.rs",
+  "rust/src/core/shell_allowlist/enforcement_patterns.rs",
+  "rust/src/core/shell_allowlist/self_config_tests.rs",
+  # 3.12.1 outline token budget for ctx_read (lean-ctx-af, read-shell-volume).
+  "rust/src/tools/ctx_read/outline_budget.rs",
   # 3.12.1: the shared `cargo fast` alias (only the alias, no [build] job budget),
   # so fresh clones can run `make build`; the root .cargo/config.toml stays private.
   "rust/.cargo/config.toml",
   "tests/build/test_cargo_alias.py",
+  # 3.12.1 wave 3 (cli): npm preinstall stops only the installed daemon.
+  "packages/lean-ctx-bin/preinstall.test.cjs",
+  # the skill's curl | bash installer: exit status, temp dir, checksum.
+  "tests/build/test_skill_install_sh.py",
+  # the AUR recipe's version coupling.
+  "scripts/tests/test_check_package_versions.py",
   # 3.12.1 cleanup: the Task Spine v1 cohort the V3 receipt migration tests read,
   # moved from _archive/benchmarks/efficiency/task-spine-v1/ (same synthetic files).
   "rust/tests/fixtures/v3/task-spine-v1/README.md",
@@ -2556,6 +2574,9 @@ removed_paths = [
   # swarm, conductor, compute, sync/swarm, ctx_compute, ctx_tasks scope=swarm,
   # hive swarm|compute CLI, scripts/e2e/swarm-two-engines.sh). None of them is
   # in `baseline_commit`, so they left `new_paths` instead of being listed here.
+  # Hive 1.x retired, owner decision 2026-10-31: the daily `POST /v1/metrics`
+  # builder (core/hive/metrics/payload.rs, metrics/k2_review_tests.rs) left
+  # `new_paths` the same way.
   # Research/eval tooling removed from the engine, owner decision 2026-10-30.
   ".github/workflows/benchmark-study.yml",
   "rust/eval/accuracy-suite.ndjson",
@@ -2684,6 +2705,7 @@ removed_paths = [
   "rust/crates/lean-ctx-ocla/src/observation.rs",
   "rust/src/cli/dispatch/analytics/provider_run.rs",
   "rust/src/core/a2a/compress.rs",
+  "rust/src/core/a2a/telemetry.rs",
   "rust/src/core/code_health/coupling.rs",
   "rust/src/core/cognitive/chunker.rs",
   "rust/src/core/cognitive/mod.rs",
@@ -2724,6 +2746,18 @@ removed_paths = [
   "rust/src/proxy/web_app/normalize.rs",
   "rust/src/proxy/web_app/proof_tests.rs",
   "rust/tests/multi_read_cap_scenarios.rs",
+  # Adaptive/memory trim, measured then trimmed (CHANGELOG [Unreleased] Removed):
+  # learning stores no default read consults.
+  "rust/src/core/adaptive_mode_policy.rs",
+  "rust/src/core/bandit.rs",
+  "rust/src/core/feedback.rs",
+  "rust/src/core/mode_predictor.rs",
+  # Adaptive/memory trim batch 4 (owner 2026-10-31): the opt-in cognition loop.
+  "rust/src/core/cognition_loop.rs",
+  "rust/src/core/cognition_scheduler.rs",
+  # Batch 5: LITM placement calibration and its learning bundles.
+  "rust/src/core/learning_sync.rs",
+  "rust/src/core/litm_calibration.rs",
 ]
 
 include = [

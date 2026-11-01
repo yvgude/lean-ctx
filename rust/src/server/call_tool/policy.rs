@@ -29,8 +29,24 @@ const ROOTS_LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1
 const ROOTS_LIST_MAX_ATTEMPTS: u32 = 3;
 
 impl LeanCtxServer {
-    pub(crate) fn guard_role_and_policy(name: &str) -> Option<CallToolResult> {
-        let role_check = role_guard::check_tool_access(name);
+    /// The agent a guard's audit entry names: the registered bus agent, else
+    /// the session's presence id, else this process's identity
+    /// (`LEAN_CTX_AGENT_ID`, else `local`).
+    pub(crate) async fn audit_agent_id(&self) -> String {
+        if let Some(agent) = self.agent_id.read().await.clone() {
+            return agent;
+        }
+        self.presence_agent_id
+            .read()
+            .await
+            .clone()
+            .unwrap_or_else(|| crate::core::agent_identity::current_agent_id().to_owned())
+    }
+
+    /// Role and policy-pack tool gating. A denial is a tool error carrying
+    /// the reason, audited for `agent_id`.
+    pub(crate) fn guard_role_and_policy(name: &str, agent_id: &str) -> Option<CallToolResult> {
+        let role_check = role_guard::check_tool_access_as(name, agent_id);
         if let Some(denied) = role_guard::into_call_tool_result(&role_check) {
             tracing::warn!(
                 tool = name,
@@ -43,7 +59,7 @@ impl LeanCtxServer {
         // #673 — context-policy-pack tool gating. Additive to the role guard:
         // a pack's `allow_tools`/`deny_tools` are enforced here. No-op (allow)
         // when no policy pack is active, so existing behavior is unchanged.
-        let policy_check = policy_guard::check_tool_access(name);
+        let policy_check = policy_guard::check_tool_access_as(name, agent_id);
         if let Some(denied) = policy_guard::into_call_tool_result(&policy_check) {
             tracing::warn!(
                 tool = name,
@@ -55,9 +71,12 @@ impl LeanCtxServer {
         None
     }
 
+    /// Egress DLP on agent writes and actions. A block is a tool error,
+    /// audited for `agent_id`.
     pub(crate) fn guard_egress(
         guard_name: &str,
         guard_args: Option<&serde_json::Map<String, serde_json::Value>>,
+        agent_id: &str,
     ) -> Option<CallToolResult> {
         // #676 — egress / output DLP on agent writes & actions. Inspect the
         // payload of write/action tools BEFORE dispatch so a forbidden write
@@ -73,8 +92,8 @@ impl LeanCtxServer {
             if let Some((payload, kind)) = target {
                 if let Some(reason) = active.egress.check_content(&payload, &active.redaction) {
                     tracing::warn!(tool = guard_name, %reason, "agent egress blocked by policy");
-                    policy_guard::audit_egress(guard_name, &reason);
-                    return Some(CallToolResult::success(vec![ContentBlock::text(format!(
+                    policy_guard::audit_egress(guard_name, &reason, agent_id);
+                    return Some(CallToolResult::error(vec![ContentBlock::text(format!(
                         "[POLICY BLOCKED] {kind} blocked by context policy pack egress rule \
                          ({reason}). Review the effective local or organization \
                          egress policy."
@@ -84,8 +103,8 @@ impl LeanCtxServer {
                     && !crate::core::egress::check_rate(max)
                 {
                     tracing::warn!(tool = guard_name, max, "agent egress rate limit exceeded");
-                    policy_guard::audit_egress(guard_name, "rate-limit");
-                    return Some(CallToolResult::success(vec![ContentBlock::text(format!(
+                    policy_guard::audit_egress(guard_name, "rate-limit", agent_id);
+                    return Some(CallToolResult::error(vec![ContentBlock::text(format!(
                         "[POLICY BLOCKED] {kind} rate limit exceeded ({max}/min) by context \
                          policy pack. Slow agent writes/actions or adjust .lean-ctx/policy.toml."
                     ))]));
@@ -95,6 +114,8 @@ impl LeanCtxServer {
         None
     }
 
+    /// Active-workflow tool gating. A refusal is a tool error carrying the
+    /// reason, like a role or policy denial.
     pub(super) async fn guard_workflow(&self, name: &str) -> Option<CallToolResult> {
         use crate::core::workflow::ToolGate;
         // The decision is `core::workflow::tool_gate`, shared with the
@@ -109,7 +130,7 @@ impl LeanCtxServer {
                 None
             }
             ToolGate::Refuse(reason) => {
-                Some(CallToolResult::success(vec![ContentBlock::text(reason)]))
+                Some(CallToolResult::error(vec![ContentBlock::text(reason)]))
             }
         }
     }
@@ -470,6 +491,8 @@ mod workflow_gate_tests {
                 .guard_workflow(tool)
                 .await
                 .unwrap_or_else(|| panic!("{tool} must be refused"));
+            // A refusal is a tool error, like a role or policy denial.
+            assert_eq!(refused.is_error, Some(true), "{tool}");
             let reason = text(&refused);
             assert!(
                 reason.contains("withheld by the context gateway"),

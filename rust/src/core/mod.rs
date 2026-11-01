@@ -135,8 +135,6 @@ pub(crate) mod customer_proof_v2;
 // Domain: Knowledge
 // ---------------------------------------------------------------------------
 pub mod claim_extractor;
-pub(crate) mod cognition_loop;
-pub(crate) mod cognition_scheduler;
 pub mod execution_ledger;
 pub mod knowledge;
 pub(crate) mod knowledge_bootstrap;
@@ -223,10 +221,8 @@ pub mod hive;
 // Domain: Adaptive & Scoring
 // ---------------------------------------------------------------------------
 pub mod adaptive;
-pub(crate) mod adaptive_mode_policy;
 pub mod adaptive_thresholds;
 pub mod auto_mode_resolver;
-pub mod bandit;
 pub mod decision_loop;
 #[cfg(test)]
 mod decision_loop_integration_test;
@@ -235,8 +231,6 @@ pub mod decision_loop_runtime;
 mod decision_loop_runtime_tests;
 pub mod execution_lifecycle;
 pub mod execution_protocol;
-pub mod litm_calibration;
-pub mod mode_predictor;
 pub(crate) mod model_registry;
 pub mod shadow;
 pub mod task_relevance;
@@ -311,7 +305,6 @@ pub(crate) mod eviction_orchestrator;
 pub(crate) mod evidence;
 pub mod extension_registry;
 pub mod extractors;
-pub mod feedback;
 pub(crate) mod file_lock;
 pub(crate) mod filters;
 pub mod gain;
@@ -374,7 +367,6 @@ pub mod language_capabilities;
 #[cfg(target_os = "macos")]
 pub(crate) mod launchd;
 pub(crate) mod layout_pin;
-pub(crate) mod learning_sync;
 pub(crate) mod levenshtein;
 pub(crate) mod limits;
 pub mod llm_enhance;

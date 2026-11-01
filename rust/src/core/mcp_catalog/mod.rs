@@ -9,7 +9,7 @@
 //! 3. proxies the actual call to the owning server ([`client`]).
 //!
 //! Net effect: unlimited downstream tools at (roughly) constant context cost.
-//! Fully no-op until `[mcp_catalog] enabled = true` in config.
+//! Fully no-op until `[gateway] enabled = true` in config.
 
 pub mod adapters;
 mod binary_pin;
@@ -82,10 +82,6 @@ pub async fn proxy(
         |arguments| client::proxy_call(&resolved, tool, arguments, timeout),
     )
     .await;
-    // Per-addon usage metering (P5): attribute every proxied call to its server +
-    // tool. A transport failure or a downstream `is_error` counts as an error.
-    // Side-channel only — never touches the returned text (output determinism).
-    let _ok = matches!(&call, Ok(r) if !r.is_error.unwrap_or(false));
     let source = format!("mcp://{handle}");
     // Transport failures may contain remote response text, too. Admit them
     // before returning an error rather than treating errors as trusted output.

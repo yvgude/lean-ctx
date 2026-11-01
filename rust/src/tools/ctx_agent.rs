@@ -11,7 +11,11 @@ use crate::core::ocla::types::{
 
 #[path = "ctx_agent_control.rs"]
 mod control;
+#[path = "ctx_agent_lease.rs"]
+mod lease;
 use control::{control_status, lease_resource};
+#[cfg(test)]
+use lease::LeaseSettle;
 
 fn presence_ttl_hours() -> u64 {
     crate::core::config::Config::load()
@@ -325,8 +329,59 @@ pub fn handle_wait(
     )
 }
 
+/// A `ctx_agent` call. What Hive answered to this agent's earlier lease
+/// requests (asked off the tool call) comes in front of the answer, except
+/// for `read`, whose answer is a delivery of its sources only.
 #[allow(clippy::too_many_arguments)]
 pub fn handle(
+    action: &str,
+    agent_type: Option<&str>,
+    role: Option<&str>,
+    durable_identity_id: Option<&str>,
+    project_root: &str,
+    current_agent_id: Option<&str>,
+    message: Option<&str>,
+    category: Option<&str>,
+    to_agent: Option<&str>,
+    status: Option<&str>,
+    privacy: Option<&str>,
+    priority: Option<&str>,
+    ttl_hours: Option<u64>,
+    format: Option<&str>,
+    write: bool,
+    filename: Option<&str>,
+    request_id: Option<&str>,
+) -> String {
+    let answer = handle_action(
+        action,
+        agent_type,
+        role,
+        durable_identity_id,
+        project_root,
+        current_agent_id,
+        message,
+        category,
+        to_agent,
+        status,
+        privacy,
+        priority,
+        ttl_hours,
+        format,
+        write,
+        filename,
+        request_id,
+    );
+    match current_agent_id {
+        Some(agent) if action != "read" => crate::core::hive::background::with_answers(
+            &crate::core::hive::bus::leases::caller(agent),
+            answer,
+        ),
+        _ => answer,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_action(
     action: &str,
     agent_type: Option<&str>,
     role: Option<&str>,
@@ -541,13 +596,6 @@ pub fn handle(
             let Some(target) = to_agent else {
                 return "Error: to_agent is required for handoff".to_string();
             };
-            // Hive bus control (C5b): a vetoed handoff is refused.
-            if let Some(refusal) = crate::core::hive::bus::control::veto_refusal(
-                Some(from),
-                &[&format!("handoff:{from}:{target}")],
-            ) {
-                return format!("Handoff rejected: {refusal}");
-            }
             let summary = message.unwrap_or("(no summary provided)");
             let scratchpad_ttl = scratchpad_default_ttl_hours();
             // C5c: a target Hive reports on another machine gets an offer
@@ -559,6 +607,16 @@ pub fn handle(
                 Ok(remote) => remote,
                 Err(ambiguous) => return format!("Handoff rejected: {ambiguous}"),
             };
+            // Hive bus control (C5b): a veto pauses a handoff through Hive;
+            // one on this machine is local work and never refused.
+            if remote.is_some()
+                && let Some(refusal) = crate::core::hive::bus::control::veto_refusal(
+                    Some(from),
+                    &[&format!("handoff:{from}:{target}")],
+                )
+            {
+                return format!("Handoff rejected: {refusal}");
+            }
             let waiting = format!("handing off to {target} (awaiting the Hive ack)");
 
             let entry_id = match AgentRegistry::mutate_locked(|registry| {
@@ -1270,216 +1328,16 @@ pub fn handle(
             out
         }
 
-        // P11: Acquire an opaque path/symbol lease for mutation planning.
-        "lease_acquire" => {
-            let Some(agent_id) = current_agent_id else {
-                return "Error: agent must be registered first".to_string();
-            };
-            let Some(target) = message else {
-                return "Error: message (path or symbol:<name>) is required".to_string();
-            };
-            if let Err(error) = AgentRegistry::load_or_create()
-                .require_active_for_presence(agent_id, "acquiring a lease")
-            {
-                return format!("Lease rejected: {error}");
-            }
-            let (resource_kind, resource_ref) = match lease_resource(project_root, target) {
-                Ok(resource) => resource,
-                Err(error) => return format!("Lease rejected: {error}"),
-            };
-            // Hive bus control (C5b): a vetoed resource is refused.
-            if let Some(refusal) =
-                crate::core::hive::bus::control::veto_refusal(Some(agent_id), &[&resource_ref])
-            {
-                return format!("Lease rejected: {refusal}");
-            }
-            let duration_ms = match _ttl_hours.unwrap_or(0) {
-                0 => 10 * 60 * 1_000,
-                1 => 60 * 60 * 1_000,
-                _ => return "Error: ttl_hours for lease must be 0 (10min) or 1 (1h)".to_string(),
-            };
-            let request = crate::core::agent_lease::AgentLeaseRequestV1 {
-                schema_version: crate::core::agent_lease::AGENT_LEASE_SCHEMA_VERSION,
-                lease_request_ref: format!(
-                    "lease-request:{}",
-                    blake3::hash(format!("{agent_id}:{resource_ref}").as_bytes()).to_hex()
-                ),
-                resource_kind,
-                resource_ref: resource_ref.clone(),
-                owner_agent_id: agent_id.to_string(),
-                duration_ms,
-            };
-            match crate::core::agent_lease::acquire_shared(request) {
-                Ok(crate::core::agent_lease::AgentLeaseAcquireV1::Granted(lease)) => {
-                    // C5c: across machines through Hive (bounded, see bus::leases).
-                    use crate::core::hive::bus::leases::{self, Outcome};
-                    let hive = leases::acquire(
-                        std::path::Path::new(project_root),
-                        agent_id,
-                        target,
-                        duration_ms,
-                        &lease.lease_ref,
-                    );
-                    let release_local = || {
-                        let _ = crate::core::agent_lease::release_shared(
-                            resource_kind,
-                            &resource_ref,
-                            agent_id,
-                            &lease.lease_ref,
-                        );
-                    };
-                    match hive {
-                        Outcome::Held {
-                            agent_id: holder,
-                            instance_id,
-                            expires_at,
-                        } => {
-                            release_local();
-                            format!(
-                                "Lease HELD (hive): resource={resource_ref} owner={holder} \
-                                 instance={instance_id} expires={expires_at}"
-                            )
-                        }
-                        Outcome::Vetoed => {
-                            release_local();
-                            "Lease rejected: a workspace veto bars this agent from it \
-                             until the veto is lifted"
-                                .to_string()
-                        }
-                        Outcome::Granted { ref expires_at, .. } => format!(
-                            "Lease granted: {} resource={} owner={} expires_at_epoch_ms={} {} hive_expires_at={expires_at}",
-                            lease.lease_ref,
-                            resource_ref,
-                            agent_id,
-                            lease.expires_at_epoch_ms,
-                            leases::scope_line(&hive)
-                        ),
-                        other => format!(
-                            "Lease granted: {} resource={} owner={} expires_at_epoch_ms={} {}",
-                            lease.lease_ref,
-                            resource_ref,
-                            agent_id,
-                            lease.expires_at_epoch_ms,
-                            leases::scope_line(&match other {
-                                Outcome::Superseded => Outcome::Local("Hive lost the lease".into()),
-                                other => other,
-                            })
-                        ),
-                    }
-                }
-                Ok(crate::core::agent_lease::AgentLeaseAcquireV1::HeldBy {
-                    owner_agent_id,
-                    lease_ref,
-                    expires_at_epoch_ms,
-                }) => format!(
-                    "Lease HELD: resource={resource_ref} owner={owner_agent_id} lease_ref={lease_ref} expires={expires_at_epoch_ms}"
-                ),
-                Err(e) => format!("Lease rejected: {e}"),
-            }
-        }
-
-        // P11: Release a previously acquired lease.
-        "lease_release" => {
-            let Some(agent_id) = current_agent_id else {
-                return "Error: agent must be registered first".to_string();
-            };
-            let Some(target) = message else {
-                return "Error: message (same path or symbol:<name>) is required".to_string();
-            };
-            let Some(lease_ref) = category else {
-                return "Error: category (lease_ref from lease_acquire) is required".to_string();
-            };
-            let (resource_kind, resource_ref) = match lease_resource(project_root, target) {
-                Ok(resource) => resource,
-                Err(error) => return format!("Release failed: {error}"),
-            };
-            // C5c: the Hive side is released by the relay (queued, no network here).
-            crate::core::hive::bus::leases::queue_release(lease_ref);
-            match crate::core::agent_lease::release_shared(
-                resource_kind,
-                &resource_ref,
-                agent_id,
-                lease_ref,
-            ) {
-                Ok(true) => format!("Lease released: {lease_ref} resource={resource_ref}"),
-                Ok(false) => format!("No active lease found for resource={resource_ref}"),
-                Err(e) => format!("Release failed: {e}"),
-            }
-        }
-
-        // P11: Renew an owned lease without rotating its fencing token.
-        // A lease that already expired is rejected and must be re-acquired;
-        // this prevents a delayed worker from reviving abandoned work.
-        "lease_renew" => {
-            let Some(agent_id) = current_agent_id else {
-                return "Error: agent must be registered first".to_string();
-            };
-            let Some(target) = message else {
-                return "Error: message (same path or symbol:<name>) is required for renew"
-                    .to_string();
-            };
-            let Some(lease_ref) = category else {
-                return "Error: category (lease_ref from lease_acquire) is required".to_string();
-            };
-            if let Err(error) = AgentRegistry::load_or_create()
-                .require_active_for_presence(agent_id, "renewing a lease")
-            {
-                return format!("Lease renewal rejected: {error}");
-            }
-            let (resource_kind, resource_ref) = match lease_resource(project_root, target) {
-                Ok(resource) => resource,
-                Err(error) => return format!("Lease renewal rejected: {error}"),
-            };
-            if let Some(refusal) = crate::core::hive::bus::control::veto_refusal(
-                Some(agent_id),
-                &[lease_ref, &resource_ref],
-            ) {
-                return format!("Lease renewal rejected: {refusal}");
-            }
-            let duration_ms = match _ttl_hours.unwrap_or(0) {
-                0 => 10 * 60 * 1_000,
-                1 => 60 * 60 * 1_000,
-                _ => return "Error: ttl_hours for lease must be 0 (10min) or 1 (1h)".to_string(),
-            };
-            match crate::core::agent_lease::renew_shared(
-                resource_kind,
-                &resource_ref,
-                agent_id,
-                lease_ref,
-                duration_ms,
-            ) {
-                Ok(lease) => {
-                    use crate::core::hive::bus::leases::{self, Outcome};
-                    match leases::renew(std::path::Path::new(project_root), lease_ref, duration_ms)
-                    {
-                        outcome @ (Outcome::Superseded | Outcome::Vetoed) => {
-                            let _ = crate::core::agent_lease::release_shared(
-                                resource_kind,
-                                &resource_ref,
-                                agent_id,
-                                lease_ref,
-                            );
-                            if outcome == Outcome::Vetoed {
-                                "Lease renewal rejected: a workspace veto ended it".to_string()
-                            } else {
-                                "Lease renewal rejected: Hive no longer holds it for you \
-                                 (expired on the service clock or superseded); acquire it again"
-                                    .to_string()
-                            }
-                        }
-                        hive => format!(
-                            "Lease renewed: {} resource={} owner={} expires_at_epoch_ms={} {}",
-                            lease.lease_ref,
-                            resource_ref,
-                            agent_id,
-                            lease.expires_at_epoch_ms,
-                            leases::scope_line(&hive)
-                        ),
-                    }
-                }
-                Err(e) => format!("Lease renewal rejected: {e}"),
-            }
-        }
+        // P11: path/symbol leases for mutation planning (see `lease`).
+        "lease_acquire" => lease::acquire(project_root, current_agent_id, message, _ttl_hours),
+        "lease_release" => lease::release(project_root, current_agent_id, message, category),
+        "lease_renew" => lease::renew(
+            project_root,
+            current_agent_id,
+            message,
+            category,
+            _ttl_hours,
+        ),
 
         _ => format!("Unknown action: {action}. Use: {}", ACTIONS.join(", ")),
     }

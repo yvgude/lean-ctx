@@ -5,7 +5,8 @@
 //!
 //! The answer is kept in `<config_dir>/hive/sharing.json` (0600), so later
 //! sessions and later connects to the same workspace ask nothing. A "no"
-//! switches every outbound channel off in `[hive]`. Pulling the
+//! switches every outbound channel off in `[hive]`, and fact states and
+//! automatic 1.x merges and objections check it ([`declined`]). Pulling the
 //! workspace's knowledge and policy goes on. Nothing here talks to Hive.
 
 use std::path::Path;
@@ -78,8 +79,18 @@ pub fn record_from(
     Ok(decision)
 }
 
+/// Whether the person said no to sharing with `org_id`: the channels a
+/// "no" cannot switch off in `[hive]` (fact states, automatic 1.x merges
+/// and objections) check this.
+pub fn declined(store: &HiveStore, org_id: &str) -> bool {
+    decision(store, org_id).is_some_and(|d| !d.shared)
+}
+
 /// What leaves this machine for the workspace under `config`, one line
-/// each. Empty when nothing does.
+/// each: exactly what the engine sends, nothing it does not. Empty when
+/// nothing does. Engine metrics are asked separately once released
+/// (`engine_metrics_notice`); usage totals and context receipts are not
+/// sent by this version.
 pub fn shared_items(config: &HiveConfig) -> Vec<&'static str> {
     if config.enabled == Some(false) {
         return Vec::new();
@@ -90,20 +101,25 @@ pub fn shared_items(config: &HiveConfig) -> Vec<&'static str> {
             "knowledge from your sessions that passes the capture gate: single claims with a file, symbol, test, commit or link reference (never chats, tool output or whole files)",
         );
     }
-    if config.metrics_upload {
-        items.push("daily usage totals for the workspace Cockpit (numbers only)");
-    }
-    if config.receipts_upload {
-        items.push("context receipts, where your plan and workspace turn them on");
-    }
+    items.push(
+        "fact states: which of the workspace's facts no longer match this checkout (fact ids, the reason, and where a moved anchor is now; counts only for sealed vaults)",
+    );
+    items.push(
+        "on a Hive before 2.0: the automatic merge of knowledge proposals that reached their threshold, and objections to proposals your agents judged contradicting",
+    );
     if config.bus == HiveBusMode::Auto {
         items.push("your agents' presence and the bus messages they send to the workspace");
+        items.push("hourly collaboration friction counts, such as merge conflicts (numbers only)");
     }
+    items.push(
+        "task traffic your agents start: tasks they propose, and claims, one-line updates and results of tasks they work on under your worker opt-in",
+    );
     items
 }
 
 /// [`shared_items`] as the C0 2.1 share codes the approval page words
-/// (`knowledge`, `usage`, `receipts`, `bus`), sorted.
+/// (`knowledge`, `bus`), sorted. `usage` and `receipts` are not sent by
+/// this version and are not announced.
 pub fn share_codes(config: &HiveConfig) -> Vec<String> {
     if config.enabled == Some(false) {
         return Vec::new();
@@ -114,12 +130,6 @@ pub fn share_codes(config: &HiveConfig) -> Vec<String> {
     }
     if config.auto_capture {
         codes.push("knowledge".to_string());
-    }
-    if config.receipts_upload {
-        codes.push("receipts".to_string());
-    }
-    if config.metrics_upload {
-        codes.push("usage".to_string());
     }
     codes
 }
@@ -180,8 +190,16 @@ mod tests {
     fn a_decision_holds_for_its_workspace_only() {
         let (_dir, store) = store();
         assert!(decision(&store, "org_a").is_none(), "nothing asked yet");
+        assert!(!declined(&store, "org_a"), "no answer is no no");
         let now = Utc::now();
+        record(&store, "org_a", false, now).unwrap();
+        assert!(
+            declined(&store, "org_a"),
+            "fact states and merges stay here"
+        );
+        assert!(!declined(&store, "org_b"));
         record(&store, "org_a", true, now).unwrap();
+        assert!(!declined(&store, "org_a"));
         let kept = decision(&store, "org_a").unwrap();
         assert!(kept.shared);
         assert!(
@@ -235,14 +253,29 @@ mod tests {
     #[test]
     fn the_summary_names_each_channel_that_is_on_and_a_no_turns_all_off() {
         let mut config = HiveConfig::default();
-        assert_eq!(shared_items(&config).len(), 4);
-        assert_eq!(
-            share_codes(&config),
-            ["bus", "knowledge", "receipts", "usage"]
-        );
+        // Exactly what is sent: knowledge, fact states, 1.x merges and
+        // objections, bus with friction counts, task traffic; never usage
+        // totals or receipts, which this version does not send.
+        let items = shared_items(&config).join("\n");
+        for sent in [
+            "knowledge",
+            "fact states",
+            "automatic merge",
+            "objections",
+            "bus messages",
+            "friction counts",
+            "task traffic",
+        ] {
+            assert!(items.contains(sent), "{sent}: {items}");
+        }
+        for not_sent in ["usage totals", "receipts"] {
+            assert!(!items.contains(not_sent), "{not_sent}: {items}");
+        }
+        assert_eq!(share_codes(&config), ["bus", "knowledge"]);
         without_sharing(&mut config);
         assert!(share_codes(&config).is_empty());
-        assert!(shared_items(&config).is_empty());
+        let left = shared_items(&config).join("\n");
+        assert!(!left.contains("knowledge from") && !left.contains("bus messages"));
         assert!(!config.auto_capture && !config.metrics_upload && !config.receipts_upload);
         assert_eq!(config.bus, HiveBusMode::Off);
         // A later yes (E2E 27.10. E2) turns the same channels back on.

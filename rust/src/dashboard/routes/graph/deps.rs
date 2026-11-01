@@ -7,7 +7,6 @@ pub(super) fn get_route(
     match path {
         "/api/heatmap" => Some(heatmap()),
         "/api/graph" => Some(graph()),
-        "/api/graph/enrich" => Some(enrich()),
         "/api/graph/stats" => Some(stats()),
         "/api/graph-files" => Some(graph_files()),
         "/api/routes" => Some(routes(query_str)),
@@ -17,8 +16,9 @@ pub(super) fn get_route(
 
 fn heatmap() -> (&'static str, &'static str, String) {
     let project_root = detect_project_root_for_dashboard();
-    let Some(open) = crate::core::graph_provider::open_or_build(&project_root) else {
-        return ("200 OK", "application/json", "[]".to_string());
+    let open = match super::open_graph(&project_root) {
+        Ok(open) => open,
+        Err(building) => return building,
     };
     let entries = build_heatmap_json(&open.provider);
     ("200 OK", "application/json", entries)
@@ -26,12 +26,9 @@ fn heatmap() -> (&'static str, &'static str, String) {
 
 fn graph() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let Some(open) = crate::core::graph_provider::open_or_build(&root) else {
-        return (
-            "200 OK",
-            "application/json",
-            "{\"error\":\"no graph\"}".to_string(),
-        );
+    let open = match super::open_graph(&root) {
+        Ok(open) => open,
+        Err(building) => return building,
     };
     let gp = &open.provider;
 
@@ -173,35 +170,79 @@ fn graph() -> (&'static str, &'static str, String) {
     ("200 OK", "application/json", json)
 }
 
+/// `POST /api/graph/enrich`: writes git commits, tests and knowledge entries
+/// into the project's PropertyGraph and returns the counts. A GET is refused:
+/// reads never write.
+pub(super) fn enrich_route(method: &str) -> (&'static str, &'static str, String) {
+    if method.eq_ignore_ascii_case("POST") {
+        enrich()
+    } else {
+        (
+            "405 Method Not Allowed",
+            "application/json",
+            crate::dashboard::routes::helpers::json_err(
+                "use POST to enrich the project graph: it writes to the graph",
+            ),
+        )
+    }
+}
+
 fn enrich() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
     let project_path = std::path::Path::new(&root);
-    let result = match crate::core::property_graph::CodeGraph::open(&root) {
+    let outcome = match crate::core::property_graph::CodeGraph::open(&root) {
         Ok(graph) => match crate::core::graph_enricher::enrich_graph(&graph, project_path, 500) {
             Ok(stats) => {
                 let nc = graph.node_count().unwrap_or(0);
                 let ec = graph.edge_count().unwrap_or(0);
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "commits_indexed": stats.commits_indexed,
                     "tests_indexed": stats.tests_indexed,
                     "knowledge_indexed": stats.knowledge_indexed,
                     "edges_created": stats.edges_created,
                     "total_nodes": nc,
                     "total_edges": ec,
-                })
+                }))
             }
             Err(e) => {
                 tracing::warn!("graph enrich error: {e}");
-                serde_json::json!({"error": "enrichment_failed"})
+                Err(EnrichFailure::Enrichment)
             }
         },
         Err(e) => {
             tracing::warn!("graph open error: {e}");
-            serde_json::json!({"error": "graph_unavailable"})
+            Err(EnrichFailure::GraphUnavailable)
         }
     };
-    let json = serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string());
-    ("200 OK", "application/json", json)
+    enrich_response(outcome)
+}
+
+/// Why `POST /api/graph/enrich` wrote nothing.
+#[derive(Debug, Clone, Copy)]
+enum EnrichFailure {
+    GraphUnavailable,
+    Enrichment,
+}
+
+/// Maps an enrichment outcome to its HTTP answer: a failure carries an error
+/// status and the dashboard's `{"error": …}` body, never `200 OK`.
+fn enrich_response(
+    outcome: Result<serde_json::Value, EnrichFailure>,
+) -> (&'static str, &'static str, String) {
+    use crate::dashboard::routes::helpers::json_err;
+    match outcome {
+        Ok(counts) => ("200 OK", "application/json", counts.to_string()),
+        Err(EnrichFailure::GraphUnavailable) => (
+            "503 Service Unavailable",
+            "application/json",
+            json_err("the project graph could not be opened; retry once it is free"),
+        ),
+        Err(EnrichFailure::Enrichment) => (
+            "500 Internal Server Error",
+            "application/json",
+            json_err("graph enrichment failed; the dashboard log names the cause"),
+        ),
+    }
 }
 
 fn stats() -> (&'static str, &'static str, String) {
@@ -241,8 +282,9 @@ fn stats() -> (&'static str, &'static str, String) {
 
 fn graph_files() -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let Some(open) = crate::core::graph_provider::open_or_build(&root) else {
-        return ("200 OK", "application/json", "{\"files\":[]}".to_string());
+    let open = match super::open_graph(&root) {
+        Ok(open) => open,
+        Err(building) => return building,
     };
     let gp = &open.provider;
     let mut files: Vec<serde_json::Value> = gp
@@ -273,8 +315,9 @@ fn graph_files() -> (&'static str, &'static str, String) {
 
 fn routes(_query_str: &str) -> (&'static str, &'static str, String) {
     let root = detect_project_root_for_dashboard();
-    let Some(open) = crate::core::graph_provider::open_or_build(&root) else {
-        return ("200 OK", "application/json", "{\"routes\":[]}".to_string());
+    let open = match super::open_graph(&root) {
+        Ok(open) => open,
+        Err(building) => return building,
     };
     let gp = &open.provider;
     let file_paths = gp.file_paths();
@@ -347,4 +390,27 @@ fn build_heatmap_json(gp: &crate::core::graph_provider::GraphProvider) -> String
     });
 
     serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_enrichment_answers_an_error_status() {
+        for (failure, status) in [
+            (EnrichFailure::GraphUnavailable, "503 Service Unavailable"),
+            (EnrichFailure::Enrichment, "500 Internal Server Error"),
+        ] {
+            let (got, kind, body) = enrich_response(Err(failure));
+            assert_eq!(got, status);
+            assert_eq!(kind, "application/json");
+            let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert!(json["error"].is_string(), "{body}");
+            assert_eq!(json.as_object().map(serde_json::Map::len), Some(1));
+        }
+        let (got, _, body) = enrich_response(Ok(serde_json::json!({"edges_created": 3})));
+        assert_eq!(got, "200 OK");
+        assert!(body.contains("\"edges_created\":3"), "{body}");
+    }
 }

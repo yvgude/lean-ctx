@@ -26,6 +26,7 @@ use super::learn::{fact_id, knowledge_category};
 use super::{BaseRevision, base_dir};
 use crate::core::hive::HiveError;
 use crate::core::hive::auth::Session;
+use crate::core::hive::knowledge::screening::Screen;
 use crate::core::hive::state::write_private;
 use crate::core::hive::vault::VaultRecord;
 use crate::core::knowledge::ProjectKnowledge;
@@ -117,8 +118,15 @@ pub(super) fn contradictions(
     out
 }
 
-/// The doubts about `base`'s facts in the checkout at `root`.
-fn doubts(root: &Path, record: &VaultRecord, base: &BaseRevision) -> Vec<Doubt> {
+/// The doubts about `base`'s facts in the checkout at `root`. Where an
+/// anchor moved to is outbound content: a new path or symbol the `screen`
+/// refuses stays here, and the fact is reported as changed instead.
+fn doubts(
+    root: &Path,
+    record: &VaultRecord,
+    base: &BaseRevision,
+    screen: &mut Screen,
+) -> Vec<Doubt> {
     let category = knowledge_category(&record.ns, &record.name);
     let contradicted = ProjectKnowledge::load(&root.to_string_lossy())
         .map(|k| contradictions(&k, &category))
@@ -146,7 +154,19 @@ fn doubts(root: &Path, record: &VaultRecord, base: &BaseRevision) -> Vec<Doubt> 
                 }
                 AnchorState::Missing => None,
                 AnchorState::Moved { path } => {
-                    anchors::capture(root, &path, anchor.symbol.as_deref()).ok()
+                    match anchors::capture(root, &path, anchor.symbol.as_deref()).ok() {
+                        Some(to)
+                            if screen.check(&to.path).is_err()
+                                || to
+                                    .symbol
+                                    .as_deref()
+                                    .is_some_and(|symbol| screen.check(symbol).is_err()) =>
+                        {
+                            doubt.reasons.insert(FactStateReason::AnchorChanged);
+                            continue;
+                        }
+                        other => other,
+                    }
                 }
             };
             match moved {
@@ -181,11 +201,12 @@ fn build(
     base: &BaseRevision,
     sent: &Sent,
     now: DateTime<Utc>,
+    screen: &mut Screen,
 ) -> Option<FactStateReportV1> {
     if base.revision == 0 {
         return None;
     }
-    let doubts = doubts(root, record, base);
+    let doubts = doubts(root, record, base, screen);
     let (states, counts) = if record.sealed {
         let contradicted = doubts
             .iter()
@@ -249,12 +270,20 @@ pub fn report(
     data: &Path,
     record: &VaultRecord,
 ) -> Result<Option<FactStateAckV1>, HiveError> {
+    // A "no" to the sharing question at connect keeps fact states here.
+    if crate::core::hive::connect::declined(&session.store, &session.lease.lease.org_id) {
+        return Ok(None);
+    }
     let Some(root) = record.roots.iter().map(Path::new).find(|r| r.is_dir()) else {
         return Ok(None);
     };
+    let mut screen = Screen::for_installation();
+    if let Some(problem) = screen.problem() {
+        return Err(HiveError::Config(problem));
+    }
     let base = super::load_base(data, &record.vault_id);
     let sent = load_sent(data, &record.vault_id);
-    let Some(report) = build(root, record, &base, &sent, Utc::now()) else {
+    let Some(report) = build(root, record, &base, &sent, Utc::now(), &mut screen) else {
         return Ok(None);
     };
     if unchanged(&sent, &report) {
@@ -351,7 +380,9 @@ mod tests {
         std::fs::remove_file(root.join("src/c.md")).unwrap();
 
         let rec = record(false, root);
-        let report = build(root, &rec, &base, &Sent::default(), now()).unwrap();
+        let mut screen =
+            Screen::with_rules(Vec::new(), std::sync::Arc::new(Vec::new()), Vec::new());
+        let report = build(root, &rec, &base, &Sent::default(), now(), &mut screen).unwrap();
         report.validate().unwrap();
         let states = report.states.as_ref().unwrap();
         assert_eq!(
@@ -381,11 +412,19 @@ mod tests {
             counts: None,
         };
         let later = now() + chrono::Duration::hours(3);
-        let again = build(root, &rec, &base, &sent, later).unwrap();
+        let again = build(root, &rec, &base, &sent, later, &mut screen).unwrap();
         assert!(unchanged(&sent, &again));
 
         // Sealed: counts only, no fact ids, no paths.
-        let sealed = build(root, &record(true, root), &base, &Sent::default(), now()).unwrap();
+        let sealed = build(
+            root,
+            &record(true, root),
+            &base,
+            &Sent::default(),
+            now(),
+            &mut screen,
+        )
+        .unwrap();
         sealed.validate().unwrap();
         assert_eq!(sealed.states, None);
         assert_eq!(
@@ -397,6 +436,98 @@ mod tests {
         );
         let wire = serde_json::to_string(&sealed).unwrap();
         assert!(!wire.contains("f.changed") && !wire.contains("src/"));
+    }
+
+    /// Where an anchor moved to is outbound content: a new path the screen
+    /// refuses stays on this machine, and that fact is reported as changed
+    /// (no `moved_to`); an admitted move is reported with its new place.
+    #[test]
+    fn a_moved_anchor_names_its_new_place_only_when_the_screen_lets_it_pass() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        let retry = "pub fn retry() {\n    three();\n}\n";
+        let pay = "pub fn pay() {\n    charge();\n}\n";
+        std::fs::write(root.join("src/a.rs"), retry).unwrap();
+        std::fs::write(root.join("src/b.rs"), pay).unwrap();
+        let base = base(vec![
+            fact(
+                "f.moved",
+                vec![anchors::capture(root, "src/a.rs", Some("retry")).unwrap()],
+            ),
+            fact(
+                "f.withheld",
+                vec![anchors::capture(root, "src/b.rs", Some("pay")).unwrap()],
+            ),
+        ]);
+        std::fs::remove_file(root.join("src/a.rs")).unwrap();
+        std::fs::remove_file(root.join("src/b.rs")).unwrap();
+        std::fs::write(root.join("src/retry.rs"), retry).unwrap();
+        std::fs::write(root.join("src/falcon_billing.rs"), pay).unwrap();
+        let root_text = root.to_string_lossy();
+        let mut index = crate::core::graph_index::ProjectIndex::new(&root_text);
+        for (file, name) in [("src/retry.rs", "retry"), ("src/falcon_billing.rs", "pay")] {
+            // `ProjectIndex::load` answers only for a graph with cataloged files.
+            index.files.insert(
+                file.into(),
+                crate::core::graph_index::FileEntry {
+                    path: file.into(),
+                    hash: "h".into(),
+                    language: "rs".into(),
+                    line_count: 3,
+                    token_count: 1,
+                    exports: vec![name.into()],
+                    summary: String::new(),
+                },
+            );
+            index.symbols.insert(
+                format!("{file}::{name}"),
+                crate::core::graph_index::SymbolEntry {
+                    file: file.into(),
+                    name: name.into(),
+                    kind: "fn".into(),
+                    start_line: 1,
+                    end_line: 3,
+                    is_exported: true,
+                },
+            );
+        }
+        index.save().unwrap();
+
+        let mut screen = Screen::with_rules(
+            Vec::new(),
+            std::sync::Arc::new(Vec::new()),
+            vec![regex::Regex::new("falcon").unwrap()],
+        );
+        let report = build(
+            root,
+            &record(false, root),
+            &base,
+            &Sent::default(),
+            now(),
+            &mut screen,
+        )
+        .unwrap();
+        report.validate().unwrap();
+        let states = report.states.as_ref().unwrap();
+        assert_eq!(
+            states
+                .iter()
+                .map(|s| (s.fact.as_str(), s.reasons.clone(), s.moved_to.is_some()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("f.moved", vec![FactStateReason::AnchorMoved], true),
+                ("f.withheld", vec![FactStateReason::AnchorChanged], false),
+            ]
+        );
+        let wire = serde_json::to_string(&report).unwrap();
+        assert!(wire.contains("src/retry.rs"), "{wire}");
+        assert!(
+            !wire.contains("falcon"),
+            "the refused path stays here: {wire}"
+        );
     }
 
     #[test]

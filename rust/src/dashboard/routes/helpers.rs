@@ -21,6 +21,12 @@ pub fn extract_query_param(qs: &str, key: &str) -> Option<String> {
     None
 }
 
+/// Whether a read asks for a fresh answer instead of a cached one: the
+/// Cockpit appends `_refresh=1` when the user reloads or re-checks a view.
+pub(crate) fn wants_refresh(qs: &str) -> bool {
+    extract_query_param(qs, "_refresh").is_some_and(|v| !matches!(v.as_str(), "" | "0" | "false"))
+}
+
 pub fn percent_decode_query_component(s: &str) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(s.len());
     let b = s.as_bytes();

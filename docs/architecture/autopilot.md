@@ -91,7 +91,7 @@ der Entscheidung, ist die Bindung ungültig — der Test
 
 Eingaben sind vorhandene Primitive: Aufgabe und strukturierte Intention,
 Projektzustand, Kontextdruck, Context Ledger und IR, jüngste Reads und
-Dedup-Zustand, Knowledge, Gotchas, Graph, Suchindex, ModePredictor, adaptive
+Dedup-Zustand, Knowledge, Gotchas, Graph, Suchindex, adaptive
 Schwellen, Korrektur- und Bounce-Signale, Provider/Modell, Token-Preise,
 Prompt-Cache-Ökonomie, Tool-Schemata sowie historische und akzeptierte
 Outcomes.

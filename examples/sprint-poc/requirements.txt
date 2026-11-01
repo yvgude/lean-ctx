@@ -1,2 +1,4 @@
 openai
--e ../../packages/python-lean-ctx
+# The `leanctx` arm needs the retired Python SDK (`from lean_ctx import LeanCTX`),
+# whose source (packages/python-lean-ctx) left this repository. This example is
+# unmaintained; see README.md. The `stock` arm and the quality tests run without it.

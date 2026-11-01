@@ -26,11 +26,15 @@ pub(crate) struct GraphBuildProgress {
 }
 
 impl GraphBuildProgress {
-    fn building() -> Self {
+    /// The graph scan's file counts for `project_root` while this process
+    /// runs it (`0/0` while it still walks the tree, or when another process,
+    /// such as the daemon, builds the shared index).
+    fn building(project_root: &str) -> Self {
+        let graph = crate::core::index_orchestrator::progress_view(project_root).graph;
         Self {
             status: "building",
-            files_total: 0,
-            files_done: 0,
+            files_total: usize::try_from(graph.total).unwrap_or(usize::MAX),
+            files_done: usize::try_from(graph.done).unwrap_or(usize::MAX),
         }
     }
 }
@@ -47,6 +51,11 @@ pub(crate) fn get_or_start_build(
     if let Some(open) = graph_provider::open_best_effort(project_root) {
         return Ok(open);
     }
-    crate::core::index_orchestrator::ensure_all_background(project_root);
-    Err(GraphBuildProgress::building())
+    // Unit tests share one process-global data dir that each test rewrites; a
+    // detached build would outlive the test that started it (the same reason
+    // `graph_provider` skips its lazy build under `cfg!(test)`).
+    if !cfg!(test) {
+        crate::core::index_orchestrator::ensure_all_background(project_root);
+    }
+    Err(GraphBuildProgress::building(project_root))
 }

@@ -85,6 +85,36 @@ pub(super) fn deliver_carrier(
     output
 }
 
+/// A result the daemon returned for `tool`, released through the same run as
+/// a local result before the caller prints it with `print_released`.
+///
+/// The daemon released and recorded the result in its own pipeline; the text
+/// printed here also passes this process's release point (policy, masking)
+/// and, where protection is active, its receipt. This process captured none
+/// of the result's sources, so the text is never recorded here as a delivery
+/// of them. `None`: the release produced nothing to print.
+#[cfg(unix)]
+pub(super) fn released_daemon_result(
+    tool: &str,
+    project_root: &str,
+    arguments: Option<&serde_json::Map<String, serde_json::Value>>,
+    listing: bool,
+    text: String,
+    failed: bool,
+) -> Option<String> {
+    let run = CliToolRun::new(tool, project_root, arguments).admitted_reader_output();
+    let run = if listing { run.human_facing() } else { run };
+    let ((), printed) = run.run(|| {
+        let printable = Printable {
+            text,
+            source_only: false,
+            failed,
+        };
+        ((), Some(printable))
+    });
+    printed
+}
+
 /// The arguments of the MCP tool call a CLI carrier stands for, as a map.
 pub(super) fn tool_arguments(
     value: serde_json::Value,
@@ -92,5 +122,50 @@ pub(super) fn tool_arguments(
     match value {
         serde_json::Value::Object(map) => map,
         _ => serde_json::Map::new(),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use crate::cli::common::carrier_tests_support::{AWS_KEY, governed, lineage, project};
+
+    /// The daemon routes of `read`, `grep`, `glob` and `ls` printed the
+    /// daemon's text with `println!`, outside the shared run. It now passes
+    /// the release point here too, and is never recorded as a delivery.
+    #[test]
+    fn a_daemon_result_is_released_and_registers_nothing() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let (_project, root) = project();
+        let arguments =
+            super::tool_arguments(serde_json::json!({ "path": "a.rs", "mode": "full" }));
+        let text = "a.rs 1L\npub fn a() {}".to_string();
+        let printed = super::released_daemon_result(
+            "ctx_read",
+            &root,
+            Some(&arguments),
+            false,
+            text.clone(),
+            false,
+        );
+        assert_eq!(
+            printed.as_deref(),
+            Some(text.as_str()),
+            "admitted text keeps its bytes"
+        );
+        assert_eq!(lineage(&root, &text), None);
+        for listing in [false, true] {
+            let leaked = super::released_daemon_result(
+                "ctx_read",
+                &root,
+                Some(&arguments),
+                listing,
+                format!("a.rs 1L\nkey = {AWS_KEY}"),
+                false,
+            )
+            .unwrap_or_default();
+            assert!(!leaked.contains(AWS_KEY), "{leaked}");
+        }
     }
 }

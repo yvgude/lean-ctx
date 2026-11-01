@@ -46,7 +46,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "bool",
             serde_json::json!(cfg.autonomy.cognition_loop_enabled),
-            "Enable the background cognition loop (periodic knowledge consolidation)",
+            "No effect (kept so existing configs load): the cognition loop is retired; scheduled consolidation runs the memory lifecycle",
             "LEAN_CTX_COGNITION_LOOP_ENABLED",
         ),
     );
@@ -55,7 +55,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "u64",
             serde_json::json!(cfg.autonomy.cognition_loop_interval_secs),
-            "Seconds between cognition loop iterations",
+            "No effect (kept so existing configs load): the cognition loop is retired",
             "LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS",
         ),
     );
@@ -64,7 +64,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "u8",
             serde_json::json!(cfg.autonomy.cognition_loop_max_steps),
-            "Maximum steps per cognition loop iteration (>= 9 enables observation synthesis)",
+            "No effect (kept so existing configs load): the cognition loop is retired",
             "LEAN_CTX_COGNITION_LOOP_MAX_STEPS",
         ),
     );
@@ -73,7 +73,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "usize",
             serde_json::json!(cfg.autonomy.cognition_synthesis_min_cluster),
-            "Minimum facts per entity before observation synthesis writes a summary (needs cognition_loop_max_steps >= 9)",
+            "No effect (kept so existing configs load): observation synthesis is retired with the cognition loop",
             "LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER",
         ),
     );
@@ -679,7 +679,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string",
             serde_json::json!(""),
-            "Registry id; becomes the governed route `/mcp/{id}` on the proxy port (lowercase alnum/-/_)",
+            "Registry id; becomes the governed route `/mcp/{id}` on the enterprise gateway server's port, not the local proxy (lowercase alnum/-/_)",
         ),
     );
     mcp_servers.insert(

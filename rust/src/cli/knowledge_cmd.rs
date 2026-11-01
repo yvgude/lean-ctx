@@ -23,9 +23,7 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
         Some(action @ ("contradict" | "retract")) => {
             match super::hive_curate_cmd::run(action, args, &project_root) {
                 Ok(lines) => {
-                    for line in lines {
-                        println!("{line}");
-                    }
+                    super::common::print_released(&released_curation(&project_root, &lines));
                 }
                 Err(error) => {
                     eprintln!("lean-ctx knowledge {action}: {error}");
@@ -132,6 +130,13 @@ fn print_outcome(outcome: Result<String, String>) {
 /// never recorded as a delivery.
 fn report_run(project_root: &str) -> super::common::CliToolRun<'_> {
     super::common::CliToolRun::new("ctx_knowledge", project_root, None).human_facing()
+}
+
+/// The report of `contradict` / `retract` (what was queued, Hive's refusal
+/// reasons): released like every other output of this command, never a
+/// delivery.
+fn released_curation(project_root: &str, lines: &[String]) -> String {
+    report_run(project_root).deliver_text(|| lines.join("\n"))
 }
 
 /// `status`, `health`, `lifecycle`: an action without further arguments.
@@ -1109,6 +1114,25 @@ mod tests {
         });
         assert!(printed.starts_with("Import complete"), "{printed}");
         assert_eq!(lineage(&root, &printed), None);
+    }
+
+    /// `contradict` / `retract` printed their report (with Hive's refusal
+    /// reasons) directly; it now passes the release point like the rest.
+    #[test]
+    fn a_curation_report_is_released() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let (_project, root) = project();
+        let lines = [
+            "Queued for @acme/main.".to_string(),
+            "Sent 1 event(s) to Hive.".to_string(),
+        ];
+        let printed = released_curation(&root, &lines);
+        assert_eq!(printed, "Queued for @acme/main.\nSent 1 event(s) to Hive.");
+        assert_eq!(lineage(&root, &printed), None);
+        let leaked = released_curation(&root, &[format!("1 event(s) refused: {AWS_KEY}")]);
+        assert!(!leaked.contains(AWS_KEY), "{leaked}");
     }
 
     /// `--json` and the stdout export: a redaction notice in front of the

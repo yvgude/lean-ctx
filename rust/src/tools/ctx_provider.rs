@@ -514,7 +514,19 @@ fn handle_registry_query(
     match mode {
         "chunks" => handle_registry_chunks(provider_id, resource, &params, ctx),
         "snapshot" => snapshot::handle(provider_id, resource, &params, ctx),
+        "text" => handle_registry_text(provider_id, resource, &params),
         _ => handle_registry_compact(provider_id, resource, &params, ctx),
+    }
+}
+
+/// `mode="text"`: the items with their bodies, for reading rather than
+/// listing. Not consolidated into the stores: a read of one page section or
+/// issue body is not a source pass, and indexing it would add a second chunk
+/// (and hints) beside the listing's.
+fn handle_registry_text(provider_id: &str, resource: &str, params: &ProviderParams) -> String {
+    match global_registry().execute_bound(provider_id, resource, params) {
+        Ok(bound) => format_result_text(&bound.result),
+        Err(e) => format!("Error: {e}"),
     }
 }
 
@@ -526,8 +538,13 @@ fn handle_registry_compact(
 ) -> String {
     match global_registry().execute_bound(provider_id, resource, params) {
         Ok(bound) => {
-            let chunks = bound.chunks(&bound.result);
-            consolidate_to_session(&chunks, ctx);
+            if global_registry()
+                .get(provider_id)
+                .is_none_or(|provider| provider.consolidates(resource))
+            {
+                let chunks = bound.chunks(&bound.result);
+                consolidate_to_session(&chunks, ctx);
+            }
             format_result(&bound.result)
         }
         Err(e) => format!("Error: {e}"),
@@ -801,12 +818,35 @@ fn handle_gitlab_pipelines(args: &serde_json::Map<String, serde_json::Value>) ->
 /// delivered items, and the withheld count reaches the caller only through
 /// the receipt's in-band gateway notice.
 pub(crate) fn format_result(result: &ProviderResult) -> String {
+    format_result_with(result, crate::core::providers::ProviderItem::format_compact)
+}
+
+/// [`format_result`] with each item's body under its list line
+/// (`mode="text"`): the way to read an issue, a ticket or an emspace page
+/// section through the gateway. Every item is admitted on its own, as there.
+pub(crate) fn format_result_text(result: &ProviderResult) -> String {
+    format_result_with(result, |item| {
+        let mut text = item.format_compact();
+        if let Some(body) = item.body.as_deref().filter(|body| !body.trim().is_empty()) {
+            text.push_str(body);
+            if !body.ends_with('\n') {
+                text.push('\n');
+            }
+        }
+        text
+    })
+}
+
+fn format_result_with(
+    result: &ProviderResult,
+    render: impl Fn(&crate::core::providers::ProviderItem) -> String,
+) -> String {
     let origin = format!("provider:{}/{}", result.provider, result.resource_type);
     let mut items = String::new();
     let mut delivered = 0usize;
     for item in &result.items {
         let item_origin = format!("{origin}/{}", item.id);
-        let text = crate::core::redaction::redact_text_if_enabled(&item.format_compact());
+        let text = crate::core::redaction::redact_text_if_enabled(&render(item));
         if let Ok(admitted) =
             crate::core::context_admission::admit_source(&text, &item_origin, false)
         {

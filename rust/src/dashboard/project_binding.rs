@@ -144,6 +144,7 @@ const PROJECT_WRITE_ROUTES: &[&str] = &[
     "/api/knowledge-relations/edit",
     "/api/context-overlay",
     "/api/context-policy",
+    "/api/graph/enrich",
 ];
 
 /// Writes to device-wide state (`config.toml`, the feedback outbox): a valid

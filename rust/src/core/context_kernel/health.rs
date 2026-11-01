@@ -60,20 +60,6 @@ pub fn is_healthy() -> bool {
     report.initialized && report.kernel_enabled
 }
 
-/// Formats a one-line human-readable Context Kernel health summary.
-#[must_use]
-pub fn format_health() -> String {
-    let report = kernel_health();
-    let state = if report.kernel_enabled { "ON" } else { "OFF" };
-    format!(
-        "Kernel: {state} | Dedup: {:.0}% hit | Schema: {} opts, {} tok saved | Evidence: {} entries",
-        report.dedup_hit_rate * 100.0,
-        report.schema_optimizations,
-        report.schema_tokens_saved,
-        report.evidence_chain_entries,
-    )
-}
-
 /// Returns the names of subsystems represented by [`HealthReport`].
 #[must_use]
 pub fn subsystem_names() -> &'static [&'static str] {
@@ -89,7 +75,7 @@ pub fn subsystem_names() -> &'static [&'static str] {
 
 #[cfg(test)]
 pub mod tests {
-    use super::{format_health, is_healthy, kernel_health};
+    use super::{is_healthy, kernel_health};
     use crate::core::context_kernel::{
         dedup_wiring, envelope_wiring, kernel_config, schema_wiring, startup,
     };
@@ -131,9 +117,10 @@ pub mod tests {
     }
 
     #[test]
-    fn format_readable() {
+    fn health_reports_uninitialized_until_startup() {
         let _guard = isolated();
+        assert!(!kernel_health().initialized);
         startup::initialize();
-        assert!(format_health().contains("Kernel:"));
+        assert!(kernel_health().initialized);
     }
 }

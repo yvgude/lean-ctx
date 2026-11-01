@@ -55,16 +55,18 @@ pub fn route_response(
                 r#"{"error":"authenticated dashboard required"}"#.into(),
             );
         }
-        return agent_control::handle(method, body);
+        return after_write(path, method, agent_control::handle(method, body));
     }
 
     if path == analysis_bridge::INPUTS || path == analysis_bridge::APPLY {
-        return analysis_bridge::handle(path, token.is_some(), method, body);
+        let result = analysis_bridge::handle(path, token.is_some(), method, body);
+        return after_write(path, method, result);
     }
 
-    // Response cache: return cached response for expensive read-only routes.
+    // Response cache: return cached response for expensive read-only routes,
+    // unless the read asks for a fresh answer (`_refresh=1`).
     let cache_key = response_cache::key(path);
-    if response_cache::is_cacheable(path, method) {
+    if response_cache::is_cacheable(path, method) && !helpers::wants_refresh(query_str) {
         if let Some(cached) = response_cache::get(&cache_key) {
             return cached;
         }
@@ -104,6 +106,26 @@ pub fn route_response(
     // Store in cache for subsequent requests within the TTL window.
     if response_cache::is_cacheable(path, method) && result.0 == "200 OK" {
         response_cache::put(&cache_key, result.1, &result.2);
+    }
+    after_write(path, method, result)
+}
+
+/// Drop the cached reads a successful write may have changed, so the next
+/// read shows the write instead of an answer computed before it.
+fn after_write(
+    path: &str,
+    method: &str,
+    result: (&'static str, &'static str, String),
+) -> (&'static str, &'static str, String) {
+    let read = method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD");
+    if !read && result.0.starts_with('2') {
+        response_cache::invalidate_all();
+        // The ROI answer shows the output holdout and the doctor report the
+        // setup: both read the config a settings write changes.
+        if path == "/api/settings" {
+            roi::invalidate();
+            doctor::invalidate();
+        }
     }
     result
 }

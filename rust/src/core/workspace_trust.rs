@@ -31,7 +31,7 @@ const TRUST_ALL_ENV: &str = "LEAN_CTX_TRUST_WORKSPACE";
 /// for fleet provisioning where the set of trusted repos is managed centrally.
 const TRUSTED_ROOTS_ENV: &str = "LEAN_CTX_TRUSTED_ROOTS";
 
-const FILE_NAME: &str = "workspace-trust.toml";
+pub(crate) const FILE_NAME: &str = "workspace-trust.toml";
 
 /// One trusted workspace: its canonical path plus the content hash of the
 /// `.lean-ctx.toml` reviewed at trust time (empty when no local file existed).
@@ -159,6 +159,25 @@ pub(crate) fn is_trusted_for(root: &Path, config_hash: &str) -> bool {
             .iter()
             .any(|w| w.path == canon && w.config_hash == config_hash)
     })
+}
+
+/// Whether the trust file at `store` pins `(root, config_hash)`. Reads no
+/// environment: the shell-security policy uses it with the trust file in the
+/// real user's config directory (see `config::shell_policy`).
+#[must_use]
+pub(crate) fn is_pinned_in_store(store: &Path, root: &Path, config_hash: &str) -> bool {
+    let canon = canonical(root);
+    if canon.is_empty() {
+        return false;
+    }
+    std::fs::read_to_string(store)
+        .ok()
+        .and_then(|text| toml::from_str::<TrustStore>(&text).ok())
+        .is_some_and(|s| {
+            s.workspaces
+                .iter()
+                .any(|w| w.path == canon && w.config_hash == config_hash)
+        })
 }
 
 /// Whether `root` is trusted at its current `.lean-ctx.toml` content. Reads the

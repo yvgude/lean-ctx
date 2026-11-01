@@ -41,23 +41,13 @@ pub fn record_from_tool_dispatch(
     super::evidence_hook::record_tool_call(tool_name, input_tokens, output_tokens);
 }
 
-/// Records evidence for one proxy-forwarded request.
-pub fn record_from_proxy_dispatch(
-    input_tokens: usize,
-    output_tokens: usize,
-    tokens_saved: usize,
-    model: Option<&str>,
-    provider: Option<&str>,
-) {
+/// Counts one proxy-forwarded request at the dispatch boundary.
+///
+/// Only the dispatch counters move here. The forward path's Context IR stage
+/// records the request once in the kernel evidence pipelines.
+pub fn record_from_proxy_dispatch(input_tokens: usize, output_tokens: usize, tokens_saved: usize) {
     PROXY_DISPATCHES.fetch_add(1, Ordering::Relaxed);
     record_dispatch(input_tokens, output_tokens, tokens_saved);
-    super::evidence_hook::record_proxy_call(
-        input_tokens,
-        output_tokens,
-        tokens_saved,
-        model,
-        provider,
-    );
 }
 
 /// Returns cumulative dispatch-boundary evidence totals.
@@ -111,11 +101,17 @@ pub mod tests {
     fn proxy_dispatch_records() {
         let _guard = isolated();
         for _ in 0..2 {
-            record_from_proxy_dispatch(20, 5, 8, Some("gpt-test"), Some("openai"));
+            record_from_proxy_dispatch(20, 5, 8);
         }
         let summary = dispatch_summary();
         assert_eq!(summary.proxy_dispatches, 2);
         assert_eq!(summary.total_input_tokens, 40);
+        // The Context IR stage owns the per-request evidence; a dispatch adds none.
+        assert_eq!(evidence_hook::evidence_report().proxy_calls, 0);
+        assert_eq!(
+            crate::core::context_kernel::usage_normalizer::session_usage().total_requests,
+            0
+        );
     }
 
     #[test]
@@ -125,7 +121,7 @@ pub mod tests {
         features.enabled = false;
         kernel_config::update_features(features);
         record_from_tool_dispatch("ctx_read", 10, 4, 6);
-        record_from_proxy_dispatch(20, 5, 8, None, None);
+        record_from_proxy_dispatch(20, 5, 8);
         assert_eq!(evidence_hook::evidence_report().tool_calls, 0);
         assert_eq!(evidence_hook::evidence_report().proxy_calls, 0);
         assert_eq!(dispatch_summary().tool_dispatches, 1);
@@ -136,7 +132,7 @@ pub mod tests {
     fn reset_clears_all() {
         let _guard = isolated();
         record_from_tool_dispatch("ctx_read", 10, 4, 6);
-        record_from_proxy_dispatch(20, 5, 8, None, None);
+        record_from_proxy_dispatch(20, 5, 8);
         reset();
         let summary = dispatch_summary();
         assert_eq!(summary.tool_dispatches, 0);
