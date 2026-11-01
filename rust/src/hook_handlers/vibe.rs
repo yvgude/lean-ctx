@@ -242,10 +242,16 @@ mod tests {
     fn bash_nonrewritable_denied_only_in_replace() {
         // Heredocs cannot survive the quoting round-trip, so `rewrite_candidate`
         // declines them (#140) — the ideal non-rewritable probe.
+        // The allowlist verdict for the native command reads process-wide env
+        // that other tests set (an override without `cat`); pin it.
+        let _lock = crate::core::data_dir::test_env_lock();
+        let _mode = crate::test_env::VarGuard::set("LEAN_CTX_SHELL_SECURITY", "enforce");
+        let _list = crate::test_env::VarGuard::set("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "cat");
         let heredoc = serde_json::json!({ "command": "cat <<EOF\nhi\nEOF" });
+        let passthrough = decide(&inv("bash", &heredoc), "lean-ctx", HookMode::Mcp);
         assert!(
-            decide(&inv("bash", &heredoc), "lean-ctx", HookMode::Mcp).is_none(),
-            "non-rewritable bash passes through outside Replace"
+            passthrough.is_none(),
+            "non-rewritable bash passes through outside Replace: {passthrough:?}"
         );
         let out = decide(&inv("bash", &heredoc), "lean-ctx", HookMode::Replace).unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();

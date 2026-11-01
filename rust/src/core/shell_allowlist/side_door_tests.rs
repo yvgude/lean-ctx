@@ -726,7 +726,16 @@ fn relative_paths_resolve_in_the_run_directory() {
     let _mode = crate::test_env::VarGuard::set("LEAN_CTX_SHELL_SECURITY", "enforce");
     let project = tempfile::tempdir().expect("project");
     let up = "../".repeat(40);
-    let home_rel = home.to_string_lossy().trim_start_matches('/').to_string();
+    // Without the root and the drive (`C:` on Windows): the temp dir and home
+    // share a drive, so 40 `../` reach its root on every platform.
+    let home_rel = home
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/");
     let into_state = format!("cp /tmp/e {up}{home_rel}/.config/lean-ctx/config.toml");
     let grant: Vec<String> = Vec::new();
     let in_project = |cmd: &str| {

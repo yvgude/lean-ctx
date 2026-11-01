@@ -23522,11 +23522,11 @@
    "size": 7344
   },
   {
-   "blob": "4e07f27576ca7445b8a3d77efd9bd680a5d51edd",
+   "blob": "55b6cf0457d6ee5e50e06bd82b4d9820b4a1c98e",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/side_door_tests.rs",
-   "sha256": "85967e7b0ae56c3f205a9f46b00ca53d099634828778a45899daae56fc536cf2",
-   "size": 28208
+   "sha256": "e435b3d16d2b4a10cef6c38275dbbf283abbe57b2803b802dda87af60f8269fa",
+   "size": 28532
   },
   {
    "blob": "de17c6beb27a75435966e1818ad6034c68ca392f",
@@ -25762,11 +25762,11 @@
    "size": 5522
   },
   {
-   "blob": "38af380db71f6e9d63563185829ded531ea00954",
+   "blob": "ac4fbf02a96ece8dc020c24e5280afd79188b87e",
    "mode": "100644",
    "path": "rust/src/hook_handlers/vibe.rs",
-   "sha256": "3193b35276743fe4e70060be62e5af7936c98b8e3d7a21089d828d56dd15801d",
-   "size": 12314
+   "sha256": "1975553577a48557309730a3f26aa40797dd67917a5cee01ba084fa438028659",
+   "size": 12764
   },
   {
    "blob": "c141692f23ae558e0c28a1c42f962f4f85a6b866",
@@ -33978,7 +33978,7 @@
  ],
  "manifest_sha256": "0d45974d80507623415889b4c3ab4ff5cd7366f7076828f9e168a16d33691261",
  "schema": 1,
- "source_commit": "ce4df17c70becdabb06095ff518ab827162a7850",
+ "source_commit": "79deb1c76049e7d99e33e26bd73c217fcb4afebc",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "fe948367a2dfe7730f8f3044d4f97666ba9a4cebc816297c747442b3696e1cfa"
+ "tree_sha256": "f32375e49d77b8e22832ef39ecee7040891bc363e097803d68ee3e7a4c7ef300"
 }
