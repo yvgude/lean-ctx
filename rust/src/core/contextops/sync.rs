@@ -82,9 +82,9 @@ mod tests {
     /// Scope Claude's config dir into the sandbox so a test can never write into
     /// the developer's real `~/.claude` — `CLAUDE_CONFIG_DIR` is the only agent
     /// detection path that escapes `home`.
-    fn scope_claude_into(home: &std::path::Path) -> crate::setup::EnvVarGuard {
+    fn scope_claude_into(home: &std::path::Path) -> crate::test_env::EnvVarGuard {
         let claude_dir = home.join(".claude").to_string_lossy().into_owned();
-        crate::setup::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &claude_dir)
+        crate::test_env::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &claude_dir)
     }
 
     // `sync_all` is idempotent and side-effect-scoped: a second sync over the same
@@ -159,8 +159,8 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let home = TempHome::new("claude_all");
         let _claude = scope_claude_into(&home.path);
-        let _rules = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-        let _scope = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+        let _rules = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _scope = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
         let claude_dir = home.path.join(".claude");
         std::fs::create_dir_all(&claude_dir).unwrap();
         std::fs::write(
@@ -191,8 +191,8 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let home = TempHome::new("claude_agent");
         let _claude = scope_claude_into(&home.path);
-        let _rules = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-        let _scope = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+        let _rules = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _scope = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
         let md = home.path.join(".claude/CLAUDE.md");
         let legacy = home.path.join(".claude/rules/lean-ctx.md");
         std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
@@ -249,8 +249,8 @@ mod tests {
         ] {
             let home = TempHome::new(&format!("claude_policy_{scope}_{injection}"));
             let _claude = scope_claude_into(&home.path);
-            let _scope = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", scope);
-            let _rules = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", injection);
+            let _scope = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", scope);
+            let _rules = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", injection);
             let report = sync_agent(&home.path, "claude");
             assert!(report.errors.is_empty(), "{:?}", report.errors);
             assert!(report.synced.is_empty(), "{:?}", report.synced);

@@ -1828,15 +1828,8 @@ mod response_cache_tests {
 }
 
 mod request_binding_tests {
+    use crate::server::isolation_fixture::git_projects;
     use crate::tools::LeanCtxServer;
-
-    fn git_projects() -> (tempfile::TempDir, tempfile::TempDir) {
-        let projects = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        for project in [&projects.0, &projects.1] {
-            std::fs::create_dir(project.path().join(".git")).unwrap();
-        }
-        projects
-    }
 
     fn uri(project: &tempfile::TempDir) -> String {
         format!("file://{}", project.path().display())
@@ -2254,188 +2247,15 @@ mod request_binding_tests {
         assert!(saved.evidence.iter().any(|e| e.key == "c06:before-switch"));
     }
 
-    async fn call_text(server: &LeanCtxServer, tool: &str, args: &serde_json::Value) -> String {
-        let result = crate::server::call_tool::dispatch_and_post_process(
-            server,
-            tool,
-            args.as_object(),
-            false,
-            crate::core::config::Config::load_arc(),
-            false,
-            None,
-            None,
-            format!("{tool}:{args}"),
-            None,
-        )
-        .await;
-        match result {
-            Ok(result) => result
-                .content
-                .iter()
-                .filter_map(|content| content.as_text().map(|t| t.text.clone()))
-                .collect(),
-            Err(error) => error.message.to_string(),
-        }
-    }
-
-    /// I08: one canary in a project's source (read into the content cache,
-    /// indexed, in the call graph), its knowledge, knowledge archive and
-    /// shared memory. Tool calls and the dashboard inspector bound to another
-    /// project answer exactly as they answer for a term that exists nowhere:
-    /// no title, snippet, count or hint of the canary.
+    /// I08 (tool half): one canary in a project's source (read into the
+    /// content cache, indexed, in the call graph), its knowledge, knowledge
+    /// archive and shared memory. Tool calls from another project answer
+    /// exactly as they answer for a term that exists nowhere: no title,
+    /// snippet, count or hint of the canary. The dashboard half lives with
+    /// the dashboard routes.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn one_canary_in_every_store_of_a_project_is_invisible_from_another() {
-        const CANARY: &str = "zqcanaryeight";
-        const ABSENT: &str = "zqnowhereeight";
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
-        let (first, second) = git_projects();
-        let owner = LeanCtxServer::new_with_project_root(Some(&first.path().to_string_lossy()));
-        let first_root = owner.session.read().await.project_root.clone().unwrap();
-        let source = std::path::Path::new(&first_root).join(format!("{CANARY}_vault.rs"));
-        std::fs::write(
-            &source,
-            format!("pub fn {CANARY}_vault() -> u8 {{ {CANARY}_seal() }}\nfn {CANARY}_seal() -> u8 {{ 8 }}\n"),
-        )
-        .unwrap();
-        let read = call_text(&owner, "ctx_read", &serde_json::json!({"path": source})).await;
-        assert!(read.contains(CANARY), "{read}");
-        let indexed = call_text(
-            &owner,
-            "ctx_search",
-            &serde_json::json!({"action": "semantic", "query": CANARY}),
-        )
-        .await;
-        assert!(indexed.contains(CANARY), "{indexed}");
-        let graph =
-            crate::core::call_graph::CallGraph::build(&crate::core::call_graph::CallGraphInputs {
-                project_root: first_root.clone(),
-                file_paths: vec![format!("{CANARY}_vault.rs")],
-                ..Default::default()
-            });
-        graph.save().unwrap();
-        let fact = format!("{CANARY} keys live in the vault");
-        call_text(
-            &owner,
-            "ctx_knowledge",
-            &serde_json::json!({"action": "remember", "category": "decision", "key": CANARY, "value": fact}),
-        )
-        .await;
-        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(std::path::PathBuf::from(&first_root))),
-            || {
-                let knowledge = crate::core::knowledge::ProjectKnowledge::load(&first_root)
-                    .expect("the canary fact was stored");
-                let stored: Vec<_> = knowledge
-                    .facts
-                    .into_iter()
-                    .filter(|f| f.key == CANARY)
-                    .collect();
-                assert_eq!(stored.len(), 1);
-                crate::core::memory_lifecycle::archive_facts(&stored).unwrap();
-            },
-        );
-        crate::core::shared_context::SharedContext::for_project(&first_root)
-            .and_then(|store| store.put(format!("{CANARY} shared note"), "a1", "fact"))
-            .unwrap();
-
-        let other = LeanCtxServer::new_with_project_root(Some(&second.path().to_string_lossy()));
-        let second_root = other.session.read().await.project_root.clone().unwrap();
-        let probes = |term: &str| {
-            [
-                (
-                    "ctx_knowledge",
-                    serde_json::json!({"action": "recall", "query": term}),
-                ),
-                (
-                    "ctx_knowledge",
-                    serde_json::json!({"action": "search", "query": term}),
-                ),
-                ("ctx_search", serde_json::json!({"pattern": term})),
-                (
-                    "ctx_search",
-                    serde_json::json!({"action": "semantic", "query": term}),
-                ),
-                (
-                    "ctx_memory",
-                    serde_json::json!({"action": "get", "query": term}),
-                ),
-                (
-                    "ctx_callgraph",
-                    serde_json::json!({"action": "callers", "symbol": format!("{term}_seal")}),
-                ),
-            ]
-        };
-        for ((tool, canary_args), (_, absent_args)) in
-            probes(CANARY).into_iter().zip(probes(ABSENT))
-        {
-            // A one-time setup tip may trail whichever call comes first; it
-            // is session state, not project content.
-            let untipped = |text: String| match text.find("\n\n--- tip:") {
-                Some(at) => text[..at].to_string(),
-                None => text,
-            };
-            let seen = untipped(call_text(&other, tool, &canary_args).await);
-            let baseline = untipped(call_text(&other, tool, &absent_args).await);
-            // An answer may echo the caller's own query term; whether it
-            // leaks is decided against a term no project has ever held.
-            assert_eq!(
-                seen.replace(CANARY, "TERM"),
-                baseline.replace(ABSENT, "TERM"),
-                "{tool} answers differently for a foreign canary"
-            );
-        }
-        // The content cache holds the first project's file: a read of it
-        // from the other project is refused, not served from the cache.
-        // `no-jail` turns the path jail off on purpose, so only with it on.
-        #[cfg(not(feature = "no-jail"))]
-        {
-            let foreign_read =
-                call_text(&other, "ctx_read", &serde_json::json!({"path": source})).await;
-            assert!(
-                !foreign_read.contains(&format!("{CANARY}_seal")),
-                "{foreign_read}"
-            );
-        }
-
-        let _bound = crate::test_env::VarGuard::set("LEAN_CTX_DASHBOARD_PROJECT", &second_root);
-        for route in [
-            "/api/knowledge",
-            "/api/knowledge-relations",
-            "/api/memory",
-            "/api/search",
-            "/api/search-index",
-            "/api/symbols",
-            "/api/call-graph",
-            "/api/graph",
-            "/api/session",
-            "/api/intent",
-            "/api/procedures",
-            "/api/gotchas",
-        ] {
-            let body_for = |term: &str| {
-                let query = format!("q={term}");
-                crate::dashboard::routes::route_response(route, &query, None, None, true, "GET", "")
-                    .2
-            };
-            // The bound project's own session remembers the last semantic
-            // query it ran — the absent term, probed last (I07: the query
-            // lands in the caller's own session). That is its own state, not
-            // the first project's.
-            let own_last_query = format!("\"last_semantic_query\":\"{ABSENT}\"");
-            let (seen, baseline) = (
-                body_for(CANARY).replace(&own_last_query, ""),
-                body_for(ABSENT).replace(&own_last_query, ""),
-            );
-            // The bound project's own session lists its own queries and a
-            // route may echo the query; anything from the first project
-            // would make the canary appear more often than the absent term.
-            assert_eq!(
-                seen.matches(CANARY).count(),
-                baseline.matches(ABSENT).count(),
-                "{route}: {seen}"
-            );
-        }
+        crate::server::isolation_fixture::canary_invisible_to_tools().await;
     }
 
     /// I04: a host that authorises two roots without asking for an

@@ -381,8 +381,8 @@ pub async fn forward_request(
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .take()
         .ok_or(StatusCode::CONFLICT)?;
-    let value_metrics = super::value_gate_proxy::session_metrics();
-    let compression_ratio = super::value_gate_proxy::compression_ratio();
+    let value_metrics = crate::core::proxy_value_metrics::session_metrics();
+    let compression_ratio = crate::core::proxy_value_metrics::compression_ratio();
     if let Ok(value) = HeaderValue::from_str(&format!("{compression_ratio:.4}")) {
         response
             .headers_mut()
@@ -855,7 +855,7 @@ async fn prepare_upstream_request(
         .as_ref()
         .map_or_else(|| trace_id.clone(), |context| context.session_id.clone());
     #[cfg(feature = "enterprise")]
-    let causal_turn_provided = super::value_gate_proxy::session_metrics()
+    let causal_turn_provided = crate::core::proxy_value_metrics::session_metrics()
         .request_count
         .saturating_add(1);
     let context_ir = {

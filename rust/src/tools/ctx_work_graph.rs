@@ -934,3 +934,60 @@ fn ensure_active_agent(project_root: &str, agent_id: &str) -> Result<(), String>
 #[cfg(test)]
 #[path = "ctx_work_graph_lifecycle_tests.rs"]
 mod lifecycle_tests;
+
+/// The host-start actions with their test request and node views, for the
+/// lifecycle tests here and the end-to-end test that drives a started child
+/// against the HTTP delivery endpoint.
+#[cfg(test)]
+pub(crate) mod test_api {
+    use super::{Request, WorkGraphStore};
+
+    #[cfg(feature = "http-server")]
+    pub(crate) fn start(request: &Request<'_>) -> Result<String, String> {
+        super::start(request)
+    }
+
+    #[cfg(feature = "http-server")]
+    pub(crate) fn receipt(request: &Request<'_>) -> Result<String, String> {
+        super::receipt(request)
+    }
+
+    pub(crate) fn request<'a>(action: &'a str, project: &'a str, agent: &'a str) -> Request<'a> {
+        Request {
+            action,
+            project_root: project,
+            agent_id: agent,
+            graph_id: "graph",
+            node_id: Some("child"),
+            if_revision: None,
+            parent_node_id: None,
+            to_agent: None,
+            capsule_ref: None,
+            outcome_ref: None,
+            tokens: None,
+            cost_micros: None,
+            max_concurrency: None,
+            receipt_id: None,
+            execution_fence: None,
+            outcome: None,
+            claims: None,
+            accepted_nodes: None,
+            stop_reason: None,
+            timeout_ms: None,
+            path_claims: None,
+            task_ref: None,
+            policy_ref: None,
+            expected_outcome_ref: None,
+        }
+    }
+
+    pub(crate) fn node(project: &str) -> crate::core::work_graph::WorkNode {
+        WorkGraphStore::load(project)
+            .unwrap()
+            .graph("graph")
+            .unwrap()
+            .get_node("child")
+            .unwrap()
+            .clone()
+    }
+}

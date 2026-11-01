@@ -19,7 +19,7 @@ fn options() -> SessionToolOptions<'static> {
 #[test]
 fn persistent_direct_actions_refuse_missing_project_scope() {
     let session = SessionState::new();
-    for action in ["list", "restore", "episodes", "procedures"] {
+    for action in ["list", "restore"] {
         let result = prepare_admitted_action(&session, &[], action, None, None, options());
         assert!(
             result.is_err(),
@@ -28,17 +28,49 @@ fn persistent_direct_actions_refuse_missing_project_scope() {
     }
 
     let mut direct = session.clone();
-    let output = handle(
-        &mut direct,
-        &[],
-        "episodes",
-        Some("search"),
-        None,
-        options(),
-    );
+    let output = handle(&mut direct, &[], "list", None, None, options());
     assert!(output.starts_with("ERROR:"));
     assert_eq!(direct.id, session.id);
     assert_eq!(direct.project_root, session.project_root);
+}
+
+#[test]
+fn retired_episode_and_procedure_actions_are_no_ops_that_point_to_knowledge() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let project = tempfile::tempdir().expect("project root");
+    let root = project.path().to_string_lossy().into_owned();
+    let mut session = SessionState::new();
+    session.project_root = Some(root.clone());
+    session.shell_cwd = Some(root);
+    let memory = crate::core::data_dir::lean_ctx_data_dir()
+        .expect("isolated data directory")
+        .join("memory");
+    let legacy = memory.join("episodes").join("legacy.json");
+    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    std::fs::write(&legacy, "{}").unwrap();
+
+    for (action, value) in [
+        ("episodes", None),
+        ("episodes", Some("record")),
+        ("episodes", Some("search build")),
+        ("episodes", Some("outcome success")),
+        ("procedures", None),
+        ("procedures", Some("detect")),
+        ("procedures", Some("suggest deploy")),
+    ] {
+        let mut direct = session.clone();
+        let output = handle(&mut direct, &[], action, value, None, options());
+        let expected = format!(
+            "DEPRECATION: action=\"{action}\" is retired with the episode and procedure memory and has no effect. Decisions, findings and gotchas live in ctx_knowledge (action=recall or action=search)."
+        );
+        assert_eq!(output, expected, "{action} {value:?}");
+        assert_eq!(
+            super::handle_without_session(action, value, None).as_deref(),
+            Some(expected.as_str())
+        );
+    }
+    assert!(!memory.join("procedures").exists(), "no store is created");
+    assert_eq!(std::fs::read_to_string(&legacy).unwrap(), "{}");
 }
 
 #[test]
@@ -98,47 +130,6 @@ fn list_admits_full_task_before_truncating_display() {
     receiver.project_root = Some(root.clone());
     receiver.shell_cwd = Some(root);
     assert_eq!(handle_scoped_list(&receiver).unwrap(), "No sessions found.");
-}
-
-#[test]
-fn completed_task_episode_is_written_only_after_commit_callback() {
-    let _data = crate::core::data_dir::isolated_data_dir();
-    let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
-    let project = tempfile::tempdir().expect("project root");
-    let root = project.path().to_string_lossy().into_owned();
-    let mut session = SessionState::new();
-    session.project_root = Some(root.clone());
-    session.shell_cwd = Some(root);
-    let prepared = prepare_admitted_action(
-        &session,
-        &[],
-        "task",
-        Some("Finished the task [done]"),
-        None,
-        options(),
-    )
-    .expect("admitted completion");
-    assert!(prepared.completed_task);
-
-    let hash = crate::core::project_hash::hash_project_root(
-        prepared
-            .candidate
-            .strict_project_root()
-            .as_deref()
-            .expect("trusted root"),
-    );
-    assert!(crate::core::episodic_memory::EpisodicStore::load(&hash).is_none());
-    let note = super::record_completed_task_after_commit(
-        &prepared.candidate,
-        prepared.completed_task,
-        &[],
-        None,
-    );
-    assert!(note.is_some(), "post-commit storage should succeed");
-    assert!(
-        crate::core::episodic_memory::EpisodicStore::load(&hash)
-            .is_some_and(|store| !store.episodes.is_empty())
-    );
 }
 
 #[test]

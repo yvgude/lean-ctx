@@ -4,8 +4,6 @@
 use super::*;
 use crate::core::consolidation_engine::ConsolidateOptions;
 use crate::core::memory_lifecycle::LifecycleReport;
-use crate::core::procedural_memory::ProceduralStore;
-use crate::core::procedural_memory::Procedure;
 use crate::test_env::CurrentDirGuard;
 
 struct DataDirGuard;
@@ -75,9 +73,6 @@ fn report(session_id: Option<String>, session_items: usize) -> KnowledgeConsolid
         history: 3,
         history_capacity_target: 6,
         history_compacted: 1,
-        procedures: 4,
-        procedure_capacity_target: 6,
-        procedures_compacted: 2,
         lifecycle: LifecycleReport {
             decayed_count: 1,
             consolidated_count: 2,
@@ -109,55 +104,13 @@ fn consolidation_report_includes_session_and_lifecycle_stats() {
             "Patterns: 2 (target <= 6, compacted 0), History: 3 (target <= 6, compacted 1)"
         )
     );
-    assert!(out.contains("Procedures: 4 (target <= 6, compacted 2)"));
+    assert!(
+        !out.contains("Procedures"),
+        "the procedure store is retired"
+    );
     assert!(out.contains("archived 3, compacted 4, remaining 5"));
     // Lossless: a run that archived items points at the restore path.
     assert!(out.contains("restore with: lean-ctx knowledge restore"));
-}
-
-fn test_procedure(id: usize, confidence: f32) -> Procedure {
-    Procedure {
-        id: format!("p-{id}"),
-        name: format!("workflow-{id}"),
-        description: "test workflow".to_string(),
-        steps: Vec::new(),
-        activation_keywords: Vec::new(),
-        confidence,
-        times_used: id as u32,
-        times_succeeded: id as u32,
-        last_used: Utc::now(),
-        project_specific: true,
-        created_at: Utc::now(),
-    }
-}
-
-#[test]
-fn consolidation_compacts_procedures_above_target() {
-    let _env_lock = crate::core::data_dir::test_env_lock();
-    let data_dir = tempfile::tempdir().unwrap();
-    let _data_dir = DataDirGuard::set(data_dir.path());
-    let project = tempfile::tempdir().unwrap();
-    let root = project.path().to_string_lossy().to_string();
-    let project_hash = ProjectKnowledge::new(&root).project_hash;
-    let mut store = ProceduralStore::new(&project_hash);
-    // Hysteresis (#995): reclaim triggers only at/above the cap (100), then
-    // settles at the headroom target (75). 100 -> keep 75, archive 25.
-    for i in 0..100 {
-        store.procedures.push(test_procedure(i, i as f32 / 100.0));
-    }
-    store.save().unwrap();
-
-    let report = consolidate_project_knowledge(&root).unwrap();
-    let reloaded = ProceduralStore::load(&project_hash).unwrap();
-
-    assert_eq!(report.procedures, 75);
-    assert_eq!(report.procedure_capacity_target, 75);
-    assert_eq!(report.procedures_compacted, 25);
-    assert_eq!(reloaded.procedures.len(), 75);
-    // Lowest-retention procedures (smallest id/confidence) are the ones evicted.
-    assert!(!reloaded.procedures.iter().any(|p| p.id == "p-0"));
-    assert!(!reloaded.procedures.iter().any(|p| p.id == "p-24"));
-    assert!(reloaded.procedures.iter().any(|p| p.id == "p-99"));
 }
 
 #[test]
@@ -167,13 +120,19 @@ fn consolidate_dry_run_previews_without_mutating() {
     let _data_dir = DataDirGuard::set(data_dir.path());
     let project = tempfile::tempdir().unwrap();
     let root = project.path().to_string_lossy().to_string();
-    let project_hash = ProjectKnowledge::new(&root).project_hash;
-
-    let mut store = ProceduralStore::new(&project_hash);
+    let mut knowledge = ProjectKnowledge::new(&root);
+    // Hysteresis (#995): reclaim triggers only at/above the cap (100), then
+    // settles at the headroom target (75). 100 -> keep 75, archive 25.
     for i in 0..100 {
-        store.procedures.push(test_procedure(i, i as f32 / 100.0));
+        knowledge
+            .history
+            .push(crate::core::knowledge::ConsolidatedInsight {
+                summary: format!("summary {i}"),
+                from_sessions: vec![format!("s{i}")],
+                timestamp: Utc::now(),
+            });
     }
-    store.save().unwrap();
+    knowledge.save().unwrap();
 
     let report =
         consolidate_project_knowledge_with(&root, &ConsolidateOptions::manual().into_dry_run())
@@ -181,13 +140,13 @@ fn consolidate_dry_run_previews_without_mutating() {
 
     // The preview reports the reclaim that *would* happen…
     assert!(report.dry_run);
-    assert_eq!(report.procedures, 100);
-    assert_eq!(report.procedures_compacted, 25);
+    assert_eq!(report.history, 100);
+    assert_eq!(report.history_compacted, 25);
     assert!(format_consolidation_report(&report).contains("DRY RUN"));
 
-    // …but the store on disk is byte-for-byte untouched.
-    let reloaded = ProceduralStore::load(&project_hash).unwrap();
-    assert_eq!(reloaded.procedures.len(), 100);
+    // …but the store on disk is untouched.
+    let reloaded = ProjectKnowledge::load(&root).unwrap();
+    assert_eq!(reloaded.history.len(), 100);
 }
 
 #[test]
@@ -221,24 +180,13 @@ fn consolidation_does_not_capacity_compact_at_twenty_five_percent_free() {
     }
     knowledge.save().unwrap();
 
-    let mut procedures = ProceduralStore::new(&knowledge.project_hash);
-    for i in 0..75 {
-        procedures
-            .procedures
-            .push(test_procedure(i, i as f32 / 100.0));
-    }
-    procedures.save().unwrap();
-
     let report = consolidate_project_knowledge(&root).unwrap();
     let reloaded = ProjectKnowledge::load(&root).unwrap();
-    let reloaded_procedures = ProceduralStore::load(&knowledge.project_hash).unwrap();
 
     assert_eq!(report.lifecycle.archived_count, 0);
     assert_eq!(report.history_compacted, 0);
-    assert_eq!(report.procedures_compacted, 0);
     assert_eq!(reloaded.facts.len(), 150);
     assert_eq!(reloaded.history.len(), 75);
-    assert_eq!(reloaded_procedures.procedures.len(), 75);
 }
 
 /// Knowledge has no fact limit (owner decision 2026-10-24): a project with

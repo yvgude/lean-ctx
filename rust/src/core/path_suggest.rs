@@ -70,6 +70,29 @@ pub(crate) fn unambiguous_match(path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// [`unambiguous_match`], plus one more mechanical slip: a path built from a
+/// search result's directory-relative hit on the wrong prefix
+/// (`src/app/signal/test_x.py` after a search under `tests/` listed
+/// `signal/test_x.py`). The file is then looked up under the whole
+/// `project_root`; it is taken only when exactly one file there shares the
+/// longest trailing part with `path`, and that part names at least its
+/// directory and file (`signal/test_x.py`) — a bare file-name match stays a
+/// suggestion.
+pub(crate) fn unambiguous_match_in(path: &Path, project_root: &Path) -> Option<PathBuf> {
+    if let Some(found) = unambiguous_match(path) {
+        return Some(found);
+    }
+    if path.exists() || !path.starts_with(project_root) || !project_root.is_dir() {
+        return None;
+    }
+    let (ranked, _) = ranked_tail_matches(project_root, path);
+    match ranked.as_slice() {
+        [(shared, only)] if *shared >= 2 => Some(only.clone()),
+        [(shared, best), (next, _), ..] if *shared >= 2 && next < shared => Some(best.clone()),
+        _ => None,
+    }
+}
+
 /// The suggestions as a one-line suffix for an error message, or "".
 pub(crate) fn hint(path: &Path) -> String {
     let found = suggestions(path);
@@ -239,6 +262,30 @@ mod tests {
         assert_eq!(unambiguous_match(&root.join("rust/src/main.ts")), None);
         // Existing paths are never substituted.
         assert_eq!(unambiguous_match(&root.join("rust/src/main.rs")), None);
+    }
+
+    #[test]
+    fn project_wide_match_repairs_a_search_relative_path_on_the_wrong_prefix() {
+        let dir = project();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("tests/core")).unwrap();
+        std::fs::write(root.join("tests/core/test_config.rs"), "").unwrap();
+        // `rust/src/core` exists, so only the project-wide lookup finds it.
+        let wanted = root.join("rust/src/core/test_config.rs");
+        assert_eq!(unambiguous_match(&wanted), None);
+        assert_eq!(
+            unambiguous_match_in(&wanted, root),
+            Some(root.join("tests/core/test_config.rs"))
+        );
+        // A bare file-name match is a different file: suggestion only.
+        assert_eq!(
+            unambiguous_match_in(&root.join("rust/src/other/test_config.rs"), root),
+            None
+        );
+        // Two files sharing the same tail: no substitute.
+        std::fs::create_dir_all(root.join("more/core")).unwrap();
+        std::fs::write(root.join("more/core/test_config.rs"), "").unwrap();
+        assert_eq!(unambiguous_match_in(&wanted, root), None);
     }
 
     #[test]

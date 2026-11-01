@@ -565,36 +565,6 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
             ));
         }
 
-        let episodes_path = data_dir
-            .join("memory")
-            .join("episodes")
-            .join(format!("{hash}.json"));
-        if let Ok(content) = std::fs::read_to_string(&episodes_path)
-            && let Ok(e) =
-                serde_json::from_str::<crate::core::episodic_memory::EpisodicStore>(&content)
-        {
-            checks.push((
-                "episodes".to_string(),
-                e.episodes.len(),
-                policy.episodic.max_episodes,
-            ));
-        }
-
-        let procedures_path = data_dir
-            .join("memory")
-            .join("procedures")
-            .join(format!("{hash}.json"));
-        if let Ok(content) = std::fs::read_to_string(&procedures_path)
-            && let Ok(p) =
-                serde_json::from_str::<crate::core::procedural_memory::ProceduralStore>(&content)
-        {
-            checks.push((
-                "procedures".to_string(),
-                p.procedures.len(),
-                policy.procedural.max_procedures,
-            ));
-        }
-
         let mut warnings: Vec<String> = Vec::new();
         let mut critical = false;
 

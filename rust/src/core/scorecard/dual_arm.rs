@@ -23,7 +23,7 @@
 //!   affects. The headline therefore never borrows credit from output pricing.
 //! * Prices come from the shared embedded `ModelPricing` table via
 //!   `ModelCost::estimate_usd` — the same function that prices the user's real
-//!   proxy bill ([`crate::proxy::usage_meter`]).
+//!   proxy bill ([`crate::core::proxy_usage`]).
 //! * The result is reproducible: every number is a deterministic function of the
 //!   corpus + pricing, captured in a BLAKE3 `determinism_digest` (#498).
 //!

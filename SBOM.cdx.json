@@ -2,6 +2,54 @@
   "bomFormat": "CycloneDX",
   "components": [
     {
+      "bom-ref": "path+file://./rust/crates/lean-ctx-compress#0.1.0",
+      "description": "Deterministic text compressors (Markdown, JSON, CSV/TSV, YAML, HTML) for the LeanCTX Engine.",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://leanctx.com"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/yvgude/lean-ctx"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "name": "lean-ctx-compress",
+      "purl": "pkg:cargo/lean-ctx-compress@0.1.0?download_url=file://crates/lean-ctx-compress",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.0"
+    },
+    {
+      "bom-ref": "path+file://./rust/crates/lean-ctx-fs#0.1.0",
+      "description": "Filesystem and environment foundation for the LeanCTX Engine: atomic writes, file locks, hashing, JSONC, home resolution.",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://leanctx.com"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/yvgude/lean-ctx"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "name": "lean-ctx-fs",
+      "purl": "pkg:cargo/lean-ctx-fs@0.1.0?download_url=file://crates/lean-ctx-fs",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.0"
+    },
+    {
       "bom-ref": "path+file://./rust/crates/lean-ctx-ocla#4.0.0",
       "description": "Open Context & Token Lifecycle Architecture \u2014 the provider-neutral contract boundary (capability traits, canonical types, token envelopes) shared between lean-ctx-core (OSS) and lean-ctx-enterprise (proprietary).",
       "externalReferences": [
@@ -22,6 +70,30 @@
       "version": "4.0.0"
     },
     {
+      "bom-ref": "path+file://./rust/crates/lean-ctx-patterns#0.1.0",
+      "description": "Deterministic shell-output compression patterns and token counting for the LeanCTX Engine.",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://leanctx.com"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/yvgude/lean-ctx"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "name": "lean-ctx-patterns",
+      "purl": "pkg:cargo/lean-ctx-patterns@0.1.0?download_url=file://crates/lean-ctx-patterns",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.0"
+    },
+    {
       "bom-ref": "path+file://./rust/crates/lean-ctx-protocol#0.4.0",
       "description": "Open wire contracts for lean-ctx: events, observations, assignments, evidence gaps.",
       "externalReferences": [
@@ -40,6 +112,54 @@
       "scope": "required",
       "type": "library",
       "version": "0.4.0"
+    },
+    {
+      "bom-ref": "path+file://./rust/crates/lean-ctx-syntax#0.1.0",
+      "description": "Tree-sitter based code structure for the LeanCTX Engine: signatures, deep AST queries, import resolution and the post-edit syntax gate.",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://leanctx.com"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/yvgude/lean-ctx"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "name": "lean-ctx-syntax",
+      "purl": "pkg:cargo/lean-ctx-syntax@0.1.0?download_url=file://crates/lean-ctx-syntax",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.0"
+    },
+    {
+      "bom-ref": "path+file://./rust/crates/lean-ctx-workgraph#0.1.0",
+      "description": "Bounded multi-agent work graph, budget cascade and outcome evaluation model for the LeanCTX Engine.",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://leanctx.com"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/yvgude/lean-ctx"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "name": "lean-ctx-workgraph",
+      "purl": "pkg:cargo/lean-ctx-workgraph@0.1.0?download_url=file://crates/lean-ctx-workgraph",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.0"
     },
     {
       "bom-ref": "path+file://./rust/crates/leanctx-native-storage#0.1.1",
@@ -16749,8 +16869,13 @@
         "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
         "registry+https://github.com/rust-lang/crates.io-index#ignore@0.4.30",
         "registry+https://github.com/rust-lang/crates.io-index#keyring@3.6.3",
+        "path+file://./rust/crates/lean-ctx-compress#0.1.0",
+        "path+file://./rust/crates/lean-ctx-fs#0.1.0",
         "path+file://./rust/crates/lean-ctx-ocla#4.0.0",
+        "path+file://./rust/crates/lean-ctx-patterns#0.1.0",
         "path+file://./rust/crates/lean-ctx-protocol#0.4.0",
+        "path+file://./rust/crates/lean-ctx-syntax#0.1.0",
+        "path+file://./rust/crates/lean-ctx-workgraph#0.1.0",
         "path+file://./rust/crates/leanctx-native-storage#0.1.1",
         "registry+https://github.com/rust-lang/crates.io-index#libc@0.2.189",
         "registry+https://github.com/rust-lang/crates.io-index#libloading@0.8.9",
@@ -16794,6 +16919,89 @@
         "registry+https://github.com/rust-lang/crates.io-index#tracing-subscriber@0.3.23",
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter@0.26.12",
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-bash@0.25.1",
+        "registry+https://github.com/rust-lang/crates.io-index#unicode-normalization@0.1.25",
+        "registry+https://github.com/rust-lang/crates.io-index#unicode-width@0.2.2",
+        "registry+https://github.com/rust-lang/crates.io-index#ureq@3.4.0",
+        "registry+https://github.com/rust-lang/crates.io-index#urlencoding@2.1.3",
+        "registry+https://github.com/rust-lang/crates.io-index#uuid@1.24.0",
+        "registry+https://github.com/rust-lang/crates.io-index#walkdir@2.5.0",
+        "registry+https://github.com/rust-lang/crates.io-index#wasmi@1.1.0",
+        "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2",
+        "registry+https://github.com/rust-lang/crates.io-index#yaml_serde@0.10.4",
+        "registry+https://github.com/rust-lang/crates.io-index#zeroize@1.9.0",
+        "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5",
+        "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
+      ],
+      "ref": "path+file://./rust#lean-ctx@3.12.0"
+    },
+    {
+      "dependsOn": [
+        "path+file://./rust/crates/lean-ctx-patterns#0.1.0",
+        "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
+        "registry+https://github.com/rust-lang/crates.io-index#similar@3.1.2",
+        "registry+https://github.com/rust-lang/crates.io-index#yaml_serde@0.10.4"
+      ],
+      "ref": "path+file://./rust/crates/lean-ctx-compress#0.1.0"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.6",
+        "registry+https://github.com/rust-lang/crates.io-index#dirs@6.0.0",
+        "registry+https://github.com/rust-lang/crates.io-index#fs2@0.4.3",
+        "registry+https://github.com/rust-lang/crates.io-index#libc@0.2.189",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
+        "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20",
+        "registry+https://github.com/rust-lang/crates.io-index#toml@1.1.4+spec-1.1.0",
+        "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2"
+      ],
+      "ref": "path+file://./rust/crates/lean-ctx-fs#0.1.0"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
+        "registry+https://github.com/rust-lang/crates.io-index#base64@0.22.1",
+        "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.6",
+        "registry+https://github.com/rust-lang/crates.io-index#ed25519-dalek@2.2.0",
+        "registry+https://github.com/rust-lang/crates.io-index#getrandom@0.4.3",
+        "path+file://./rust/crates/lean-ctx-protocol#0.4.0",
+        "registry+https://github.com/rust-lang/crates.io-index#semver@1.0.28",
+        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
+        "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0",
+        "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20"
+      ],
+      "ref": "path+file://./rust/crates/lean-ctx-ocla#4.0.0"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.6",
+        "registry+https://github.com/rust-lang/crates.io-index#moka@0.12.15",
+        "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
+        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
+        "registry+https://github.com/rust-lang/crates.io-index#tiktoken-rs@0.12.0",
+        "registry+https://github.com/rust-lang/crates.io-index#tracing@0.1.44"
+      ],
+      "ref": "path+file://./rust/crates/lean-ctx-patterns#0.1.0"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#chacha20poly1305@0.10.1",
+        "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
+        "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
+        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
+        "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0"
+      ],
+      "ref": "path+file://./rust/crates/lean-ctx-protocol#0.4.0"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
+        "registry+https://github.com/rust-lang/crates.io-index#tree-sitter@0.26.12",
+        "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-bash@0.25.1",
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-c@0.24.2",
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-c-sharp@0.23.5",
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-cpp@0.23.4",
@@ -16816,48 +17024,20 @@
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-solidity@1.2.13",
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-swift@0.7.3",
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-typescript@0.23.2",
-        "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-zig@1.1.2",
-        "registry+https://github.com/rust-lang/crates.io-index#unicode-normalization@0.1.25",
-        "registry+https://github.com/rust-lang/crates.io-index#unicode-width@0.2.2",
-        "registry+https://github.com/rust-lang/crates.io-index#ureq@3.4.0",
-        "registry+https://github.com/rust-lang/crates.io-index#urlencoding@2.1.3",
-        "registry+https://github.com/rust-lang/crates.io-index#uuid@1.24.0",
-        "registry+https://github.com/rust-lang/crates.io-index#walkdir@2.5.0",
-        "registry+https://github.com/rust-lang/crates.io-index#wasmi@1.1.0",
-        "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2",
-        "registry+https://github.com/rust-lang/crates.io-index#yaml_serde@0.10.4",
-        "registry+https://github.com/rust-lang/crates.io-index#zeroize@1.9.0",
-        "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5",
-        "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
+        "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-zig@1.1.2"
       ],
-      "ref": "path+file://./rust#lean-ctx@3.12.0"
+      "ref": "path+file://./rust/crates/lean-ctx-syntax#0.1.0"
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#async-trait@0.1.92",
-        "registry+https://github.com/rust-lang/crates.io-index#base64@0.22.1",
         "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.6",
-        "registry+https://github.com/rust-lang/crates.io-index#ed25519-dalek@2.2.0",
-        "registry+https://github.com/rust-lang/crates.io-index#getrandom@0.4.3",
         "path+file://./rust/crates/lean-ctx-protocol#0.4.0",
-        "registry+https://github.com/rust-lang/crates.io-index#semver@1.0.28",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-ocla#4.0.0"
-    },
-    {
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#chacha20poly1305@0.10.1",
-        "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
-        "registry+https://github.com/rust-lang/crates.io-index#regex@1.13.1",
-        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
-        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
-        "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0"
-      ],
-      "ref": "path+file://./rust/crates/lean-ctx-protocol#0.4.0"
+      "ref": "path+file://./rust/crates/lean-ctx-workgraph#0.1.0"
     },
     {
       "dependsOn": [
@@ -20670,7 +20850,7 @@
       },
       {
         "name": "leanctx:cargo-lock-sha256",
-        "value": "9113ad325eb7da52ae409fa88874087ddc9605267e01322f7d88780f0a0292ab"
+        "value": "8446a84ff552675ec7d0b9593857c170f8054c3ab03ab9db063d682009a1a73a"
       }
     ],
     "tools": [

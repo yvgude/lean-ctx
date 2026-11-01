@@ -16,8 +16,6 @@ pub struct MemoryPolicy {
 impl MemoryPolicy {
     pub fn apply_env_overrides(&mut self) {
         self.knowledge.apply_env_overrides();
-        self.episodic.apply_env_overrides();
-        self.procedural.apply_env_overrides();
         self.lifecycle.apply_env_overrides();
         self.embeddings.apply_env_overrides();
         self.gotcha.apply_env_overrides();
@@ -31,8 +29,6 @@ impl MemoryPolicy {
 
     pub fn validate(&self) -> Result<(), String> {
         self.knowledge.validate()?;
-        self.episodic.validate()?;
-        self.procedural.validate()?;
         self.lifecycle.validate()?;
         self.embeddings.validate()?;
         self.gotcha.validate()?;
@@ -205,6 +201,10 @@ impl KnowledgePolicy {
     }
 }
 
+/// `[memory.episodic]`: no effect. The episode memory is retired
+/// (DEPRECATIONS.toml `config-memory-episodic-procedural`); the section stays
+/// accepted, unvalidated, so existing configs keep loading. Its
+/// `LEAN_CTX_EPISODIC_*` environment variables are ignored.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EpisodicPolicy {
@@ -223,39 +223,10 @@ impl Default for EpisodicPolicy {
     }
 }
 
-impl EpisodicPolicy {
-    fn apply_env_overrides(&mut self) {
-        if let Ok(v) = std::env::var("LEAN_CTX_EPISODIC_MAX_EPISODES")
-            && let Ok(n) = v.parse()
-        {
-            self.max_episodes = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_EPISODIC_MAX_ACTIONS_PER_EPISODE")
-            && let Ok(n) = v.parse()
-        {
-            self.max_actions_per_episode = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_EPISODIC_SUMMARY_MAX_CHARS")
-            && let Ok(n) = v.parse()
-        {
-            self.summary_max_chars = n;
-        }
-    }
-
-    fn validate(&self) -> Result<(), String> {
-        if self.max_episodes == 0 {
-            return Err("memory.episodic.max_episodes must be > 0".to_string());
-        }
-        if self.max_actions_per_episode == 0 {
-            return Err("memory.episodic.max_actions_per_episode must be > 0".to_string());
-        }
-        if self.summary_max_chars < 40 {
-            return Err("memory.episodic.summary_max_chars must be >= 40".to_string());
-        }
-        Ok(())
-    }
-}
-
+/// `[memory.procedural]`: no effect. The procedure memory is retired
+/// (DEPRECATIONS.toml `config-memory-episodic-procedural`); the section stays
+/// accepted, unvalidated, so existing configs keep loading. Its
+/// `LEAN_CTX_PROCEDURAL_*` environment variables are ignored.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProceduralPolicy {
@@ -273,49 +244,6 @@ impl Default for ProceduralPolicy {
             max_procedures: 100,
             max_window_size: 10,
         }
-    }
-}
-
-impl ProceduralPolicy {
-    fn apply_env_overrides(&mut self) {
-        if let Ok(v) = std::env::var("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS")
-            && let Ok(n) = v.parse()
-        {
-            self.min_repetitions = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_PROCEDURAL_MIN_SEQUENCE_LEN")
-            && let Ok(n) = v.parse()
-        {
-            self.min_sequence_len = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_PROCEDURAL_MAX_PROCEDURES")
-            && let Ok(n) = v.parse()
-        {
-            self.max_procedures = n;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_PROCEDURAL_MAX_WINDOW_SIZE")
-            && let Ok(n) = v.parse()
-        {
-            self.max_window_size = n;
-        }
-    }
-
-    fn validate(&self) -> Result<(), String> {
-        if self.min_repetitions == 0 {
-            return Err("memory.procedural.min_repetitions must be > 0".to_string());
-        }
-        if self.min_sequence_len < 2 {
-            return Err("memory.procedural.min_sequence_len must be >= 2".to_string());
-        }
-        if self.max_procedures == 0 {
-            return Err("memory.procedural.max_procedures must be > 0".to_string());
-        }
-        if self.max_window_size < self.min_sequence_len {
-            return Err(
-                "memory.procedural.max_window_size must be >= min_sequence_len".to_string(),
-            );
-        }
-        Ok(())
     }
 }
 
@@ -699,10 +627,12 @@ mod tests {
         let prev_facts = std::env::var("LEAN_CTX_KNOWLEDGE_MAX_FACTS").ok();
         let prev_stale = std::env::var("LEAN_CTX_LIFECYCLE_STALE_DAYS").ok();
         let prev_rep = std::env::var("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS").ok();
+        let prev_eps = std::env::var("LEAN_CTX_EPISODIC_MAX_EPISODES").ok();
 
         crate::test_env::set_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS", "123");
         crate::test_env::set_var("LEAN_CTX_LIFECYCLE_STALE_DAYS", "7");
         crate::test_env::set_var("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS", "4");
+        crate::test_env::set_var("LEAN_CTX_EPISODIC_MAX_EPISODES", "7");
 
         let mut p = MemoryPolicy::default();
         p.apply_env_overrides();
@@ -710,11 +640,14 @@ mod tests {
         // The fact cap is gone: its env var no longer sets anything.
         assert_eq!(p.knowledge.max_facts, None);
         assert_eq!(p.lifecycle.stale_days, 7);
-        assert_eq!(p.procedural.min_repetitions, 4);
+        // The episode and procedure memory is retired: their env vars are ignored.
+        assert_eq!(p.procedural.min_repetitions, 3);
+        assert_eq!(p.episodic.max_episodes, 500);
 
         restore_env("LEAN_CTX_KNOWLEDGE_MAX_FACTS", prev_facts);
         restore_env("LEAN_CTX_LIFECYCLE_STALE_DAYS", prev_stale);
         restore_env("LEAN_CTX_PROCEDURAL_MIN_REPETITIONS", prev_rep);
+        restore_env("LEAN_CTX_EPISODIC_MAX_EPISODES", prev_eps);
     }
 
     #[test]
@@ -731,9 +664,17 @@ mod tests {
         let mut p = MemoryPolicy::default();
         p.lifecycle.decay_rate = 2.0;
         assert!(p.validate().is_err());
+    }
 
-        let mut p = MemoryPolicy::default();
-        p.procedural.min_sequence_len = 1;
-        assert!(p.validate().is_err());
+    #[test]
+    fn retired_episodic_and_procedural_sections_still_load_and_validate() {
+        let p: MemoryPolicy = toml::from_str(
+            "[episodic]\nmax_episodes = 0\n[procedural]\nmin_sequence_len = 1\nmax_procedures = 0\n",
+        )
+        .expect("retired [episodic]/[procedural] sections must keep loading");
+        assert_eq!(p.episodic.max_episodes, 0);
+        assert_eq!(p.procedural.min_sequence_len, 1);
+        p.validate()
+            .expect("retired [episodic]/[procedural] sections are not validated");
     }
 }

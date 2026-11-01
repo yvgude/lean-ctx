@@ -374,7 +374,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.episodic.max_episodes),
-            "Maximum number of episodes retained",
+            "Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect",
         ),
     );
     mem_episodic.insert(
@@ -382,7 +382,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.episodic.max_actions_per_episode),
-            "Maximum actions tracked per episode",
+            "Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect",
         ),
     );
     mem_episodic.insert(
@@ -390,13 +390,13 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.episodic.summary_max_chars),
-            "Maximum characters in episode summary",
+            "Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect",
         ),
     );
     sections.insert(
         "memory.episodic".into(),
         SectionSchema {
-            description: "Episodic memory budgets (session episodes)".into(),
+            description: "Retired (no effect): episode memory budgets, accepted so existing configs keep loading".into(),
             keys: mem_episodic,
         },
     );
@@ -407,7 +407,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.procedural.max_procedures),
-            "Maximum number of learned procedures stored",
+            "Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect",
         ),
     );
     mem_procedural.insert(
@@ -415,7 +415,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.procedural.min_repetitions),
-            "Minimum repetitions before a pattern is stored",
+            "Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect",
         ),
     );
     mem_procedural.insert(
@@ -423,7 +423,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.procedural.min_sequence_len),
-            "Minimum sequence length for procedure detection",
+            "Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect",
         ),
     );
     mem_procedural.insert(
@@ -431,13 +431,13 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.procedural.max_window_size),
-            "Maximum window size for pattern analysis",
+            "Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect",
         ),
     );
     sections.insert(
         "memory.procedural".into(),
         SectionSchema {
-            description: "Procedural memory budgets (learned patterns)".into(),
+            description: "Retired (no effect): procedure memory budgets, accepted so existing configs keep loading".into(),
             keys: mem_procedural,
         },
     );
@@ -646,15 +646,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     // `LlmConfig`: `model` advertised `llama3.2` while the struct defaulted to
     // `qwen2.5-coder:1.5b`, `base_url` was missing, and `api_key` named a field
     // that does not exist — so `config set llm.api_key …` reported a save that
-    // was silently discarded. The key is gone; the environment variables that
-    // actually supply the credential are named in the section description.
+    // was silently discarded. The key is gone. The whole section is retired
+    // (DEPRECATIONS.toml `config-llm`): every key is accepted and has no effect.
     let mut llm_keys = BTreeMap::new();
     llm_keys.insert(
         "enabled".into(),
         key(
             "bool",
             serde_json::json!(cfg.llm.enabled),
-            "Enable optional LLM enhancements (query expansion, contradiction explanation)",
+            "No effect (kept so existing configs load): LeanCTX calls no model itself",
         ),
     );
     let backend_default = serde_json::to_value(cfg.llm.backend.clone())
@@ -666,7 +666,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_enum(
             &["ollama", "openrouter", "anthropic"],
             &backend_default,
-            "LLM backend provider",
+            "No effect (kept so existing configs load): LeanCTX calls no model itself",
         ),
     );
     llm_keys.insert(
@@ -674,7 +674,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string",
             serde_json::json!(cfg.llm.model),
-            "Model name for the selected backend",
+            "No effect (kept so existing configs load): LeanCTX calls no model itself",
         ),
     );
     llm_keys.insert(
@@ -682,7 +682,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string",
             serde_json::json!(cfg.llm.base_url.clone().unwrap_or_default()),
-            "Override the backend's base URL (empty = the backend's own default)",
+            "No effect (kept so existing configs load): LeanCTX calls no model itself",
         ),
     );
     llm_keys.insert(
@@ -690,11 +690,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "u64",
             serde_json::json!(cfg.llm.timeout_secs),
-            "HTTP timeout for LLM requests",
+            "No effect (kept so existing configs load): LeanCTX calls no model itself",
         ),
     );
     sections.insert("llm".into(), SectionSchema {
-            description: "Optional LLM enhancement settings (query expansion, contradiction explanation). Deterministic fallback when disabled or unreachable. Credentials come from the environment — OPENROUTER_API_KEY or ANTHROPIC_API_KEY — not from this file.".into(),
+            description: "Retired, no effect: query expansion and observation synthesis, the only consumers of these settings, are gone (LeanCTX calls no model itself). The keys stay accepted so existing configs keep loading; earliest removal 3.15.0.".into(),
             keys: llm_keys,
         });
 

@@ -178,31 +178,7 @@ fn print_effective() {
 }
 
 fn current_from_global() -> Vec<String> {
-    global_string_list("allow_paths")
-}
-
-/// A string-array key from the raw GLOBAL config table — never the merged
-/// runtime view, so project-local or default values are never persisted
-/// globally.
-pub(crate) fn global_string_list(key: &str) -> Vec<String> {
-    let Some(path) = config::Config::path() else {
-        return Vec::new();
-    };
-    let Ok(raw) = std::fs::read_to_string(&path) else {
-        return Vec::new();
-    };
-    let Ok(table) = raw.parse::<toml::Table>() else {
-        return Vec::new();
-    };
-    table
-        .get(key)
-        .and_then(toml::Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
+    config::global_string_list("allow_paths")
 }
 
 fn write(entries: &[String]) -> Result<(), String> {

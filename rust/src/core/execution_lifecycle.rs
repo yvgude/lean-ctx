@@ -1004,7 +1004,7 @@ impl ExecutionLifecycle {
                 task_class: context.triage_class.clone(),
             });
             #[cfg(not(test))]
-            crate::proxy::value_gate_proxy::record_completion(
+            crate::core::proxy_value_metrics::record_completion(
                 economics.tokens_pruned,
                 economics.original_tokens,
                 &economics.task_class,

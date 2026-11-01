@@ -1367,7 +1367,7 @@ mod tests {
         let policy = crate::core::policy::load(&format!("{BLOCK_CONFIDENTIAL}pii = \"block\"\n"))
             .expect("policy");
         let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
-        let _cap = crate::setup::EnvVarGuard::set("LCTX_MAX_READ_BYTES", "1024");
+        let _cap = crate::test_env::EnvVarGuard::set("LCTX_MAX_READ_BYTES", "1024");
         let (_dir, root, sessions) = history();
         // Digit-free records of one length: the unit boundaries are known.
         let expected: Vec<String> = ('a'..='c')

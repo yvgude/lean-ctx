@@ -13,21 +13,10 @@ use std::path::{Path, PathBuf};
 
 use super::grok::{ShellFlavor, ensure_proxy_provider};
 use super::util::{COMMANDCODE_OMITTED_NOTE, is_proxy_reachable};
+use crate::core::editor_registry::COMMANDCODE_MCP_INSTRUCTIONS;
 
 pub(crate) const COMMANDCODE_PROVIDER_ID: &str = "commandcode";
 pub(crate) const COMMANDCODE_UPSTREAM: &str = "https://api.commandcode.ai";
-
-/// Instructions block for Command Code MCP hosts (shadow-mode rules).
-pub(crate) const COMMANDCODE_MCP_INSTRUCTIONS: &str = "\
-lean-ctx shadow mode: native file/search/shell calls auto-route to ctx_* — no tool-mapping needed.\n\
-Exclusive tools (no native trigger): ctx_compose (search + read + symbols), \
-ctx_search(action=symbol) (exact symbol), ctx_search(action=semantic) (by meaning), \
-ctx_callgraph (callers), ctx_knowledge / ctx_session (memory).\n\
-OUTPUT STYLE: concise\n\
-- Bullet points over paragraphs\n\
-- Skip filler words and hedging (\"I think\", \"probably\", \"it seems\")\n\
-- 1-sentence explanations max, then code/action\n\
-- No repeating what the user said";
 
 pub(crate) fn commandcode_dir(home: &Path) -> PathBuf {
     home.join(".commandcode")

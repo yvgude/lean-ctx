@@ -8,8 +8,8 @@ use serde_json::{Value, json};
 
 use crate::core::tokens::{TokenizerFamily, count_tokens_for};
 
-use super::adaptive_policy::CompressionPolicy;
 use super::compress::compress_tool_result_gateway_with_policy;
+use crate::core::adaptive_policy::CompressionPolicy;
 
 /// A conversation split at the first message safe to rewrite.
 #[derive(Debug, Clone, PartialEq)]
@@ -238,7 +238,7 @@ mod tests {
     use super::*;
 
     fn policy() -> CompressionPolicy {
-        super::super::adaptive_policy::select_policy("chat")
+        crate::core::adaptive_policy::select_policy("chat")
     }
 
     fn verbose_text() -> String {

@@ -834,9 +834,16 @@ fn cmd_restore(args: &[String], project_root: &str) {
         .unwrap_or(ctx_knowledge::DEFAULT_RESTORE_LIMIT);
 
     let store = match store.as_deref() {
+        Some(s) if crate::core::memory_archive::MemoryStore::is_retired(s) => {
+            println!(
+                "{}",
+                crate::core::memory_archive::RETIRED_PROCEDURES_STORE_NOTICE
+            );
+            return;
+        }
         Some(s) => {
             let Some(ms) = crate::core::memory_archive::MemoryStore::parse(s) else {
-                eprintln!("Unknown store: {s}. Use: facts, history, procedures, patterns");
+                eprintln!("Unknown store: {s}. Use: facts, history, patterns");
                 std::process::exit(1);
             };
             Some(ms)
@@ -983,7 +990,7 @@ Usage:
     --adaptive uses the scheduled (budgeted) import.
     --session imports that session's findings and decisions; without it only
     project facts are consolidated.
-  lean-ctx knowledge restore [--store facts|history|procedures|patterns] [--query <text>] [--limit N]
+  lean-ctx knowledge restore [--store facts|history|patterns] [--query <text>] [--limit N]
   lean-ctx knowledge status
   lean-ctx knowledge health
   lean-ctx knowledge lifecycle

@@ -11,6 +11,8 @@ pub mod elicitation;
 pub(crate) mod execute;
 mod file_resource;
 pub mod helpers;
+#[cfg(test)]
+pub(crate) mod isolation_fixture;
 pub(crate) mod mcp_idle;
 pub mod multi_path;
 pub(crate) mod native_receipts;

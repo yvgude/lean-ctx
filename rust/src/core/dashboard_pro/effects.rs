@@ -698,8 +698,7 @@ pub(crate) fn consolidation_summary(output: &str) -> Value {
     let archived = number(r"archived-to-target (\d+)")
         .max(number(r"Lifecycle:[^\n]*?archived (\d+)"))
         + number(r"Patterns:[^\n]*?compacted (\d+)")
-        + number(r"History:[^\n]*?compacted (\d+)")
-        + number(r"Procedures:[^\n]*compacted (\d+)");
+        + number(r"History:[^\n]*?compacted (\d+)");
     let kept = match number(r"remaining (\d+)") {
         0 => number(r"Facts: (\d+) active"),
         n => n,

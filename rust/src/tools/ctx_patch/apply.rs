@@ -31,6 +31,16 @@ pub(crate) struct ResolvedEdit {
     hi: usize,
 }
 
+impl ResolvedEdit {
+    /// Lines this edit really adds and removes against the preimage `lines`
+    /// (unchanged lines it rewrites in place are not counted).
+    pub(crate) fn net_change(&self, lines: &[String]) -> (u64, u64) {
+        let end = (self.start_idx + self.remove_count).min(lines.len());
+        let start = self.start_idx.min(end);
+        crate::tools::ctx_edit::net_line_change(&lines[start..end], &self.new_lines)
+    }
+}
+
 /// Split `content` into logical lines plus the framing needed to rebuild it
 /// byte-faithfully: the dominant line separator and whether a trailing newline
 /// is present. Mirrors [`str::lines`] so line numbers match

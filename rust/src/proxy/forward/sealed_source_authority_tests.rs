@@ -99,7 +99,7 @@ fn three_answers() -> Vec<(&'static str, Vec<u8>)> {
 /// client's bytes in `cache` mode.
 struct Scenario {
     _bound: crate::proxy::store_binding::BoundHostForTest,
-    _mode: crate::setup::EnvVarGuard,
+    _mode: crate::test_env::EnvVarGuard,
     _data: crate::core::data_dir::IsolatedDataDir,
     _live: LivePolicy,
     _directory: tempfile::TempDir,

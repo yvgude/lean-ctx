@@ -168,7 +168,9 @@ pub(crate) fn summarize(
     // Non-MCP route first: the verbatim blob is a real file any tool can read,
     // for agents/orgs where MCP is unavailable or forbidden.
     let path = crate::core::archive::content_path_str(archive_id);
-    if crate::cli::enforce_protected_store_path(std::path::Path::new(&path)).is_ok() {
+    if crate::core::protected_store::enforce_protected_store_path(std::path::Path::new(&path))
+        .is_ok()
+    {
         out.push_str(&format!("Direct:  read {path} directly (no MCP)\n"));
     }
     out.push_str(&format!("Full:    ctx_expand(id=\"{archive_id}\")\n"));

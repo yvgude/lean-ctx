@@ -28,7 +28,6 @@ const CONTENT_FIELDS: &[&str] = &[
     "evidence",
     "intents",
     "active_structured_intent",
-    "wakeup_manifest",
     "playbook",
     "last_semantic_query",
 ];

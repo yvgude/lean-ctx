@@ -164,7 +164,6 @@ fn run_admitted_cli_action(session: &mut SessionState, action: &str, value: &str
         eprintln!("Session policy changed during content admission; retry the operation.");
         std::process::exit(1);
     }
-    let completed_task = prepared.completed_task;
     *session = prepared.candidate;
     if !prepared.store_admission.is_current() {
         eprintln!("Session policy changed before persistence; retry the operation.");
@@ -172,13 +171,7 @@ fn run_admitted_cli_action(session: &mut SessionState, action: &str, value: &str
     }
     require_session_save(session);
 
-    let mut output = prepared.output;
-    if let Some(note) =
-        ctx_session::record_completed_task_after_commit(session, completed_task, &[], None)
-    {
-        output.push_str(&note);
-    }
-    crate::core::session::admission::admit_tool_value(session, &output)
+    crate::core::session::admission::admit_tool_value(session, &prepared.output)
         .unwrap_or_else(|_| "[lean-ctx gateway: session content withheld]".into())
 }
 

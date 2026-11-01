@@ -787,6 +787,9 @@ fn enforce_hook_keeps_the_secret_path_deny() {
 
 #[test]
 fn enforce_hook_never_grants_a_permission() {
+    // The verdicts read the allowlist from process-wide env, which other
+    // tests set under this lock (an override without `cat`).
+    let _lock = crate::core::data_dir::test_env_lock();
     let binary = "lean-ctx";
     let bash = |cmd: &str| {
         serde_json::json!({ "tool_name": "Bash", "hook_event_name": "PreToolUse",
@@ -816,6 +819,8 @@ fn enforce_hook_never_grants_a_permission() {
 
 #[test]
 fn enforce_only_rewrite_never_compresses() {
+    // See `enforce_hook_never_grants_a_permission`.
+    let _lock = crate::core::data_dir::test_env_lock();
     let binary = "lean-ctx";
     let payload = |cmd: &str| {
         serde_json::json!({ "tool_name": "Bash", "hook_event_name": "PreToolUse",

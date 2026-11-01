@@ -22,9 +22,8 @@ fn read_a2a_peers(path: &std::path::Path) -> Result<String, String> {
 /// A secret (the A2A signing key, the HTTP auth token) from a file: bounded,
 /// no symlink, the trailing line break removed. Keeps the secret out of the
 /// process arguments, which every local user can list.
-#[cfg(feature = "http-server")]
 fn read_secret_file(path: &std::path::Path) -> Result<String, String> {
-    let raw = read_a2a_task_authority(path)?;
+    let raw = crate::core::a2a::task::policy_file::read_bounded(path)?;
     let key = raw.trim_end_matches(['\n', '\r']);
     if key.trim().is_empty() {
         return Err("the file is empty".to_string());
@@ -45,6 +44,74 @@ const A2A_SIGNING_KEY_ARGV_WARNING: &str = "warning: --a2a-signing-key <key> is 
 const AUTH_TOKEN_ARGV_WARNING: &str = "warning: lean-ctx serve --auth-token <token> is deprecated: \
      the token is visible in the process list. Use --auth-token-file <path> or the \
      LEAN_CTX_HTTP_TOKEN environment variable instead.";
+
+/// Printed when `cockpit --auth-token=<token>` (or `--token=`) is used
+/// (deprecation `cli-cockpit-auth-token-argv` in `DEPRECATIONS.toml`).
+const COCKPIT_AUTH_TOKEN_ARGV_WARNING: &str = "warning: lean-ctx cockpit --auth-token=<token> is \
+     deprecated: the token is visible in the process list. Use --auth-token-file <path> or the \
+     LEAN_CTX_HTTP_TOKEN environment variable instead.";
+
+/// The Bearer token `cockpit` pins: the deprecated `--auth-token=` /
+/// `--token=` value (warned on stderr), else the token file
+/// (`--auth-token-file`, else `LEAN_CTX_HTTP_TOKEN_FILE` when
+/// `LEAN_CTX_HTTP_TOKEN` is unset). `Ok(None)` leaves `LEAN_CTX_HTTP_TOKEN`
+/// or a fresh random token to the dashboard. `Err` is the line to show.
+fn cockpit_auth_token(
+    rest: &[String],
+    env: impl Fn(&str) -> Option<String>,
+) -> Result<Option<String>, String> {
+    let argv = rest
+        .iter()
+        .find_map(|p| {
+            p.strip_prefix("--auth-token=")
+                .or_else(|| p.strip_prefix("--token="))
+        })
+        .map(String::from);
+    let file =
+        rest.iter()
+            .enumerate()
+            .find_map(|(i, arg)| match arg.strip_prefix("--auth-token-file=") {
+                Some(path) => Some(Some(path)),
+                None if arg == "--auth-token-file" => Some(rest.get(i + 1).map(String::as_str)),
+                None => None,
+            });
+    let file = match file {
+        None => None,
+        Some(Some(path)) if !path.trim().is_empty() && !path.starts_with("--") => {
+            Some(path.to_string())
+        }
+        Some(_) => {
+            return Err(
+                "--auth-token-file needs a path: --auth-token-file=<path> or --auth-token-file <path>"
+                    .to_string(),
+            );
+        }
+    };
+    let set = |name: &str| env(name).filter(|value| !value.trim().is_empty());
+    let file = match (argv, file) {
+        (Some(_), Some(_)) => {
+            return Err(
+                "Use either --auth-token-file or --auth-token, not both; prefer --auth-token-file."
+                    .to_string(),
+            );
+        }
+        (Some(token), None) => {
+            eprintln!("{COCKPIT_AUTH_TOKEN_ARGV_WARNING}");
+            return Ok(Some(token));
+        }
+        (None, Some(path)) => path,
+        (None, None) if set("LEAN_CTX_HTTP_TOKEN").is_none() => {
+            match set("LEAN_CTX_HTTP_TOKEN_FILE") {
+                Some(path) => path,
+                None => return Ok(None),
+            }
+        }
+        (None, None) => return Ok(None),
+    };
+    read_secret_file(std::path::Path::new(&file))
+        .map(Some)
+        .map_err(|error| format!("Invalid auth token file at {file}: {error}"))
+}
 
 pub(crate) mod cockpit_start;
 mod provider;
@@ -71,7 +138,7 @@ pub(crate) const VIEW_CALLS: &str = "calls";
 pub(crate) const VIEW_REPORT: &str = "report";
 
 const COCKPIT_HELP: &str = "\
-Usage: lean-ctx cockpit (also: lean-ctx dashboard) [--port N] [--foreground] [--no-open] [--host=H] [--base-path=PREFIX] [--auth-token=TOKEN] [--no-auth] [--project=PATH] [--vscode] [--export [--output=FILE] [--open]]
+Usage: lean-ctx cockpit (also: lean-ctx dashboard) [--port N] [--foreground] [--no-open] [--host=H] [--base-path=PREFIX] [--auth-token-file=PATH] [--no-auth] [--project=PATH] [--vscode] [--export [--output=FILE] [--open]]
        lean-ctx cockpit stop      Stop the Cockpit server started in the background
        lean-ctx cockpit install   Install the Cockpit runtime package (signed, proprietary, free)
        lean-ctx cockpit install --from <dir|file.tar.gz> [--allow-downgrade]   … from a shipped bundle, offline
@@ -89,7 +156,8 @@ Examples:
   lean-ctx cockpit --no-open --port 3333
   lean-ctx cockpit --host=0.0.0.0
   lean-ctx cockpit --base-path=/cockpit       Mount behind a reverse proxy subpath
-  lean-ctx cockpit --auth-token=<token>       Pin the Bearer token (alias --token; overrides LEAN_CTX_HTTP_TOKEN)
+  lean-ctx cockpit --auth-token-file=<path>   Pin the Bearer token read from a file (overrides LEAN_CTX_HTTP_TOKEN;
+                                              --auth-token=<token> / --token= are deprecated: visible in the process list)
   lean-ctx cockpit --no-auth                  Run without a Bearer token (alias --auth=false).
                                               Cross-origin/CSRF + DNS-rebinding stay blocked via
                                               Sec-Fetch-Site/Origin/Host checks. Best on loopback;
@@ -106,7 +174,8 @@ In the terminal: lean-ctx gain --terminal   (on a terminal, plain `lean-ctx gain
 
 Environment:
   LEAN_CTX_DASHBOARD_OPEN=browser|none|vscode  Default reveal mode (overridden by --open=).
-  LEAN_CTX_HTTP_TOKEN=<token>   Pin the Bearer token (stable across restarts — ideal behind a reverse proxy). Overridden by --auth-token. Unset → a random token is generated each start.
+  LEAN_CTX_HTTP_TOKEN=<token>   Pin the Bearer token (stable across restarts — ideal behind a reverse proxy). Overridden by --auth-token-file. Unset → a random token is generated each start.
+  LEAN_CTX_HTTP_TOKEN_FILE=<path>  File with the Bearer token, used when LEAN_CTX_HTTP_TOKEN is unset.
   LEAN_CTX_SCRAPE_TOKEN=<token> Read-only token accepted ONLY for GET /metrics — hand this to Prometheus/Datadog agents instead of the dashboard token (docs/integrations/datadog.md).
   LEAN_CTX_DASHBOARD_AUTH=true|false  Require the Bearer token (default true). false = no-auth mode (overridden by --no-auth/--auth=). Also settable via `lean-ctx config set dashboard_auth`.
   LEAN_CTX_DASHBOARD_ALLOWED_HOSTS=host:port,…  Extra Host header values accepted in no-auth mode (loopback + bound host are always allowed).";
@@ -250,16 +319,17 @@ pub(crate) fn cmd_cockpit(rest: &[String], view: Option<&str>) {
                 .or_else(|| p.strip_prefix("--prefix="))
         })
         .map(String::from);
-    // `--auth-token` / `--token`: pin the dashboard Bearer token from the CLI.
-    // Takes precedence over LEAN_CTX_HTTP_TOKEN so it survives container/service
-    // environments that strip or fail to inherit the env var (#377).
-    let auth_token = rest
-        .iter()
-        .find_map(|p| {
-            p.strip_prefix("--auth-token=")
-                .or_else(|| p.strip_prefix("--token="))
-        })
-        .map(String::from);
+    // `--auth-token-file` (or the deprecated `--auth-token` / `--token`): pin
+    // the dashboard Bearer token from the CLI. Takes precedence over
+    // LEAN_CTX_HTTP_TOKEN so it survives container/service environments that
+    // strip or fail to inherit the env var (#377).
+    let auth_token = match cockpit_auth_token(rest, |name| std::env::var(name).ok()) {
+        Ok(token) => token,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
     // `--no-auth` / `--auth=<bool>`: run the dashboard without a Bearer token.
     // No-auth is not unprotected — cross-origin/CSRF and DNS-rebinding are blocked
     // by request-header checks (Sec-Fetch-Site/Origin/Host allowlist). Precedence:

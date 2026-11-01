@@ -383,4 +383,4 @@ mod tests {
 
 #[cfg(test)]
 #[path = "content_storage_tests.rs"]
-mod storage_tests;
+pub(crate) mod storage_tests;

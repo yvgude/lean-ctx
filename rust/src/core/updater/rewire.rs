@@ -56,7 +56,7 @@ pub(crate) fn migrate_shadow_mode_default_public() {
     migrate_shadow_mode_default();
 }
 
-pub(super) fn post_update_rewire(skip_rules: bool, quiet: bool) {
+pub(super) fn post_update_rewire(skip_rules: bool, quiet: bool, setup: &dyn SetupRefresh) {
     // #356: regenerate installed LaunchAgent plists so they adopt the new
     // deny-~/Documents seatbelt wrapper. A plist is only (re)written on install,
     // so without this an upgrade keeps the old unwrapped plist — and the TCC
@@ -101,7 +101,7 @@ pub(super) fn post_update_rewire(skip_rules: bool, quiet: bool) {
     // PHASE 1: Restart proxy BEFORE writing env vars.
     if proxy_active {
         restart_proxy_if_running();
-        wait_for_proxy_health(crate::proxy_setup::default_port());
+        wait_for_proxy_health(crate::core::proxy_endpoint::default_port());
     }
 
     // PHASE 2: Run setup which writes MCP configs (always) and rules (if opted in).
@@ -113,15 +113,11 @@ pub(super) fn post_update_rewire(skip_rules: bool, quiet: bool) {
     }
     // Only the recorded selection (setup.agents) or, without one, the tools
     // that are already connected: an update never connects a new tool.
-    if let Err(e) = crate::setup::run_setup_with_options(&rewire_options(
-        proxy_active,
-        effective_skip_rules,
-        false,
-    )) {
+    if let Err(e) = setup.refresh(proxy_active, effective_skip_rules) {
         tracing::error!("Setup refresh error: {e}");
     }
     if !quiet {
-        print_unconnected_tools_hint();
+        setup.print_unconnected_tools_hint();
     }
 
     // The Cockpit ships with LeanCTX: an update installs it when it is missing.
@@ -130,59 +126,24 @@ pub(super) fn post_update_rewire(skip_rules: bool, quiet: bool) {
     }
 }
 
-fn rewire_options(
-    proxy_active: bool,
-    skip_rules: bool,
-    dry_run: bool,
-) -> crate::setup::SetupOptions {
-    crate::setup::SetupOptions {
-        non_interactive: true,
-        yes: true,
-        fix: true,
-        skip_proxy: !proxy_active,
-        skip_rules,
-        refresh_only: true,
-        dry_run,
-        ..Default::default()
-    }
+/// The setup refresh an update runs after replacing the binary. Setup sits
+/// above the engine, so the updater's caller supplies it.
+pub(crate) trait SetupRefresh {
+    /// Re-run setup in refresh-only mode: MCP configs, shell hooks and, unless
+    /// `skip_rules`, rules for the recorded or already-connected tools.
+    fn refresh(&self, proxy_active: bool, skip_rules: bool) -> Result<(), String>;
+    /// Print what [`SetupRefresh::refresh`] would change, without writing.
+    fn print_plan(&self, proxy_active: bool, skip_rules: bool);
+    /// Name installed tools the refresh leaves alone.
+    fn print_unconnected_tools_hint(&self);
 }
 
 /// `update --dry-run`: the refresh an update would run, without writing.
-pub(super) fn print_rewire_plan(skip_rules: bool) {
+pub(super) fn print_rewire_plan(skip_rules: bool, setup: &dyn SetupRefresh) {
     let cfg = crate::core::config::Config::load();
     let skip_rules = skip_rules || !cfg.setup.should_inject_rules();
-    match crate::setup::run_setup_with_options(&rewire_options(
-        cfg.proxy_enabled == Some(true),
-        skip_rules,
-        true,
-    )) {
-        Ok(report) => crate::setup::print_plan(&report),
-        Err(e) => eprintln!("  \x1b[31m✗\x1b[0m Cannot plan the setup refresh: {e}"),
-    }
-    print_unconnected_tools_hint();
-}
-
-/// Name installed tools the refresh left alone, so connecting one stays a
-/// deliberate step.
-fn print_unconnected_tools_hint() {
-    use crate::setup::agent_selection as sel;
-    let Some(home) = crate::core::home::resolve_home_dir() else {
-        return;
-    };
-    let targets = crate::core::editor_registry::build_targets(&home);
-    let scope = sel::scope_for_run(&home, &targets, None, true);
-    let skipped: Vec<String> = sel::detected_agents(&home, &targets)
-        .into_iter()
-        .filter(|a| !scope.allows(&a.key))
-        .map(|a| a.key)
-        .collect();
-    if !skipped.is_empty() {
-        eprintln!(
-            "  \u{2139} Not connected (left untouched): {}",
-            skipped.join(", ")
-        );
-        eprintln!("    Connect one: lean-ctx init --agent <name>  ·  choose: lean-ctx setup");
-    }
+    setup.print_plan(cfg.proxy_enabled == Some(true), skip_rules);
+    setup.print_unconnected_tools_hint();
 }
 
 /// #356: rewrite every installed LaunchAgent plist (daemon, proxy, auto-updater)
@@ -193,7 +154,7 @@ fn print_unconnected_tools_hint() {
 #[cfg(target_os = "macos")]
 fn rewrap_launchagents_for_tcc() {
     if crate::proxy_autostart::is_installed() {
-        crate::proxy_autostart::install(crate::proxy_setup::default_port(), true);
+        crate::proxy_autostart::install(crate::core::proxy_endpoint::default_port(), true);
     }
     if crate::daemon_autostart::is_installed() {
         crate::daemon_autostart::install(true);
@@ -232,7 +193,7 @@ fn wait_for_proxy_health(port: u16) {
 }
 
 fn restart_proxy_if_running() {
-    let port = crate::proxy_setup::default_port();
+    let port = crate::core::proxy_endpoint::default_port();
 
     if restart_managed_proxy() {
         return;

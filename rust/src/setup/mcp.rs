@@ -709,9 +709,10 @@ mod qodercli_tests {
         std::fs::create_dir_all(&home).unwrap();
         std::fs::create_dir_all(&project).unwrap();
 
-        let _home_guard = crate::setup::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
+        let _home_guard =
+            crate::test_env::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
         let _profile_guard =
-            crate::setup::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
+            crate::test_env::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
         let _cwd_guard = CurrentDirGuard::enter(&project);
 
         configure_agent_mcp_with_rule_steering("kiro", false).unwrap();

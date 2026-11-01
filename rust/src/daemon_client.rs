@@ -209,7 +209,7 @@ fn format_daemon_tool_call_body(name: &str, arguments: Option<&serde_json::Value
     // not in the session of whichever project it served last. Outside any
     // project (home, `/`) nothing is named and the daemon's own root serves.
     let args: Vec<String> = std::env::args().collect();
-    let root = crate::cli::common::detect_project_root(&args);
+    let root = crate::core::command_root::detect_project_root(&args);
     let project_root =
         (!crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(&root)))
             .then_some(root.as_str());

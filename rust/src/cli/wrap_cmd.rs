@@ -854,7 +854,7 @@ mod tests {
     #[test]
     fn default_port_follows_the_configured_proxy_port() {
         let _data = crate::core::data_dir::isolated_data_dir();
-        let _port = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_PORT", "9441");
+        let _port = crate::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_PORT", "9441");
         assert_eq!(
             WrapArgs::parse(&args(&["claude"]), false).unwrap().port,
             9441

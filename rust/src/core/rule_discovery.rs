@@ -430,7 +430,7 @@ mod tests {
             "{INJECTING}[context_gateway]\nclassification = \"block\"\n"
         ));
         let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
-        let _injection = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _injection = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
         let (_directory, root, file) = rule_project(&[("AGENTS.md", BANNERED_RULE)]);
 
         reset_injection_cache();
@@ -464,7 +464,7 @@ mod tests {
             "{INJECTING}[context_gateway]\nmode = \"governed\"\nclassification = \"block\"\n"
         ));
         let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
-        let _injection = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _injection = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
         let (_directory, root, file) = rule_project(&[
             ("CLAUDE.md", "Prefer small modules.\n"),
             ("AGENTS.md", BANNERED_RULE),
@@ -515,11 +515,12 @@ mod tests {
         )
         .unwrap();
 
-        let _config_guard = crate::setup::EnvVarGuard::set(
+        let _config_guard = crate::test_env::EnvVarGuard::set(
             "LEAN_CTX_CONFIG_DIR",
             config_dir.to_string_lossy().as_ref(),
         );
-        let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let _injection_guard =
+            crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
 
         std::fs::write(
             config_dir.join("config.toml"),

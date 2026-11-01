@@ -184,10 +184,11 @@ pub(crate) fn dispatch(args: &[String]) -> Result<Option<i32>, String> {
 
 #[cfg(unix)]
 mod unix {
-    use super::super::{CLIENT_ENV_PASSTHROUGH, MCP_ENV_PASSTHROUGH, write_guard};
+    use super::super::{CLIENT_ENV_PASSTHROUGH, MCP_ENV_PASSTHROUGH};
     use super::{
         FD_FLAG, Launch, MAX_FRAME, REQUIRED_POLICY_DIGEST_ENV, REQUIRED_POLICY_ROOT_ENV, Selection,
     };
+    use crate::core::protected_store;
     use std::io::{Read, Write};
     use std::os::fd::{AsRawFd, FromRawFd};
     use std::os::unix::net::UnixStream;
@@ -358,7 +359,7 @@ mod unix {
         // under. Built here, outside the MCP sandbox, from the rules the
         // launcher pinned — never from a request or a writable file.
         let boundary = crate::core::protected_execution::LaunchProfile::from_pinned(profile)?;
-        write_guard::validate(boundary.shell_profile())?;
+        protected_store::validate(boundary.shell_profile())?;
 
         let handoff_frame = match launch {
             Some(launch) => {
@@ -395,7 +396,7 @@ mod unix {
         }
         arguments.push(crate::core::protected_execution::EXEC_FD_FLAG.to_string());
         arguments.push(crate::core::protected_execution::CHILD_EXEC_FD.to_string());
-        let mut command = Command::new(write_guard::SANDBOX_EXEC);
+        let mut command = Command::new(protected_store::SANDBOX_EXEC);
         command
             .args(["-p", profile])
             .arg(binary)
@@ -408,7 +409,7 @@ mod unix {
             "LEAN_CTX_PROJECT_ROOT",
             REQUIRED_POLICY_ROOT_ENV,
             REQUIRED_POLICY_DIGEST_ENV,
-            write_guard::CHILD_PROFILE_ENV,
+            protected_store::CHILD_PROFILE_ENV,
         ]
         .iter()
         .chain(MCP_ENV_PASSTHROUGH.iter())

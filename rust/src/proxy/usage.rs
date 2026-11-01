@@ -18,33 +18,9 @@
 //! uncached input, output (incl. reasoning/thoughts), cache-read, cache-write.
 
 use futures::{Stream, StreamExt};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Where provider usage was observed, not an assertion of answer quality or
-/// successful generation. Terminal usage also accompanies failed responses.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum UsageBoundary {
-    BodyEnd,
-    ProviderTerminalUsage,
-    StreamEnd,
-    StreamError,
-}
-
-/// Payload-free local measurement. Unknown cost stays unknown; neither HTTP
-/// status nor receipt of usage supplies the private runtime's quality label.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ResponseObservation {
-    pub schema_version: u8,
-    pub http_status: u16,
-    /// Monotonic elapsed time from upstream dispatch (including retries) to
-    /// the indicated usage boundary, not necessarily full response latency.
-    pub usage_observed_ms: u64,
-    pub boundary: UsageBoundary,
-    pub provider_cost_usd: Option<f64>,
-}
+pub use crate::core::proxy_usage::{ResponseObservation, UsageBoundary};
 
 /// LLM provider whose response shape a [`Scanner`] understands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

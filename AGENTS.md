@@ -121,9 +121,18 @@ before it is written, and the check is part of the handover:
   it belongs to once that exists. New code in `rust/src/` needs a reason in the
   handover (what it needs from the monolith, and why it cannot depend on a
   crate instead).
+- **The map is `rust/CRATE_MAP.md`** (machine form `rust/CRATE_MAP.toml`):
+  extracted crates, modules scheduled for a crate, and the allowed direction.
+  Crates never depend on `lean-ctx`. The engine depends on them through a thin
+  facade (for example `core::patterns`), so engine paths stay stable. New code
+  for an extracted area goes into its crate, never beside the facade.
 - **Changes to existing code do not deepen the coupling:** no new
-  `crate::` edges from a module that is already split out or scheduled for a
-  split; shared types move down into a lower crate rather than up.
+  `crate::` edges out of a module that is split out or scheduled for a split;
+  shared types move down into a lower crate rather than up.
+  `scripts/check-crate-boundaries.py` (preflight and the pounce gate) fails on
+  such an edge. Its baseline `rust/crate_boundary_baseline.json` only grows with
+  the crate-split lead's sign-off ("monolith: <reason>" plus `--update`), and it
+  shrinks with every edge you cut.
 - **A new heavy dependency** (a parser, ML runtime, HTTP stack, database
   client) lands behind a feature in its own crate, never directly in
   `lean_ctx`.

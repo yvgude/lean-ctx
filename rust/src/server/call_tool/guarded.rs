@@ -73,6 +73,19 @@ fn host_hook_refusal(mut result: CallToolResult) -> CallToolResult {
     result
 }
 
+/// A loop-throttle block as a tool error carrying the detector's message,
+/// like a role or policy denial: the call was refused, not answered.
+/// `None` when the call is not blocked.
+fn loop_throttle_refusal(
+    throttle: &crate::core::loop_detection::ThrottleResult,
+) -> Option<CallToolResult> {
+    (throttle.level == crate::core::loop_detection::ThrottleLevel::Blocked).then(|| {
+        CallToolResult::error(vec![ContentBlock::text(
+            throttle.message.clone().unwrap_or_default(),
+        )])
+    })
+}
+
 struct McpProcessedCall {
     result: CallToolResult,
     pipeline: Option<super::pipeline::McpProcessed>,
@@ -742,9 +755,7 @@ impl LeanCtxServer {
             }
         };
 
-        if throttle_result.level == crate::core::loop_detection::ThrottleLevel::Blocked {
-            let msg = throttle_result.message.unwrap_or_default();
-            let result = CallToolResult::success(vec![ContentBlock::text(msg)]);
+        if let Some(result) = loop_throttle_refusal(&throttle_result) {
             return Ok(PreparedCallResult::Terminal(
                 result,
                 "loop throttle blocked",

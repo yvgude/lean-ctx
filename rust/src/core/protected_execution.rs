@@ -187,7 +187,7 @@ impl LaunchProfile {
     /// Fails closed: a wrapper that cannot reproduce the pinned boundary
     /// supervises nothing.
     pub(crate) fn from_pinned(control_profile: &str) -> Result<Self, String> {
-        let prefix = crate::cli::protected_child_prefix()?
+        let prefix = crate::core::protected_store::protected_child_prefix()?
             .ok_or("supervised execution requires a protected session")?;
         let mut shell = match prefix.as_slice() {
             [program, flag, profile] if program == SANDBOX_EXEC && flag == "-p" => profile.clone(),
@@ -300,7 +300,9 @@ fn with_broker_profile<T>(profile: String, run: impl FnOnce() -> T) -> T {
 
 #[cfg(all(test, target_os = "macos"))]
 pub(crate) fn with_test_supervisor<T>(run: impl FnOnce() -> T) -> T {
-    let prefix = crate::cli::protected_child_prefix().unwrap().unwrap();
+    let prefix = crate::core::protected_store::protected_child_prefix()
+        .unwrap()
+        .unwrap();
     with_broker_profile(prefix[2].clone(), run)
 }
 
@@ -331,7 +333,7 @@ pub(crate) fn launch_mode() -> Result<Mode, String> {
         }
         return Ok(Mode::Brokered(client));
     }
-    if crate::cli::protected_child_prefix()?.is_some() {
+    if crate::core::protected_store::protected_child_prefix()?.is_some() {
         return Err(
             "protected session without a supervised execution channel; restart \
              `lean-ctx codex-protected`"
@@ -1078,7 +1080,8 @@ mod tests {
     fn combined_shell_retains_controls_and_refuses_new_grants() {
         let _lock = crate::core::data_dir::test_env_lock();
         let isolation = crate::core::data_dir::isolated_data_dir();
-        let _session = crate::cli::pin_synthetic_session(isolation.path()).unwrap();
+        let _session =
+            crate::core::protected_store::pin_synthetic_session(isolation.path()).unwrap();
         let control = "(deny file-read* (literal \"/synthetic-control\"))\n";
         let combined =
             LaunchProfile::from_pinned(&format!("{LAUNCH_PROFILE_HEADER}{control}")).unwrap();
@@ -1101,7 +1104,7 @@ mod tests {
     #[test]
     fn a_community_session_runs_children_directly() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::cli::unpin_synthetic_session();
+        crate::core::protected_store::unpin_synthetic_session();
         assert!(matches!(launch_mode().unwrap(), Mode::Direct));
     }
 
@@ -1110,7 +1113,8 @@ mod tests {
     fn a_protected_session_without_a_channel_runs_nothing() {
         let _lock = crate::core::data_dir::test_env_lock();
         let isolation = crate::core::data_dir::isolated_data_dir();
-        let _session = crate::cli::pin_synthetic_session(isolation.path()).expect("pinned rules");
+        let _session = crate::core::protected_store::pin_synthetic_session(isolation.path())
+            .expect("pinned rules");
         // No channel was installed in this process: the mode must be an error,
         // never a direct, unsupervised child.
         match launch_mode() {
@@ -1125,7 +1129,7 @@ mod tests {
     #[test]
     fn a_supervisor_thread_takes_the_broker_private_path() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::cli::unpin_synthetic_session();
+        crate::core::protected_store::unpin_synthetic_session();
         let profile = format!("{LAUNCH_PROFILE_HEADER}(deny file-read* (subpath \"/store\"))\n");
         with_broker_profile(profile.clone(), || match launch_mode().unwrap() {
             Mode::Sandboxed(fixed) => {
@@ -1196,7 +1200,7 @@ mod tests {
     #[test]
     fn ordinary_work_succeeds_and_exit_codes_survive_the_channel() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::cli::unpin_synthetic_session();
+        crate::core::protected_store::unpin_synthetic_session();
         let temp = tempfile::tempdir().expect("temp");
         std::fs::write(temp.path().join("ordinary.txt"), "project-content").unwrap();
         let cwd = temp.path().to_str().unwrap().to_string();
@@ -1230,7 +1234,7 @@ mod tests {
     #[test]
     fn a_supervised_child_is_denied_the_store_but_keeps_its_project_work() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::cli::unpin_synthetic_session();
+        crate::core::protected_store::unpin_synthetic_session();
         let temp = tempfile::tempdir().expect("temp");
         let store = temp.path().join("store");
         std::fs::create_dir_all(&store).unwrap();
@@ -1290,7 +1294,7 @@ mod tests {
     #[test]
     fn a_request_cannot_select_a_weaker_boundary() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::cli::unpin_synthetic_session();
+        crate::core::protected_store::unpin_synthetic_session();
         let temp = tempfile::tempdir().expect("temp");
         let root = temp.path().canonicalize().unwrap();
         let secret = root.join("knowledge.json");
@@ -1366,7 +1370,7 @@ mod tests {
     #[test]
     fn program_output_larger_than_a_pipe_completes_and_is_bounded() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::cli::unpin_synthetic_session();
+        crate::core::protected_store::unpin_synthetic_session();
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().canonicalize().unwrap();
         let file = root.join("output.txt");
@@ -1438,7 +1442,7 @@ mod tests {
     #[test]
     fn cancellation_terminates_the_whole_process_group() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::cli::unpin_synthetic_session();
+        crate::core::protected_store::unpin_synthetic_session();
         let cancel = AtomicBool::new(false);
         supervised("", |client| {
             std::thread::scope(|scope| {

@@ -22,7 +22,7 @@
 // Chunker::name returns &str; literals here would otherwise trip the lint.
 #![allow(clippy::unnecessary_literal_bound)]
 
-pub mod csv;
+pub use lean_ctx_compress::csv;
 pub mod eml;
 pub mod json;
 

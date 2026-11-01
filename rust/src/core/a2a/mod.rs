@@ -1,6 +1,5 @@
 pub mod a2a_compat;
 pub mod agent_card;
-pub mod budget_cascade;
 pub mod cost_attribution;
 pub mod dlq;
 pub mod health;

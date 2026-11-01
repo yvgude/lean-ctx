@@ -170,7 +170,7 @@ Keep useful task records and discover relationships between code and local
 knowledge. Learning here means context continuity; it does not train your model.
 
 - **Session memory (CCP)**: persist task/facts/decisions across chats — structured recovery queries survive compaction
-- **Knowledge graph**: temporal facts with validity windows, episodic + procedural memory
+- **Knowledge graph**: temporal facts with validity windows, relations and lifecycle
 - **Property Graph**: multi-edge code graph (imports, calls, exports, type_ref) powers impact analysis and search ranking
 - **Permission-bound reuse:** access and retention rules still apply when stored
   context is retrieved. Experimental `.ctxpkg` export is described under Research below.

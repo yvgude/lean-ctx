@@ -5,6 +5,18 @@ use super::super::shared::*;
 use super::super::{WriteAction, WriteOptions, WriteResult};
 use crate::core::editor_registry::types::EditorTarget;
 
+/// Instructions block for Command Code MCP hosts (shadow-mode rules).
+pub(crate) const COMMANDCODE_MCP_INSTRUCTIONS: &str = "\
+lean-ctx shadow mode: native file/search/shell calls auto-route to ctx_* — no tool-mapping needed.\n\
+Exclusive tools (no native trigger): ctx_compose (search + read + symbols), \
+ctx_search(action=symbol) (exact symbol), ctx_search(action=semantic) (by meaning), \
+ctx_callgraph (callers), ctx_knowledge / ctx_session (memory).\n\
+OUTPUT STYLE: concise\n\
+- Bullet points over paragraphs\n\
+- Skip filler words and hedging (\"I think\", \"probably\", \"it seems\")\n\
+- 1-sentence explanations max, then code/action\n\
+- No repeating what the user said";
+
 pub(crate) fn write_commandcode_config_with_rule_steering(
     target: &EditorTarget,
     binary: &str,
@@ -23,7 +35,7 @@ pub(crate) fn write_commandcode_config_with_rule_steering(
     if allow_rule_steering && let Some(obj) = desired.as_object_mut() {
         obj.insert(
             "instructions".to_string(),
-            serde_json::Value::String(crate::proxy_setup::COMMANDCODE_MCP_INSTRUCTIONS.to_string()),
+            serde_json::Value::String(COMMANDCODE_MCP_INSTRUCTIONS.to_string()),
         );
     }
 
@@ -69,8 +81,7 @@ pub(crate) fn write_commandcode_config_with_rule_steering(
                 == crate::core::config::RulesInjection::Off;
 
             let lean_ctx_owned = instructions.as_str().is_some_and(|text| {
-                text == crate::proxy_setup::COMMANDCODE_MCP_INSTRUCTIONS
-                    || text.starts_with("lean-ctx shadow mode:")
+                text == COMMANDCODE_MCP_INSTRUCTIONS || text.starts_with("lean-ctx shadow mode:")
             });
 
             if !rules_off || !lean_ctx_owned {

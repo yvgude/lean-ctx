@@ -43,7 +43,7 @@ pub fn compress_tool_result(content: &str, tool_name: Option<&str>) -> String {
 pub fn compress_tool_result_with_policy(
     content: &str,
     tool_name: Option<&str>,
-    policy: crate::proxy::adaptive_policy::CompressionPolicy,
+    policy: crate::core::adaptive_policy::CompressionPolicy,
 ) -> String {
     if !policy.compress_tool_output || policy.log_compression_level == 0 {
         return content.to_owned();
@@ -59,7 +59,7 @@ pub fn compress_tool_result_gateway_with_policy(
     content: &str,
     tool_name: Option<&str>,
     family: TokenizerFamily,
-    policy: crate::proxy::adaptive_policy::CompressionPolicy,
+    policy: crate::core::adaptive_policy::CompressionPolicy,
 ) -> String {
     if !policy.compress_tool_output || policy.log_compression_level == 0 {
         return content.to_owned();

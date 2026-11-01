@@ -78,7 +78,7 @@ pub struct ProxyConfig {
     pub live_compress: Option<bool>,
     /// Per-tool exclusion list for live tool-result compression (#481). Tool
     /// names are matched case-insensitively as substrings (the same style as
-    /// [`crate::proxy::tool_kind::classify_tool_name`]); a match is treated as
+    /// `proxy::tool_kind::classify_tool_name`); a match is treated as
     /// protected, exactly like a file read. `None` (the default) protects
     /// Serena's code-reading tools (`find_symbol`/`find_referencing_symbols`/
     /// `search_for_pattern` return source bodies the model edits, but are
@@ -155,8 +155,8 @@ pub struct ProxyConfig {
     /// behind one flag: (1) prompt-cache **miss attribution** telemetry — per turn,
     /// classify why the cache hit or missed (cold start / warm reuse / TTL lapse /
     /// prefix change) and expose cumulative gauges on `/status`
-    /// ([`crate::proxy::cache_attribution`]); and (2) a **net-cost gate** on the
-    /// cold-prefix repack ([`crate::proxy::cache_policy::worth_repacking`]) that
+    /// (`proxy::cache_attribution`); and (2) a **net-cost gate** on the
+    /// cold-prefix repack (`proxy::cache_policy::worth_repacking`) that
     /// skips re-seeding prefixes too small to be cached. The telemetry never
     /// touches the body and the gate only makes repacking *more* conservative, so
     /// it can never bust a cache that would otherwise have been kept. `None` (the
@@ -596,7 +596,7 @@ impl ProxyMode {
 pub enum ProseRanker {
     /// Extractive embedding ranking when the engine is available, else truncate.
     /// The default — strictly better than truncation, and cache-safe via the
-    /// per-content memo in [`crate::proxy::prose_ranker`].
+    /// per-content memo in `proxy::prose_ranker`.
     Auto,
     /// Same engine path as `Auto` (kept distinct so an operator can express
     /// intent / so a future "require engine" semantic has a name).

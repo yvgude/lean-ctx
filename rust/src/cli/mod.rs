@@ -105,22 +105,11 @@ pub(crate) mod wrap_cmd;
 pub(crate) use agent_cmd::cmd_agent;
 pub use allow_cmd::cmd_allow;
 pub use allow_path_cmd::cmd_allow_path;
-pub(crate) use allow_path_cmd::global_string_list;
 #[allow(unused_imports)]
 pub(crate) use benchmark_cmd::cmd_benchmark_real;
 pub(crate) use call_cmd::cmd_call;
 pub use cheatsheet_cmd::*;
-#[cfg(all(test, target_os = "macos"))]
-pub(crate) use codex_protected_cmd::CHILD_PROFILE_ENV;
-#[cfg(test)]
-pub(crate) use codex_protected_cmd::pin_synthetic_session;
-#[cfg(all(test, unix))]
-pub(crate) use codex_protected_cmd::unpin_synthetic_session;
-pub(crate) use codex_protected_cmd::{
-    cmd_codex_protected, cmd_setup_codex_protected, enforce_protected_store_path,
-    protected_child_prefix,
-};
-pub use common::load_shell_history_pub;
+pub(crate) use codex_protected_cmd::{cmd_codex_protected, cmd_setup_codex_protected};
 pub(crate) use compress_cmd::cmd_compress;
 pub use config_cmd::*;
 pub(crate) use context_cmd::{cmd_compile, cmd_control, cmd_plan};

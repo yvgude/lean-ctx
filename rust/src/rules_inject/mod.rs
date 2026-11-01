@@ -396,6 +396,29 @@ pub fn any_rules_marker_present(home: &std::path::Path) -> bool {
     false
 }
 
+/// Whether `lean-ctx setup` has left guidance for any host: a rules target,
+/// or the instruction-file block of a host that has no rules target (Claude
+/// Code's `CLAUDE.md`, CodeBuddy's `CODEBUDDY.md`, #555). The "run setup" tip
+/// needs this wider check: [`any_rules_marker_present`] alone never sees a
+/// Claude-only installation.
+#[must_use]
+pub fn host_guidance_present(home: &std::path::Path) -> bool {
+    use crate::core::editor_registry::{claude_state_dir, codebuddy_state_dir};
+    any_rules_marker_present(home)
+        || pointer_block_present(&[
+            claude_state_dir(home).join("CLAUDE.md"),
+            codebuddy_state_dir(home).join("CODEBUDDY.md"),
+        ])
+}
+
+fn pointer_block_present(files: &[std::path::PathBuf]) -> bool {
+    files.iter().any(|path| {
+        // These are pointer blocks, delimited by AGENTS_BLOCK_START (#549).
+        std::fs::read_to_string(path)
+            .is_ok_and(|c| c.contains(crate::core::rules_canonical::AGENTS_BLOCK_START))
+    })
+}
+
 fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
     let needle = cli_key.to_lowercase();
     let tn = target_name.to_lowercase();

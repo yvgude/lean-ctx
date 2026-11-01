@@ -120,8 +120,7 @@ var always wins.
 ### Provider tokens (for `ctx_provider`)
 
 `GITHUB_TOKEN` / `GH_TOKEN`, `GITLAB_TOKEN` / `CI_JOB_TOKEN`, `JIRA_URL` +
-`JIRA_EMAIL` + `JIRA_TOKEN`, `DATABASE_URL`. Optional LLM enhance:
-`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`.
+`JIRA_EMAIL` + `JIRA_TOKEN`, `DATABASE_URL`.
 
 ### Internal (set by lean-ctx itself — don't set these)
 
@@ -177,8 +176,8 @@ loading; a writable global `config.toml` has them removed automatically, and
 | `[secret_detection]` | Secret redaction in output |
 | `[cloud]` | `contribute_enabled` + sync timestamps |
 | `[proxy]` | Upstream URLs for Anthropic/OpenAI/Gemini |
-| `[memory.*]` | Knowledge/episodic/procedural/lifecycle/gotcha/embeddings caps |
-| `[llm]` | Optional local LLM enhance (Ollama) |
+| `[memory.*]` | Knowledge/lifecycle/gotcha/embeddings caps (`episodic`/`procedural`: retired, no effect) |
+| `[llm]` | Retired, no effect (LeanCTX calls no model itself) |
 | `[value_display]` | How lean-ctx shows its value outside the model's context: `mode` (`off`/`minimal`/`milestones`/`verbose`), recap cadence, notifications, git trailer |
 
 Key defaults worth knowing:

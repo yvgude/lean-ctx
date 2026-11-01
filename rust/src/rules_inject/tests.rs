@@ -355,7 +355,7 @@ fn inject_rules_for_agent_opencode() {
     // Injection reads LEAN_CTX_RULES_INJECTION, which other tests set to "off"
     // under the env lock; without the lock this test raced them.
     let _guard = crate::core::data_dir::test_env_lock();
-    let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
     let home = std::env::temp_dir().join("test_inject_rules_agent");
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::create_dir_all(&home);
@@ -382,7 +382,7 @@ fn inject_rules_for_agent_opencode() {
 #[test]
 fn inject_rules_for_agent_cursor() {
     let _guard = crate::core::data_dir::test_env_lock();
-    let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
     let home = std::env::temp_dir().join("test_inject_rules_cursor");
     let _ = std::fs::remove_dir_all(&home);
     let _ = std::fs::create_dir_all(&home);
@@ -473,6 +473,26 @@ fn any_rules_marker_present_detects_opencode() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+/// Claude Code has no rules target: its guidance is the CLAUDE.md block. A
+/// set-up Claude-only install must count as set up, or every session gets
+/// the "run lean-ctx setup" tip.
+#[test]
+fn claude_md_block_counts_as_installed_guidance() {
+    let _guard = crate::core::data_dir::test_env_lock();
+    let home = tempfile::tempdir().unwrap();
+    with_temp_home(home.path(), || {
+        assert!(!host_guidance_present(home.path()));
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+        std::fs::write(
+            home.path().join(".claude/CLAUDE.md"),
+            "<!-- lean-ctx -->\n<!-- lean-ctx-claude-v13 -->\n## LeanCTX\n<!-- /lean-ctx -->\n",
+        )
+        .unwrap();
+        assert!(!any_rules_marker_present(home.path()));
+        assert!(host_guidance_present(home.path()));
+    });
+}
+
 // ── Skills ───────────────────────────────────────────────────
 
 #[test]
@@ -492,7 +512,7 @@ fn skill_targets_count() {
 #[test]
 fn install_skill_creates_file() {
     let _guard = crate::core::data_dir::test_env_lock();
-    let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
     let home = std::env::temp_dir().join("test_skill_install");
     let _ = std::fs::create_dir_all(&home);
     let fake_cursor = home.join(".cursor");
@@ -510,7 +530,7 @@ fn install_skill_creates_file() {
 #[test]
 fn install_skill_idempotent() {
     let _guard = crate::core::data_dir::test_env_lock();
-    let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
     let home = std::env::temp_dir().join("test_skill_idempotent");
     let _ = std::fs::create_dir_all(&home);
     let fake_cursor = home.join(".cursor");
@@ -594,12 +614,12 @@ fn explicit_auto_inject_false_suppresses_freshness_self_heal() {
     )
     .unwrap();
 
-    let _config_guard = crate::setup::EnvVarGuard::set(
+    let _config_guard = crate::test_env::EnvVarGuard::set(
         "LEAN_CTX_CONFIG_DIR",
         config_dir.to_string_lossy().as_ref(),
     );
-    let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-    let _scope_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+    let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _scope_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
 
     let target = build_rules_targets(&home, crate::core::config::RulesInjection::Shared)
         .into_iter()
@@ -632,12 +652,12 @@ fn automatic_rule_maintenance_allows_default_freshness_check() {
     std::fs::create_dir_all(&home).unwrap();
     std::fs::create_dir_all(&config_dir).unwrap();
 
-    let _config_guard = crate::setup::EnvVarGuard::set(
+    let _config_guard = crate::test_env::EnvVarGuard::set(
         "LEAN_CTX_CONFIG_DIR",
         config_dir.to_string_lossy().as_ref(),
     );
-    let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-    let _scope_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+    let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _scope_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
 
     std::fs::create_dir_all(home.join(".cursor")).unwrap();
     std::fs::write(
@@ -682,12 +702,12 @@ fn automatic_rule_maintenance_allows_explicit_true_freshness_check() {
     )
     .unwrap();
 
-    let _config_guard = crate::setup::EnvVarGuard::set(
+    let _config_guard = crate::test_env::EnvVarGuard::set(
         "LEAN_CTX_CONFIG_DIR",
         config_dir.to_string_lossy().as_ref(),
     );
-    let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-    let _scope_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+    let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _scope_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
 
     std::fs::create_dir_all(home.join(".cursor")).unwrap();
     std::fs::write(
@@ -732,12 +752,12 @@ fn project_scope_suppresses_global_freshness_self_heal() {
     )
     .unwrap();
 
-    let _config_guard = crate::setup::EnvVarGuard::set(
+    let _config_guard = crate::test_env::EnvVarGuard::set(
         "LEAN_CTX_CONFIG_DIR",
         config_dir.to_string_lossy().as_ref(),
     );
-    let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-    let _scope_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "project");
+    let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _scope_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "project");
 
     let target = build_rules_targets(&home, crate::core::config::RulesInjection::Shared)
         .into_iter()
@@ -769,12 +789,12 @@ fn missing_mcp_config_suppresses_freshness_self_heal() {
     std::fs::create_dir_all(home.join(".cursor/rules")).unwrap();
     std::fs::create_dir_all(&config_dir).unwrap();
 
-    let _config_guard = crate::setup::EnvVarGuard::set(
+    let _config_guard = crate::test_env::EnvVarGuard::set(
         "LEAN_CTX_CONFIG_DIR",
         config_dir.to_string_lossy().as_ref(),
     );
-    let _injection_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
-    let _scope_guard = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
+    let _injection_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+    let _scope_guard = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_SCOPE", "global");
 
     let target = build_rules_targets(&home, crate::core::config::RulesInjection::Shared)
         .into_iter()
@@ -811,7 +831,7 @@ fn missing_mcp_config_suppresses_freshness_self_heal() {
 fn every_rules_target_maps_to_a_selectable_agent_key() {
     use crate::core::config::RulesInjection;
     let home = tempfile::tempdir().unwrap();
-    let known = crate::setup::agent_selection::known_agent_keys(
+    let known = crate::core::editor_registry::known_agent_keys(
         &crate::core::editor_registry::build_targets(home.path()),
     );
     for injection in [RulesInjection::Shared, RulesInjection::Dedicated] {
@@ -1001,7 +1021,7 @@ fn claude_duplicate_rules_channels_are_detected_and_removed_keeping_user_text() 
 
         // Sync (setup/update) retires the global copy, dedup the project one.
         crate::hooks::agents::sync_claude_global_rules_block(home, mode).unwrap();
-        crate::cli::rules_dedup::auto_apply(home, &project);
+        crate::core::rules_dedup::auto_apply(home, &project);
 
         let global = std::fs::read_to_string(&global_rules).unwrap();
         let local = std::fs::read_to_string(&project_rules).unwrap();

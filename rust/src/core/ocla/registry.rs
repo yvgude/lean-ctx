@@ -188,7 +188,7 @@ mod tests {
     use super::*;
     use crate::core::ocla::capability_fabric::normalize_manifest;
     use crate::core::ocla::traits::{
-        EfficiencyAnalyzer, ObservationHook, OclaService, OutcomeTracker, SavingsLedger, UsageSink,
+        EfficiencyAnalyzer, ObservationHook, OclaService, OutcomeTracker, SavingsLedger,
     };
     use crate::core::ocla::types::{
         AgentEnvelope, CompressionRequest, ConfigTuningRequest, ConnectorJob, EfficiencyAnalysis,
@@ -350,7 +350,6 @@ mod tests {
     struct SpySavings(Arc<AtomicUsize>);
     struct SpyObservation(Arc<AtomicUsize>);
     struct SpyOutcome(Arc<AtomicUsize>);
-    struct SpyUsage(Arc<AtomicUsize>);
 
     macro_rules! spy_capability {
         ($name:ty, $kind:expr) => {
@@ -366,7 +365,6 @@ mod tests {
     spy_capability!(SpySavings, OclaCapabilityKind::SavingsLedger);
     spy_capability!(SpyObservation, OclaCapabilityKind::ObservationHook);
     spy_capability!(SpyOutcome, OclaCapabilityKind::OutcomeTracker);
-    spy_capability!(SpyUsage, OclaCapabilityKind::UsageSink);
 
     impl EfficiencyAnalyzer for SpyEfficiency {
         fn analyze_efficiency(&self, sample: EfficiencySample) -> OclaResult<EfficiencyAnalysis> {
@@ -402,14 +400,6 @@ mod tests {
 
     impl OutcomeTracker for SpyOutcome {
         fn record_outcome(&self, _outcome: Outcome) -> OclaResult<()> {
-            self.0.fetch_add(1, Ordering::Relaxed);
-            Ok(())
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl UsageSink for SpyUsage {
-        async fn record_usage(&self, _usage: UsageRecord) -> OclaResult<()> {
             self.0.fetch_add(1, Ordering::Relaxed);
             Ok(())
         }
@@ -687,28 +677,5 @@ mod tests {
 
         assert_eq!(observation_calls.load(Ordering::Relaxed), 1);
         assert_eq!(outcome_calls.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn proxy_request_projects_measured_usage_to_usage_spy() {
-        let _dir = crate::core::data_dir::isolated_data_dir();
-        let usage_calls = Arc::new(AtomicUsize::new(0));
-        let mut registry = OclaRegistry::with_builtins();
-        registry.usage_sink = Arc::new(SpyUsage(usage_calls.clone()));
-        let _guard = with_test_registry(registry);
-        let usage = crate::proxy::usage::RealUsage {
-            model: "test-model".into(),
-            input_tokens: 11,
-            output_tokens: 7,
-            wire: Some(Box::new(crate::proxy::usage::WireContext {
-                lineage: Some(context()),
-                ..Default::default()
-            })),
-            ..Default::default()
-        };
-
-        crate::proxy::usage_meter::record(&usage);
-
-        assert_eq!(usage_calls.load(Ordering::Relaxed), 1);
     }
 }

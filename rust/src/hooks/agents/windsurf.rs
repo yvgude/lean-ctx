@@ -1,7 +1,9 @@
 use super::super::{
     install_mcp_json_agent, mcp_server_quiet_mode, resolve_hook_command_binary, write_file,
 };
-use super::shared::prepare_project_rules_path;
+use super::shared::{
+    prepare_project_rules_path, read_agent_json_config, report_unreadable_agent_config,
+};
 
 pub(crate) fn install_windsurf_rules(global: bool) {
     let home = crate::core::home::resolve_home_dir().unwrap_or_default();
@@ -38,16 +40,9 @@ pub(crate) fn install_windsurf_hooks(home: &std::path::Path) {
     let rewrite_cmd = format!("{binary} hook rewrite");
     let redirect_cmd = format!("{binary} hook redirect");
 
-    let existing_content = if hooks_json.exists() {
-        std::fs::read_to_string(&hooks_json).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let mut root = if existing_content.trim().is_empty() {
-        serde_json::json!({})
-    } else {
-        crate::core::jsonc::parse_jsonc(&existing_content).unwrap_or_else(|_| serde_json::json!({}))
+    let mut root = match read_agent_json_config(&hooks_json, "windsurf") {
+        Ok(root) => root,
+        Err(error) => return report_unreadable_agent_config("Windsurf", &error),
     };
 
     if !root.is_object() {
@@ -128,16 +123,9 @@ pub(crate) fn install_windsurf_deny_hook(home: &std::path::Path) {
     let binary = resolve_hook_command_binary();
     let deny_cmd = format!("{binary} hook deny");
 
-    let existing_content = if hooks_json.exists() {
-        std::fs::read_to_string(&hooks_json).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let mut root = if existing_content.trim().is_empty() {
-        serde_json::json!({})
-    } else {
-        crate::core::jsonc::parse_jsonc(&existing_content).unwrap_or_else(|_| serde_json::json!({}))
+    let mut root = match read_agent_json_config(&hooks_json, "windsurf") {
+        Ok(root) => root,
+        Err(error) => return report_unreadable_agent_config("Windsurf", &error),
     };
 
     if !root.is_object() {
@@ -191,4 +179,32 @@ pub(crate) fn install_windsurf_deny_hook(home: &std::path::Path) {
 pub(crate) fn install_windsurf_hooks_replace(home: &std::path::Path) {
     install_windsurf_hooks(home);
     install_windsurf_deny_hook(home);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // An unparseable hooks.json was replaced with `{}` plus the lean-ctx
+    // hooks, dropping the user's own hooks. Both writers now refuse it and
+    // leave it byte-identical.
+    #[test]
+    fn unparseable_hooks_json_is_refused_and_left_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hooks_json = tmp
+            .path()
+            .join(".codeium")
+            .join("windsurf")
+            .join("hooks.json");
+        std::fs::create_dir_all(hooks_json.parent().unwrap()).unwrap();
+        let broken = "{\"hooks\": {\"pre_user_prompt\": [\n";
+        std::fs::write(&hooks_json, broken).unwrap();
+
+        install_windsurf_hooks_replace(tmp.path());
+
+        assert_eq!(std::fs::read_to_string(&hooks_json).unwrap(), broken);
+        let error = read_agent_json_config(&hooks_json, "windsurf").unwrap_err();
+        assert!(error.contains("hooks.json is not valid JSON"), "{error}");
+        assert!(error.contains("lean-ctx init --agent windsurf"), "{error}");
+    }
 }

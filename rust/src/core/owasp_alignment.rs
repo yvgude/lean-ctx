@@ -189,7 +189,7 @@ pub(crate) fn alignment() -> Vec<OwaspMapping> {
                 },
                 Mitigation {
                     feature: "Proxy Metrics",
-                    module: "proxy/metrics.rs",
+                    module: "core/proxy_metrics.rs",
                     description: "Atomic counters for requests, tokens saved, bytes compressed",
                 },
             ],

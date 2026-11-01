@@ -50,7 +50,7 @@ pub use defaults::*;
 #[allow(unreachable_pub, unused_imports)]
 pub use logic::*;
 pub use model::*;
-pub use render::render_annotated_config;
+pub use render::{SIMPLIFIED_TEMPLATE, render_annotated_config};
 pub use sections::*;
 
 pub(crate) use defaults_allowlist::{cloud_infra_commands, default_shell_allowlist};
@@ -61,6 +61,7 @@ pub use enums::{
 };
 pub use intelligence::IntelligenceRuntimeConfig;
 pub use loader::ConfigLoadFailure;
+pub(crate) use loader::global_string_list;
 pub use loader::last_config_parse_error;
 pub use loader::local_sensitive_overrides;
 pub(crate) use loader::strip_sensitive_overrides;
@@ -88,6 +89,8 @@ pub use value_display::{StatuslineStyle, ValueDisplayConfig, ValueDisplayMode};
 mod solution_tests;
 #[cfg(test)]
 mod telemetry_migration_tests;
+#[cfg(test)]
+pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

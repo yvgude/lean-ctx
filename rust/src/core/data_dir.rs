@@ -186,69 +186,12 @@ pub(crate) fn ensure_dir_permissions(path: &std::path::Path) {
 #[cfg(not(unix))]
 pub(crate) fn ensure_dir_permissions(_path: &std::path::Path) {}
 
-static TEST_ENV_MUTEX: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+// The process-wide test environment lock lives in `lean-ctx-fs`, so the
+// engine and its foundation crates share one lock.
+pub use lean_ctx_fs::env_lock::{TestEnvGuard, test_env_lock};
 
-thread_local! {
-    /// Re-entrancy depth for the current thread. >0 means this thread already
-    /// holds the lock, so a nested acquire is a no-op bump instead of a
-    /// self-deadlock.
-    static TEST_ENV_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    /// The real guard, held only while depth transitions 0→…→0.
-    static TEST_ENV_HELD: std::cell::RefCell<Option<std::sync::MutexGuard<'static, ()>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Reentrant test env lock. Serializes env-mutating tests across threads (the
-/// point — `std::env::set_var` is not thread-safe) while letting the SAME
-/// thread re-acquire without deadlocking. A test and a `setup()` helper (or
-/// `isolated_data_dir`) can both take it; only the outermost acquisition holds
-/// the underlying mutex, nested ones just bump a per-thread depth. Other
-/// threads still block, so cross-test serialization is unchanged.
-pub fn test_env_lock() -> TestEnvGuard {
-    let mutex = TEST_ENV_MUTEX.get_or_init(|| std::sync::Mutex::new(()));
-    TEST_ENV_DEPTH.with(|depth| {
-        if depth.get() == 0 {
-            let guard = mutex
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            TEST_ENV_HELD.with(|held| *held.borrow_mut() = Some(guard));
-        }
-        depth.set(depth.get() + 1);
-    });
-    TestEnvGuard {
-        _not_send_sync: std::marker::PhantomData,
-    }
-}
-
-/// Whether the current thread holds [`test_env_lock`]. The lock belongs to
-/// the thread that took it: a guard held by another thread does not count.
 #[cfg(test)]
-pub(crate) fn holds_test_env_lock() -> bool {
-    TEST_ENV_DEPTH.with(|depth| depth.get() > 0)
-}
-
-/// RAII guard for [`test_env_lock`]. Dropping the outermost one releases the
-/// underlying mutex; nested guards just decrement the depth.
-///
-/// The lock and its depth live in the acquiring thread's own storage, so the
-/// guard must be dropped on that thread: it is neither `Send` nor `Sync`.
-/// Moved to another thread it would decrement that thread's depth and leave
-/// the lock held here.
-pub struct TestEnvGuard {
-    _not_send_sync: std::marker::PhantomData<*const ()>,
-}
-
-impl Drop for TestEnvGuard {
-    fn drop(&mut self) {
-        TEST_ENV_DEPTH.with(|depth| {
-            let next = depth.get().saturating_sub(1);
-            depth.set(next);
-            if next == 0 {
-                TEST_ENV_HELD.with(|held| *held.borrow_mut() = None);
-            }
-        });
-    }
-}
+pub(crate) use lean_ctx_fs::env_lock::holds_test_env_lock;
 
 /// RAII data-dir isolation for tests (GL #556): holds `test_env_lock` for
 /// the guard's lifetime, points `LEAN_CTX_DATA_DIR` at a fresh temp dir and

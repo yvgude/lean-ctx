@@ -308,13 +308,13 @@ Global-only optional runtime consent and independent staging pins; project overr
 
 ## `[llm]`
 
-Optional LLM enhancement settings (query expansion, contradiction explanation). Deterministic fallback when disabled or unreachable. Credentials come from the environment — OPENROUTER_API_KEY or ANTHROPIC_API_KEY — not from this file.
+Retired, no effect: query expansion and observation synthesis, the only consumers of these settings, are gone (LeanCTX calls no model itself). The keys stay accepted so existing configs keep loading; earliest removal 3.15.0.
 
-- `backend` (enum: ollama | openrouter | anthropic, default `ollama`) — LLM backend provider
-- `base_url` (string, default `""`) — Override the backend's base URL (empty = the backend's own default)
-- `enabled` (bool, default `false`) — Enable optional LLM enhancements (query expansion, contradiction explanation)
-- `model` (string, default `qwen2.5-coder:1.5b`) — Model name for the selected backend
-- `timeout_secs` (u64, default `10`) — HTTP timeout for LLM requests
+- `backend` (enum: ollama | openrouter | anthropic, default `ollama`) — No effect (kept so existing configs load): LeanCTX calls no model itself
+- `base_url` (string, default `""`) — No effect (kept so existing configs load): LeanCTX calls no model itself
+- `enabled` (bool, default `false`) — No effect (kept so existing configs load): LeanCTX calls no model itself
+- `model` (string, default `qwen2.5-coder:1.5b`) — No effect (kept so existing configs load): LeanCTX calls no model itself
+- `timeout_secs` (u64, default `10`) — No effect (kept so existing configs load): LeanCTX calls no model itself
 
 ## `[loop_detection]`
 
@@ -344,11 +344,11 @@ Embeddings memory settings for semantic search
 
 ## `[memory.episodic]`
 
-Episodic memory budgets (session episodes)
+Retired (no effect): episode memory budgets, accepted so existing configs keep loading
 
-- `max_actions_per_episode` (usize, default `50`) — Maximum actions tracked per episode
-- `max_episodes` (usize, default `500`) — Maximum number of episodes retained
-- `summary_max_chars` (usize, default `200`) — Maximum characters in episode summary
+- `max_actions_per_episode` (usize, default `50`) — Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect
+- `max_episodes` (usize, default `500`) — Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect
+- `summary_max_chars` (usize, default `200`) — Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect
 
 ## `[memory.gotcha]`
 
@@ -385,12 +385,12 @@ Knowledge lifecycle policy (decay, staleness, dedup)
 
 ## `[memory.procedural]`
 
-Procedural memory budgets (learned patterns)
+Retired (no effect): procedure memory budgets, accepted so existing configs keep loading
 
-- `max_procedures` (usize, default `100`) — Maximum number of learned procedures stored
-- `max_window_size` (usize, default `10`) — Maximum window size for pattern analysis
-- `min_repetitions` (usize, default `3`) — Minimum repetitions before a pattern is stored
-- `min_sequence_len` (usize, default `2`) — Minimum sequence length for procedure detection
+- `max_procedures` (usize, default `100`) — Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect
+- `max_window_size` (usize, default `10`) — Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect
+- `min_repetitions` (usize, default `3`) — Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect
+- `min_sequence_len` (usize, default `2`) — Retired since 3.13.0 with the episode and procedure memory: accepted so existing configs keep loading, no effect
 
 ## `[model_context_windows]`
 

@@ -71,6 +71,15 @@ replacement = "lean-ctx serve --auth-token-file <path> (or LEAN_CTX_HTTP_TOKEN /
 note = "The token on the command line is visible in the process list. The flag still works and warns on stderr."
 
 [[deprecation]]
+id = "cli-cockpit-auth-token-argv"
+surface = "cli"
+subject = "lean-ctx cockpit --auth-token=<token> (alias --token=)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx cockpit --auth-token-file <path> (or LEAN_CTX_HTTP_TOKEN / LEAN_CTX_HTTP_TOKEN_FILE)"
+note = "The token on the command line is visible in the process list. The flag still works and warns on stderr."
+
+[[deprecation]]
 id = "mcp-ctx-agent-poll-events-aliases"
 surface = "mcp-tool"
 subject = "ctx_agent action=poll_events with to_agent, category, message, privacy or ttl_hours"
@@ -125,6 +134,15 @@ replacement = ""
 note = "Cluster compaction ran only in the retired cognition loop. The section is accepted without validation so existing configs keep loading; it has no effect."
 
 [[deprecation]]
+id = "config-llm"
+surface = "config"
+subject = "[llm] (enabled, backend, model, base_url, timeout_secs)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "Query expansion and observation synthesis, the only consumers of the optional LLM layer, are retired; LeanCTX calls no model itself. The section is accepted so existing configs keep loading; it has no effect."
+
+[[deprecation]]
 id = "cli-learning-export-import"
 surface = "cli"
 subject = "lean-ctx learning export|import"
@@ -141,3 +159,39 @@ announced_in = "3.13.0"
 earliest_removal = "3.15.0"
 replacement = "LEAN_CTX_KERNEL_MODE"
 note = "Still read and warns once per process; LEAN_CTX_KERNEL_MODE wins when both are set."
+
+[[deprecation]]
+id = "mcp-ctx-session-episodes-procedures"
+surface = "mcp-tool"
+subject = "ctx_session action=episodes|procedures (every value: record, search, file, outcome, detect, suggest)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "ctx_knowledge action=recall|search"
+note = "The episode and procedure memory is retired (owner decision 2026-11-01): procedures were never selected into a kernel plan and episodes, tool/file run logs, never reached the delivered context. The actions answer that they were retired and have no effect; no episode is recorded at shutdown or on task completion any more. Files under memory/episodes and memory/procedures stay on disk untouched."
+
+[[deprecation]]
+id = "mcp-ctx-knowledge-restore-store-procedures"
+surface = "mcp-tool"
+subject = "ctx_knowledge action=restore store=procedures (and lean-ctx knowledge restore --store procedures)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "ctx_knowledge action=restore store=facts|history|patterns"
+note = "The procedure store is retired with the procedure memory. The store value answers that it was retired and restores nothing; archived procedure files stay on disk untouched."
+
+[[deprecation]]
+id = "http-dashboard-episodes-procedures"
+surface = "http-endpoint"
+subject = "GET /api/episodes, GET /api/procedures, POST /api/episodes/annotate"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "GET /api/knowledge, GET /api/gotchas"
+note = "Retired with the episode and procedure memory: the routes answer {\"retired\": true, \"message\": …} and read or write no store."
+
+[[deprecation]]
+id = "config-memory-episodic-procedural"
+surface = "config"
+subject = "memory.episodic (max_episodes, max_actions_per_episode, summary_max_chars), memory.procedural (min_repetitions, min_sequence_len, max_procedures, max_window_size); LEAN_CTX_EPISODIC_*, LEAN_CTX_PROCEDURAL_*"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "The episode and procedure memory is retired. The sections are accepted without validation so existing configs keep loading, and are no longer scaled by max_disk_mb; they and the environment variables have no effect."

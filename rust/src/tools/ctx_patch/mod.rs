@@ -173,6 +173,10 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
     let avoided_tokens = metering::avoided_output_tokens(&lines, &params.ops);
 
     let n_edits = edits.len();
+    let net_change = edits.iter().fold((0u64, 0u64), |(added, removed), edit| {
+        let (a, r) = edit.net_change(&lines);
+        (added.saturating_add(a), removed.saturating_add(r))
+    });
     let lines_added = edits.iter().fold(0u64, |total, edit| {
         total.saturating_add(u64::try_from(edit.new_lines.len()).unwrap_or(u64::MAX))
     });
@@ -247,7 +251,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         &pre,
         &new_content,
         new_lines.len(),
-        (lines_added, lines_removed),
+        net_change,
         n_edits,
         backup_path,
     );

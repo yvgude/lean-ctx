@@ -301,6 +301,30 @@ pub fn local_sensitive_overrides(local_toml: &str) -> Vec<&'static str> {
     }
 }
 
+/// A string-array key from the raw GLOBAL config table — never the merged
+/// runtime view, so project-local or default values are never persisted
+/// globally.
+pub(crate) fn global_string_list(key: &str) -> Vec<String> {
+    let Some(path) = Config::path() else {
+        return Vec::new();
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let Ok(table) = raw.parse::<toml::Table>() else {
+        return Vec::new();
+    };
+    table
+        .get(key)
+        .and_then(toml::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 impl Config {
     /// Returns the path to the global config file (`$XDG_CONFIG_HOME/lean-ctx/config.toml`).
     ///

@@ -5,10 +5,12 @@ pub(crate) mod aggressiveness;
 pub(crate) mod auto_capture;
 pub(crate) mod auto_findings;
 pub(crate) mod behavior_nudge;
+pub(crate) mod cockpit_launch_record;
 pub mod codebook;
 #[cfg(target_os = "macos")]
 pub(crate) mod codesign;
 pub mod command_cwd;
+pub(crate) mod command_root;
 pub(crate) mod command_vars;
 pub(crate) mod compress_preview;
 pub(crate) mod compression_safety;
@@ -22,7 +24,7 @@ pub mod etpao;
 pub(crate) mod extractive;
 pub mod finops_export;
 pub(crate) mod foreign_mcp;
-pub mod html_crush;
+pub use lean_ctx_compress::html_crush;
 #[allow(unused_imports)]
 pub mod ib;
 pub mod import;
@@ -31,7 +33,6 @@ pub mod import;
 pub(crate) mod integration_proof;
 pub(crate) mod intelligence_runtime;
 pub mod json_crush;
-pub(crate) mod markdown_compact;
 pub(crate) mod migration_lock;
 pub mod output_sanitizer;
 pub mod policy;
@@ -45,6 +46,7 @@ pub mod rule_artifacts;
 pub(crate) mod rule_discovery;
 pub mod rules_canonical;
 pub mod rules_channel;
+pub mod rules_dedup;
 pub(crate) mod rules_overhead;
 pub(crate) mod rules_sections;
 pub(crate) mod rules_validation;
@@ -56,19 +58,18 @@ pub mod solution_tracker;
 /// `core::knowledge`. Kept on purpose for library users (#1923).
 pub mod solution_types;
 pub(crate) mod structured_read;
-pub mod tabular_crush;
+pub use lean_ctx_compress::tabular_crush;
 pub(crate) mod task_receipt_migration;
 #[allow(unreachable_pub)]
 #[cfg(windows)]
 pub(crate) mod windows_file;
 #[cfg(windows)]
 pub(crate) mod windows_private;
-pub mod yaml_crush;
+pub use lean_ctx_compress::yaml_crush;
 
 // ---------------------------------------------------------------------------
 // Domain: Memory
 // ---------------------------------------------------------------------------
-pub mod episodic_memory;
 pub mod interrupt;
 pub(crate) mod legacy_adoption;
 pub mod memory_archive;
@@ -79,7 +80,6 @@ pub mod memory_guard;
 pub mod memory_lifecycle;
 pub mod memory_policy;
 pub(crate) mod memory_salience;
-pub mod procedural_memory;
 pub(crate) mod prospective_memory;
 
 // ---------------------------------------------------------------------------
@@ -221,6 +221,7 @@ pub mod hive;
 // Domain: Adaptive & Scoring
 // ---------------------------------------------------------------------------
 pub mod adaptive;
+pub mod adaptive_policy;
 pub mod adaptive_thresholds;
 pub mod auto_mode_resolver;
 pub mod decision_loop;
@@ -278,6 +279,7 @@ pub mod cache;
 pub mod capabilities;
 pub mod capsule_transport;
 pub mod causal_attribution;
+pub mod ccr;
 pub(crate) mod cli_cache;
 pub(crate) mod client_capabilities;
 pub(crate) mod client_constraints;
@@ -342,7 +344,7 @@ pub(crate) mod graph_cache;
 pub(crate) mod host_env;
 pub(crate) mod http_client;
 pub mod ide_permissions;
-pub mod import_resolver;
+pub use lean_ctx_syntax::import_resolver;
 pub mod index_admission;
 pub(crate) mod index_filter;
 pub(crate) mod index_namespace;
@@ -369,7 +371,6 @@ pub(crate) mod launchd;
 pub(crate) mod layout_pin;
 pub(crate) mod levenshtein;
 pub(crate) mod limits;
-pub mod llm_enhance;
 pub(crate) mod llm_feedback;
 pub(crate) mod logging;
 pub mod mcp_manifest;
@@ -400,15 +401,23 @@ pub(crate) mod project_link;
 /// wrapper, outside the MCP sandbox).
 #[cfg(unix)]
 pub(crate) mod protected_execution;
+/// Kernel store boundary of protected sessions: the pinned child rules, the
+/// in-process store-path check and the launcher's control-file profiles.
+pub(crate) mod protected_store;
 pub mod protocol;
 pub mod provenance;
 pub mod provider_bandit;
 pub mod provider_cache;
 pub mod providers;
+pub mod proxy_endpoint;
+pub mod proxy_metrics;
+pub mod proxy_usage;
+pub mod proxy_value_metrics;
 pub(crate) mod read_stub_index;
 pub(crate) mod recovery;
 pub(crate) mod redaction;
 pub mod reference_docs;
+pub mod response_optimizer;
 pub mod roles;
 pub(crate) mod root_selection;
 pub(crate) mod route_extractor;
@@ -433,10 +442,11 @@ pub mod session_token;
 pub(crate) mod share;
 pub mod shell_allowlist;
 pub(crate) mod shell_file_effects;
+pub(crate) mod shell_history;
 pub mod startup_guard;
 pub mod stats;
 pub mod symbol_map;
-pub(crate) mod syntax_validate;
+pub(crate) use lean_ctx_syntax::syntax_validate;
 pub mod task_briefing;
 /// macOS Seatbelt self-sandbox (#356): wraps launchd-owned daemon/proxy/updater
 /// in a `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/
@@ -487,11 +497,12 @@ pub mod archive;
 pub mod archive_fts;
 pub(crate) mod artifact_index;
 pub(crate) mod artifacts;
-pub(crate) mod ast_walk;
+#[cfg(feature = "tree-sitter")]
+pub(crate) use lean_ctx_syntax::ast_walk;
 #[cfg(feature = "tree-sitter")]
 pub(crate) mod chunks_ts;
 pub(crate) mod context_gc;
-pub mod deep_queries;
+pub use lean_ctx_syntax::deep_queries;
 pub(crate) mod deps;
 #[cfg(test)]
 mod doc_claims;
@@ -502,9 +513,9 @@ pub mod pathjail_scope;
 pub(crate) mod relevance_gate;
 pub mod signatures;
 #[cfg(feature = "tree-sitter")]
-pub(crate) mod signatures_ts;
+pub(crate) use lean_ctx_syntax::signatures_ts;
 pub mod storage_maintenance;
-pub(crate) mod structured_compact;
 pub(crate) mod type_ref_edges;
+pub(crate) mod workspace_args;
 pub mod workspace_authority;
 pub(crate) mod workspace_trust;

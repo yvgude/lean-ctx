@@ -71,7 +71,12 @@ impl McpTool for CtxReadTool {
             || get_str(args, "mode").as_deref() == Some("raw")
             || args.get("raw").and_then(Value::as_bool) == Some(true);
         let (path, substituted) = match (!byte_exact)
-            .then(|| crate::core::path_suggest::unambiguous_match(std::path::Path::new(&path)))
+            .then(|| {
+                crate::core::path_suggest::unambiguous_match_in(
+                    std::path::Path::new(&path),
+                    std::path::Path::new(&ctx.project_root),
+                )
+            })
             .flatten()
             .and_then(|found| ctx.resolve_path_sync(&found.to_string_lossy()).ok())
         {

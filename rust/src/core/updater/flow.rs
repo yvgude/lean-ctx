@@ -8,7 +8,7 @@ use super::{
     rollback_to_previous, sha256_hex, verify_download_integrity,
 };
 
-pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
+pub(super) fn run_with_mode(args: &[String], mode: UpdateMode, setup: &dyn super::SetupRefresh) {
     let mut check_only = args.iter().any(|a| a == "--check");
     let quiet = args.iter().any(|a| a == "--quiet");
     let skip_rules = args.iter().any(|a| a == "--skip-rules");
@@ -302,10 +302,10 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
                     "  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m"
                 );
             }
-            post_update_rewire(skip_rules, quiet);
+            post_update_rewire(skip_rules, quiet, setup);
             println!();
         } else if dry_run {
-            print_rewire_plan(skip_rules);
+            print_rewire_plan(skip_rules, setup);
         }
         return;
     }
@@ -347,7 +347,7 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
         println!(
             "  \x1b[2mDry run: would install {asset_name} (v{target_tag}), then refresh setup.\x1b[0m"
         );
-        print_rewire_plan(skip_rules);
+        print_rewire_plan(skip_rules, setup);
         return;
     }
     if check_only {
@@ -478,7 +478,7 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
             println!("  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m");
         }
     }
-    post_update_rewire(skip_rules, quiet);
+    post_update_rewire(skip_rules, quiet, setup);
 
     if !quiet {
         println!();

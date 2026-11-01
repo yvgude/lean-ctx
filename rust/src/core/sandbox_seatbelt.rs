@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn a_community_session_applies_exactly_the_local_profile() {
         let _lock = crate::core::data_dir::test_env_lock();
-        crate::cli::unpin_synthetic_session();
+        crate::core::protected_store::unpin_synthetic_session();
         let profile = seatbelt_profile(&[], "/usr/bin/true");
         assert!(matches!(
             crate::core::protected_execution::launch_mode().unwrap(),
@@ -256,7 +256,8 @@ mod tests {
         let fact = isolation.path().join("knowledge/knowledge.json");
         std::fs::create_dir_all(fact.parent().unwrap()).unwrap();
         std::fs::write(&fact, "synthetic-provider-fact").unwrap();
-        let _session = crate::cli::pin_synthetic_session(isolation.path()).expect("pinned rules");
+        let _session = crate::core::protected_store::pin_synthetic_session(isolation.path())
+            .expect("pinned rules");
 
         let refused = execute_sandboxed(
             "/bin/cat",

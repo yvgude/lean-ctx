@@ -40,6 +40,7 @@ use tokenizer::{
 pub use approval::{
     ApprovalMiss, ApprovalRequest, approval_request, check_shell_allowlist_granted,
 };
+pub(crate) use approval::{allow_execute_languages, allow_programs};
 pub(crate) use case_construct::{contains_double_semicolon, rewrite_case_constructs};
 pub use config::*;
 pub use enforcement::*;

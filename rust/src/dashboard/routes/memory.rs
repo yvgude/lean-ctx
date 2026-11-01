@@ -2,20 +2,20 @@ use chrono::Utc;
 use serde::Deserialize;
 use std::path::Path;
 
-use super::helpers::{detect_project_root_for_dashboard, extract_query_param, json_err, json_ok};
+use super::helpers::{detect_project_root_for_dashboard, json_err, json_ok};
 
 pub(super) fn handle(
     path: &str,
-    query_str: &str,
+    _query_str: &str,
     method: &str,
     body: &str,
 ) -> Option<(&'static str, &'static str, String)> {
     match path {
         "/api/session/note" if method.eq_ignore_ascii_case("POST") => Some(post_session_note(body)),
         "/api/episodes/annotate" if method.eq_ignore_ascii_case("POST") => {
-            Some(post_episodes_annotate(body))
+            Some(retired_memory_route())
         }
-        _ => get_routes(path, query_str),
+        _ => get_routes(path),
     }
 }
 
@@ -77,68 +77,21 @@ fn dashboard_json_response(
     }
 }
 
-fn episodes_json(root: &str) -> Result<String, String> {
-    with_dashboard_project(root, |hash, admission, _authority| {
-        let store = crate::core::episodic_memory::EpisodicStore::load_admitted(hash, admission)?;
-        let stats = store.stats();
-        let recent: Vec<_> = store.recent(20).into_iter().cloned().collect();
-        admitted_dashboard_json(&serde_json::json!({
-            "project_root": root,
-            "project_hash": hash,
-            "stats": {
-                "total_episodes": stats.total_episodes,
-                "successes": stats.successes,
-                "failures": stats.failures,
-                "success_rate": stats.success_rate,
-                "total_tokens": stats.total_tokens,
-            },
-            "recent": recent,
-        }))
-    })
-}
-
-fn procedures_json(root: &str, query_str: &str) -> Result<String, String> {
-    with_dashboard_project(root, |hash, admission, _authority| {
-        let store =
-            crate::core::procedural_memory::ProceduralStore::load_admitted(hash, admission)?;
-        let raw_task = extract_query_param(query_str, "task").or_else(|| {
-            crate::core::session::SessionState::load_latest_for_project_root(root)
-                .and_then(|session| session.task.map(|task| task.description))
-        });
-        let task = raw_task
-            .map(|task| admitted_dashboard_text(&task))
-            .transpose()?;
-        let suggestions: Vec<serde_json::Value> = task.as_deref().map_or(Vec::new(), |task| {
-            store
-                .suggest(task)
-                .into_iter()
-                .take(10)
-                .map(|procedure| {
-                    serde_json::json!({
-                        "id": procedure.id,
-                        "name": procedure.name,
-                        "description": procedure.description,
-                        "confidence": procedure.confidence,
-                        "times_used": procedure.times_used,
-                        "times_succeeded": procedure.times_succeeded,
-                        "success_rate": procedure.success_rate(),
-                        "steps": procedure.steps,
-                        "activation_keywords": procedure.activation_keywords,
-                        "last_used": procedure.last_used,
-                        "created_at": procedure.created_at,
-                    })
-                })
-                .collect()
-        });
-        admitted_dashboard_json(&serde_json::json!({
-            "project_root": root,
-            "project_hash": hash,
-            "total_procedures": store.procedures.len(),
-            "task": task,
-            "suggestions": suggestions,
-            "procedures": store.procedures,
-        }))
-    })
+/// `/api/episodes`, `/api/procedures` and `POST /api/episodes/annotate`: the
+/// episode and procedure memory is retired (DEPRECATIONS.toml
+/// `http-dashboard-episodes-procedures`). Accepted with this notice and no
+/// effect; files under `memory/episodes` and `memory/procedures` stay on disk
+/// untouched.
+fn retired_memory_route() -> (&'static str, &'static str, String) {
+    (
+        "200 OK",
+        "application/json",
+        serde_json::json!({
+            "retired": true,
+            "message": "The episode and procedure memory is retired; decisions, findings and gotchas live in project knowledge (/api/knowledge, /api/gotchas).",
+        })
+        .to_string(),
+    )
 }
 
 fn intent_json(root: &str) -> Result<String, String> {
@@ -201,16 +154,9 @@ fn today_metering_summary(
     totals
 }
 
-fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str, String)> {
+fn get_routes(path: &str) -> Option<(&'static str, &'static str, String)> {
     match path {
-        "/api/episodes" => {
-            let root = detect_project_root_for_dashboard();
-            Some(dashboard_json_response(episodes_json(&root)))
-        }
-        "/api/procedures" => {
-            let root = detect_project_root_for_dashboard();
-            Some(dashboard_json_response(procedures_json(&root, query_str)))
-        }
+        "/api/episodes" | "/api/procedures" => Some(retired_memory_route()),
         "/api/session" => {
             // The status bar promises "the task your most recent agent session
             // is working on". `load_latest()` matches sessions against THIS
@@ -417,7 +363,7 @@ fn post_session_note(body: &str) -> (&'static str, &'static str, String) {
         );
     }
     // The note goes to the newest session of the dashboard's project (or the
-    // project the request names), admitted like the episode annotation.
+    // project the request names), admitted before it is stored.
     let root = detect_project_root_for_dashboard();
     if root.is_empty() {
         return (
@@ -463,80 +409,6 @@ fn append_session_note(root: &str, note: &str) -> Result<bool, String> {
         });
         session.save()?;
         Ok(true)
-    })
-}
-
-#[derive(Deserialize)]
-struct EpisodeAnnotateReq {
-    episode_index: usize,
-    outcome: String,
-}
-
-fn post_episodes_annotate(body: &str) -> (&'static str, &'static str, String) {
-    let req: EpisodeAnnotateReq = match serde_json::from_str(body) {
-        Ok(request) => request,
-        Err(error) => {
-            return (
-                "400 Bad Request",
-                "application/json",
-                json_err(&format!("invalid JSON: {error}")),
-            );
-        }
-    };
-    let outcome = match req.outcome.to_lowercase().as_str() {
-        "success" => crate::core::episodic_memory::Outcome::Success {
-            tests_passed: false,
-        },
-        "failure" => crate::core::episodic_memory::Outcome::Failure {
-            error: "annotated failure".to_string(),
-        },
-        "neutral" => crate::core::episodic_memory::Outcome::Unknown,
-        _ => {
-            return (
-                "400 Bad Request",
-                "application/json",
-                json_err("outcome must be success, failure, or neutral"),
-            );
-        }
-    };
-
-    let root = detect_project_root_for_dashboard();
-    match annotate_episode_in_project(&root, req.episode_index, outcome) {
-        Ok(true) => ("200 OK", "application/json", json_ok()),
-        Ok(false) => (
-            "400 Bad Request",
-            "application/json",
-            json_err("episode_index out of range (newest-first: 0 = most recent)"),
-        ),
-        Err(_) => (
-            "503 Service Unavailable",
-            "application/json",
-            json_err("episode annotation unavailable under current policy"),
-        ),
-    }
-}
-
-fn annotate_episode_in_project(
-    root: &str,
-    episode_index: usize,
-    outcome: crate::core::episodic_memory::Outcome,
-) -> Result<bool, String> {
-    with_dashboard_project(root, |project_hash, admission, _authority| {
-        let (_, updated) = crate::core::episodic_memory::EpisodicStore::mutate_locked_admitted(
-            project_hash,
-            admission,
-            |text| crate::core::session::admission::admit_store_text(admission, text),
-            |store| {
-                let len = store.episodes.len();
-                if len == 0 || episode_index >= len {
-                    return Ok(false);
-                }
-                let real_idx = len - 1 - episode_index;
-                store.episodes[real_idx].outcome = outcome;
-                Ok(true)
-            },
-        )?;
-        Ok(updated)
     })
 }
 
@@ -748,24 +620,6 @@ mod workspace_tests {
 mod dashboard_memory_admission_tests {
     use super::*;
     use crate::core::data_dir::isolated_data_dir;
-    use crate::core::episodic_memory::{Episode, EpisodicStore, Outcome};
-    use crate::core::procedural_memory::{ProceduralStore, Procedure};
-
-    fn episode(id: &str, task_description: &str) -> Episode {
-        Episode {
-            id: id.to_string(),
-            session_id: "dashboard-test-session".to_string(),
-            timestamp: Utc::now(),
-            task_description: task_description.to_string(),
-            actions: Vec::new(),
-            outcome: Outcome::Unknown,
-            affected_files: Vec::new(),
-            summary: "safe summary".to_string(),
-            duration_secs: 0,
-            tokens_used: 0,
-            agent_id: None,
-        }
-    }
 
     #[test]
     fn dashboard_intent_reads_only_admitted_project_session() {
@@ -796,76 +650,6 @@ mod dashboard_memory_admission_tests {
             serde_json::from_str(&body).expect("dashboard response remains JSON");
         assert_eq!(payload["active"], true);
         assert!(payload["intent"]["keywords"].as_array().unwrap().is_empty());
-    }
-
-    #[test]
-    fn dashboard_episode_read_and_annotation_admit_before_delivery_and_write() {
-        let _isolated = isolated_data_dir();
-        let project = tempfile::tempdir().expect("project root");
-        let root = project.path().to_str().expect("UTF-8 project root");
-        let hash = crate::core::project_hash::hash_project_root(root);
-        let mut store = EpisodicStore::new(&hash);
-        store.episodes = vec![
-            episode("restricted-old", "TOP SECRET\nprivate finding"),
-            episode("safe-new", "ordinary task"),
-        ];
-        store.save().expect("write raw fixture");
-
-        let body = episodes_json(root).expect("admitted dashboard response");
-        assert!(!body.contains("TOP SECRET"), "restricted content escaped");
-        let json: serde_json::Value =
-            serde_json::from_str(&body).expect("dashboard response remains JSON");
-        assert_eq!(json["recent"].as_array().unwrap().len(), 1);
-        assert_eq!(json["recent"][0]["task_description"], "ordinary task");
-
-        assert!(
-            annotate_episode_in_project(
-                root,
-                0,
-                Outcome::Failure {
-                    error: "annotated failure".to_string(),
-                },
-            )
-            .expect("admitted annotation")
-        );
-        let persisted = EpisodicStore::load(&hash).expect("cleaned store persisted");
-        assert_eq!(persisted.episodes.len(), 1);
-        assert_eq!(persisted.episodes[0].task_description, "ordinary task");
-        assert_eq!(
-            persisted.episodes[0].outcome,
-            Outcome::Failure {
-                error: "annotated failure".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn dashboard_procedure_read_omits_restricted_records() {
-        let _isolated = isolated_data_dir();
-        let project = tempfile::tempdir().expect("project root");
-        let root = project.path().to_str().expect("UTF-8 project root");
-        let hash = crate::core::project_hash::hash_project_root(root);
-        let mut store = ProceduralStore::new(&hash);
-        store.procedures.push(Procedure {
-            id: "restricted-procedure".to_string(),
-            name: "TOP SECRET\nprivate workflow".to_string(),
-            description: "safe description".to_string(),
-            steps: Vec::new(),
-            activation_keywords: Vec::new(),
-            confidence: 0.5,
-            times_used: 1,
-            times_succeeded: 1,
-            last_used: Utc::now(),
-            project_specific: true,
-            created_at: Utc::now(),
-        });
-        store.save().expect("write raw fixture");
-
-        let body = procedures_json(root, "").expect("admitted dashboard response");
-        assert!(!body.contains("TOP SECRET"), "restricted content escaped");
-        let json: serde_json::Value =
-            serde_json::from_str(&body).expect("dashboard response remains JSON");
-        assert_eq!(json["procedures"].as_array().unwrap().len(), 0);
     }
 
     #[test]
@@ -939,6 +723,33 @@ mod dashboard_memory_admission_tests {
         );
         assert!(refused.is_err(), "a foreign request project was accepted");
         assert_eq!(notes(&alpha), vec!["alpha note".to_string()]);
+    }
+
+    #[test]
+    fn retired_episode_and_procedure_routes_answer_the_retirement_only() {
+        let _isolated = isolated_data_dir();
+        for (path, method) in [
+            ("/api/episodes", "GET"),
+            ("/api/procedures", "GET"),
+            ("/api/episodes/annotate", "POST"),
+        ] {
+            let (status, kind, body) = handle(
+                path,
+                "task=x",
+                method,
+                r#"{"episode_index":0,"outcome":"success"}"#,
+            )
+            .expect("retired route stays accepted");
+            assert_eq!((status, kind), ("200 OK", "application/json"), "{path}");
+            let value: serde_json::Value = serde_json::from_str(&body).expect("JSON");
+            assert_eq!(value["retired"], serde_json::json!(true), "{path}");
+            assert!(
+                value["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("/api/knowledge")),
+                "{path}: {body}"
+            );
+        }
     }
 
     #[test]

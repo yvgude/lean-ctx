@@ -122,7 +122,8 @@ fn anchored_search_emits_line_hash_per_hit_opt_in_only() {
 fn hits_inside_multiline_symbols_carry_enclosing_tag() {
     let _no_policy = no_policy();
     // #608: a hit inside a multi-line function names its enclosing symbol +
-    // the handle anchor, and the output ships a self-describing legend.
+    // its start line. No legend: agents read the tag by name (`ctx_read
+    // symbol=`) and never used the `handle=` form it advertised.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("a.rs"),
@@ -145,8 +146,8 @@ fn hits_inside_multiline_symbols_carry_enclosing_tag() {
         "hit must name its enclosing fn: {out}"
     );
     assert!(
-        out.contains("[∈ enclosing symbol"),
-        "self-describing legend must be present: {out}"
+        !out.contains("[∈ enclosing symbol"),
+        "the legend line is gone: {out}"
     );
 }
 

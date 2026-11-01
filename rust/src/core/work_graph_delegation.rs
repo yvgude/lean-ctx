@@ -16,9 +16,6 @@ use crate::core::work_graph::WorkNode;
 mod delivery_issuer;
 pub(crate) use delivery_issuer::DeliveryIssuerConfig;
 
-/// Upper bound of persisted delivery attempts within one fence. New starts use
-/// attempt 1; stores written by earlier releases may still carry attempt 2.
-pub(crate) const MAX_DELIVERY_ATTEMPTS: u8 = 2;
 const MAX_START_WINDOW_MS: u64 = 30 * 60 * 1_000;
 /// Default lease window of a host-started node.
 pub(crate) const DEFAULT_START_WINDOW_MS: u64 = 300_000;

@@ -4,7 +4,8 @@ use std::time::Instant;
 use axum::{Json, extract::State, response::Html};
 use serde::Serialize;
 
-use crate::proxy::{ProxyState, value_gate_proxy};
+use crate::core::proxy_value_metrics;
+use crate::proxy::ProxyState;
 
 static PROXY_STARTED: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
@@ -39,8 +40,8 @@ pub(crate) fn mark_proxy_started() {
 /// recorded — never with the token (the Cockpit asks for it, or
 /// `lean-ctx cockpit` opens it signed in).
 pub(crate) async fn page() -> Html<String> {
-    let cockpit = crate::dashboard::launch::read_record()
-        .filter(crate::dashboard::launch::LaunchRecord::process_alive)
+    let cockpit = crate::core::cockpit_launch_record::read_record()
+        .filter(crate::core::cockpit_launch_record::LaunchRecord::process_alive)
         .map(|record| (record.port, record.base_path));
     Html(cockpit_pointer_page(
         cockpit.as_ref().map(|(p, b)| (*p, b.as_str())),
@@ -83,7 +84,7 @@ p.tag{{color:var(--muted)}}
 }
 
 pub(crate) async fn stats(State(state): State<ProxyState>) -> Json<DashboardStats> {
-    let session = value_gate_proxy::session_metrics();
+    let session = proxy_value_metrics::session_metrics();
     let all_time = crate::core::stats::load_for_display();
     let proxy = &state.stats;
     let proxy_saved = proxy
@@ -116,7 +117,7 @@ pub(crate) async fn stats(State(state): State<ProxyState>) -> Json<DashboardStat
         .as_ref()
         .map_or(0, |started| started.elapsed().as_secs());
     let compression_ratio = if session.total_original_tokens > 0 {
-        value_gate_proxy::compression_ratio()
+        proxy_value_metrics::compression_ratio()
     } else {
         proxy.compression_ratio()
     };

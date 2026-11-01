@@ -63,7 +63,7 @@ impl BridgeStatus {
     #[must_use]
     pub fn detect() -> Self {
         let proxy_configured = crate::core::config::Config::load().proxy_enabled == Some(true);
-        let proxy_running = crate::proxy_setup::configured_proxy_live();
+        let proxy_running = crate::core::proxy_endpoint::configured_proxy_live();
         let total_requests = persisted_request_count(INTROSPECT_MAX_AGE_SECS);
         let tool_count = crate::server::registry::tool_count();
         let engagement = classify(proxy_running, total_requests);

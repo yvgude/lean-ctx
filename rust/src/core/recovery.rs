@@ -77,7 +77,8 @@ pub(crate) fn read_footer(file_path: &str) -> Option<String> {
 #[must_use]
 pub(crate) fn handle_clause(id: &str, on_disk_path: Option<&str>) -> String {
     if on_disk_path.is_some_and(|path| {
-        crate::cli::enforce_protected_store_path(std::path::Path::new(path)).is_err()
+        crate::core::protected_store::enforce_protected_store_path(std::path::Path::new(path))
+            .is_err()
     }) {
         return format!("full: ctx_expand(id=\"{id}\")");
     }
@@ -157,7 +158,7 @@ mod tests {
         let isolated = crate::core::data_dir::isolated_data_dir();
         let artifact = isolated.path().join("tee/output.log");
         let path = artifact.to_str().unwrap();
-        let _pin = crate::cli::pin_synthetic_session(isolated.path()).unwrap();
+        let _pin = crate::core::protected_store::pin_synthetic_session(isolated.path()).unwrap();
         let hint = handle_clause("fixture-archive", Some(path));
         assert!(hint.contains("ctx_expand"));
         assert!(!hint.contains("directly"));

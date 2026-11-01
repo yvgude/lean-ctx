@@ -163,7 +163,7 @@ pub fn stop() {
 }
 
 pub fn start() -> bool {
-    start_on_port(crate::proxy_setup::default_port())
+    start_on_port(crate::core::proxy_endpoint::default_port())
 }
 
 /// Start the installed manager after atomically taking ownership of `port`.

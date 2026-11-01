@@ -64,7 +64,7 @@ pub fn normalize_dashboard_demo_path(path: &str) -> String {
     }
 
     let candidate = Path::new(trimmed);
-    if candidate.is_absolute() || is_windows_absolute_path(trimmed) {
+    if candidate.is_absolute() || crate::core::pathutil::is_windows_absolute_path(trimmed) {
         return trimmed.to_string();
     }
 
@@ -77,19 +77,6 @@ pub fn normalize_dashboard_demo_path(path: &str) -> String {
     // the forward-slash canonical form, so emitting `\` on Windows made every
     // dashboard action miss its ledger entry.
     p.trim_start_matches(['\\', '/']).replace('\\', "/")
-}
-
-pub fn is_windows_absolute_path(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    if bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && matches!(bytes[2], b'\\' | b'/')
-    {
-        return true;
-    }
-
-    path.starts_with("\\\\") || path.starts_with("//")
 }
 
 /// Where the dashboard's project binding came from.

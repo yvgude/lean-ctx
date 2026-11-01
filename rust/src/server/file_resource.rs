@@ -66,7 +66,8 @@ pub(super) fn read_file_resource(
 ) -> Result<Vec<ResourceContents>, FileResourceError> {
     let path_str = resolve_path(uri)?;
     let path = Path::new(&path_str);
-    crate::cli::enforce_protected_store_path(path).map_err(FileResourceError::ProtectedContext)?;
+    crate::core::protected_store::enforce_protected_store_path(path)
+        .map_err(FileResourceError::ProtectedContext)?;
     // Under a Workspace a resource read is confined like a tool path (#2120).
     crate::core::workspace_authority::confine(&path_str, project_root.unwrap_or(""), false)
         .map_err(FileResourceError::ProtectedContext)?;
@@ -160,7 +161,7 @@ mod tests {
         let uri = path_to_file_uri(&path);
         let root = isolated.path().to_str().unwrap();
         assert!(read_file_resource(&uri, Some(root), &[]).is_ok());
-        let _pin = crate::cli::pin_synthetic_session(isolated.path()).unwrap();
+        let _pin = crate::core::protected_store::pin_synthetic_session(isolated.path()).unwrap();
         assert!(matches!(
             read_file_resource(&uri, Some(root), &[root.to_owned()]),
             Err(FileResourceError::ProtectedContext(_))

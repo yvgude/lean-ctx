@@ -21,7 +21,7 @@ impl McpTool for CtxKnowledgeTool {
              WORKFLOW: save after completing significant tasks; recall at session start.\n\
              action=remember value='Y' saves a fact (key optional — derived from value; content= is an accepted alias).\n\
              action=recall query='X' retrieves it (bare recall lists recent facts). action=status shows all categories.\n\
-action=consolidate imports latest session if present, runs lifecycle, then frees 25% facts/history/procedures capacity.\n\
+action=consolidate imports latest session if present, runs lifecycle, then frees 25% history/patterns capacity.\n\
              action=gotcha trigger='X' resolution='Y' for known pitfalls.\n\
              mode=semantic|exact for recall. category groups related facts.",
             json!({
@@ -52,7 +52,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     "pattern_type": { "type": "string" },
                     "examples": { "type": "array", "items": { "type": "string" } },
                     "confidence": { "type": "number", "description": "0.0-1.0" },
-                    "store": { "type": "string", "description": "restore: facts|history|procedures|patterns (default: all)" },
+                    "store": { "type": "string", "description": "restore: facts|history|patterns (default: all)" },
                     "limit": { "type": "number", "description": "restore: max items to recover (default 50)" },
                     "dry_run": { "type": "boolean", "description": "consolidate: preview imports/reclaim without writing" },
                     "format": { "type": "string", "description": "export: json|okf (okf = portable Markdown bundle)" },
@@ -163,14 +163,18 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
         // the shared `handle()` signature.
         if action == "restore" {
             let store = match get_str(args, "store").as_deref() {
+                Some(s) if crate::core::memory_archive::MemoryStore::is_retired(s) => {
+                    return Ok(text_output(
+                        &action,
+                        crate::core::memory_archive::RETIRED_PROCEDURES_STORE_NOTICE.to_string(),
+                    ));
+                }
                 Some(s) => match crate::core::memory_archive::MemoryStore::parse(s) {
                     Some(ms) => Some(ms),
                     None => {
                         return Ok(text_output(
                             &action,
-                            format!(
-                                "Unknown store: {s}. Use: facts, history, procedures, patterns"
-                            ),
+                            format!("Unknown store: {s}. Use: facts, history, patterns"),
                         ));
                     }
                 },

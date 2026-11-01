@@ -25,6 +25,7 @@
 use crate::core::policy::runtime::{
     REQUIRED_POLICY_DIGEST_ENV, REQUIRED_POLICY_ROOT_ENV, protected_policy_digest,
 };
+use crate::core::protected_store;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -32,18 +33,10 @@ use std::time::Duration;
 
 mod gitlab_bootstrap;
 mod onboarding;
-mod write_guard;
 
 pub(crate) use gitlab_bootstrap::dispatch as protected_gitlab_dispatch;
 pub(crate) use gitlab_bootstrap::initialize_agent_gitlab;
 pub(crate) use onboarding::cmd_setup_codex_protected;
-#[cfg(all(test, target_os = "macos"))]
-pub(crate) use write_guard::CHILD_PROFILE_ENV;
-#[cfg(test)]
-pub(crate) use write_guard::pin_synthetic_session;
-#[cfg(all(test, unix))]
-pub(crate) use write_guard::unpin_synthetic_session;
-pub(crate) use write_guard::{enforce_protected_store_path, protected_child_prefix};
 
 /// The single Codex build whose behaviour this launcher has been qualified
 /// against. Compared byte-exactly to `codex --version` output.
@@ -330,8 +323,8 @@ fn preflight_with_policy(
     validate_mcp_authority_paths(&mcp_env)?;
     // Resolve the legacy/XDG layout once. Runtime data markers must not select
     // a different authority directory after the kernel profile is compiled.
-    let mut control_paths = write_guard::bind_authority(&project, &mcp_home, &mut mcp_env)?;
-    let mut operator_credentials = write_guard::operator_credentials(&mcp_home)?;
+    let mut control_paths = protected_store::bind_authority(&project, &mcp_home, &mut mcp_env)?;
+    let mut operator_credentials = protected_store::operator_credentials(&mcp_home)?;
     let gitlab = invocation
         .gitlab
         .clone()
@@ -362,8 +355,8 @@ fn preflight_with_policy(
     // exists: every model-directed subprocess of the MCP server runs under these
     // rules, and the server refuses to start one without them.
     mcp_env.insert(
-        write_guard::CHILD_PROFILE_ENV.to_string(),
-        write_guard::child_profile(&mcp_home)?,
+        protected_store::CHILD_PROFILE_ENV.to_string(),
+        protected_store::child_profile(&mcp_home)?,
     );
 
     Ok(Preflight {
@@ -546,13 +539,41 @@ fn provision(pre: &Preflight, root: &Path) -> Result<Session, String> {
         set_owner_only(dir)?;
     }
 
-    let profile = write_guard::profile(pre, &session)?;
-    write_guard::validate(&profile)?;
+    let profile = mcp_profile(pre, &session)?;
+    protected_store::validate(&profile)?;
     let config = render_config(pre, &session, &profile)?;
     let config_path = session.codex_home.join("config.toml");
     write_owner_only(&config_path, config.as_bytes())?;
 
     Ok(session)
+}
+
+/// Kernel control-file profile of the whole managed MCP process.
+fn mcp_profile(pre: &Preflight, session: &Session) -> Result<String, String> {
+    let mut entries: Vec<(PathBuf, bool)> = Vec::new();
+    entries.extend(pre.control_paths.iter().map(|path| (path.clone(), false)));
+    entries.extend(
+        pre.operator_credentials
+            .iter()
+            .map(|path| (path.clone(), true)),
+    );
+    for path in [&pre.lean_ctx, &pre.codex] {
+        entries.push((path.clone(), false));
+    }
+    entries.push((pre.source_codex_home.join("config.toml"), false));
+    entries.push((pre.source_codex_home.join("auth.json"), true));
+    for path in [&session.home, &session.codex_home] {
+        entries.push((path.clone(), true));
+    }
+    // These loaders can search the MCP's process CWD and its ancestors. Protect
+    // every candidate, including absent ones, without making runtime dirs RO.
+    for root in session.workspace.ancestors() {
+        for member in ["profiles", "roles"] {
+            entries.push((root.join(".lean-ctx").join(member), false));
+        }
+    }
+    entries.push((session.workspace.join(".claude/settings.local.json"), false));
+    protected_store::control_profile(entries)
 }
 
 fn set_owner_only(path: &Path) -> Result<(), String> {
@@ -659,7 +680,7 @@ fn render_config(pre: &Preflight, session: &Session, mcp_profile: &str) -> Resul
         table[utf8_path(&session.home, "the session home")?.as_str()] = toml_edit::value("deny");
         table[utf8_path(&session.codex_home, "the session Codex home")?.as_str()] =
             toml_edit::value("deny");
-        for path in write_guard::credential_read_paths(&pre.operator_credentials)? {
+        for path in protected_store::credential_read_paths(&pre.operator_credentials)? {
             table[&path] = toml_edit::value("deny");
         }
     }

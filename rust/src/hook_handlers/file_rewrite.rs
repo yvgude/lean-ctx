@@ -930,7 +930,7 @@ pub(super) fn is_outside_project_path(path: &str) -> bool {
 
     // #1903: `lean-ctx read` enforces the PathJail, so anything it would refuse
     // (`../../etc/hosts`, a sibling checkout, a broad-root CWD) stays native.
-    crate::cli::cli_read_is_refused(trimmed)
+    crate::core::command_root::cli_read_is_refused(trimmed)
 }
 
 /// #1537: whether a head/tail invocation uses byte-count semantics (`-c N`,

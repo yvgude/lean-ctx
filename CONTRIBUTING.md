@@ -190,14 +190,14 @@ lean-ctx/
 
 ### Add a shell compression pattern
 
-1. Add a new module in `rust/src/core/patterns/<tool>.rs`
+1. Add a new module in `rust/crates/lean-ctx-patterns/src/<tool>.rs` (the `lean-ctx-patterns` crate)
 2. Implement:
 
 ```rust
 pub fn compress(command: &str, output: &str) -> Option<String>
 ```
 
-3. Register the module + routing in `rust/src/core/patterns/mod.rs` (`try_specific_pattern`)
+3. Register the module + routing in `rust/crates/lean-ctx-patterns/src/lib.rs` (`PATTERNS`, routed by `try_specific_pattern_with`)
 4. Add tests (unit tests in the module or integration tests in `rust/tests/`)
 5. Run the quality checks above
 

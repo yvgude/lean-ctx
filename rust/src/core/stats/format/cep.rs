@@ -105,7 +105,8 @@ pub fn format_cep_report() -> String {
         // turns, token savings) before any per-session CEP snapshot lands. Don't
         // mislabel that as "nothing recorded" — point at the meter that has the
         // real numbers (#361).
-        let proxy_turns = crate::proxy::metrics::load_persisted().map_or(0, |m| m.requests_total);
+        let proxy_turns =
+            crate::core::proxy_metrics::load_persisted().map_or(0, |m| m.requests_total);
         if store.total_commands > 0 || proxy_turns > 0 {
             return format!(
                 "{dim}No per-session CEP snapshot yet, but lean-ctx is active \

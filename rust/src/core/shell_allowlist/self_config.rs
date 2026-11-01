@@ -232,7 +232,7 @@ fn classify(args: &[String]) -> Result<Verdict, String> {
         "session" => matches!(next, Some("status")),
         // A Workspace bounds the agent itself (#2120): `remove` narrows,
         // `show`/`diagnose` only read.
-        "workspace" => crate::cli::workspace_cmd::agent_shell_may_run(rest),
+        "workspace" => crate::core::workspace_args::agent_shell_may_run(rest),
         "addon" | "addons" => matches!(next, None | Some("list" | "ls")),
         "policy" => matches!(
             (next, third),

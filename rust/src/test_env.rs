@@ -61,21 +61,9 @@ pub(crate) fn run_in_own_process_at(
     true
 }
 
-/// Sets `key` to `value` in the process environment (test-only).
-pub(crate) fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) {
-    assert_lock_held();
-    // SAFETY: the assertion above holds, so this thread owns test_env_lock()
-    // and no other thread reads or writes the environment concurrently.
-    unsafe { std::env::set_var(key, value) };
-}
-
-/// Removes `key` from the process environment (test-only).
-pub(crate) fn remove_var<K: AsRef<OsStr>>(key: K) {
-    assert_lock_held();
-    // SAFETY: the assertion above holds, so this thread owns test_env_lock()
-    // and no other thread reads or writes the environment concurrently.
-    unsafe { std::env::remove_var(key) };
-}
+// The environment mutation helpers sit next to the lock they assert, in
+// `lean-ctx-fs` (enabled here by its `test-support` feature).
+pub(crate) use lean_ctx_fs::env_lock::{remove_var, set_var};
 
 /// Sets `key` until dropped, then restores its previous value — also when
 /// the test panics. Declare it after the `test_env_lock()` guard so it is
@@ -101,6 +89,40 @@ impl Drop for VarGuard {
         match self.previous.take() {
             Some(previous) => set_var(&self.key, previous),
             None => remove_var(&self.key),
+        }
+    }
+}
+
+/// Sets `key` until dropped, then restores its previous value, holding
+/// `test_env_lock()` itself for its whole lifetime (unlike [`VarGuard`],
+/// which relies on a lock the caller already holds).
+pub(crate) struct EnvVarGuard {
+    key: &'static str,
+    previous: Option<std::ffi::OsString>,
+    // Held from before the snapshot until after the restore below: the
+    // struct's own `Drop` runs before this field is released.
+    _lock: crate::core::data_dir::TestEnvGuard,
+}
+
+impl EnvVarGuard {
+    pub(crate) fn set(key: &'static str, value: &str) -> Self {
+        let lock = crate::core::data_dir::test_env_lock();
+        let previous = std::env::var_os(key);
+        set_var(key, value);
+        Self {
+            key,
+            previous,
+            _lock: lock,
+        }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = &self.previous {
+            set_var(self.key, previous);
+        } else {
+            remove_var(self.key);
         }
     }
 }
@@ -134,14 +156,4 @@ impl Drop for CurrentDirGuard {
         // Restored before the lock field is released.
         let _ = std::env::set_current_dir(&self.previous);
     }
-}
-
-/// The precondition of the two functions above, checked in every build of the
-/// tests and before anything is changed. It does not take the lock itself:
-/// that would hide a caller whose lock does not span its whole mutation.
-fn assert_lock_held() {
-    assert!(
-        crate::core::data_dir::holds_test_env_lock(),
-        "test environment mutation requires the current thread to hold test_env_lock()"
-    );
 }

@@ -135,9 +135,9 @@ fn auto_read_never_inflates_small_file() {
 /// the 500–700-token `science_cognitive_small` band, mid-size and over the
 /// turn budget, plus prose and Python/TypeScript.
 const AUTO_CORPUS: &[&str] = &[
-    "src/core/error.rs",
+    "crates/lean-ctx-fs/src/error.rs",
     "src/core/surprise.rs",
-    "src/core/compressor.rs",
+    "crates/lean-ctx-compress/src/compressor.rs",
     "src/core/entropy.rs",
     "src/tools/ctx_read/render.rs",
     "../VISION.md",
@@ -190,9 +190,10 @@ fn auto_cognitive_fallback_is_bare_file() {
     let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::set_var("LEAN_CTX_SHOW_SAVINGS", "0");
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    // A small real source file; `core/error.rs` is used crate-wide, so it
-    // will not disappear the way the original fixture did in #1915.
-    let content = std::fs::read_to_string(root.join("src/core/error.rs")).unwrap();
+    // A small real source file; the error type is used engine-wide, so it
+    // will not disappear the way the original fixture did in #1915. It lives
+    // in lean-ctx-fs since the crate split (core/error.rs is a re-export).
+    let content = std::fs::read_to_string(root.join("crates/lean-ctx-fs/src/error.rs")).unwrap();
     let raw = count_tokens(&content);
     let render = || {
         process_mode_tuned(
@@ -203,7 +204,7 @@ fn auto_cognitive_fallback_is_bare_file() {
             "rs",
             raw,
             CrpMode::Off,
-            "src/core/error.rs",
+            "crates/lean-ctx-fs/src/error.rs",
             None,
             ReadTuning::default(),
         )

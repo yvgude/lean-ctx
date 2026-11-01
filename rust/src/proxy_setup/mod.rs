@@ -38,18 +38,17 @@ use pi::{install_pi_env, uninstall_pi_env};
 use shell::install_shell_exports;
 use util::{PROXY_ENV_END, PROXY_ENV_START};
 
+pub use crate::core::proxy_endpoint::{
+    configured_proxy_live, default_port, lean_ctx_proxy_responding, proxy_timeout,
+};
 pub use claude::anthropic_api_key_available;
 pub(crate) use claude::repair_claude_subscription_env;
 #[cfg(feature = "http-server")]
 pub(crate) use codex::CodexEnvOutcome;
 pub(crate) use codex::install_codex_env;
-pub(crate) use commandcode::COMMANDCODE_MCP_INSTRUCTIONS;
 pub use grok::{grok_session_auth_available, xai_api_key_available};
+pub use util::is_local_lean_ctx_url;
 pub(crate) use util::is_proxy_reachable;
-pub use util::{
-    configured_proxy_live, default_port, is_local_lean_ctx_url, lean_ctx_proxy_responding,
-    proxy_timeout,
-};
 
 pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
     let cfg = crate::core::config::Config::load();

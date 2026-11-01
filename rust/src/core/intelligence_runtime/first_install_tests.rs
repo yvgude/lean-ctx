@@ -4,7 +4,7 @@
 use super::*;
 
 #[path = "company_journey_tests.rs"]
-mod company_journey_tests;
+pub(crate) mod company_journey_tests;
 
 #[test]
 #[cfg(any(target_os = "macos", all(target_os = "linux", target_env = "gnu")))]

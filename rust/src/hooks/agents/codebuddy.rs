@@ -3,7 +3,10 @@ use super::super::{
     mcp_server_quiet_mode, resolve_binary_path_for_bash, resolve_hook_command_binary,
     shell_quoted_binary, write_file, write_wrapper_file,
 };
-use super::shared::{contains_managed_md_block, managed_md_is_current, remove_managed_md_blocks};
+use super::shared::{
+    contains_managed_md_block, managed_md_is_current, read_agent_json_config,
+    remove_managed_md_blocks, report_unreadable_agent_config,
+};
 
 /// CodeBuddy shares Claude Code's `permissions.deny` contract: a listed tool
 /// leaves the model's tool list, so hiding costs no refusal. Grep/Glob are
@@ -14,16 +17,12 @@ pub(crate) fn install_codebuddy_permissions_deny_replace(home: &std::path::Path,
     let settings_path =
         crate::core::editor_registry::codebuddy_state_dir(home).join("settings.json");
 
-    let mut json = if settings_path.exists() {
-        let content = std::fs::read_to_string(&settings_path).unwrap_or_default();
-        if content.trim().is_empty() {
-            serde_json::json!({})
-        } else {
-            crate::core::jsonc::parse_jsonc(&content).unwrap_or_else(|_| serde_json::json!({}))
-        }
-    } else {
+    if !settings_path.exists() {
         let _ = std::fs::create_dir_all(settings_path.parent().unwrap_or(home.as_ref()));
-        serde_json::json!({})
+    }
+    let mut json = match read_agent_json_config(&settings_path, "codebuddy") {
+        Ok(json) => json,
+        Err(error) => return report_unreadable_agent_config("CodeBuddy", &error),
     };
 
     let Some(obj) = json.as_object_mut() else {
@@ -782,6 +781,39 @@ mod tests {
         .unwrap();
         install_codebuddy_permissions_deny_replace(home, HookMode::Hybrid);
         assert_eq!(deny(&settings), ["Grep", "Glob", "Bash(rm:*)"]);
+    }
+
+    // A settings.json that did not parse was replaced with `{}` plus the
+    // deny list: every other setting of the user was gone. It is now refused
+    // and left byte-identical.
+    #[test]
+    fn unparseable_settings_are_refused_and_left_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let dir = crate::core::editor_registry::codebuddy_state_dir(home);
+        std::fs::create_dir_all(&dir).unwrap();
+        let settings = dir.join("settings.json");
+        let broken = "{\"model\": \"kept\", \"permissions\": {\"deny\": [\n";
+        std::fs::write(&settings, broken).unwrap();
+
+        install_codebuddy_permissions_deny_replace(home, HookMode::Replace);
+
+        assert_eq!(std::fs::read_to_string(&settings).unwrap(), broken);
+        let error = read_agent_json_config(&settings, "codebuddy").unwrap_err();
+        assert!(error.contains("settings.json is not valid JSON"), "{error}");
+        assert!(error.contains("left unchanged"), "{error}");
+        assert!(error.contains("lean-ctx init --agent codebuddy"), "{error}");
+
+        // Missing and blank files still start from an empty object.
+        assert_eq!(
+            read_agent_json_config(&dir.join("missing.json"), "codebuddy"),
+            Ok(serde_json::json!({}))
+        );
+        std::fs::write(&settings, " \n").unwrap();
+        assert_eq!(
+            read_agent_json_config(&settings, "codebuddy"),
+            Ok(serde_json::json!({}))
+        );
     }
 
     #[test]

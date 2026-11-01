@@ -306,7 +306,7 @@ Interfaces for external integrations and future plugin system.
 
 ### CompressionPattern (planned v1)
 
-- **Status**: Interface extracted from `rust/src/core/patterns/mod.rs`
+- **Status**: Interface extracted from the `lean-ctx-patterns` crate (`rust/crates/lean-ctx-patterns/src/lib.rs`)
 - **Future**: Plugin-loadable compression patterns for proprietary CLI tools
 
 ### LcpTool (planned v1)

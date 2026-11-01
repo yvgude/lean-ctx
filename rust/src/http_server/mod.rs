@@ -46,6 +46,8 @@ mod scoped_delivery;
 mod task_control;
 #[cfg(test)]
 mod task_control_tests;
+#[cfg(test)]
+mod work_graph_delivery_tests;
 #[allow(clippy::wildcard_imports)]
 use handlers::*;
 

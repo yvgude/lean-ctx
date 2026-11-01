@@ -160,11 +160,11 @@ fn record_adaptive_policy_outcome(task_id: &str, assessment: &ValueAssessment) {
         .filter(|envelope| envelope.task_id.as_str() == task_id)
         .and_then(|envelope| envelope.task_class)
         .unwrap_or_else(|| "chat".to_owned());
-    let policy = crate::proxy::adaptive_policy::best_policy_for(&task_class);
+    let policy = crate::core::adaptive_policy::best_policy_for(&task_class);
 
     // ExecutionCost holds post-compression token usage only. No baseline means
     // no defensible percentage, so preserve the feedback event with 0.0 savings.
-    crate::proxy::adaptive_policy::record_value_gate_outcome(
+    crate::core::adaptive_policy::record_value_gate_outcome(
         task_class,
         policy,
         assessment.outcome_accepted,
@@ -313,7 +313,7 @@ mod tests {
         let path = crate::core::paths::data_dir()
             .unwrap()
             .join("policy_outcomes.jsonl");
-        let recorded: crate::proxy::adaptive_policy::PolicyOutcome = serde_json::from_str(
+        let recorded: crate::core::adaptive_policy::PolicyOutcome = serde_json::from_str(
             std::fs::read_to_string(path)
                 .unwrap()
                 .lines()
@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(recorded.task_class, "debugging");
         assert_eq!(
             recorded.policy_used,
-            crate::proxy::adaptive_policy::select_policy("debugging")
+            crate::core::adaptive_policy::select_policy("debugging")
         );
         assert_eq!(recorded.session_success, Some(assessment.outcome_accepted));
         assert_eq!(recorded.savings_pct, 0.0);

@@ -32,7 +32,7 @@ pub(crate) const REQUIRED_POLICY_ROOT_ENV: &str = "LEAN_CTX_REQUIRED_POLICY_ROOT
 pub(crate) const REQUIRED_POLICY_DIGEST_ENV: &str = "LEAN_CTX_REQUIRED_POLICY_DIGEST";
 pub(crate) use refresh::{protected_authority_paths, protected_policy_digest};
 #[cfg(test)]
-mod held_horizon_tests;
+pub(crate) mod held_horizon_tests;
 #[cfg(test)]
 mod refresh_tests;
 

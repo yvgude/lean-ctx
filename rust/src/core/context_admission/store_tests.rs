@@ -396,10 +396,10 @@ fn case_31_tee_store_holds_and_returns_admitted_text_only() {
     let _env = isolated("");
     let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let output = format!("{}\n{}", leaky_source(), "line\n".repeat(200));
-    let handle = crate::proxy::ccr::persist(&output).expect("tee handle");
+    let handle = crate::core::ccr::persist(&output).expect("tee handle");
     let on_disk = std::fs::read_to_string(&handle).expect("tee file");
     assert_clean(&on_disk, "tee file");
-    let recovered = crate::proxy::ccr::read_tee_detailed(Path::new(&handle)).expect("read");
+    let recovered = crate::core::ccr::read_tee_detailed(Path::new(&handle)).expect("read");
     assert_clean(&recovered, "recovered tee");
 }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! BuiltinMetricsExporter — batches MetricPoints for local consumption.
 //!
-//! Wraps `proxy/metrics.rs` behind the OCLA trait. Metrics are stored in a
+//! Wraps `core/proxy_metrics.rs` behind the OCLA trait. Metrics are stored in a
 //! bounded ring buffer per metric name. No external export destination —
 //! the TUI and CLI consume metrics locally via `recent()`.
 

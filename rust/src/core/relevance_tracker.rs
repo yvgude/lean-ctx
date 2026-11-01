@@ -427,7 +427,7 @@ fn is_stopword(word: &str) -> bool {
 // --- CCR Integration ---
 
 fn load_from_ccr(handle: &str, _budget: usize) -> Option<String> {
-    crate::proxy::ccr::read_tee(handle)
+    crate::core::ccr::read_tee(handle)
 }
 
 fn truncate_to_budget(content: &str, max_tokens: usize) -> String {

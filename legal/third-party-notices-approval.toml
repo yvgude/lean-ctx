@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "a3b2e0852fdc941ffa3c3a8d51effda51982f11fa9462857a5fcb7695747aa10"
+approved_content_sha256 = "d32e30dcf0641129515ceb236617649d297dadd9ca27b320a5011bff24961d18"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.1 after the Hive Swarms/Task Compute removal; the only notice changes are the dropped chrono-tz, iana-time-zone and two dependents (603 -> 599 third-party Cargo packages) and the input digests. Owner okay in the Hive lead session on 2026-10-31 (answer \"Freigeben\" to the notices question naming old 314f805c and new pending 8affad19)."
-approved_at = "2026-10-31"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.1 after the first engine crate split; third-party Cargo packages unchanged (599), the only notice changes are the input digests, the Cargo graph 607 -> 612 (the own workspace crates lean-ctx-patterns, -workgraph, -compress, -fs, -syntax) and SBOM components 552 -> 557. Owner okay in the 3.12.1 integration lead session on 2026-11-01 (answer \"Freigeben\" to the notices question naming old a3b2e085 and new pending 39fd5a61)."
+approved_at = "2026-11-01"

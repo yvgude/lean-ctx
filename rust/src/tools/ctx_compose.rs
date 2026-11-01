@@ -594,8 +594,8 @@ fn handle_in_view(task: &str, project_root: &str, crp_mode: CrpMode) -> (String,
         out.push_str(&small_files_section(&out, project_root, allow_secret));
     }
 
-    // 5. Context Kernel enrichment — cross-store context from Knowledge,
-    //    Episodic, and Procedural memory that the lexical pipeline misses.
+    // 5. Context Kernel enrichment — cross-store context from knowledge,
+    //    session state and the indexes that the lexical pipeline misses.
     //    Budget: 20% of symbol budget. Graceful no-op if kernel returns None.
     if !protected {
         use crate::core::context_kernel::context_dedup::dedup_kernel_blocks;

@@ -1,7 +1,6 @@
 pub mod agent_selection;
 mod dry_run;
 pub use dry_run::print_plan;
-mod env_guard;
 mod first_run;
 mod index_build;
 mod intelligence;
@@ -10,6 +9,8 @@ mod interactive;
 mod onboard;
 mod options;
 mod paths;
+mod update_refresh;
+pub use update_refresh::UpdateRefresh;
 mod with_options;
 
 // Shared imports for sibling submodules that use `use super::*` (mcp, helpers).
@@ -22,8 +23,6 @@ pub use mcp::*;
 mod helpers;
 pub use helpers::*;
 
-#[cfg(test)]
-pub(crate) use env_guard::EnvVarGuard;
 pub use interactive::*;
 pub use onboard::*;
 pub use options::*;

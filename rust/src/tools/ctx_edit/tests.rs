@@ -404,6 +404,24 @@ mod tests {
     }
 
     #[test]
+    fn receipt_counts_only_changed_lines_when_the_anchor_is_repeated() {
+        let f = make_temp("from .models import (\n    Alpha,\n    Beta,\n)\n");
+        let mut cache = SessionCache::new();
+        // An insertion sent as anchor → anchor + new line: one line added.
+        let result = handle(
+            &mut cache,
+            &mk_params(
+                f.path(),
+                "from .models import (\n    Alpha,\n    Beta,",
+                "from .models import (\n    Alpha,\n    Added,\n    Beta,",
+                false,
+                false,
+            ),
+        );
+        assert!(result.contains("(+1 -0)"), "{result}");
+    }
+
+    #[test]
     fn crlf_file_with_lf_search() {
         let f = make_temp("line1\r\nline2\r\nline3\r\n");
         let mut cache = SessionCache::new();

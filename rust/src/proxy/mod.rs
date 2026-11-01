@@ -15,9 +15,10 @@
 //! The self-hosted org gateway (lean-ctx-enterprise) extends this proxy with
 //! admin/usage-store routes. In the OSS build the proxy runs standalone.
 
-pub mod adaptive_policy;
 #[cfg(feature = "http-server")]
 pub(crate) mod admitted;
+#[cfg(all(test, feature = "http-server"))]
+mod admitted_horizon_tests;
 #[cfg(feature = "http-server")]
 pub(crate) mod agent_compact;
 #[cfg(feature = "http-server")]
@@ -72,6 +73,12 @@ pub mod forward;
 pub mod gateway_identity;
 #[cfg(feature = "http-server")]
 pub mod google;
+#[cfg(all(
+    test,
+    feature = "http-server",
+    any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))
+))]
+mod held_floor_journey_tests;
 pub mod history_prune;
 pub mod holdout;
 #[cfg(all(test, feature = "http-server"))]
@@ -83,7 +90,6 @@ mod intent;
 pub mod introspect;
 #[cfg(feature = "http-server")]
 mod lineage;
-pub mod metrics;
 #[cfg(feature = "http-server")]
 pub mod models_api;
 #[cfg(feature = "http-server")]
@@ -117,7 +123,6 @@ pub mod providers;
 #[cfg(all(test, feature = "http-server"))]
 mod reference_tests;
 pub(crate) mod request_project;
-pub mod response_optimizer;
 #[cfg(feature = "http-server")]
 pub(crate) mod response_shaper;
 pub mod rollout;
@@ -147,14 +152,12 @@ pub mod usage_accounting;
 pub mod usage_meter;
 pub mod usage_parity;
 pub mod usage_sink;
-pub mod value_gate_proxy;
 pub mod verbosity;
 #[cfg(all(test, feature = "http-server"))]
 mod via_p0_characterization_tests;
 #[cfg(feature = "http-server")]
 pub mod web_app;
 
-pub mod connector_schedule;
 #[allow(warnings)]
 pub mod live_zone;
 

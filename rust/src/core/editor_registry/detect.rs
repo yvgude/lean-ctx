@@ -9,6 +9,22 @@ use super::paths::{
 };
 use super::types::{ConfigType, EditorTarget};
 
+/// `pi` has no MCP target (its integration is the pi-lean-ctx package, see
+/// [`build_targets`]) but is an `init --agent` and rules target.
+pub const PI_AGENT_KEY: &str = "pi";
+
+/// Agent keys `--agents` and `setup.agents` accept.
+#[must_use]
+pub fn known_agent_keys(targets: &[EditorTarget]) -> std::collections::BTreeSet<String> {
+    let mut keys: std::collections::BTreeSet<String> = targets
+        .iter()
+        .filter(|t| !t.agent_key.is_empty())
+        .map(|t| t.agent_key.clone())
+        .collect();
+    keys.insert(PI_AGENT_KEY.to_string());
+    keys
+}
+
 pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
     // #1585: honour an existing opencode.jsonc instead of creating a competing
     // opencode.json next to it.

@@ -567,7 +567,7 @@ fn remove_claude_skill(home: &std::path::Path) {
 /// (`.bak` backup); only the lean-ctx region goes.
 fn remove_claude_rules_file(home: &std::path::Path) -> bool {
     let rules_path = crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md");
-    let Some(line) = crate::cli::rules_dedup::retire_rules_file(&rules_path) else {
+    let Some(line) = crate::core::rules_dedup::retire_rules_file(&rules_path) else {
         return false;
     };
     if !super::super::mcp_server_quiet_mode() {

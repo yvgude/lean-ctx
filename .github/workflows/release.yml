@@ -1256,6 +1256,46 @@ jobs:
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
+          PATTERNS_VERSION="$(grep -m1 '^version' crates/lean-ctx-patterns/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-patterns/${PATTERNS_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-patterns ${PATTERNS_VERSION} to crates.io first..."
+            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-patterns
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          LEAN_CTX_WORKGRAPH_VERSION="$(grep -m1 '^version' crates/lean-ctx-workgraph/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-workgraph/${LEAN_CTX_WORKGRAPH_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-workgraph ${LEAN_CTX_WORKGRAPH_VERSION} to crates.io first..."
+            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-workgraph
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          LEAN_CTX_COMPRESS_VERSION="$(grep -m1 '^version' crates/lean-ctx-compress/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-compress/${LEAN_CTX_COMPRESS_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-compress ${LEAN_CTX_COMPRESS_VERSION} to crates.io first..."
+            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-compress
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          LEAN_CTX_FS_VERSION="$(grep -m1 '^version' crates/lean-ctx-fs/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-fs/${LEAN_CTX_FS_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-fs ${LEAN_CTX_FS_VERSION} to crates.io first..."
+            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-fs
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          LEAN_CTX_SYNTAX_VERSION="$(grep -m1 '^version' crates/lean-ctx-syntax/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-syntax/${LEAN_CTX_SYNTAX_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-syntax ${LEAN_CTX_SYNTAX_VERSION} to crates.io first..."
+            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-syntax
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
           STORAGE_VERSION="$(grep -m1 '^version' crates/leanctx-native-storage/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/leanctx-native-storage/${STORAGE_VERSION}" >/dev/null 2>&1; then
@@ -1279,7 +1319,7 @@ jobs:
           cargo package --locked -p lean-ctx
           # Verification is intentionally mandatory: source packages cannot rely
           # on this repository's local `[patch.crates-io]` entries.
-          cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}"
+          cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx
 
   publish-npm:
     name: Publish to npm

@@ -110,7 +110,7 @@ impl JetBrainsHttpBackend {
         let url = format!("{}{endpoint}", self.base_url);
         // ureq 3.x + repo convention (NO `json` feature): serialize via serde_json,
         // send raw bytes, read response body as string, parse. Per-request timeout via
-        // `.config().timeout_global(..).build()`. Pattern mirrors port_discovery.rs + llm_enhance.rs.
+        // `.config().timeout_global(..).build()`. Pattern mirrors port_discovery.rs.
         let payload = serde_json::to_vec(body).map_err(|e| format!("serialize request: {e}"))?;
         let resp = ureq::post(&url)
             .config()

@@ -100,7 +100,7 @@ Ordering ist deterministisch (stable sort tie-breaks), danach erfolgt Truncation
 
 ### Verlustfreie Eviction (MUST, #995)
 
-- **Kein Hard-Drop.** Jeder Store mit Kapazitätsgrenze (history/procedures/patterns)
+- **Kein Hard-Drop.** Jeder Store mit Kapazitätsgrenze (history/patterns)
   evictet ausschließlich über den einen Kapazitäts-Manager
   (`rust/src/core/memory_capacity.rs::reclaim_store`). Der entfernte Tail wird
   **vor** dem Löschen nach `memory/archive/<store>/` archiviert und ist
@@ -111,8 +111,8 @@ Ordering ist deterministisch (stable sort tie-breaks), danach erfolgt Truncation
 - **Default-on, gated.** `reclaim_enabled = true` ist Standard; `false` kappt nur
   den Overflow (Daten bleiben in beiden Fällen verlustfrei).
 - **Retention-Ranking** je Store ist deterministisch (stable sort tie-breaks):
-  history/patterns nach Recency,
-  procedures nach `procedural_memory::retention_cmp`.
+  history/patterns nach Recency. (Der procedures-Store ist mit dem
+  prozeduralen Gedächtnis seit 3.13.0 entfernt.)
 - **Archive-Erreichbarkeit.** `rehydrate_reach` ist an `max_files` gekoppelt
   (`ArchiveConfig`), sodass jedes retainte Archiv für Recall/Restore erreichbar ist.
 

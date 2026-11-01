@@ -712,7 +712,7 @@ pub(crate) mod tests {
     fn index_descriptions_are_served_under_the_originless_rule() {
         let _data = crate::core::data_dir::isolated_data_dir();
         let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
-        crate::cli::common::carrier_tests_support::governed();
+        crate::core::config::test_support::governed();
         let store = tempfile::tempdir().expect("store");
         let registry = LocalRegistry::open_at(store.path()).expect("registry");
         let content = session("the changelog misses the 3.11 entry");

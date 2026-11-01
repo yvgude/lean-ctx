@@ -190,36 +190,6 @@ fn global_list(key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Adds `programs` to the global `shell_allowlist_extra`, as `lean-ctx allow`
-/// does, without printing. Returns the entries that were new. Used when the
-/// user answers an approval prompt with "always allow".
-pub(crate) fn allow_programs(programs: &[String]) -> Result<Vec<String>, String> {
-    add_to_global_list("shell_allowlist_extra", programs)
-}
-
-/// Adds `languages` to the global `execute_allowed_languages`: the "always
-/// allow" answer to a `ctx_execute` approval prompt.
-pub(crate) fn allow_execute_languages(languages: &[String]) -> Result<Vec<String>, String> {
-    add_to_global_list("execute_allowed_languages", languages)
-}
-
-fn add_to_global_list(key: &str, entries: &[String]) -> Result<Vec<String>, String> {
-    let mut list = global_list(key);
-    let added: Vec<String> = entries
-        .iter()
-        .filter(|p| !p.is_empty() && !list.contains(p))
-        .cloned()
-        .collect();
-    if added.is_empty() {
-        return Ok(added);
-    }
-    list.extend(added.iter().cloned());
-    config::setter::set_by_key(key, &list.join(","))
-        .map(|_| ())
-        .map_err(|e| e.to_string())?;
-    Ok(added)
-}
-
 /// Persists the extra list via the schema-validated setter (minimal-config round-trip).
 fn write_extra(extra: &[String]) -> Result<(), String> {
     config::setter::set_by_key("shell_allowlist_extra", &extra.join(","))
