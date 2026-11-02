@@ -7,15 +7,14 @@
 //! between paths again (dogfood 25.10.: the maintain CLI signed with the raw
 //! `inst_<hex>` id and Hive refused `invalid_event shape /hlc/node`).
 
+use crate::core::hive::HiveError;
 use crate::core::hive::auth::Session;
 use crate::core::hive::events::build::{Place, Signer};
-use crate::core::hive::events::sealed_body::SealKey;
 use crate::core::hive::instance_key::InstanceKeys;
 use crate::core::hive::replica::Replica;
 use crate::core::hive::vault::VaultRecord;
 use crate::core::hive::workers::card::{Availability, Budget, WorkerCard};
 use crate::core::hive::workers::{attach, canonical_instance_id, register};
-use crate::core::hive::{HiveError, HiveStore};
 
 use super::place::{CAPTURE_HOST, place_id};
 
@@ -62,8 +61,8 @@ pub fn vault_ref(record: &VaultRecord) -> String {
     format!("vault:{}", place_id(&record.vault_id))
 }
 
-/// The vault as an event place, keyed with the replica's id salt (the
-/// sealed `pk_id` once a sealed vault synced) at its folded cursor.
+/// The vault as an event place, keyed with the replica's id salt at its
+/// folded cursor.
 pub fn vault_place(record: &VaultRecord, replica: &Replica) -> Result<Place, HiveError> {
     let pk_id = replica.id_salt()?.ok_or_else(|| {
         HiveError::Local("replica has no id_salt: run `lean-ctx hive sync`".into())
@@ -74,20 +73,6 @@ pub fn vault_place(record: &VaultRecord, replica: &Replica) -> Result<Place, Hiv
         pk_id,
         causal_base: replica.cursor()?.unwrap_or(0),
     })
-}
-
-/// A sealed vault's events are sealed with the newest epoch key held;
-/// `None` for a plain vault.
-pub fn vault_seal(store: &HiveStore, record: &VaultRecord) -> Result<Option<SealKey>, HiveError> {
-    if !record.sealed {
-        return Ok(None);
-    }
-    let missing = || HiveError::Refused("sealed_key_missing".into());
-    let epoch = crate::core::hive::sealed::newest_held_epoch(store, &record.vault_id)?
-        .ok_or_else(missing)?;
-    let key =
-        crate::core::hive::sealed::held_key(store, &record.vault_id, epoch).ok_or_else(missing)?;
-    Ok(Some(SealKey { epoch, key }))
 }
 
 #[cfg(test)]

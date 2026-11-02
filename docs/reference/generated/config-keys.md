@@ -268,7 +268,6 @@ LeanCTX Hive: workspace knowledge, policies and the shared agent bus.
 - `receipts_upload` (bool, default `true`) — Upload context receipts to Hive.
 - `root_key` (string, default `null`) — Root public key (base64 Ed25519) of a self-hosted Hive.
 - `runtime_consent` (bool, default `false`) — You agreed to install the proprietary Intelligence runtime your plan licenses (set by `hive connect` or `hive runtime install`).
-- `sealed_grants` (string: confirm | auto, default `confirm`) — Sealed vaults: grant the vault key to a newly approved instance only after you confirmed its fingerprint (confirm), or to every instance Hive lists (auto).
 - `url` (string, default `https://hive.leanctx.com`) — Hive origin (https; a self-hosted Hive may use any https URL).
 - `vault_labels` (bool, default `true`) — Send checkout folder names as vault labels.
 - `worker.max_tasks_per_day` (integer, default `null`) — Worker mode: at most this many claimed tasks per day on this machine; only tightens the opt-in budget set on the web.

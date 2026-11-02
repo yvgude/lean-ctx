@@ -32,15 +32,6 @@
           "field": "ids"
         }
       }
-    },
-    {
-      "status": 409,
-      "body": {
-        "error": {
-          "code": "sealed_plaintext",
-          "message": "a sealed vault's nodes are read on its engines only"
-        }
-      }
     }
   ]
 }

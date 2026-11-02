@@ -1,0 +1,75 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaadocs",
+  "body": {
+    "anchor_state": "fresh",
+    "anchors": [
+      {
+        "commit": "83936d237f7b373029ebc6fa51f13d747656b1cd",
+        "digest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "ref": "file:crates/hive-server/src/routes/wiki_pages.rs",
+        "verified_at": 1792800020000
+      },
+      {
+        "commit": "83936d237f7b373029ebc6fa51f13d747656b1cd",
+        "digest": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "mode": "content",
+        "ref": "glob:web/src/lib/render/wiki*.ts",
+        "verified_at": 1792800020000
+      },
+      {
+        "commit": "83936d237f7b373029ebc6fa51f13d747656b1cd",
+        "digest": "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b",
+        "ref": "file:docs/API.md",
+        "role": "cites",
+        "verified_at": 1792800020000
+      }
+    ],
+    "body_nonce": "14141414141414141414141414141414",
+    "description": "The vault wiki: pages of ordered sections and notes on place nodes",
+    "slug": "knowledge/wiki",
+    "status": "canonical",
+    "title": "Wiki",
+    "type": "feature"
+  },
+  "body_commit": "69d5d2f4b8185bd7e06ebfd3dc89ddbb432b5d77148c42e242348827a7bd9859",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 19,
+  "event_id": "01M5NKANH0005000000000D020",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800020000
+  },
+  "key_id": "47983724220c8521",
+  "node_type": "page",
+  "op": "node.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800020350,
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 20,
+  "signature": "1944384787a154e2b2bed16481c3c913e1dbdafb1a0ad85e9e321e314b7e06d8e5fedd446f2c4eea0b7134be70649b6eb32c384e5cbea15f1ca145f848bcde04",
+  "target": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

@@ -109,7 +109,7 @@ pub fn envelope_digest(event: &Value) -> Result<String, String> {
 }
 
 /// `hex(blake3_keyed(key, canonical_json(body)))`; `key` is the place's
-/// `id_salt` (or the sealed `pk_id`).
+/// `id_salt`.
 pub fn body_commit(key: &[u8; 32], body: &Value) -> Result<String, String> {
     Ok(
         blake3::keyed_hash(key, &canonical_json(body).map_err(|e| e.to_string())?)

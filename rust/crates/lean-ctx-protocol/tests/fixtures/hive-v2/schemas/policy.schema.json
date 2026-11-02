@@ -118,7 +118,7 @@
           },
           "x-merge": "union",
           "x-enforcement": "server",
-          "x-server": "unsealed vaults: a push, task result, draft or code graph with a code anchor path the globs match is refused; sealed vaults stay advisory (the server cannot read their anchors)"
+          "x-server": "a push, task result, draft or code graph with a code anchor path the globs match is refused"
         },
         "block_secrets": {
           "description": "Block agent writes and actions that carry detected secrets or PII.",
@@ -204,7 +204,7 @@
           },
           "x-merge": "union",
           "x-enforcement": "server",
-          "x-server": "unsealed vaults: a push, task result, draft or code graph with a code anchor path the globs match is refused; sealed vaults stay advisory (the server cannot read their anchors)"
+          "x-server": "a push, task result, draft or code graph with a code anchor path the globs match is refused"
         },
         "block_secrets": {
           "description": "Block agent writes and actions that carry detected secrets or PII.",
@@ -542,14 +542,14 @@
           },
           "x-merge": "intersection",
           "x-enforcement": "server",
-          "x-server": "every engine route that names a vault (resolve, match, reads, pushes, tasks, reviews, bus v1/v2, presence, metrics): a vault outside the list is refused, a new vault too"
+          "x-server": "every engine route that names a vault (resolve, match, reads, pushes, tasks, bus, metrics): a vault outside the list is refused, a new vault too"
         },
         "cross_team_sharing": {
           "description": "Results may be shared with other team workspaces.",
           "type": "boolean",
           "x-merge": "false_wins",
           "x-enforcement": "server",
-          "x-server": "false: moving a vault to another workspace (W11) and making it public (W26) are refused"
+          "x-server": "false: moving a vault to another workspace (W11) is refused"
         },
         "task_claim_min_role": {
           "description": "Lowest member role whose agents may claim tasks.",
@@ -557,13 +557,6 @@
           "x-merge": "rank",
           "x-enforcement": "server",
           "x-server": "task claim and claim renew by an engine whose owner's role is lower are refused"
-        },
-        "auto_merge_results": {
-          "description": "Agent results merge into shared knowledge without a person.",
-          "type": "boolean",
-          "x-merge": "false_wins",
-          "x-enforcement": "server",
-          "x-server": "false: a task result's plain ops are held as a proposal for a person instead of entering the shared log"
         },
         "consent_required_for": {
           "description": "Actions that need a person's consent outside the agent context.",
@@ -589,7 +582,7 @@
           "type": "boolean",
           "x-merge": "false_wins",
           "x-enforcement": "server",
-          "x-server": "POST /v1/metrics/hours and POST /v1/metrics: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices and day entries refused; absent at every level = the plan default (Team, Business on; Community, Pro off until the person confirms once, 403 sharing_not_confirmed)"
+          "x-server": "POST /v1/metrics/hours: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
         }
       }
     },
@@ -607,14 +600,14 @@
           },
           "x-merge": "intersection",
           "x-enforcement": "server",
-          "x-server": "every engine route that names a vault (resolve, match, reads, pushes, tasks, reviews, bus v1/v2, presence, metrics): a vault outside the list is refused, a new vault too"
+          "x-server": "every engine route that names a vault (resolve, match, reads, pushes, tasks, bus, metrics): a vault outside the list is refused, a new vault too"
         },
         "cross_team_sharing": {
           "description": "Results may be shared with other team workspaces.",
           "type": "boolean",
           "x-merge": "false_wins",
           "x-enforcement": "server",
-          "x-server": "false: moving a vault to another workspace (W11) and making it public (W26) are refused"
+          "x-server": "false: moving a vault to another workspace (W11) is refused"
         },
         "task_claim_min_role": {
           "description": "Lowest member role whose agents may claim tasks.",
@@ -622,13 +615,6 @@
           "x-merge": "rank",
           "x-enforcement": "server",
           "x-server": "task claim and claim renew by an engine whose owner's role is lower are refused"
-        },
-        "auto_merge_results": {
-          "description": "Agent results merge into shared knowledge without a person.",
-          "type": "boolean",
-          "x-merge": "false_wins",
-          "x-enforcement": "server",
-          "x-server": "false: a task result's plain ops are held as a proposal for a person instead of entering the shared log"
         },
         "consent_required_for": {
           "description": "Actions that need a person's consent outside the agent context.",
@@ -654,7 +640,7 @@
           "type": "boolean",
           "x-merge": "false_wins",
           "x-enforcement": "server",
-          "x-server": "POST /v1/metrics/hours and POST /v1/metrics: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices and day entries refused; absent at every level = the plan default (Team, Business on; Community, Pro off until the person confirms once, 403 sharing_not_confirmed)"
+          "x-server": "POST /v1/metrics/hours: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
         }
       }
     },
@@ -824,13 +810,10 @@
       }
     },
     "bundle_response": {
-      "description": "GET /v1/policy/bundle for Hive-Protocol 2.x: the C0 1.x members unchanged plus `effective_policy` (null only when this server has no lease signing key)",
+      "description": "GET /v1/policy/bundle for Hive-Protocol 2.x: the schema, the filter packs and `effective_policy` (null only when this server has no lease signing key); answers below 2.1 also carry policy_version 0, org_policy null and unpin null",
       "type": "object",
       "required": [
         "schema",
-        "policy_version",
-        "org_policy",
-        "unpin",
         "filter_packs",
         "effective_policy"
       ],
@@ -839,20 +822,16 @@
           "const": "leanctx.hive.policy-bundle/v1"
         },
         "policy_version": {
-          "type": "integer",
-          "minimum": 0
+          "description": "only in answers to Hive-Protocol below 2.1, always 0: the released 3.12.1 engine (C0 2.0) requires it (until MIN_ENGINE >= the C0 2.1 release); the TOML org policy is retired",
+          "const": 0
         },
         "org_policy": {
-          "type": [
-            "object",
-            "null"
-          ]
+          "description": "only in answers to Hive-Protocol below 2.1, always null (until MIN_ENGINE >= the C0 2.1 release)",
+          "type": "null"
         },
         "unpin": {
-          "type": [
-            "object",
-            "null"
-          ]
+          "description": "only in answers to Hive-Protocol below 2.1, always null (until MIN_ENGINE >= the C0 2.1 release)",
+          "type": "null"
         },
         "filter_packs": {
           "type": "array",

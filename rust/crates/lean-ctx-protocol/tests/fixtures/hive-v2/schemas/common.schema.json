@@ -78,10 +78,6 @@
       "type": "string",
       "pattern": "^msg_[0-9a-f]{16}$"
     },
-    "review_id": {
-      "type": "string",
-      "pattern": "^rv_[a-z2-7]{26}$"
-    },
     "purge_id": {
       "type": "string",
       "pattern": "^prg_[a-z2-7]{26}$"
@@ -89,18 +85,6 @@
     "batch_id": {
       "type": "string",
       "pattern": "^b_[a-z2-7]{26}$"
-    },
-    "goal_id": {
-      "type": "string",
-      "pattern": "^g_[a-z2-7]{26}$"
-    },
-    "claim_id": {
-      "type": "string",
-      "pattern": "^cl_[a-z2-7]{26}$"
-    },
-    "pledge_id": {
-      "type": "string",
-      "pattern": "^plg_[a-z2-7]{26}$"
     },
     "invite_id": {
       "type": "string",
@@ -110,14 +94,9 @@
       "type": "string",
       "pattern": "^cns_[a-z2-7]{16}$"
     },
-    "criterion_id": {
-      "type": "string",
-      "pattern": "^sc_([1-9]|10)$"
-    },
     "place_kind": {
       "enum": [
-        "vault",
-        "swarm"
+        "vault"
       ]
     },
     "place": {
@@ -138,7 +117,7 @@
     },
     "place_ref": {
       "type": "string",
-      "pattern": "^(vault|swarm):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "pattern": "^vault:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
       "description": "`{kind}:{id}`: the place id string used in derivations, AAD and subjects"
     },
     "evidence": {
@@ -154,20 +133,6 @@
         "workspace",
         "public",
         "foreign"
-      ]
-    },
-    "review_state": {
-      "enum": [
-        "confirmed",
-        "unconfirmed",
-        "reviewed_needs_person"
-      ]
-    },
-    "reviewed_by": {
-      "enum": [
-        "reviewer",
-        "maintainer",
-        "none"
       ]
     },
     "artefact": {
@@ -231,11 +196,6 @@
       "description": "<ws>/<vault>[@<server>] (lead addition 24.10.): no @server = hosted hive.leanctx.com; a server with a dot or a port = self-hosted (origin https://<server>); a bare dotless name without port is refused; canonical form lowercase",
       "pattern": "^[a-z0-9][a-z0-9-]{0,38}/[a-z0-9-]{2,40}(@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+(:[0-9]{1,5})?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?:[0-9]{1,5}|\\[[0-9a-f:.]+\\]:[0-9]{1,5}))?$"
     },
-    "wiki_page_id": {
-      "type": "string",
-      "pattern": "^wp_[a-z2-7]{26}$",
-      "description": "wiki_pages.page_id (CHECK of migration 0058)"
-    },
     "knowledge_state": {
       "description": "Derived knowledge state (enums/knowledge-states.json, vectors/knowledge_state.vectors.json); never stored in an event",
       "enum": [
@@ -257,7 +217,6 @@
             "anchor_gone",
             "anchor_changed",
             "contradicted",
-            "unconfirmed",
             "not_observed"
           ]
         },

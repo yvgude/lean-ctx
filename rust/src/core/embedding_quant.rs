@@ -167,6 +167,7 @@ mod tests {
         let q = quantize(&[0.0, 0.0, 0.0]);
         assert_eq!(q.scale, 0.0);
         assert_eq!(q.code, vec![0, 0, 0]);
+        #[cfg(feature = "embeddings")]
         assert_eq!(dot_quant(&[1.0, 1.0, 1.0], &q), 0.0);
     }
 
@@ -180,6 +181,7 @@ mod tests {
         assert!((recon[0] - 1.0).abs() < 1e-6);
     }
 
+    #[cfg(feature = "embeddings")]
     #[test]
     fn dot_quant_approximates_cosine_for_normalized_vectors() {
         // Two similar L2-normalized vectors: quantized dot must track the true dot.
@@ -199,6 +201,7 @@ mod tests {
         assert!(self_sim > 0.99, "self_sim={self_sim}");
     }
 
+    #[cfg(feature = "embeddings")]
     #[test]
     fn dot_quant_preserves_ranking() {
         // The most similar doc must still score highest after quantization.
@@ -208,6 +211,7 @@ mod tests {
         assert!(dot_quant(&query, &near) > dot_quant(&query, &far));
     }
 
+    #[cfg(feature = "embeddings")]
     fn l2_normalize(v: &mut [f32]) {
         let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
         if norm > 0.0 {
@@ -217,6 +221,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "embeddings")]
     fn normalized(mut v: Vec<f32>) -> Vec<f32> {
         l2_normalize(&mut v);
         v

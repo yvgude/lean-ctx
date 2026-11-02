@@ -13,16 +13,5 @@
       "value": "low",
       "min_score": 0
     }
-  ],
-  "review_states": [
-    {
-      "value": "confirmed"
-    },
-    {
-      "value": "unconfirmed"
-    },
-    {
-      "value": "reviewed_needs_person"
-    }
   ]
 }

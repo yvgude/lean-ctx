@@ -4,6 +4,7 @@
 
 use super::*;
 
+#[cfg(feature = "embeddings")]
 /// Deterministic hash-bag pseudo-embedding so the determinism guard needs no
 /// ONNX engine. Identical sentences map to identical vectors (so the MMR gate
 /// fires), and `DefaultHasher::new()` is fixed-seed, so it is stable across
@@ -24,6 +25,7 @@ fn synth_embed(s: &str) -> Vec<f32> {
     v
 }
 
+#[cfg(feature = "embeddings")]
 #[test]
 fn pipeline_is_byte_identical_across_runs() {
     // #498 guard: segment → score → quantize → MMR select → reassemble is a

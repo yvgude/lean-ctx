@@ -13,9 +13,6 @@
 //! A report replaces the reporting engine's earlier states for that
 //! revision; a fact is `current` again when no engine reports it.
 //!
-//! A sealed vault reports `counts` only: which facts are in doubt, and why,
-//! is information too, so the states stay on the engines.
-//!
 //! A state never changes the document. Fixing a fact is a proposal; a
 //! `contradiction` with no proposal after 24 hours becomes a task (origin
 //! `contradiction`).
@@ -139,27 +136,15 @@ impl FactStateV1 {
     }
 }
 
-/// How many facts are in doubt (sealed vaults).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FactStateCountsV1 {
-    pub to_verify: u64,
-    pub contradicted: u64,
-}
-
-/// `POST /v1/vaults/{vault_id}/facts/states`: exactly one of
-/// `states` (clear vaults; may be empty: nothing in doubt) and `counts`
-/// (sealed vaults).
+/// `POST /v1/vaults/{vault_id}/facts/states`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FactStateReportV1 {
     pub schema: String,
     /// The released revision the engine checked.
     pub revision: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub states: Option<Vec<FactStateV1>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub counts: Option<FactStateCountsV1>,
+    /// The facts in doubt, sorted by fact; empty: nothing in doubt.
+    pub states: Vec<FactStateV1>,
 }
 
 impl FactStateReportV1 {
@@ -168,28 +153,20 @@ impl FactStateReportV1 {
         if self.revision == 0 {
             return Err(ValidationError::new("revision 0 has no facts"));
         }
-        match (&self.states, &self.counts) {
-            (Some(states), None) => {
-                if states.len() > MAX_FACT_STATES {
-                    return Err(ValidationError::new(format!(
-                        "at most {MAX_FACT_STATES} states"
-                    )));
-                }
-                for (i, state) in states.iter().enumerate() {
-                    state.validate()?;
-                    if i > 0 && states[i - 1].fact >= state.fact {
-                        return Err(ValidationError::new(
-                            "states must be sorted by fact without repeats",
-                        ));
-                    }
-                }
-                Ok(())
-            }
-            (None, Some(_)) => Ok(()),
-            _ => Err(ValidationError::new(
-                "a report carries exactly one of states and counts",
-            )),
+        if self.states.len() > MAX_FACT_STATES {
+            return Err(ValidationError::new(format!(
+                "at most {MAX_FACT_STATES} states"
+            )));
         }
+        for (i, state) in self.states.iter().enumerate() {
+            state.validate()?;
+            if i > 0 && self.states[i - 1].fact >= state.fact {
+                return Err(ValidationError::new(
+                    "states must be sorted by fact without repeats",
+                ));
+            }
+        }
+        Ok(())
     }
 }
 

@@ -56,9 +56,6 @@
       "provenance": "own",
       "provenance_claim": "own",
       "received_at": 1792800004350,
-      "review_id": "rv_aaaaaaaaaaaaaaaaaaaaaadxaq",
-      "review_state": "confirmed",
-      "reviewed_by": "maintainer",
       "schema": "leanctx.hive.event/v2",
       "screening": {
         "counts": {

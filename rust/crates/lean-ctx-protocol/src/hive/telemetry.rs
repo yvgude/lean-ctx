@@ -7,8 +7,7 @@
 //!   per `(device.id, date, vault.id)`; `vault.id` is the resolved Hive
 //!   `vault_id`.
 //! - 1.9 (X4): a day may carry `hive` ([`MetricsHiveV1`]), how Hive
-//!   helped in that vault: counts and durations only, the same for sealed
-//!   vaults. Claim conflicts are not reported; Hive derives them from its
+//!   helped in that vault: counts and durations only. Claim conflicts are not reported; Hive derives them from its
 //!   own refusals and bus lease conflicts.
 //! - `POST /v1/receipts` [`ReceiptsUploadV1`] → [`ReceiptsAckV1`]; a receipt
 //!   already stored (same `receipt_id` and `digest`) counts as duplicate.

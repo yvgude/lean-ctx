@@ -1,3 +1,5 @@
+#![cfg(feature = "http-server")]
+
 use std::sync::Arc;
 
 use axum::body::Body;

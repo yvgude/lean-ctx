@@ -328,10 +328,10 @@ pub enum TaskRefusal {
     StaleClaim,
     /// A write to a `done`, `rejected` or `cancelled` task.
     Closed,
-    /// A confirmation that a threshold may not count.
-    ReviewerNotIndependent,
-    /// An object of another network (org bus vs a swarm).
-    CrossNetwork,
+    /// C0 2.2 E48: the agent that did the work checked its own result.
+    SelfVerify,
+    /// C0 2.2 E48: a verdict on a task that is not `submitted`.
+    NotSubmitted,
     /// The task's role or the owner's worker consent does not allow this agent.
     NotPermitted(PermitCheck),
     /// The engine's opt-in does not cover this vault or network (§4,
@@ -360,10 +360,8 @@ impl TaskRefusal {
             (HiveErrorCode::InvalidState, "task_not_open") => Self::NotOpen,
             (HiveErrorCode::InvalidState, "stale_claim") => Self::StaleClaim,
             (HiveErrorCode::InvalidState, "task_closed") => Self::Closed,
-            (HiveErrorCode::InvalidState, "reviewer_not_independent") => {
-                Self::ReviewerNotIndependent
-            }
-            (HiveErrorCode::InvalidState, "cross_network") => Self::CrossNetwork,
+            (HiveErrorCode::ForbiddenRight, "self_verify") => Self::SelfVerify,
+            (HiveErrorCode::InvalidState, "not_submitted") => Self::NotSubmitted,
             (HiveErrorCode::ForbiddenRight, "not_permitted") => Self::NotPermitted(match check {
                 Some("presence") => PermitCheck::Presence,
                 Some("role") => PermitCheck::Role,
@@ -392,10 +390,10 @@ impl fmt::Display for TaskRefusal {
             Self::NotOpen => f.write_str("the task is not open"),
             Self::StaleClaim => f.write_str("this claim is no longer the task's claim"),
             Self::Closed => f.write_str("the task is closed"),
-            Self::ReviewerNotIndependent => {
-                f.write_str("this confirmation is not independent of the result")
-            }
-            Self::CrossNetwork => f.write_str("the task belongs to another network"),
+            Self::SelfVerify => f.write_str(
+                "the agent that did the work does not check its own result; another agent verifies it",
+            ),
+            Self::NotSubmitted => f.write_str("the task has no result waiting for a check"),
             Self::NotPermitted(PermitCheck::Presence) => f.write_str(
                 "this agent is not on the bus: its session (or the relay) must be running and announce it with the task's role",
             ),
@@ -974,9 +972,36 @@ mod tests {
                 "{fixture}"
             );
         }
+        // C0 2.2 E48: the verify refusals of the hive-v2 contract.
+        for (fixture, expected) in [
+            (
+                "task_verify.error.self_verify.json",
+                TaskRefusal::SelfVerify,
+            ),
+            (
+                "task_verify.error.not_submitted.json",
+                TaskRefusal::NotSubmitted,
+            ),
+        ] {
+            let path = format!(
+                "{}/crates/lean-ctx-protocol/tests/fixtures/hive-v2/routes/{fixture}",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let body: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            let code: HiveErrorCode =
+                serde_json::from_value(body["error"]["code"].clone()).unwrap();
+            assert!(
+                matches!(
+                    HiveError::from_response(code.http_status(), &body),
+                    HiveError::Task { refusal, .. } if refusal == expected
+                ),
+                "{fixture}"
+            );
+        }
         assert_eq!(refusal(403, "forbidden_right", "vetoed"), HiveError::Vetoed);
         assert_eq!(
-            refusal(409, "invalid_state", "sealed"),
+            refusal(409, "invalid_state", "code_graph_disabled"),
             HiveError::Server {
                 status: 409,
                 code: "invalid_state".into()
@@ -1039,11 +1064,11 @@ mod tests {
         );
         let unnamed = HiveError::from_response(
             402,
-            &json!({"error": {"code": "plan_required", "message": "", "feature": "sealed_vaults", "plan_needed": "team"}}),
+            &json!({"error": {"code": "plan_required", "message": "", "feature": "audit_export", "plan_needed": "team"}}),
         );
         assert_eq!(
             unnamed.to_string(),
-            "sealed vaults is included in Team and Enterprise"
+            "audit export is included in Team and Enterprise"
         );
         let hostile = HiveError::from_response(
             402,

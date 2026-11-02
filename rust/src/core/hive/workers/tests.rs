@@ -68,7 +68,7 @@ const SEED_A: [u8; 32] = [0x49; 32];
 const SEED_B: [u8; 32] = [0x4a; 32];
 const INSTANCE_A: &str = "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b";
 const INSTANCE_B: &str = "8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c";
-const SWARM: &str = "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02";
+const OTHER_VAULT: &str = "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03";
 const VAULT: &str = "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01";
 
 fn keys(seed: [u8; 32]) -> InstanceKeys {
@@ -196,27 +196,27 @@ fn signing_vectors() -> serde_json::Value {
 #[test]
 fn one_engine_is_unlinkable_across_places_and_to_its_instance_id() {
     let a = WorkerAliasKey::from_seed(&SEED_A);
-    let (in_swarm, in_vault) = (
-        a.worker_id("codex", "general", SWARM),
+    let (in_other, in_vault) = (
+        a.worker_id("codex", "general", OTHER_VAULT),
         a.worker_id("codex", "general", VAULT),
     );
-    assert_ne!(in_swarm, in_vault);
-    assert_ne!(a.hlc_node(SWARM), a.hlc_node(VAULT));
+    assert_ne!(in_other, in_vault);
+    assert_ne!(a.hlc_node(OTHER_VAULT), a.hlc_node(VAULT));
     // A co-member knows the instance UUID, not the seed: nothing derived
     // from the UUID reproduces the alias or the node.
     let guess = workspace_worker_id(INSTANCE_A, "codex", "general");
-    assert_ne!(guess, in_swarm);
-    let unkeyed = blake3::hash(format!("codex|general|{SWARM}").as_bytes());
-    assert_ne!(worker_id_of(unkeyed.as_bytes()), in_swarm);
+    assert_ne!(guess, in_other);
+    let unkeyed = blake3::hash(format!("codex|general|{OTHER_VAULT}").as_bytes());
+    assert_ne!(worker_id_of(unkeyed.as_bytes()), in_other);
     assert_ne!(
-        &blake3::hash(SWARM.as_bytes()).to_hex()[..16],
-        a.hlc_node(SWARM)
+        &blake3::hash(OTHER_VAULT.as_bytes()).to_hex()[..16],
+        a.hlc_node(OTHER_VAULT)
     );
     let keyed_by_uuid = blake3::keyed_hash(
         blake3::hash(INSTANCE_A.as_bytes()).as_bytes(),
-        SWARM.as_bytes(),
+        OTHER_VAULT.as_bytes(),
     );
-    assert_ne!(&keyed_by_uuid.to_hex()[..16], a.hlc_node(SWARM));
+    assert_ne!(&keyed_by_uuid.to_hex()[..16], a.hlc_node(OTHER_VAULT));
 }
 
 #[test]

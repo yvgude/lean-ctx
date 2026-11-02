@@ -1,0 +1,49 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "base_event": "01M5NKAPG8005000000000D021",
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaadocs",
+  "body": {
+    "body_nonce": "1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b",
+    "field": "body",
+    "value": "\nThe wiki of a vault stores readable pages as place nodes: a page, its sections in order and the notes on them. Pages link to each other by id, for example [the item types](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgb#types-and-bodies).\n\nW58 and its `wiki_pages` table are gone since C0 2.2.\n\n"
+  },
+  "body_commit": "2cc27663736928b37f638622b02bef7a106da368dceebf58edc3c119f47fe5a8",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 26,
+  "event_id": "01M5NKAWBR005000000000D027",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800027000
+  },
+  "key_id": "47983724220c8521",
+  "op": "field.set",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800027350,
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 27,
+  "signature": "d86e79e0c759e0cb68165b3f9503f7eb8f3eb1eb0e7e22e1518ece8c76d5cbd2a35124c7cb1a054b84e900152102c34f676d0fd58c68aa9e5fe8bfa1c33da50b",
+  "target": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

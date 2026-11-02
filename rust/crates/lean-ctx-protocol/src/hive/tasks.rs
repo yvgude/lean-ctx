@@ -18,7 +18,7 @@
 //! - The claiming instance never decides on it, not through its instance
 //!   token either. A person decides (the instance's owner included), or an
 //!   auto-merge threshold. A threshold counts independent confirmations: in
-//!   Team and swarms people and agents of other owners (Team: one by
+//!   Team people and agents of other owners (one by
 //!   default, configurable per vault), and in Personal sessions on the owner's
 //!   other instances (one by default): never the claiming instance, in any
 //!   of its sessions (D1 per instance).
@@ -51,6 +51,14 @@
 //! | `POST /{number}/release` | [`TaskReleaseRequestV1`] | [`TaskAckV1`] (`open`) | `tasks.work` |
 //! | `POST /{number}/updates` | [`TaskUpdateRequestV1`] | [`TaskAckV1`] | `tasks.work` |
 //! | `POST /{number}/result` | [`TaskResultRequestV1`] | [`TaskAckV1`] (`submitted`; v5 `done` or `failed`) | `tasks.work` |
+//! | `POST /{number}/verify` | [`TaskVerifyRequestV1`] | [`TaskAckV1`] (`done` or `open`; C0 2.2) | `tasks.work` |
+//! | `PATCH /{number}` | [`TaskFieldsRequestV1`] | [`TaskAckV1`] (C0 2.2) | `tasks.propose` |
+//!
+//! C0 2.2: a result leaves the task `submitted` (`failed` with `outcome:
+//! failed`) until another agent verifies it (E48): `accept` → `done`,
+//! `reject` → `open`. The verifier is never the result's worker (`403
+//! forbidden_right`, `reason` `self_verify`), and only a submitted task
+//! takes a verdict (`409 invalid_state`, `reason` `not_submitted`).
 //!
 //! Errors carry `number` (`HiveErrorDetailV1::number`):
 //! - `409 invalid_state`, `reason`:
@@ -58,9 +66,7 @@
 //!   - `task_not_open`: claim on a task that is not `open`;
 //!   - `stale_claim`: the lease id or fencing token is not the current claim's;
 //!   - `task_closed`: any write to a `done`, `rejected` or `cancelled` task;
-//!   - `reviewer_not_independent`: a confirmation that a threshold may not count;
-//!   - `cross_network`: an object of another network (org bus vs a swarm);
-//!     for message replies Hive answers `404 not_found` instead (section 2).
+//!   - `reviewer_not_independent`: a confirmation that a threshold may not count.
 //! - `403 forbidden_right`, `reason`:
 //!   - `not_permitted`: the task's role or the owner's worker consent does
 //!     not allow this agent;
@@ -72,18 +78,12 @@
 //! - `429 rate_limited`, `reason` `daily_budget`: the opt-in's daily
 //!   budget is used up (`retry_after_s` until it resets).
 //!
-//! Sealed vaults: an engine sends no readable text. A proposed task, an
-//! update or a result carries `sealed` instead of the plaintext fields,
-//! encrypted under the vault key with the AAD
-//! `vault_id|<task number>|epoch|content_schema`. A proposed task, which
-//! has no number yet, uses `0`. Evidence travels inside the sealed result.
-//! Text that people type on the web is Hive-visible by nature, as for gaps.
+//! A proposed task, an update and a result carry their text in the clear.
 
 use serde::{Deserialize, Serialize};
 
 use super::anchor::CodeAnchorV1;
 use super::knowledge::DraftProposalV1;
-use super::sealed::SealedBlobV1;
 use super::{require_schema, validate_hex64, validate_id, validate_text};
 use crate::{UtcTimestamp, ValidationError};
 
@@ -97,13 +97,10 @@ pub const TASK_CLAIM_ACK_SCHEMA: &str = "leanctx.hive.task-claim/v1";
 pub const TASK_RELEASE_SCHEMA: &str = "leanctx.hive.task-release/v1";
 pub const TASK_UPDATE_SCHEMA: &str = "leanctx.hive.task-update/v1";
 pub const TASK_RESULT_SCHEMA: &str = "leanctx.hive.task-result/v1";
-
-/// `content_schema` of a sealed proposed task: `{title, goal?, acceptance}`.
-pub const SEALED_TASK_CONTENT_SCHEMA: &str = "leanctx.hive.sealed-task/v1";
-/// `content_schema` of a sealed update: `{summary}`.
-pub const SEALED_TASK_UPDATE_SCHEMA: &str = "leanctx.hive.sealed-task-update/v1";
-/// `content_schema` of a sealed result: `{summary, evidence}`.
-pub const SEALED_TASK_RESULT_SCHEMA: &str = "leanctx.hive.sealed-task-result/v1";
+/// C0 2.2 E48: another agent's verdict on a submitted result.
+pub const TASK_VERIFY_SCHEMA: &str = "leanctx.hive.task-verify/v1";
+/// C0 2.2 E47 `PATCH`: a task's priority and labels.
+pub const TASK_FIELDS_SCHEMA: &str = "leanctx.hive.task-fields/v1";
 
 pub const MIN_TITLE_CHARS: usize = 5;
 pub const MAX_TITLE_CHARS: usize = 180;
@@ -112,6 +109,9 @@ pub const MAX_ACCEPTANCE_CHARS: usize = 2000;
 /// Updates and result summaries are summaries, not prompts: one line.
 pub const MAX_SUMMARY_CHARS: usize = 500;
 pub const MAX_REASON_CHARS: usize = 280;
+/// A verifier's reason (C0 2.2 E48), required on `reject`.
+pub const MAX_VERIFY_REASON_CHARS: usize = 2000;
+pub const MAX_TASK_LABELS: usize = 16;
 pub const MAX_EVIDENCE: usize = 20;
 pub const MAX_EVIDENCE_REF_CHARS: usize = 512;
 /// Updates a task view carries, newest last.
@@ -151,6 +151,8 @@ pub enum TaskLifecycle {
     Queued,
     Claimed,
     Running,
+    /// C0 2.2: a result waits for a second agent's check.
+    Submitted,
     Completed,
     Failed,
     Cancelled,
@@ -180,16 +182,14 @@ pub enum TaskOriginKind {
     Contradiction,
     /// A question no agent answered (section 2).
     Question,
-    /// New knowledge that stayed in quarantine past its review window
-    /// (section 3); `facts` names the quarantined facts.
-    QuarantineTimeout,
+    /// Any other origin.
     #[serde(other)]
     Unknown,
 }
 
 /// Origin of a task. `facts` names exactly two distinct fact ids for a
-/// contradiction and the quarantined facts for a quarantine timeout;
-/// `message` names the question's message id for a question.
+/// contradiction; `message` names the question's message id for a
+/// question.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskOriginV1 {
@@ -367,22 +367,12 @@ pub fn validate_role(role: &str) -> Result<(), ValidationError> {
     }
 }
 
-/// Exactly one of plaintext (`plain`) or `sealed` with the given schema.
-fn one_of(plain: bool, sealed: Option<&SealedBlobV1>, schema: &str) -> Result<(), ValidationError> {
-    match (plain, sealed) {
-        (true, None) => Ok(()),
-        (false, Some(blob)) => {
-            blob.validate()?;
-            if blob.content_schema == schema {
-                Ok(())
-            } else {
-                Err(ValidationError::new(format!(
-                    "sealed content must be {schema}"
-                )))
-            }
-        }
-        (true, Some(_)) => Err(ValidationError::new("sealed writes carry no plaintext")),
-        (false, None) => Err(ValidationError::new("text or sealed content is required")),
+/// A task write carries its text (`plain`).
+fn text_required(plain: bool) -> Result<(), ValidationError> {
+    if plain {
+        Ok(())
+    } else {
+        Err(ValidationError::new("text is required"))
     }
 }
 
@@ -432,8 +422,6 @@ pub struct TaskProposeRequestV1 {
     pub origin: TaskOriginV1,
     /// Opaque, per-session id (no host or user data).
     pub session_ref: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
 }
 
 impl TaskProposeRequestV1 {
@@ -445,7 +433,7 @@ impl TaskProposeRequestV1 {
             validate_role(role)?;
         }
         let plain = self.title.is_some() || self.goal.is_some() || self.acceptance.is_some();
-        one_of(plain, self.sealed.as_ref(), SEALED_TASK_CONTENT_SCHEMA)?;
+        text_required(plain)?;
         if plain {
             validate_title(self.title.as_deref().unwrap_or_default())?;
             if let Some(goal) = &self.goal {
@@ -531,7 +519,7 @@ pub struct TaskClaimAckV1 {
 pub struct TaskReleaseRequestV1 {
     pub schema: String,
     pub claim: ClaimRefV1,
-    /// Why, in one line; absent for sealed vaults.
+    /// Why, in one line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
@@ -567,8 +555,6 @@ pub struct TaskUpdateRequestV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<UsageV1>,
 }
 
@@ -576,11 +562,7 @@ impl TaskUpdateRequestV1 {
     pub fn validate(&self) -> Result<(), ValidationError> {
         require_schema(&self.schema, TASK_UPDATE_SCHEMA)?;
         self.claim.validate()?;
-        one_of(
-            self.summary.is_some(),
-            self.sealed.as_ref(),
-            SEALED_TASK_UPDATE_SCHEMA,
-        )?;
+        text_required(self.summary.is_some())?;
         if let Some(summary) = &self.summary {
             validate_text(summary, MAX_SUMMARY_CHARS, "summary", false)?;
         }
@@ -591,8 +573,8 @@ impl TaskUpdateRequestV1 {
 /// `POST …/{number}/result`: the holder's result. It ends the claim; a 1.x
 /// Hive turns it into a proposal (`origin task`), Hive v5 ends the task
 /// (`done`, or `failed` with `outcome: failed`). `draft` is its knowledge
-/// change, if it brings one, exactly as a regular draft (sealed rules
-/// included); a failed result brings none.
+/// change, if it brings one, exactly as a regular draft; a failed result
+/// brings none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskResultRequestV1 {
@@ -604,8 +586,6 @@ pub struct TaskResultRequestV1 {
     pub evidence: Vec<EvidenceV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft: Option<DraftProposalV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<UsageV1>,
     /// Hive v5; absent = `completed`. A 1.x Hive refuses the field
@@ -619,7 +599,7 @@ impl TaskResultRequestV1 {
         require_schema(&self.schema, TASK_RESULT_SCHEMA)?;
         self.claim.validate()?;
         let plain = self.summary.is_some() || !self.evidence.is_empty();
-        one_of(plain, self.sealed.as_ref(), SEALED_TASK_RESULT_SCHEMA)?;
+        text_required(plain)?;
         if plain {
             validate_text(
                 self.summary.as_deref().unwrap_or_default(),
@@ -634,11 +614,6 @@ impl TaskResultRequestV1 {
                 return Err(ValidationError::new("a failed result brings no draft"));
             }
             draft.validate()?;
-            if draft.context_patch.sealed.is_some() != self.sealed.is_some() {
-                return Err(ValidationError::new(
-                    "a result and its draft are both sealed or both in the clear",
-                ));
-            }
         }
         Ok(())
     }
@@ -652,6 +627,130 @@ pub struct TaskAckV1 {
     pub state: TaskState,
 }
 
+/// A verifier's verdict on a submitted result (C0 2.2): `accept` makes the
+/// task `done`, `reject` opens it again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskVerdict {
+    Accept,
+    Reject,
+    #[serde(other)]
+    Unknown,
+}
+
+/// `POST …/{number}/verify` (C0 2.2 E48, `tasks.work`): another agent's
+/// verdict. `worker_id` is the verifying agent, never the result's
+/// (`403 self_verify`); `reason` is required on `reject`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskVerifyRequestV1 {
+    pub schema: String,
+    pub worker_id: String,
+    pub verdict: TaskVerdict,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl TaskVerifyRequestV1 {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        require_schema(&self.schema, TASK_VERIFY_SCHEMA)?;
+        let worker_ok = (1..=128).contains(&self.worker_id.len())
+            && self
+                .worker_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'));
+        if !worker_ok {
+            return Err(ValidationError::new(
+                "worker_id is 1-128 of [A-Za-z0-9._:-]",
+            ));
+        }
+        match (self.verdict, &self.reason) {
+            (TaskVerdict::Unknown, _) => Err(ValidationError::new("verdict is accept or reject")),
+            (TaskVerdict::Reject, None) => Err(ValidationError::new("a reject names its reason")),
+            (_, Some(reason)) => validate_text(reason, MAX_VERIFY_REASON_CHARS, "reason", false),
+            (TaskVerdict::Accept, None) => Ok(()),
+        }
+    }
+}
+
+/// The last verdict on a task's result, as a task view shows it (C0 2.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskVerificationV1 {
+    pub verdict: TaskVerdict,
+    pub by: TaskActorV1,
+    pub at: UtcTimestamp,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// What a task update is (C0 2.2): the holder's progress, or a verifier's
+/// verdict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskUpdateKind {
+    Progress,
+    Verification,
+    #[serde(other)]
+    Unknown,
+}
+
+/// A task's priority (C0 2.2); absent means `normal`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskPriority {
+    High,
+    #[default]
+    Normal,
+}
+
+/// `PATCH …/{number}` (C0 2.2 E47, `tasks.propose`): an agent sets a
+/// task's priority and labels. `base_version` is the task's
+/// `fields_version`; a mismatch answers `409 stale_base`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskFieldsRequestV1 {
+    pub schema: String,
+    pub base_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<TaskPriority>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub labels: Option<Vec<String>>,
+}
+
+impl TaskFieldsRequestV1 {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        require_schema(&self.schema, TASK_FIELDS_SCHEMA)?;
+        if self.priority.is_none() && self.labels.is_none() {
+            return Err(ValidationError::new("set priority, labels or both"));
+        }
+        if let Some(labels) = &self.labels {
+            validate_labels(labels)?;
+        }
+        Ok(())
+    }
+}
+
+/// At most [`MAX_TASK_LABELS`] unique labels of `^[a-z0-9-]{1,32}$`.
+pub fn validate_labels(labels: &[String]) -> Result<(), ValidationError> {
+    if labels.len() > MAX_TASK_LABELS {
+        return Err(ValidationError::new("at most 16 labels"));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for label in labels {
+        let ok = (1..=32).contains(&label.len())
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+        if !ok {
+            return Err(ValidationError::new("a label is 1-32 of [a-z0-9-]"));
+        }
+        if !seen.insert(label) {
+            return Err(ValidationError::new("labels are unique"));
+        }
+    }
+    Ok(())
+}
+
 /// One update as a task view shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskUpdateV1 {
@@ -660,9 +759,13 @@ pub struct TaskUpdateV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<UsageV1>,
+    /// C0 2.2; absent from older Hives (progress).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<TaskUpdateKind>,
+    /// C0 2.2: a verifier's verdict, on `kind: verification`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<TaskVerdict>,
 }
 
 /// Evidence as Hive shows it: `verified` is set by Hive (a `receipt`
@@ -692,8 +795,6 @@ pub struct TaskResultV1 {
     pub summary: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub evidence: Vec<EvidenceViewV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<UsageV1>,
 }
@@ -736,18 +837,16 @@ pub struct TaskV1 {
     pub vault_id: String,
     pub number: u64,
     pub state: TaskState,
-    /// Hive v5 lifecycle (additive; absent from a 1.x Hive).
+    /// Hive v5 lifecycle; absent when Hive sends none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lifecycle: Option<TaskLifecycle>,
-    /// Absent when an engine proposed it in a sealed vault.
+    /// The task's title; absent when Hive sends none (shown as untitled).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceptance: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     pub origin: TaskOriginV1,
@@ -765,6 +864,23 @@ pub struct TaskV1 {
     pub result: Option<TaskResultV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decision: Option<TaskDecisionV1>,
+    /// C0 2.2: the agent whose `accept` made the task `done`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_by: Option<TaskActorV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<UtcTimestamp>,
+    /// C0 2.2: the last verdict (accept or reject).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verification: Option<TaskVerificationV1>,
+    /// C0 2.2; absent means `normal`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<TaskPriority>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    /// C0 2.2: +1 whenever priority or labels change (the `base_version`
+    /// of [`TaskFieldsRequestV1`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fields_version: Option<u32>,
 }
 
 impl TaskV1 {
@@ -812,6 +928,13 @@ pub struct TaskSummaryV1 {
     pub updated_at: UtcTimestamp,
     /// Whether this instance holds its claim.
     pub mine: bool,
+    /// C0 2.2; absent means `normal`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<TaskPriority>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fields_version: Option<u32>,
 }
 
 /// `GET /v1/vaults/{vault_id}/tasks`.
@@ -850,7 +973,6 @@ mod tests {
                 message: None,
             },
             session_ref: "s-1".into(),
-            sealed: None,
         }
     }
 
@@ -859,6 +981,15 @@ mod tests {
             lease_id: "lease-1".into(),
             fencing_token: 3,
         }
+    }
+
+    #[test]
+    fn an_unknown_task_origin_parses_as_unknown() {
+        let origin: TaskOriginV1 = serde_json::from_value(serde_json::json!({
+            "kind": "quarantine_timeout", "facts": ["f-1"],
+        }))
+        .unwrap();
+        assert_eq!(origin.kind, TaskOriginKind::Unknown);
     }
 
     #[test]
@@ -886,7 +1017,6 @@ mod tests {
             summary: Some("Done".into()),
             evidence: Vec::new(),
             draft: None,
-            sealed: None,
             usage: None,
             outcome: None,
         };
@@ -917,7 +1047,6 @@ mod tests {
             schema: TASK_UPDATE_SCHEMA.into(),
             claim: claim(),
             summary: Some(summary.into()),
-            sealed: None,
             usage: None,
         };
         assert!(update("Reproduced the timeout").validate().is_ok());
@@ -1012,5 +1141,55 @@ mod tests {
         assert_eq!(list.tasks[0].lifecycle, Some(TaskLifecycle::Unknown));
         let state: TaskState = serde_json::from_value("someday".into()).unwrap();
         assert_eq!(state, TaskState::Unknown);
+    }
+
+    fn v2_route(name: &str) -> serde_json::Value {
+        let path = format!(
+            "{}/tests/fixtures/hive-v2/routes/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    /// C0 2.2 (E48, E47 fields): the contract's requests validate, its
+    /// answers parse, and a reject without reason or an empty field change
+    /// is refused before it is sent.
+    #[test]
+    fn the_c0_2_2_task_shapes_hold() {
+        for name in ["task_verify.request", "task_verify.reject.request"] {
+            let request: TaskVerifyRequestV1 = serde_json::from_value(v2_route(name)).unwrap();
+            request.validate().unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(serde_json::to_value(&request).unwrap(), v2_route(name));
+        }
+        let mut reject: TaskVerifyRequestV1 =
+            serde_json::from_value(v2_route("task_verify.reject.request")).unwrap();
+        reject.reason = None;
+        assert_eq!(
+            reject.validate().unwrap_err().to_string(),
+            "a reject names its reason"
+        );
+        for (name, state) in [
+            ("task_verify.response", TaskState::Done),
+            ("task_verify.reject.response", TaskState::Open),
+            ("task_result.submitted.response", TaskState::Submitted),
+        ] {
+            let ack: TaskAckV1 = serde_json::from_value(v2_route(name)).unwrap();
+            assert_eq!(ack.state, state, "{name}");
+        }
+        let fields: TaskFieldsRequestV1 =
+            serde_json::from_value(v2_route("task_fields.request")).unwrap();
+        fields.validate().unwrap();
+        assert_eq!(fields.priority, Some(TaskPriority::High));
+        let empty = TaskFieldsRequestV1 {
+            labels: None,
+            priority: None,
+            ..fields.clone()
+        };
+        assert!(empty.validate().is_err());
+        let bad = TaskFieldsRequestV1 {
+            labels: Some(vec!["Docs".into()]),
+            ..fields
+        };
+        assert!(bad.validate().is_err());
     }
 }

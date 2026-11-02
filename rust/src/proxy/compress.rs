@@ -914,6 +914,6 @@ fn extract_command_hint(content: &str) -> Option<String> {
 #[path = "compress_tests.rs"]
 mod tests;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 #[path = "compress_recovery_tests.rs"]
 mod recovery_tests;

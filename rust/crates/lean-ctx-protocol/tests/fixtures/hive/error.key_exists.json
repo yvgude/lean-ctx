@@ -1,9 +1,0 @@
-{
-  "error": {
-    "actual": 1,
-    "code": "revision_conflict",
-    "expected": 1,
-    "message": "This sealed vault already has a key.",
-    "reason": "key_exists"
-  }
-}

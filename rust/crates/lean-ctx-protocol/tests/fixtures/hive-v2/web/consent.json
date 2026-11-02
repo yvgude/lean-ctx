@@ -24,14 +24,16 @@
       "created_at": "2026-10-24T08:00:00Z",
       "expires_at": "2026-10-25T08:00:00Z",
       "id": "cns_abcdefgh234567ab",
-      "kind": "swarm_join",
+      "kind": "link_vault",
       "state": "pending",
       "subject": {
-        "cli": "codex",
-        "pledge_digest": "bcdc41b049980096993b60a5058f751cffe19a68382c112b5eb9e18b04a2abfd",
-        "swarm": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02"
+        "bound_repo": "gitlab.acme.example/acme/payments",
+        "link_digest": "7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+        "remote_seen": "gitlab.acme.example/acme/payments",
+        "target_vault": null,
+        "vault": "acme/payments"
       },
-      "subject_digest": "aadc65c3aeeb5df86987fc43cf88bec7c7bdf4d2beb47558dfe9b8a9cdccf591"
+      "subject_digest": "388956890aa7662cd53da0798e78b85d6d5c762f9f22d91c52eefc77b7529186"
     },
     "status": 200
   },

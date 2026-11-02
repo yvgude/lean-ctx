@@ -22,7 +22,6 @@ use crate::core::graph_index::ProjectIndex;
 use crate::core::hive::HiveError;
 use crate::core::hive::auth::Session;
 use crate::core::hive::knowledge::screening::Screen;
-use crate::core::hive::sealed;
 use crate::core::hive::vault::VaultRecord;
 use lean_ctx_protocol::hive::anchor::{MAX_ANCHOR_SYMBOL_CHARS, validate_anchor_path};
 use lean_ctx_protocol::hive::codegraph::{
@@ -215,13 +214,12 @@ pub struct Published {
     pub edges: usize,
     pub truncated: bool,
     pub withheld_files: usize,
-    pub sealed: bool,
     pub revision_hint: Option<String>,
 }
 
 /// Publish the code graph of the checkout at `root` for `record` (PUT
 /// replaces the stored one). Hive takes it only when the repo's owner set
-/// `code_graph` to `full`; a sealed vault gets it sealed with the repo key.
+/// `code_graph` to `full`.
 pub fn publish(
     session: &Session,
     record: &VaultRecord,
@@ -244,44 +242,9 @@ pub fn publish(
         .validate()
         .map_err(|e| HiveError::Local(format!("code graph: {e}")))?;
     let (nodes, edges) = (graph.nodes.len(), graph.edges.len());
-    let put = if record.sealed {
-        // A repo without a key yet (key_epoch 0) and without knowledge gets
-        // its first key from the first engine that has something to seal.
-        let base = super::load_base(session.store.data_dir(), &record.vault_id).revision;
-        let key = match sealed::sealing_key(session, &record.vault_id, base)? {
-            sealed::SealingKey::Ready(epoch, key) => (epoch, key),
-            sealed::SealingKey::Waiting => {
-                return Err(HiveError::Config(
-                    "this sealed vault's key has not reached this machine yet".into(),
-                ));
-            }
-            sealed::SealingKey::Rotating { .. } => {
-                return Err(HiveError::Config(
-                    "this sealed vault's key is being rotated; try again shortly".into(),
-                ));
-            }
-        };
-        let doc = serde_json::to_value(&graph).map_err(|e| HiveError::Local(e.to_string()))?;
-        let plaintext = lean_ctx_protocol::hive::canonical_json(&doc)
-            .map_err(|e| HiveError::Local(e.to_string()))?;
-        CodeGraphPutV1 {
-            schema: CODE_GRAPH_PUT_SCHEMA.into(),
-            graph: None,
-            sealed: Some(sealed::seal(
-                &key.1,
-                &record.vault_id,
-                0,
-                key.0,
-                CODE_GRAPH_SCHEMA,
-                &plaintext,
-            )?),
-        }
-    } else {
-        CodeGraphPutV1 {
-            schema: CODE_GRAPH_PUT_SCHEMA.into(),
-            graph: Some(graph),
-            sealed: None,
-        }
+    let put = CodeGraphPutV1 {
+        schema: CODE_GRAPH_PUT_SCHEMA.into(),
+        graph,
     };
     put.validate()
         .map_err(|e| HiveError::Local(format!("code graph: {e}")))?;
@@ -291,12 +254,8 @@ pub fn publish(
         .with_client(|c| c.send("PUT", &path, Some(&body), &[], 64 * 1024))
         .map_err(|e| match e {
             HiveError::Server { status: 409, .. } => HiveError::Config(
-                if record.sealed {
-                    "Hive did not take the graph: the vault keeps only anchors (its owner turns on the full code graph on the web), or its key moved to a newer epoch (run `lean-ctx hive sync`, then publish again)"
-                } else {
-                    "Hive keeps only anchors for this vault; its owner turns on the full code graph on the web"
-                }
-                .into(),
+                "Hive keeps only anchors for this vault; its owner turns on the full code graph on the web"
+                    .into(),
             ),
             other => other,
         })?;
@@ -307,7 +266,6 @@ pub fn publish(
         edges,
         truncated,
         withheld_files,
-        sealed: record.sealed,
         revision_hint,
     })
 }

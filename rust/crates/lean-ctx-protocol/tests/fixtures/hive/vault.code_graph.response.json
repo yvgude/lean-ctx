@@ -1,8 +1,7 @@
 {
   "code_graph": "full",
-  "key_epoch": 1,
   "schema": "leanctx.hive.vault/v1",
-  "sealed": true,
+  "sealed": false,
   "vault": {
     "name": "payments",
     "ns": "acme"

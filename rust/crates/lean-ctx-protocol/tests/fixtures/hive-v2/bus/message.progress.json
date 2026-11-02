@@ -1,6 +1,5 @@
 {
   "body": {
-    "goal": "g_aaaaaaaaaaaaaaaaaaaaaaaaaq",
     "percentage": 40,
     "step": "Flame graph recorded; reading the TLS frames now.",
     "usage": {
@@ -14,18 +13,17 @@
   "id": "msg_00000000000000a8",
   "provenance": "workspace",
   "received_at": 1792800008000,
-  "reply_to": "msg_00000000000000a7",
   "schema": "leanctx.hive.bus/v2",
   "sender": {
     "host_app": "codex",
     "kind": "worker",
-    "name": "Codex · general",
+    "name": "Codex · reviewer",
     "owner_handle": "yves",
-    "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+    "worker_id": "wkr_gawyravj36igdp3irdfo"
   },
   "seq": 8,
-  "thread_id": "msg_00000000000000a7",
-  "to": "~checkout-latency",
+  "thread_id": "msg_00000000000000a8",
+  "to": "#acme/payments",
   "type": "progress",
-  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+  "worker_id": "wkr_gawyravj36igdp3irdfo"
 }

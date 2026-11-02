@@ -50,44 +50,6 @@
           "provenance": "workspace"
         },
         {
-          "id": "lg_cccccccccccccccccccccccccc",
-          "kind": "review.done",
-          "actor": null,
-          "place": {
-            "id": "payments",
-            "kind": "vault",
-            "name": "payments",
-            "ws": "acme"
-          },
-          "counts": {
-            "n": 3,
-            "accepted": 2,
-            "rejected": 1
-          },
-          "provenance": "workspace",
-          "at": "2026-10-24T08:30:00Z"
-        },
-        {
-          "id": "lg_dddddddddddddddddddddddddd",
-          "kind": "swarm.progress",
-          "actor": {
-            "kind": "system",
-            "name": null
-          },
-          "place": {
-            "kind": "swarm",
-            "ws": "acme",
-            "id": "checkout-latency",
-            "name": "Checkout latency below 300 ms"
-          },
-          "counts": {
-            "done": 1,
-            "total": 3
-          },
-          "provenance": "workspace",
-          "at": "2026-10-24T08:40:00Z"
-        },
-        {
           "id": "lg_eeeeeeeeeeeeeeeeeeeeeeeeee",
           "kind": "engine.connected",
           "actor": {

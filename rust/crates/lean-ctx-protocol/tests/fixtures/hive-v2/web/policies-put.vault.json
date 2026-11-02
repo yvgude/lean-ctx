@@ -8,7 +8,6 @@
       "security": {},
       "context": {},
       "sharing": {
-        "auto_merge_results": false,
         "cross_team_sharing": false
       }
     },
@@ -25,7 +24,6 @@
         "security": {},
         "context": {},
         "sharing": {
-          "auto_merge_results": false,
           "cross_team_sharing": false
         }
       },

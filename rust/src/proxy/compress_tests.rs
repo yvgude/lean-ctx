@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::ccr;
+#[cfg(feature = "http-server")]
 use super::{
-    BTreeMap, NO_PROJECT, RESEARCH_PROSE_CAP, RESEARCH_PROSE_CAP_ENV, Reader, RecoveryCopy,
-    RecoveryId, bound_copy, carries_recovery_stub, compress_tool_result,
-    compress_tool_result_gateway, delivered, extract_command_hint, infer_command, looks_like_prose,
-    observing, output_looks_like_build_failure, output_looks_like_test_run, recovery_copy,
-    recovery_stub, reference_stub, research_prose_cap, resolve_recovery, shape_command_output,
+    BTreeMap, NO_PROJECT, Reader, bound_copy, delivered, observing, resolve_recovery,
     shape_tool_output,
+};
+use super::{
+    RESEARCH_PROSE_CAP, RESEARCH_PROSE_CAP_ENV, RecoveryCopy, RecoveryId, carries_recovery_stub,
+    compress_tool_result, compress_tool_result_gateway, extract_command_hint, infer_command,
+    looks_like_prose, output_looks_like_build_failure, output_looks_like_test_run, recovery_copy,
+    recovery_stub, reference_stub, research_prose_cap, shape_command_output,
 };
 use serial_test::serial;
 
@@ -293,6 +296,7 @@ fn governed_mode_stores_no_recovery_copy_and_keeps_the_original() {
     );
 }
 
+#[cfg(feature = "http-server")]
 /// Governed mode with `root` as the proxy's configured project root.
 fn governed_project(root: &std::path::Path) {
     let config = crate::core::paths::config_dir_read_only().expect("config directory");
@@ -307,6 +311,7 @@ fn governed_project(root: &std::path::Path) {
     .expect("gateway config");
 }
 
+#[cfg(feature = "http-server")]
 /// The test plays the Engine for the project `root`: an admitted read of
 /// `source`, recorded as delivered with its file lineage. Returns the
 /// delivered text.
@@ -338,6 +343,7 @@ fn recovery_id_in(sent: &str) -> String {
     rest.split('"').next().expect("an id").to_owned()
 }
 
+#[cfg(feature = "http-server")]
 /// [real register and store] Under protection a block is compressed only
 /// with a recovery copy bound to its lineage. A block the Engine
 /// delivered from an admitted project file is compressed; its stub
@@ -398,6 +404,7 @@ fn file_lineage_block_is_compressed_with_a_resolvable_copy_until_its_source_is_g
     );
 }
 
+#[cfg(feature = "http-server")]
 /// [real register and store] A source the project policy restricts is in
 /// no lineage: the Engine records nothing for it, so its text is not
 /// compressed and nothing is stored. And without a project of the proxy
@@ -437,6 +444,7 @@ fn restricted_source_and_missing_project_leave_the_block_whole() {
     assert_eq!(resolve_recovery(&"0".repeat(64)), Some(Err(NO_PROJECT)));
 }
 
+#[cfg(feature = "http-server")]
 /// [real registers and store] Prepared context from a caller-supplied
 /// source that is presented and admitted now: compressed, and its stub
 /// resolves to the exact original. (That a presentation older than its
@@ -485,6 +493,7 @@ fn live_compression_output_is_byte_stable_across_turns() {
     );
 }
 
+#[cfg(feature = "http-server")]
 /// Contract test for #702, pinned to LiteLLM's marker regex: the headroom
 /// guardrail scans compressed text with `hash=([a-f0-9]{24})`
 /// (BerriAI/litellm#31681). If our gateway stub ever drifts from that
@@ -617,6 +626,7 @@ fn a_block_that_carries_its_stub_passes_every_later_pass_untouched() {
     }
 }
 
+#[cfg(feature = "http-server")]
 /// Under protection every block that stays whole for want of a recovery
 /// copy is counted once, with its content-free code, for the route that
 /// observes the pass — however often a pass tries it. Developer mode
@@ -707,6 +717,7 @@ fn shaping_returns_an_output_that_carries_its_stub_whole() {
     }
 }
 
+#[cfg(feature = "http-server")]
 /// `shape_command_output` under protection: the route knows no tool list of
 /// the host that reads the result, so no stub may be issued and no recovery
 /// copy is asked for — the output arrives whole, the reason is counted, and
@@ -755,6 +766,7 @@ fn shaping_under_protection_without_a_recovery_copy_keeps_the_output_whole() {
     assert!(kept.is_empty());
 }
 
+#[cfg(feature = "http-server")]
 /// [real registers and store] `shape_command_output` in governed mode WITH
 /// a project and a known, admitted lineage of the output — the case in
 /// which a copy could be bound. The route holds no tool list of the host,
@@ -808,6 +820,7 @@ fn shaping_under_protection_issues_no_stub_without_a_known_host_tool() {
     );
 }
 
+#[cfg(feature = "http-server")]
 /// [real registers and store] `shape_tool_output` — the entry point of
 /// `ctx_shape` for a host tool without a known command line — in governed
 /// mode WITH a project and a known, admitted lineage. The same text handed

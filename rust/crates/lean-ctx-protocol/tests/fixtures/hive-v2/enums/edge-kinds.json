@@ -6,8 +6,7 @@
       "from": "any",
       "to": "node",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ]
     },
     {
@@ -15,8 +14,7 @@
       "from": "any",
       "to": "node",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ]
     },
     {
@@ -24,8 +22,7 @@
       "from": "any",
       "to": "node",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ]
     },
     {
@@ -33,8 +30,7 @@
       "from": "any",
       "to": "node",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ],
       "symmetric": true
     },
@@ -43,51 +39,48 @@
       "from": "any",
       "to": "node",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ]
     },
     {
       "value": "part_of",
       "from": "any",
-      "to": "episode",
+      "to": [
+        "episode",
+        "page"
+      ],
       "places": [
-        "vault",
-        "swarm"
-      ]
+        "vault"
+      ],
+      "rule": "to a page only from a section; one live part_of per section (lowest seq wins)"
     },
     {
       "value": "answers",
       "from": "finding",
       "to": "message",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ]
     },
     {
-      "value": "child_of",
-      "from": "goal",
-      "to": "goal",
+      "from": "page",
       "places": [
-        "swarm"
-      ]
+        "vault"
+      ],
+      "to": "page",
+      "value": "links_to"
     },
     {
-      "value": "result_of",
-      "from": "result",
-      "to": "goal",
+      "from": "note",
+      "one_live_per_from": true,
       "places": [
-        "swarm"
-      ]
-    },
-    {
-      "value": "blocked_by",
-      "from": "goal",
-      "to": "goal",
-      "places": [
-        "swarm"
-      ]
+        "vault"
+      ],
+      "to": [
+        "page",
+        "section"
+      ],
+      "value": "about"
     }
   ]
 }

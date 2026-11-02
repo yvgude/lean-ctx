@@ -22,7 +22,6 @@
         "id": "prg_aaaaaaaaaaaaaaaaaaaaaaezcm",
         "item_count": 1,
         "keys_destroyed_at": "2026-10-24T08:05:30Z",
-        "legacy_replicas": 0,
         "offline_pending": 1,
         "reason": "leaked_secret",
         "requested_by": {

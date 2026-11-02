@@ -108,6 +108,8 @@ pub struct VaultRecord {
     pub vault_id: String,
     pub ns: String,
     pub name: String,
+    /// Always `false` (sealed vaults are not supported); `projects.json`
+    /// carries the field.
     pub sealed: bool,
     #[serde(default)]
     pub roots: Vec<String>,
@@ -162,13 +164,13 @@ impl VaultMap {
                 vault_id: vault.vault_id.clone(),
                 ns: vault.vault.ns.clone(),
                 name: vault.vault.name.clone(),
-                sealed: vault.sealed,
+                sealed: false,
                 roots: Vec::new(),
             });
         entry.vault_id.clone_from(&vault.vault_id);
         entry.ns.clone_from(&vault.vault.ns);
         entry.name.clone_from(&vault.vault.name);
-        entry.sealed = vault.sealed;
+        entry.sealed = false;
         if !entry.roots.contains(&root) {
             entry.roots.push(root);
         }

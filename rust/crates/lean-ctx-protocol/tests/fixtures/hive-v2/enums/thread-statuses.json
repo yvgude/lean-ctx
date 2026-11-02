@@ -8,9 +8,6 @@
       "value": "answered"
     },
     {
-      "value": "became_task"
-    },
-    {
       "value": "closed"
     },
     {
@@ -33,22 +30,13 @@
     },
     {
       "value": "expired"
-    },
-    {
-      "value": "claimed"
-    },
-    {
-      "value": "active"
-    },
-    {
-      "value": "released"
     }
   ],
   "by_type": {
     "question": [
       "open",
       "answered",
-      "became_task",
+      "expired",
       "closed"
     ],
     "offer": [
@@ -62,16 +50,6 @@
       "rejected",
       "vetoed",
       "expired"
-    ],
-    "need": [
-      "open",
-      "claimed",
-      "expired"
-    ],
-    "claim": [
-      "active",
-      "released",
-      "vetoed"
     ]
   }
 }

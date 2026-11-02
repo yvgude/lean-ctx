@@ -1,0 +1,12 @@
+{
+  "at": 1792800022000,
+  "by": {
+    "instance_id": "inst_9a4d7e216b3c4f588e091d2c3b4a5f02",
+    "worker_id": "wkr_gawyravj36igdp3irdfo"
+  },
+  "event": "verified",
+  "number": 7,
+  "state": "done",
+  "t": "task.event",
+  "vault": "#acme/payments"
+}

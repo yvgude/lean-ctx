@@ -22,24 +22,15 @@
         "7131099a2bcdfd4192f2edfa0710a458082bd1c885260a95c20d2b97c538c080",
         "295e5e326b87925a326756a153841bd69ea91a1acdf6f3674d92d600a07cfa85"
       ],
-      "note": "seq 4 withheld (unconfirmed procedure), seq 5 purged: both keep their leaf",
+      "note": "seq 4 withheld, seq 5 purged: both keep their leaf",
       "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
       "seq_from": 1,
       "seq_to": 18
-    },
-    {
-      "envelope_root": "90d81a5f99746aa0fd131e6083608cc132171908bbbb2e23ff18a029b6fd3dd2",
-      "leaves": [
-        "90d81a5f99746aa0fd131e6083608cc132171908bbbb2e23ff18a029b6fd3dd2"
-      ],
-      "place": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
-      "seq_from": 1,
-      "seq_to": 1
     }
   ],
   "rules": {
     "inner": "blake3(0x01 ‖ left ‖ right); an odd last node is promoted unchanged",
-    "leaf": "blake3(0x00 ‖ canonical_json(signed envelope)): the signed members plus signature, never server fields, body or ck_wrapped; a withheld or converted record contributes its leaf",
+    "leaf": "blake3(0x00 ‖ canonical_json(signed envelope)): the signed members plus signature, never server fields or body; a withheld or converted record contributes its leaf",
     "synthetic": "leaf i = blake3(0x00 ‖ canonical_json({\"i\": i})) for i = 0..leaves"
   },
   "synthetic": [

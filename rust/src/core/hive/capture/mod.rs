@@ -310,11 +310,7 @@ fn check_procedure(c: &CaptureCandidate) -> Result<(), ReasonCode> {
 }
 
 /// The rules G2–G11 on a shaped candidate. Returns the valid references.
-pub fn gate(
-    c: &CaptureCandidate,
-    checkout: &mut Checkout,
-    sealed: bool,
-) -> Result<Vec<String>, ReasonCode> {
+pub fn gate(c: &CaptureCandidate, checkout: &mut Checkout) -> Result<Vec<String>, ReasonCode> {
     if c.node_type == NodeType::Procedure {
         check_procedure(c)?;
     } else {
@@ -347,12 +343,7 @@ pub fn gate(
     if valid.len() > MAX_REFERENCES {
         return Err(ReasonCode::TooManyReferences);
     }
-    let allowed = if sealed {
-        c.sensitivity <= SensitivityLevel::Internal
-    } else {
-        c.sensitivity == SensitivityLevel::Public
-    };
-    if !allowed {
+    if c.sensitivity != SensitivityLevel::Public {
         return Err(ReasonCode::Sensitivity);
     }
     Ok(valid)
@@ -474,7 +465,6 @@ pub struct CaptureRun<'a> {
     pub screen: &'a mut crate::core::hive::knowledge::screening::Screen,
     pub checkout: Checkout,
     pub pk_id: [u8; 32],
-    pub sealed: bool,
     pub counts: CaptureCounts,
     pub pending: Vec<Pending>,
     pub now_ms: i64,
@@ -485,7 +475,6 @@ impl<'a> CaptureRun<'a> {
         screen: &'a mut crate::core::hive::knowledge::screening::Screen,
         root: &Path,
         pk_id: [u8; 32],
-        sealed: bool,
         pending: Vec<Pending>,
         now_ms: i64,
     ) -> Self {
@@ -493,7 +482,6 @@ impl<'a> CaptureRun<'a> {
             screen,
             checkout: Checkout::new(root),
             pk_id,
-            sealed,
             counts: CaptureCounts {
                 gate_version: GATE_VERSION,
                 window_from: Some(now_ms),
@@ -552,9 +540,8 @@ pub fn open_run<'a>(
     let place = record
         .as_ref()
         .map_or_else(|| stable.to_string(), |r| r.vault_id.clone());
-    let sealed = record.is_some_and(|r| r.sealed);
     let pending = load_pending(data_dir, &place);
-    let run = CaptureRun::new(screen, root, local_pk_id(&place), sealed, pending, now_ms);
+    let run = CaptureRun::new(screen, root, local_pk_id(&place), pending, now_ms);
     (run, place)
 }
 
@@ -574,7 +561,7 @@ pub fn finish_run(
 /// The place id key of a vault until the replica delivers the server's
 /// `id_salt` (SPEC-ENGINE §3.1.5).
 // lean-ctx: derived from the vault id, so local-only; replace with the
-// snapshot's `id_salt` / sealed `place_secret` when the replica lands (V4).
+// snapshot's `id_salt` when the replica lands (V4).
 pub fn local_pk_id(vault: &str) -> [u8; 32] {
     blake3::derive_key("leanctx.hive.capture.pk-local.v1", vault.as_bytes())
 }

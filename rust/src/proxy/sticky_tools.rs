@@ -778,12 +778,14 @@ mod tests {
         assert!(active_sessions().lock().unwrap().len() <= MAX_TRACKED);
     }
 
+    #[cfg(feature = "http-server")]
     /// Developer mode (the default of an isolated data directory): the tool
     /// list is read as it is, no store binding is asked.
     fn developer_mode() {
         assert!(!crate::proxy::compress::protected(), "developer mode");
     }
 
+    #[cfg(feature = "http-server")]
     /// Governed mode with `root` as the proxy's configured project root.
     fn governed_project(root: &std::path::Path) {
         let config = crate::core::paths::config_dir_read_only().expect("config directory");
@@ -799,6 +801,7 @@ mod tests {
         assert!(crate::proxy::compress::protected(), "governed mode");
     }
 
+    #[cfg(feature = "http-server")]
     /// What a request knows is carried from one pass into the next, a
     /// compressor joins the pass of the request that called it and is its
     /// own pass when it runs alone, and nothing of a pass leaks into the
@@ -847,6 +850,7 @@ mod tests {
         assert_eq!(outer.expand.as_deref(), Some(prefixed));
     }
 
+    #[cfg(feature = "http-server")]
     /// Under protection a listed expand tool is not held on the list alone,
     /// and the necessary store conditions (a live MCP Engine registered for
     /// the proxy's project, behind a loopback listener) only let the request
@@ -982,6 +986,7 @@ mod tests {
         assert_eq!(HandleUse::for_request(Some(&doc), true).expand, None);
     }
 
+    #[cfg(feature = "http-server")]
     /// The producing call of a result block is read at each shape's place,
     /// and the expand tool of its server is the listed one with exactly the
     /// same prefix.
@@ -1069,6 +1074,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "http-server")]
     /// The expand tool of a request is what the host's own list names, read
     /// at each shape's place, under exactly the registered name — and
     /// nothing else: a deferred entry, a name a stub cannot carry, a list

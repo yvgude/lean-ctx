@@ -19,8 +19,7 @@ USAGE:
   lean-ctx hive consent --web <id>
 
 Some steps need your own yes, for example sharing a project's knowledge
-with a workspace for the first time, or giving another machine access to a
-sealed vault. lean-ctx then stops and waits for you. Answer here, in your
+with a workspace for the first time. lean-ctx then stops and waits for you. Answer here, in your
 own terminal: agents cannot approve.
 
 list        What is waiting for your answer.
@@ -48,12 +47,6 @@ pub(crate) fn run(config: &HiveConfig, args: &[String]) -> Result<(), HiveError>
         (None | Some("list"), _) => list(&broker, store.data_dir()),
         (Some("approve"), Some(id)) => {
             let record = broker.get(id)?;
-            if record.kind == Kind::ProcedureConfirm {
-                return Err(ConsentError::WebOnly {
-                    consent_id: record.consent_id,
-                }
-                .into());
-            }
             if broker.trust().host_channel() == Channel::OsPresence {
                 let approval = channel::os_approval(&record, store.data_dir())?;
                 let approved = broker.approve(id, approval, now_ms())?;
@@ -62,12 +55,6 @@ pub(crate) fn run(config: &HiveConfig, args: &[String]) -> Result<(), HiveError>
             }
             let policy = channel::policy_requires_presence(store.data_dir());
             let approval = channel::tty_approval(&record, broker.trust(), policy, now_ms())?;
-            if record.kind.server_gated() && broker.trust().host_channel() == Channel::TtyOnly {
-                // Only a web statement proves this one to Hive (§3.8.2):
-                // continue into the browser in the same terminal.
-                println!("Hive checks this one in the browser; continuing there.");
-                return web(config, &store, &broker, id);
-            }
             let approved = broker.approve(id, approval, now_ms())?;
             println!("Approved: {}.", summary(&approved));
             Ok(())
@@ -185,11 +172,6 @@ fn summary(r: &crate::core::hive::consent::Record) -> String {
                 );
             format!("Share project {} into {into}", field("bound_repo"))
         }
-        Kind::SealedGrant => format!(
-            "Give another machine access to sealed vault {}",
-            field("vault")
-        ),
         Kind::ApiKeySet => format!("Store an API key for {}", field("vendor")),
-        other => format!("{} {}", other.as_str(), r.typed_value()),
     }
 }

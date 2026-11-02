@@ -2,7 +2,7 @@
 //! Task proposals through the outbox (`tasks` channel): an agent task the
 //! agent asks for, or a contradiction between two facts (lean-ctx-ae
 //! queues those). A proposal is screened when it is queued; the scheduler
-//! and `lean-ctx hive sync` send it, sealed in sealed projects. Hive
+//! and `lean-ctx hive sync` send it. Hive
 //! answers with the task's state: a member agent's task is open at once
 //! (owners and maintainers may close it afterwards); a Hive that still
 //! asks for approval answers `proposed`, and that is what is reported.
@@ -13,16 +13,14 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::{TaskContent, screened};
+use super::screened;
 use crate::core::hive::HiveError;
 use crate::core::hive::auth::Session;
 use crate::core::hive::outbox::{CHANNEL_TASKS, Outbox};
-use crate::core::hive::sealed::{self, SealingKey};
 use crate::core::hive::vault::VaultMap;
 use lean_ctx_protocol::hive::lease::HiveRight;
 use lean_ctx_protocol::hive::tasks::{
-    SEALED_TASK_CONTENT_SCHEMA, TASK_PROPOSE_SCHEMA, TaskOriginKind, TaskOriginV1,
-    TaskProposeRequestV1,
+    TASK_PROPOSE_SCHEMA, TaskOriginKind, TaskOriginV1, TaskProposeRequestV1,
 };
 
 /// What a proposal is.
@@ -84,7 +82,6 @@ impl QueuedProposal {
             role: self.role.clone(),
             origin: self.origin(),
             session_ref: self.session_ref(),
-            sealed: None,
         }
     }
 
@@ -203,7 +200,7 @@ pub fn drain(session: &Session) -> DrainReport {
             );
             continue;
         };
-        match send(session, &record.vault_id, record.sealed, &proposal) {
+        match send(session, &record.vault_id, &proposal) {
             Ok(created) => {
                 report.sent.push(created);
                 let _ = outbox.remove(&item);
@@ -214,7 +211,7 @@ pub fn drain(session: &Session) -> DrainReport {
                 let _ = outbox.retry_later(&mut item, &error.to_string(), retry_after, now);
             }
             Err(error @ HiveError::Refused(_)) => {
-                // Sealed key not here yet or rotating: try again later.
+                // Refused for now: try again later.
                 let _ = outbox.retry_later(&mut item, &error.to_string(), None, now);
             }
             Err(error) => {
@@ -232,39 +229,9 @@ pub fn drain(session: &Session) -> DrainReport {
 fn send(
     session: &Session,
     vault_id: &str,
-    sealed_project: bool,
     proposal: &QueuedProposal,
 ) -> Result<(u64, lean_ctx_protocol::hive::tasks::TaskState), HiveError> {
-    let mut request = proposal.plain_request();
-    if sealed_project {
-        let (epoch, key) = match sealed::sealing_key(session, vault_id, 1)? {
-            SealingKey::Ready(epoch, key) => (epoch, key),
-            SealingKey::Waiting | SealingKey::Rotating { .. } => {
-                return Err(HiveError::Refused(
-                    "the sealed vault's key is not ready on this machine".into(),
-                ));
-            }
-        };
-        let content = TaskContent {
-            title: proposal.title.clone(),
-            goal: proposal.goal.clone(),
-            acceptance: proposal.acceptance.clone(),
-        };
-        let bytes = zeroize::Zeroizing::new(
-            serde_json::to_vec(&content).map_err(|e| HiveError::Local(e.to_string()))?,
-        );
-        request.title = None;
-        request.goal = None;
-        request.acceptance = None;
-        request.sealed = Some(sealed::seal(
-            &key,
-            vault_id,
-            0,
-            epoch,
-            SEALED_TASK_CONTENT_SCHEMA,
-            &bytes,
-        )?);
-    }
+    let request = proposal.plain_request();
     let key = proposal.idempotency_key();
     session
         .with_client(|client| super::client::TasksApi { client, vault_id }.propose(&request, &key))
@@ -278,7 +245,6 @@ pub fn created_line(number: u64, state: lean_ctx_protocol::hive::tasks::TaskStat
     use lean_ctx_protocol::hive::tasks::TaskState;
     match state {
         TaskState::Open => format!("Created task #{number}, open now (any agent may claim it)."),
-        TaskState::Proposed => format!("Proposed task #{number} (waits for a person's approval)."),
         other => format!(
             "Created task #{number} ({}).",
             format!("{other:?}").to_lowercase()

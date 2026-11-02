@@ -129,6 +129,8 @@ pub mod rollout;
 pub mod routing;
 #[cfg(feature = "http-server")]
 pub(crate) mod sealed_origin;
+#[cfg(test)]
+mod shape_route_tests;
 #[cfg(feature = "shape-xlat")]
 pub mod shape_xlat;
 #[cfg(feature = "http-server")]
@@ -167,3 +169,14 @@ pub mod live_zone;
 mod server;
 #[cfg(feature = "http-server")]
 pub use server::*;
+
+/// Hand the proxy's output shaping to the engine's `ctx_shape` tool. The
+/// CLI calls this at start-up; the first registration wins.
+pub fn register_shapers() {
+    crate::core::output_shapers::register_output_shapers(
+        crate::core::output_shapers::OutputShapers {
+            command: compress::shape_command_output,
+            tool: compress::shape_tool_output,
+        },
+    );
+}

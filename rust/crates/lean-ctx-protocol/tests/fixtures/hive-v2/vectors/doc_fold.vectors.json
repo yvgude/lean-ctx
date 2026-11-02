@@ -1,0 +1,201 @@
+{
+  "cases": [
+    {
+      "events": [
+        {
+          "from": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+          "kind": "part_of",
+          "op": "edge.add",
+          "seq": 5,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaaflda",
+          "to": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        },
+        {
+          "from": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+          "kind": "part_of",
+          "op": "edge.add",
+          "seq": 7,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaafldb",
+          "to": "n_aaaaaaaaaaaaaaaaaaaaaadpgb"
+        }
+      ],
+      "expect": {
+        "section_page": {
+          "n_aaaaaaaaaaaaaaaaaaaaaadsea": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        }
+      },
+      "name": "part_of_lowest_seq"
+    },
+    {
+      "events": [
+        {
+          "from": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+          "kind": "part_of",
+          "op": "edge.add",
+          "seq": 5,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaaflda",
+          "to": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        },
+        {
+          "from": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+          "kind": "part_of",
+          "op": "edge.add",
+          "seq": 7,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaafldb",
+          "to": "n_aaaaaaaaaaaaaaaaaaaaaadpgb"
+        },
+        {
+          "op": "retract",
+          "seq": 9,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaaflda"
+        }
+      ],
+      "expect": {
+        "section_page": {
+          "n_aaaaaaaaaaaaaaaaaaaaaadsea": "n_aaaaaaaaaaaaaaaaaaaaaadpgb"
+        }
+      },
+      "name": "part_of_after_retract"
+    },
+    {
+      "events": [
+        {
+          "from": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+          "kind": "part_of",
+          "op": "edge.add",
+          "seq": 5,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaaflda",
+          "to": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        },
+        {
+          "op": "retract",
+          "seq": 6,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaaflda"
+        }
+      ],
+      "expect": {
+        "section_page": {
+          "n_aaaaaaaaaaaaaaaaaaaaaadsea": null
+        }
+      },
+      "name": "unattached"
+    },
+    {
+      "events": [
+        {
+          "from": "n_aaaaaaaaaaaaaaaaaaaaaadnta",
+          "kind": "about",
+          "op": "edge.add",
+          "seq": 4,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaafldc",
+          "to": "n_aaaaaaaaaaaaaaaaaaaaaadsea"
+        },
+        {
+          "from": "n_aaaaaaaaaaaaaaaaaaaaaadnta",
+          "kind": "about",
+          "op": "edge.add",
+          "seq": 8,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaafldd",
+          "to": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        }
+      ],
+      "expect": {
+        "note_about": {
+          "n_aaaaaaaaaaaaaaaaaaaaaadnta": "n_aaaaaaaaaaaaaaaaaaaaaadsea"
+        }
+      },
+      "name": "about_lowest_seq"
+    },
+    {
+      "events": [
+        {
+          "node_type": "page",
+          "op": "node.add",
+          "seq": 3,
+          "slug": "a",
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        },
+        {
+          "node_type": "page",
+          "op": "node.add",
+          "seq": 4,
+          "slug": "a",
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaadpgb"
+        }
+      ],
+      "expect": {
+        "slug_conflict": [
+          "n_aaaaaaaaaaaaaaaaaaaaaadpgb"
+        ],
+        "slug_owner": {
+          "a": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        }
+      },
+      "name": "slug_conflict"
+    },
+    {
+      "events": [
+        {
+          "node_type": "page",
+          "op": "node.add",
+          "seq": 3,
+          "slug": "a",
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        },
+        {
+          "node_type": "page",
+          "op": "node.add",
+          "seq": 4,
+          "slug": "a",
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaadpgb"
+        },
+        {
+          "op": "retract",
+          "seq": 6,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        }
+      ],
+      "expect": {
+        "slug_conflict": [],
+        "slug_owner": {
+          "a": "n_aaaaaaaaaaaaaaaaaaaaaadpgb"
+        }
+      },
+      "name": "slug_freed_by_retract"
+    },
+    {
+      "events": [
+        {
+          "node_type": "page",
+          "op": "node.add",
+          "seq": 3,
+          "slug": "a",
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        },
+        {
+          "node_type": "page",
+          "op": "node.add",
+          "seq": 4,
+          "slug": "a",
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaadpgb"
+        },
+        {
+          "field": "slug",
+          "op": "field.set",
+          "seq": 6,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+          "value": "b"
+        }
+      ],
+      "expect": {
+        "slug_conflict": [],
+        "slug_owner": {
+          "a": "n_aaaaaaaaaaaaaaaaaaaaaadpgb",
+          "b": "n_aaaaaaaaaaaaaaaaaaaaaadpga"
+        }
+      },
+      "name": "slug_freed_by_rename"
+    }
+  ],
+  "rule": "lowest-seq membership, shared by hive-docs and lean-ctx-doc: a section's page is the to of its live part_of edge with the lowest seq (none: unattached); a note's subject is the to of its live about edge with the lowest seq; a slug belongs to the live page with the lowest node.add seq that holds it now, every other live page holding it carries slug_conflict. The server refuses part_of_taken and slug_taken at admission; these rules decide what a reader shows if a log holds such a pair anyway."
+}

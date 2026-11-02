@@ -217,7 +217,7 @@ fn roots(root: &[u8; 32]) -> (Vec<[u8; 32]>, Vec<[u8; 32]>) {
     (trusted, compiled_root_keys(RETIRED_ROOT_KEYS))
 }
 
-/// Fetch E13 as a C0 2.0 engine (`Hive-Protocol: 2.0`; a 1.x request keeps
+/// Fetch E13 as a C0 2.x engine (`Hive-Protocol` 2.x; a 1.x request keeps
 /// getting the v1 set its lease is checked against), verify and store it.
 /// A refused set keeps the last verified one in force.
 pub fn refresh(
@@ -229,7 +229,10 @@ pub fn refresh(
             "GET",
             "/keys",
             None,
-            &[(lean_ctx_protocol::hive::HEADER_PROTOCOL, "2.0")],
+            &[(
+                lean_ctx_protocol::hive::HEADER_PROTOCOL,
+                crate::core::hive::transport::PROTOCOL_V2,
+            )],
             256 * 1024,
         )?;
         Ok(answer.body)

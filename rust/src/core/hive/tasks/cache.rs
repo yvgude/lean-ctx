@@ -93,8 +93,9 @@ fn mutate(data_dir: &Path, vault_id: &str, change: impl FnOnce(&mut VaultCache))
     }
 }
 
-/// Mark what is cached for the vault outdated: the next read refreshes it.
-fn outdate(data_dir: &Path, vault_id: &str) {
+/// Mark what is cached for the vault outdated: the next read refreshes it
+/// (a change of this machine, or a `task.event` from Hive).
+pub(crate) fn outdate(data_dir: &Path, vault_id: &str) {
     mutate(data_dir, vault_id, |vault| {
         vault.lists.values_mut().for_each(|e| e.outdated = true);
         vault.tasks.values_mut().for_each(|e| e.outdated = true);
@@ -158,7 +159,6 @@ pub fn list(project_root: &Path, filter: &ListFilter, caller: &str) -> Result<St
 }
 
 /// `ctx_tasks show`: the cached task, refreshed off the call when needed.
-/// Sealed parts are opened with the keys this machine holds (no request).
 pub fn show(project_root: &Path, number: u64, caller: &str) -> Result<String, HiveError> {
     let c = connected(project_root, HiveRight::TasksRead)?;
     let entry = load(c.store.data_dir())

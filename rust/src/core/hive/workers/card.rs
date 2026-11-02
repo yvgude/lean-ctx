@@ -24,7 +24,8 @@ pub enum ModelSource {
     Unknown,
 }
 
-/// Pledge summary; USD amounts are integer cents (C0 carries no floats).
+/// The worker's daily budget; USD amounts are integer cents (C0 carries no
+/// floats).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Budget {
     #[serde(default, skip_serializing_if = "Option::is_none")]

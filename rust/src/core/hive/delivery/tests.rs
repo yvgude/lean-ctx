@@ -5,7 +5,7 @@ use serde_json::json;
 use super::*;
 use crate::core::hive::replica::fold::FoldEvent;
 
-fn add(seq: u64, id: &str, node_type: &str, body: Value, prov: &str, review: &str) -> FoldEvent {
+fn add(seq: u64, id: &str, node_type: &str, body: Value, prov: &str) -> FoldEvent {
     FoldEvent {
         seq,
         event_id: format!("E{seq:025}"),
@@ -15,7 +15,7 @@ fn add(seq: u64, id: &str, node_type: &str, body: Value, prov: &str, review: &st
         body: Some(body),
         sig_invalid: false,
         provenance: Some(prov.into()),
-        review_state: Some(review.into()),
+        review_state: None,
     }
 }
 
@@ -28,7 +28,6 @@ fn graph() -> Graph {
             "fact",
             json!({"statement": "The relay drops frames on slow links."}),
             "workspace",
-            "confirmed",
         ),
         add(
             2,
@@ -36,7 +35,6 @@ fn graph() -> Graph {
             "gotcha",
             json!({"statement": "The sandbox rejects tiny charges."}),
             "workspace",
-            "confirmed",
         ),
         add(
             3,
@@ -44,7 +42,6 @@ fn graph() -> Graph {
             "fact",
             json!({"statement": "My own note about relay retries."}),
             "own",
-            "confirmed",
         ),
         add(
             4,
@@ -52,15 +49,6 @@ fn graph() -> Graph {
             "decision",
             json!({"statement": "Use advisory locks.", "chosen": "Postgres"}),
             "workspace",
-            "unconfirmed",
-        ),
-        add(
-            5,
-            "n_e",
-            "fact",
-            json!({"statement": "Held for review, never shown."}),
-            "workspace",
-            "held",
         ),
         add(
             6,
@@ -68,7 +56,6 @@ fn graph() -> Graph {
             "procedure",
             json!({"title": "Rotate the relay key", "steps": ["Create it.", "Deploy it."]}),
             "workspace",
-            "confirmed",
         ),
     ])
     .unwrap();
@@ -86,7 +73,7 @@ fn order_is_bucket_then_type_then_tier_then_id() {
         .into_iter()
         .map(|i| i.node_id)
         .collect();
-    assert_eq!(ids, ["n_b", "n_a", "n_f", "n_c", "n_d"]);
+    assert_eq!(ids, ["n_b", "n_a", "n_d", "n_f", "n_c"]);
 }
 
 #[test]
@@ -113,17 +100,16 @@ fn rendering_is_byte_stable_and_fences_other_members_text() {
         );
     }
     assert!(first.starts_with("vault @acme/payments · "));
-    assert!(first.contains("[unconfirmed] decision"));
+    assert!(first.contains("- decision"), "{first}");
     assert!(
         first.contains("My own note about relay retries."),
         "own text is not fenced"
     );
     assert!(first.contains("(from workspace)"));
     assert_eq!(first.matches("kind=hive_knowledge").count(), 4, "{first}");
-    assert!(!first.contains("Held for review"));
 
     // A trust change of a node that is not delivered keeps the bytes.
-    let trust = |id: &str| (id == "n_e").then(|| "high".to_string());
+    let trust = |id: &str| (id == "n_x").then(|| "high".to_string());
     assert_eq!(
         render("acme/payments", &items(&graph(), &trust, ""), 1_500),
         first
@@ -147,7 +133,6 @@ fn citable_graph() -> Graph {
             "fact",
             json!({"statement": "The relay drops frames on slow links."}),
             "workspace",
-            "confirmed",
         ),
         add(
             2,
@@ -155,7 +140,6 @@ fn citable_graph() -> Graph {
             "gotcha",
             json!({"statement": "Retries need a jittered backoff."}),
             "own",
-            "confirmed",
         ),
         add(
             3,
@@ -163,7 +147,6 @@ fn citable_graph() -> Graph {
             "fact",
             json!({"statement": "A malformed target id."}),
             "workspace",
-            "confirmed",
         ),
     ])
     .unwrap();
@@ -255,7 +238,7 @@ fn low_trust_items_are_labelled_and_sorted_last() {
     let trust = |id: &str| (id == "n_a").then(|| "low".to_string());
     let list = items(&graph(), &trust, "");
     let ids: Vec<&str> = list.iter().map(|i| i.node_id.as_str()).collect();
-    assert_eq!(ids, ["n_f", "n_b", "n_c", "n_a", "n_d"]);
+    assert_eq!(ids, ["n_d", "n_f", "n_b", "n_c", "n_a"]);
     let out = render("acme/payments", &list, 1_500);
     assert!(out.contains("- [low trust] gotcha"), "{out}");
     assert_eq!(out.matches("[low trust]").count(), 1);
@@ -266,21 +249,13 @@ fn the_budget_skips_whole_items_and_never_truncates() {
     let mut g = Graph::default();
     let long = format!("{} end.", "A long imported statement ".repeat(70));
     g.fold(&[
-        add(
-            1,
-            "n_long",
-            "fact",
-            json!({"statement": long}),
-            "own",
-            "confirmed",
-        ),
+        add(1, "n_long", "fact", json!({"statement": long}), "own"),
         add(
             2,
             "n_short",
             "fact",
             json!({"statement": "A short one."}),
             "own",
-            "confirmed",
         ),
     ])
     .unwrap();

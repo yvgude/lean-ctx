@@ -46,7 +46,6 @@
                 "allowed_vaults": [
                   "3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c"
                 ],
-                "auto_merge_results": false,
                 "cross_team_sharing": false,
                 "task_claim_min_role": "contributor"
               }

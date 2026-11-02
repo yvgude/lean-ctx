@@ -152,7 +152,7 @@ pub(crate) fn test_lock() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "embeddings"))]
 mod tests {
     use super::*;
     use std::collections::HashSet;

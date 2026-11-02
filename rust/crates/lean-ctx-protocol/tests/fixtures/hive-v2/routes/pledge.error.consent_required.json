@@ -1,7 +1,0 @@
-{
-  "error": {
-    "code": "consent_required",
-    "message": "Approve the higher limits on your engine first.",
-    "kind": "pledge_change"
-  }
-}

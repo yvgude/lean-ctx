@@ -1,0 +1,92 @@
+{
+  "effective_policy": {
+    "digest": "sha256:28dfd1d0382fbd8c512517f56447ac04b7229be245c16cd992e2b22a5bfe8f08",
+    "instance_id": "inst_01b2c3d4e5f60718293a4b5c6d7e8f90",
+    "issued_at": "2026-10-25T12:00:00Z",
+    "key_id": "552e43422b3589fa",
+    "not_after": "2026-11-08T12:00:00Z",
+    "org_id": "org_7d1e4c2a9b3f4e6a8c0d2b4f6e8a1c3e",
+    "policy": {
+      "effective": {
+        "context": {
+          "denied_tools": [
+            "ctx_shell"
+          ],
+          "max_context_tokens": 64000
+        },
+        "schema": "leanctx.hive.policy/v1",
+        "security": {
+          "block_secrets": true,
+          "excluded_paths": [
+            ".env*",
+            "secrets/**"
+          ],
+          "pii": "redact"
+        },
+        "sharing": {
+          "consent_required_for": [
+            "permission_expansion"
+          ],
+          "cross_team_sharing": false
+        }
+      },
+      "vaults": [
+        {
+          "effective": {
+            "context": {
+              "denied_tools": [
+                "ctx_shell"
+              ],
+              "max_context_tokens": 64000
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "excluded_paths": [
+                ".env*",
+                "customers/**",
+                "secrets/**"
+              ],
+              "pii": "block"
+            },
+            "sharing": {
+              "consent_required_for": [
+                "permission_expansion"
+              ],
+              "cross_team_sharing": false
+            }
+          },
+          "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+        }
+      ]
+    },
+    "schema": "leanctx.hive.effective-policy/v1",
+    "signature": "c21d399db38264dd6fc3c58340b8c5093b72d249a18f9498cb70f17728f2d559722bf05d0d097cd88ee2d4ac337a7c99b25a1db27ca43941910cf0506028f00b",
+    "sources": [
+      {
+        "digest": "sha256:2121cff5348518f670a6ce0e193dc463d46b3af7933c0c8c4293dddde5b348bd",
+        "level": "workspace",
+        "scope": "org_7d1e4c2a9b3f4e6a8c0d2b4f6e8a1c3e",
+        "version": 2
+      },
+      {
+        "digest": "sha256:583fb8866d70e71c6c05e325f5f010e628e094ee6ddc6ad9144c5d2f1894850f",
+        "level": "vault",
+        "scope": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42",
+        "version": 1
+      },
+      {
+        "digest": "sha256:03b82c6f293f57e4e3cf5932bd8a76049d97a930de57adecbb470cd58b51563c",
+        "level": "engine",
+        "scope": "inst_01b2c3d4e5f60718293a4b5c6d7e8f90",
+        "version": 1
+      }
+    ],
+    "version": 3
+  },
+  "filter_packs": [],
+  "org_policy": null,
+  "policy_version": 0,
+  "schema": "leanctx.hive.policy-bundle/v1",
+  "unpin": null
+}

@@ -10,8 +10,6 @@
 //! `HIVE_FIXTURES_WRITE=1 cargo test -p lean-ctx-protocol --test hive_fixtures`
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
-use chacha20poly1305::aead::{Aead, KeyInit as _, Payload};
-use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hmac::{Hmac, KeyInit as _, Mac as _};
 use lean_ctx_protocol::ValidationError;
@@ -20,7 +18,6 @@ use lean_ctx_protocol::hive::enroll::*;
 use lean_ctx_protocol::hive::knowledge::*;
 use lean_ctx_protocol::hive::lease::*;
 use lean_ctx_protocol::hive::policy::*;
-use lean_ctx_protocol::hive::sealed::*;
 use lean_ctx_protocol::hive::status::*;
 use lean_ctx_protocol::hive::telemetry::*;
 use lean_ctx_protocol::hive::vault::*;
@@ -36,12 +33,7 @@ const SIGNING_SEED: [u8; 32] = [0x53; 32];
 const INSTANCE_SEED: [u8; 32] = [0x49; 32];
 const POLICY_SEED: [u8; 32] = [0x4f; 32];
 const ORG_SALT: [u8; 32] = [0x0a; 32];
-const REPO_KEY: [u8; 32] = [0x4b; 32];
 const KX_PUBLIC: [u8; 32] = [0x58; 32];
-/// Seed of the recipient's X25519 key in the key-wrap vector.
-const KX_SEED: [u8; 32] = [0x59; 32];
-/// Fixed ephemeral X25519 scalar of the key-wrap vector.
-const EPHEMERAL_SCALAR: [u8; 32] = [0x45; 32];
 
 const T0: &str = "2026-10-20T12:00:00Z";
 const T0_UNIX: i64 = 1_792_497_600;
@@ -85,26 +77,6 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn seal(plaintext: &[u8], revision: u64, content_schema: &str, nonce: [u8; 24]) -> Value {
-    let aad = sealed_aad(VAULT, revision, 1, content_schema);
-    let ciphertext = XChaCha20Poly1305::new((&REPO_KEY).into())
-        .encrypt(
-            XNonce::from_slice(&nonce),
-            Payload {
-                msg: plaintext,
-                aad: &aad,
-            },
-        )
-        .expect("encrypt");
-    json!({
-        "alg": SEALED_CONTENT_ALG,
-        "epoch": 1,
-        "content_schema": content_schema,
-        "nonce": B64.encode(nonce),
-        "ciphertext": B64.encode(ciphertext),
-    })
-}
-
 fn identity_digest() -> String {
     let mut mac = Hmac::<Sha256>::new_from_slice(&ORG_SALT).expect("any key length");
     mac.update(stable_identity(IDENTITY).as_bytes());
@@ -119,73 +91,6 @@ fn keyset() -> Value {
     let input = signing_input_without_signature(KEYSET_SIGNATURE_DOMAIN, &keyset).unwrap();
     keyset["signature"] = Value::from(sign(ROOT_SEED, &input));
     keyset
-}
-
-/// The recipient's X25519 key pair: the Montgomery form of an Ed25519 seed,
-/// as engines derive it (`kx.key`).
-fn recipient_kx() -> ([u8; 32], [u8; 32]) {
-    let kx = key(KX_SEED);
-    (
-        kx.to_scalar_bytes(),
-        kx.verifying_key().to_montgomery().to_bytes(),
-    )
-}
-
-/// The 32-byte wrap key: HKDF-SHA256(salt = ephemeral || recipient,
-/// ikm = X25519 shared secret, info = SEALED_WRAP_INFO).
-fn wrap_key(shared: &[u8; 32], ephemeral: &[u8; 32], recipient: &[u8; 32]) -> [u8; 32] {
-    let mut salt = ephemeral.to_vec();
-    salt.extend_from_slice(recipient);
-    let mut out = [0u8; 32];
-    hkdf::Hkdf::<Sha256>::new(Some(&salt), shared)
-        .expand(SEALED_WRAP_INFO.as_bytes(), &mut out)
-        .expect("32 bytes");
-    out
-}
-
-/// REPO_KEY wrapped for the fixture recipient (fixed ephemeral and nonce).
-fn wrap_repo_key(instance_id: &str, epoch: u32) -> Value {
-    use curve25519_dalek::montgomery::MontgomeryPoint;
-    let (_, recipient) = recipient_kx();
-    let ephemeral = MontgomeryPoint::mul_base_clamped(EPHEMERAL_SCALAR).to_bytes();
-    let shared = MontgomeryPoint(recipient)
-        .mul_clamped(EPHEMERAL_SCALAR)
-        .to_bytes();
-    let nonce = [0x4e; 24];
-    let ciphertext = XChaCha20Poly1305::new((&wrap_key(&shared, &ephemeral, &recipient)).into())
-        .encrypt(
-            XNonce::from_slice(&nonce),
-            Payload {
-                msg: &REPO_KEY,
-                aad: &sealed_wrap_aad(VAULT, epoch, instance_id),
-            },
-        )
-        .expect("encrypt");
-    json!({
-        "alg": SEALED_WRAP_ALG,
-        "ephemeral_pub": B64.encode(ephemeral),
-        "nonce": B64.encode(nonce),
-        "ciphertext": B64.encode(ciphertext),
-    })
-}
-
-/// Approved recipients without a key at epoch 2, signed by the Hive key.
-fn sealed_pending() -> Value {
-    let mut pending = json!({
-        "schema": SEALED_PENDING_SCHEMA, "vault_id": VAULT, "epoch_required": 2,
-        "recipients": [{
-            "instance_id": "inst_01jb8z9", "label": "build-box",
-            "owner": {"id": "usr_01jb8zd", "name": "Ada Muster"},
-            "instance_kx_public_key": B64.encode(KX_PUBLIC),
-            "kx_fingerprint": kx_fingerprint(&KX_PUBLIC),
-            "approved_by": {"id": "usr_01jb8ze", "name": "Repo Maintainer"},
-            "approved_at": T0,
-        }],
-        "kid": KID,
-    });
-    let input = SealedPendingV1::signing_input_raw(&pending).unwrap();
-    pending["signature"] = Value::from(sign(SIGNING_SEED, &input));
-    pending
 }
 
 fn lease_envelope() -> Value {
@@ -259,93 +164,6 @@ fn metrics_day() -> Value {
     })
 }
 
-/// `OrgPolicyStatementV2` (ee/contracts/team-company org_policy/wire.rs):
-/// signed as `serde_json::to_vec` in this declaration order, not key-sorted.
-#[derive(Serialize)]
-struct OrgPolicyStatementV2 {
-    schema: &'static str,
-    organization_id: &'static str,
-    key_id: String,
-    policy_version: u64,
-    issued_at: &'static str,
-    not_before: &'static str,
-    not_after: &'static str,
-    grace_seconds: u64,
-    pack_digest: String,
-    /// C 1.8; left out when empty, so the 1.7 bytes stay valid.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    required_filter_packs: Vec<RequiredFilterPackV1>,
-}
-
-/// `OrgPolicyArtifactV2` (ee/contracts/team-company verifier.rs) without `unpin`.
-#[derive(Serialize)]
-struct OrgPolicyArtifactV2 {
-    statement: OrgPolicyStatementV2,
-    public_key: String,
-    signature: String,
-    pack_toml: &'static str,
-}
-
-const ORG_POLICY_SIGNATURE_DOMAIN: &str = "leanctx.org-policy.v2\n";
-const POLICY_PACK_TOML: &str = "name = \"acme-floor\"\nversion = \"1.0.0\"\ndescription = \"ACME org floor\"\n\n[context]\ndeny_tools = [\"ctx_url_read\"]\n";
-
-/// The signed org policy plus the byte-level values behind it.
-fn org_policy() -> (Value, Value) {
-    org_policy_with(1, Vec::new())
-}
-
-/// Version 2 of the policy, requiring the fixture filter pack (C 1.8).
-fn org_policy_requiring_packs() -> (Value, Value) {
-    let pack = filter_pack();
-    org_policy_with(
-        2,
-        vec![RequiredFilterPackV1 {
-            pack_id: pack["pack_id"].as_str().unwrap().into(),
-            version: pack["version"].as_u64().unwrap(),
-            sha256: pack["sha256"].as_str().unwrap().into(),
-        }],
-    )
-}
-
-fn org_policy_with(version: u64, required: Vec<RequiredFilterPackV1>) -> (Value, Value) {
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    validate_required_filter_packs(&required).unwrap();
-    let public = key(POLICY_SEED).verifying_key().to_bytes();
-    let statement = OrgPolicyStatementV2 {
-        schema: "leanctx.org-policy/v2",
-        organization_id: ORG,
-        key_id: format!("key:ed25519-{}", &hex(&Sha256::digest(public))[..32]),
-        policy_version: version,
-        issued_at: T0,
-        not_before: T0,
-        not_after: "2026-11-20T12:00:00Z",
-        grace_seconds: 7 * 24 * 60 * 60,
-        pack_digest: format!(
-            "sha256:{}",
-            hex(&Sha256::digest(POLICY_PACK_TOML.as_bytes()))
-        ),
-        required_filter_packs: required,
-    };
-    let statement_bytes = serde_json::to_vec(&statement).unwrap();
-    let mut signing_input = ORG_POLICY_SIGNATURE_DOMAIN.as_bytes().to_vec();
-    signing_input.extend_from_slice(&statement_bytes);
-    let signature = URL_SAFE_NO_PAD.encode(key(POLICY_SEED).sign(&signing_input).to_bytes());
-    let vector = json!({
-        "statement_json": String::from_utf8(statement_bytes).unwrap(),
-        "signing_input": String::from_utf8(signing_input).unwrap(),
-        "public_key": URL_SAFE_NO_PAD.encode(public),
-        "signature": signature,
-        "pack_toml": POLICY_PACK_TOML,
-    });
-    let artifact = OrgPolicyArtifactV2 {
-        statement,
-        public_key: URL_SAFE_NO_PAD.encode(public),
-        signature,
-        pack_toml: POLICY_PACK_TOML,
-    };
-    (serde_json::to_value(artifact).unwrap(), vector)
-}
-
 fn receipt_document() -> Value {
     json!({"schema": "leanctx.engine-receipt/v1", "receipt_id": "rcpt_01jb8z5", "tool": "ctx_read", "tokens_saved": 1200})
 }
@@ -399,19 +217,6 @@ fn fixtures() -> Vec<Fixture> {
     let document = document();
     let ops = patch_ops();
     let receipt = receipt_document();
-    let wrapped = wrap_repo_key(INSTANCE, 1);
-    // Nothing readable in the clear (1.5): summary, body and ops are sealed.
-    let sealed_draft = json!({
-        "schema": DRAFT_PROPOSAL_SCHEMA, "state": "draft",
-        "context_patch": {"base_revision": 3, "sealed": seal(&canonical_json(&json!({
-            "schema": SEALED_PATCH_CONTENT_SCHEMA,
-            "summary": "Session learnings: draft rebasing",
-            "body": "Two decisions from the connector session.",
-            "ops": ops,
-        })).unwrap(), 3, SEALED_PATCH_CONTENT_SCHEMA, [0x32; 24])},
-        "session_ref": "ses_01jb8z7",
-        "engine_screening": {"scanner_version": 1, "secrets_removed": 0, "pii_removed": 0, "items_dropped": 0},
-    });
     let deliver = json!({
         "t": "deliver", "seq": 42, "channel": channel(), "from": "claude-3e", "to": "codex-85",
         "kind": "status", "priority": "normal", "privacy": "team",
@@ -572,23 +377,9 @@ fn fixtures() -> Vec<Fixture> {
             value: json!({"schema": VAULT_SCHEMA, "vault_id": VAULT, "vault": {"ns": "acme", "name": "payments"}, "sealed": false, "label": "payments"}),
         },
         Fixture {
-            name: "vault.sealed.response",
-            kind: Response,
-            value: json!({"schema": VAULT_SCHEMA, "vault_id": VAULT, "vault": {"ns": "acme", "name": "payments"}, "sealed": true, "key_epoch": 1}),
-        },
-        Fixture {
             name: "knowledge_revision.response",
             kind: Response,
             value: json!({"schema": KNOWLEDGE_REVISION_SCHEMA, "vault_id": VAULT, "revision": 3, "document": document, "updated_at": T0}),
-        },
-        Fixture {
-            name: "knowledge_revision.sealed.response",
-            kind: Response,
-            value: json!({
-                "schema": KNOWLEDGE_REVISION_SCHEMA, "vault_id": VAULT, "revision": 3,
-                "sealed": seal(&canonical_json(&document).unwrap(), 3, RESEARCH_CONTEXT_FORMAT, [0x31; 24]),
-                "updated_at": T0,
-            }),
         },
         Fixture {
             name: "revision_list.response",
@@ -615,11 +406,6 @@ fn fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            name: "proposal.sealed.request",
-            kind: Request,
-            value: sealed_draft.clone(),
-        },
-        Fixture {
             name: "proposal.import.request",
             kind: Request,
             value: json!({
@@ -630,34 +416,6 @@ fn fixtures() -> Vec<Fixture> {
                 "session_ref": "ses_01jb8z6",
                 "engine_screening": {"scanner_version": 1, "secrets_removed": 0, "pii_removed": 0, "items_dropped": 0},
                 "origin": "import",
-            }),
-        },
-        Fixture {
-            name: "proposal.import.sealed.request",
-            kind: Request,
-            value: {
-                let mut draft = sealed_draft.clone();
-                draft["origin"] = json!("import");
-                draft
-            },
-        },
-        Fixture {
-            name: "proposal_view.sealed.response",
-            kind: Response,
-            value: json!({
-                "schema": PROPOSAL_VIEW_SCHEMA, "number": 12, "state": "draft",
-                "created_at": T0, "mine": false, "draft": sealed_draft,
-            }),
-        },
-        Fixture {
-            // An engine merged proposal 12 of a sealed vault: revision 4, sealed
-            // for exactly that number.
-            name: "knowledge_put.sealed.request",
-            kind: Request,
-            value: json!({
-                "schema": KNOWLEDGE_PUT_REQUEST_SCHEMA, "expected_revision": 3,
-                "sealed": seal(&canonical_json(&document).unwrap(), 4, RESEARCH_CONTEXT_FORMAT, [0x34; 24]),
-                "merged_proposals": [12],
             }),
         },
         Fixture {
@@ -720,17 +478,7 @@ fn fixtures() -> Vec<Fixture> {
         Fixture {
             name: "policy_bundle.response",
             kind: Response,
-            value: json!({"schema": POLICY_BUNDLE_SCHEMA, "policy_version": 0, "org_policy": null, "unpin": null, "filter_packs": [filter_pack()]}),
-        },
-        Fixture {
-            name: "policy_bundle.signed.response",
-            kind: Response,
-            value: json!({"schema": POLICY_BUNDLE_SCHEMA, "policy_version": 1, "org_policy": org_policy().0, "unpin": null, "filter_packs": [filter_pack()]}),
-        },
-        Fixture {
-            name: "policy_bundle.required_packs.response",
-            kind: Response,
-            value: json!({"schema": POLICY_BUNDLE_SCHEMA, "policy_version": 2, "org_policy": org_policy_requiring_packs().0, "unpin": null, "filter_packs": [filter_pack()]}),
+            value: json!({"schema": POLICY_BUNDLE_SCHEMA, "filter_packs": [filter_pack()]}),
         },
         Fixture {
             name: "bus.hello",
@@ -835,22 +583,6 @@ fn fixtures() -> Vec<Fixture> {
             value: json!({"schema": BUS_LEASE_SCHEMA, "granted": false, "holder": {"agent_id": "codex-85", "instance_id": "inst_01jb8z9", "expires_at": "2026-10-20T12:07:00Z"}, "server_time": T0}),
         },
         Fixture {
-            name: "sealed_key.response",
-            kind: Response,
-            // A member was removed: epoch 2 is required, this instance holds 1.
-            value: json!({"schema": SEALED_KEY_SCHEMA, "vault_id": VAULT, "instance_id": INSTANCE, "epoch": 1, "wrapped_key": wrapped, "epoch_required": 2}),
-        },
-        Fixture {
-            name: "sealed_grant.request",
-            kind: Request,
-            value: json!({"schema": SEALED_GRANT_REQUEST_SCHEMA, "instance_id": "inst_01jb8z9", "epoch": 1, "wrapped_key": wrapped}),
-        },
-        Fixture {
-            name: "sealed_pending.response",
-            kind: Response,
-            value: sealed_pending(),
-        },
-        Fixture {
             name: "error.invalid_state",
             kind: Response,
             value: error(
@@ -860,54 +592,17 @@ fn fixtures() -> Vec<Fixture> {
             ),
         },
         Fixture {
-            name: "error.key_exists",
-            kind: Response,
-            value: error(
-                "revision_conflict",
-                "This sealed vault already has a key.",
-                json!({"expected": 1, "actual": 1, "reason": "key_exists"}),
-            ),
-        },
-        Fixture {
-            name: "error.sealed_plaintext",
-            kind: Response,
-            value: error(
-                "invalid_request",
-                "sealed drafts carry no plaintext",
-                json!({"field": "summary", "reason": "sealed_plaintext"}),
-            ),
-        },
-        Fixture {
             name: "status.connected",
             kind: Other,
             value: json!({
                 "available": true, "connected": true, "instance": {"id": INSTANCE, "label": "studio-mac"},
                 "org": {"name": "Acme AG"}, "last_seen": T0, "url": HIVE_DEFAULT_URL,
                 "drafts": {"queued": 2, "refused": 0},
-                "policy": {"version": 1, "state": "required", "verified_at": T0,
-                           "not_after": "2026-11-20T12:00:00Z", "enforced": false},
                 "filter_packs": [{"pack_id": "ch-identifiers", "version": 3}],
                 "policy_refusal": null,
                 "web_url": HIVE_DEFAULT_URL,
                 "bus_controls": [{"target_agent": "claude-3e", "action": "hold", "target_ref": null,
                                   "reason": "Owner review of the contract.", "issued_by": "admin@acme", "since": T0}],
-            }),
-        },
-        // C 1.8, additive status field: the policy of `policy_bundle.required_packs`
-        // in force, its required pack installed as signed.
-        Fixture {
-            name: "status.required_packs",
-            kind: Other,
-            value: json!({
-                "available": true, "connected": true, "instance": {"id": INSTANCE, "label": "studio-mac"},
-                "org": {"name": "Acme AG"}, "last_seen": T0, "url": HIVE_DEFAULT_URL,
-                "drafts": {"queued": 0, "refused": 0},
-                "policy": {"version": 2, "state": "required", "verified_at": T0,
-                           "not_after": "2026-11-20T12:00:00Z", "enforced": true,
-                           "required_filter_packs": [{"pack_id": "ch-identifiers", "version": 3, "installed": true}]},
-                "filter_packs": [{"pack_id": "ch-identifiers", "version": 3}],
-                "policy_refusal": null,
-                "web_url": HIVE_DEFAULT_URL,
             }),
         },
         Fixture {
@@ -916,7 +611,7 @@ fn fixtures() -> Vec<Fixture> {
             value: json!({
                 "available": true, "connected": false, "instance": {"id": INSTANCE, "label": "studio-mac"},
                 "org": {"name": "Acme AG"}, "last_seen": T0, "url": HIVE_DEFAULT_URL,
-                "drafts": {"queued": 0, "refused": 0}, "policy": null, "filter_packs": [],
+                "drafts": {"queued": 0, "refused": 0}, "filter_packs": [],
                 "policy_refusal": null, "web_url": HIVE_DEFAULT_URL,
                 "bus_controls_inactive": "lease_lapsed",
             }),
@@ -933,8 +628,7 @@ fn fixtures() -> Vec<Fixture> {
     list.extend(knowledge_fixtures());
     list.push(metrics_hive_fixture());
     list.extend(profile_fixtures());
-    list.extend(swarm_fixtures());
-    list.extend(automerge_fixtures());
+    list.extend(threshold_fixtures());
     list.extend(code_graph_fixtures());
     list.extend(optin_fixtures());
     list.push(Fixture {
@@ -991,18 +685,6 @@ fn task_fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            // Sealed vault: no readable text; a proposed task has no number yet (AAD 0).
-            name: "task_propose.sealed.request",
-            kind: Request,
-            value: json!({
-                "schema": TASK_PROPOSE_SCHEMA, "origin": {"kind": "agent"}, "session_ref": "ses_01jb8z7",
-                "sealed": seal(&canonical_json(&json!({
-                    "schema": SEALED_TASK_CONTENT_SCHEMA, "title": "Explain the retry budget",
-                    "acceptance": acceptance,
-                })).unwrap(), 0, SEALED_TASK_CONTENT_SCHEMA, [0x70; 24]),
-            }),
-        },
-        Fixture {
             name: "task_ack.response",
             kind: Response,
             value: json!({"schema": TASK_ACK_SCHEMA, "number": 7, "state": "proposed"}),
@@ -1036,17 +718,6 @@ fn task_fixtures() -> Vec<Fixture> {
             name: "task_result.request",
             kind: Request,
             value: json!({"schema": TASK_RESULT_SCHEMA, "claim": claim, "summary": summary, "evidence": evidence, "usage": {"tokens": 48210, "usd_micros": 412000}}),
-        },
-        Fixture {
-            // Sealed: summary and evidence travel only inside the blob (AAD: task number 7).
-            name: "task_result.sealed.request",
-            kind: Request,
-            value: json!({
-                "schema": TASK_RESULT_SCHEMA, "claim": claim,
-                "sealed": seal(&canonical_json(&json!({
-                    "schema": SEALED_TASK_RESULT_SCHEMA, "summary": summary, "evidence": evidence,
-                })).unwrap(), 7, SEALED_TASK_RESULT_SCHEMA, [0x71; 24]),
-            }),
         },
         Fixture {
             name: "task.claimed.response",
@@ -1133,6 +804,15 @@ fn task_fixtures() -> Vec<Fixture> {
                        "role": "backend", "agent_role": "web"}),
             ),
         },
+        Fixture {
+            name: "error.vetoed",
+            kind: Response,
+            value: error(
+                "forbidden_right",
+                "A veto holds this agent.",
+                json!({"reason": "vetoed"}),
+            ),
+        },
     ]
 }
 
@@ -1141,7 +821,6 @@ fn message_fixtures() -> Vec<Fixture> {
     use Kind::*;
     use lean_ctx_protocol::hive::messages::*;
     let org = json!({"kind": "org", "channel": channel()});
-    let swarm = json!({"kind": "swarm", "swarm_id": "sw_01jbretry"});
     let question = json!({
         "t": "message", "client_msg_id": "01JBMSGQ1", "network": org, "type": "question",
         "from": "claude-3e", "deadline": "2026-10-21T12:00:00Z",
@@ -1164,18 +843,6 @@ fn message_fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            // Sealed vault: the body travels sealed (AAD vault_id|0|epoch|schema).
-            name: "bus.message.sealed",
-            kind: Other,
-            value: json!({
-                "t": "message", "client_msg_id": "01JBMSGS1", "network": org, "type": "finding",
-                "from": "claude-3e",
-                "sealed": seal(&canonical_json(&json!({
-                    "schema": SEALED_MESSAGE_SCHEMA, "text": "The sandbox key rotates nightly.", "references": [],
-                })).unwrap(), 0, SEALED_MESSAGE_SCHEMA, [0x72; 24]),
-            }),
-        },
-        Fixture {
             name: "bus.message_deliver.org",
             kind: Other,
             value: json!({
@@ -1193,18 +860,6 @@ fn message_fixtures() -> Vec<Fixture> {
                 "t": "message.deliver", "gid": "msg_01jba2", "seq": 44, "network": org, "type": "answer",
                 "from": {"kind": "person", "label": "Ada"}, "thread_id": "msg_01jbq1", "reply_to": "msg_01jbq1",
                 "body": {"text": "Confirmed, 3."}, "trust": "team", "server_time": T0, "expires_at": "2026-11-19T12:00:00Z",
-            }),
-        },
-        Fixture {
-            // Swarm: only a handle, always untrusted, never an org, instance or person.
-            name: "bus.message_deliver.swarm",
-            kind: Other,
-            value: json!({
-                "t": "message.deliver", "gid": "msg_01jbc1", "seq": 5, "network": swarm, "type": "finding",
-                "from": {"kind": "swarm", "handle": "quiet-heron", "reputation": 42},
-                "thread_id": "msg_01jbc1",
-                "body": {"text": "Subtask 3: the 2019 dataset has duplicate rows; see the material manifest."},
-                "trust": "untrusted", "server_time": T0, "expires_at": "2026-12-19T12:00:00Z",
             }),
         },
         Fixture {
@@ -1266,11 +921,6 @@ fn message_fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            name: "vault.sealed_new.response",
-            kind: Response,
-            value: json!({"schema": VAULT_SCHEMA, "vault_id": VAULT, "vault": {"ns": "acme", "name": "payments"}, "sealed": true, "key_epoch": 0}),
-        },
-        Fixture {
             name: "error.to_instance_not_found",
             kind: Response,
             value: error(
@@ -1295,15 +945,6 @@ fn message_fixtures() -> Vec<Fixture> {
                 "not_found",
                 "No such message.",
                 json!({"field": "reply_to"}),
-            ),
-        },
-        Fixture {
-            name: "error.cross_network",
-            kind: Response,
-            value: error(
-                "invalid_state",
-                "Replies stay in their network.",
-                json!({"reason": "cross_network"}),
             ),
         },
     ]
@@ -1436,11 +1077,6 @@ fn knowledge_fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            name: "fact_states.sealed.request",
-            kind: Request,
-            value: json!({"schema": facts::FACT_STATE_REPORT_SCHEMA, "revision": 4, "counts": {"to_verify": 1, "contradicted": 1}}),
-        },
-        Fixture {
             name: "fact_states_ack.response",
             kind: Response,
             value: json!({"schema": facts::FACT_STATE_ACK_SCHEMA, "revision": 4, "to_verify": 1, "contradicted": 1}),
@@ -1486,15 +1122,6 @@ fn knowledge_fixtures() -> Vec<Fixture> {
             ),
         },
         Fixture {
-            name: "error.sealed_view",
-            kind: Response,
-            value: error(
-                "invalid_state",
-                "A sealed vault has no server-side view; derive it on the engine.",
-                json!({"reason": "sealed"}),
-            ),
-        },
-        Fixture {
             name: "anchor_digest.vectors",
             kind: Other,
             value: anchor_digest_vectors(),
@@ -1512,8 +1139,7 @@ fn optin_fixtures() -> Vec<Fixture> {
             value: json!({
                 "schema": optin::ENGINE_OPTIN_SCHEMA, "optin_id": "opt_01jbq7k2", "active": true,
                 "vaults": [VAULT],
-                "networks": [{"kind": "org", "channel": channel()}, {"kind": "swarm", "swarm_id": "sw_01jbretry"}],
-                "topics": ["payments", "retries"],
+                "networks": [{"kind": "org", "channel": channel()}],
                 "daily_budget": {"tasks": 5, "tokens": 2_000_000, "usd_micros": 20_000_000},
                 "used_today": {"day": "2026-10-20", "tasks": 2, "tokens": 310_400, "usd_micros": 1_870_000},
                 "updated_at": "2026-10-20T08:00:00Z",
@@ -1525,7 +1151,7 @@ fn optin_fixtures() -> Vec<Fixture> {
             kind: Response,
             value: json!({
                 "schema": optin::ENGINE_OPTIN_SCHEMA, "optin_id": "opt_01jbq7k4", "active": true,
-                "vaults": [VAULT], "networks": [], "topics": [],
+                "vaults": [VAULT], "networks": [],
                 "daily_budget": {},
                 "used_today": {"day": "2026-10-20", "tasks": 140, "tokens": 9_310_400, "usd_micros": 41_870_000},
                 "updated_at": "2026-10-20T08:00:00Z",
@@ -1536,7 +1162,7 @@ fn optin_fixtures() -> Vec<Fixture> {
             kind: Response,
             value: json!({
                 "schema": optin::ENGINE_OPTIN_SCHEMA, "optin_id": "opt_01jbq7k3", "active": false,
-                "vaults": [VAULT], "networks": [], "topics": [],
+                "vaults": [VAULT], "networks": [],
                 "daily_budget": {"tasks": 5},
                 "used_today": {"day": "2026-10-20", "tasks": 2, "tokens": 310_400, "usd_micros": 1_870_000},
                 "stopped_at": T0, "updated_at": T0,
@@ -1546,7 +1172,7 @@ fn optin_fixtures() -> Vec<Fixture> {
             name: "engine_optin.none.response",
             kind: Response,
             value: json!({
-                "schema": optin::ENGINE_OPTIN_SCHEMA, "active": false, "vaults": [], "networks": [], "topics": [],
+                "schema": optin::ENGINE_OPTIN_SCHEMA, "active": false, "vaults": [], "networks": [],
                 "daily_budget": {"tasks": 5},
                 "used_today": {"day": "2026-10-20", "tasks": 0, "tokens": 0, "usd_micros": 0},
             }),
@@ -1644,258 +1270,13 @@ fn profile_fixtures() -> Vec<Fixture> {
                 ],
             }),
         },
-        Fixture {
-            name: "handle.response",
-            kind: Response,
-            value: json!({
-                "schema": profiles::HANDLE_SCHEMA, "handle": "quiet-heron",
-                "reputation": {"score": 3, "contributions": 2, "weight_pct": 25},
-                "strengths": ["retries"], "since": "2026-10-01T00:00:00Z",
-            }),
-        },
-        Fixture {
-            name: "error.limit_exceeded",
-            kind: Response,
-            value: error(
-                "rate_limited",
-                "Free handles keep one open question.",
-                json!({"reason": "limit_exceeded", "field": "open_swarms", "limit": 1, "used": 1, "retry_after_s": 3600}),
-            ),
-        },
     ]
 }
 
-const SWARM_ID: &str = "sw_01jbretry";
-const SUBTASK_ID: &str = "ss_01jbretry7";
-const REVEAL_NONCE: &str = "AAECAwQFBgcICQoLDA0ODxAREhM=";
-
-fn swarm_result() -> Value {
-    json!({
-        "schema": swarm::SWARM_RESULT_SCHEMA, "fencing_token": 3,
-        "summary": "payments retries 3 times; the 5 in the runbook is stale",
-        "body": "retry.rs sets RETRY_BUDGET = 3 since 2026-09; the runbook predates it.",
-        "value": 3, "usage": {"tokens": 48_200, "usd_micros": 190_000},
-    })
-}
-
-fn swarm_reveal() -> Value {
-    json!({"schema": swarm::VERIFICATION_REVEAL_SCHEMA, "verdict": "agree", "value": 3, "nonce": REVEAL_NONCE})
-}
-
-/// Section 6: Swarm engine routes.
-fn swarm_fixtures() -> Vec<Fixture> {
-    use Kind::*;
-    let trust = "untrusted";
-    let swarm_ref = json!({"swarm_id": SWARM_ID, "title": "Which retry budget does payments use?", "licence": "CC-BY-4.0", "scope": "public"});
-    let subtask = json!({
-        "subtask_id": SUBTASK_ID, "swarm_id": SWARM_ID, "number": 7,
-        "title": "Find the retry budget in code", "acceptance": "The constant and the file it lives in.",
-        "expected_kind": "number", "state": "open", "mine": false, "swarm": swarm_ref,
-    });
-    let result: swarm::SwarmResultRequestV1 = serde_json::from_value(swarm_result()).unwrap();
-    let reveal: swarm::VerificationRevealV1 = serde_json::from_value(swarm_reveal()).unwrap();
-    let seed = json!({
-        "schema": swarm::SWARM_SEED_SCHEMA, "title": "HF incident replay", "body": "Reconstruct the incident timeline from the excerpts.",
-        "topics": ["incident", "replay"], "licence": "CC-BY-4.0",
-        "subtasks": [
-            {"title": "When did the first alert fire?", "acceptance": "A UTC timestamp from the logs.", "expected_kind": "text"},
-            {"title": "Which deploy started it?", "acceptance": "The deploy hash.", "expected_kind": "hash"},
-        ],
-        "material": [{"name": "timeline.txt", "media_type": "text/plain", "sha256": hex(&Sha256::digest(b"timeline")), "bytes": 8}],
-    });
-    vec![
-        Fixture {
-            name: "swarm.response",
-            kind: Response,
-            value: json!({
-                "schema": swarm::SWARM_SCHEMA, "swarm_id": SWARM_ID,
-                "title": "Which retry budget does payments use?", "body": "Code says 3, the runbook says 5.",
-                "topics": ["payments", "retries"], "licence": "CC-BY-4.0", "scope": "public", "state": "working",
-                "owner": {"handle": "quiet-heron"},
-                "material": [{"name": "runbook.md", "media_type": "text/markdown", "sha256": hex(&Sha256::digest(b"runbook")), "bytes": 7}],
-                "answer_revision": 0, "trust": trust,
-            }),
-        },
-        Fixture {
-            name: "swarm.team.response",
-            kind: Response,
-            value: json!({
-                "schema": swarm::SWARM_SCHEMA, "swarm_id": SWARM_ID,
-                "title": "Which retry budget does payments use?", "body": "Code says 3, the runbook says 5.",
-                "topics": ["payments"], "licence": "CC-BY-4.0", "scope": "team", "org_id": ORG, "state": "working",
-                "owner": {"handle": "quiet-heron"}, "material": [],
-                "answer_revision": 0, "trust": trust,
-            }),
-        },
-        Fixture {
-            name: "swarm_subtask_list.response",
-            kind: Response,
-            value: json!({"schema": swarm::SWARM_SUBTASK_LIST_SCHEMA, "items": [subtask], "trust": trust}),
-        },
-        Fixture {
-            name: "swarm_subtask_propose.request",
-            kind: Request,
-            value: json!({
-                "schema": swarm::SWARM_SUBTASK_PROPOSE_SCHEMA, "title": "Check the runbook's history",
-                "acceptance": "The commit that last changed the retry line.", "expected_kind": "hash",
-            }),
-        },
-        Fixture {
-            name: "swarm_subtask.response",
-            kind: Response,
-            value: json!({
-                "subtask_id": "ss_01jbretry8", "swarm_id": SWARM_ID, "number": 8,
-                "title": "Check the runbook's history", "acceptance": "The commit that last changed the retry line.",
-                "expected_kind": "hash", "state": "proposed", "mine": false,
-            }),
-        },
-        Fixture {
-            name: "swarm_claim.request",
-            kind: Request,
-            value: json!({"schema": swarm::SWARM_CLAIM_REQUEST_SCHEMA, "optin_id": "opt_01jbq7k2", "minutes": 15}),
-        },
-        Fixture {
-            name: "swarm_claim_renew.request",
-            kind: Request,
-            value: json!({"schema": swarm::SWARM_CLAIM_RENEW_SCHEMA, "fencing_token": 3, "minutes": 15}),
-        },
-        Fixture {
-            name: "swarm_claim_release.request",
-            kind: Request,
-            value: json!({"schema": swarm::SWARM_CLAIM_RELEASE_SCHEMA, "fencing_token": 3}),
-        },
-        Fixture {
-            name: "swarm_claim.response",
-            kind: Response,
-            value: json!({
-                "schema": swarm::SWARM_CLAIM_SCHEMA, "subtask_id": SUBTASK_ID, "swarm_id": SWARM_ID,
-                "number": 7, "fencing_token": 3, "until": "2026-10-20T12:15:00Z", "trust": trust,
-            }),
-        },
-        Fixture {
-            name: "swarm_result.request",
-            kind: Request,
-            value: swarm_result(),
-        },
-        Fixture {
-            name: "swarm_result_ack.response",
-            kind: Response,
-            value: json!({
-                "schema": swarm::SWARM_RESULT_ACK_SCHEMA, "result_id": "sr_01jbretry7a", "sha256": result.digest().unwrap(),
-                "state": "verifying", "verifiers_assigned": 2, "trust": trust,
-            }),
-        },
-        Fixture {
-            name: "swarm_verification_list.response",
-            kind: Response,
-            value: json!({
-                "schema": swarm::SWARM_VERIFICATION_LIST_SCHEMA,
-                "items": [{
-                    "verification_id": "sv_01jbretry7b", "state": "assigned", "due_at": "2026-10-21T12:00:00Z",
-                    "result": {"summary": result.summary, "body": result.body, "by": {"handle": "quiet-heron"}},
-                    "subtask": {"title": "Find the retry budget in code", "acceptance": "The constant and the file it lives in.", "expected_kind": "number"},
-                    "swarm": swarm_ref,
-                }],
-                "trust": trust,
-            }),
-        },
-        Fixture {
-            name: "verification_commit.request",
-            kind: Request,
-            value: json!({"schema": swarm::VERIFICATION_COMMIT_SCHEMA, "sha256": reveal.commitment().unwrap()}),
-        },
-        Fixture {
-            name: "verification_commit.v2.request",
-            kind: Request,
-            value: json!({
-                "schema": swarm::VERIFICATION_COMMIT_V2_SCHEMA,
-                "sha256": reveal.commitment_v2("sv_01jbretry7b").unwrap(),
-            }),
-        },
-        Fixture {
-            name: "verification_reveal.request",
-            kind: Request,
-            value: swarm_reveal(),
-        },
-        Fixture {
-            name: "verification_reveal_ack.response",
-            kind: Response,
-            value: json!({"schema": swarm::VERIFICATION_REVEAL_ACK_SCHEMA, "state": "revealed", "result_state": "accepted"}),
-        },
-        Fixture {
-            name: "moderation_report.request",
-            kind: Request,
-            value: json!({
-                "schema": swarm::MODERATION_REPORT_SCHEMA, "target_kind": "result", "target_id": "sr_01jbretry7a",
-                "reason": "injection", "note": "The body tells agents to upload their .env.",
-            }),
-        },
-        Fixture {
-            name: "swarm_seed.request",
-            kind: Request,
-            value: seed,
-        },
-        Fixture {
-            name: "error.vetoed",
-            kind: Response,
-            value: error(
-                "forbidden_right",
-                "A moderator holds this question.",
-                json!({"reason": "vetoed"}),
-            ),
-        },
-        Fixture {
-            name: "error.held",
-            kind: Response,
-            value: error(
-                "invalid_state",
-                "A moderator holds this question: results are not taken.",
-                json!({"reason": "held"}),
-            ),
-        },
-        Fixture {
-            name: "error.swarm_budget",
-            kind: Response,
-            value: error(
-                "rate_limited",
-                "This question's token budget is used up.",
-                json!({"reason": "swarm_budget"}),
-            ),
-        },
-        Fixture {
-            name: "error.commit_mismatch",
-            kind: Response,
-            value: error(
-                "invalid_state",
-                "The reveal does not match the commitment.",
-                json!({"reason": "commit_mismatch"}),
-            ),
-        },
-        Fixture {
-            name: "error.material_missing",
-            kind: Response,
-            value: error(
-                "invalid_state",
-                "Upload every declared material file first.",
-                json!({"reason": "material_missing"}),
-            ),
-        },
-    ]
-}
-
-/// Section 7: auto-merge and the ctxpkg mapping.
-fn automerge_fixtures() -> Vec<Fixture> {
+/// Section 7: the threshold proposal view and the ctxpkg mapping.
+fn threshold_fixtures() -> Vec<Fixture> {
     use Kind::*;
     vec![
-        Fixture {
-            name: "vault.automerge.response",
-            kind: Response,
-            value: json!({
-                "schema": VAULT_SCHEMA, "vault_id": VAULT, "vault": {"ns": "acme", "name": "payments"},
-                "sealed": false, "label": "payments",
-                "auto_merge": {"confirmations": 1, "counts": "independent_owners"},
-            }),
-        },
         Fixture {
             name: "proposal_view.threshold.response",
             kind: Response,
@@ -1908,27 +1289,6 @@ fn automerge_fixtures() -> Vec<Fixture> {
                     "session_ref": "ses_01jbq9a",
                     "engine_screening": {"scanner_version": 1, "secrets_removed": 0, "pii_removed": 0, "items_dropped": 0},
                 },
-            }),
-        },
-        Fixture {
-            name: "proposal_confirm.request",
-            kind: Request,
-            value: json!({"schema": automerge::PROPOSAL_CONFIRM_SCHEMA, "session_ref": "ses_01jbq9c", "verdict": "confirm"}),
-        },
-        Fixture {
-            name: "proposal_confirm.object.request",
-            kind: Request,
-            value: json!({
-                "schema": automerge::PROPOSAL_CONFIRM_SCHEMA, "session_ref": "ses_01jbq9d", "verdict": "object",
-                "reason": "The runbook still says 5; the fact needs its source.",
-            }),
-        },
-        Fixture {
-            name: "proposal_confirm_ack.response",
-            kind: Response,
-            value: json!({
-                "schema": automerge::PROPOSAL_CONFIRM_ACK_SCHEMA, "number": 12, "confirmations": 1,
-                "required": 1, "state": "ready",
             }),
         },
         Fixture {
@@ -1947,15 +1307,6 @@ fn automerge_fixtures() -> Vec<Fixture> {
                 "invalid_state",
                 "Task 7 is done; it takes no more writes.",
                 json!({"reason": "task_closed", "number": 7}),
-            ),
-        },
-        Fixture {
-            name: "error.keys_lost",
-            kind: Response,
-            value: error(
-                "invalid_state",
-                "This sealed vault has content but no member holds a key for it.",
-                json!({"reason": "keys_lost"}),
             ),
         },
         Fixture {
@@ -2072,7 +1423,7 @@ fn code_graph_fixtures() -> Vec<Fixture> {
             kind: Response,
             value: json!({
                 "schema": VAULT_SCHEMA, "vault_id": VAULT, "vault": {"ns": "acme", "name": "payments"},
-                "sealed": true, "key_epoch": 1, "code_graph": "full",
+                "sealed": false, "code_graph": "full",
             }),
         },
         Fixture {
@@ -2081,29 +1432,12 @@ fn code_graph_fixtures() -> Vec<Fixture> {
             value: json!({"schema": codegraph::CODE_GRAPH_PUT_SCHEMA, "graph": graph}),
         },
         Fixture {
-            name: "code_graph_put.sealed.request",
-            kind: Request,
-            value: json!({
-                "schema": codegraph::CODE_GRAPH_PUT_SCHEMA,
-                "sealed": seal(&canonical_json(&graph).unwrap(), 0, codegraph::CODE_GRAPH_SCHEMA, [0x47; 24]),
-            }),
-        },
-        Fixture {
             name: "code_graph_ack.response",
             kind: Response,
             value: json!({
                 "schema": codegraph::CODE_GRAPH_ACK_SCHEMA, "nodes": 4, "edges": 4,
                 "revision_hint": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f423f6c1e9a",
             }),
-        },
-        Fixture {
-            name: "error.no_handle",
-            kind: Response,
-            value: error(
-                "forbidden_right",
-                "Choose a Swarm handle first.",
-                json!({"reason": "no_handle"}),
-            ),
         },
         Fixture {
             name: "error.code_graph_disabled",
@@ -2181,7 +1515,7 @@ fn vectors() -> Value {
             "signing_seed_hex": hex(&SIGNING_SEED), "signing_kid": KID, "signing_ed25519_pub": public(SIGNING_SEED),
             "instance_seed_hex": hex(&INSTANCE_SEED), "instance_ed25519_pub": public(INSTANCE_SEED),
             "policy_signer_seed_hex": hex(&POLICY_SEED),
-            "org_salt_hex": hex(&ORG_SALT), "repo_key_hex": hex(&REPO_KEY),
+            "org_salt_hex": hex(&ORG_SALT),
         },
         "canonical_json": {"input": canonical_input, "output": String::from_utf8(canonical_json(&canonical_input).unwrap()).unwrap()},
         "token_assertion": {
@@ -2193,18 +1527,7 @@ fn vectors() -> Value {
             "stable_identity": stable_identity(IDENTITY),
             "identity_digest": identity_digest(),
         },
-        "sealed_aad": String::from_utf8(sealed_aad(VAULT, 3, 1, RESEARCH_CONTEXT_FORMAT)).unwrap(),
-        "sealed_wrap": {
-            "recipient_kx_seed_hex": hex(&KX_SEED),
-            "recipient_kx_public_b64": B64.encode(recipient_kx().1),
-            "recipient_kx_fingerprint": kx_fingerprint(&recipient_kx().1),
-            "ephemeral_scalar_hex": hex(&EPHEMERAL_SCALAR),
-            "aad": String::from_utf8(sealed_wrap_aad(VAULT, 1, INSTANCE)).unwrap(),
-            "wrapped_key": wrap_repo_key(INSTANCE, 1),
-        },
         "receipt_digest": receipt_digest(&receipt_document()).unwrap(),
-        "org_policy": org_policy().1,
-        "org_policy_required_packs": org_policy_requiring_packs().1,
     })
 }
 
@@ -2389,45 +1712,14 @@ fn every_fixture_decodes_validates_and_round_trips() {
             }
             "fact_states_ack.response" => check::<facts::FactStateAckV1>(&fixture, ok),
             "graph.response" => check(&fixture, graph::GraphV1::validate),
-            n if n.starts_with("proposal_confirm.") => {
-                check(&fixture, automerge::ProposalConfirmV1::validate)
-            }
-            "proposal_confirm_ack.response" => {
-                check(&fixture, automerge::ProposalConfirmAckV1::validate)
-            }
             "ctxpkg.vectors" => {}
             n if n.starts_with("code_graph_put.") => {
                 check(&fixture, codegraph::CodeGraphPutV1::validate)
             }
             "code_graph_ack.response" => check::<codegraph::CodeGraphAckV1>(&fixture, ok),
-            "swarm.response" | "swarm.team.response" => check(&fixture, swarm::SwarmV1::validate),
-            "swarm_subtask_list.response" => check(&fixture, swarm::SwarmSubtaskListV1::validate),
-            "swarm_subtask.response" => check(&fixture, swarm::SwarmSubtaskV1::validate),
-            "swarm_subtask_propose.request" => {
-                check(&fixture, swarm::SwarmSubtaskProposeV1::validate)
-            }
-            "swarm_claim.request" => check(&fixture, swarm::SwarmClaimRequestV1::validate),
-            "swarm_claim_renew.request" => check(&fixture, swarm::SwarmClaimRenewV1::validate),
-            "swarm_claim_release.request" => check(&fixture, swarm::SwarmClaimReleaseV1::validate),
-            "swarm_claim.response" => check(&fixture, swarm::SwarmClaimV1::validate),
-            "swarm_result.request" => check(&fixture, swarm::SwarmResultRequestV1::validate),
-            "swarm_result_ack.response" => check::<swarm::SwarmResultAckV1>(&fixture, ok),
-            "swarm_verification_list.response" => {
-                check(&fixture, swarm::SwarmVerificationListV1::validate)
-            }
-            n if n.starts_with("verification_commit.") => {
-                check(&fixture, swarm::VerificationCommitV1::validate)
-            }
-            "verification_reveal.request" => check(&fixture, swarm::VerificationRevealV1::validate),
-            "verification_reveal_ack.response" => {
-                check::<swarm::VerificationRevealAckV1>(&fixture, ok)
-            }
-            "moderation_report.request" => check(&fixture, swarm::ModerationReportV1::validate),
-            "swarm_seed.request" => check(&fixture, swarm::SwarmSeedV1::validate),
             "agent_profile_list.response" => {
                 check(&fixture, profiles::AgentProfileListV1::validate)
             }
-            "handle.response" => check(&fixture, profiles::HandleV1::validate),
             "engine_optin_stop.request" => check(&fixture, optin::EngineOptinStopV1::validate),
             n if n.starts_with("engine_optin.") => check(&fixture, optin::EngineOptinV1::validate),
             "anchor_digest.vectors" => {}
@@ -2461,9 +1753,6 @@ fn every_fixture_decodes_validates_and_round_trips() {
             "bus_lease.request" => check(&fixture, BusLeaseRequestV1::validate),
             "bus_lease_renew.request" => check(&fixture, BusLeaseRenewRequestV1::validate),
             n if n.starts_with("bus_lease.") => check(&fixture, BusLeaseV1::validate),
-            "sealed_key.response" => check(&fixture, SealedKeyV1::validate),
-            "sealed_grant.request" => check(&fixture, SealedGrantRequestV1::validate),
-            "sealed_pending.response" => check(&fixture, SealedPendingV1::validate),
             n if n.starts_with("status.") => check::<HiveCliStatusV1>(&fixture, ok),
             n if n.starts_with("task_propose.") => {
                 check(&fixture, tasks::TaskProposeRequestV1::validate)
@@ -2556,74 +1845,6 @@ fn signatures_in_fixtures_verify_along_the_trust_chain() {
 }
 
 #[test]
-fn sealed_fixtures_decrypt_with_the_test_repo_key_and_bind_their_aad() {
-    let blob: SealedBlobV1 = serde_json::from_value(
-        fixtures()
-            .into_iter()
-            .find(|fixture| fixture.name == "knowledge_revision.sealed.response")
-            .unwrap()
-            .value["sealed"]
-            .clone(),
-    )
-    .unwrap();
-    let cipher = XChaCha20Poly1305::new((&REPO_KEY).into());
-    let nonce = B64.decode(&blob.nonce).unwrap();
-    let ciphertext = B64.decode(&blob.ciphertext).unwrap();
-    let open = |revision| {
-        cipher.decrypt(
-            XNonce::from_slice(&nonce),
-            Payload {
-                msg: &ciphertext,
-                aad: &sealed_aad(VAULT, revision, blob.epoch, &blob.content_schema),
-            },
-        )
-    };
-    assert_eq!(open(3).unwrap(), canonical_json(&document()).unwrap());
-    assert!(
-        open(4).is_err(),
-        "a sealed revision cannot be replayed as another"
-    );
-}
-
-#[test]
-fn swarm_digests_are_canonical_sha256_and_the_reveal_opens_the_commit() {
-    let fixtures = fixtures();
-    let get = |name: &str| {
-        fixtures
-            .iter()
-            .find(|f| f.name == name)
-            .unwrap()
-            .value
-            .clone()
-    };
-    let reveal: swarm::VerificationRevealV1 =
-        serde_json::from_value(get("verification_reveal.request")).unwrap();
-    let doc = json!({"nonce": REVEAL_NONCE, "value": 3, "verdict": "agree"});
-    let expected = hex(&Sha256::digest(canonical_json(&doc).unwrap()));
-    assert_eq!(get("verification_commit.request")["sha256"], expected);
-    assert_eq!(reveal.commitment().unwrap(), expected);
-    let doc = json!({
-        "domain": "leanctx.hive.verification-commit/v2", "verification_id": "sv_01jbretry7b",
-        "nonce": REVEAL_NONCE, "value": 3, "verdict": "agree",
-    });
-    let v2 = hex(&Sha256::digest(canonical_json(&doc).unwrap()));
-    assert_eq!(get("verification_commit.v2.request")["sha256"], v2);
-    assert_ne!(v2, expected, "v2 is domain-separated");
-    assert_ne!(
-        reveal.commitment_v2("sv_other").unwrap(),
-        v2,
-        "bound to its assignment"
-    );
-    let result = swarm_result();
-    let doc =
-        json!({"summary": result["summary"], "body": result["body"], "value": result["value"]});
-    assert_eq!(
-        get("swarm_result_ack.response")["sha256"],
-        hex(&Sha256::digest(canonical_json(&doc).unwrap()))
-    );
-}
-
-#[test]
 fn ctxpkg_ids_are_canonical_sha256_of_the_typed_objects() {
     let document: ResearchContextDocumentV1 = serde_json::from_value(wiki_document()).unwrap();
     let fact = &document.facts[0];
@@ -2648,27 +1869,6 @@ fn ctxpkg_ids_are_canonical_sha256_of_the_typed_objects() {
             hex(&Sha256::digest(canonical_json(&commit).unwrap()))
         )
     );
-}
-
-#[test]
-fn a_sealed_code_graph_shows_no_path_and_opens_to_the_clear_graph() {
-    let value = fixtures()
-        .into_iter()
-        .find(|fixture| fixture.name == "code_graph_put.sealed.request")
-        .unwrap()
-        .value;
-    assert!(!value.to_string().contains("outbox"), "a path in the clear");
-    let blob: SealedBlobV1 = serde_json::from_value(value["sealed"].clone()).unwrap();
-    let opened = XChaCha20Poly1305::new((&REPO_KEY).into())
-        .decrypt(
-            XNonce::from_slice(&B64.decode(&blob.nonce).unwrap()),
-            Payload {
-                msg: &B64.decode(&blob.ciphertext).unwrap(),
-                aad: &sealed_aad(VAULT, 0, blob.epoch, codegraph::CODE_GRAPH_SCHEMA),
-            },
-        )
-        .unwrap();
-    assert_eq!(opened, canonical_json(&code_graph()).unwrap());
 }
 
 #[test]
@@ -2705,245 +1905,6 @@ fn anchor_digest_vectors_hash_the_normalized_bytes() {
             .unwrap()["normalized_hex"],
         hex(b"x\n\n\n  y\n")
     );
-}
-
-#[test]
-fn sealed_task_writes_carry_nothing_readable_and_bind_the_task_number() {
-    for (name, number) in [
-        ("task_result.sealed.request", 7),
-        ("task_propose.sealed.request", 0),
-    ] {
-        let value = fixtures()
-            .into_iter()
-            .find(|fixture| fixture.name == name)
-            .unwrap()
-            .value;
-        let text = value.to_string();
-        for plaintext in ["retry", "Budget", "summary\"", "title\"", "evidence\""] {
-            assert!(
-                !text.contains(plaintext),
-                "{name}: {plaintext} in the clear"
-            );
-        }
-        let blob: SealedBlobV1 = serde_json::from_value(value["sealed"].clone()).unwrap();
-        let cipher = XChaCha20Poly1305::new((&REPO_KEY).into());
-        let open = |number| {
-            cipher.decrypt(
-                XNonce::from_slice(&B64.decode(&blob.nonce).unwrap()),
-                Payload {
-                    msg: &B64.decode(&blob.ciphertext).unwrap(),
-                    aad: &sealed_aad(VAULT, number, blob.epoch, &blob.content_schema),
-                },
-            )
-        };
-        let opened: Value = serde_json::from_slice(&open(number).unwrap()).unwrap();
-        assert_eq!(opened["schema"], blob.content_schema.as_str(), "{name}");
-        assert!(
-            open(number + 1).is_err(),
-            "{name}: sealed task content cannot move to another task"
-        );
-    }
-}
-
-#[test]
-fn a_sealed_draft_carries_nothing_readable_and_opens_to_its_content() {
-    let draft = fixtures()
-        .into_iter()
-        .find(|fixture| fixture.name == "proposal.sealed.request")
-        .unwrap()
-        .value;
-    let text = draft.to_string();
-    for plaintext in ["Session learnings", "Two decisions", "summary\"", "body\""] {
-        assert!(!text.contains(plaintext), "{plaintext} in the clear");
-    }
-    let blob: SealedBlobV1 =
-        serde_json::from_value(draft["context_patch"]["sealed"].clone()).unwrap();
-    let opened = XChaCha20Poly1305::new((&REPO_KEY).into())
-        .decrypt(
-            XNonce::from_slice(&B64.decode(&blob.nonce).unwrap()),
-            Payload {
-                msg: &B64.decode(&blob.ciphertext).unwrap(),
-                aad: &sealed_aad(VAULT, 3, blob.epoch, &blob.content_schema),
-            },
-        )
-        .unwrap();
-    let content: SealedDraftContentV1 = serde_json::from_slice(&opened).unwrap();
-    content.validate().unwrap();
-    assert_eq!(content.summary, "Session learnings: draft rebasing");
-    // In the clear, a sealed draft with any free text is refused.
-    let mut leaky: DraftProposalV1 = serde_json::from_value(draft).unwrap();
-    leaky.summary = Some("Sealed draft".into());
-    assert!(leaky.validate().is_err());
-}
-
-#[test]
-fn the_wrapped_repo_key_opens_for_its_recipient_repo_and_epoch_only() {
-    use curve25519_dalek::montgomery::MontgomeryPoint;
-    let wrapped: WrappedKeyV1 = serde_json::from_value(wrap_repo_key(INSTANCE, 1)).unwrap();
-    wrapped.validate().unwrap();
-    let (secret, recipient) = recipient_kx();
-    let ephemeral: [u8; 32] = B64
-        .decode(&wrapped.ephemeral_pub)
-        .unwrap()
-        .try_into()
-        .unwrap();
-    let shared = MontgomeryPoint(ephemeral).mul_clamped(secret).to_bytes();
-    let cipher = XChaCha20Poly1305::new((&wrap_key(&shared, &ephemeral, &recipient)).into());
-    let nonce = B64.decode(&wrapped.nonce).unwrap();
-    let ciphertext = B64.decode(&wrapped.ciphertext).unwrap();
-    let open = |aad: Vec<u8>| {
-        cipher.decrypt(
-            XNonce::from_slice(&nonce),
-            Payload {
-                msg: &ciphertext,
-                aad: &aad,
-            },
-        )
-    };
-    assert_eq!(
-        open(sealed_wrap_aad(VAULT, 1, INSTANCE)).unwrap(),
-        REPO_KEY.to_vec()
-    );
-    assert!(
-        open(sealed_wrap_aad(VAULT, 2, INSTANCE)).is_err(),
-        "another epoch"
-    );
-    assert!(
-        open(sealed_wrap_aad(VAULT, 1, "inst_other")).is_err(),
-        "another instance"
-    );
-}
-
-#[test]
-fn the_pending_recipients_are_signed_by_an_hive_key() {
-    let pending = sealed_pending();
-    let parsed: SealedPendingV1 = serde_json::from_value(pending.clone()).unwrap();
-    let input = SealedPendingV1::signing_input_raw(&pending).unwrap();
-    let signature =
-        Signature::from_bytes(&B64.decode(&parsed.signature).unwrap().try_into().unwrap());
-    assert!(
-        key(SIGNING_SEED)
-            .verifying_key()
-            .verify(&input, &signature)
-            .is_ok()
-    );
-    let mut swapped = pending;
-    swapped["recipients"][0]["instance_kx_public_key"] = Value::from(B64.encode([0x59u8; 32]));
-    assert_ne!(SealedPendingV1::signing_input_raw(&swapped).unwrap(), input);
-    assert_eq!(
-        parsed.recipients[0].kx_fingerprint,
-        kx_fingerprint(&KX_PUBLIC)
-    );
-}
-
-#[test]
-fn org_policy_fixture_verifies_under_the_policy_signer_key() {
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let (artifact, vector) = org_policy();
-    let statement = serde_json::to_vec(&artifact["statement"]).unwrap();
-    let mut input = ORG_POLICY_SIGNATURE_DOMAIN.as_bytes().to_vec();
-    input.extend_from_slice(vector["statement_json"].as_str().unwrap().as_bytes());
-    assert_eq!(input, vector["signing_input"].as_str().unwrap().as_bytes());
-    let public: [u8; 32] = URL_SAFE_NO_PAD
-        .decode(artifact["public_key"].as_str().unwrap())
-        .unwrap()
-        .try_into()
-        .unwrap();
-    let signature: [u8; 64] = URL_SAFE_NO_PAD
-        .decode(artifact["signature"].as_str().unwrap())
-        .unwrap()
-        .try_into()
-        .unwrap();
-    VerifyingKey::from_bytes(&public)
-        .unwrap()
-        .verify(&input, &Signature::from_bytes(&signature))
-        .expect("org policy statement signed by the policy signer key");
-    let pack = artifact["pack_toml"].as_str().unwrap();
-    assert_eq!(
-        artifact["statement"]["pack_digest"],
-        format!("sha256:{}", hex(&Sha256::digest(pack.as_bytes())))
-    );
-    // Declaration order is the signed form; a key-sorted re-encoding differs.
-    assert_ne!(
-        canonical_json(&artifact["statement"]).unwrap(),
-        input[ORG_POLICY_SIGNATURE_DOMAIN.len()..]
-    );
-    assert_eq!(
-        statement.len(),
-        input.len() - ORG_POLICY_SIGNATURE_DOMAIN.len()
-    );
-}
-
-#[test]
-fn a_policy_requiring_packs_signs_them_and_binds_the_bundle() {
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    let (artifact, vector) = org_policy_requiring_packs();
-    // Without required packs the statement keeps its 1.7 bytes.
-    assert!(
-        !org_policy().1["statement_json"]
-            .as_str()
-            .unwrap()
-            .contains("required_filter_packs")
-    );
-    let statement = vector["statement_json"].as_str().unwrap();
-    assert!(statement.ends_with(&format!(
-        ",\"required_filter_packs\":[{{\"pack_id\":\"ch-identifiers\",\"version\":3,\"sha256\":\"{}\"}}]}}",
-        filter_pack()["sha256"].as_str().unwrap()
-    )));
-    let public: [u8; 32] = URL_SAFE_NO_PAD
-        .decode(artifact["public_key"].as_str().unwrap())
-        .unwrap()
-        .try_into()
-        .unwrap();
-    let signature: [u8; 64] = URL_SAFE_NO_PAD
-        .decode(artifact["signature"].as_str().unwrap())
-        .unwrap()
-        .try_into()
-        .unwrap();
-    VerifyingKey::from_bytes(&public)
-        .unwrap()
-        .verify(
-            vector["signing_input"].as_str().unwrap().as_bytes(),
-            &Signature::from_bytes(&signature),
-        )
-        .expect("the required packs are covered by the policy signature");
-
-    let required: Vec<RequiredFilterPackV1> =
-        serde_json::from_value(artifact["statement"]["required_filter_packs"].clone()).unwrap();
-    validate_required_filter_packs(&required).unwrap();
-    let bundle: PolicyBundleV1 = serde_json::from_value(
-        fixtures()
-            .into_iter()
-            .find(|f| f.name == "policy_bundle.required_packs.response")
-            .unwrap()
-            .value,
-    )
-    .unwrap();
-    assert!(unmet_required_packs(&required, &bundle.filter_packs).is_empty());
-    // Dropped, older, or another statement under the same version: unmet.
-    assert_eq!(
-        unmet_required_packs(&required, &[]),
-        ["required filter pack ch-identifiers is missing"]
-    );
-    let mut older = bundle.filter_packs.clone();
-    older[0].version = 2;
-    assert_eq!(
-        unmet_required_packs(&required, &older),
-        ["required filter pack ch-identifiers is version 2, the policy requires 3"]
-    );
-    let mut other = bundle.filter_packs;
-    other[0].sha256 = "0".repeat(64);
-    assert_eq!(
-        unmet_required_packs(&required, &other),
-        ["required filter pack ch-identifiers version 3 is not the one the policy signed"]
-    );
-    // One encoding per set: ascending ids, no repeats, real digests.
-    let mut twice = required.clone();
-    twice.extend(required.clone());
-    assert!(validate_required_filter_packs(&twice).is_err());
-    let mut upper = required;
-    upper[0].sha256 = upper[0].sha256.to_uppercase();
-    assert!(validate_required_filter_packs(&upper).is_err());
 }
 
 #[test]

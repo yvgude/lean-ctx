@@ -37,15 +37,18 @@ fn stricter_policy_rechecks_old_recovery_and_denies_blocked_new_copies() {
         let _policy = TestPolicyOverride::set(None);
         crate::core::ccr::persist(&content).unwrap();
     }
+    #[cfg(feature = "http-server")]
     let hash = crate::core::ccr::litellm_hash(&content);
     {
         let _policy = protected("[redaction]\ncustomer = 'K-[0-9]{6}'");
         // Content masking cannot prove that the original source is still allowed.
+        #[cfg(feature = "http-server")]
         assert!(crate::core::ccr::retrieve_litellm(&hash).is_none());
         assert!(crate::core::ccr::persist(&content).is_none());
     }
     {
         let _policy = protected("[filters]\nclassification = 'block'");
+        #[cfg(feature = "http-server")]
         assert!(crate::core::ccr::retrieve_litellm(&hash).is_none());
         assert!(crate::core::ccr::persist_conversation("CONFIDENTIAL\nblocked").is_none());
         assert!(crate::shell::save_tee("show data", "CONFIDENTIAL\nblocked").is_none());

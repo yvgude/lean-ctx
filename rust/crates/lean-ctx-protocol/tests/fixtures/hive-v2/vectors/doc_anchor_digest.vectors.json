@@ -1,0 +1,69 @@
+{
+  "cases": [
+    {
+      "anchor": {
+        "ref": "file:src/lib.rs"
+      },
+      "digest": "1497ba2ae9c58431b70c98c925ac011cdfc28b8b74ce9e0e5ae54c0261ec5fb9",
+      "name": "file"
+    },
+    {
+      "anchor": {
+        "ref": "dir:docs/guide"
+      },
+      "digest": "1d71a3193a1273437b70644f06adaff7d368b9c6f0598776ba0503574103f93f",
+      "input": "a.md\\0b6a98d9ce9a2d9149288fa3df42d377c3e42737afdcdaf714e33c0a100b51060\\nb.md\\0f2c82decdd7181cf98945929a62598db7e6b477e11f6e0eb0ae97020eff151ad\\n",
+      "name": "dir_two_files"
+    },
+    {
+      "anchor": {
+        "ref": "glob:src/**/*.rs"
+      },
+      "digest": "e5ba8609e0f1153e71e6015814700e24ddf89abe7b5953363ccc53f79aff32f6",
+      "matches": [
+        "src/lib.rs",
+        "src/x/y.rs"
+      ],
+      "name": "glob"
+    },
+    {
+      "anchor": {
+        "mode": "shape",
+        "ref": "dir:docs/guide"
+      },
+      "digest": "80470d491b39cfbc95db36d718eddff3c90a184765b75ab9353d3b53408d65d1",
+      "input": "a.md\\nb.md\\n",
+      "name": "dir_shape"
+    },
+    {
+      "anchor": {
+        "ref": "dir:docs/empty"
+      },
+      "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "empty_dir",
+      "note": "an existing directory holding no tracked file"
+    },
+    {
+      "anchor": {
+        "ref": "file:src/gone.rs"
+      },
+      "digest": null,
+      "name": "missing_file"
+    },
+    {
+      "anchor": {
+        "ref": "dir:docs/gone"
+      },
+      "digest": null,
+      "name": "missing_dir"
+    }
+  ],
+  "rule": "sha256 hex everywhere. file: sha256(bytes). dir: sha256 over \"<relpath>\\0<sha256hex(file)>\\n\" per file, sorted bytewise by relpath, relpath relative to the anchor dir with / separators. glob: the same over the matching files (* within a segment, ** any depth, ? one character), relpath relative to the repo root. mode shape: sha256 over \"<relpath>\\n\", sorted the same way. The file set is the git-tracked files at the anchor's commit (ls-tree); without git, a walk that respects .gitignore. A dir: or glob: selecting no file digests the empty input. A file: or dir: target that does not exist is observed null; a glob: never is.",
+  "tree": {
+    "docs/guide/a.md": "alpha\n",
+    "docs/guide/b.md": "beta\n",
+    "src/README.md": "# src\n",
+    "src/lib.rs": "pub mod x;\n",
+    "src/x/y.rs": "pub fn y() {}\n"
+  }
+}

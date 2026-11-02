@@ -13,6 +13,7 @@ fn make_temp(content: &str) -> NamedTempFile {
     f
 }
 
+#[cfg(feature = "tree-sitter")]
 /// A temp file with a real `.rs` suffix so the tree-sitter syntax gate engages
 /// (the plain `make_temp` files have no recognized extension → gate skipped).
 fn make_temp_rs(content: &str) -> NamedTempFile {

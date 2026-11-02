@@ -1,0 +1,40 @@
+{
+  "added_in": "2.2",
+  "changed": [
+    {
+      "from": "any",
+      "places": [
+        "vault"
+      ],
+      "rule": "to a page only from a section; one live part_of per section (lowest seq wins)",
+      "to": [
+        "episode",
+        "page"
+      ],
+      "value": "part_of"
+    }
+  ],
+  "name": "edge-kinds",
+  "values": [
+    {
+      "from": "page",
+      "places": [
+        "vault"
+      ],
+      "to": "page",
+      "value": "links_to"
+    },
+    {
+      "from": "note",
+      "one_live_per_from": true,
+      "places": [
+        "vault"
+      ],
+      "to": [
+        "page",
+        "section"
+      ],
+      "value": "about"
+    }
+  ]
+}

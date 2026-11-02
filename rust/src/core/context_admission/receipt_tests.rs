@@ -4,13 +4,18 @@
 
 use std::sync::Arc;
 
+#[cfg(feature = "http-server")]
+use lean_ctx_protocol::MAX_EGRESS_ATTEMPTS;
 use lean_ctx_protocol::context_gateway::{
-    ContextDispositionV1, DeliveryOutcomeV1, DestinationLocalityV1, EgressAdmissionOutcomeV1,
-    EgressAdmissionReceiptV1, EgressTransportFailureV1, EgressTransportObservationV1,
-    EgressTransportObserverV1, EgressTransportResultV1, EgressTransportV1, MAX_DECISIONS,
-    TransformationKindV1,
+    ContextDispositionV1, DeliveryOutcomeV1, EgressAdmissionOutcomeV1, EgressAdmissionReceiptV1,
+    MAX_DECISIONS, TransformationKindV1,
 };
-use lean_ctx_protocol::{MAX_EGRESS_ATTEMPTS, ProtocolReference, Sha256Digest, V1_SCHEMA_VERSION};
+#[cfg(feature = "http-server")]
+use lean_ctx_protocol::context_gateway::{
+    DestinationLocalityV1, EgressTransportFailureV1, EgressTransportObservationV1,
+    EgressTransportObserverV1, EgressTransportResultV1, EgressTransportV1,
+};
+use lean_ctx_protocol::{ProtocolReference, Sha256Digest, V1_SCHEMA_VERSION};
 
 use super::capture::{self, AdmissionCapture, CallIdentity, Delivered};
 use super::*;
@@ -360,6 +365,7 @@ fn egress_admission_for(
     }
 }
 
+#[cfg(feature = "http-server")]
 #[test]
 #[serial_test::serial(cache_telemetry)]
 fn egress_admission_and_attempts_are_linked_content_addressed_and_append_only() {

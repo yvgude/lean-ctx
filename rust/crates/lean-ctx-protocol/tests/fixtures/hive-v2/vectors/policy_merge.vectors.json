@@ -274,11 +274,10 @@
           "confidential_out_of_sharing": true
         },
         "sharing": {
-          "auto_merge_results": true,
           "cross_team_sharing": false
         }
       },
-      "effective_digest": "sha256:df7cda14286981f8dcb8e3b7b711b4d02962bd42fa002435358d6db71da207ec",
+      "effective_digest": "sha256:77fea3ab3b55c6235c95086cae251149bc969e6b1ffdd6f0ce2179d18f1ababe",
       "levels": [
         {
           "document": {
@@ -292,7 +291,6 @@
               "confidential_out_of_sharing": true
             },
             "sharing": {
-              "auto_merge_results": true,
               "cross_team_sharing": true
             }
           },
@@ -595,14 +593,13 @@
           "pii": "block"
         },
         "sharing": {
-          "auto_merge_results": false,
           "consent_required_for": [
             "permission_expansion"
           ],
           "cross_team_sharing": false
         }
       },
-      "effective_digest": "sha256:f98d383844a3c655827537b5aaec7ba6b2213927421882e2f9db0d0505aea23a",
+      "effective_digest": "sha256:359cb27103f40f733c0c91c443a324bae7cb426dfd817786a5cd34efa158a90f",
       "levels": [
         {
           "document": {
@@ -639,9 +636,7 @@
               ],
               "pii": "block"
             },
-            "sharing": {
-              "auto_merge_results": false
-            }
+            "sharing": {}
           },
           "level": "vault"
         },

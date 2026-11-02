@@ -12,12 +12,6 @@
       "receipts_upload": false
     },
     "plan": "team",
-    "policy_signer_keys": [
-      {
-        "ed25519_pub": "AOPFa5GrCgFxdLlmRer5KDZs264eh/0hv4ZmHYbz5+8=",
-        "org": "org_acme"
-      }
-    ],
     "rights": [
       "knowledge.read",
       "knowledge.draft",
@@ -27,7 +21,6 @@
       "policy.pull",
       "bus.relay",
       "bus.control",
-      "sealed",
       "runtime"
     ],
     "schema": "leanctx.hive.lease/v1",
@@ -35,5 +28,5 @@
     "server_time": "2026-10-20T12:00:00Z"
   },
   "schema": "leanctx.hive.lease-envelope/v1",
-  "signature": "dzRPJl6AvE6yaRK9Tptn4sM6n/M2lZWRatvn5b/Pc8YDUVTsKgkuHiqtm4gsM3nIR34GOKnnjnO61pmYk8evBA=="
+  "signature": "528FF/Gd9D/SsO43tOEStq42Qp/zRGr2fPiLLO6e8N/C3AKTc1PMjEmPoNgwACwoUHg38cjaTsvRzhsK7ALgAA=="
 }

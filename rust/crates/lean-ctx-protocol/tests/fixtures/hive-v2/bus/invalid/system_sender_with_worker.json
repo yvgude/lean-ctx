@@ -1,6 +1,6 @@
 {
   "case": "system_sender_with_worker",
-  "base": "bus/message.need.system.json",
+  "base": "bus/message.finding.system.json",
   "patch": [
     {
       "op": "add",

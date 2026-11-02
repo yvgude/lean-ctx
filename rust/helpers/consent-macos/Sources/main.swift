@@ -20,14 +20,12 @@ let presenceLabel = "ch.thinkery.leanctx.presence"
 let proofDomain = "leanctx.hive.consent_proof.v1\n"
 let bindDomain = "leanctx.hive.presence_bind.v1\n"
 
-/// The subject fields per kind (C0 `enums/consent-kinds.json`);
-/// `procedure_confirm` is web only and never signed here.
+/// The subject fields per kind (C0 `enums/consent-kinds.json` without the
+/// swarm kinds retired in 3.12.1); `procedure_confirm` is web only and
+/// never signed here.
 let subjectFields: [String: [String]] = [
     "link_vault": ["bound_repo", "link_digest", "remote_seen", "target_vault", "vault"],
     "public_presence": ["vault", "worker_id"],
-    "swarm_join": ["cli", "pledge_digest", "swarm"],
-    "pledge_change": ["after_digest", "before_digest", "swarm"],
-    "unattended_start": ["cli", "pledge_digest", "swarm", "usd_cents_per_day"],
     "reviewer_enable": ["cli", "place", "reviewer_usd_cents_per_day", "source"],
     "api_key_set": ["cli", "vendor"],
     "sealed_grant": ["engine_fingerprint", "requester", "vault"],
@@ -59,12 +57,6 @@ func template(kind: String, subject: JSONValue, digest: String) -> String? {
         question = "Use vault \(s("vault")) for the repository \(s("remote_seen"))?"
     case "public_presence":
         question = "Show worker \(s("worker_id")) on the public bus of vault \(s("vault"))?"
-    case "swarm_join":
-        question = "Let \(s("cli")) on this Mac join swarm \(s("swarm"))?"
-    case "pledge_change":
-        question = "Raise your pledge to swarm \(s("swarm"))? Lowering a limit never needs approval."
-    case "unattended_start":
-        question = "Let swarm \(s("swarm")) run unattended with \(s("cli")), up to \(dollars(subject["usd_cents_per_day"])) per day?"
     case "reviewer_enable":
         question = "Run reviews for \(s("place")) with \(s("cli")), up to \(dollars(subject["reviewer_usd_cents_per_day"])) per day (\(s("source")) capacity)?"
     case "api_key_set":

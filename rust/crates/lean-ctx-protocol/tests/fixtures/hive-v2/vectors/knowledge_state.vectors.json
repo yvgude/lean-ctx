@@ -1,10 +1,9 @@
 {
-  "rule": "first match wins: rejected (retracted|purged -> retracted; decision status reverted -> reverted), outdated (superseded edge or decision status superseded -> superseded; anchor_state gone -> anchor_gone; to_verify -> anchor_changed), conflicting (open contradicts -> contradicted), verified (review_state confirmed and evidence observed), provisional (review_state not confirmed -> unconfirmed; else not_observed). superseded = a live supersedes edge from a live node to this one; contradicted = a live contradicts edge to a live node that is not superseded.",
+  "rule": "first match wins: rejected (retracted|purged -> retracted; decision status reverted -> reverted), outdated (superseded edge or decision status superseded -> superseded; anchor_state gone -> anchor_gone; to_verify -> anchor_changed), conflicting (open contradicts -> contradicted), verified (evidence observed), provisional (else not_observed). superseded = a live supersedes edge from a live node to this one; contradicted = a live contradicts edge to a live node that is not superseded.",
   "defaults": {
     "node_type": "fact",
     "retracted": false,
     "purged": false,
-    "review_state": "confirmed",
     "evidence": "observed",
     "status": null,
     "anchor_state": null,
@@ -39,31 +38,6 @@
       "reason": "not_observed",
       "set": {
         "evidence": "imported"
-      }
-    },
-    {
-      "name": "unconfirmed_is_provisional",
-      "state": "provisional",
-      "reason": "unconfirmed",
-      "set": {
-        "review_state": "unconfirmed"
-      }
-    },
-    {
-      "name": "needs_person_is_provisional",
-      "state": "provisional",
-      "reason": "unconfirmed",
-      "set": {
-        "review_state": "reviewed_needs_person"
-      }
-    },
-    {
-      "name": "unconfirmed_wins_over_not_observed",
-      "state": "provisional",
-      "reason": "unconfirmed",
-      "set": {
-        "evidence": "stated",
-        "review_state": "unconfirmed"
       }
     },
     {
@@ -106,6 +80,26 @@
       "set": {
         "node_type": "decision",
         "status": "active"
+      }
+    },
+    {
+      "name": "decision_anchor_changed_is_outdated",
+      "state": "outdated",
+      "reason": "anchor_changed",
+      "set": {
+        "node_type": "decision",
+        "status": "active",
+        "anchor_state": "to_verify"
+      }
+    },
+    {
+      "name": "decision_anchor_gone_is_outdated",
+      "state": "outdated",
+      "reason": "anchor_gone",
+      "set": {
+        "node_type": "decision",
+        "status": "active",
+        "anchor_state": "gone"
       }
     },
     {

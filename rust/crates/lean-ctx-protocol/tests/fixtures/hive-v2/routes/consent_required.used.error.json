@@ -2,7 +2,7 @@
   "error": {
     "code": "consent_required",
     "message": "This approval was already used.",
-    "kind": "pledge_change",
+    "kind": "link_vault",
     "reason": "used"
   }
 }

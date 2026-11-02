@@ -486,7 +486,6 @@ fn handle_lifecycle_report(project_root: &str) -> String {
         Ok(p) => p,
         Err(e) => return e,
     };
-    let hash = crate::core::project_hash::hash_project_root(project_root);
 
     let mut out = String::from("=== Memory Lifecycle Report ===\n");
 
@@ -517,6 +516,7 @@ fn handle_lifecycle_report(project_root: &str) -> String {
     // Embeddings layer (semantic index over knowledge facts).
     #[cfg(feature = "embeddings")]
     {
+        let hash = crate::core::project_hash::hash_project_root(project_root);
         let n = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(&hash)
             .map_or(0, |idx| idx.entries.len());
         out.push_str(&format!(

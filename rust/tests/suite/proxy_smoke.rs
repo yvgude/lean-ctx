@@ -5,6 +5,7 @@
 //! It stays hermetic and offline: a provider route sent without credentials is
 //! rejected by the auth guard (401) *before* any upstream is contacted, so no
 //! network egress and no real provider key are required.
+#![cfg(feature = "http-server")]
 
 use std::time::Duration;
 

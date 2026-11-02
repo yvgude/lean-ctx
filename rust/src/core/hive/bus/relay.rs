@@ -192,13 +192,14 @@ pub(crate) fn outgoing(
     for entry in entries {
         // D6: no address, `local` or a local agent id never leaves (a name
         // published by itself would reach any instance announcing it, E4).
-        // Swarm and worker addresses wait for the bus v2 relay.
+        // Worker addresses wait for the bus v2 relay; any other address
+        // (`~name`) is refused and never leaves.
         let project = match Address::parse(entry.to_agent.as_deref()) {
             Ok(Address::Vault { workspace, vault }) => map
                 .vaults
                 .values()
                 .find(|record| record.ns == workspace && record.name == vault),
-            Ok(Address::Swarm(_) | Address::Worker(_)) => continue,
+            Ok(Address::Worker(_)) => continue,
             Ok(Address::Local | Address::LocalAgent(_)) | Err(_) => {
                 state.mark_forwarded(&entry.id);
                 continue;
@@ -563,7 +564,8 @@ mod tests {
         ];
         let unlinked = post(Some("#acme/other"), PrivacyLevel::Team);
         let private = post(Some("#acme/payments"), PrivacyLevel::Private);
-        let later = post(Some("~launch-q4"), PrivacyLevel::Team);
+        let later = post(Some("@wkr_vk4oelpv5lzjmev44hun"), PrivacyLevel::Team);
+        let unknown = post(Some("~launch-q4"), PrivacyLevel::Team);
         let sent = post(Some("#acme/payments"), PrivacyLevel::Team);
         let mut state = RelayState::default();
         let out = outgoing(&registry, &map, "org_acme", &mut state, &mut screen());
@@ -573,11 +575,11 @@ mod tests {
             panic!("publish frame");
         };
         assert_eq!(to, &None, "the address is the channel, not a recipient");
-        for id in stay.iter().chain([&unlinked, &private]) {
+        for id in stay.iter().chain([&unlinked, &private, &unknown]) {
             assert!(state.was_forwarded(id), "decided once, not re-evaluated");
         }
         assert_eq!(state.withheld, 2, "unlinked vault and private body");
-        assert!(!state.was_forwarded(&later), "swarm posts wait for bus v2");
+        assert!(!state.was_forwarded(&later), "worker posts wait for bus v2");
     }
 
     /// Another instance cannot deliver a message as an agent of this machine.

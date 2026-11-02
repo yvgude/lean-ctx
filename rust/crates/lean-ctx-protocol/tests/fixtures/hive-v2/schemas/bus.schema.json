@@ -5,8 +5,8 @@
   "$defs": {
     "address": {
       "type": "string",
-      "pattern": "^(#[a-z0-9_-]{1,64}/[a-z0-9-]{2,40}|~[a-z0-9-]{3,40}|@wkr_[a-z2-7]{20})$",
-      "description": "display/body form only; never in a URL path (R15, R33)"
+      "pattern": "^(#[a-z0-9_-]{1,64}/[a-z0-9-]{2,40}|@wkr_[a-z2-7]{20})$",
+      "description": "display/body form only; never in a URL path (R15, R33); a vault bus `#ws/vault` or a worker `@wkr_…`"
     },
     "ulid": {
       "$ref": "common.schema.json#/$defs/event_id"
@@ -18,17 +18,13 @@
         "handoff",
         "finding",
         "answer",
-        "need",
-        "claim",
-        "progress",
-        "result"
+        "progress"
       ]
     },
     "thread_status": {
       "enum": [
         "open",
         "answered",
-        "became_task",
         "closed",
         "taken",
         "withdrawn",
@@ -36,10 +32,7 @@
         "accepted",
         "rejected",
         "vetoed",
-        "expired",
-        "claimed",
-        "active",
-        "released"
+        "expired"
       ]
     },
     "ref": {
@@ -193,74 +186,6 @@
         }
       }
     },
-    "body_need": {
-      "type": "object",
-      "required": [
-        "text",
-        "capabilities"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "text": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000
-        },
-        "capabilities": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 5,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          }
-        },
-        "budget_hint": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "tasks": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 50
-            },
-            "usd_cents": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 50000
-            }
-          }
-        },
-        "expires_at": {
-          "$ref": "common.schema.json#/$defs/ms"
-        },
-        "routed_to": {
-          "$ref": "common.schema.json#/$defs/u32",
-          "description": "server-set"
-        }
-      }
-    },
-    "body_claim": {
-      "type": "object",
-      "required": [
-        "resource",
-        "lease_id"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "resource": {
-          "$ref": "#/$defs/resource"
-        },
-        "lease_id": {
-          "$ref": "#/$defs/lease_id"
-        },
-        "expires_at": {
-          "$ref": "common.schema.json#/$defs/ms",
-          "description": "server-set (= lease expiry)"
-        }
-      }
-    },
     "body_progress": {
       "type": "object",
       "additionalProperties": false,
@@ -289,61 +214,6 @@
         },
         "usage": {
           "$ref": "common.schema.json#/$defs/usage"
-        },
-        "goal": {
-          "$ref": "common.schema.json#/$defs/goal_id"
-        }
-      }
-    },
-    "body_result": {
-      "type": "object",
-      "required": [
-        "summary",
-        "artefacts"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "summary": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000
-        },
-        "artefacts": {
-          "type": "array",
-          "maxItems": 20,
-          "items": {
-            "$ref": "common.schema.json#/$defs/artefact"
-          }
-        },
-        "goal": {
-          "$ref": "common.schema.json#/$defs/goal_id"
-        },
-        "review_state": {
-          "enum": [
-            "unconfirmed",
-            "accepted",
-            "rejected"
-          ],
-          "description": "server-set"
-        },
-        "review_id": {
-          "$ref": "common.schema.json#/$defs/review_id",
-          "description": "server-set"
-        }
-      }
-    },
-    "body_sealed": {
-      "type": "object",
-      "required": [
-        "sealed"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "sealed": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9_-]+$",
-          "maxLength": 87382,
-          "description": "base64url(nonce ‖ ct), ≤ 64 KiB"
         }
       }
     },
@@ -388,13 +258,6 @@
         "body": {
           "type": "object"
         },
-        "ck_wrapped": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9_-]{96}$"
-        },
-        "epoch": {
-          "$ref": "common.schema.json#/$defs/u32"
-        },
         "about": {
           "enum": [
             "collaboration"
@@ -404,7 +267,7 @@
         "counts": {
           "type": "object",
           "additionalProperties": false,
-          "description": "plaintext counts of a collaboration finding (R128, V16.1), stored by the server in a typed table (collab_findings, numbers only): exactly these keys, each optional, non-negative integers; never on sealed places",
+          "description": "plaintext counts of a collaboration finding (R128, V16.1), stored by the server in a typed table (collab_findings, numbers only): exactly these keys, each optional, non-negative integers",
           "properties": {
             "registration_renewed": {
               "$ref": "common.schema.json#/$defs/u32"
@@ -451,188 +314,99 @@
       },
       "allOf": [
         {
-          "$comment": "Sealed places: body {sealed} with ck_wrapped + epoch (R52); plain places: body per type, no key material.",
           "if": {
             "properties": {
-              "body": {
-                "required": [
-                  "sealed"
-                ]
+              "type": {
+                "const": "question"
               }
             }
           },
           "then": {
-            "required": [
-              "ck_wrapped",
-              "epoch"
-            ],
             "properties": {
               "body": {
-                "$ref": "#/$defs/body_sealed"
+                "$ref": "#/$defs/body_question"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "offer"
               }
             }
           },
-          "else": {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "ck_wrapped"
-                  ]
-                },
-                {
-                  "required": [
-                    "epoch"
-                  ]
-                }
-              ]
-            },
-            "allOf": [
-              {
-                "if": {
-                  "properties": {
-                    "type": {
-                      "const": "question"
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "body": {
-                      "$ref": "#/$defs/body_question"
-                    }
-                  }
-                }
-              },
-              {
-                "if": {
-                  "properties": {
-                    "type": {
-                      "const": "offer"
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "body": {
-                      "$ref": "#/$defs/body_offer"
-                    }
-                  }
-                }
-              },
-              {
-                "if": {
-                  "properties": {
-                    "type": {
-                      "const": "handoff"
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "body": {
-                      "$ref": "#/$defs/body_handoff"
-                    }
-                  }
-                }
-              },
-              {
-                "if": {
-                  "properties": {
-                    "type": {
-                      "const": "finding"
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "body": {
-                      "$ref": "#/$defs/body_finding"
-                    }
-                  }
-                }
-              },
-              {
-                "if": {
-                  "properties": {
-                    "type": {
-                      "const": "answer"
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "body": {
-                      "$ref": "#/$defs/body_answer"
-                    }
-                  }
-                }
-              },
-              {
-                "if": {
-                  "properties": {
-                    "type": {
-                      "const": "need"
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "body": {
-                      "$ref": "#/$defs/body_need"
-                    }
-                  }
-                }
-              },
-              {
-                "if": {
-                  "properties": {
-                    "type": {
-                      "const": "claim"
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "body": {
-                      "$ref": "#/$defs/body_claim"
-                    }
-                  }
-                }
-              },
-              {
-                "if": {
-                  "properties": {
-                    "type": {
-                      "const": "progress"
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "body": {
-                      "$ref": "#/$defs/body_progress"
-                    }
-                  }
-                }
-              },
-              {
-                "if": {
-                  "properties": {
-                    "type": {
-                      "const": "result"
-                    }
-                  }
-                },
-                "then": {
-                  "properties": {
-                    "body": {
-                      "$ref": "#/$defs/body_result"
-                    }
-                  }
-                }
+          "then": {
+            "properties": {
+              "body": {
+                "$ref": "#/$defs/body_offer"
               }
-            ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "handoff"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "body": {
+                "$ref": "#/$defs/body_handoff"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "finding"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "body": {
+                "$ref": "#/$defs/body_finding"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "answer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "body": {
+                "$ref": "#/$defs/body_answer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "progress"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "body": {
+                "$ref": "#/$defs/body_progress"
+              }
+            }
           }
         },
         {
@@ -694,7 +468,7 @@
           }
         },
         {
-          "$comment": "counts and window only with about = collaboration, never with a sealed body",
+          "$comment": "counts and window only with about = collaboration",
           "if": {
             "anyOf": [
               {
@@ -716,13 +490,6 @@
             "properties": {
               "about": {
                 "const": "collaboration"
-              },
-              "body": {
-                "not": {
-                  "required": [
-                    "sealed"
-                  ]
-                }
               }
             }
           }
@@ -772,7 +539,7 @@
           }
         },
         {
-          "$comment": "counts and window only with about = collaboration, never with a sealed body",
+          "$comment": "counts and window only with about = collaboration",
           "if": {
             "anyOf": [
               {
@@ -794,13 +561,6 @@
             "properties": {
               "about": {
                 "const": "collaboration"
-              },
-              "body": {
-                "not": {
-                  "required": [
-                    "sealed"
-                  ]
-                }
               }
             }
           }
@@ -875,7 +635,7 @@
             "kind"
           ],
           "additionalProperties": false,
-          "description": "Hive itself (actor.kind = server): e.g. the need posted when a swarm question passes its deadline (§3.19.2)",
+          "description": "Hive itself (actor.kind = server), e.g. a note on a vault bus (§3.19.2)",
           "properties": {
             "kind": {
               "const": "system"
@@ -1010,7 +770,6 @@
             "kind": {
               "enum": [
                 "handoff",
-                "claim",
                 "lease"
               ]
             },
@@ -1169,8 +928,7 @@
             "lease.expired",
             "log.advanced",
             "trust.advanced",
-            "need.match",
-            "swarm.event",
+            "task.event",
             "consent.answered",
             "error",
             "ping",
@@ -1343,24 +1101,12 @@
           "if": {
             "properties": {
               "t": {
-                "const": "need.match"
+                "const": "task.event"
               }
             }
           },
           "then": {
-            "$ref": "#/$defs/f_need_match"
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "t": {
-                "const": "swarm.event"
-              }
-            }
-          },
-          "then": {
-            "$ref": "#/$defs/f_swarm_event"
+            "$ref": "#/$defs/f_task_event"
           }
         },
         {
@@ -1676,104 +1422,83 @@
         }
       }
     },
-    "f_need_match": {
+    "f_task_event": {
+      "description": "C0 2.2: a task of a vault the socket follows changed. Fanned out to every subscriber of the vault like message.deliver (the acting engine too) and fenced the same way; not stored, so there is no replay: an engine catches up with GET /v1/vaults/{pid}/tasks?state=.",
       "required": [
-        "address",
-        "message_id",
-        "capabilities"
+        "vault",
+        "number",
+        "event",
+        "state",
+        "by",
+        "at"
       ],
       "properties": {
-        "address": {
+        "vault": {
           "$ref": "#/$defs/address"
         },
-        "message_id": {
-          "$ref": "common.schema.json#/$defs/msg_id"
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
         },
-        "capabilities": {
-          "$ref": "#/$defs/body_need/properties/capabilities"
-        }
-      }
-    },
-    "f_swarm_event": {
-      "required": [
-        "swarm",
-        "kind"
-      ],
-      "properties": {
-        "swarm": {
-          "$ref": "common.schema.json#/$defs/uuid"
-        },
-        "kind": {
+        "event": {
           "enum": [
-            "goal_changed",
-            "claim_expired",
-            "conductor_changed",
-            "state_changed"
+            "opened",
+            "claimed",
+            "released",
+            "submitted",
+            "verified",
+            "rejected",
+            "cancelled",
+            "failed"
           ]
-        },
-        "goal": {
-          "$ref": "common.schema.json#/$defs/goal_id"
-        },
-        "epoch": {
-          "$ref": "common.schema.json#/$defs/u64"
         },
         "state": {
           "enum": [
             "open",
-            "running",
-            "paused",
+            "claimed",
+            "submitted",
             "done",
-            "archived"
+            "failed",
+            "cancelled"
           ]
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "enum": [
-                  "goal_changed",
-                  "claim_expired"
-                ]
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "goal"
-            ]
-          }
         },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "conductor_changed"
+        "by": {
+          "description": "the acting worker and its engine, or Hive itself (a lapsed lease, a person's cancel)",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "system"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "system": {
+                  "const": true
+                }
+              }
+            },
+            {
+              "type": "object",
+              "minProperties": 1,
+              "additionalProperties": false,
+              "properties": {
+                "worker_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+                },
+                "instance_id": {
+                  "type": "string",
+                  "pattern": "^inst_[0-9a-f]{32}$"
+                }
               }
             }
-          },
-          "then": {
-            "required": [
-              "epoch"
-            ]
-          }
+          ]
         },
-        {
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "state_changed"
-              }
-            }
-          },
-          "then": {
-            "required": [
-              "state"
-            ]
-          }
+        "at": {
+          "$ref": "common.schema.json#/$defs/ms"
         }
-      ]
+      }
     },
     "f_consent_answered": {
       "required": [
@@ -2064,7 +1789,7 @@
             "kind"
           ],
           "additionalProperties": false,
-          "description": "Hive itself (actor.kind = server): e.g. the need posted when a swarm question passes its deadline (§3.19.2)",
+          "description": "Hive itself (actor.kind = server), e.g. a note on a vault bus (§3.19.2)",
           "properties": {
             "kind": {
               "const": "system"

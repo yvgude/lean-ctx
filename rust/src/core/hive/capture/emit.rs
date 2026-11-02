@@ -12,7 +12,6 @@ use super::{CapturedFact, dedupe};
 use crate::core::hive::HiveError;
 use crate::core::hive::events::build::{self, Place, Signer};
 use crate::core::hive::events::hlc::{self, Stamp};
-use crate::core::hive::events::sealed_body::{self, SealKey};
 use crate::core::hive::replica::Replica;
 use crate::core::knowledge::NodeType;
 
@@ -39,9 +38,8 @@ pub struct Target<'a> {
     pub place: &'a Place,
     pub signer: &'a Signer<'a>,
     pub project_hash: &'a str,
-    /// A sealed place's epoch key: bodies leave only as `{ct, nonce}` under
-    /// a per-event key (§3.3.4).
-    pub seal: Option<&'a SealKey>,
+    /// The Hive answered C0 2.2: decisions carry their anchors.
+    pub decision_anchors: bool,
 }
 
 /// Queue a signed `node.add` per captured fact.
@@ -57,7 +55,7 @@ pub fn emit(
         place,
         signer,
         project_hash,
-        seal,
+        decision_anchors,
     } = *target;
     let mut out = Emitted {
         clock,
@@ -76,12 +74,9 @@ pub fn emit(
             continue;
         }
         let (applies, anchors) = build::applies_and_anchors(&fact.refs, checkout);
-        let body = build::claim_body(c, &applies, anchors, seal.is_some())?;
+        let body = build::claim_body(c, &applies, anchors, decision_anchors)?;
         out.clock = hlc::send(out.clock, now_ms);
-        let (mut event, node_id) = build::node_add(c, &body, place, out.clock, signer)?;
-        if let Some(seal) = seal {
-            sealed_body::seal_event(&mut event, seal, signer.key)?;
-        }
+        let (event, node_id) = build::node_add(c, &body, place, out.clock, signer)?;
         let event_id = queue(replica, &event, out.clock)?;
         replica.add_dedupe_key(&dk, &node_id)?;
         replica.put_signature(&node_id, &dedupe::signature(&place.pk_id, &c.statement))?;
@@ -105,7 +100,7 @@ pub fn emit(
             .filter(|to| cited.contains(&format!("node:{to}")))
         {
             out.clock = hlc::send(out.clock, now_ms);
-            let mut edge = build::edge_add(
+            let edge = build::edge_add(
                 "derived_from",
                 &node_id,
                 to,
@@ -114,9 +109,6 @@ pub fn emit(
                 out.clock,
                 signer,
             )?;
-            if let Some(seal) = seal {
-                sealed_body::seal_event(&mut edge, seal, signer.key)?;
-            }
             out.derived
                 .push((queue(replica, &edge, out.clock)?, to.clone()));
         }
@@ -188,7 +180,7 @@ mod tests {
             place: &place,
             signer: &signer,
             project_hash: "ph",
-            seal: None,
+            decision_anchors: false,
         };
         let first = emit(
             &target,
@@ -283,7 +275,7 @@ mod tests {
             place: &place,
             signer: &signer,
             project_hash: "ph",
-            seal: None,
+            decision_anchors: false,
         };
         let out = emit(
             &target,

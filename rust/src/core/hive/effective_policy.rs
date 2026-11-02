@@ -496,16 +496,7 @@ pub(crate) fn on_pull(
 /// boundary, share with a team or the public, or expand rights.
 pub fn sensitive_kind(kind: super::consent::Kind) -> bool {
     use super::consent::Kind;
-    matches!(
-        kind,
-        Kind::LinkVault
-            | Kind::PublicPresence
-            | Kind::SwarmJoin
-            | Kind::PledgeChange
-            | Kind::UnattendedStart
-            | Kind::ReviewerEnable
-            | Kind::SealedGrant
-    )
+    matches!(kind, Kind::LinkVault)
 }
 
 /// `now` is at or past `not_after` (an unreadable instant counts as past).

@@ -22,8 +22,8 @@ USAGE:
 Hive admits a claim under your opt-in for this repo. A claim made here stays
 alive while its agent is on the bus (the relay keeps it) and has itself claimed,
 posted or updated the task within 2 h; `update` (or claiming again) renews it.
-A result ends the task: done, or failed with --failed (a Hive before v5
-holds it for a decision instead and takes no --failed; release the task).
+A result waits for another agent's check (ctx_tasks action=verify), or ends
+the task as failed with --failed; the agent that did the work never checks it.
 Evidence kinds: commit, receipt, ci_run, url, fact, and file_anchor:<path>[::<symbol>]
 (digested as the file is now). A proposed task is sent with
 the next `lean-ctx hive sync` and is open at once for any agent to claim.

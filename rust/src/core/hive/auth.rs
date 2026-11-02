@@ -413,3 +413,90 @@ impl Session {
         self.with_client(|client| client.delete(&path))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(path: &str) -> Value {
+        let path = format!(
+            "{}/crates/lean-ctx-protocol/tests/fixtures/{path}",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    fn at(t: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(t).unwrap().with_timezone(&Utc)
+    }
+
+    /// Enroll `raw` in a fresh store; the directory lives as long as the
+    /// returned guard.
+    fn enroll(
+        raw: &Value,
+        root: &[u8; 32],
+    ) -> Result<(tempfile::TempDir, HiveStore, InstanceRecord), HiveError> {
+        let dir = tempfile::tempdir().unwrap();
+        let store = HiveStore::at(dir.path().join("c"), dir.path().join("d"));
+        let enrollment: EnrollmentV1 = decode(raw.clone(), "enrollment")?;
+        let record = complete_enrollment(
+            &store,
+            "https://hive.leanctx.com",
+            &enrollment,
+            &raw["keys"],
+            root,
+            "studio-mac",
+            at("2026-10-20T12:00:00Z"),
+        )?;
+        let lease = load_lease(&store, root, &record.instance_id)?;
+        assert_eq!(lease.envelope.kid, enrollment.lease.kid);
+        Ok((dir, store, record))
+    }
+
+    /// Below Hive-Protocol 2.1: key set v1, the lease signed by its `kid`.
+    #[test]
+    fn an_enrollment_with_key_set_v1_is_verified_and_kept() {
+        use ed25519_dalek::SigningKey;
+        let raw = fixture("hive/enrollment.response.json");
+        let root = SigningKey::from_bytes(&[0x52; 32])
+            .verifying_key()
+            .to_bytes();
+        let (_dir, _store, record) = enroll(&raw, &root).unwrap();
+        assert_eq!(record.org_id, "org_acme");
+        let refused = enroll(&raw, &[7; 32]).expect_err("another root");
+        assert!(
+            refused
+                .to_string()
+                .contains(super::super::lease::ROOT_MISMATCH)
+        );
+    }
+
+    /// Hive-Protocol 2.1 (`routes/enrollment.for_2x.response.json`): key set
+    /// v3, verified as every v3 set, and the lease signed by the key of
+    /// purpose `policy` its `kid` names.
+    #[test]
+    fn an_enrollment_with_key_set_v3_is_verified_with_its_policy_key() {
+        let raw = fixture("hive-v2/routes/enrollment.for_2x.response.json");
+        let mut root = [0u8; 32];
+        hex::decode_to_slice(
+            fixture("hive-v2/vectors/signing.vectors.json")["keys"]["root_new"]["public_key_hex"]
+                .as_str()
+                .unwrap(),
+            &mut root,
+        )
+        .unwrap();
+        let (_dir, store, record) = enroll(&raw, &root).unwrap();
+        assert_eq!(record.org_id, "org_acme");
+        assert_eq!(raw["lease"]["kid"], "552e43422b3589fa");
+        let kept: Value = store
+            .read_config(super::super::state::KEYS_FILE)
+            .unwrap()
+            .unwrap();
+        assert_eq!(kept, raw["keys"], "the v3 set is kept as received");
+        // Another root, or a lease kid of a key that signs no leases: refused.
+        assert!(enroll(&raw, &[7; 32]).is_err());
+        let mut event_kid = raw;
+        event_kid["lease"]["kid"] = "4fc7bebc302357bd".into();
+        assert!(enroll(&event_kid, &root).is_err());
+    }
+}

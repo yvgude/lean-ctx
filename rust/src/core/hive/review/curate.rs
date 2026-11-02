@@ -136,8 +136,7 @@ fn live(graph: &Graph, node_id: &str) -> Result<(), HiveError> {
 }
 
 /// The events already queued and not yet folded, so a repeated command
-/// queues nothing twice. A sealed place's queued bodies are ciphertext, so
-/// there only the folded state dedupes.
+/// queues nothing twice.
 fn pending(target: &Target<'_>) -> Result<Vec<Value>, HiveError> {
     Ok(target
         .replica
@@ -181,7 +180,7 @@ pub fn queue_contradiction(
     }
     let stamp = hlc::send(Stamp::default(), now_ms);
     let event = contradicts_edge(target.place, a, b, stamp, target.signer)?;
-    queue(target, event, stamp)?;
+    queue(target, &event, stamp)?;
     Ok(true)
 }
 
@@ -214,7 +213,7 @@ pub fn queue_retraction(
     }
     let stamp = hlc::send(Stamp::default(), now_ms);
     let event = retract_event(target.place, node, reason, stamp, target.signer)?;
-    queue(target, event, stamp)?;
+    queue(target, &event, stamp)?;
     Ok(true)
 }
 

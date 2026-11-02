@@ -1,7 +1,7 @@
 {
   "error": {
     "code": "forbidden_right",
-    "message": "A moderator holds this question.",
+    "message": "A veto holds this agent.",
     "reason": "vetoed"
   }
 }

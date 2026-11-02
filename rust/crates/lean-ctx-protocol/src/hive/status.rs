@@ -38,43 +38,6 @@ pub struct HiveStatusDraftsV1 {
     pub refused: u32,
 }
 
-/// Whether an org policy is in force or was lifted (1.2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HiveOrgPolicyStateV1 {
-    Required,
-    Unpinned,
-}
-
-/// The last verified org policy (1.2).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HiveStatusPolicyV1 {
-    pub version: u64,
-    pub state: HiveOrgPolicyStateV1,
-    pub verified_at: UtcTimestamp,
-    /// End of the signed validity, for a policy in force.
-    pub not_after: Option<UtcTimestamp>,
-    /// Whether this engine enforces it (needs the Intelligence runtime).
-    pub enforced: bool,
-    /// C 1.8, additive status field (no wire change): the filter packs the
-    /// policy requires, in its signed order. Left out when it requires none,
-    /// so earlier output is unchanged; readers treat it as optional.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub required_filter_packs: Vec<HiveStatusRequiredPackV1>,
-}
-
-/// A filter pack the org policy requires (C 1.8, status only).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HiveStatusRequiredPackV1 {
-    pub pack_id: String,
-    pub version: u64,
-    /// Whether the installed filter set holds this pack exactly as the
-    /// policy signed it and applies it in full (the policy runtime's rule).
-    pub installed: bool,
-}
-
 /// An active filter pack (1.2). Bundles verify as a whole, so every listed
 /// pack is active; a refused bundle leaves the previous list in place.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,9 +101,6 @@ pub struct HiveCliStatusV1 {
     pub drafts: HiveStatusDraftsV1,
     /// 1.2.
     #[serde(default)]
-    pub policy: Option<HiveStatusPolicyV1>,
-    /// 1.2.
-    #[serde(default)]
     pub filter_packs: Vec<HiveStatusFilterPackV1>,
     /// 1.2: why the newest policy bundle was refused (the last verified one stays).
     #[serde(default)]
@@ -189,7 +149,6 @@ impl HiveCliStatusV1 {
             last_seen: None,
             url: url.unwrap_or(HIVE_DEFAULT_URL).to_string(),
             drafts: HiveStatusDraftsV1::default(),
-            policy: None,
             filter_packs: Vec::new(),
             policy_refusal: None,
             web_url: Some(url.unwrap_or(HIVE_DEFAULT_URL).to_string()),
@@ -208,7 +167,7 @@ mod tests {
     fn not_connected_prints_nulls() {
         assert_eq!(
             serde_json::to_string(&HiveCliStatusV1::not_connected(None)).unwrap(),
-            r#"{"available":true,"connected":false,"instance":null,"org":null,"last_seen":null,"url":"https://hive.leanctx.com","drafts":{"queued":0,"refused":0},"policy":null,"filter_packs":[],"policy_refusal":null,"web_url":"https://hive.leanctx.com"}"#
+            r#"{"available":true,"connected":false,"instance":null,"org":null,"last_seen":null,"url":"https://hive.leanctx.com","drafts":{"queued":0,"refused":0},"filter_packs":[],"policy_refusal":null,"web_url":"https://hive.leanctx.com"}"#
         );
     }
 

@@ -16,7 +16,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use super::lease::{HiveKeySetV1, HiveLeaseEnvelopeV1};
+use super::lease::{EnrollmentKeySet, HiveLeaseEnvelopeV1};
 use super::{
     HIVE_ENGINE_CLIENT_ID, TOKEN_ASSERTION_DOMAIN, require_schema, validate_b64_len, validate_id,
     validate_text,
@@ -228,7 +228,7 @@ pub struct DeviceTokenRequestV1 {
     pub device_code: String,
     /// Ed25519 public key (32 bytes, base64) the instance signs assertions with.
     pub instance_public_key: String,
-    /// X25519 public key (32 bytes, base64) sealed vault keys are wrapped to.
+    /// X25519 public key (32 bytes, base64); enrollment carries it.
     pub instance_kx_public_key: String,
     /// User-visible name, e.g. the host name when labels are on.
     pub instance_label: String,
@@ -291,8 +291,9 @@ pub struct EnrollmentV1 {
     pub instance_id: String,
     pub org: OrgRefV1,
     pub lease: HiveLeaseEnvelopeV1,
-    /// Signed by the Hive root key; verified before the lease.
-    pub keys: HiveKeySetV1,
+    /// Signed by the Hive root key; verified before the lease. v1 for an
+    /// engine below Hive-Protocol 2.1, v3 from 2.1.
+    pub keys: EnrollmentKeySet,
     /// Id of the org salt the engine fetches with `GET /v1/org/salt`.
     pub org_salt_id: String,
     /// 1.3: origin of the Hive web app ("Open Hive"); may equal the API origin.
@@ -313,7 +314,13 @@ impl EnrollmentV1 {
             super::validate_origin(web_url, "web_url")?;
         }
         self.keys.validate()?;
-        self.lease.validate_shape()
+        self.lease.validate_shape()?;
+        if !self.keys.signs_leases_as(&self.lease.kid) {
+            return Err(ValidationError::new(
+                "the lease kid names no lease key of the enrollment's key set",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -477,6 +484,57 @@ mod tests {
         answer["features"] = serde_json::json!([FEATURE_DEVICE_SETUP, "later"]);
         let new: DeviceCodeV1 = serde_json::from_value(answer).unwrap();
         assert!(new.offers_device_setup());
+    }
+
+    /// An enrollment as a Hive-Protocol 1.x/2.0 engine receives it: key
+    /// set v1, the lease signed by a `kid` of it.
+    #[test]
+    fn an_enrollment_with_key_set_v1_decodes_and_names_its_lease_key() {
+        let raw: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/hive/enrollment.response.json"
+        ))
+        .unwrap();
+        let enrollment: EnrollmentV1 = serde_json::from_value(raw.clone()).unwrap();
+        enrollment.validate().unwrap();
+        assert!(matches!(enrollment.keys, EnrollmentKeySet::V1(_)));
+        assert_eq!(serde_json::to_value(&enrollment).unwrap(), raw);
+        let mut other_kid = enrollment;
+        other_kid.lease.kid = "k-unknown".into();
+        assert!(other_kid.validate().is_err(), "the kid follows the set");
+    }
+
+    /// An enrollment as a Hive-Protocol 2.1+ engine receives it
+    /// (`routes/enrollment.for_2x.response.json`): key set v3, the lease of
+    /// a 2.x engine signed by the v3 key of purpose `policy` its `kid`
+    /// names.
+    #[test]
+    fn an_enrollment_with_key_set_v3_decodes_and_names_its_policy_key() {
+        let raw: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/hive-v2/routes/enrollment.for_2x.response.json"
+        ))
+        .unwrap();
+        let enrollment: EnrollmentV1 = serde_json::from_value(raw.clone()).unwrap();
+        enrollment.validate().unwrap();
+        let EnrollmentKeySet::V3(set) = &enrollment.keys else {
+            panic!("a v3 set decodes as v3");
+        };
+        assert_eq!(
+            set.lease_key(&enrollment.lease.kid)
+                .map(|k| k.key_id.as_str()),
+            Some("552e43422b3589fa")
+        );
+        assert_eq!(serde_json::to_value(&enrollment).unwrap(), raw);
+        // The kid of a key without purpose `policy` signs no lease.
+        let mut event_kid = enrollment.clone();
+        event_kid.lease.kid = "4fc7bebc302357bd".into();
+        assert!(event_kid.validate().is_err());
+        // A v3 key without its v3 fields is refused, not read as v1.
+        let mut broken = raw;
+        broken["keys"]["keys"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("key_id");
+        assert!(serde_json::from_value::<EnrollmentV1>(broken).is_err());
     }
 
     #[test]

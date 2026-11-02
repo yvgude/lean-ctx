@@ -34,6 +34,38 @@ const MAX_AGENTS: usize = 1000;
 /// role; the running relay announces it at once instead of on its next tick.
 const ANNOUNCE_FILE: &str = "announce";
 
+/// How long `ctx_agent list` shows another machine's worker after its last
+/// presence report.
+pub const LIST_WINDOW_HOURS: i64 = 24;
+
+/// The workers of other machines, as `ctx_agent list` shows them under the
+/// local ones; empty when Hive reported none.
+pub fn render_remote(data_dir: &Path, now: chrono::DateTime<chrono::Utc>) -> String {
+    let map = PresenceMap::load(data_dir);
+    let rows = map.remote_workers(now, chrono::Duration::hours(LIST_WINDOW_HOURS));
+    if rows.is_empty() {
+        return String::new();
+    }
+    let mut out = format!(
+        "Other machines ({}), address them with to_agent=<wkr_…>:\n",
+        rows.len()
+    );
+    for (worker, p) in rows {
+        let age = chrono::DateTime::parse_from_rfc3339(&p.server_time)
+            .map(|t| (now - t.with_timezone(&chrono::Utc)).num_minutes().max(0))
+            .unwrap_or(0);
+        let state = serde_json::to_value(p.state)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            "  {worker} · {} state={state} on {} (last seen {age}m ago)\n",
+            p.role, p.vault_id
+        ));
+    }
+    out
+}
+
 /// Ask the running relay to announce this machine's agents now (after a
 /// `ctx_agent register` or a role change), so a claim right after it finds
 /// the agent on the bus. Local only and best effort: it never waits for
@@ -211,6 +243,64 @@ impl PresenceMap {
         true
     }
 
+    /// Record a C0 2.0 `presence.update` (a worker on a bus address, `at` in
+    /// milliseconds); `false` for an older report. Hive names the worker,
+    /// not its instance, so `instance_id` stays empty and the vault is the
+    /// bus address (`#ws/vault`).
+    pub fn apply_v2(
+        &mut self,
+        address: &str,
+        worker_id: &str,
+        role: &str,
+        state: PresenceState,
+        at_ms: u64,
+    ) -> bool {
+        let Some(at) =
+            chrono::DateTime::from_timestamp_millis(i64::try_from(at_ms).unwrap_or(i64::MAX))
+        else {
+            return false;
+        };
+        let server_time = at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        if self
+            .agents
+            .get(worker_id)
+            .is_some_and(|known| known.server_time.as_str() > server_time.as_str())
+        {
+            return false;
+        }
+        self.agents.insert(
+            worker_id.to_owned(),
+            Presence {
+                instance_id: String::new(),
+                vault_id: address.to_owned(),
+                role: role.to_owned(),
+                state,
+                server_time,
+            },
+        );
+        true
+    }
+
+    /// The workers of other machines Hive reported within `window` before
+    /// `now` and not closed, newest first: what `ctx_agent list` shows.
+    pub fn remote_workers(
+        &self,
+        now: chrono::DateTime<chrono::Utc>,
+        window: chrono::Duration,
+    ) -> Vec<(&str, &Presence)> {
+        let cutoff = (now - window).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let mut out: Vec<(&str, &Presence)> = self
+            .agents
+            .iter()
+            .filter(|(_, p)| {
+                p.state != PresenceState::Closed && p.server_time.as_str() >= cutoff.as_str()
+            })
+            .map(|(id, p)| (id.as_str(), p))
+            .collect();
+        out.sort_by(|a, b| b.1.server_time.cmp(&a.1.server_time).then(a.0.cmp(b.0)));
+        out
+    }
+
     /// The instances other than `own_instance` that announced `agent` within
     /// [`SEEN_WINDOW_HOURS`] before `now` (`YYYY-MM-DDTHH:MM:SSZ`), sorted.
     /// More than one means the name is ambiguous: a sender must pick.
@@ -284,6 +374,40 @@ mod tests {
             profile_id: None,
             profile: None,
         }
+    }
+
+    #[test]
+    fn bus_v2_presence_lists_other_machines_workers() {
+        let mut map = PresenceMap::default();
+        let at = 1_792_800_060_000;
+        assert!(map.apply_v2(
+            "#acme/payments",
+            "wkr_b",
+            "tester",
+            PresenceState::Active,
+            at
+        ));
+        assert!(
+            !map.apply_v2(
+                "#acme/payments",
+                "wkr_b",
+                "tester",
+                PresenceState::Idle,
+                at - 1000
+            ),
+            "older"
+        );
+        assert!(map.apply_v2("#acme/payments", "wkr_c", "dev", PresenceState::Closed, at));
+        let now = chrono::DateTime::from_timestamp_millis(at as i64 + 120_000).unwrap();
+        let rows = map.remote_workers(now, chrono::Duration::hours(1));
+        assert_eq!(rows.len(), 1, "closed workers are not listed");
+        assert_eq!(rows[0].0, "wkr_b");
+        assert_eq!(rows[0].1.vault_id, "#acme/payments");
+        let late = chrono::DateTime::from_timestamp_millis(at as i64 + 7_200_000).unwrap();
+        assert!(
+            map.remote_workers(late, chrono::Duration::hours(1))
+                .is_empty()
+        );
     }
 
     #[test]

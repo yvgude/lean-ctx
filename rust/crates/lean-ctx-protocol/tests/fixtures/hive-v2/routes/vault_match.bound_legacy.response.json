@@ -3,10 +3,7 @@
   "matched": "legacy",
   "schema": "leanctx.hive.vault-match/v1",
   "vault": {
-    "key_epoch": 1,
     "schema": "leanctx.hive.vault/v1",
-    "sealed": true,
-    "sealed_conversion": "none",
     "vault": {
       "name": "payments",
       "ns": "acme"

@@ -52,11 +52,5 @@
         "server"
       ]
     }
-  ],
-  "revert_scopes": [
-    "item",
-    "revision",
-    "worker_since"
-  ],
-  "revert_note": "W19/W20 scope kinds; reverts are system events with cause {kind: revert, id: preview_id}, there is no revert_of member (decision B)"
+  ]
 }

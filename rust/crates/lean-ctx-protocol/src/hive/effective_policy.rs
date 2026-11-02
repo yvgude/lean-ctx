@@ -91,7 +91,6 @@ pub const ENGINE_MEMBERS: &[(&str, &str)] = &[
 pub const SERVER_MEMBERS: &[&str] = &[
     "security.excluded_paths",
     "sharing.allowed_vaults",
-    "sharing.auto_merge_results",
     "sharing.consent_required_for",
     "sharing.cross_team_sharing",
     "sharing.personal_workspace",
@@ -231,8 +230,6 @@ pub struct SharingPolicyV1 {
     pub cross_team_sharing: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_claim_min_role: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auto_merge_results: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub consent_required_for: Option<Vec<String>>,
     /// `allow` | `forbid` (Hive C line): `forbid` keeps the team's project

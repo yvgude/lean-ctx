@@ -1,11 +1,11 @@
 {
   "case": "hlc_node_mismatch",
-  "base": "events/node.add.result.json",
+  "base": "events/node.add.fact.json",
   "patch": [
     {
       "op": "replace",
       "path": "/hlc/node",
-      "value": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b"
+      "value": "8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c"
     }
   ],
   "expect": {
@@ -13,5 +13,5 @@
     "code": "invalid_event",
     "reason": "hlc_node"
   },
-  "resign_with": "a_swarm"
+  "resign_with": "instance_a"
 }

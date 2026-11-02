@@ -70,10 +70,6 @@ fn the_snapshot_manifest_verifies_with_the_hive_snapshot_key_only() {
     let mut forged = manifest.clone();
     forged["seq"] = Value::from(19);
     assert!(!manifest_verifies(&forged, &test_key("hive_snapshot")));
-    assert!(manifest_verifies(
-        &fixture("records/snapshot_manifest.sealed.json"),
-        &test_key("hive_snapshot")
-    ));
 }
 
 /// The fixture segment holds records 1, 4, 5 and 6 of the 18 in the
@@ -119,78 +115,48 @@ fn a_segment_imports_only_when_count_run_and_root_match() {
     let instance = test_key("instance_a");
     let hive = test_key("hive_event");
     let signed = |e: &Value| sign::verify(e, &instance) || sign::verify(e, &hive);
-    let events = import_segment(&meta, &records, &id_salt(), false, &signed).unwrap();
-    assert_eq!(events.len(), 2, "the withheld record is not stored");
+    let events = import_segment(&meta, &records, &id_salt(), &signed).unwrap();
+    assert_eq!(events.len(), 3);
     assert!(events.iter().all(|e| !e.sig_invalid), "{events:?}");
-    assert_eq!(events[0].event["purged"], true);
-    assert!(events[0].event.get("body").is_none());
+    assert_eq!(events[1].event["purged"], true);
+    assert!(events[1].event.get("body").is_none());
 
     let mut flipped = records.clone();
     flipped[2]["envelope"]["target"] = Value::from("n_aaaaaaaaaaaaaaaaaaaaaaaaaa");
     assert_eq!(
-        import_segment(&meta, &flipped, &id_salt(), false, &signed),
+        import_segment(&meta, &flipped, &id_salt(), &signed),
         Err(SegmentError::Root)
     );
     assert!(matches!(
-        import_segment(&meta, &records[..2], &id_salt(), false, &signed),
+        import_segment(&meta, &records[..2], &id_salt(), &signed),
         Err(SegmentError::Count { .. })
     ));
     let mut gap = records.clone();
     gap[1]["seq"] = Value::from(9);
     assert_eq!(
-        import_segment(&meta, &gap, &id_salt(), false, &signed),
+        import_segment(&meta, &gap, &id_salt(), &signed),
         Err(SegmentError::SeqRun)
     );
 
     // A body that does not match its commitment is kept, never folded.
     let mut tampered = records.clone();
     tampered[2]["body"]["statement"] = Value::from("Something else entirely, said here.");
-    let events = import_segment(&meta, &tampered, &id_salt(), false, &signed).unwrap();
-    assert!(events[1].sig_invalid);
-}
-
-/// C0 1459f77: a purge tombstone in a sealed place carries an unkeyed
-/// body_commit; the same tombstone in a plain place, or a changed body,
-/// does not verify.
-#[test]
-fn sealed_purge_tombstones_commit_unkeyed() {
-    let v = fixture("vectors/body_commit.vectors.json");
-    let hive = test_key("hive_event");
-    let signed = |e: &Value| sign::verify(e, &hive);
-    for case in v["sealed_tombstone"].as_array().unwrap() {
-        let mut event = fixture(case["fixture"].as_str().unwrap());
-        assert_eq!(event["body_commit"], case["body_commit"]);
-        assert!(event_verifies(&event, &[0; 32], true, &signed));
-        assert!(
-            !event_verifies(&event, &[0; 32], false, &signed),
-            "keyed rule outside sealed places"
-        );
-        event["body"]["reason"] = Value::from("gdpr_erasure");
-        assert!(!event_verifies(&event, &[0; 32], true, &signed));
-    }
-    // A worker event in a sealed place stays keyed.
-    let fact = fixture("events/node.add.fact.json");
-    let instance = test_key("instance_a");
-    assert!(!event_verifies(&fact, &[0; 32], true, &|e| sign::verify(
-        e, &instance
-    )));
-    assert!(event_verifies(&fact, &id_salt(), true, &|e| sign::verify(
-        e, &instance
-    )));
+    let events = import_segment(&meta, &tampered, &id_salt(), &signed).unwrap();
+    assert!(events[2].sig_invalid);
 }
 
 #[test]
 fn tail_pages_verify_each_event() {
     let page = fixture("routes/events_tail.response.json");
     let instance = test_key("instance_a");
-    let tail = tail_page(&page, &id_salt(), false, &|e| sign::verify(e, &instance)).unwrap();
-    assert_eq!(tail.events.len(), 3);
+    let tail = tail_page(&page, &id_salt(), &|e| sign::verify(e, &instance)).unwrap();
+    assert_eq!(tail.events.len(), 4);
     assert!(tail.events.iter().all(|e| !e.sig_invalid));
     assert_eq!(
         (tail.next_since, tail.head_seq, tail.epoch),
         (Some(4), 18, Some(0))
     );
-    let wrong = tail_page(&page, &id_salt(), false, &|e| {
+    let wrong = tail_page(&page, &id_salt(), &|e| {
         sign::verify(e, &test_key("instance_b"))
     })
     .unwrap();

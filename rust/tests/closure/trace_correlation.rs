@@ -1,3 +1,5 @@
+#![cfg(feature = "http-server")]
+
 use axum::body::Body;
 use http::{HeaderMap, HeaderValue, Response};
 use lean_ctx::core::ocla::types::OclaRequestContext;

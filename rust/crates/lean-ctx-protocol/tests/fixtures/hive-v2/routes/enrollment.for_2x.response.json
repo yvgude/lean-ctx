@@ -1,0 +1,131 @@
+{
+  "instance_id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+  "keys": {
+    "keys": [
+      {
+        "created_at": 1790208000000,
+        "key_id": "552e43422b3589fa",
+        "public_key": "-AzM3OSuHAeuIIoq35mjEK5CB-Awb6AjYRCwaCe7uNA",
+        "purposes": [
+          "policy"
+        ],
+        "revoked_at": null
+      },
+      {
+        "created_at": 1790208000000,
+        "key_id": "4fc7bebc302357bd",
+        "public_key": "Y1VpHBeKj_kQB6dHivuVXvc1LGPnslcDmEz3iybiGlY",
+        "purposes": [
+          "event"
+        ],
+        "revoked_at": null
+      },
+      {
+        "created_at": 1775520000000,
+        "key_id": "5c4707450391efe5",
+        "public_key": "7pOk9m-NFrgZu5vrn_zN_NwUEuh_7moyTCqZoeDmcUg",
+        "purposes": [
+          "event"
+        ],
+        "revoked_at": 1790121600000
+      },
+      {
+        "created_at": 1790208000000,
+        "key_id": "7bc9f7e9dc1a0621",
+        "public_key": "DXVQdU4IAKXSN-71gmA1dmubPloVhoqUCrKJlYeI47A",
+        "purposes": [
+          "snapshot"
+        ],
+        "revoked_at": null
+      },
+      {
+        "created_at": 1790208000000,
+        "key_id": "41dad53017a5f8de",
+        "public_key": "iN9VZBNTiwAgFelhmwG9tcxIxyFWRXklY_VGD3MHp2M",
+        "purposes": [
+          "revocation"
+        ],
+        "revoked_at": null
+      },
+      {
+        "created_at": 1790208000000,
+        "key_id": "b7bda707a8979c46",
+        "public_key": "2sMevKFZ0oP4NB_ZDX-hzZW_XsyrZX95UmYuZ-Vq--M",
+        "purposes": [
+          "consent"
+        ],
+        "revoked_at": null
+      },
+      {
+        "created_at": 1790208000000,
+        "key_id": "fac2346807329f09",
+        "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY",
+        "purposes": [
+          "control"
+        ],
+        "revoked_at": null
+      },
+      {
+        "created_at": 1790208000000,
+        "key_id": "5d2abe57a3a2c50f",
+        "public_key": "a3NKjv8kb-c0s41ARsFI7uXwT-h7OgpCOVWneVbeBms",
+        "purposes": [
+          "purge"
+        ],
+        "revoked_at": null
+      }
+    ],
+    "schema": "leanctx.hive.keyset/v3",
+    "signature": "FPd+2wOsqqsmvtxV+MRe28bBLn9xIJ09ce//sMBwvDYGCnMRoauCoT5x7LZgwtjqFfVscxtFxk8Gew8SPko3Bg==",
+    "signatures": [
+      {
+        "key_id": "7c05bc3512a2bbe7",
+        "signature": "8a9784a08577d16d579b51e324d0fc8fb5833a6f03286de73b1be6f282bddfaa0eb4fe9c442362a7c504494cff8305caa6536910108f7b9e01e8405b53f1610a"
+      },
+      {
+        "key_id": "168d42cf763161e3",
+        "signature": "78eddc47fc969dabfc3cd6f2c879d605f8316a10cb9b5cd621e4353f383d822f62af17505ab1da01e4dab3875d32b23123a1d8a63a1acbe1939d539c23478d09"
+      }
+    ]
+  },
+  "lease": {
+    "kid": "552e43422b3589fa",
+    "lease": {
+      "expires_at": "2026-10-21T12:00:00Z",
+      "grace_until": "2026-10-27T12:00:00Z",
+      "instance_id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+      "issued_at": "2026-10-20T12:00:00Z",
+      "lease_id": "lse_01jb8z4a2b3c4d5e6f7g8h9j0k",
+      "org_id": "org_acme",
+      "org_settings": {
+        "metrics_upload": true,
+        "receipts_upload": false
+      },
+      "plan": "team",
+      "rights": [
+        "knowledge.read",
+        "knowledge.draft",
+        "knowledge.merge",
+        "metrics.upload",
+        "receipts.upload",
+        "policy.pull",
+        "bus.relay",
+        "bus.control",
+        "runtime"
+      ],
+      "schema": "leanctx.hive.lease/v1",
+      "seats_limit": 25,
+      "server_time": "2026-10-20T12:00:00Z"
+    },
+    "schema": "leanctx.hive.lease-envelope/v1",
+    "signature": "528FF/Gd9D/SsO43tOEStq42Qp/zRGr2fPiLLO6e8N/C3AKTc1PMjEmPoNgwACwoUHg38cjaTsvRzhsK7ALgAA=="
+  },
+  "org": {
+    "id": "org_acme",
+    "kind": "team",
+    "name": "Acme AG"
+  },
+  "org_salt_id": "salt_2026_10",
+  "schema": "leanctx.hive.enrollment/v1",
+  "web_url": "https://hive.leanctx.com"
+}

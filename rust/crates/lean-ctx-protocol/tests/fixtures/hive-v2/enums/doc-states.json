@@ -1,0 +1,22 @@
+{
+  "added_in": "2.2",
+  "name": "doc-states",
+  "reasons": [
+    "anchor_changed",
+    "anchor_gone"
+  ],
+  "values": [
+    {
+      "rule": "anchor_state absent or fresh; or drift non-empty but no entry names a derived anchor (cites never drive state)",
+      "value": "fresh"
+    },
+    {
+      "rule": "anchor_state to_verify or gone and every drift entry on a derived anchor is covered by an open note about the page or one of its sections with the same ref and digest == observed (null for gone)",
+      "value": "noted"
+    },
+    {
+      "rule": "otherwise, including anchor_state to_verify or gone with an empty drift (a writer that sent no detail)",
+      "value": "stale"
+    }
+  ]
+}

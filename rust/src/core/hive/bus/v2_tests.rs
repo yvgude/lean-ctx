@@ -105,7 +105,7 @@ fn collaboration_findings_carry_counts_and_a_window_without_refs() {
 
 #[test]
 fn engine_publishes_match_the_fixtures() {
-    for name in ["publish.question", "publish.answer", "publish.sealed"] {
+    for name in ["publish.question", "publish.answer"] {
         let doc = fixture(&format!("bus/{name}.json"));
         publish_ok(&doc).unwrap_or_else(|e| panic!("{name}: {e}"));
         let back = serde_json::to_value(serde_json::from_value::<Publish>(doc.clone()).unwrap());
@@ -116,6 +116,21 @@ fn engine_publishes_match_the_fixtures() {
     let mut body = frame.clone();
     body.as_object_mut().unwrap().remove("t");
     publish_ok(&body).unwrap();
+}
+
+/// A sealed body never leaves, with or without its key material.
+#[test]
+fn a_sealed_publish_is_refused() {
+    let mut doc = fixture("bus/publish.question.json");
+    doc["body"] = serde_json::json!({"sealed": {"ct": "AAAA", "nonce": "AAAA"}});
+    let refused = publish_ok(&doc).unwrap_err();
+    assert!(
+        refused.0.contains("sealed bodies are not supported"),
+        "{refused:?}"
+    );
+    doc["ck_wrapped"] = Value::from("A".repeat(96));
+    doc["epoch"] = Value::from(1);
+    assert!(publish_ok(&doc).is_err());
 }
 
 #[test]
@@ -273,16 +288,13 @@ fn ulids_are_well_formed_and_ordered_by_time() {
 }
 
 #[test]
-fn phase_a_types_on_vault_buses() {
-    let a: Vec<_> = [
+fn the_c0_2_2_bus_types() {
+    for t in [
         "question", "answer", "finding", "offer", "handoff", "progress",
-    ]
-    .iter()
-    .map(|t| MessageType::parse(t).unwrap())
-    .collect();
-    assert!(a.iter().all(|t| t.in_phase_a()));
-    for t in ["need", "claim", "result"] {
-        assert!(!MessageType::parse(t).unwrap().in_phase_a());
+    ] {
+        assert!(MessageType::parse(t).is_some(), "{t}");
     }
-    assert_eq!(MessageType::parse("status"), None);
+    for t in ["need", "claim", "result", "status"] {
+        assert_eq!(MessageType::parse(t), None, "{t}");
+    }
 }

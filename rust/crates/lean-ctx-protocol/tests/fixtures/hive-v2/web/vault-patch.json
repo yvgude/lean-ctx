@@ -19,35 +19,6 @@
         }
       },
       "status": 400
-    },
-    {
-      "body": {
-        "error": {
-          "code": "plan_required",
-          "feature": "sealed",
-          "message": "Sealed vaults: included in Personal, Team and Enterprise.",
-          "plan_needed": "personal"
-        }
-      },
-      "status": 402
-    },
-    {
-      "body": {
-        "error": {
-          "code": "sealed_public_conflict",
-          "message": "A public vault cannot be sealed."
-        }
-      },
-      "status": 409
-    },
-    {
-      "body": {
-        "error": {
-          "code": "step_up_required",
-          "message": "Confirm with your authenticator app."
-        }
-      },
-      "status": 403
     }
   ],
   "method": "PATCH",
@@ -61,7 +32,6 @@
       "vault": {
         "counts": {
           "nodes": 0,
-          "open_reviews": 0,
           "workers": 0
         },
         "description": "How refunds, retries and payouts work.",
@@ -71,9 +41,6 @@
         "license": null,
         "name": "payments",
         "presence_public": false,
-        "sealed": false,
-        "sealed_conversion": "none",
-        "sealed_grants": "confirm",
         "stars": 0,
         "title": "Payments",
         "viewer": {

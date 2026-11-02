@@ -42,7 +42,6 @@ mod hive_cmd;
 mod hive_connect_cmd;
 mod hive_consent_cmd;
 mod hive_curate_cmd;
-mod hive_review_cmd;
 mod hive_tasks_cmd;
 mod index_cmd;
 mod init_cmd;

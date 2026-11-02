@@ -379,7 +379,7 @@ fn capture_one(
         shaped.anchors.clear();
     }
     let candidate = capture::shape(&shaped, import.and_then(import_reference))?;
-    let refs = match capture::gate(&candidate, &mut run.checkout, run.sealed) {
+    let refs = match capture::gate(&candidate, &mut run.checkout) {
         Ok(refs) => refs,
         Err(reason) => {
             if reason == ReasonCode::UnpublishedRef {

@@ -112,14 +112,12 @@
       }
     },
     "vault": {
-      "description": "C0 1.x VaultV1 as POST /v1/vaults/resolve answers it, with the R90 conversion fields",
+      "description": "C0 1.x VaultV1 as POST /v1/vaults/resolve and match answer it",
       "type": "object",
       "required": [
         "schema",
         "vault_id",
-        "vault",
-        "sealed",
-        "sealed_conversion"
+        "vault"
       ],
       "additionalProperties": false,
       "properties": {
@@ -133,73 +131,16 @@
           "$ref": "#/$defs/vault_ref"
         },
         "sealed": {
-          "type": "boolean"
-        },
-        "key_epoch": {
-          "$ref": "common.schema.json#/$defs/u32"
+          "description": "only in answers to Hive-Protocol below 2.1, always false: the released 3.12.1 engine (C0 2.0) requires it (until MIN_ENGINE >= the C0 2.1 release)",
+          "const": false
         },
         "label": {
           "type": "string",
           "minLength": 1,
           "maxLength": 64
         },
-        "auto_merge": {
-          "type": "object",
-          "required": [
-            "confirmations",
-            "counts"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "confirmations": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "counts": {
-              "enum": [
-                "independent_owners",
-                "distinct_sessions"
-              ]
-            }
-          }
-        },
         "code_graph": {
           "const": "full"
-        },
-        "sealed_conversion": {
-          "enum": [
-            "none",
-            "pending",
-            "done"
-          ]
-        },
-        "conversion_source": {
-          "enum": [
-            "legacy",
-            "v2_plain"
-          ]
-        },
-        "conversion_from_seq": {
-          "$ref": "common.schema.json#/$defs/u64"
-        }
-      },
-      "if": {
-        "properties": {
-          "sealed": {
-            "const": true
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "key_epoch"
-        ]
-      },
-      "else": {
-        "not": {
-          "required": [
-            "key_epoch"
-          ]
         }
       }
     },

@@ -9,10 +9,7 @@ use serde_json::Value;
 use crate::core::hive::replica::fold::{Graph, Node};
 use crate::core::hive::untrusted::{UntrustedKind, wrap};
 
-pub mod decide;
-pub mod health;
 pub mod knowledge_state;
-pub mod trust;
 
 /// Bucket a delivered node is shown in (§3.5.2), in delivery order. The
 /// last two hold knowledge that is not current truth (v5 2.2.1): it is
@@ -21,7 +18,6 @@ pub mod trust;
 pub enum Bucket {
     High,
     Normal,
-    Unconfirmed,
     /// An anchor changed or is gone: re-verify before relying on it.
     Outdated,
     /// An open contradiction with another live claim.
@@ -33,7 +29,6 @@ impl Bucket {
         match self {
             Self::High => "high",
             Self::Normal => "normal",
-            Self::Unconfirmed => "unconfirmed",
             Self::Outdated => "outdated",
             Self::Conflicting => "conflicting",
         }
@@ -91,19 +86,15 @@ fn text_of(node: &Node) -> Option<String> {
     }
 }
 
-/// Bucket of a node for a session of the owning workspace, from the server
-/// fields and the trust bucket (absent until the trust job publishes one).
-/// `None`: not delivered.
-pub fn bucket_of(node: &Node, trust_bucket: Option<&str>) -> Option<(Bucket, bool)> {
+/// Bucket of a node for a session of the owning workspace, from its
+/// provenance and the trust bucket (absent until the trust job publishes
+/// one).
+pub fn bucket_of(node: &Node, trust_bucket: Option<&str>) -> (Bucket, bool) {
     let own = node.provenance.as_deref() == Some("own");
-    match node.review_state.as_deref() {
-        Some("unconfirmed" | "reviewed_needs_person") => Some((Bucket::Unconfirmed, false)),
-        Some("confirmed") | None => Some(match trust_bucket {
-            Some("high") if !own => (Bucket::High, false),
-            Some("low") => (Bucket::Normal, true),
-            _ => (Bucket::Normal, false),
-        }),
-        Some(_) => None,
+    match trust_bucket {
+        Some("high") if !own => (Bucket::High, false),
+        Some("low") => (Bucket::Normal, true),
+        _ => (Bucket::Normal, false),
     }
 }
 
@@ -146,7 +137,7 @@ pub fn items(graph: &Graph, trust: &dyn Fn(&str) -> Option<String>, query: &str)
                 | (knowledge_state::State::Outdated, Some("superseded")) => return None,
                 (knowledge_state::State::Outdated, _) => (Bucket::Outdated, false),
                 (knowledge_state::State::Conflicting, _) => (Bucket::Conflicting, false),
-                _ => bucket_of(node, trust(id).as_deref())?,
+                _ => bucket_of(node, trust(id).as_deref()),
             };
             let text = text_of(node)?;
             Some(Item {
@@ -203,7 +194,6 @@ pub fn render(vault: &str, items: &[Item], budget_tokens: usize) -> String {
             String::new()
         };
         let label = match item.bucket {
-            Bucket::Unconfirmed => "[unconfirmed] ",
             Bucket::Outdated => "[outdated: re-verify] ",
             Bucket::Conflicting => "[conflicting] ",
             _ if item.low => "[low trust] ",
@@ -282,28 +272,6 @@ fn folded(store: &crate::core::hive::HiveStore, vault_id: &str) -> Option<Graph>
     Some(graph)
 }
 
-/// `hive status --health`: the local figures of every sealed vault of
-/// this machine with a replica (§3.5.5; never sent), in vault order.
-pub fn sealed_health_lines(store: &crate::core::hive::HiveStore) -> Vec<String> {
-    let map = crate::core::hive::vault::VaultMap::load(store.data_dir());
-    let mut lines: Vec<String> = map
-        .vaults
-        .values()
-        .filter(|r| r.sealed)
-        .filter_map(|r| {
-            let graph = folded(store, &r.vault_id)?;
-            Some(format!(
-                "Health @{}/{} (sealed, local): {}",
-                r.ns,
-                r.name,
-                health::of(&graph).render()
-            ))
-        })
-        .collect();
-    lines.sort();
-    lines
-}
-
 /// The vault section a recall in `project_root` delivers (§3.5.1): the
 /// bound vault's replica, deterministic and within budget. `None` when the
 /// checkout is not bound or has no replica yet (nothing is created here).
@@ -318,16 +286,7 @@ pub fn for_project(project_root: &str, query: &str) -> Option<String> {
         .get(&stable)?
         .clone();
     let graph = folded(&store, &record.vault_id)?;
-    // Sealed places: the server cannot score what it cannot read, so the
-    // trust bucket is computed here from the folded log (§3.5.5).
-    let local = record.sealed.then(|| trust::buckets(&graph));
-    let trust_of = |id: &str| {
-        local
-            .as_ref()
-            .and_then(|b| b.get(id))
-            .map(|b| (*b).to_string())
-    };
-    let list = items(&graph, &trust_of, query);
+    let list = items(&graph, &|_| None, query);
     let out = render(
         &format!("{}/{}", record.ns, record.name),
         &list,

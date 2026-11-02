@@ -170,7 +170,6 @@ pub const KNOWN_RULES: &[&str] = &[
     "security.external_model_excluded_classes",
     "security.pii",
     "sharing.allowed_vaults",
-    "sharing.auto_merge_results",
     "sharing.consent_required_for",
     "sharing.cross_team_sharing",
     "sharing.personal_workspace",
@@ -992,7 +991,7 @@ pub struct SecretRowV2 {
     pub count: u64,
 }
 
-/// X4 Hive help in one hour (moved from the retired `POST /v1/metrics`).
+/// X4 Hive help in one hour.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HiveHourV2 {

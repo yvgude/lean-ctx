@@ -70,12 +70,10 @@ pub(super) fn run(action: &str, args: &[String], root: &str) -> Result<Vec<Strin
     let vault_writer = writer::VaultWriter::open(&session, place::CAPTURE_ROLE)?;
     let place = writer::vault_place(&record, &replica)?;
     let signer = vault_writer.signer();
-    let seal = writer::vault_seal(&store, &record)?;
     let target = maintain::Target {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: seal.as_ref(),
     };
     let now = chrono::Utc::now().timestamp_millis().unsigned_abs();
     let queued = match (nodes.as_slice(), reason) {

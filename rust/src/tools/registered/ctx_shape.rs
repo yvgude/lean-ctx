@@ -3,6 +3,7 @@ use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
+use crate::core::output_shapers::OutputShapers;
 use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput};
 use crate::tool_defs::tool_def;
 
@@ -92,17 +93,44 @@ impl McpTool for CtxShapeTool {
     }
 }
 
-/// Pure shaping decision, separated from MCP plumbing for testing.
-fn shape(tool: &str, command: Option<&str>, exit_code: Option<i32>, output: &str) -> String {
+/// Pure shaping decision, separated from MCP plumbing for testing. Shapes
+/// with the registered `core::output_shapers`.
+pub(crate) fn shape(
+    tool: &str,
+    command: Option<&str>,
+    exit_code: Option<i32>,
+    output: &str,
+) -> String {
+    shape_with(
+        crate::core::output_shapers::output_shapers(),
+        tool,
+        command,
+        exit_code,
+        output,
+    )
+}
+
+/// `shape` with explicit shapers; `None` (nothing registered) hands the
+/// redacted output back unshaped.
+fn shape_with(
+    shapers: Option<&OutputShapers>,
+    tool: &str,
+    command: Option<&str>,
+    exit_code: Option<i32>,
+    output: &str,
+) -> String {
     if output.len() < MIN_SHAPE_BYTES || output.len() > MAX_SHAPE_BYTES {
         return output.to_string();
     }
     let redacted = super::ctx_shell_background::redact_shell_output_secrets(output);
+    let Some(shapers) = shapers else {
+        return redacted;
+    };
     let shaped = match (tool, command) {
         ("Bash", Some(cmd)) if !cmd.trim().is_empty() => {
-            crate::proxy::compress::shape_command_output(cmd, &redacted, exit_code)
+            (shapers.command)(cmd, &redacted, exit_code)
         }
-        _ => crate::proxy::compress::shape_tool_output(&redacted, Some(tool)),
+        _ => (shapers.tool)(&redacted, Some(tool)),
     };
     // Never hand back more than the host already has.
     if shaped.len() >= redacted.len() {
@@ -123,42 +151,21 @@ mod tests {
         assert_eq!(shape("Bash", Some("cat big"), Some(0), &huge), huge);
     }
 
-    /// A successful `cargo build` (real shape: progress lines + `Finished`)
-    /// must shrink on the success path and stay recoverable — never larger
-    /// than the input.
+    /// Without registered shapers (library use, tests) the redacted output
+    /// comes back unshaped, never a panic. The shaping path itself is driven
+    /// with the proxy's shapers in `proxy::shape_route_tests`.
     #[test]
-    fn successful_build_output_is_folded_and_recoverable() {
+    fn without_registered_shapers_the_redacted_output_is_returned() {
         use std::fmt::Write as _;
-        // The tee path is derived from the data dir and re-checked at write time:
-        // hold an isolated data dir so a parallel test cannot move it in between.
-        let _data = crate::core::data_dir::isolated_data_dir();
-        // The recovery tee is Community-only: hold the policy test lock with no
-        // policy, so a parallel test's scoped policy cannot suppress the handle.
-        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let mut noisy = String::new();
         for i in 0..400 {
             let _ = writeln!(noisy, "   Compiling crate-{i} v0.1.{i} (/tmp/x)");
         }
-        noisy
-            .push_str("    Finished `dev` profile [unoptimized + debuginfo] target(s) in 42.17s\n");
-        let shaped = shape("Bash", Some("cargo build"), Some(0), &noisy);
-        assert!(
-            shaped.len() < noisy.len(),
-            "verbose cargo output must shrink"
+        let expected = super::super::ctx_shell_background::redact_shell_output_secrets(&noisy);
+        assert_eq!(
+            shape_with(None, "Bash", Some("cargo build"), Some(0), &noisy),
+            expected
         );
-        assert!(
-            shaped.contains("Finished"),
-            "the build verdict must survive: {shaped}"
-        );
-        assert!(
-            shaped.contains("full original"),
-            "a lossy shrink must carry its recovery handle: {shaped}"
-        );
-
-        let mut opaque = String::new();
-        for i in 0..300 {
-            let _ = writeln!(opaque, "{i:x}{}", i * 7919);
-        }
-        assert!(shape("Grep", None, None, &opaque).len() <= opaque.len());
+        assert_eq!(shape_with(None, "Grep", None, None, &noisy), expected);
     }
 }

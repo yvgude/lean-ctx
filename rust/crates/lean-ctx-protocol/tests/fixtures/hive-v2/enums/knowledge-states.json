@@ -4,7 +4,7 @@
     {
       "value": "verified",
       "precedence": 4,
-      "rule": "review_state confirmed and evidence observed",
+      "rule": "evidence observed",
       "served_as_truth": true
     },
     {
@@ -39,7 +39,6 @@
     "anchor_gone",
     "anchor_changed",
     "contradicted",
-    "unconfirmed",
     "not_observed"
   ],
   "web_state": {

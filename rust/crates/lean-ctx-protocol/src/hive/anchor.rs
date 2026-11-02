@@ -12,9 +12,6 @@
 //! or of the whole file without a symbol, normalized by
 //! [`normalize_anchor_content`]. `vectors.json` → `anchor_digest` holds the
 //! reference cases every implementation reproduces.
-//!
-//! In sealed vaults anchors travel only inside sealed content: a path or a
-//! symbol name is information too.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

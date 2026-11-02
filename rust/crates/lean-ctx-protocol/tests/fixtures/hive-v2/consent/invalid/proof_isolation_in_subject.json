@@ -1,6 +1,6 @@
 {
   "case": "proof_isolation_in_subject",
-  "base": "consent/proof.ed25519.swarm_join.json",
+  "base": "consent/proof.p256_ecdsa_sha256.link_vault.json",
   "patch": [
     {
       "op": "add",

@@ -225,6 +225,14 @@ pub(super) async fn session_once(
         .await
         .map_err(offline)?;
     let local_workers: BTreeSet<String> = workers.values().map(|w| w.worker_id.clone()).collect();
+    // Worker → the local agents that are it, for messages addressed to one.
+    let mut agents_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (agent, worker) in &workers {
+        agents_of
+            .entry(worker.worker_id.clone())
+            .or_default()
+            .push(agent.clone());
+    }
     let mut screen = Screen::for_installation();
     let mut tick = tokio::time::interval(TICK);
     loop {
@@ -296,10 +304,18 @@ pub(super) async fn session_once(
                     }
                     Inbound::Deliver(message) => {
                         let applied = AgentRegistry::mutate_locked(|registry| {
-                            relay_v2::apply_delivery(registry, &map, &mut state, &message, &local_workers)
+                            relay_v2::apply_delivery(registry, &map, &mut state, &message, &local_workers, &agents_of)
                         });
                         if let Ok((_, Err(error))) = applied {
                             store.record_error(&format!("bus delivery: {error}"));
+                        }
+                    }
+                    Inbound::TaskEvent(event) => {
+                        let applied = AgentRegistry::mutate_locked(|registry| {
+                            crate::core::hive::bus::task_events::apply(registry, &map, store.data_dir(), &event)
+                        });
+                        if let Ok((_, Err(error))) = applied {
+                            store.record_error(&format!("bus task event: {error}"));
                         }
                     }
                     Inbound::Control { lifted, control } => {
@@ -336,7 +352,23 @@ pub(super) async fn session_once(
                     Inbound::ConsentAnswered { consent_id } => {
                         crate::core::hive::consent::web::note_answered(&data, &consent_id);
                     }
-                    Inbound::Presence { .. } | Inbound::Other(_) => {}
+                    // Who works where: other machines' workers, for
+                    // `ctx_agent list` (this machine's own are local).
+                    Inbound::Presence { address, worker_id, role, state: presence_state, at } => {
+                        // The bus v2 and the 1.9 presence states share their names.
+                        let state = serde_json::to_value(presence_state)
+                            .ok()
+                            .and_then(|v| serde_json::from_value(v).ok());
+                        if let (false, Some(state)) = (local_workers.contains(&worker_id), state) {
+                            let recorded = super::super::presence::PresenceMap::mutate(&data, |map| {
+                                map.apply_v2(&address, &worker_id, &role, state, at)
+                            });
+                            if let Err(error) = recorded {
+                                store.record_error(&format!("bus presence: {error}"));
+                            }
+                        }
+                    }
+                    Inbound::Other(_) => {}
                 }
                 state.save(&data)?;
             }

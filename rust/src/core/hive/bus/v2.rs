@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bus v2 wire shapes the engine sends and reads (C0 2.0 section 3,
-//! `bus.schema.json`; SPEC-ENGINE §3.7): typed messages on vault and swarm
-//! buses, Hive-signed controls and presence.
+//! `bus.schema.json`; SPEC-ENGINE §3.7): typed messages on vault buses,
+//! Hive-signed controls and presence.
 //!
 //! Network-free: the relay builds and checks these, the socket moves them.
 
@@ -11,14 +11,15 @@ use ed25519_dalek::{Signature, Verifier as _, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::address::{Address, is_worker_id};
+use super::address::{is_wire_address, is_worker_id};
 
 pub const BUS_SCHEMA: &str = "leanctx.hive.bus/v2";
 pub const CONTROL_DOMAIN: &str = "leanctx.hive.control.v1\n";
 const TEXT_MAX: usize = 4000;
 const REFS_MAX: usize = 10;
 
-/// The nine message types (SPEC-ENGINE §3.7.2).
+/// The six message types (C0 2.2): the conversation types and `progress`
+/// as a status line. Work is a task (`ctx_tasks`), never a bus message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageType {
@@ -27,29 +28,12 @@ pub enum MessageType {
     Handoff,
     Finding,
     Answer,
-    Need,
-    Claim,
     Progress,
-    Result,
 }
 
 impl MessageType {
     pub fn parse(s: &str) -> Option<Self> {
         serde_json::from_value(Value::String(s.to_string())).ok()
-    }
-
-    /// Phase A on vault buses (V6.2a); `need`, `claim` and `result` follow
-    /// with swarms (V6.2c/d).
-    pub fn in_phase_a(self) -> bool {
-        matches!(
-            self,
-            Self::Question
-                | Self::Answer
-                | Self::Finding
-                | Self::Offer
-                | Self::Handoff
-                | Self::Progress
-        )
     }
 }
 
@@ -88,6 +72,8 @@ pub struct Publish {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<Ref>,
     pub body: Value,
+    /// Key material of a sealed place: a publish that carries it is
+    /// refused (engines publish to plain places only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ck_wrapped: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -175,6 +161,10 @@ pub fn sender_of(message: &Value) -> Result<Sender, Invalid> {
         && !is_worker_id(worker_id)
     {
         return Err(Invalid("sender.worker_id".into()));
+    }
+    // Only a worker's message names a worker; a person's or Hive's never.
+    if !matches!(parsed, Sender::Worker { .. }) && message.get("worker_id").is_some() {
+        return Err(Invalid("worker_id on a message no worker sent".into()));
     }
     Ok(parsed)
 }
@@ -276,50 +266,13 @@ fn check_body(kind: MessageType, body: &Value) -> Result<(), Invalid> {
                 _ => Err(bad("accept must be true or false")),
             }
         }
-        MessageType::Need => {
-            only(map, &["text", "capabilities", "budget_hint", "expires_at"])?;
-            chars(body, "text", 1, 1000)?;
-            let caps = body["capabilities"]
-                .as_array()
-                .ok_or_else(|| bad("capabilities is required"))?;
-            if !(1..=5).contains(&caps.len())
-                || caps.iter().any(|c| {
-                    c.as_str()
-                        .is_none_or(|c| c.is_empty() || c.chars().count() > 64)
-                })
-            {
-                return Err(bad("capabilities must name 1 to 5 tools or hosts"));
-            }
-            if let Some(hint) = body.get("budget_hint") {
-                let hint_map = hint
-                    .as_object()
-                    .ok_or_else(|| bad("budget_hint must be an object"))?;
-                only(hint_map, &["tasks", "usd_cents"])?;
-                int(hint, "tasks", 1, 50, false)?;
-                int(hint, "usd_cents", 0, 50_000, false)?;
-            }
-            int(body, "expires_at", 0, u64::MAX, false)
-        }
-        MessageType::Claim => {
-            only(map, &["resource", "lease_id"])?;
-            chars(body, "resource", 1, 200)?;
-            lease(body, true)
-        }
         MessageType::Progress => {
-            only(map, &["percentage", "step", "usage", "goal"])?;
+            only(map, &["percentage", "step", "usage"])?;
             if map.get("percentage").is_none() && map.get("step").is_none() {
                 return Err(bad("progress needs percentage or step"));
             }
             int(body, "percentage", 0, 100, false)?;
             opt_chars(body, "step", 1, 300)
-        }
-        MessageType::Result => {
-            only(map, &["summary", "artefacts", "goal"])?;
-            chars(body, "summary", 1, 1000)?;
-            match body["artefacts"].as_array() {
-                Some(a) if a.len() <= 20 => Ok(()),
-                _ => Err(bad("artefacts must be a list of at most 20")),
-            }
         }
     }
 }
@@ -349,8 +302,7 @@ fn is_msg_id(s: &str) -> bool {
 }
 
 impl Publish {
-    /// The C0 2.0 rules for an engine publish. A sealed body is opaque
-    /// here: only its key material is checked.
+    /// The C0 2.0 rules for an engine publish, plain places only.
     pub fn validate(&self) -> Result<(), Invalid> {
         if self.schema != BUS_SCHEMA {
             return Err(bad("schema"));
@@ -358,9 +310,8 @@ impl Publish {
         if !is_ulid(&self.client_msg_id) {
             return Err(bad("client_msg_id must be a ULID"));
         }
-        match Address::parse(Some(&self.to)) {
-            Ok(a) if a.is_remote() => {}
-            _ => return Err(bad("to must be #<ws>/<vault>, ~<swarm> or @wkr_<id>")),
+        if !is_wire_address(&self.to) {
+            return Err(bad("to must be #<ws>/<vault>, ~<slug> or @wkr_<id>"));
         }
         if !is_worker_id(&self.worker_id) {
             return Err(bad("worker_id"));
@@ -378,14 +329,13 @@ impl Publish {
         {
             return Err(bad("refs: at most 10, each 1 to 500 characters"));
         }
-        let sealed = self.body.get("sealed").is_some();
+        if self.body.get("sealed").is_some() {
+            return Err(bad("sealed bodies are not supported"));
+        }
         let collaboration = self.about.is_some();
         if collaboration {
             if self.kind != MessageType::Finding {
                 return Err(bad("about: collaboration is for findings only"));
-            }
-            if sealed {
-                return Err(bad("collaboration counts never go to a sealed place"));
             }
             if self.counts.is_none() || self.window.is_none() {
                 return Err(bad("a collaboration finding needs counts and window"));
@@ -399,21 +349,10 @@ impl Publish {
         if self.kind == MessageType::Answer && self.reply_to.is_none() {
             return Err(bad("an answer needs reply_to"));
         }
-        match (sealed, &self.ck_wrapped, self.epoch) {
-            (true, Some(ck), Some(_)) => {
-                let len_ok = ck.len() == 96
-                    && ck
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
-                if !len_ok {
-                    return Err(bad("ck_wrapped"));
-                }
-                Ok(())
-            }
-            (true, _, _) => Err(bad("a sealed body needs ck_wrapped and epoch")),
-            (false, None, None) => check_body(self.kind, &self.body),
-            (false, _, _) => Err(bad("key material on a plain place")),
+        if self.ck_wrapped.is_some() || self.epoch.is_some() {
+            return Err(bad("key material on a plain place"));
         }
+        check_body(self.kind, &self.body)
     }
 }
 
@@ -610,6 +549,8 @@ pub enum Inbound {
     ConsentAnswered {
         consent_id: String,
     },
+    /// C0 2.2: a task of a followed vault changed.
+    TaskEvent(Box<super::task_events::TaskEvent>),
     Other(String),
 }
 
@@ -699,6 +640,9 @@ pub fn parse_frame(text: &str) -> Result<Inbound, Invalid> {
         "consent.answered" => Inbound::ConsentAnswered {
             consent_id: s("consent_id")?,
         },
+        "task.event" => Inbound::TaskEvent(Box::new(
+            super::task_events::TaskEvent::parse(&value).ok_or_else(|| bad("task.event"))?,
+        )),
         _ => Inbound::Other(t),
     })
 }

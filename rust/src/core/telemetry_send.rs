@@ -178,6 +178,7 @@ mod tests {
         assert_eq!(endpoint, "http://127.0.0.1:9/api/telemetry/v2/batch");
     }
 
+    #[cfg(feature = "http-server")]
     #[test]
     #[serial_test::serial]
     fn daemon_tick_honours_an_explicit_opt_out() {
@@ -191,6 +192,7 @@ mod tests {
         assert!(!state.join("telemetry_v2_one_shots.json").exists());
     }
 
+    #[cfg(feature = "http-server")]
     #[test]
     #[serial_test::serial]
     fn daemon_tick_attempts_a_send_for_a_default_install() {

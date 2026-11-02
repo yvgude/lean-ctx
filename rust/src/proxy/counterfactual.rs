@@ -265,8 +265,10 @@ async fn dispatch_probe(probe: Probe, admission: Admission, task_slot: Counterfa
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "http-server")]
     use serde_json::json;
 
+    #[cfg(feature = "http-server")]
     fn full_request() -> Value {
         json!({
             "model": "claude-sonnet-4",
@@ -282,6 +284,7 @@ mod tests {
         })
     }
 
+    #[cfg(feature = "http-server")]
     #[tokio::test(flavor = "current_thread")]
     async fn mandatory_receipt_failure_prevents_counterfactual_network_request() {
         let _data = crate::core::data_dir::isolated_data_dir();
@@ -329,6 +332,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "http-server")]
     #[test]
     fn probe_body_is_the_count_tokens_whitelist() {
         let body = probe_body(&full_request(), None).expect("probe body");
@@ -346,6 +350,7 @@ mod tests {
         assert_eq!(obj["model"], "claude-sonnet-4");
     }
 
+    #[cfg(feature = "http-server")]
     #[test]
     fn probe_body_restores_the_prerouting_model() {
         // The router downgraded the model in the body; the counterfactual asks
@@ -357,6 +362,7 @@ mod tests {
         assert_eq!(v["model"], "claude-sonnet-4");
     }
 
+    #[cfg(feature = "http-server")]
     #[test]
     fn probe_body_requires_model_and_messages() {
         assert!(probe_body(&json!({"messages": []}), None).is_none());

@@ -139,6 +139,10 @@ impl McpTool for CtxAgentTool {
                         "enum": ["question", "offer", "handoff", "answer", "finding"],
                         "description": "send/reply: message type (required for send; reply defaults to answer); inbox: filter"
                     },
+                    "accept": {
+                        "type": "boolean",
+                        "description": "reply to a handoff: true takes it over, false declines it"
+                    },
                     "to_instance": {
                         "type": "string",
                         "description": "send/reply with to_agent: the recipient's instance id; needed when several instances announce the same agent name"
@@ -367,6 +371,7 @@ impl McpTool for CtxAgentTool {
                             .collect()
                     })
                     .unwrap_or_default(),
+                accept: args.get("accept").and_then(Value::as_bool),
             };
             let text = crate::tools::ctx_agent::handle_message(
                 &action,

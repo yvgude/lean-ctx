@@ -55,18 +55,6 @@ pub enum HiveBusMode {
     Off,
 }
 
-/// How this engine grants a sealed vault key to a newly approved recipient.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HiveSealedGrants {
-    /// Show the recipient's fingerprint and grant only after the member
-    /// confirmed it (the only guard against a dishonest Hive operator).
-    #[default]
-    Confirm,
-    /// Grant to every recipient Hive lists (trusts Hive with the list).
-    Auto,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HiveConfig {
@@ -94,8 +82,6 @@ pub struct HiveConfig {
     /// the lease licenses (`hive connect` asks, `hive runtime install`
     /// records it). Nothing installs it without this consent.
     pub runtime_consent: bool,
-    /// Sealed repos: `confirm` (default) or `auto`.
-    pub sealed_grants: HiveSealedGrants,
     /// Worker mode: local caps that only tighten the server opt-in budget.
     pub worker: super::worker::HiveWorkerConfig,
 }
@@ -113,7 +99,6 @@ impl Default for HiveConfig {
             bus: HiveBusMode::Auto,
             vault_labels: true,
             runtime_consent: false,
-            sealed_grants: HiveSealedGrants::Confirm,
             worker: super::worker::HiveWorkerConfig::default(),
         }
     }
@@ -257,15 +242,6 @@ pub fn schema_section() -> crate::core::config::schema::SectionSchema {
                 serde_json::json!(defaults.runtime_consent),
                 "You agreed to install the proprietary Intelligence runtime your plan licenses (set by `hive connect` or `hive runtime install`).",
                 None,
-            ),
-        ),
-        (
-            "sealed_grants",
-            key(
-                "string",
-                serde_json::json!("confirm"),
-                "Sealed vaults: grant the vault key to a newly approved instance only after you confirmed its fingerprint (confirm), or to every instance Hive lists (auto).",
-                Some(&["confirm", "auto"]),
             ),
         ),
         (

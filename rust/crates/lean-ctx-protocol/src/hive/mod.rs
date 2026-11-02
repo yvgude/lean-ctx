@@ -26,7 +26,6 @@
 //!   stay covered by the signature.
 
 pub mod anchor;
-pub mod automerge;
 pub mod bus;
 pub mod codegraph;
 pub mod ctxpkg;
@@ -44,9 +43,7 @@ pub mod policy;
 pub mod profiles;
 pub mod receipts_v2;
 pub mod root_cert;
-pub mod sealed;
 pub mod status;
-pub mod swarm;
 pub mod tasks;
 pub mod telemetry;
 pub mod vault;

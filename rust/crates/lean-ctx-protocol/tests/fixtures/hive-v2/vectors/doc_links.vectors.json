@@ -1,0 +1,53 @@
+{
+  "export": [
+    {
+      "from_page": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "in": "[types](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgb#types-and-bodies)",
+      "out": "[types](knowledge-items.md#types-and-bodies)"
+    },
+    {
+      "from_page": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "in": "[log](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgc)",
+      "out": "[log](../architecture/place-event-store.md)"
+    },
+    {
+      "from_page": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "in": "[gone](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgd)",
+      "out": "gone"
+    }
+  ],
+  "pages": {
+    "n_aaaaaaaaaaaaaaaaaaaaaadpga": "knowledge/wiki",
+    "n_aaaaaaaaaaaaaaaaaaaaaadpgb": "knowledge/knowledge-items",
+    "n_aaaaaaaaaaaaaaaaaaaaaadpgc": "architecture/place-event-store"
+  },
+  "rule": "stored bodies link pages as hive:n_<26> with an optional #<heading-slug>. On write /<slug>[#frag] naming a live page becomes hive:<id>[#frag]; an unknown slug stays as written and is listed dangling; other URLs are untouched. On export hive:<id>[#frag] becomes the path of the target's <slug>.md relative to the exporting page's <slug>.md; a link to no live page keeps its text only.",
+  "write": [
+    {
+      "dangling": [],
+      "from_page": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "in": "[types](/knowledge/knowledge-items#types-and-bodies)",
+      "out": "[types](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgb#types-and-bodies)"
+    },
+    {
+      "dangling": [],
+      "from_page": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "in": "[log](/architecture/place-event-store)",
+      "out": "[log](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgc)"
+    },
+    {
+      "dangling": [
+        "/no/such-page"
+      ],
+      "from_page": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "in": "[x](/no/such-page)",
+      "out": "[x](/no/such-page)"
+    },
+    {
+      "dangling": [],
+      "from_page": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "in": "[web](https://leanctx.com/)",
+      "out": "[web](https://leanctx.com/)"
+    }
+  ]
+}

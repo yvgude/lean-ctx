@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.leanctx.com/hive-v2/schemas/event.schema.json",
   "title": "leanctx.hive.event/v2 envelope with server fields (SPEC-CONTRACT-SERVER §3.5–§3.8)",
-  "description": "Signed fields: every member except body, ck_wrapped, signature and the server fields (seq, received_at, provenance, review_state, reviewed_by, review_id, batch_id, purged, revoked_signer, legacy). Shape refusals map to `invalid_event` `reason: shape`.",
+  "description": "Signed fields: every member except body, signature and the server fields (seq, received_at, provenance, batch_id, purged, revoked_signer, legacy). Shape refusals map to `invalid_event` `reason: shape`.",
   "type": "object",
   "required": [
     "schema",
@@ -56,26 +56,23 @@
         "finding",
         "episode",
         "reference",
-        "goal",
-        "result"
+        "page",
+        "section",
+        "note"
       ]
     },
     "body_commit": {
       "$ref": "common.schema.json#/$defs/hex64"
-    },
-    "epoch": {
-      "$ref": "common.schema.json#/$defs/u32"
-    },
-    "ck_wrapped": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9_-]{96}$",
-      "description": "base64url (no padding) of nonce(24) ‖ ciphertext(32) ‖ tag(16)"
     },
     "hlc": {
       "$ref": "#/$defs/hlc"
     },
     "causal_base": {
       "$ref": "common.schema.json#/$defs/u64"
+    },
+    "base_event": {
+      "$ref": "common.schema.json#/$defs/event_id",
+      "description": "C0 2.2 CAS: the head of the target the edit started from (field.set, retract, restore only); signed like every envelope member"
     },
     "actor": {
       "$ref": "#/$defs/actor"
@@ -205,15 +202,6 @@
     "provenance": {
       "$ref": "common.schema.json#/$defs/provenance"
     },
-    "review_state": {
-      "$ref": "common.schema.json#/$defs/review_state"
-    },
-    "reviewed_by": {
-      "$ref": "common.schema.json#/$defs/reviewed_by"
-    },
-    "review_id": {
-      "$ref": "common.schema.json#/$defs/review_id"
-    },
     "batch_id": {
       "$ref": "common.schema.json#/$defs/batch_id"
     },
@@ -328,11 +316,6 @@
               "required": [
                 "cause"
               ]
-            },
-            {
-              "required": [
-                "epoch"
-              ]
             }
           ]
         }
@@ -376,33 +359,6 @@
       }
     },
     {
-      "$comment": "Swarm-only node types.",
-      "if": {
-        "properties": {
-          "node_type": {
-            "enum": [
-              "goal",
-              "result"
-            ]
-          }
-        },
-        "required": [
-          "node_type"
-        ]
-      },
-      "then": {
-        "properties": {
-          "place": {
-            "properties": {
-              "kind": {
-                "const": "swarm"
-              }
-            }
-          }
-        }
-      }
-    },
-    {
       "$comment": "Body present unless purged (purged: true → body absent).",
       "if": {
         "properties": {
@@ -428,326 +384,377 @@
       }
     },
     {
-      "$comment": "Sealed places (epoch present): ck_wrapped and flags required, body is ciphertext. Plain places: no ck_wrapped, body per op.",
       "if": {
-        "required": [
-          "epoch"
-        ]
-      },
-      "then": {
-        "required": [
-          "ck_wrapped",
-          "flags"
-        ],
         "properties": {
-          "body": {
-            "$ref": "#/$defs/sealed_body"
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "fact"
           }
         }
       },
-      "else": {
-        "not": {
-          "required": [
-            "ck_wrapped"
-          ]
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/fact_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "decision"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/decision_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "gotcha"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/gotcha_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "procedure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/procedure_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "finding"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/finding_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "episode"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/episode_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "reference"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/reference_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "field.set"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/field_set_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "edge.add"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/edge_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "retract",
+              "restore"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/reason_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "purge"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "#/$defs/purge_body"
+          }
+        }
+      }
+    },
+    {
+      "$comment": "A plaintext body with a `legacy` member only from actor.kind = legacy_import (§3.7 R70: native `legacy` refused `shape`).",
+      "if": {
+        "properties": {
+          "body": {
+            "required": [
+              "legacy"
+            ]
+          }
         },
-        "allOf": [
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "node.add"
-                },
-                "node_type": {
-                  "const": "fact"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/fact_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "node.add"
-                },
-                "node_type": {
-                  "const": "decision"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/decision_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "node.add"
-                },
-                "node_type": {
-                  "const": "gotcha"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/gotcha_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "node.add"
-                },
-                "node_type": {
-                  "const": "procedure"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/procedure_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "node.add"
-                },
-                "node_type": {
-                  "const": "finding"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/finding_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "node.add"
-                },
-                "node_type": {
-                  "const": "episode"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/episode_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "node.add"
-                },
-                "node_type": {
-                  "const": "reference"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/reference_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "node.add"
-                },
-                "node_type": {
-                  "const": "goal"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/goal_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "node.add"
-                },
-                "node_type": {
-                  "const": "result"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/result_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "field.set"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/field_set_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "edge.add"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/edge_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "enum": [
-                    "retract",
-                    "restore"
-                  ]
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/reason_body"
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "op": {
-                  "const": "purge"
-                }
-              }
-            },
-            "then": {
-              "properties": {
-                "body": {
-                  "$ref": "#/$defs/purge_body"
-                }
-              }
-            }
-          },
-          {
-            "$comment": "A plaintext body with a `legacy` member only from actor.kind = legacy_import (§3.7 R70: native `legacy` refused `shape`).",
-            "if": {
-              "properties": {
-                "body": {
-                  "required": [
-                    "legacy"
-                  ]
-                }
-              },
-              "required": [
-                "body"
-              ]
-            },
-            "then": {
-              "properties": {
-                "actor": {
-                  "properties": {
-                    "kind": {
-                      "const": "legacy_import"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          {
-            "$comment": "field.set of legacy.doc_index only by legacy_import.",
-            "if": {
-              "properties": {
-                "body": {
-                  "properties": {
-                    "field": {
-                      "const": "legacy.doc_index"
-                    }
-                  },
-                  "required": [
-                    "field"
-                  ]
-                }
-              },
-              "required": [
-                "body"
-              ]
-            },
-            "then": {
-              "properties": {
-                "actor": {
-                  "properties": {
-                    "kind": {
-                      "const": "legacy_import"
-                    }
-                  }
-                }
+        "required": [
+          "body"
+        ]
+      },
+      "then": {
+        "properties": {
+          "actor": {
+            "properties": {
+              "kind": {
+                "const": "legacy_import"
               }
             }
           }
+        }
+      }
+    },
+    {
+      "$comment": "field.set of legacy.doc_index only by legacy_import.",
+      "if": {
+        "properties": {
+          "body": {
+            "properties": {
+              "field": {
+                "const": "legacy.doc_index"
+              }
+            },
+            "required": [
+              "field"
+            ]
+          }
+        },
+        "required": [
+          "body"
         ]
+      },
+      "then": {
+        "properties": {
+          "actor": {
+            "properties": {
+              "kind": {
+                "const": "legacy_import"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C0 2.2: base_event only on field.set, retract and restore",
+      "if": {
+        "required": [
+          "base_event"
+        ]
+      },
+      "then": {
+        "properties": {
+          "op": {
+            "enum": [
+              "field.set",
+              "retract",
+              "restore"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C0 2.2: doc node types are vault-only",
+      "if": {
+        "properties": {
+          "node_type": {
+            "enum": [
+              "page",
+              "section",
+              "note"
+            ]
+          }
+        },
+        "required": [
+          "node_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "place": {
+            "properties": {
+              "kind": {
+                "const": "vault"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "$comment": "C0 2.2: plain bodies per doc node type",
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "page"
+          }
+        },
+        "required": [
+          "op",
+          "node_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "docs.draft.schema.json#/$defs/page_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "section"
+          }
+        },
+        "required": [
+          "op",
+          "node_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "docs.draft.schema.json#/$defs/section_body"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "node.add"
+          },
+          "node_type": {
+            "const": "note"
+          }
+        },
+        "required": [
+          "op",
+          "node_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "$ref": "docs.draft.schema.json#/$defs/note_body"
+          }
+        }
       }
     }
   ],
@@ -852,7 +859,7 @@
             "import_ref": {
               "type": "string",
               "maxLength": 200,
-              "pattern": "^(rev:[0-9a-f-]{36}:[0-9]{1,10}#[0-9]{1,6}|draft:[0-9a-f-]{36}#[0-9]{1,6}|put:[0-9a-f-]{36}:[0-9A-Za-z_-]{1,64}#[0-9]{1,6}|task:[0-9a-f-]{36}#[0-9]{1,6}|swarm:[0-9a-f-]{36}:[0-9a-f-]{36})$"
+              "pattern": "^(rev:[0-9a-f-]{36}:[0-9]{1,10}#[0-9]{1,6}|draft:[0-9a-f-]{36}#[0-9]{1,6}|put:[0-9a-f-]{36}:[0-9A-Za-z_-]{1,64}#[0-9]{1,6}|task:[0-9a-f-]{36}#[0-9]{1,6})$"
             },
             "instance_id": {
               "$ref": "common.schema.json#/$defs/uuid"
@@ -876,8 +883,6 @@
             "person_action",
             "revert",
             "export",
-            "review",
-            "conductor",
             "retention",
             "moderation",
             "legacy_import"
@@ -886,34 +891,6 @@
         "id": {
           "type": "string",
           "pattern": "^[A-Za-z0-9_:.-]{1,128}$"
-        },
-        "epoch": {
-          "$ref": "common.schema.json#/$defs/u64"
-        }
-      },
-      "if": {
-        "properties": {
-          "kind": {
-            "const": "conductor"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "id",
-          "epoch"
-        ],
-        "properties": {
-          "id": {
-            "$ref": "common.schema.json#/$defs/worker_id"
-          }
-        }
-      },
-      "else": {
-        "not": {
-          "required": [
-            "epoch"
-          ]
         }
       }
     },
@@ -1166,6 +1143,10 @@
         },
         "legacy": {
           "$ref": "#/$defs/legacy_node"
+        },
+        "anchors": {
+          "$ref": "#/$defs/anchors",
+          "$comment": "C0 2.2: decisions get anchors (re-checked like claims, knowledge state outdated)"
         },
         "body_nonce": {
           "$ref": "#/$defs/nonce"
@@ -1479,129 +1460,6 @@
         }
       }
     },
-    "goal_body": {
-      "type": "object",
-      "required": [
-        "title",
-        "text",
-        "acceptance",
-        "kind",
-        "parent",
-        "criterion_id",
-        "order",
-        "body_nonce"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "title": {
-          "type": "string",
-          "minLength": 4,
-          "maxLength": 120
-        },
-        "text": {
-          "type": "string",
-          "maxLength": 2000
-        },
-        "acceptance": {
-          "type": "array",
-          "maxItems": 10,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300
-          }
-        },
-        "kind": {
-          "enum": [
-            "root",
-            "subgoal",
-            "task",
-            "synthesis"
-          ]
-        },
-        "parent": {
-          "anyOf": [
-            {
-              "$ref": "common.schema.json#/$defs/node_id"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "criterion_id": {
-          "anyOf": [
-            {
-              "$ref": "common.schema.json#/$defs/criterion_id"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "order": {
-          "$ref": "common.schema.json#/$defs/u16"
-        },
-        "body_nonce": {
-          "$ref": "#/$defs/nonce"
-        }
-      },
-      "if": {
-        "properties": {
-          "kind": {
-            "const": "root"
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "parent": {
-            "type": "null"
-          }
-        }
-      },
-      "else": {
-        "properties": {
-          "parent": {
-            "$ref": "common.schema.json#/$defs/node_id"
-          }
-        }
-      }
-    },
-    "result_body": {
-      "type": "object",
-      "required": [
-        "summary",
-        "artefacts",
-        "goal",
-        "usage",
-        "body_nonce"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "summary": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000
-        },
-        "artefacts": {
-          "type": "array",
-          "maxItems": 20,
-          "items": {
-            "$ref": "common.schema.json#/$defs/artefact"
-          }
-        },
-        "goal": {
-          "$ref": "common.schema.json#/$defs/node_id"
-        },
-        "usage": {
-          "$ref": "common.schema.json#/$defs/usage"
-        },
-        "body_nonce": {
-          "$ref": "#/$defs/nonce"
-        }
-      }
-    },
     "field_set_body": {
       "type": "object",
       "required": [
@@ -1612,7 +1470,7 @@
       "additionalProperties": false,
       "properties": {
         "field": {
-          "$comment": "Union of the mutable fields of §3.7; the per-type check needs the folded node (server/engine).",
+          "$comment": "Union of the mutable fields of §3.7 and C0 2.2 (page, section, note); the per-type check needs the folded node (server/engine).",
           "enum": [
             "evidence",
             "applies_to",
@@ -1634,7 +1492,15 @@
             "acceptance",
             "legacy.doc_index",
             "anchors",
-            "tags"
+            "tags",
+            "slug",
+            "type",
+            "description",
+            "drift",
+            "body",
+            "order",
+            "covers",
+            "resolved_by"
           ]
         },
         "value": true,
@@ -1658,7 +1524,15 @@
         ],
         "properties": {
           "value": {
-            "$ref": "#/$defs/anchors"
+            "$comment": "code anchors on claims and decisions, doc anchors (file:, dir:, glob:, sym:) on pages; the per-type check needs the folded node",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/anchors"
+              },
+              {
+                "$ref": "docs.draft.schema.json#/$defs/doc_anchors"
+              }
+            ]
           }
         }
       },
@@ -1689,9 +1563,8 @@
             "derived_from",
             "part_of",
             "answers",
-            "child_of",
-            "result_of",
-            "blocked_by"
+            "links_to",
+            "about"
           ]
         },
         "from": {
@@ -1881,22 +1754,6 @@
         }
       }
     },
-    "sealed_body": {
-      "type": "object",
-      "required": [
-        "ct",
-        "nonce"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "ct": {
-          "$ref": "common.schema.json#/$defs/base64url"
-        },
-        "nonce": {
-          "$ref": "common.schema.json#/$defs/hex48"
-        }
-      }
-    },
     "code_anchor": {
       "description": "CodeAnchorV1 (lead addition 24.10.): ref file:<path> or sym:<path>::<symbol>; digest = sha256 hex of the anchored content (file bytes, or the symbol's source span); commit = the git commit the digest was taken at; verified_at = when an engine last re-anchored it",
       "type": "object",
@@ -1991,9 +1848,6 @@
           "items": {
             "type": "object"
           }
-        },
-        "conversion": {
-          "$ref": "#/$defs/conversion"
         }
       }
     },
@@ -2009,7 +1863,7 @@
         "results": {
           "type": "array",
           "items": {
-            "$ref": "swarm.schema.json#/$defs/event_status"
+            "$ref": "#/$defs/event_status"
           }
         },
         "epoch": {
@@ -2020,6 +1874,173 @@
         }
       }
     },
+    "event_status": {
+      "type": "object",
+      "required": [
+        "event_id",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "$ref": "common.schema.json#/$defs/event_id"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "held",
+            "duplicate",
+            "refused"
+          ]
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "retry_after_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "field": {
+          "type": "string",
+          "pattern": "^(/[^/]+)+$",
+          "description": "invalid_event reason shape: JSON Pointer (RFC 6901) of the first failing member, e.g. /body/statement; a missing required member is named by its own pointer"
+        },
+        "head": {
+          "$ref": "common.schema.json#/$defs/event_id",
+          "description": "C0 2.2 stale_base: the target's head event"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "accepted"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "seq"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "duplicate"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "seq"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "refused"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "code"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "retract_rate_limited",
+                  "rate_limited"
+                ]
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "required": [
+              "retry_after_s"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "invalid_event"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        {
+          "$comment": "shape refusals name the failing member",
+          "if": {
+            "properties": {
+              "code": {
+                "const": "invalid_event"
+              },
+              "reason": {
+                "const": "shape"
+              }
+            },
+            "required": [
+              "code",
+              "reason"
+            ]
+          },
+          "then": {
+            "required": [
+              "field"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "stale_base"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "required": [
+              "head"
+            ]
+          }
+        }
+      ],
+      "description": "per-event push result (E5): refusals carry code (and reason for invalid_event: shape, use_restore, target_state, ...); a rate-limited event (retract_rate_limited, rate_limited) carries retry_after_s and the batch continues with the next event"
+    },
     "tags": {
       "type": "array",
       "maxItems": 16,
@@ -2027,176 +2048,6 @@
       "items": {
         "type": "string",
         "pattern": "^[a-z0-9-]{1,32}$"
-      }
-    },
-    "conversion": {
-      "description": "E5 batch member of a conversion push (R59, R90): the lease holder's re-pushed events cover original seqs from_seq..to_seq (v2_plain) of the vault",
-      "type": "object",
-      "required": [
-        "vault",
-        "source"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "vault": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 64
-        },
-        "source": {
-          "enum": [
-            "legacy",
-            "v2_plain"
-          ]
-        },
-        "from_seq": {
-          "$ref": "common.schema.json#/$defs/u64"
-        },
-        "to_seq": {
-          "$ref": "common.schema.json#/$defs/u64"
-        }
-      }
-    },
-    "conversion_lease_request": {
-      "description": "E38a POST /v1/vaults/{id}/conversion/lease",
-      "type": "object",
-      "required": [
-        "source"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "source": {
-          "enum": [
-            "legacy",
-            "v2_plain"
-          ]
-        }
-      }
-    },
-    "conversion_lease_response": {
-      "description": "E38a answer: 10 min, renewed by repeating; conversion_from_seq only for v2_plain",
-      "type": "object",
-      "required": [
-        "lease_instance",
-        "expires_at",
-        "source"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "lease_instance": {
-          "type": "string",
-          "pattern": "^inst_[0-9a-f]{32}$"
-        },
-        "expires_at": {
-          "$ref": "common.schema.json#/$defs/ms"
-        },
-        "source": {
-          "enum": [
-            "legacy",
-            "v2_plain"
-          ]
-        },
-        "conversion_from_seq": {
-          "$ref": "common.schema.json#/$defs/u64"
-        }
-      },
-      "if": {
-        "properties": {
-          "source": {
-            "const": "v2_plain"
-          }
-        }
-      },
-      "then": {
-        "required": [
-          "conversion_from_seq"
-        ]
-      },
-      "else": {
-        "not": {
-          "required": [
-            "conversion_from_seq"
-          ]
-        }
-      }
-    },
-    "conversion_done_request": {
-      "description": "E38 source v2_plain (R90): Ed25519 by the instance key over signing_input_without_signature(\"leanctx.hive.conversion_done.v1\\n\", body); paged in parts of <= 10 000 seq_digests; the legacy form (R74) comes with migrate-v4",
-      "type": "object",
-      "required": [
-        "source",
-        "events_written",
-        "last_seq",
-        "seq_digests",
-        "part",
-        "parts",
-        "key_id",
-        "signature"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "source": {
-          "const": "v2_plain"
-        },
-        "events_written": {
-          "$ref": "common.schema.json#/$defs/u64"
-        },
-        "last_seq": {
-          "$ref": "common.schema.json#/$defs/u64"
-        },
-        "part": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "parts": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "seq_digests": {
-          "type": "array",
-          "maxItems": 10000,
-          "items": {
-            "type": "object",
-            "required": [
-              "seq",
-              "envelope_digest"
-            ],
-            "additionalProperties": false,
-            "properties": {
-              "seq": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "envelope_digest": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
-              }
-            }
-          },
-          "description": "every seq <= conversion_from_seq the lease holder converts: not purged and not an op=purge tombstone (tombstones are server-only and never copied, R136); a seq the engine cannot verify is not re-signed, the conversion then waits for another member after the lease expires"
-        },
-        "key_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{16}$"
-        },
-        "signature": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{128}$"
-        }
-      }
-    },
-    "conversion_done_part_response": {
-      "description": "E38 202 after an earlier part (the last part answers 204 without a body)",
-      "type": "object",
-      "required": [
-        "next_part"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "next_part": {
-          "type": "integer",
-          "minimum": 2
-        }
       }
     }
   }

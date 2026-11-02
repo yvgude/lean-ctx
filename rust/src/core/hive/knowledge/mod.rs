@@ -13,7 +13,6 @@ pub mod draft;
 pub mod import_draft;
 pub mod learn;
 pub mod pull;
-pub mod review;
 pub mod screening;
 pub mod states;
 

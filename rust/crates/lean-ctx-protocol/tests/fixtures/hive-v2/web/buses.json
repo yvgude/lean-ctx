@@ -14,8 +14,7 @@
         "name": "payments",
         "unread": 2,
         "present": 1,
-        "control": "none",
-        "sealed": false
+        "control": "none"
       },
       {
         "kind": "v",
@@ -25,19 +24,7 @@
         "name": "card-vault",
         "unread": 0,
         "present": 0,
-        "control": "held",
-        "sealed": true
-      },
-      {
-        "kind": "s",
-        "ws": "acme",
-        "id": "checkout-latency",
-        "address": "~checkout-latency",
-        "name": "Checkout latency below 300 ms",
-        "unread": 5,
-        "present": 2,
-        "control": "none",
-        "sealed": false
+        "control": "held"
       }
     ]
   },

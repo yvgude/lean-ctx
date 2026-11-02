@@ -11,7 +11,8 @@ use lean_ctx_protocol::ValidationError;
 use lean_ctx_protocol::hive::tasks::{
     TASK_ACK_SCHEMA, TASK_CLAIM_ACK_SCHEMA, TaskAckV1, TaskClaimAckV1, TaskClaimRenewRequestV1,
     TaskClaimRequestV1, TaskListV1, TaskProposeRequestV1, TaskReleaseRequestV1,
-    TaskResultRequestV1, TaskState, TaskUpdateRequestV1, TaskV1, validate_role,
+    TaskResultRequestV1, TaskState, TaskUpdateRequestV1, TaskV1, TaskVerifyRequestV1,
+    validate_role,
 };
 
 /// `GET …/tasks` filters.
@@ -186,6 +187,22 @@ impl TasksApi<'_> {
         let answer = self
             .client
             .post(&self.path(&format!("/{number}/result")), &encode(request)?)?;
+        self.ack(answer, Some(number))
+    }
+
+    /// C0 2.2 E48; `idempotency_key` makes a resent verdict one verdict.
+    pub(super) fn verify(
+        &self,
+        number: u64,
+        request: &TaskVerifyRequestV1,
+        idempotency_key: &str,
+    ) -> Result<TaskAckV1, HiveError> {
+        request.validate().map_err(|e| invalid(&e))?;
+        let answer = self.client.post_idempotent(
+            &self.path(&format!("/{number}/verify")),
+            &encode(request)?,
+            idempotency_key,
+        )?;
         self.ack(answer, Some(number))
     }
 }

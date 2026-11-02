@@ -26,7 +26,6 @@ fn lease(rights: Vec<HiveRight>, receipts: Option<bool>) -> HiveLeaseV1 {
         plan: HivePlan::Enterprise,
         seats_limit: 25,
         rights,
-        policy_signer_keys: vec![],
         issued_at: UtcTimestamp::new("2026-10-20T12:00:00Z").unwrap(),
         expires_at: UtcTimestamp::new("2026-10-21T12:00:00Z").unwrap(),
         grace_until: UtcTimestamp::new("2026-10-27T12:00:00Z").unwrap(),

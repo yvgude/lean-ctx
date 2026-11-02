@@ -6,7 +6,12 @@
       "op": "replace",
       "path": "/body",
       "value": {
-        "goal": "g_aaaaaaaaaaaaaaaaaaaaaaaaaq"
+        "usage": {
+          "source": "cli_summary",
+          "tasks": 0,
+          "tokens": 64000,
+          "usd_cents": 14
+        }
       }
     }
   ],

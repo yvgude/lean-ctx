@@ -237,7 +237,6 @@ impl Place {
         Link {
             data_dir: self.data.path(),
             vault_id: PROJECT,
-            sealed: false,
             root: self.root.path(),
             via: Via::Origin(fake.origin.clone()),
             budget: BUDGET,
@@ -338,7 +337,7 @@ fn a_claimed_task_is_updated_renewed_and_submitted_under_its_claim() {
     assert!(requests[4].2.get("draft").is_none());
     assert_eq!(
         render_result_ack(&ack),
-        "Result submitted on task #7; a person or the review threshold decides on it."
+        "Result submitted on task #7; another agent checks it before it is done."
     );
 }
 
@@ -1193,9 +1192,7 @@ fn a_cli_claim_outlives_its_minutes_while_its_agent_works() {
 fn view_of(task: Value) -> TaskView {
     let task: TaskV1 = serde_json::from_value(task).unwrap();
     TaskView {
-        update_summaries: task.updates.iter().map(|u| u.summary.clone()).collect(),
         task,
-        content: None,
         held_until: None,
     }
 }

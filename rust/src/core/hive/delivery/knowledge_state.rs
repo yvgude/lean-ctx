@@ -42,7 +42,6 @@ impl State {
 pub struct Inputs<'a> {
     pub retracted: bool,
     pub purged: bool,
-    pub review_state: Option<&'a str>,
     pub evidence: Option<&'a str>,
     /// A decision's `status`.
     pub status: Option<&'a str>,
@@ -53,8 +52,7 @@ pub struct Inputs<'a> {
     pub contradicted: bool,
 }
 
-/// `(state, reason)`; the reason is `None` only for `verified`. A node
-/// without a server review state folds as confirmed, as delivery does.
+/// `(state, reason)`; the reason is `None` only for `verified`.
 pub fn of_inputs(i: &Inputs<'_>) -> (State, Option<&'static str>) {
     if i.retracted || i.purged {
         return (State::Rejected, Some("retracted"));
@@ -72,9 +70,6 @@ pub fn of_inputs(i: &Inputs<'_>) -> (State, Option<&'static str>) {
     }
     if i.contradicted {
         return (State::Conflicting, Some("contradicted"));
-    }
-    if i.review_state.is_some_and(|r| r != "confirmed") {
-        return (State::Provisional, Some("unconfirmed"));
     }
     if i.evidence != Some("observed") {
         return (State::Provisional, Some("not_observed"));
@@ -134,7 +129,6 @@ impl Index {
         of_inputs(&Inputs {
             retracted: node.retracted,
             purged: node.purged,
-            review_state: node.review_state.as_deref(),
             evidence: f("evidence"),
             status: (node.node_type == "decision")
                 .then(|| f("status"))
@@ -181,7 +175,6 @@ mod tests {
             let (state, reason) = of_inputs(&Inputs {
                 retracted: b("retracted"),
                 purged: b("purged"),
-                review_state: m["review_state"].as_str(),
                 evidence: m["evidence"].as_str(),
                 status: m["status"].as_str(),
                 anchor_state: m["anchor_state"].as_str(),
@@ -203,7 +196,6 @@ mod tests {
         Node {
             node_type: "fact".into(),
             fields: fields.as_object().cloned().unwrap(),
-            review_state: Some("confirmed".into()),
             ..Node::default()
         }
     }

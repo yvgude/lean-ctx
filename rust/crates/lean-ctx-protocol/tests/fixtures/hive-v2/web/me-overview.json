@@ -126,9 +126,6 @@
             ],
             "next_cursor": null
           },
-          "cockpit": {
-            "series": []
-          },
           "pilot_metrics": {
             "activation": {
               "first_engine_at": "2026-10-12T08:06:40Z",
@@ -283,9 +280,6 @@
           "enforcement": {
             "items": [],
             "next_cursor": null
-          },
-          "cockpit": {
-            "series": []
           },
           "pilot_metrics": null,
           "billing": null

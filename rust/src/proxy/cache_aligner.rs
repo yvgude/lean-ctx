@@ -560,7 +560,7 @@ pub(crate) fn apply_anthropic_relocate(doc: &mut Value) -> usize {
     result.fields
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 mod tests {
     use super::*;
 

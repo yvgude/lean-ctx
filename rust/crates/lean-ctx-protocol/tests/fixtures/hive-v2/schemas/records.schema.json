@@ -4,7 +4,7 @@
   "title": "Snapshot manifest (E2), segment record stream (E3), tail (E4), trust (E7) (SPEC-CONTRACT-SERVER §3.13, §3.14, RESOLUTIONS R48, R52, R59, R90)",
   "$defs": {
     "manifest": {
-      "description": "leanctx.hive.snapshot/v1, signed by the Hive key of purpose snapshot, domain leanctx.hive.snapshot.v1\\n, over the manifest without signature; id_salt only for non-sealed places",
+      "description": "leanctx.hive.snapshot/v1, signed by the Hive key of purpose snapshot, domain leanctx.hive.snapshot.v1\\n, over the manifest without signature",
       "type": "object",
       "required": ["schema", "place", "rev", "seq", "epoch", "created_at", "server_time", "segments", "key_id", "signature"],
       "additionalProperties": false,
@@ -15,7 +15,6 @@
         "seq": { "$ref": "common.schema.json#/$defs/u64" },
         "id_salt": { "$ref": "common.schema.json#/$defs/hex64" },
         "epoch": { "$ref": "common.schema.json#/$defs/u64" },
-        "scope": { "type": "string", "pattern": "^subtree:g_[a-z2-7]{26}$", "description": "swarm ad-hoc manifests only" },
         "created_at": { "$ref": "common.schema.json#/$defs/ms" },
         "server_time": { "$ref": "common.schema.json#/$defs/ms" },
         "segments": {
@@ -36,19 +35,16 @@
       }
     },
     "signed_envelope": {
-      "description": "the signed envelope members plus signature (never body, ck_wrapped or server fields)",
+      "description": "the signed envelope members plus signature (never body or server fields)",
       "type": "object", "required": ["schema", "event_id", "place", "op", "key_id", "signature"],
-      "not": { "anyOf": [{ "required": ["body"] }, { "required": ["ck_wrapped"] }, { "required": ["seq"] }, { "required": ["review_state"] }] }
+      "not": { "anyOf": [{ "required": ["body"] }, { "required": ["seq"] }] }
     },
     "server_fields": {
-      "type": "object", "required": ["seq", "received_at", "provenance", "review_state", "reviewed_by", "batch_id"], "additionalProperties": false,
+      "type": "object", "required": ["seq", "received_at", "provenance", "batch_id"], "additionalProperties": false,
       "properties": {
         "seq": { "type": "integer", "minimum": 1 },
         "received_at": { "$ref": "common.schema.json#/$defs/ms" },
         "provenance": { "$ref": "common.schema.json#/$defs/provenance" },
-        "review_state": { "$ref": "common.schema.json#/$defs/review_state" },
-        "reviewed_by": { "$ref": "common.schema.json#/$defs/reviewed_by" },
-        "review_id": { "$ref": "common.schema.json#/$defs/review_id" },
         "batch_id": { "$ref": "common.schema.json#/$defs/batch_id" },
         "purged": { "type": "boolean" },
         "revoked_signer": { "type": "boolean" },
@@ -61,15 +57,8 @@
       "oneOf": [
         { "type": "object", "required": ["seq", "envelope", "server_fields", "body"], "additionalProperties": false,
           "properties": { "seq": { "type": "integer", "minimum": 1 }, "envelope": { "$ref": "#/$defs/signed_envelope" }, "server_fields": { "$ref": "#/$defs/server_fields" }, "body": { "type": "object" } } },
-        { "type": "object", "required": ["seq", "envelope", "server_fields", "sealed"], "additionalProperties": false,
-          "properties": { "seq": { "type": "integer", "minimum": 1 }, "envelope": { "$ref": "#/$defs/signed_envelope" }, "server_fields": { "$ref": "#/$defs/server_fields" },
-            "sealed": { "type": "object", "required": ["ct", "nonce", "ck_wrapped", "epoch"], "additionalProperties": false,
-              "properties": { "ct": { "$ref": "common.schema.json#/$defs/base64url" }, "nonce": { "$ref": "common.schema.json#/$defs/hex48" },
-                "ck_wrapped": { "$ref": "event.schema.json#/properties/ck_wrapped" }, "epoch": { "$ref": "common.schema.json#/$defs/u32" } } } } },
         { "type": "object", "required": ["seq", "envelope", "server_fields", "purged"], "additionalProperties": false,
           "properties": { "seq": { "type": "integer", "minimum": 1 }, "envelope": { "$ref": "#/$defs/signed_envelope" }, "server_fields": { "$ref": "#/$defs/server_fields" }, "purged": { "const": true } } },
-        { "type": "object", "required": ["seq", "withheld", "leaf"], "additionalProperties": false,
-          "properties": { "seq": { "type": "integer", "minimum": 1 }, "withheld": { "const": true }, "leaf": { "$ref": "#/$defs/leaf" } } },
         { "type": "object", "required": ["seq", "converted", "leaf"], "additionalProperties": false,
           "properties": { "seq": { "type": "integer", "minimum": 1 }, "converted": { "const": true }, "leaf": { "$ref": "#/$defs/leaf" } } }
       ]
@@ -102,13 +91,13 @@
       "additionalProperties": false,
       "properties": {
         "events": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/tail_event" } },
-        "withheld": { "type": "array", "items": { "type": "object", "required": ["seq"], "additionalProperties": false, "properties": { "seq": { "type": "integer", "minimum": 1 } } } },
+        "withheld": { "type": "array", "maxItems": 0, "description": "always empty: every stored event is delivered" },
         "released": { "type": "array", "items": { "$ref": "event.schema.json" } },
         "held_results": {
           "type": "array", "maxItems": 1000,
           "items": {
-            "type": "object", "required": ["event_id", "review_id", "status"], "additionalProperties": false,
-            "properties": { "event_id": { "$ref": "common.schema.json#/$defs/event_id" }, "review_id": { "$ref": "common.schema.json#/$defs/review_id" }, "status": { "enum": ["accepted", "rejected"] }, "seq": { "type": "integer", "minimum": 1 } },
+            "type": "object", "required": ["event_id", "status"], "additionalProperties": false,
+            "properties": { "event_id": { "$ref": "common.schema.json#/$defs/event_id" }, "status": { "enum": ["accepted", "rejected"] }, "seq": { "type": "integer", "minimum": 1 } },
             "if": { "properties": { "status": { "const": "accepted" } } }, "then": { "required": ["seq"] }, "else": { "not": { "required": ["seq"] } }
           }
         },
@@ -120,12 +109,12 @@
       }
     },
     "trust_response": {
-      "description": "E7 GET /v1/places/{p}/trust?since_rev=; scores are never sent; sealed places 409 sealed_plaintext",
+      "description": "E7 GET /v1/places/{p}/trust?since_rev=; scores are never sent",
       "type": "object", "required": ["trust_rev", "changes", "next_rev"], "additionalProperties": false,
       "properties": {
         "trust_rev": { "$ref": "common.schema.json#/$defs/u64" },
-        "changes": { "type": "array", "maxItems": 10000, "items": { "type": "object", "required": ["node_id", "bucket", "review_state", "reviewed_by"], "additionalProperties": false,
-          "properties": { "node_id": { "$ref": "common.schema.json#/$defs/node_id" }, "bucket": { "enum": ["high", "normal", "low"] }, "review_state": { "$ref": "common.schema.json#/$defs/review_state" }, "reviewed_by": { "$ref": "common.schema.json#/$defs/reviewed_by" } } } },
+        "changes": { "type": "array", "maxItems": 10000, "items": { "type": "object", "required": ["node_id", "bucket"], "additionalProperties": false,
+          "properties": { "node_id": { "$ref": "common.schema.json#/$defs/node_id" }, "bucket": { "enum": ["high", "normal", "low"] } } } },
         "next_rev": { "anyOf": [{ "$ref": "common.schema.json#/$defs/u64" }, { "type": "null" }] }
       }
     }

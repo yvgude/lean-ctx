@@ -18,16 +18,10 @@
 //! source text, no bodies, no digests (a hash of short code can be guessed).
 //! Paths follow the anchor rules and pass the same admission as anchors on
 //! the engine (restricted or secret files are dropped from the graph).
-//!
-//! A sealed vault sends the same [`CodeGraphV1`] only as `sealed`
-//! (content `leanctx.hive.code-graph/v1`, AAD
-//! `vault_id|0|epoch|content_schema`). Hive stores it opaquely; its
-//! `GraphV1` stays `409 sealed` and engines merge the graph locally.
 
 use serde::{Deserialize, Serialize};
 
 use super::anchor::validate_anchor_path;
-use super::sealed::SealedBlobV1;
 use super::{require_schema, validate_text};
 use crate::ValidationError;
 
@@ -143,7 +137,7 @@ pub struct CodeEdgeV1 {
     pub kind: CodeEdgeKind,
 }
 
-/// The engine's code graph of one repo (also the sealed content).
+/// The engine's code graph of one repo.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CodeGraphV1 {
@@ -204,34 +198,25 @@ impl CodeGraphV1 {
     }
 }
 
-/// `PUT …/code-graph`: exactly one of `graph` (clear) and `sealed`.
+/// `PUT …/code-graph`: the graph, in the clear.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CodeGraphPutV1 {
     pub schema: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub graph: Option<CodeGraphV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
+    pub graph: CodeGraphV1,
 }
 
 impl CodeGraphPutV1 {
     pub fn validate(&self) -> Result<(), ValidationError> {
         require_schema(&self.schema, CODE_GRAPH_PUT_SCHEMA)?;
-        match (&self.graph, &self.sealed) {
-            (Some(graph), None) => graph.validate(),
-            (None, Some(sealed)) => sealed.validate(),
-            _ => Err(ValidationError::new(
-                "a code graph upload carries exactly one of graph and sealed",
-            )),
-        }
+        self.graph.validate()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CodeGraphAckV1 {
     pub schema: String,
-    /// Stored counts; 0 for a sealed upload (Hive cannot count it).
+    /// Stored counts.
     pub nodes: u64,
     pub edges: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]

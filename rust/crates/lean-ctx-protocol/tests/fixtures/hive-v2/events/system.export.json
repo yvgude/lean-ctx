@@ -39,8 +39,6 @@
   },
   "provenance": "foreign",
   "received_at": 1792800014350,
-  "review_state": "confirmed",
-  "reviewed_by": "reviewer",
   "schema": "leanctx.hive.event/v2",
   "seq": 14,
   "signature": "c862b397f4c8a9207222f5893492c2fcf04488bd8e00eab0c86ba55de659408c7e5b57217227b6cd2de2e2691a1fe5e9be7782b62d8e0e0e9f0c9f54a444be0e",

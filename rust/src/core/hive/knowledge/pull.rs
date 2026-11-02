@@ -21,7 +21,7 @@ use crate::core::hive::mapping::{MapError, map_root};
 use crate::core::hive::outbox::{CHANNEL_KNOWLEDGE, Outbox};
 use crate::core::hive::vault::{VaultMap, VaultRecord};
 use lean_ctx_protocol::hive::knowledge::{
-    DraftProposalV1, KnowledgeRevisionV1, MAX_KNOWLEDGE_BODY_BYTES, ProposalAckV1, RevisionState,
+    KnowledgeRevisionV1, MAX_KNOWLEDGE_BODY_BYTES, ProposalAckV1, RevisionState,
 };
 use lean_ctx_protocol::hive::vault::OrgSaltV1;
 
@@ -37,9 +37,6 @@ pub struct SyncReport {
     pub drafts_failed: usize,
     /// `(ns/name, revision, facts loaded)` per project that moved.
     pub pulled: Vec<(String, u64, usize)>,
-    /// `(ns/name, revision)` per sealed project whose ready proposals this
-    /// engine merged (C0 1.9 §7).
-    pub merged_ready: Vec<(String, u64)>,
     pub problems: Vec<String>,
 }
 
@@ -148,16 +145,20 @@ pub fn sync(session: &Session, config: &HiveConfig, cwd_root: Option<&Path>) -> 
             report.problems.push(format!("{}: {error}", root.display()));
         }
     }
-    send_drafts(&mut resolver, &mut report);
+    // A C0 2.0 Hive takes no 1.x draft: capture sends the same knowledge
+    // as signed events, so a draft still queued from before is dropped.
+    if crate::core::hive::bus::relay_v2::speaks_v2(&session.store) {
+        drop_drafts(&data);
+    } else {
+        send_drafts(&mut resolver, &mut report);
+    }
     pull_all(&resolver, &mut report);
-    // 1.x proposal merges (§7) and fact states (J2) have no C0 2.0 route:
-    // a 2.0 Hive decides through review items and folded maintenance events.
-    // Both are outbound and named in the sharing question: a "no" at
-    // connect keeps them off (`connect::declined`).
+    // 1.x fact states (J2) have no C0 2.0 route: a 2.0 Hive folds
+    // maintenance events. They are outbound and named in the sharing
+    // question: a "no" at connect keeps them off (`connect::declined`).
     if !crate::core::hive::bus::relay_v2::speaks_v2(&session.store)
         && !crate::core::hive::connect::declined(&session.store, &session.lease.lease.org_id)
     {
-        merge_ready_all(&resolver, &mut report);
         report_states(&resolver, &mut report);
     }
     let outbox = Outbox::at(&data);
@@ -172,6 +173,13 @@ pub fn sync(session: &Session, config: &HiveConfig, cwd_root: Option<&Path>) -> 
         session.store.record_error(&report.problems.join("; "));
     }
     report
+}
+
+fn drop_drafts(data: &Path) {
+    let outbox = Outbox::at(data);
+    for item in outbox.list(CHANNEL_KNOWLEDGE) {
+        let _ = outbox.remove(&item);
+    }
 }
 
 fn send_drafts(resolver: &mut Resolver<'_>, report: &mut SyncReport) {
@@ -214,30 +222,7 @@ fn send_drafts(resolver: &mut Resolver<'_>, report: &mut SyncReport) {
             item.payload = payload;
             let _ = outbox.update(&item);
         }
-        // A sealed project gets the draft sealed, with nothing readable
-        // outside; the queued item keeps the clear draft on this machine.
-        let wire = if record.sealed {
-            match sealed_draft(resolver.session, &record.vault_id, &queued_draft.draft) {
-                Ok(Some(draft)) => draft,
-                Ok(None) => {
-                    let _ = outbox.retry_later(
-                        &mut item,
-                        "sealed vault: waiting for the vault key",
-                        Some(3600),
-                        now,
-                    );
-                    continue;
-                }
-                Err(error) => {
-                    report.problems.push(format!("draft {}: {error}", item.id));
-                    let _ = outbox.retry_later(&mut item, &error.to_string(), Some(900), now);
-                    continue;
-                }
-            }
-        } else {
-            queued_draft.draft.clone()
-        };
-        let body = match serde_json::to_value(&wire) {
+        let body = match serde_json::to_value(&queued_draft.draft) {
             Ok(body) => body,
             Err(error) => {
                 let _ = outbox.fail(&mut item, &error.to_string());
@@ -306,71 +291,9 @@ fn send_drafts(resolver: &mut Resolver<'_>, report: &mut SyncReport) {
     }
 }
 
-/// The draft as a sealed project takes it: summary, body, sources and ops
-/// sealed under the current repo key; `None` while no key reached this
-/// instance or a rotation is due.
-fn sealed_draft(
-    session: &Session,
-    vault_id: &str,
-    clear: &DraftProposalV1,
-) -> Result<Option<DraftProposalV1>, HiveError> {
-    use crate::core::hive::sealed::{SealingKey, seal, sealing_key};
-    use lean_ctx_protocol::hive::knowledge::ContextPatchV1;
-    use lean_ctx_protocol::hive::sealed::{SEALED_PATCH_CONTENT_SCHEMA, SealedDraftContentV1};
-    let base_revision = clear.context_patch.base_revision;
-    let (epoch, key) = match sealing_key(session, vault_id, base_revision)? {
-        SealingKey::Ready(epoch, key) => (epoch, key),
-        SealingKey::Waiting => return Ok(None),
-        SealingKey::Rotating { required } => {
-            return Err(HiveError::Local(format!(
-                "sealed vault: the key moves to epoch {required} first (a member was removed)"
-            )));
-        }
-    };
-    let content = SealedDraftContentV1 {
-        schema: SEALED_PATCH_CONTENT_SCHEMA.into(),
-        summary: clear
-            .summary
-            .clone()
-            .ok_or_else(|| HiveError::Local("a queued draft without a summary".into()))?,
-        body: clear.body.clone(),
-        sources: clear.sources.clone(),
-        ops: clear.context_patch.ops.clone(),
-    };
-    content
-        .validate()
-        .map_err(|e| HiveError::Protocol(format!("sealed draft: {e}")))?;
-    let plaintext = zeroize::Zeroizing::new(
-        serde_json::to_vec(&content).map_err(|e| HiveError::Local(e.to_string()))?,
-    );
-    let blob = seal(
-        &key,
-        vault_id,
-        base_revision,
-        epoch,
-        SEALED_PATCH_CONTENT_SCHEMA,
-        &plaintext,
-    )?;
-    let draft = DraftProposalV1 {
-        summary: None,
-        body: None,
-        sources: Vec::new(),
-        context_patch: ContextPatchV1 {
-            base_revision,
-            ops: Vec::new(),
-            sealed: Some(blob),
-        },
-        ..clear.clone()
-    };
-    draft
-        .validate()
-        .map_err(|e| HiveError::Protocol(format!("sealed draft: {e}")))?;
-    Ok(Some(draft))
-}
-
 /// Rebase a queued draft onto `base` when it is newer. Returns `false` when
 /// every op is already in the base (nothing left to propose). A draft whose
-/// ops clash with the newer base keeps its old base; reviewers resolve it.
+/// ops clash with the newer base keeps its old base.
 fn rebase_onto(queued_draft: &mut QueuedDraft, base: &BaseRevision) -> bool {
     let patch = &mut queued_draft.draft.context_patch;
     if base.revision <= patch.base_revision {
@@ -404,28 +327,6 @@ fn pull_all(resolver: &Resolver<'_>, report: &mut SyncReport) {
     }
 }
 
-/// §7: sealed proposals that reached their threshold wait for an engine
-/// with `knowledge.merge`; this one merges them. Proposals adding a fact an
-/// agent here judged contradicting get an objection.
-fn merge_ready_all(resolver: &Resolver<'_>, report: &mut SyncReport) {
-    for record in resolver.map.vaults.values() {
-        let repo = format!("{}/{}", record.ns, record.name);
-        // An objection stops a threshold: it goes out before any merge.
-        if let Err(error) = super::review::object_contradicted(resolver.session, record) {
-            report.problems.push(format!("objections {repo}: {error}"));
-        }
-        let (merged, problems) = super::review::merge_ready(resolver.session, record);
-        if let Some(revision) = merged {
-            report.merged_ready.push((repo.clone(), revision));
-        }
-        for problem in problems {
-            report
-                .problems
-                .push(format!("ready proposals {repo}: {problem}"));
-        }
-    }
-}
-
 /// J2: tell Hive which facts of each base are in doubt here (sent only
 /// when that changed).
 fn report_states(resolver: &Resolver<'_>, report: &mut SyncReport) {
@@ -440,15 +341,6 @@ fn report_states(resolver: &Resolver<'_>, report: &mut SyncReport) {
             )),
         }
     }
-}
-
-/// Bring one project's base to Hive' newest revision (before a merge).
-pub(crate) fn refresh_project(
-    session: &Session,
-    data: &Path,
-    record: &VaultRecord,
-) -> Result<(), HiveError> {
-    pull_project(session, data, record).map(|_| ())
 }
 
 /// Pull one project; `Some((revision, facts loaded))` when it moved.
@@ -489,29 +381,9 @@ fn pull_project(
             "Hive delivered a revision that is not released".into(),
         ));
     }
-    let document = match (revision.document, revision.sealed) {
-        (Some(document), _) => document,
-        // Sealed: opened with the key of its epoch; without that key the
-        // revision waits (never a plaintext fallback).
-        (None, Some(blob)) => {
-            let Some(key) =
-                crate::core::hive::sealed::key_for_epoch(session, &record.vault_id, blob.epoch)?
-            else {
-                return Ok(None);
-            };
-            let plaintext =
-                crate::core::hive::sealed::open(&key, &record.vault_id, revision.revision, &blob)?;
-            let document: lean_ctx_protocol::hive::knowledge::ResearchContextDocumentV1 =
-                serde_json::from_slice(&plaintext)
-                    .map_err(|e| HiveError::Protocol(format!("sealed knowledge: {e}")))?;
-            // The plain document is validated with the revision; the sealed
-            // one only exists once opened, and gets the same checks then.
-            document
-                .validate()
-                .map_err(|e| HiveError::Protocol(format!("sealed knowledge: {e}")))?;
-            document
-        }
-        (None, None) => return Ok(None),
+    // `validate` refused a revision without its document.
+    let Some(document) = revision.document else {
+        return Ok(None);
     };
     if revision.revision == base.revision && document == base.document {
         if revision.quarantined_after != base.quarantined_after {
@@ -561,11 +433,7 @@ pub fn draft_listing(data: &Path) -> (Vec<DraftLine>, Vec<DraftLine>) {
             .map(|item| {
                 let summary = queued(&item.payload).map_or_else(
                     || "(unreadable)".to_string(),
-                    |q| {
-                        q.draft
-                            .summary
-                            .unwrap_or_else(|| "(sealed draft)".to_string())
-                    },
+                    |q| q.draft.summary.unwrap_or_default(),
                 );
                 (item.id, summary, item.last_error)
             })
@@ -614,7 +482,6 @@ mod tests {
                         .iter()
                         .map(|id| PatchOpV1::AddFact { fact: fact(id) })
                         .collect(),
-                    sealed: None,
                 },
                 session_ref: "ses_1".into(),
                 engine_screening: EngineScreeningV1 {

@@ -2,7 +2,7 @@
 //! Consent broker against the C0 2.0 consent fixtures and vectors
 //! (T-CONSENT-4 record integrity, T-CONSENT-7 coverage, enum = fixture).
 
-use super::broker::{Approval, BoundPresenceKey, Restart, verify_statement};
+use super::broker::{Approval, BoundPresenceKey, verify_statement};
 use super::channel::{is_agent_command, tty_preconditions};
 use super::*;
 use base64::Engine as _;
@@ -84,13 +84,11 @@ fn required_id(result: Result<Record, ConsentError>) -> String {
 use std::collections::BTreeMap;
 
 #[test]
-fn the_embedded_kinds_equal_the_fixture_and_the_enum() {
-    let path = format!(
-        "{}/crates/lean-ctx-protocol/tests/fixtures/hive-v2/enums/consent-kinds.json",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    assert_eq!(KINDS_JSON, std::fs::read_to_string(path).unwrap());
-    let listed: Vec<String> = fixture("enums/consent-kinds.json")["values"]
+fn the_embedded_kinds_equal_the_kinds_of_the_fixture() {
+    let hive = fixture("enums/consent-kinds.json");
+    let embedded: Value = serde_json::from_str(KINDS_JSON).unwrap();
+    assert_eq!(embedded, hive);
+    let listed: Vec<String> = hive["values"]
         .as_array()
         .unwrap()
         .iter()
@@ -118,9 +116,11 @@ fn the_embedded_kinds_equal_the_fixture_and_the_enum() {
     .map(|c| serde_json::to_value(c).unwrap())
     .collect();
     assert_eq!(ours, channels);
-    assert!(!Kind::ApiKeySet.answerable_on("web") && Kind::ProcedureConfirm.answerable_on("web"));
-    assert!(!Kind::ProcedureConfirm.answerable_on("cli"));
-    assert!(Kind::SwarmJoin.server_gated() && !Kind::LinkVault.server_gated());
+    assert!(!Kind::ApiKeySet.answerable_on("web") && Kind::LinkVault.answerable_on("web"));
+    for unknown in hive["after_3_12_0"].as_array().unwrap() {
+        assert_eq!(Kind::parse(unknown.as_str().unwrap()), None, "{unknown}");
+        assert!(serde_json::from_value::<Kind>(unknown.clone()).is_err());
+    }
 }
 
 #[test]
@@ -145,13 +145,10 @@ fn subjects_digest_to_the_vectors() {
 
 #[test]
 fn subjects_of_another_shape_are_refused() {
-    let mut isolation = case_subject(Kind::SwarmJoin);
+    let mut isolation = case_subject(Kind::LinkVault);
     isolation["isolation"] = "full".into();
-    assert!(check_subject(Kind::SwarmJoin, &isolation).is_err(), "R107");
-    assert!(check_subject(Kind::PledgeChange, &case_subject(Kind::SwarmJoin)).is_err());
-    let mut bad = case_subject(Kind::ReviewerEnable);
-    bad["reviewer_usd_cents_per_day"] = 99.into();
-    assert!(check_subject(Kind::ReviewerEnable, &bad).is_err());
+    assert!(check_subject(Kind::LinkVault, &isolation).is_err(), "R107");
+    assert!(check_subject(Kind::ApiKeySet, &case_subject(Kind::LinkVault)).is_err());
     let mut bad = case_subject(Kind::LinkVault);
     bad["target_vault"] = "acme/other".into();
     assert!(check_subject(Kind::LinkVault, &bad).is_err());
@@ -177,33 +174,73 @@ fn consent_ids_have_the_contract_shape() {
     assert!(!is_consent_id("cns_../../etc/passwd"));
 }
 
+/// The proof vectors pin the signing input rule and both signature
+/// algorithms.
 #[test]
-fn a_presence_proof_verifies_against_the_vector() {
-    let (_, bound) = presence_a();
+fn presence_proofs_verify_against_the_vectors() {
     let vectors = fixture("vectors/consent_proof.vectors.json");
-    let case = &vectors["cases"][0];
-    let proof = fixture(case["fixture"].as_str().unwrap());
-    assert_eq!(bound.key_id, proof["presence_key_id"]);
-    let record = Record {
-        consent_id: proof["consent_id"].as_str().unwrap().into(),
-        kind: Kind::SwarmJoin,
-        subject: proof["subject"].clone(),
-        subject_digest: proof["subject_digest"].as_str().unwrap().into(),
+    let (_, ed25519) = presence_a();
+    let key = &vectors["keys"]["presence_mac"];
+    let p256 = BoundPresenceKey {
+        alg: "p256_ecdsa_sha256".into(),
+        key_id: key["key_id"].as_str().unwrap().into(),
+        public_key: key["public_key"].as_str().unwrap().into(),
+    };
+    for case in vectors["cases"].as_array().unwrap() {
+        let bound = match case["key"].as_str() {
+            Some("presence_mac") => &p256,
+            _ => &ed25519,
+        };
+        let proof = fixture(case["fixture"].as_str().unwrap());
+        assert_eq!(bound.key_id, proof["presence_key_id"]);
+        let input = lean_ctx_protocol::hive::signing_input(
+            PROOF_DOMAIN,
+            &json!({
+                "consent_id": proof["consent_id"],
+                "kind": proof["kind"],
+                "subject_digest": proof["subject_digest"],
+                "approved_at": proof["approved_at"],
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(input.clone()).unwrap(),
+            case["signing_input"].as_str().unwrap()
+        );
+        let signature = proof["signature"].as_str().unwrap();
+        assert!(bound.verifies(&input, signature), "{}", bound.alg);
+        let mut tampered = input;
+        tampered.push(b' ');
+        assert!(!bound.verifies(&tampered, signature), "{}", bound.alg);
+    }
+}
+
+#[test]
+fn a_presence_proof_verifies_through_the_broker() {
+    let (signing, bound) = presence_a();
+    let subject = case_subject(Kind::LinkVault);
+    let approved_at = NOW + 60_000;
+    let mut record = Record {
+        consent_id: "cns_cdefgh234567abcd".into(),
+        kind: Kind::LinkVault,
+        subject_digest: subject_digest(&subject).unwrap(),
+        subject,
         created_at: NOW,
         expires_at: NOW + REQUEST_TTL_MS,
         state: State::Approved,
         channel: Some(Channel::OsPresence),
-        approved_at: proof["approved_at"].as_u64(),
-        proof: Some(Proof::Presence(PresenceSignature {
-            key_id: bound.key_id.clone(),
-            alg: "ed25519".into(),
-            signature: proof["signature"].as_str().unwrap().into(),
-        })),
+        approved_at: Some(approved_at),
+        proof: None,
     };
-    assert_eq!(
-        String::from_utf8(record.proof_input(record.approved_at.unwrap()).unwrap()).unwrap(),
-        case["signing_input"].as_str().unwrap()
-    );
+    record.proof = Some(Proof::Presence(PresenceSignature {
+        key_id: bound.key_id.clone(),
+        alg: "ed25519".into(),
+        signature: B64URL.encode(
+            signing
+                .sign(&record.proof_input(approved_at).unwrap())
+                .to_bytes(),
+        ),
+    }));
     let (_dir, with_key) = broker(Trust {
         presence: Some(bound.clone()),
         ..Trust::default()
@@ -220,44 +257,43 @@ fn a_presence_proof_verifies_against_the_vector() {
     let (_d3, unbound) = broker(Trust::default());
     assert!(!unbound.verify(&record));
     let mut later = record;
-    later.approved_at = Some(later.approved_at.unwrap() + 1);
+    later.approved_at = Some(approved_at + 1);
     assert!(!with_key.verify(&later));
 }
 
+/// A stored record of a kind this engine does not know (one Hive lists
+/// after 3.12.0) is an invalid record and approves nothing.
 #[test]
-fn a_secure_enclave_p256_proof_verifies_against_the_vector() {
-    let vectors = fixture("vectors/consent_proof.vectors.json");
-    let key = &vectors["keys"]["presence_mac"];
-    let bound = BoundPresenceKey {
-        alg: "p256_ecdsa_sha256".into(),
-        key_id: key["key_id"].as_str().unwrap().into(),
-        public_key: key["public_key"].as_str().unwrap().into(),
-    };
-    let proof = fixture("consent/proof.p256_ecdsa_sha256.pledge_change.json");
-    let record = Record {
-        consent_id: proof["consent_id"].as_str().unwrap().into(),
-        kind: Kind::PledgeChange,
-        subject: proof["subject"].clone(),
-        subject_digest: proof["subject_digest"].as_str().unwrap().into(),
-        created_at: NOW,
-        expires_at: NOW + REQUEST_TTL_MS,
-        state: State::Approved,
-        channel: Some(Channel::OsPresence),
-        approved_at: proof["approved_at"].as_u64(),
-        proof: Some(Proof::Presence(PresenceSignature {
-            key_id: bound.key_id.clone(),
-            alg: bound.alg.clone(),
-            signature: proof["signature"].as_str().unwrap().into(),
-        })),
-    };
-    let (_dir, broker) = broker(Trust {
-        presence: Some(bound),
-        ..Trust::default()
+fn a_stored_record_of_an_unknown_kind_is_invalid() {
+    let (dir, broker) = broker(Trust::default());
+    let mut proof = fixture("consent/proof.p256_ecdsa_sha256.link_vault.json");
+    let id = proof["consent_id"].as_str().unwrap().to_string();
+    let record = json!({
+        "consent_id": id,
+        "kind": fixture("enums/consent-kinds.json")["after_3_12_0"][0],
+        "subject": proof["subject"].take(),
+        "subject_digest": proof["subject_digest"],
+        "created_at": NOW,
+        "expires_at": NOW + REQUEST_TTL_MS,
+        "state": "approved",
+        "channel": "os_presence",
+        "approved_at": proof["approved_at"],
+        "proof": {"presence": {"key_id": proof["presence_key_id"], "alg": "p256_ecdsa_sha256",
+                               "signature": proof["signature"]}},
     });
-    assert!(broker.verify(&record));
-    let mut tampered = record;
-    tampered.approved_at = Some(tampered.approved_at.unwrap() + 1);
-    assert!(!broker.verify(&tampered));
+    let consent_dir = dir.path().join("c").join("consent");
+    std::fs::create_dir_all(&consent_dir).unwrap();
+    std::fs::write(
+        consent_dir.join(format!("{id}.json")),
+        serde_json::to_vec(&record).unwrap(),
+    )
+    .unwrap();
+    let refused = broker.get(&id).unwrap_err();
+    assert_eq!(refused, ConsentError::RecordInvalid);
+    assert!(
+        broker.list().unwrap().is_empty(),
+        "never listed as a record"
+    );
 }
 
 #[test]
@@ -266,7 +302,7 @@ fn statements_verify_and_every_mismatch_is_refused() {
     let statement = fixture("consent/statement.allow.json");
     let record = Record {
         consent_id: statement["consent_id"].as_str().unwrap().into(),
-        kind: Kind::SwarmJoin,
+        kind: Kind::LinkVault,
         subject: json!({}),
         subject_digest: statement["subject_digest"].as_str().unwrap().into(),
         created_at: NOW,
@@ -324,11 +360,11 @@ fn statements_verify_and_every_mismatch_is_refused() {
 #[test]
 fn a_tty_approval_on_a_tty_only_host_is_a_mac_record() {
     let (_dir, broker) = broker(Trust::default());
-    let subject = case_subject(Kind::SealedGrant);
-    let id = required_id(broker.require(Kind::SealedGrant, &subject, NOW));
+    let subject = case_subject(Kind::LinkVault);
+    let id = required_id(broker.require(Kind::LinkVault, &subject, NOW));
     // The same subject reuses the pending request.
     assert_eq!(
-        required_id(broker.require(Kind::SealedGrant, &subject, NOW + 1)),
+        required_id(broker.require(Kind::LinkVault, &subject, NOW + 1)),
         id
     );
     let approved = broker
@@ -343,9 +379,7 @@ fn a_tty_approval_on_a_tty_only_host_is_a_mac_record() {
     assert!(matches!(approved.proof, Some(Proof::Mac(_))));
     assert_eq!(approved.channel, Some(Channel::TtyOnly));
     assert_eq!(
-        broker
-            .require(Kind::SealedGrant, &subject, NOW + 3)
-            .unwrap(),
+        broker.require(Kind::LinkVault, &subject, NOW + 3).unwrap(),
         approved
     );
     assert_eq!(
@@ -415,8 +449,8 @@ fn a_presence_approval_is_checked_before_it_is_stored() {
         presence: Some(bound.clone()),
         ..Trust::default()
     });
-    let subject = case_subject(Kind::SwarmJoin);
-    let id = required_id(broker.require(Kind::SwarmJoin, &subject, NOW));
+    let subject = case_subject(Kind::LinkVault);
+    let id = required_id(broker.require(Kind::LinkVault, &subject, NOW));
     let record = broker.get(&id).unwrap();
     assert_eq!(
         broker.approve(&id, Approval::TtyOnly { approved_at: NOW }, NOW),
@@ -453,7 +487,7 @@ fn a_presence_approval_is_checked_before_it_is_stored() {
     broker.approve(&id, signed, NOW + 5).unwrap();
     assert_eq!(
         broker
-            .require(Kind::SwarmJoin, &subject, NOW + 6)
+            .require(Kind::LinkVault, &subject, NOW + 6)
             .unwrap()
             .state,
         State::Approved
@@ -463,24 +497,13 @@ fn a_presence_approval_is_checked_before_it_is_stored() {
 #[test]
 fn kind_channel_and_expiry_rules() {
     let (_dir, broker) = broker(web_trust());
-    let id = required_id(broker.require(
-        Kind::ProcedureConfirm,
-        &case_subject(Kind::ProcedureConfirm),
-        NOW,
-    ));
-    assert_eq!(
-        broker.approve(&id, Approval::TtyOnly { approved_at: NOW }, NOW),
-        Err(ConsentError::WebOnly {
-            consent_id: id.clone()
-        })
-    );
     let id = required_id(broker.require(Kind::ApiKeySet, &case_subject(Kind::ApiKeySet), NOW));
     assert_eq!(
         broker.approve(&id, Approval::Statement(json!({})), NOW),
         Err(ConsentError::TerminalOnly)
     );
-    let subject = case_subject(Kind::PublicPresence);
-    let id = required_id(broker.require(Kind::PublicPresence, &subject, NOW));
+    let subject = case_subject(Kind::LinkVault);
+    let id = required_id(broker.require(Kind::LinkVault, &subject, NOW));
     let late = NOW + REQUEST_TTL_MS;
     assert_eq!(
         broker.approve(&id, Approval::TtyOnly { approved_at: late }, late),
@@ -489,7 +512,7 @@ fn kind_channel_and_expiry_rules() {
     assert_eq!(broker.get(&id).unwrap().state, State::Expired);
     // An expired request is replaced by a new one.
     assert_ne!(
-        required_id(broker.require(Kind::PublicPresence, &subject, late)),
+        required_id(broker.require(Kind::LinkVault, &subject, late)),
         id
     );
 }
@@ -497,39 +520,17 @@ fn kind_channel_and_expiry_rules() {
 #[test]
 fn a_denial_blocks_until_the_request_would_have_expired() {
     let (_dir, broker) = broker(Trust::default());
-    let subject = case_subject(Kind::ReviewerEnable);
-    let id = required_id(broker.require(Kind::ReviewerEnable, &subject, NOW));
+    let subject = case_subject(Kind::LinkVault);
+    let id = required_id(broker.require(Kind::LinkVault, &subject, NOW));
     broker.deny(&id, Channel::TtyOnly, NOW + 1).unwrap();
     assert_eq!(
-        broker.require(Kind::ReviewerEnable, &subject, NOW + 2),
+        broker.require(Kind::LinkVault, &subject, NOW + 2),
         Err(ConsentError::Denied)
     );
     assert_ne!(
-        required_id(broker.require(Kind::ReviewerEnable, &subject, NOW + REQUEST_TTL_MS + 1)),
+        required_id(broker.require(Kind::LinkVault, &subject, NOW + REQUEST_TTL_MS + 1)),
         id
     );
-}
-
-fn approve_now(broker: &Broker, kind: Kind, subject: &Value) -> Record {
-    let id = required_id(broker.require(kind, subject, NOW));
-    broker
-        .approve(&id, Approval::TtyOnly { approved_at: NOW }, NOW)
-        .unwrap()
-}
-
-/// T-CONSENT-7, restart half: the review-loop restart needs no new request; a
-/// CLI change on the review loop does.
-#[test]
-fn approved_records_cover_automatic_restarts() {
-    let (_dir, broker) = broker(Trust::default());
-    let review = case_subject(Kind::ReviewerEnable);
-    approve_now(&broker, Kind::ReviewerEnable, &review);
-    broker
-        .cover(&Restart::ReviewLoop(review.clone()), NOW + 1)
-        .unwrap();
-    let mut other_cli = review.clone();
-    other_cli["cli"] = "codex".into();
-    required_id(broker.cover(&Restart::ReviewLoop(other_cli), NOW + 1));
 }
 
 #[test]

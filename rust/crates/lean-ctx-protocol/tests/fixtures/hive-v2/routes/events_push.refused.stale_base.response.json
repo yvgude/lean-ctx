@@ -1,0 +1,18 @@
+{
+  "epoch": 0,
+  "results": [
+    {
+      "code": "stale_base",
+      "event_id": "01M5NKAZ9G005000000000D030",
+      "head": "01M5NKAWBR005000000000D027",
+      "status": "refused"
+    },
+    {
+      "code": "invalid_event",
+      "event_id": "01M5NKB08R005000000000D031",
+      "reason": "base_required",
+      "status": "refused"
+    }
+  ],
+  "server_time": 1792800031500
+}

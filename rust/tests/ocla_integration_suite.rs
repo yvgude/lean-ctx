@@ -1,3 +1,5 @@
+#![cfg(feature = "http-server")]
+
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 

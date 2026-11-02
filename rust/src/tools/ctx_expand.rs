@@ -105,7 +105,7 @@ fn handle_retrieve(args: &serde_json::Value) -> Result<String, String> {
     // slice it needs (head / tail / search / json_path / range) instead of
     // re-injecting the whole original — the surgical front-end the issue calls
     // "preferred when available". Admit the complete original before selecting.
-    if let Some(path) = crate::proxy::ccr::resolve_tee(id) {
+    if let Some(path) = crate::core::ccr::resolve_tee(id) {
         // The tee store keeps no lineage: the reply's sources are unknown.
         archive::authority::mark_unbound();
         return expand_tee_file(&path, args);
@@ -351,7 +351,7 @@ fn dispatch_selectors(id: &str, content: &str, noun: &str, args: &serde_json::Va
 ///
 /// `Err` is the error text of a tee file that could not be read or admitted.
 fn expand_tee_file(path: &std::path::Path, args: &serde_json::Value) -> Result<String, String> {
-    match crate::proxy::ccr::read_tee_detailed(path) {
+    match crate::core::ccr::read_tee_detailed(path) {
         Ok(content) => Ok(tee_selectors(path, &content, args)),
         Err(reason) => Err(format!("ERROR: {reason}")),
     }
@@ -710,8 +710,8 @@ mod tests {
             .map(|i| format!("output row {i:03}"))
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(original.len() >= crate::proxy::ccr::MIN_TEE_BYTES);
-        let tee_handle = crate::proxy::ccr::persist(&original).expect("tee handle");
+        assert!(original.len() >= crate::core::ccr::MIN_TEE_BYTES);
+        let tee_handle = crate::core::ccr::persist(&original).expect("tee handle");
 
         // Full content via the handle path (proxy-only fallback also reads this).
         let full = handle(&json!({"id": tee_handle}));
@@ -766,8 +766,8 @@ mod tests {
             .map(|i| format!(r#"{{"id":{i},"ts":"2026-06-22T10:00:{i:02}Z"}}"#))
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(original.len() >= crate::proxy::ccr::MIN_TEE_BYTES);
-        let handle_path = crate::proxy::ccr::persist_json(&original).expect("json tee handle");
+        assert!(original.len() >= crate::core::ccr::MIN_TEE_BYTES);
+        let handle_path = crate::core::ccr::persist_json(&original).expect("json tee handle");
         assert!(handle_path.contains("json_"), "json_ prefix: {handle_path}");
 
         let out = handle(&json!({ "id": handle_path }));
@@ -788,7 +788,7 @@ mod tests {
             .map(|i| format!("<h2>Section {i}</h2><p>body of section {i}</p>"))
             .collect::<Vec<_>>()
             .join("\n");
-        let handle_path = crate::proxy::ccr::persist_html(&original).expect("html tee handle");
+        let handle_path = crate::core::ccr::persist_html(&original).expect("html tee handle");
         assert!(handle_path.contains("html_"), "html_ prefix: {handle_path}");
 
         let out = handle(&json!({ "id": handle_path, "search": "Section 7<" }));

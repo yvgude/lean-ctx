@@ -1,15 +1,5 @@
 {
-  "errors": [
-    {
-      "body": {
-        "error": {
-          "code": "sealed_plaintext",
-          "message": "This vault is sealed; read it in your engine."
-        }
-      },
-      "status": 409
-    }
-  ],
+  "errors": [],
   "method": "GET",
   "path": "/api/v1/orgs/acme/vaults/payments/nodes?type=fact",
   "request": null,
@@ -31,8 +21,6 @@
           "refs": [
             "n_aaaaaaaaaaaaaaaaaaaaaacaa4"
           ],
-          "review_state": "confirmed",
-          "reviewed_by": "none",
           "state": "active",
           "knowledge_state": "verified",
           "knowledge_reason": null,
@@ -53,7 +41,6 @@
                 "shell": "sh"
               }
             ],
-            "needs_person_confirm": true,
             "preconditions": [
               "Maintainer role in the provider dashboard"
             ],
@@ -69,12 +56,10 @@
           "id": "n_aaaaaaaaaaaaaaaaaaaaaacaaq",
           "provenance": "own",
           "refs": [],
-          "review_state": "reviewed_needs_person",
-          "reviewed_by": "none",
           "state": "active",
-          "knowledge_state": "provisional",
-          "knowledge_reason": "unconfirmed",
-          "trust_bucket": null,
+          "knowledge_state": "verified",
+          "knowledge_reason": null,
+          "trust_bucket": "high",
           "type": "procedure",
           "updated_at": "2026-10-24T08:00:04Z",
           "worker": {
@@ -102,8 +87,6 @@
           "id": "n_7chq56yvwzef6tv2modcu3oaxw",
           "provenance": "own",
           "refs": [],
-          "review_state": "confirmed",
-          "reviewed_by": "none",
           "state": "active",
           "knowledge_state": "verified",
           "knowledge_reason": null,

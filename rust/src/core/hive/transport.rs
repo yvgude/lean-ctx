@@ -27,24 +27,30 @@ pub struct HiveClient {
     origin: String,
     agent: ureq::Agent,
     auth: Option<(String, Zeroizing<String>)>,
+    /// The minor of the last 2.x `Hive-Protocol` answer; `u16::MAX` until
+    /// one came.
+    answered_minor: std::sync::atomic::AtomicU16,
 }
 
-/// The C0 2.0 protocol every request carries, the enrollment included.
-/// Hive accepts only major 2 and answers `426` for a missing or malformed
-/// header or another major (Hive 1.x is retired).
-pub const PROTOCOL_V2: &str = "2.0";
+/// The C0 protocol every request carries, the enrollment included. Hive
+/// accepts only major 2 and answers `426` for a missing or malformed header
+/// or another major. From 2.1 an enrollment carries key set v3 and the
+/// policy bundle no TOML org policy. Hive answers `2.<min(minor, 2)>`: a
+/// 2.2 answer allows the 2.2 writes (doc nodes, decision anchors), which
+/// the engine gates on the answered minor (`relay_v2::protocol_minor`).
+pub const PROTOCOL_V2: &str = "2.2";
 
 /// The protocol major this engine speaks and accepts in an answer.
 const PROTOCOL_MAJOR: u16 = 2;
 
 /// Why an answer's `Hive-Protocol` is refused: only a 2.x Hive is spoken
-/// to (Hive 1.x is retired), and the error names the protocol required.
+/// to, and the error names the protocol required.
 fn incompatible(peer: &str) -> Option<HiveError> {
     match parse_protocol_header(peer) {
         Some((PROTOCOL_MAJOR, _)) => None,
         Some((major, minor)) => Some(HiveError::Protocol(format!(
             "Hive speaks protocol {major}.{minor}; this engine requires Hive-Protocol \
-             {PROTOCOL_MAJOR}.x (Hive 1.x is retired): upgrade the Hive server"
+             {PROTOCOL_MAJOR}.x: upgrade the Hive server"
         ))),
         None => Some(HiveError::Protocol(format!(
             "Hive sent no valid protocol version; this engine requires Hive-Protocol \
@@ -63,6 +69,15 @@ pub struct HiveResponse {
 }
 
 impl HiveClient {
+    /// The minor version of the last 2.x answer this client got (`2.2` →
+    /// `Some(2)`); `None` before any answer.
+    pub fn answered_minor(&self) -> Option<u16> {
+        let minor = self
+            .answered_minor
+            .load(std::sync::atomic::Ordering::Relaxed);
+        (minor != u16::MAX).then_some(minor)
+    }
+
     pub fn new(origin: &str) -> Result<Self, HiveError> {
         let origin = normalize_origin(origin)?;
         let agent: ureq::Agent = ureq::config::Config::builder()
@@ -78,6 +93,7 @@ impl HiveClient {
             origin,
             agent,
             auth: None,
+            answered_minor: std::sync::atomic::AtomicU16::new(u16::MAX),
         })
     }
 
@@ -97,6 +113,7 @@ impl HiveClient {
             origin,
             agent,
             auth: None,
+            answered_minor: std::sync::atomic::AtomicU16::new(u16::MAX),
         })
     }
 
@@ -320,6 +337,12 @@ impl HiveClient {
         }
         if let Some(refused) = peer_protocol.as_deref().and_then(incompatible) {
             return Err(refused);
+        }
+        if let Some((PROTOCOL_MAJOR, minor)) =
+            peer_protocol.as_deref().and_then(parse_protocol_header)
+        {
+            self.answered_minor
+                .store(minor, std::sync::atomic::Ordering::Relaxed);
         }
         Ok((status, etag, bytes, value))
     }

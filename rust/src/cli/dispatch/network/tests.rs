@@ -87,6 +87,7 @@ fn cockpit_port_accepts_both_flag_forms() {
     assert_eq!(super::port_flag(&args(&["--no-open"])), None);
 }
 
+#[cfg(feature = "http-server")]
 #[test]
 fn task_authority_policy_reader_is_bounded() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -99,7 +100,7 @@ fn task_authority_policy_reader_is_bounded() {
     assert!(super::read_a2a_task_authority(&path).is_err());
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "http-server"))]
 #[test]
 fn task_authority_policy_reader_rejects_symlinks() {
     use std::os::unix::fs::symlink;

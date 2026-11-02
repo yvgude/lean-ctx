@@ -4,8 +4,7 @@
     {
       "value": "fact",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ],
       "claim": true,
       "mutable": [
@@ -20,22 +19,23 @@
     {
       "value": "decision",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ],
       "claim": true,
       "mutable": [
         "status",
         "deferred",
         "rationale",
-        "evidence"
-      ]
+        "evidence",
+        "anchors",
+        "anchor_state"
+      ],
+      "anchors": true
     },
     {
       "value": "gotcha",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ],
       "claim": true,
       "mutable": [
@@ -51,8 +51,7 @@
     {
       "value": "procedure",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ],
       "claim": false,
       "mutable": [
@@ -69,8 +68,7 @@
     {
       "value": "finding",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ],
       "claim": true,
       "mutable": [
@@ -80,8 +78,7 @@
     {
       "value": "episode",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ],
       "claim": false,
       "mutable": [
@@ -93,8 +90,7 @@
     {
       "value": "reference",
       "places": [
-        "vault",
-        "swarm"
+        "vault"
       ],
       "claim": false,
       "mutable": [
@@ -102,24 +98,52 @@
       ]
     },
     {
-      "value": "goal",
-      "places": [
-        "swarm"
+      "anchors": true,
+      "cas_exempt": [
+        "anchor_state",
+        "drift"
       ],
       "claim": false,
       "mutable": [
+        "slug",
         "title",
-        "text",
-        "acceptance"
-      ]
+        "type",
+        "status",
+        "description",
+        "anchors",
+        "anchor_state",
+        "drift"
+      ],
+      "places": [
+        "vault"
+      ],
+      "value": "page"
     },
     {
-      "value": "result",
-      "places": [
-        "swarm"
-      ],
+      "cas_exempt": [],
       "claim": false,
-      "mutable": []
+      "mutable": [
+        "body",
+        "order"
+      ],
+      "places": [
+        "vault"
+      ],
+      "value": "section"
+    },
+    {
+      "cas_exempt": [],
+      "claim": false,
+      "mutable": [
+        "body",
+        "covers",
+        "status",
+        "resolved_by"
+      ],
+      "places": [
+        "vault"
+      ],
+      "value": "note"
     }
   ]
 }

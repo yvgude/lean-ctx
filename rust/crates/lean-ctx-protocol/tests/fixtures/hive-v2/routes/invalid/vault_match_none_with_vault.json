@@ -11,8 +11,6 @@
       "value": {
         "label": "payments",
         "schema": "leanctx.hive.vault/v1",
-        "sealed": false,
-        "sealed_conversion": "none",
         "vault": {
           "name": "payments",
           "ns": "acme"

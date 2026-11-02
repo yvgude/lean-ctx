@@ -14,21 +14,24 @@ pub enum Address {
     LocalAgent(String),
     /// `#<workspace>/<vault>`: the vault's bus.
     Vault { workspace: String, vault: String },
-    /// `~<swarm>`: the swarm's bus.
-    Swarm(String),
     /// `@wkr_…`: a direct message to a worker.
     Worker(String),
 }
 
 /// Why a `#`, `~` or `@` address is refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InvalidAddress;
+pub enum InvalidAddress {
+    /// Not of the contract grammar.
+    Malformed,
+}
 
 impl fmt::Display for InvalidAddress {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(
-            "invalid_address: use #<workspace>/<vault>, ~<swarm> or @wkr_<id> (or no address for this machine only)",
-        )
+        f.write_str(match self {
+            Self::Malformed => {
+                "invalid_address: use #<workspace>/<vault> or @wkr_<id> (or no address for this machine only)"
+            }
+        })
     }
 }
 
@@ -45,35 +48,33 @@ impl Address {
             return Ok(Self::Local);
         }
         if let Some(rest) = to.strip_prefix('#') {
-            let (workspace, vault) = rest.split_once('/').ok_or(InvalidAddress)?;
+            let (workspace, vault) = rest.split_once('/').ok_or(InvalidAddress::Malformed)?;
             let ws_ok = (1..=64).contains(&workspace.len())
                 && workspace.bytes().all(|b| {
                     b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-'
                 });
             if !ws_ok || !slug(vault, 2, 40) {
-                return Err(InvalidAddress);
+                return Err(InvalidAddress::Malformed);
             }
             return Ok(Self::Vault {
                 workspace: workspace.to_string(),
                 vault: vault.to_string(),
             });
         }
-        if let Some(swarm) = to.strip_prefix('~') {
-            return slug(swarm, 3, 40)
-                .then(|| Self::Swarm(swarm.to_string()))
-                .ok_or(InvalidAddress);
+        if to.starts_with('~') {
+            return Err(InvalidAddress::Malformed);
         }
         if let Some(worker) = to.strip_prefix('@') {
             return is_worker_id(worker)
                 .then(|| Self::Worker(worker.to_string()))
-                .ok_or(InvalidAddress);
+                .ok_or(InvalidAddress::Malformed);
         }
         Ok(Self::LocalAgent(to.to_string()))
     }
 
     /// True when the message may leave the machine.
     pub fn is_remote(&self) -> bool {
-        matches!(self, Self::Vault { .. } | Self::Swarm(_) | Self::Worker(_))
+        matches!(self, Self::Vault { .. } | Self::Worker(_))
     }
 }
 
@@ -83,7 +84,6 @@ impl fmt::Display for Address {
             Self::Local => f.write_str("local"),
             Self::LocalAgent(id) => f.write_str(id),
             Self::Vault { workspace, vault } => write!(f, "#{workspace}/{vault}"),
-            Self::Swarm(id) => write!(f, "~{id}"),
             Self::Worker(id) => write!(f, "@{id}"),
         }
     }
@@ -94,6 +94,12 @@ fn slug(s: &str, min: usize, max: usize) -> bool {
     (min..=max).contains(&s.len())
         && s.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// A `to` of the contract's `$defs/address` grammar (C0 2.2):
+/// `#<workspace>/<vault>` or `@wkr_<id>`.
+pub fn is_wire_address(to: &str) -> bool {
+    Address::parse(Some(to)).is_ok_and(|a| a.is_remote())
 }
 
 /// `wkr_[a-z2-7]{20}`.
@@ -130,10 +136,6 @@ mod tests {
         assert_eq!(vault.to_string(), "#thinkery/lean-ctx");
         assert!(vault.is_remote());
         assert_eq!(
-            Address::parse(Some("~launch-q4")),
-            Ok(Address::Swarm("launch-q4".into()))
-        );
-        assert_eq!(
             Address::parse(Some("@wkr_vk4oelpv5lzjmev44hun")),
             Ok(Address::Worker("wkr_vk4oelpv5lzjmev44hun".into()))
         );
@@ -144,13 +146,45 @@ mod tests {
             "#thinkery/x",
             "#thinkery/lean-ctx@hive.acme.example",
             "#/lean-ctx",
-            "~ab",
-            "~Launch",
             "@wkr_short",
             "@wkr_vk4oelpv5lzjmev44hu1",
             "@someone",
         ] {
-            assert_eq!(Address::parse(Some(bad)), Err(InvalidAddress), "{bad}");
+            assert_eq!(
+                Address::parse(Some(bad)),
+                Err(InvalidAddress::Malformed),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn wire_addresses_follow_the_contract_grammar() {
+        for ok in ["#acme/payments", "@wkr_vk4oelpv5lzjmev44hun"] {
+            assert!(is_wire_address(ok), "{ok}");
+        }
+        for bad in [
+            "~checkout-latency",
+            "~ab",
+            "~Launch",
+            "#acme",
+            "@someone",
+            "mcp-1-abc",
+            "local",
+            "",
+        ] {
+            assert!(!is_wire_address(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_tilde_address_is_invalid() {
+        for bad in ["~launch-q4", "~ab", "~Launch"] {
+            assert_eq!(
+                Address::parse(Some(bad)),
+                Err(InvalidAddress::Malformed),
+                "{bad}"
+            );
         }
     }
 }

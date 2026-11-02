@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The instance's long-lived keys: Ed25519 for token assertions and an
-//! X25519 key that sealed vault keys are wrapped to.
+//! X25519 key whose public half enrollment carries.
 //!
 //! The X25519 key is the Montgomery form of a second, independent Ed25519
 //! seed (`kx.key`), so no key ever signs and agrees at once. Seeds are kept
@@ -54,11 +54,6 @@ impl InstanceKeys {
     /// Ed25519 signature over `message`, base64.
     pub fn sign_b64(&self, message: &[u8]) -> String {
         B64.encode(self.signing.sign(message).to_bytes())
-    }
-
-    /// X25519 secret scalar for unwrapping sealed vault keys.
-    pub fn kx_secret(&self) -> Zeroizing<[u8; 32]> {
-        Zeroizing::new(self.kx.to_scalar_bytes())
     }
 
     /// The Ed25519 signing key, for C0 2.0 documents signed as

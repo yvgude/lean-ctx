@@ -45,16 +45,11 @@ pub fn label(trust: &Trust) -> &'static str {
 }
 
 /// Workspace policy `consent_requires_user_presence` from the verified
-/// policy bundle (RESOLUTIONS R61); absent reads as `false`.
+/// policy bundle (RESOLUTIONS R61); absent reads as `false`. The bundle's
+/// `org_policy` is not read.
 pub fn policy_requires_presence(data_dir: &std::path::Path) -> bool {
-    crate::core::hive::policy::load_bundle(data_dir).is_some_and(|bundle| {
-        [
-            &bundle["consent_requires_user_presence"],
-            &bundle["org_policy"]["consent_requires_user_presence"],
-        ]
-        .iter()
-        .any(|v| v.as_bool() == Some(true))
-    })
+    crate::core::hive::policy::load_bundle(data_dir)
+        .is_some_and(|bundle| bundle["consent_requires_user_presence"].as_bool() == Some(true))
 }
 
 /// Whether `command` (a `ps` command line) is one of the agent CLIs, or

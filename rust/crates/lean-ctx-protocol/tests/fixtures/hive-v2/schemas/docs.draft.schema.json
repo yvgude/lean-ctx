@@ -1,0 +1,800 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/docs.draft.schema.json",
+  "title": "C0 2.2 docs and tasks: the doc node bodies, doc anchors, doc state, the W106–W109b web read shapes, task-fields/v1 and the task verification (E48)",
+  "description": "Promoted 01.11. into fixtures/ (blessed, in MANIFEST.sha256). event.schema.json references the $defs here; x-patches records what promotion applied to them.",
+  "x-patches": {
+    "event.schema.json#/properties/node_type/enum": {
+      "add": [
+        "page",
+        "section",
+        "note"
+      ]
+    },
+    "event.schema.json#/properties": {
+      "add": {
+        "base_event": {
+          "$ref": "common.schema.json#/$defs/event_id"
+        }
+      }
+    },
+    "event.schema.json#/allOf": {
+      "add": [
+        {
+          "$comment": "base_event only on field.set, retract and restore",
+          "if": {
+            "required": [
+              "base_event"
+            ]
+          },
+          "then": {
+            "properties": {
+              "op": {
+                "enum": [
+                  "field.set",
+                  "retract",
+                  "restore"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "$comment": "doc node types are vault-only",
+          "if": {
+            "properties": {
+              "node_type": {
+                "enum": [
+                  "page",
+                  "section",
+                  "note"
+                ]
+              }
+            },
+            "required": [
+              "node_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "place": {
+                "properties": {
+                  "kind": {
+                    "const": "vault"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "plain bodies per doc node type",
+          "if": {
+            "properties": {
+              "op": {
+                "const": "node.add"
+              },
+              "node_type": {
+                "const": "page"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "body": {
+                "$ref": "docs.draft.schema.json#/$defs/page_body"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "node.add"
+              },
+              "node_type": {
+                "const": "section"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "body": {
+                "$ref": "docs.draft.schema.json#/$defs/section_body"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "node.add"
+              },
+              "node_type": {
+                "const": "note"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "body": {
+                "$ref": "docs.draft.schema.json#/$defs/note_body"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "event.schema.json#/$defs/field_set_body/properties/field/enum": {
+      "add": [
+        "slug",
+        "type",
+        "description",
+        "drift",
+        "body",
+        "order",
+        "covers",
+        "resolved_by"
+      ]
+    },
+    "event.schema.json#/$defs/field_set_body (anchors)": {
+      "replace": "value: anyOf [#/$defs/anchors, docs.draft.schema.json#/$defs/doc_anchors]; the per-type check (code anchors on claims, doc anchors on pages) needs the folded node"
+    },
+    "event.schema.json#/$defs/edge_body/properties/kind/enum": {
+      "add": [
+        "links_to",
+        "about"
+      ]
+    },
+    "event.schema.json#/$defs/event_status/properties": {
+      "add": {
+        "head": {
+          "$ref": "common.schema.json#/$defs/event_id"
+        }
+      }
+    },
+    "event.schema.json#/$defs/event_status/allOf": {
+      "add": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "stale_base"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "required": [
+              "head"
+            ]
+          }
+        }
+      ]
+    },
+    "event.schema.json#/$defs/decision_body/properties": {
+      "add": {
+        "anchors": {
+          "$ref": "#/$defs/anchors"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z_]{1,32}$"
+    },
+    "slug": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*){0,7}$"
+    },
+    "doc_anchor": {
+      "description": "A page pin: file:, dir: or glob: (repo-relative, no .. segment, no colon in the path), or sym: as in CodeAnchorV1; digest = sha256 hex per vectors/doc_anchor_digest.vectors.json (file: the bytes; dir:/glob: over the tracked files in mode); commit = the commit it was taken at (the migrator: emspace pinnedRef)",
+      "type": "object",
+      "required": [
+        "ref",
+        "digest",
+        "commit"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "maxLength": 704,
+          "pattern": "^((file|dir|glob):(?!/)(?!(.*/)?\\.\\.(/|:|$))[^\\s\\\\:]{1,500}|sym:(?!/)(?!(.*/)?\\.\\.(/|:|$))[^\\s\\\\:]{1,500}::[^\\s]{1,200})$"
+        },
+        "digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "mode": {
+          "enum": [
+            "content",
+            "shape"
+          ],
+          "description": "dir:/glob: only; absent = content"
+        },
+        "role": {
+          "enum": [
+            "derived",
+            "cites"
+          ],
+          "description": "absent = derived; only derived anchors drive the doc state"
+        },
+        "verified_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "doc_anchors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/doc_anchor"
+      }
+    },
+    "drift": {
+      "description": "The re-check detail behind anchor_state: per moved anchor the digest seen now (null: gone)",
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": [
+          "ref",
+          "observed"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 704
+          },
+          "observed": {
+            "anyOf": [
+              {
+                "$ref": "common.schema.json#/$defs/hex64"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "cover": {
+      "type": "object",
+      "required": [
+        "ref",
+        "digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 704
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/hex64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "page_body": {
+      "type": "object",
+      "required": [
+        "slug",
+        "title",
+        "type",
+        "status",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {
+          "$ref": "#/$defs/slug"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[^\\n\\r]+$"
+        },
+        "type": {
+          "$ref": "#/$defs/name"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "canonical"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "anchors": {
+          "$ref": "#/$defs/doc_anchors"
+        },
+        "anchor_state": {
+          "enum": [
+            "fresh",
+            "to_verify",
+            "gone"
+          ]
+        },
+        "drift": {
+          "$ref": "#/$defs/drift"
+        },
+        "body_nonce": {
+          "$ref": "common.schema.json#/$defs/hex32"
+        }
+      }
+    },
+    "section_body": {
+      "description": "Canonical JSON of the whole body <= 24 000 bytes (MAX_DOC_BODY_BYTES, checked outside the schema; the migrator splits at <= 20 000 bytes of Markdown); the body keeps its own leading and trailing newlines, page markdown is # title + newline + the bodies concatenated",
+      "type": "object",
+      "required": [
+        "body",
+        "order",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24000
+        },
+        "order": {
+          "$ref": "common.schema.json#/$defs/u32"
+        },
+        "body_nonce": {
+          "$ref": "common.schema.json#/$defs/hex32"
+        }
+      }
+    },
+    "note_body": {
+      "type": "object",
+      "required": [
+        "body",
+        "status",
+        "body_nonce"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "covers": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/cover"
+          }
+        },
+        "status": {
+          "enum": [
+            "open",
+            "resolved"
+          ]
+        },
+        "resolved_by": {
+          "$ref": "common.schema.json#/$defs/event_id"
+        },
+        "body_nonce": {
+          "$ref": "common.schema.json#/$defs/hex32"
+        }
+      }
+    },
+    "doc_state": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "fresh",
+            "noted",
+            "stale"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "anchor_changed",
+            "anchor_gone"
+          ]
+        },
+        "uncovered": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "docs_tree": {
+      "description": "W106",
+      "type": "object",
+      "required": [
+        "pages"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "page_id",
+              "slug",
+              "title",
+              "type",
+              "status",
+              "doc_state",
+              "sections",
+              "open_notes",
+              "head_event",
+              "updated_seq"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "page_id": {
+                "$ref": "common.schema.json#/$defs/node_id"
+              },
+              "slug": {
+                "$ref": "#/$defs/slug"
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "$ref": "#/$defs/name"
+              },
+              "status": {
+                "enum": [
+                  "draft",
+                  "canonical"
+                ]
+              },
+              "description": {
+                "type": "string"
+              },
+              "doc_state": {
+                "$ref": "#/$defs/doc_state"
+              },
+              "slug_conflict": {
+                "const": true
+              },
+              "sections": {
+                "$ref": "common.schema.json#/$defs/u32"
+              },
+              "open_notes": {
+                "$ref": "common.schema.json#/$defs/u32"
+              },
+              "head_event": {
+                "$ref": "common.schema.json#/$defs/event_id"
+              },
+              "updated_seq": {
+                "$ref": "common.schema.json#/$defs/u64"
+              }
+            }
+          }
+        }
+      }
+    },
+    "docs_page": {
+      "description": "W107: the page, its sections in (order, node_id) order, its open and resolved notes, links",
+      "type": "object",
+      "required": [
+        "page_id",
+        "slug",
+        "title",
+        "type",
+        "status",
+        "doc_state",
+        "head_event",
+        "updated_seq",
+        "sections",
+        "notes",
+        "links_out",
+        "links_in",
+        "dangling"
+      ],
+      "properties": {
+        "page_id": {
+          "$ref": "common.schema.json#/$defs/node_id"
+        },
+        "anchors": {
+          "$ref": "#/$defs/doc_anchors"
+        },
+        "drift": {
+          "$ref": "#/$defs/drift"
+        },
+        "doc_state": {
+          "$ref": "#/$defs/doc_state"
+        },
+        "head_event": {
+          "$ref": "common.schema.json#/$defs/event_id"
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "section_id",
+              "order",
+              "body",
+              "head_event",
+              "updated_seq"
+            ],
+            "properties": {
+              "section_id": {
+                "$ref": "common.schema.json#/$defs/node_id"
+              },
+              "order": {
+                "$ref": "common.schema.json#/$defs/u32"
+              },
+              "heading": {
+                "type": "string"
+              },
+              "level": {
+                "enum": [
+                  2,
+                  3
+                ]
+              },
+              "body": {
+                "type": "string"
+              },
+              "head_event": {
+                "$ref": "common.schema.json#/$defs/event_id"
+              },
+              "updated_seq": {
+                "$ref": "common.schema.json#/$defs/u64"
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "note_id",
+              "about",
+              "status",
+              "body",
+              "head_event",
+              "created_seq"
+            ]
+          }
+        },
+        "links_out": {
+          "type": "array"
+        },
+        "links_in": {
+          "type": "array"
+        },
+        "dangling": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "hive: link targets in section bodies that are no live page"
+        }
+      }
+    },
+    "docs_search": {
+      "description": "W108",
+      "type": "object",
+      "required": [
+        "hits"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "hits": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "required": [
+              "page_id",
+              "slug",
+              "title"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "page_id": {
+                "$ref": "common.schema.json#/$defs/node_id"
+              },
+              "slug": {
+                "$ref": "#/$defs/slug"
+              },
+              "title": {
+                "type": "string"
+              },
+              "section_id": {
+                "$ref": "common.schema.json#/$defs/node_id"
+              },
+              "heading": {
+                "type": "string"
+              },
+              "snippet": {
+                "type": "string",
+                "maxLength": 161
+              }
+            }
+          }
+        }
+      }
+    },
+    "task_fields_request": {
+      "description": "E47 PATCH /v1/vaults/{pid}/tasks/{number}: agents set a task's priority and labels (the web reads them)",
+      "type": "object",
+      "required": [
+        "schema",
+        "base_version"
+      ],
+      "additionalProperties": false,
+      "minProperties": 3,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.task-fields/v1"
+        },
+        "base_version": {
+          "$ref": "common.schema.json#/$defs/u32"
+        },
+        "priority": {
+          "enum": [
+            "high",
+            "normal"
+          ]
+        },
+        "labels": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]{1,32}$"
+          }
+        }
+      }
+    },
+    "export_md": {
+      "description": "W109: the page as text/markdown (relative .md links)",
+      "type": "string",
+      "minLength": 3
+    },
+    "task_verify_request": {
+      "description": "E48 POST /v1/vaults/{pid}/tasks/{number}/verify (right tasks.work, Idempotency-Key like the other task writes): another agent's verdict on a submitted result. worker_id is the verifying agent and never the result's (403 self_verify; another worker of the same engine may); only a submitted task takes it (409 not_submitted). accept → done, reject → open (claimable, the result kept as history, the reason recorded as a verification update).",
+      "type": "object",
+      "required": [
+        "schema",
+        "worker_id",
+        "verdict"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.task-verify/v1"
+        },
+        "worker_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        },
+        "verdict": {
+          "enum": [
+            "accept",
+            "reject"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "reject"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reason"
+        ]
+      }
+    },
+    "task_ack": {
+      "description": "Answer of the E47 task writes and E48: the number and the state afterwards (C0 2.2: a result leaves the task submitted, or failed; a verdict makes it done or open).",
+      "type": "object",
+      "required": [
+        "schema",
+        "number",
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.task-ack/v1"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "state": {
+          "enum": [
+            "open",
+            "claimed",
+            "submitted",
+            "done",
+            "failed",
+            "cancelled"
+          ]
+        }
+      }
+    },
+    "task_verification": {
+      "description": "C0 2.2 additions to TaskV1 (E-tasks get): verified_by (TaskActorV1) and verified_at when an accept made the task done, and verification, the last verdict (accept or reject). Updates gain kind: verification and verdict for a verifier's update; lifecycle gains submitted.",
+      "type": "object",
+      "required": [
+        "verdict",
+        "by",
+        "at"
+      ],
+      "properties": {
+        "verdict": {
+          "enum": [
+            "accept",
+            "reject"
+          ]
+        },
+        "by": {
+          "type": "object",
+          "required": [
+            "kind",
+            "label",
+            "mine"
+          ]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    }
+  }
+}

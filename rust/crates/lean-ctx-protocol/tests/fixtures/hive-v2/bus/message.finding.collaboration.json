@@ -21,17 +21,17 @@
   "sender": {
     "host_app": "codex",
     "kind": "worker",
-    "name": "Codex · general",
+    "name": "Codex · reviewer",
     "owner_handle": "yves",
-    "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+    "worker_id": "wkr_gawyravj36igdp3irdfo"
   },
   "seq": 14,
   "thread_id": "msg_00000000000000b5",
-  "to": "~checkout-latency",
+  "to": "#acme/payments",
   "type": "finding",
-  "worker_id": "wkr_76aa2uwmpczt3cqkhfed",
   "window": {
     "from_ms": 1792800000000,
     "to_ms": 1792803600000
-  }
+  },
+  "worker_id": "wkr_gawyravj36igdp3irdfo"
 }

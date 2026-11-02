@@ -49,7 +49,7 @@ impl BoundPresenceKey {
             .is_ok_and(|bytes| hex::encode(sha2::Sha256::digest(&bytes))[..16] == self.key_id)
     }
 
-    fn verifies(&self, message: &[u8], signature: &str) -> bool {
+    pub(super) fn verifies(&self, message: &[u8], signature: &str) -> bool {
         let Ok(signature) = B64URL.decode(signature) else {
             return false;
         };
@@ -164,13 +164,6 @@ pub enum Approval {
     TtyOnly { approved_at: u64 },
 }
 
-/// An automatic restart of a host loop (§3.8.1 coverage table).
-#[derive(Debug, Clone)]
-pub enum Restart {
-    /// The review loop: the place's `reviewer_enable` subject.
-    ReviewLoop(Value),
-}
-
 /// A stored record and whether its proof holds.
 #[derive(Debug, Clone)]
 pub struct Listed {
@@ -259,14 +252,6 @@ impl Broker {
             return Err(ConsentError::RecordInvalid);
         }
         Err(ConsentError::Required { consent_id, kind })
-    }
-
-    /// Before an automatic restart: the covering record, or a new request.
-    pub fn cover(&self, restart: &Restart, now: u64) -> Result<Record, ConsentError> {
-        self.policy_gate(Kind::ReviewerEnable, now)?;
-        match restart {
-            Restart::ReviewLoop(subject) => self.require(Kind::ReviewerEnable, subject, now),
-        }
     }
 
     /// End coverage: `review disable` (field `place`). Removes the approved
@@ -595,9 +580,6 @@ impl Broker {
 /// Kind and channel rules (§3.8.1, §3.8.2).
 fn channel_allowed(record: &Record, channel: Channel) -> Result<(), ConsentError> {
     match record.kind {
-        Kind::ProcedureConfirm if channel != Channel::Web => Err(ConsentError::WebOnly {
-            consent_id: record.consent_id.clone(),
-        }),
         Kind::ApiKeySet if !matches!(channel, Channel::OsPresence | Channel::TtyOnly) => {
             Err(ConsentError::TerminalOnly)
         }

@@ -2,26 +2,6 @@
   "name": "waiting-kinds",
   "values": [
     {
-      "value": "review_disagreement",
-      "severity": "warn",
-      "snooze": true
-    },
-    {
-      "value": "review_needs_person",
-      "severity": "warn",
-      "snooze": true
-    },
-    {
-      "value": "procedure_commands",
-      "severity": "warn",
-      "snooze": true
-    },
-    {
-      "value": "review_overdue",
-      "severity": "warn",
-      "snooze": true
-    },
-    {
       "value": "instruction_signal",
       "severity": "info",
       "snooze": true
@@ -40,16 +20,6 @@
       "value": "purge_pending",
       "severity": "stop",
       "snooze": false
-    },
-    {
-      "value": "pledge_exhausted",
-      "severity": "info",
-      "snooze": true
-    },
-    {
-      "value": "question_unanswered",
-      "severity": "info",
-      "snooze": true
     },
     {
       "value": "engine_revoked_events",

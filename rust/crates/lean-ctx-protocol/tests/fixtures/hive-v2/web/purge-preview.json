@@ -3,15 +3,6 @@
     {
       "body": {
         "error": {
-          "code": "sealed_plaintext",
-          "message": "Search is not available in a sealed vault; select by id."
-        }
-      },
-      "status": 409
-    },
-    {
-      "body": {
-        "error": {
           "code": "invalid_body",
           "field": "selector",
           "message": "Use exactly one selector."
@@ -35,8 +26,7 @@
       "cascade": {
         "derived": 0,
         "messages": 1,
-        "snapshots": 1,
-        "wiki": 0
+        "snapshots": 1
       },
       "item_count": 1,
       "items": [
@@ -49,8 +39,7 @@
       "message_gids": [],
       "node_ids": [
         "n_zcjqmmor453nyxqgshlgpogwdm"
-      ],
-      "wiki_pages": []
+      ]
     },
     "status": 200
   },

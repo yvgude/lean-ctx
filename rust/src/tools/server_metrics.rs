@@ -571,7 +571,7 @@ impl LeanCtxServer {
         // aggregate their independent counters into a synthetic hit rate.
         // `reuse_snapshot` records one terminal outcome per read instead.
         let reuse = crate::core::cache::reuse_snapshot();
-        let provider_reuse = crate::proxy::cache_attribution::snapshot();
+        let provider_reuse = crate::core::proxy_cache_attribution::snapshot();
 
         let source_snapshot = crate::core::auto_mode_resolver::source_counts();
         let compressed_cache_hits = source_snapshot

@@ -46,6 +46,7 @@ pub fn run() {
     // The MCP server refreshes stale shell-hook files on start (#1959); the
     // hook generator lives in the CLI, so it is handed to the engine here.
     crate::shell_hook::register_installed_hook_refresh(super::refresh_installed_shell_hooks);
+    crate::proxy::register_shapers();
 
     let mut args: Vec<String> = std::env::args().collect();
 

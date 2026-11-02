@@ -2,6 +2,7 @@
 
 //! `lean-ctx hive connect|status|disconnect|link` end to end against the
 //! fake Hive service, each run in its own throwaway home.
+#![cfg(feature = "http-server")]
 
 use crate::support::fake_hive::{FakeHive, FakeOptions, RecordedRequest};
 use base64::Engine as _;
@@ -198,7 +199,6 @@ fn connect_status_disconnect_round_trip() {
             "last_seen",
             "metrics_v2",
             "org",
-            "policy",
             "policy_refusal",
             "url",
             "web_url"
@@ -510,8 +510,7 @@ fn sent_protocol(request: &RecordedRequest) -> Option<&str> {
         .map(|(_, value)| value.as_str())
 }
 
-/// Hive 1.x is retired: every request, enrollment and session alike,
-/// sends `Hive-Protocol: 2.0`, also when the instance card was not
+/// Every request, enrollment and session alike, sends `Hive-Protocol: 2.1`, also when the instance card was not
 /// answered (this fake has none), and the fake answers 1.x with `426`.
 #[test]
 fn every_request_sends_protocol_2_even_without_an_instance_card() {
@@ -530,38 +529,18 @@ fn every_request_sends_protocol_2_even_without_an_instance_card() {
     for request in &requests {
         assert_eq!(
             sent_protocol(request),
-            Some("2.0"),
+            Some("2.2"),
             "{} {}",
             request.method,
             request.path
         );
     }
     assert!(machine.status_json().connected);
-    // Hive swarms and Task Compute were removed (owner decision
-    // 2026-10-30): their commands say so and nothing asks Hive.
-    let before = fake.requests().len();
-    for args in [
-        &["compute", "status", "cj_0b4f9a7e3c2d4e1f8a6b5c4d3e2f1a09"][..],
-        &["swarm", "list"][..],
-    ] {
-        let out = machine.run(args);
-        assert!(!out.status.success(), "{args:?}: {out:?}");
-        let stderr = text(&out.stderr);
-        assert!(
-            stderr.contains("was retired in 3.12.1"),
-            "{args:?}: {stderr}"
-        );
-    }
-    let removed_requests = fake.requests()[before..]
-        .iter()
-        .filter(|r| r.path.contains("/compute/") || r.path.contains("/swarms/"))
-        .count();
-    assert_eq!(removed_requests, 0, "removed features never ask Hive");
 }
 
 /// Against a Hive that speaks C0 2.0 the request header decides how Hive
 /// answers: every authenticated request, the token mint included, sends
-/// `Hive-Protocol: 2.x` (Hive 1.x is retired), and so does the enrollment
+/// `Hive-Protocol: 2.x`, and so does the enrollment
 /// before it (device code, token and setup), from the first request.
 #[test]
 fn against_a_2x_hive_every_session_request_sends_protocol_2() {
@@ -1057,12 +1036,8 @@ fn session_learnings_stream_out_as_screened_drafts_and_revisions_stream_back() {
     );
 }
 
-/// An org policy signed now with the fixture signer seed, as Hive sends it.
-fn signed_org_policy(version: u64, pack: &str) -> serde_json::Value {
-    signed_org_policy_requiring(version, pack, Vec::new())
-}
-
-/// [`signed_org_policy`] that also requires filter packs (Hive contract 1.8).
+/// A TOML org policy signed now with the fixture signer seed, requiring
+/// filter packs, as a Hive before 2.1 sent it (Hive contract 1.8).
 fn signed_org_policy_requiring(
     version: u64,
     pack: &str,
@@ -1114,136 +1089,59 @@ fn signed_org_policy_requiring(
     })
 }
 
+/// Hive-Protocol 2.1 retired the TOML org policy: a bundle that still
+/// carries a signed one (requiring a filter pack) is taken for its filter
+/// packs only, `hive status` shows no company policy, and a later bundle
+/// without the policy and without the pack is accepted, never refused for
+/// dropping it.
 #[test]
-fn org_policy_bundles_are_verified_against_the_lease_and_a_bad_one_never_replaces_the_good_one() {
-    let fake = FakeHive::start_with(FakeOptions {
-        policy_signer_keys: vec![lean_ctx_protocol::hive::lease::PolicySignerKeyV1 {
-            org: "org_acme".into(),
-            ed25519_pub: base64::engine::general_purpose::STANDARD.encode(
-                ed25519_dalek::SigningKey::from_bytes(&[0x4f; 32])
-                    .verifying_key()
-                    .as_bytes(),
-            ),
-        }],
-        ..FakeOptions::default()
-    });
-    let machine = Machine::new();
-    assert!(machine.connect(&fake).status.success());
-    let pack = "name = \"acme-floor\"\nversion = \"1.0.0\"\ndescription = \"floor\"\n\n[context]\ndeny_tools = [\"ctx_url_read\"]\n";
-    let bundle = |version: u64, policy: serde_json::Value| {
-        serde_json::json!({
-            "schema": "leanctx.hive.policy-bundle/v1", "policy_version": version,
-            "org_policy": policy, "unpin": null, "filter_packs": [],
-        })
-    };
-    fake.set_policy_bundle(bundle(1, signed_org_policy(1, pack)));
-    let output = machine.run(&["sync"]);
-    assert!(
-        text(&output.stdout).contains("Policy bundle verified (org policy v1"),
-        "{output:?}"
-    );
-    let status = text(&machine.run(&["status"]).stdout);
-    assert!(
-        status.contains("Company policy: v1 received and verified"),
-        "{status}"
-    );
-
-    // Version 2 with a pack swapped after signing: refused, v1 stays.
-    let mut tampered = signed_org_policy(2, pack);
-    tampered["pack_toml"] = serde_json::Value::from(format!("{pack}\n[context]\n"));
-    fake.set_policy_bundle(bundle(2, tampered));
-    let output = machine.run(&["sync"]);
-    assert!(
-        text(&output.stderr)
-            .contains("policy bundle refused: the policy pack is not the one the statement names"),
-        "{output:?}"
-    );
-    let status = text(&machine.run(&["status"]).stdout);
-    assert!(
-        status.contains("Company policy: v1 received and verified"),
-        "{status}"
-    );
-    assert!(status.contains("Policy refused:"), "{status}");
-
-    // A downgrade is refused too.
-    fake.set_policy_bundle(bundle(1, signed_org_policy(1, "name = \"weaker\"\n")));
-    let output = machine.run(&["sync"]);
-    assert!(
-        text(&output.stderr).contains("policy bundle refused"),
-        "{output:?}"
-    );
-}
-
-/// HIVE-RT-D5: Hive cannot drop a pack the org's signed policy requires;
-/// the engine refuses that bundle, keeps the last verified one, says so in
-/// `hive status`, and local work goes on.
-#[test]
-fn a_bundle_without_a_pack_the_signed_policy_requires_is_refused() {
-    let fake = FakeHive::start_with(FakeOptions {
-        policy_signer_keys: vec![lean_ctx_protocol::hive::lease::PolicySignerKeyV1 {
-            org: "org_acme".into(),
-            ed25519_pub: base64::engine::general_purpose::STANDARD.encode(
-                ed25519_dalek::SigningKey::from_bytes(&[0x4f; 32])
-                    .verifying_key()
-                    .as_bytes(),
-            ),
-        }],
-        ..FakeOptions::default()
-    });
+fn a_toml_org_policy_is_ignored_and_never_refuses_a_bundle() {
+    let fake = FakeHive::start_with(FakeOptions::default());
     let machine = Machine::new();
     assert!(machine.connect(&fake).status.success());
     let pack = "name = \"acme-floor\"\nversion = \"1.0.0\"\ndescription = \"floor\"\n\n[context]\ndeny_tools = [\"ctx_url_read\"]\n";
     let filters = signed_filter_pack("acme-codenames", 1, "project-falcon", "block");
-    // The contract type: its field order is the signed order (a JSON object
-    // would sort the keys and break the signature).
     let required = vec![lean_ctx_protocol::hive::policy::RequiredFilterPackV1 {
         pack_id: "acme-codenames".into(),
         version: 1,
         sha256: filters["sha256"].as_str().unwrap().into(),
     }];
-    let policy = signed_org_policy_requiring(1, pack, required);
-    let bundle = |packs: serde_json::Value| {
+    let bundle = |version: u64, policy: serde_json::Value, packs: serde_json::Value| {
         serde_json::json!({
-            "schema": "leanctx.hive.policy-bundle/v1", "policy_version": 1,
+            "schema": "leanctx.hive.policy-bundle/v1", "policy_version": version,
             "org_policy": policy, "unpin": null, "filter_packs": packs,
         })
     };
-    fake.set_policy_bundle(bundle(serde_json::json!([filters])));
+    fake.set_policy_bundle(bundle(
+        1,
+        signed_org_policy_requiring(1, pack, required),
+        serde_json::json!([filters]),
+    ));
     let output = machine.run(&["sync"]);
     assert!(
-        text(&output.stdout).contains("Policy bundle verified (org policy v1"),
-        "{output:?}"
-    );
-    // The status names the required pack and whether it is installed as signed.
-    let json: serde_json::Value =
-        serde_json::from_str(&text(&machine.run(&["status", "--json"]).stdout)).unwrap();
-    assert_eq!(
-        json["policy"]["required_filter_packs"],
-        serde_json::json!([{"pack_id": "acme-codenames", "version": 1, "installed": true}]),
-        "{json}"
-    );
-    assert!(
-        text(&machine.run(&["status"]).stdout)
-            .contains("Required:     acme-codenames v1 (installed)")
-    );
-
-    // The same signed policy, the pack left out: refused, the pack stays.
-    fake.set_policy_bundle(bundle(serde_json::json!([])));
-    let output = machine.run(&["sync"]);
-    assert!(
-        text(&output.stderr)
-            .contains("policy bundle refused: required filter pack acme-codenames is missing"),
+        text(&output.stdout).contains("Policy bundle verified (1 filter packs)."),
         "{output:?}"
     );
     let status = text(&machine.run(&["status"]).stdout);
+    assert!(!status.contains("Company policy"), "{status}");
     assert!(
         status.contains("Filter packs: acme-codenames v1"),
         "{status}"
     );
+    let json: serde_json::Value =
+        serde_json::from_str(&text(&machine.run(&["status", "--json"]).stdout)).unwrap();
+    assert!(json.get("policy").is_none(), "{json}");
+
+    // Hive 2.1 sends neither the policy nor, here, the pack it listed.
+    fake.set_policy_bundle(bundle(0, serde_json::Value::Null, serde_json::json!([])));
+    let output = machine.run(&["sync"]);
     assert!(
-        status.contains("Policy refused: required filter pack acme-codenames is missing"),
-        "{status}"
+        text(&output.stdout).contains("Policy bundle verified (0 filter packs)."),
+        "{output:?}"
     );
+    assert!(!text(&output.stderr).contains("refused"), "{output:?}");
+    let status = text(&machine.run(&["status"]).stdout);
+    assert!(!status.contains("Policy refused"), "{status}");
 }
 
 /// A filter pack signed with the fake's Hive key, as Hive lists it.
@@ -1355,474 +1253,23 @@ fn drafts_wait_in_the_outbox_while_hive_is_offline() {
 }
 
 #[test]
-fn metrics_follow_the_engine_lease_and_organization_switches() {
-    use lean_ctx_protocol::hive::lease::HiveOrgSettingsV1;
-    // The organization switched metrics off; the signed lease says so.
-    let fake = FakeHive::start_with(FakeOptions {
-        org_settings: Some(HiveOrgSettingsV1 {
-            metrics_upload: false,
-            receipts_upload: false,
-        }),
-        ..FakeOptions::default()
-    });
-    let machine = Machine::new();
-    assert!(machine.connect(&fake).status.success());
-    let status = text(&machine.run(&["status"]).stdout);
-    assert!(
-        status.contains("Metrics:      not sent: switched off by the workspace"),
-        "{status}"
-    );
-    let sync = machine.run(&["sync"]);
-    assert!(sync.status.success(), "{sync:?}");
-    assert!(
-        fake.requests().iter().all(|r| r.path != "/v1/metrics"),
-        "the retired daily upload is never sent"
-    );
-
-    // An organization that allows it, and an engine that does not.
+fn receipts_follow_the_engine_and_lease_switches() {
     let fake = FakeHive::start();
     let machine = Machine::new();
     assert!(machine.connect(&fake).status.success());
     let status = text(&machine.run(&["status"]).stdout);
-    assert!(
-        status.contains("Metrics:      not sent: replaced by hourly engine metrics"),
-        "the daily upload is retired: {status}"
-    );
     assert!(
         status.contains("Receipts:     not sent: the lease does not include receipts.upload"),
         "a Team lease has no receipts right: {status}"
     );
     let config = machine.home.path().join("config/config.toml");
     let mut toml = std::fs::read_to_string(&config).unwrap();
-    toml.push_str("metrics_upload = false\n");
+    toml.push_str("receipts_upload = false\n");
     std::fs::write(&config, toml).unwrap();
     let status = text(&machine.run(&["status"]).stdout);
     assert!(
-        status.contains("Metrics:      not sent: switched off on this engine"),
+        status.contains("Receipts:     not sent: switched off on this engine"),
         "{status}"
-    );
-}
-
-/// Q1 (C0 1.9 §7): a confirmation brings a sealed proposal to its
-/// threshold; Hive cannot read it, so it waits `ready` until an engine
-/// that may merge does so on its next sync. The CLI confirms nothing.
-#[test]
-fn confirmed_sealed_proposals_are_merged_by_an_engine_and_the_cli_confirms_nothing() {
-    use lean_ctx_protocol::hive::lease::HiveRight;
-    let mut rights = FakeOptions::default().rights;
-    rights.extend([HiveRight::Sealed, HiveRight::KnowledgeMerge]);
-    let fake = FakeHive::start_with(FakeOptions {
-        rights,
-        seal_new_projects: true,
-        ..FakeOptions::default()
-    });
-    let origin = "https://github.com/acme/vault.git";
-    let a = Machine::new();
-    assert!(a.connect(&fake).status.success());
-    let a_id = a.status_json().instance.unwrap().id;
-    let a_project = git_project(&a, "vault", origin);
-    assert!(a.run_in(&a_project, &["hive", "sync"]).status.success());
-    let project_id = fake.project_ids().into_iter().next().unwrap();
-    fake.approve_sealed(&project_id, &a_id);
-    remember(
-        &a,
-        &a_project,
-        "Ledgers close at midnight UTC.",
-        "architecture-decision",
-        "close",
-    );
-    assert!(text(&a.run_in(&a_project, &["hive", "sync"]).stdout).contains("Sent draft #1"));
-    fake.set_auto_merge(&project_id, 1);
-
-    let b = Machine::new();
-    assert!(b.connect(&fake).status.success());
-    let b_id = b.status_json().instance.unwrap().id;
-    fake.approve_sealed(&project_id, &b_id);
-    assert!(a.run(&["grant", "--yes"]).status.success());
-    let b_project = git_project(&b, "vault", origin);
-    assert!(b.run_in(&b_project, &["hive", "sync"]).status.success());
-    let repo = format!("acme/p-{}", &project_id[..8]);
-
-    // The CLI confirms nothing: people review on the web, agents through
-    // their own session.
-    let cli = b.run(&["review", "confirm", &repo, "1"]);
-    assert_eq!(cli.status.code(), Some(1));
-    assert!(text(&cli.stderr).contains("on the web"), "{cli:?}");
-    assert!(
-        fake.requests()
-            .iter()
-            .all(|r| !r.path.ends_with("/confirmations")),
-        "nothing was confirmed"
-    );
-
-    // A person confirms on the web: the sealed proposal is ready, and the
-    // next sync of an engine that may merge merges it.
-    fake.confirm_as_person(&project_id, 1);
-    assert_eq!(
-        fake.proposal_state(&project_id, 1),
-        Some(serde_json::json!("ready"))
-    );
-    let listing = text(&b.run(&["review"]).stdout);
-    assert!(
-        listing.contains("#1 sealed"),
-        "ready proposals are listed: {listing}"
-    );
-    let sync = a.run_in(&a_project, &["hive", "sync"]);
-    assert!(
-        text(&sync.stdout).contains("Merged the confirmed sealed proposals of acme/"),
-        "{sync:?}"
-    );
-    assert_eq!(
-        fake.proposal_state(&project_id, 1),
-        Some(serde_json::json!("merged"))
-    );
-}
-
-/// X2 (C0 1.9 §3): a threshold merge in a quarantining plan never reaches
-/// an agent on any machine; the engine keeps merging on top of it, and a
-/// rollback to the released head undoes it, released at once.
-#[test]
-fn a_quarantined_threshold_merge_never_reaches_an_agent_and_rolls_back_to_the_released_head() {
-    use lean_ctx_protocol::hive::knowledge::RevisionState;
-    use lean_ctx_protocol::hive::lease::HiveRight;
-    let mut rights = FakeOptions::default().rights;
-    rights.extend([HiveRight::Sealed, HiveRight::KnowledgeMerge]);
-    let fake = FakeHive::start_with(FakeOptions {
-        rights,
-        seal_new_projects: true,
-        ..FakeOptions::default()
-    });
-    let origin = "https://github.com/acme/vault.git";
-    let a = Machine::new();
-    assert!(a.connect(&fake).status.success());
-    let a_id = a.status_json().instance.unwrap().id;
-    let a_project = git_project(&a, "vault", origin);
-    assert!(a.run_in(&a_project, &["hive", "sync"]).status.success());
-    let project_id = fake.project_ids().into_iter().next().unwrap();
-    fake.approve_sealed(&project_id, &a_id);
-    let repo = format!("acme/p-{}", &project_id[..8]);
-    remember(
-        &a,
-        &a_project,
-        "Ledgers close at midnight UTC.",
-        "architecture-decision",
-        "close",
-    );
-    assert!(text(&a.run_in(&a_project, &["hive", "sync"]).stdout).contains("Sent draft #1"));
-    let merged = a.run(&["review", "merge", &repo, "1"]);
-    assert!(
-        text(&merged.stdout).contains("revision 1 (sealed)"),
-        "{merged:?}"
-    );
-
-    let b = Machine::new();
-    assert!(b.connect(&fake).status.success());
-    let b_id = b.status_json().instance.unwrap().id;
-    fake.approve_sealed(&project_id, &b_id);
-    assert!(a.run(&["grant", "--yes"]).status.success());
-    let b_project = git_project(&b, "vault", origin);
-    let recall = |what: &str| {
-        assert!(b.run_in(&b_project, &["hive", "sync"]).status.success());
-        text(
-            &b.run_in(&b_project, &["knowledge", "recall", "--json", what])
-                .stdout,
-        )
-    };
-    assert!(recall("midnight").contains("Ledgers close at midnight UTC."));
-
-    fake.set_auto_merge(&project_id, 1);
-    fake.set_quarantine(&project_id, true);
-    remember(
-        &a,
-        &a_project,
-        "Refunds settle within two days.",
-        "architecture-decision",
-        "refunds",
-    );
-    assert!(text(&a.run_in(&a_project, &["hive", "sync"]).stdout).contains("Sent draft #2"));
-    fake.confirm_as_person(&project_id, 2);
-    let sync = a.run_in(&a_project, &["hive", "sync"]);
-    assert!(
-        text(&sync.stdout).contains("Merged the confirmed sealed proposals of acme/"),
-        "{sync:?}"
-    );
-    assert_eq!(
-        fake.revision_state(&project_id, 2),
-        Some(RevisionState::Quarantined)
-    );
-    assert!(
-        !recall("refunds").contains("Refunds settle"),
-        "a quarantined revision reaches no agent"
-    );
-    assert!(recall("midnight").contains("Ledgers close at midnight UTC."));
-
-    // Only a released revision is a rollback target; the released head
-    // itself is one while a quarantined revision waits after it.
-    let refused = a.run(&["review", "rollback", &repo, "2"]);
-    assert_eq!(refused.status.code(), Some(1), "{refused:?}");
-    assert!(
-        text(&refused.stderr).contains("not an earlier released revision"),
-        "{refused:?}"
-    );
-    let rolled = a.run(&["review", "rollback", &repo, "1"]);
-    assert!(rolled.status.success(), "{rolled:?}");
-    assert_eq!(fake.revision(&project_id, 3).unwrap().1, Some(1));
-    assert_eq!(
-        fake.revision_state(&project_id, 2),
-        Some(RevisionState::RolledBack)
-    );
-    assert_eq!(
-        fake.revision_state(&project_id, 3),
-        Some(RevisionState::Released)
-    );
-    assert!(!recall("refunds").contains("Refunds settle"));
-    assert!(recall("midnight").contains("Ledgers close at midnight UTC."));
-}
-
-#[test]
-fn a_sealed_repo_publishes_its_code_graph_sealed_without_a_readable_path() {
-    use lean_ctx_protocol::hive::lease::HiveRight;
-    let mut rights = FakeOptions::default().rights;
-    rights.push(HiveRight::Sealed);
-    let fake = FakeHive::start_with(FakeOptions {
-        rights,
-        seal_new_projects: true,
-        ..FakeOptions::default()
-    });
-    let machine = Machine::new();
-    assert!(machine.connect(&fake).status.success());
-    let instance_id = machine.status_json().instance.unwrap().id;
-    let project = git_project(&machine, "ledger", "https://github.com/acme/ledger.git");
-    std::fs::create_dir_all(project.join("src")).unwrap();
-    std::fs::write(
-        project.join("src/settlement_ledger.rs"),
-        "pub fn reconcile_quarterly_settlements() -> u32 {\n    7\n}\n",
-    )
-    .unwrap();
-    assert!(machine.run_in(&project, &["hive", "sync"]).status.success());
-    let project_id = fake.project_ids().into_iter().next().unwrap();
-    fake.approve_sealed(&project_id, &instance_id);
-    // The repo's first key comes with the first sealed content.
-    remember(
-        &machine,
-        &project,
-        "Settlements reconcile quarterly.",
-        "architecture-decision",
-        "settlement",
-    );
-    assert!(machine.run_in(&project, &["hive", "sync"]).status.success());
-
-    let published = machine.run_in(&project, &["hive", "graph", "publish"]);
-    assert!(published.status.success(), "{published:?}");
-    assert!(
-        text(&published.stdout).contains("sent sealed"),
-        "{published:?}"
-    );
-    // The file and its symbol are in the graph, only not readable.
-    assert!(
-        !text(&published.stdout).contains(": 0 nodes"),
-        "{published:?}"
-    );
-    let puts: Vec<_> = fake
-        .requests()
-        .into_iter()
-        .filter(|r| r.method == "PUT" && r.path.ends_with("/code-graph"))
-        .collect();
-    assert_eq!(puts.len(), 1);
-    let body: serde_json::Value = serde_json::from_str(&puts[0].body).unwrap();
-    assert!(body["graph"].is_null(), "{body}");
-    assert!(body["sealed"]["ciphertext"].is_string(), "{body}");
-    // No path, file or symbol name of the checkout in clear (each needle
-    // has a character base64 ciphertext never contains).
-    for plaintext in [
-        "settlement_ledger",
-        "reconcile_quarterly_settlements",
-        "code:",
-    ] {
-        assert!(!puts[0].body.contains(plaintext), "{plaintext} in {body}");
-    }
-}
-
-#[test]
-fn a_sealed_repo_sends_nothing_readable_and_shares_its_key_after_a_fingerprint_check() {
-    use lean_ctx_protocol::hive::lease::HiveRight;
-    let mut rights = FakeOptions::default().rights;
-    rights.push(HiveRight::Sealed);
-    // Members review sealed proposals in their engines, so they merge there.
-    rights.push(HiveRight::KnowledgeMerge);
-    let fake = FakeHive::start_with(FakeOptions {
-        rights,
-        seal_new_projects: true,
-        ..FakeOptions::default()
-    });
-    let origin = "https://github.com/acme/vault.git";
-
-    // A: the first engine of the sealed vault creates its key.
-    let a = Machine::new();
-    assert!(a.connect(&fake).status.success());
-    let a_id = a.status_json().instance.unwrap().id;
-    let a_project = git_project(&a, "vault", origin);
-    assert!(a.run_in(&a_project, &["hive", "sync"]).status.success());
-    let project_id = fake.project_ids().into_iter().next().unwrap();
-    fake.approve_sealed(&project_id, &a_id);
-    let fact = "Billing replicates to the analytics cluster nightly.";
-    remember(&a, &a_project, fact, "architecture-decision", "replication");
-    let sync = a.run_in(&a_project, &["hive", "sync"]);
-    assert!(text(&sync.stdout).contains("Sent draft #1"), "{sync:?}");
-    assert_eq!(fake.sealed_grants(&project_id), vec![(a_id.clone(), 1)]);
-
-    // Nothing readable left the machine: not the fact, not a summary.
-    for request in fake.requests() {
-        for plaintext in ["Billing", "replicates", "analytics", "Captured"] {
-            assert!(
-                !request.body.contains(plaintext),
-                "{plaintext} left the machine in {}",
-                request.path
-            );
-        }
-    }
-    let drafts = fake.proposals(&project_id);
-    assert_eq!(drafts.len(), 1);
-    assert!(drafts[0].get("summary").is_none(), "{:?}", drafts[0]);
-    assert!(drafts[0]["context_patch"]["sealed"]["ciphertext"].is_string());
-
-    // B: approved by a maintainer, granted by A after the fingerprint check.
-    let b = Machine::new();
-    assert!(b.connect(&fake).status.success());
-    let b_id = b.status_json().instance.unwrap().id;
-    let b_print = text(&b.run(&["status"]).stdout)
-        .lines()
-        .find_map(|line| line.strip_prefix("Key print:    "))
-        .map(|rest| {
-            rest.split_whitespace()
-                .next()
-                .unwrap_or_default()
-                .to_string()
-        })
-        .expect("own fingerprint in status");
-    fake.approve_sealed(&project_id, &b_id);
-    let refused = a.run(&["grant"]);
-    assert!(
-        text(&refused.stdout).contains(&b_print),
-        "the fingerprint is shown: {refused:?}"
-    );
-    assert!(text(&refused.stdout).contains("not granted"), "{refused:?}");
-    let granted = a.run(&["grant", "--yes"]);
-    assert!(text(&granted.stdout).contains("granted."), "{granted:?}");
-    assert!(fake.sealed_grants(&project_id).contains(&(b_id.clone(), 1)));
-
-    // B seals its own draft with the granted key.
-    let b_project = git_project(&b, "vault", origin);
-    remember(
-        &b,
-        &b_project,
-        "Rotate the vault key yearly.",
-        "architecture-decision",
-        "rotation",
-    );
-    let sync = b.run_in(&b_project, &["hive", "sync"]);
-    assert!(text(&sync.stdout).contains("Sent draft #2"), "{sync:?}");
-    assert!(
-        fake.requests()
-            .iter()
-            .all(|r| !r.body.contains("Rotate the vault")),
-        "B's fact stayed sealed too"
-    );
-
-    // A reviews both proposals in its engine and merges them, sealed.
-    let listing = text(&a.run(&["review"]).stdout);
-    assert!(listing.contains("#1 sealed"), "{listing}");
-    assert!(listing.contains("#2 sealed"), "{listing}");
-    let repo = format!("acme/p-{}", &project_id[..8]);
-    let merged = a.run(&["review", "merge", &repo, "1", "2"]);
-    assert!(
-        text(&merged.stdout).contains("revision 1 (sealed)"),
-        "{merged:?}"
-    );
-    assert_eq!(fake.head_epoch(&project_id), Some(1));
-    for request in fake.requests() {
-        for plaintext in ["Billing replicates", "Rotate the vault"] {
-            assert!(
-                !request.body.contains(plaintext),
-                "{plaintext} left in {}",
-                request.path
-            );
-        }
-    }
-    // B pulls the sealed revision and opens it with its granted key.
-    assert!(b.run_in(&b_project, &["hive", "sync"]).status.success());
-    let recalled = b.run_in(&b_project, &["knowledge", "recall", "--json", "replicates"]);
-    assert!(text(&recalled.stdout).contains(fact), "{recalled:?}");
-
-    // B is removed: A's next sealing moves the repo to epoch 2, re-seals
-    // the head, and B gets no key for it.
-    fake.revoke_sealed(&project_id, &b_id);
-    remember(
-        &a,
-        &a_project,
-        "Keys rotate on every member removal.",
-        "architecture-decision",
-        "removal",
-    );
-    let sync = a.run_in(&a_project, &["hive", "sync"]);
-    assert!(text(&sync.stdout).contains("Sent draft #3"), "{sync:?}");
-    let grants = fake.sealed_grants(&project_id);
-    assert!(grants.contains(&(a_id, 2)), "{grants:?}");
-    assert!(!grants.contains(&(b_id, 2)), "{grants:?}");
-    assert_eq!(
-        fake.head_epoch(&project_id),
-        Some(2),
-        "the head is re-sealed"
-    );
-
-    // A merges #3, then rolls back to revision 1 (epoch 1): the restored
-    // document is sealed again under epoch 2 for the new number; revision
-    // 1's ciphertext is never sent as it is.
-    let merged = a.run(&["review", "merge", &repo, "3"]);
-    assert!(
-        text(&merged.stdout).contains("revision 3 (sealed)"),
-        "{merged:?}"
-    );
-    let rolled = a.run(&["review", "rollback", &repo, "1"]);
-    assert!(
-        text(&rolled.stdout)
-            .contains("back to the document of revision 1: revision 4 (sealed again)"),
-        "{rolled:?}"
-    );
-    let (old, _) = fake.revision(&project_id, 1).unwrap();
-    let (new, rolls_back) = fake.revision(&project_id, 4).unwrap();
-    let (old, new) = (old.unwrap(), new.unwrap());
-    assert_eq!(rolls_back, Some(1));
-    assert_eq!(new["epoch"], 2, "sealed under the current key");
-    assert_ne!(new["ciphertext"], old["ciphertext"]);
-    let old_ciphertext = old["ciphertext"].as_str().unwrap();
-    let rollback_put = fake
-        .requests()
-        .into_iter()
-        .rfind(|r| r.method == "PUT" && r.path.ends_with("/knowledge"))
-        .expect("the rollback was written");
-    assert!(
-        rollback_put.body.contains("\"rolls_back\":1"),
-        "{}",
-        rollback_put.body
-    );
-    assert!(
-        !rollback_put.body.contains(old_ciphertext),
-        "the old ciphertext is never sent as it is"
-    );
-    let recalled = a.run_in(&a_project, &["knowledge", "recall", "--json", "replicates"]);
-    assert!(text(&recalled.stdout).contains(fact), "{recalled:?}");
-
-    // A machine that never got the repo key cannot roll back, and says why.
-    let c = Machine::new();
-    assert!(c.connect(&fake).status.success());
-    let c_project = git_project(&c, "vault", origin);
-    assert!(c.run_in(&c_project, &["hive", "sync"]).status.success());
-    let refused = c.run(&["review", "rollback", &repo, "1"]);
-    assert_eq!(refused.status.code(), Some(1));
-    assert!(
-        text(&refused.stderr).contains("holds no key of the sealed vault"),
-        "{refused:?}"
     );
 }
 
@@ -1903,10 +1350,12 @@ fn the_bus_relay_catches_up_and_acks_deliveries_from_other_instances() {
 }
 
 /// H2: tasks of a linked project are read through the contract, text from
-/// Hive arrives fenced as foreign data (X5), a proposal goes out with the next sync (once, under
-/// its idempotency key), and a claim goes out only under the engine's opt-in.
+/// Hive arrives fenced as foreign data (X5), a task an agent proposes goes out
+/// with the next sync (once, under its idempotency key) and is open at once
+/// (agents orchestrate tasks, no person approves), and a claim goes out only
+/// under the engine's opt-in.
 #[test]
-fn project_tasks_are_listed_proposed_once_and_claimed_only_under_the_optin() {
+fn project_tasks_are_listed_opened_once_and_claimed_only_under_the_optin() {
     use lean_ctx_protocol::hive::lease::HiveRight;
     let mut rights = FakeOptions::default().rights;
     rights.extend([
@@ -2027,7 +1476,10 @@ fn project_tasks_are_listed_proposed_once_and_claimed_only_under_the_optin() {
     assert!(propose("Stabilise the timer test").status.success());
     let sync = machine.run_in(&project, &["hive", "sync"]);
     assert!(
-        text(&sync.stdout).contains(&format!("Proposed task #{}", number + 1)),
+        text(&sync.stdout).contains(&format!(
+            "Created task #{}, open now (any agent may claim it).",
+            number + 1
+        )),
         "{sync:?}"
     );
     // The same proposal again is the same task (idempotency key).
@@ -2035,7 +1487,7 @@ fn project_tasks_are_listed_proposed_once_and_claimed_only_under_the_optin() {
     assert!(machine.run_in(&project, &["hive", "sync"]).status.success());
     let tasks = fake.tasks(&project_id);
     assert_eq!(tasks.len(), 2, "{tasks:?}");
-    assert_eq!(tasks[1]["state"], "proposed");
+    assert_eq!(tasks[1]["state"], "open");
     assert_eq!(tasks[1]["origin"]["kind"], "agent");
 
     let secret = propose(&format!("Rotate {}", concat!("AKIA", "IOSFODNN7EXAMPLE")));

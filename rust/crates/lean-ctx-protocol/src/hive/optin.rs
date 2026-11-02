@@ -3,8 +3,8 @@
 //! Engine opt-in (C0 1.9, section 4; owner decision O1).
 //!
 //! An engine's agents work on tasks only by *pulling* them, and only within
-//! the opt-in its owner set on the web: which vaults and networks, which
-//! topics, how much per day, and whether at all. Hive never starts an agent;
+//! the opt-in its owner set on the web: which vaults and networks, how
+//! much per day, and whether at all. Hive never starts an agent;
 //! nothing here spawns anything.
 //!
 //! `GET /v1/me/optin` (instance token) → [`EngineOptinV1`]. The owner
@@ -48,7 +48,6 @@ pub const DEFAULT_DAILY_TASKS: u32 = 5;
 pub const MAX_DAILY_TASKS: u32 = 100;
 pub const MAX_OPTIN_VAULTS: usize = 200;
 pub const MAX_OPTIN_NETWORKS: usize = 200;
-pub const MAX_OPTIN_TOPICS: usize = 5;
 
 /// Limits per UTC day. A limit that is absent is no limit; since Hive
 /// task #19 (owner decision 23.10.) that holds for the task count too.
@@ -95,26 +94,15 @@ pub struct EngineOptinV1 {
     /// Vaults (`vault_id`) whose tasks the agents may pull.
     #[serde(default)]
     pub vaults: Vec<String>,
-    /// Networks whose questions and swarm subtasks they may pull
-    /// (section 2 `NetworkV1`).
+    /// Networks whose questions they may pull (section 2 `NetworkV1`).
     #[serde(default)]
     pub networks: Vec<NetworkV1>,
-    /// Swarm topics (2-32 of `a-z`, `0-9`, `-`).
-    #[serde(default)]
-    pub topics: Vec<String>,
     pub daily_budget: DailyBudgetV1,
     pub used_today: DailyUsageV1,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopped_at: Option<UtcTimestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<UtcTimestamp>,
-}
-
-fn topic_ok(topic: &str) -> bool {
-    (2..=32).contains(&topic.len())
-        && topic
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 fn day_ok(day: &str) -> bool {
@@ -132,11 +120,7 @@ impl EngineOptinV1 {
         require_schema(&self.schema, ENGINE_OPTIN_SCHEMA)?;
         match &self.optin_id {
             Some(id) => validate_id(id, "optin_id")?,
-            None if self.active
-                || !self.vaults.is_empty()
-                || !self.networks.is_empty()
-                || !self.topics.is_empty() =>
-            {
+            None if self.active || !self.vaults.is_empty() || !self.networks.is_empty() => {
                 return Err(ValidationError::new(
                     "an engine without opt-in is inactive with empty scope",
                 ));
@@ -155,14 +139,6 @@ impl EngineOptinV1 {
                     "vaults must be sorted without repeats",
                 ));
             }
-        }
-        if self.topics.len() > MAX_OPTIN_TOPICS
-            || !self.topics.iter().all(|t| topic_ok(t))
-            || self.topics.windows(2).any(|pair| pair[0] >= pair[1])
-        {
-            return Err(ValidationError::new(
-                "up to 5 topics of 2-32 [a-z0-9-], sorted without repeats",
-            ));
         }
         if self
             .daily_budget

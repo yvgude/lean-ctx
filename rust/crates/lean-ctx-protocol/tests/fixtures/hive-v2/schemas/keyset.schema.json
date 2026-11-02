@@ -144,7 +144,7 @@
       }
     },
     "lease_envelope": {
-      "description": "lease envelope for 2.x engines: unchanged v1 envelope, kid = the key_id of the key set v3 key with purpose policy; signature = standard base64 Ed25519 over \"leanctx.hive.lease.v1\\n\" ‖ canonical_json(lease)",
+      "description": "lease envelope for 2.x engines: unchanged v1 envelope, kid = the key_id of the key set v3 key with purpose policy; signature = standard base64 Ed25519 over \"leanctx.hive.lease.v1\\n\" ‖ canonical_json(lease); lease.policy_signer_keys only in answers to Hive-Protocol below 2.1, always [] (the released 3.12.1 engine requires it, until MIN_ENGINE >= the C0 2.1 release)",
       "type": "object",
       "required": [
         "schema",
@@ -166,6 +166,84 @@
         "signature": {
           "type": "string",
           "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    },
+    "enrollment_for_2x": {
+      "description": "POST /v1/device/token answer (EnrollmentV1, leanctx.hive.enrollment/v1) to a Hive-Protocol 2.1+ request: keys is the key set v3 of GET /v1/keys and lease is a 2.x lease envelope whose kid is the key_id of its key with purpose policy; below 2.1 the answer keeps the C0 1.x key set v1 and a v1 lease kid. org.company (a team of a company) and sharing (C0 2.1 device setup) are sent only when they apply",
+      "type": "object",
+      "required": [
+        "schema",
+        "instance_id",
+        "org",
+        "lease",
+        "keys",
+        "org_salt_id",
+        "web_url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.enrollment/v1"
+        },
+        "instance_id": {
+          "type": "string",
+          "pattern": "^inst_[0-9a-z]{26,32}$"
+        },
+        "org": {
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "kind"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^org_[0-9a-z_]{1,40}$"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "enum": [
+                "personal",
+                "team"
+              ]
+            },
+            "company": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "lease": {
+          "$ref": "#/$defs/lease_envelope"
+        },
+        "keys": {
+          "$ref": "#/$defs/keyset"
+        },
+        "org_salt_id": {
+          "type": "string",
+          "pattern": "^salt_[0-9a-z_]{1,40}$"
+        },
+        "web_url": {
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "sharing": {
+          "$ref": "device.schema.json#/$defs/enrollment_sharing"
         }
       }
     }

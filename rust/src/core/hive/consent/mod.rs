@@ -7,7 +7,8 @@
 //! approval lives only in [`broker::Broker::approve`], which takes a
 //! [`Proof`] that only an approval channel produces.
 //!
-//! - [`Kind`]: the nine kinds of 3.12.0, equal to the embedded fixture.
+//! - [`Kind`]: the two kinds the engine uses, equal to the embedded list
+//!   (the kinds of the C0 fixture the engine knows; any other is unknown).
 //! - [`Record`]: one request with its decision and its proof, stored
 //!   `<config>/hive/consent/<id>.json` (0600); [`broker`] verifies the
 //!   proof on every read.
@@ -16,7 +17,6 @@ pub mod broker;
 pub mod channel;
 #[cfg(unix)]
 pub mod helper_mac;
-pub mod proof;
 pub mod web;
 
 use std::sync::OnceLock;
@@ -24,10 +24,10 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-pub use broker::{Broker, Restart, Trust};
+pub use broker::{Broker, Trust};
 
 /// The C0 kind list, embedded (`crates/` is not packaged); a test keeps it
-/// byte-equal to `tests/fixtures/hive-v2/enums/consent-kinds.json`.
+/// equal to `tests/fixtures/hive-v2/enums/consent-kinds.json`.
 pub(crate) const KINDS_JSON: &str = include_str!("consent-kinds.json");
 
 /// Domain of a presence-key signature (§3.8.1, form (b) of §3.8.3).
@@ -39,52 +39,22 @@ pub const STATEMENT_SCHEMA: &str = "leanctx.hive.consent.v1";
 /// A request may be answered for 24 h.
 pub const REQUEST_TTL_MS: u64 = 24 * 60 * 60 * 1000;
 
-/// The nine consent kinds of 3.12.0 (RESOLUTIONS R107). The values are a
-/// shared contract and stay, but no engine path requires two of them:
-/// [`Kind::PublicPresence`] and [`Kind::SealedGrant`].
+/// The C0 consent kinds (C0 2.2): sharing a checkout into a vault and
+/// storing an API key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     LinkVault,
-    /// Never required: Hive removed public vaults, so there is no public
-    /// presence to consent to. Kept for the shared kind list.
-    PublicPresence,
-    SwarmJoin,
-    PledgeChange,
-    UnattendedStart,
-    ProcedureConfirm,
-    ReviewerEnable,
     ApiKeySet,
-    /// Never required through the broker: a sealed vault key is granted by
-    /// `lean-ctx hive grant` (fingerprint confirmed by the person) or by
-    /// `[hive] sealed_grants = "auto"`. Kept for the shared kind list.
-    SealedGrant,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 9] = [
-        Kind::LinkVault,
-        Kind::PublicPresence,
-        Kind::SwarmJoin,
-        Kind::PledgeChange,
-        Kind::UnattendedStart,
-        Kind::ProcedureConfirm,
-        Kind::ReviewerEnable,
-        Kind::ApiKeySet,
-        Kind::SealedGrant,
-    ];
+    pub const ALL: [Kind; 2] = [Kind::LinkVault, Kind::ApiKeySet];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Kind::LinkVault => "link_vault",
-            Kind::PublicPresence => "public_presence",
-            Kind::SwarmJoin => "swarm_join",
-            Kind::PledgeChange => "pledge_change",
-            Kind::UnattendedStart => "unattended_start",
-            Kind::ProcedureConfirm => "procedure_confirm",
-            Kind::ReviewerEnable => "reviewer_enable",
             Kind::ApiKeySet => "api_key_set",
-            Kind::SealedGrant => "sealed_grant",
         }
     }
 
@@ -109,19 +79,11 @@ impl Kind {
         self.spec().channels.iter().any(|c| c == channel)
     }
 
-    /// A server route checks its own proof (§3.8.3).
-    pub fn server_gated(self) -> bool {
-        self.spec().server_route.is_some()
-    }
-
     /// The subject value the person types on the TTY to approve (§3.8.2):
-    /// the place, swarm, vendor or account it names.
+    /// the place, vendor or account it names.
     pub fn typed_field(self) -> &'static str {
         match self {
-            Kind::LinkVault | Kind::PublicPresence | Kind::SealedGrant => "vault",
-            Kind::SwarmJoin | Kind::PledgeChange | Kind::UnattendedStart => "swarm",
-            Kind::ProcedureConfirm => "item_id",
-            Kind::ReviewerEnable => "place",
+            Kind::LinkVault => "vault",
             Kind::ApiKeySet => "vendor",
         }
     }
@@ -138,7 +100,6 @@ struct KindSpec {
     value: String,
     channels: Vec<String>,
     subject: Vec<String>,
-    server_route: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -282,7 +243,7 @@ pub enum ConsentError {
     Expired,
     /// A record failed its proof check (`consent_record_invalid`).
     RecordInvalid,
-    /// `procedure_confirm` outside the web (`consent_web_only`).
+    /// A proof only the web flow gives (`consent_web_only`).
     WebOnly {
         consent_id: String,
     },
@@ -453,31 +414,17 @@ pub fn check_subject(kind: Kind, subject: &Value) -> Result<(), ConsentError> {
 fn field_ok(kind: Kind, name: &str, value: &Value) -> bool {
     let text = value.as_str();
     match name {
-        "link_digest" | "pledge_digest" | "before_digest" | "after_digest" | "item_digest" => {
-            text.is_some_and(is_hex64)
-        }
-        "command_digests" => value.as_array().is_some_and(|items| {
-            (1..=10).contains(&items.len())
-                && items.iter().all(|d| d.as_str().is_some_and(is_hex64))
-        }),
+        "link_digest" => text.is_some_and(is_hex64),
         "vault" if kind == Kind::LinkVault => {
             text.is_some_and(|v| crate::core::hive::vault_address::VaultAddress::parse(v).is_ok())
         }
-        "swarm" | "vault" => text.is_some_and(is_uuid),
+        "vault" => text.is_some_and(is_uuid),
         "remote_seen" | "bound_repo" => {
             value.is_null() || text.is_some_and(|t| (1..=500).contains(&t.chars().count()))
         }
         "target_vault" => value.is_null(),
         "worker_id" => text.is_some_and(crate::core::hive::bus::address::is_worker_id),
         "cli" => text.is_some_and(|t| !t.is_empty() && t.len() <= 64),
-        "usd_cents_per_day" => value.as_u64().is_some(),
-        "reviewer_usd_cents_per_day" => value.as_u64().is_some_and(|c| (100..=50_000).contains(&c)),
-        "source" => matches!(text, Some("owner" | "own")),
-        "place" => text.is_some_and(|t| {
-            t.split_once(':')
-                .is_some_and(|(k, id)| !k.is_empty() && !id.is_empty())
-        }),
-        "item_id" => text.is_some_and(|t| t.starts_with("rv_")),
         "vendor" => text.is_some_and(|t| handle_like(t, 32)),
         "requester" => text.is_some_and(|t| handle_like(t, 39)),
         "engine_fingerprint" => text.is_some_and(|t| t.len() == 16 && is_lower_hex(t)),

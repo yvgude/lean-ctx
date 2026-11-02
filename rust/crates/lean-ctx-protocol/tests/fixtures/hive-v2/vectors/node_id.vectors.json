@@ -97,52 +97,6 @@
     "claim": "node_type ∈ fact|decision|gotcha|finding: dk = blake3_keyed(pk_id, node_type ‖ 0x00 ‖ norm(statement)); node_id = \"n_\" + base32lower(dk)[..26]",
     "event_id": "ULID layout: 48-bit hlc.wall_ms ‖ 80 random bits as one 128-bit big-endian number, Crockford base32 upper, 26 chars",
     "legacy_conversion": "event_id = first 26 chars of Crockford-upper base32 of blake3_keyed(pk_id, \"conv\" ‖ revision_be8 ‖ item_key UTF-8)",
-    "random": "other node types and every edge: prefix + \"_\" + base32lower(16 random bytes) (26 chars); likewise rv_, prg_, b_, g_, cl_, plg_",
-    "seal_conversion": "event_id = first 26 chars of Crockford-upper base32 (RFC 4648 bit order, not the ULID layout) of blake3_keyed(pk_id, \"seal\" ‖ seq_be8 ‖ original_event_id ASCII) (§3.11 step 3b, R90)"
-  },
-  "seal_conversion": [
-    {
-      "case": "a: seq 1",
-      "event_id": "4DTGQ5ADM0RYMYPJZK544J6S9K",
-      "input_hex": "7365616c000000000000000130314a425a3844334b344d354e36503751385239533054315632",
-      "original_event_id": "01JBZ8D3K4M5N6P7Q8R9S0T1V2",
-      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-      "seq": 1
-    },
-    {
-      "case": "b: seq 4294967297, all 8 bytes significant",
-      "event_id": "B8T0F8NRZN2DNDGR7D0WJR527W",
-      "input_hex": "7365616c000000010000000130314a425a3844334b344d354e36503751385239533054315632",
-      "original_event_id": "01JBZ8D3K4M5N6P7Q8R9S0T1V2",
-      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-      "seq": 4294967297
-    },
-    {
-      "case": "c: same original_event_id at seq 2 gives another id than a",
-      "event_id": "EVRDQKD8D6KAQ8QCYRK39B5NMW",
-      "input_hex": "7365616c000000000000000230314a425a3844334b344d354e36503751385239533054315632",
-      "original_event_id": "01JBZ8D3K4M5N6P7Q8R9S0T1V2",
-      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-      "seq": 2
-    },
-    {
-      "case": "d: \"conv\" over the same remaining bytes as case a gives another id (domain separation from R59)",
-      "domain": "conv",
-      "event_id": "W9QWJS7J89GCTW39R689QHA0GF",
-      "input_hex": "636f6e76000000000000000130314a425a3844334b344d354e36503751385239533054315632",
-      "original_event_id": "01JBZ8D3K4M5N6P7Q8R9S0T1V2",
-      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-      "seq": 1
-    }
-  ],
-  "sealed_pk_id": [
-    {
-      "pk_id_hex": "2ecd00816d667153da3e0e855b777579fa73f26088bd66ab9729ae000c4da45e",
-      "place_secret_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c"
-    },
-    {
-      "pk_id_hex": "48125add028d806a79f96a7a26410e65f3bdab212d3c7e9f3891b0056b03ca82",
-      "place_secret_hex": "0000000000000000000000000000000000000000000000000000000000000000"
-    }
-  ]
+    "random": "other node types and every edge: prefix + \"_\" + base32lower(16 random bytes) (26 chars); likewise rv_, prg_, b_, g_, cl_, plg_"
+  }
 }

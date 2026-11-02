@@ -272,8 +272,6 @@ glob = "0.3"
 urlencoding = "2.1"
 rpassword = "7.5"
 ed25519-dalek = { version = "2.2", features = ["rand_core"] }
-# X25519 for sealed repo key wrapping (already in the tree via ed25519-dalek).
-curve25519-dalek = "4.1"
 zeroize = "1"
 getrandom = "0.4"
 uuid = { version = "1", features = ["v4"] }

@@ -37,8 +37,6 @@
   },
   "provenance": "workspace",
   "received_at": 1792800013350,
-  "review_state": "confirmed",
-  "reviewed_by": "none",
   "schema": "leanctx.hive.event/v2",
   "seq": 13,
   "signature": "4266d51313355f58ca97527c8809451609eaf7e193cc89659599f0116eafb1292feb0189284c367fe331279d1eeb41f6fe0f0044abef9f752c478d59eecac302"

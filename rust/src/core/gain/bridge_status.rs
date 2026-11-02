@@ -130,7 +130,7 @@ impl BridgeStatus {
 /// Cumulative intercepted-request count from the persisted introspection file,
 /// or `0` when the file is missing, stale, or malformed.
 fn persisted_request_count(max_age_secs: u64) -> u64 {
-    crate::proxy::introspect::load_persisted(max_age_secs)
+    crate::core::proxy_introspect::load_persisted(max_age_secs)
         .as_ref()
         .and_then(|v| v.get("cumulative"))
         .and_then(|c| c.get("total_requests"))

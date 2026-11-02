@@ -157,14 +157,11 @@ fn event_of(record: &Value) -> Result<Value, SegmentError> {
 }
 
 /// Check one received event: signature (by the caller's signer rules,
-/// SPEC-ENGINE §3.3.5) and, when it carries a body, the body commitment:
-/// keyed with the place key, except a purge tombstone in a sealed place,
-/// whose plaintext body the server commits unkeyed (it holds no key).
-/// `true` when it may fold.
+/// SPEC-ENGINE §3.3.5) and, when it carries a body, the body commitment
+/// keyed with the place key. `true` when it may fold.
 pub fn event_verifies(
     event: &Value,
     pk_id: &[u8; 32],
-    sealed: bool,
     signature_ok: &dyn Fn(&Value) -> bool,
 ) -> bool {
     if !signature_ok(event) {
@@ -173,25 +170,17 @@ pub fn event_verifies(
     let Some(body) = event.get("body").filter(|b| !b.is_null()) else {
         return true;
     };
-    let unkeyed = sealed && event.get("op").and_then(Value::as_str) == Some("purge");
-    let commit = if unkeyed {
-        canonical_json(body)
-            .ok()
-            .map(|c| blake3::hash(&c).to_hex().to_string())
-    } else {
-        sign::body_commit(pk_id, body).ok()
-    };
-    commit.as_deref() == event.get("body_commit").and_then(Value::as_str)
+    sign::body_commit(pk_id, body).ok().as_deref()
+        == event.get("body_commit").and_then(Value::as_str)
 }
 
 /// Verify a segment's records against its manifest entry and turn them into
-/// events to store. Withheld and converted stubs (`{seq, withheld|converted:
-/// true, leaf}`, R90) count for the root by their leaf and are not stored.
+/// events to store. Withheld stubs (`{seq, withheld: true, leaf}`) count
+/// for the root by their leaf and are not stored.
 pub fn import_segment(
     meta: &SegmentMeta,
     records: &[Value],
     pk_id: &[u8; 32],
-    sealed: bool,
     signature_ok: &dyn Fn(&Value) -> bool,
 ) -> Result<Vec<StoredEvent>, SegmentError> {
     if records.len() as u64 != meta.count {
@@ -210,8 +199,7 @@ pub fn import_segment(
         if seq != meta.seq_from + i as u64 {
             return Err(SegmentError::SeqRun);
         }
-        let stub = |k: &str| record.get(k).and_then(Value::as_bool) == Some(true);
-        if stub("withheld") || stub("converted") {
+        if record.get("withheld").and_then(Value::as_bool) == Some(true) {
             let l = record
                 .get("leaf")
                 .and_then(Value::as_str)
@@ -226,7 +214,7 @@ pub fn import_segment(
             .ok_or_else(|| SegmentError::Shape("record without envelope".into()))?;
         leaves.push(leaf(envelope)?);
         let event = event_of(record)?;
-        let ok = event_verifies(&event, pk_id, sealed, signature_ok);
+        let ok = event_verifies(&event, pk_id, signature_ok);
         events.push(StoredEvent {
             seq,
             event,
@@ -251,9 +239,6 @@ pub fn import_segment(
 #[derive(Debug, Clone, PartialEq)]
 pub struct TailPage {
     pub events: Vec<StoredEvent>,
-    /// `{seq, converted: true}` stubs: plaintext seqs a sealing conversion
-    /// replaced (R90); they fold as no-ops and are never stored as events.
-    pub converted: Vec<u64>,
     pub next_since: Option<u64>,
     pub head_seq: u64,
     pub epoch: Option<u64>,
@@ -262,7 +247,6 @@ pub struct TailPage {
 pub fn tail_page(
     page: &Value,
     pk_id: &[u8; 32],
-    sealed: bool,
     signature_ok: &dyn Fn(&Value) -> bool,
 ) -> Result<TailPage, SegmentError> {
     let list = page
@@ -270,25 +254,19 @@ pub fn tail_page(
         .and_then(Value::as_array)
         .ok_or_else(|| SegmentError::Shape("tail without events".into()))?;
     let mut events = Vec::with_capacity(list.len());
-    let mut converted = Vec::new();
     for event in list {
         let seq = event
             .get("seq")
             .and_then(Value::as_u64)
             .ok_or_else(|| SegmentError::Shape("tail event without seq".into()))?;
-        if event.get("converted").and_then(Value::as_bool) == Some(true) {
-            converted.push(seq);
-            continue;
-        }
         events.push(StoredEvent {
             seq,
             event: event.clone(),
-            sig_invalid: !event_verifies(event, pk_id, sealed, signature_ok),
+            sig_invalid: !event_verifies(event, pk_id, signature_ok),
         });
     }
     Ok(TailPage {
         events,
-        converted,
         next_since: page.get("next_since").and_then(Value::as_u64),
         head_seq: page.get("head_seq").and_then(Value::as_u64).unwrap_or(0),
         epoch: page.get("epoch").and_then(Value::as_u64),

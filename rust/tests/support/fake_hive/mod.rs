@@ -31,7 +31,6 @@ use lean_ctx_protocol::hive::enroll::*;
 use lean_ctx_protocol::hive::knowledge::*;
 use lean_ctx_protocol::hive::lease::*;
 use lean_ctx_protocol::hive::policy::*;
-use lean_ctx_protocol::hive::sealed::*;
 use lean_ctx_protocol::hive::telemetry::*;
 use lean_ctx_protocol::hive::vault::*;
 use lean_ctx_protocol::hive::*;
@@ -65,16 +64,11 @@ pub(crate) struct FakeOptions {
     pub(crate) grace_days: i64,
     /// Answer every request with `426 upgrade_required`.
     pub(crate) min_engine: Option<String>,
-    /// Org policy signer keys the lease pins.
-    pub(crate) policy_signer_keys: Vec<PolicySignerKeyV1>,
     /// `org_settings` signed into each lease (`None`: an older service).
     pub(crate) org_settings: Option<HiveOrgSettingsV1>,
     /// Refuse `POST /v1/metrics` with `upload_disabled` (the org switched it
     /// off after the current lease was issued).
     pub(crate) refuse_metrics: bool,
-    /// Projects created by a resolve are sealed (epoch 1), as a repo created
-    /// sealed on the web.
-    pub(crate) seal_new_projects: bool,
     /// At the seat limit, answer as a Pro org whose revoked engine's slot
     /// cools down until this time (`409 quota_exceeded registered_engines`,
     /// `cooldown_days: 7`, API §3 / P7) instead of `instance_limit`.
@@ -105,10 +99,8 @@ impl Default for FakeOptions {
             lease_hours: MAX_LEASE_VALIDITY_HOURS,
             grace_days: MAX_LEASE_GRACE_DAYS,
             min_engine: None,
-            policy_signer_keys: Vec::new(),
             org_settings: None,
             refuse_metrics: false,
-            seal_new_projects: false,
             slot_cooldown_until: None,
             device_setup: None,
             answer_delay: None,
@@ -142,7 +134,6 @@ struct Instance {
 struct Revision {
     revision: u64,
     document: Option<Value>,
-    sealed: Option<Value>,
     created_at: DateTime<Utc>,
     proposal: Option<u64>,
     /// The earlier revision this one restores (a rollback).
@@ -158,22 +149,16 @@ struct Proposal {
     base_revision: u64,
     created_at: DateTime<Utc>,
     body: Value,
-    /// `(instance, session_ref)` that confirmed it; `objected` stops the threshold.
-    confirmations: Vec<(String, String)>,
-    objected: bool,
 }
 
 struct Project {
     repo: (String, String),
     label: Option<String>,
-    sealed_epoch: Option<u32>,
     revisions: Vec<Revision>,
     proposals: Vec<Proposal>,
     /// `TaskV1` views, number = index + 1 (C0 1.9 §1).
     tasks: Vec<Value>,
-    /// `AutoMergeV1.confirmations` (section 7); `None`: people merge.
-    auto_merge: Option<u32>,
-    /// X2 (Team, public swarms): a threshold merge is quarantined.
+    /// X2 (Team): a threshold merge is quarantined.
     quarantine: bool,
 }
 
@@ -231,10 +216,6 @@ struct Inner {
     bus_handoffs: BTreeMap<String, (String, Value, bool)>,
     bus_leases: Vec<BusLease>,
     fencing: BTreeMap<(String, String, String), u64>,
-    /// `(project, instance, epoch)` → `SealedKeyV1` without `epoch_required`.
-    sealed_keys: BTreeMap<(String, String, u32), Value>,
-    /// Instances a maintainer approved per sealed project.
-    sealed_recipients: BTreeMap<String, BTreeSet<String>>,
     /// Repos created on the web: (ns, name) → whether this org's instances may contribute.
     web_repos: BTreeMap<(String, String), bool>,
     requests: Vec<RecordedRequest>,
@@ -296,8 +277,6 @@ impl FakeHive {
             bus_handoffs: BTreeMap::new(),
             bus_leases: Vec::new(),
             fencing: BTreeMap::new(),
-            sealed_keys: BTreeMap::new(),
-            sealed_recipients: BTreeMap::new(),
             web_repos: BTreeMap::new(),
             requests: Vec::new(),
             optin: serde_json::from_str(include_str!(
@@ -438,50 +417,6 @@ impl FakeHive {
         self.lock().metrics_sharing = state;
     }
 
-    /// Mark a project sealed; `epoch` is the epoch new content must use.
-    pub(crate) fn seal_project(&self, project_id: &str, epoch: u32) {
-        if let Some(project) = self.lock().projects.get_mut(project_id) {
-            project.sealed_epoch = Some(epoch);
-        }
-    }
-
-    /// A maintainer approves `instance_id` as a recipient of a sealed project.
-    pub(crate) fn approve_sealed(&self, project_id: &str, instance_id: &str) {
-        self.lock()
-            .sealed_recipients
-            .entry(project_id.to_string())
-            .or_default()
-            .insert(instance_id.to_string());
-    }
-
-    /// A maintainer removes a recipient: the repo must move to a new epoch.
-    pub(crate) fn revoke_sealed(&self, project_id: &str, instance_id: &str) {
-        let mut inner = self.lock();
-        if let Some(set) = inner.sealed_recipients.get_mut(project_id) {
-            set.remove(instance_id);
-        }
-        if let Some(project) = inner.projects.get_mut(project_id) {
-            project.sealed_epoch = project.sealed_epoch.map(|epoch| epoch + 1);
-        }
-    }
-
-    /// The epoch of the newest revision's sealed blob, if sealed.
-    pub(crate) fn head_epoch(&self, project_id: &str) -> Option<u64> {
-        let inner = self.lock();
-        let head = inner.projects.get(project_id)?.revisions.last()?;
-        head.sealed.as_ref()?["epoch"].as_u64()
-    }
-
-    /// Wrapped keys Hive stores for `project_id`: `(instance, epoch)`.
-    pub(crate) fn sealed_grants(&self, project_id: &str) -> Vec<(String, u32)> {
-        self.lock()
-            .sealed_keys
-            .keys()
-            .filter(|(pid, _, _)| pid == project_id)
-            .map(|(_, instance, epoch)| (instance.clone(), *epoch))
-            .collect()
-    }
-
     /// Publish a revision as if a reviewer merged it in Hive.
     pub(crate) fn publish_revision(&self, project_id: &str, document: Value) -> u64 {
         let mut inner = self.lock();
@@ -491,7 +426,6 @@ impl FakeHive {
         project.revisions.push(Revision {
             revision,
             document: Some(document),
-            sealed: None,
             created_at: now,
             proposal: None,
             rolls_back: None,
@@ -500,7 +434,7 @@ impl FakeHive {
         revision
     }
 
-    /// The repo's plan quarantines threshold merges (X2: Team, public swarms).
+    /// The repo's plan quarantines threshold merges (X2: Team).
     pub(crate) fn set_quarantine(&self, project_id: &str, on: bool) {
         if let Some(project) = self.lock().projects.get_mut(project_id) {
             project.quarantine = on;
@@ -518,36 +452,6 @@ impl FakeHive {
             .map(|r| r.state)
     }
 
-    /// The repo owner sets auto-merge on the web (section 7).
-    pub(crate) fn set_auto_merge(&self, project_id: &str, confirmations: u32) {
-        if let Some(project) = self.lock().projects.get_mut(project_id) {
-            project.auto_merge = Some(confirmations);
-        }
-    }
-
-    /// A person confirms proposal `number` on the web; a sealed proposal at
-    /// its threshold becomes `ready` (section 7).
-    pub(crate) fn confirm_as_person(&self, project_id: &str, number: u64) {
-        let mut inner = self.lock();
-        let Some(project) = inner.projects.get_mut(project_id) else {
-            return;
-        };
-        let required = project.auto_merge.unwrap_or(0);
-        let sealed = project.sealed_epoch.is_some();
-        if let Some(proposal) = project.proposals.iter_mut().find(|p| p.number == number) {
-            proposal
-                .confirmations
-                .push(("web".into(), format!("person-{number}")));
-            if !proposal.objected
-                && required > 0
-                && proposal.confirmations.len() as u32 >= required
-                && sealed
-            {
-                proposal.state = ProposalState::Ready;
-            }
-        }
-    }
-
     /// The state of proposal `number` (`"draft"`, `"ready"`, `"merged"` …).
     pub(crate) fn proposal_state(&self, project_id: &str, number: u64) -> Option<Value> {
         let inner = self.lock();
@@ -560,7 +464,7 @@ impl FakeHive {
         serde_json::to_value(proposal.state).ok()
     }
 
-    /// Revision `n` of a project as stored: `(sealed blob, rolls_back)`.
+    /// Revision `n` of a project as stored: `(document, rolls_back)`.
     pub(crate) fn revision(
         &self,
         project_id: &str,
@@ -572,7 +476,7 @@ impl FakeHive {
             .revisions
             .iter()
             .find(|r| r.revision == n)
-            .map(|r| (r.sealed.clone(), r.rolls_back))
+            .map(|r| (r.document.clone(), r.rolls_back))
     }
 
     /// Create a repo on the web; `contributable` decides whether instances may bind to it.
@@ -1255,7 +1159,6 @@ fn issue_lease(inner: &mut Inner, instance_id: &str) -> Value {
         plan: inner.options.plan.unwrap_or(HivePlan::Team),
         seats_limit: inner.options.seats_limit,
         rights: inner.options.rights.clone(),
-        policy_signer_keys: inner.options.policy_signer_keys.clone(),
         issued_at: timestamp(now),
         expires_at: timestamp(expires),
         grace_until: timestamp(grace),
@@ -1287,7 +1190,7 @@ fn project_id_for(digest: &str) -> String {
 
 /// The delivered head (the newest released revision before the first
 /// quarantined one: delivery is linear) and the quarantined count after it.
-fn delivered(project: &Project) -> (u64, Option<Value>, Option<Value>, u64) {
+fn delivered(project: &Project) -> (u64, Option<Value>, u64) {
     let mut head = None;
     for revision in &project.revisions {
         match revision.state {
@@ -1303,16 +1206,10 @@ fn delivered(project: &Project) -> (u64, Option<Value>, Option<Value>, u64) {
         .filter(|r| r.revision > after && r.state == RevisionState::Quarantined)
         .count() as u64;
     match head {
-        Some(r) => (
-            r.revision,
-            r.document.clone(),
-            r.sealed.clone(),
-            quarantined,
-        ),
+        Some(r) => (r.revision, r.document.clone(), quarantined),
         None => (
             0,
             Some(json!({"format": RESEARCH_CONTEXT_FORMAT, "facts": [], "relations": []})),
-            None,
             quarantined,
         ),
     }
@@ -1551,25 +1448,19 @@ fn route(
                 }
                 None => ("acme".to_string(), format!("p-{}", &project_id[..8])),
             };
-            let sealed_epoch = inner.options.seal_new_projects.then_some(1);
             let project = inner.projects.entry(project_id.clone()).or_insert(Project {
                 repo,
                 label: request.label.clone(),
-                sealed_epoch,
                 revisions: Vec::new(),
                 proposals: Vec::new(),
                 tasks: Vec::new(),
-                auto_merge: None,
                 quarantine: false,
             });
             let mut response = json!({
                 "schema": VAULT_SCHEMA, "vault_id": project_id,
                 "vault": {"ns": project.repo.0, "name": project.repo.1},
-                "sealed": project.sealed_epoch.is_some(),
+                "sealed": false, "sealed_conversion": "none",
             });
-            if let Some(epoch) = project.sealed_epoch {
-                response["key_epoch"] = Value::from(epoch);
-            }
             if let Some(label) = &project.label {
                 response["label"] = Value::from(label.clone());
             }
@@ -1582,22 +1473,16 @@ fn route(
                 .get(*pid)
                 .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown project."))?;
             let asked = query_param(query, "revision").and_then(|n| n.parse::<u64>().ok());
-            let (revision, document, sealed, state, quarantined) = if let Some(n) = asked {
+            let (revision, document, state, quarantined) = if let Some(n) = asked {
                 project
                     .revisions
                     .iter()
                     .find(|r| r.revision == n)
-                    .map(|r| (r.revision, r.document.clone(), r.sealed.clone(), r.state, 0))
+                    .map(|r| (r.revision, r.document.clone(), r.state, 0))
                     .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown revision."))?
             } else {
-                let (revision, document, sealed, quarantined) = delivered(project);
-                (
-                    revision,
-                    document,
-                    sealed,
-                    RevisionState::Released,
-                    quarantined,
-                )
+                let (revision, document, quarantined) = delivered(project);
+                (revision, document, RevisionState::Released, quarantined)
             };
             let if_none_match = headers.get("if-none-match").and_then(|v| v.to_str().ok());
             if quarantined == 0 && if_none_match == Some(format!("\"{revision}\"").as_str()) {
@@ -1615,9 +1500,6 @@ fn route(
             }
             if let Some(document) = document {
                 response["document"] = document;
-            }
-            if let Some(sealed) = sealed {
-                response["sealed"] = sealed;
             }
             Ok((200, response))
         }
@@ -1645,12 +1527,7 @@ fn route(
                 .iter()
                 .take(limit)
                 .map(|r| {
-                    let content = r
-                        .document
-                        .as_ref()
-                        .or(r.sealed.as_ref())
-                        .cloned()
-                        .unwrap_or_default();
+                    let content = r.document.clone().unwrap_or_default();
                     let digest = Sha256::digest(canonical_json(&content).unwrap_or_default());
                     let mut summary = json!({
                         "revision": r.revision, "created_at": stamp(r.created_at),
@@ -1678,12 +1555,6 @@ fn route(
                 .projects
                 .get_mut(*pid)
                 .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown project."))?;
-            if project.sealed_epoch.is_some() != request.context_patch.sealed.is_some() {
-                return Err(error(
-                    HiveErrorCode::InvalidRequest,
-                    "Sealed projects take sealed patches only.",
-                ));
-            }
             let current = project.revisions.last().map_or(0, |r| r.revision);
             if request.context_patch.base_revision > current {
                 let mut detail = HiveErrorDetailV1::new(
@@ -1699,15 +1570,9 @@ fn route(
                 number,
                 instance_id,
                 state: ProposalState::Draft,
-                // Hive' own placeholder: a sealed draft carries no summary.
-                summary: request
-                    .summary
-                    .clone()
-                    .unwrap_or_else(|| "Sealed draft".to_string()),
+                summary: request.summary.clone().unwrap_or_default(),
                 base_revision: request.context_patch.base_revision,
                 created_at: now,
-                confirmations: Vec::new(),
-                objected: false,
                 body: serde_json::from_slice(body).unwrap_or_default(),
             });
             Ok((
@@ -1745,62 +1610,6 @@ fn route(
             }
             Ok((200, view))
         }
-        ("POST", ["vaults", pid, "proposals", number, "confirmations"]) => {
-            require(inner, HiveRight::KnowledgeDraft)?;
-            let request: lean_ctx_protocol::hive::automerge::ProposalConfirmV1 = parse(body)?;
-            valid(request.validate())?;
-            let instance_id = instance.unwrap_or_default().to_string();
-            let wanted: u64 = number
-                .parse()
-                .map_err(|_| error(HiveErrorCode::NotFound, "Unknown proposal."))?;
-            let project = inner
-                .projects
-                .get_mut(*pid)
-                .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown project."))?;
-            let sealed_project = project.sealed_epoch.is_some();
-            let required = project.auto_merge.unwrap_or(0);
-            let proposal = project
-                .proposals
-                .iter_mut()
-                .find(|p| p.number == wanted)
-                .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown proposal."))?;
-            let independent = |reason: &str| {
-                let mut detail =
-                    HiveErrorDetailV1::new(HiveErrorCode::InvalidState, "Not counted.");
-                detail.reason = Some(reason.into());
-                detail.number = Some(wanted);
-                error_with(detail)
-            };
-            // The author's own session never counts (X3), nor, for a
-            // confirmation, any session of its instance (M9).
-            let confirm =
-                request.verdict == lean_ctx_protocol::hive::automerge::ConfirmVerdict::Confirm;
-            if proposal.body["session_ref"].as_str() == Some(request.session_ref.as_str())
-                || (confirm && proposal.instance_id == instance_id)
-            {
-                return Err(independent("reviewer_not_independent"));
-            }
-            if request.verdict == lean_ctx_protocol::hive::automerge::ConfirmVerdict::Object {
-                proposal.objected = true;
-            } else {
-                let entry = (instance_id, request.session_ref.clone());
-                if !proposal.confirmations.contains(&entry) {
-                    proposal.confirmations.push(entry);
-                }
-            }
-            let count = proposal.confirmations.len() as u32;
-            if !proposal.objected && required > 0 && count >= required && sealed_project {
-                proposal.state = ProposalState::Ready;
-            }
-            Ok((
-                200,
-                json!({
-                    "schema": lean_ctx_protocol::hive::automerge::PROPOSAL_CONFIRM_ACK_SCHEMA,
-                    "number": wanted, "confirmations": count, "required": required,
-                    "state": proposal.state, "objected": proposal.objected,
-                }),
-            ))
-        }
         ("GET", ["vaults", pid, "proposals"]) => {
             require(inner, HiveRight::KnowledgeRead)?;
             let project = inner
@@ -1836,23 +1645,15 @@ fn route(
             require(inner, HiveRight::KnowledgeDraft)?;
             let request: CodeGraphPutV1 = parse(body)?;
             valid(request.validate())?;
-            let project = inner
-                .projects
-                .get(*pid)
-                .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown project."))?;
-            // A sealed vault takes its graph only sealed (§8).
-            if project.sealed_epoch.is_some() && request.graph.is_some() {
-                let mut detail = HiveErrorDetailV1::new(
-                    HiveErrorCode::InvalidRequest,
-                    "sealed vaults take a sealed code graph",
-                );
-                detail.field = Some("graph".into());
-                detail.reason = Some("sealed_plaintext".into());
-                return Err(error_with(detail));
+            if !inner.projects.contains_key(*pid) {
+                return Err(error(HiveErrorCode::NotFound, "Unknown project."));
             }
-            let (nodes, edges, revision_hint) = request.graph.map_or((0, 0, None), |g| {
-                (g.nodes.len() as u64, g.edges.len() as u64, g.revision_hint)
-            });
+            let graph = request.graph;
+            let (nodes, edges, revision_hint) = (
+                graph.nodes.len() as u64,
+                graph.edges.len() as u64,
+                graph.revision_hint,
+            );
             Ok((
                 200,
                 serde_json::to_value(CodeGraphAckV1 {
@@ -1888,10 +1689,7 @@ fn route(
                     detail.number = Some(*number);
                     return Err(error_with(detail));
                 };
-                if !matches!(
-                    proposal.state,
-                    ProposalState::Draft | ProposalState::Open | ProposalState::Ready
-                ) {
+                if !matches!(proposal.state, ProposalState::Draft | ProposalState::Open) {
                     let mut detail = HiveErrorDetailV1::new(
                         HiveErrorCode::InvalidState,
                         "That proposal is not open.",
@@ -1903,14 +1701,8 @@ fn route(
             }
             let revision = current + 1;
             // X2: a rollback is released at once and undoes everything after
-            // its target; a threshold merge is quarantined in Team and public swarms;
-            // anything after a quarantined revision waits behind it.
-            let threshold = request.merged_proposals.iter().any(|number| {
-                project
-                    .proposals
-                    .iter()
-                    .any(|p| p.number == *number && p.state == ProposalState::Ready)
-            });
+            // its target; anything after a quarantined revision waits behind
+            // it.
             let pending = project
                 .revisions
                 .iter()
@@ -1922,7 +1714,7 @@ fn route(
                     }
                 }
                 RevisionState::Released
-            } else if pending || (project.quarantine && threshold) {
+            } else if pending {
                 RevisionState::Quarantined
             } else {
                 RevisionState::Released
@@ -1935,13 +1727,9 @@ fn route(
             let document = request
                 .document
                 .map(|d| serde_json::to_value(d).unwrap_or_default());
-            let sealed = request
-                .sealed
-                .map(|s| serde_json::to_value(s).unwrap_or_default());
             project.revisions.push(Revision {
                 revision,
                 document: document.clone(),
-                sealed: sealed.clone(),
                 created_at: now,
                 proposal: request.merged_proposals.first().copied(),
                 rolls_back: request.rolls_back,
@@ -1956,9 +1744,6 @@ fn route(
             }
             if let Some(document) = document {
                 response["document"] = document;
-            }
-            if let Some(sealed) = sealed {
-                response["sealed"] = sealed;
             }
             Ok((200, response))
         }
@@ -2277,142 +2062,6 @@ fn route(
                 .retain(|l| !(l.lease_id == *lease_id && Some(l.fencing_token) == token));
             Ok((204, Value::Null))
         }
-        ("GET", ["vaults", pid, "sealed", "keys"]) => {
-            require(inner, HiveRight::Sealed)?;
-            let caller = instance.unwrap_or_default().to_string();
-            let required = inner
-                .projects
-                .get(*pid)
-                .and_then(|p| p.sealed_epoch)
-                .ok_or_else(|| error(HiveErrorCode::NotFound, "Not a sealed project."))?;
-            let wanted = query_param(query, "epoch").and_then(|e| e.parse::<u32>().ok());
-            let key = inner
-                .sealed_keys
-                .iter()
-                .filter(|((p, i, e), _)| p == pid && *i == caller && wanted.is_none_or(|w| w == *e))
-                .max_by_key(|((_, _, e), _)| *e)
-                .map(|(_, key)| key.clone())
-                .ok_or_else(|| {
-                    error(HiveErrorCode::NotFound, "No key granted to this instance.")
-                })?;
-            let mut key = key;
-            key["epoch_required"] = json!(required);
-            Ok((200, key))
-        }
-        ("GET", ["vaults", pid, "sealed", "pending"]) => {
-            require(inner, HiveRight::Sealed)?;
-            let required = inner
-                .projects
-                .get(*pid)
-                .and_then(|p| p.sealed_epoch)
-                .ok_or_else(|| error(HiveErrorCode::NotFound, "Not a sealed project."))?;
-            let approved = inner
-                .sealed_recipients
-                .get(*pid)
-                .cloned()
-                .unwrap_or_default();
-            let recipients: Vec<Value> = approved
-                .iter()
-                .filter(|id| {
-                    !inner
-                        .sealed_keys
-                        .contains_key(&(pid.to_string(), (*id).clone(), required))
-                })
-                .filter_map(|id| {
-                    let found = inner.instances.get(id)?;
-                    let kx: [u8; 32] = B64.decode(&found.kx_public_key).ok()?.try_into().ok()?;
-                    Some(json!({
-                        "instance_id": id, "label": found.label,
-                        "owner": {"id": format!("usr_{id}"), "name": "Org Member"},
-                        "instance_kx_public_key": found.kx_public_key,
-                        "kx_fingerprint": kx_fingerprint(&kx),
-                        "approved_by": {"id": "usr_admin", "name": "Repo Maintainer"},
-                        "approved_at": timestamp(now),
-                    }))
-                })
-                .collect();
-            let mut pending = json!({
-                "schema": SEALED_PENDING_SCHEMA, "vault_id": pid, "epoch_required": required,
-                "recipients": recipients, "kid": SIGNING_KID,
-            });
-            let input = SealedPendingV1::signing_input_raw(&pending).expect("pending input");
-            pending["signature"] = Value::from(
-                B64.encode(
-                    SigningKey::from_bytes(&SIGNING_SEED)
-                        .sign(&input)
-                        .to_bytes(),
-                ),
-            );
-            Ok((200, pending))
-        }
-        ("POST", ["vaults", pid, "sealed", "grants"]) => {
-            require(inner, HiveRight::Sealed)?;
-            let request: SealedGrantRequestV1 = parse(body)?;
-            valid(request.validate())?;
-            let caller = instance.unwrap_or_default().to_string();
-            let project = inner
-                .projects
-                .get(*pid)
-                .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown project."))?;
-            let required = project
-                .sealed_epoch
-                .ok_or_else(|| error(HiveErrorCode::NotFound, "Not a sealed project."))?;
-            let has_revision = !project.revisions.is_empty();
-            let epoch_has_key = inner
-                .sealed_keys
-                .keys()
-                .any(|(p, _, e)| p == pid && *e == request.epoch);
-            let caller_holds =
-                inner
-                    .sealed_keys
-                    .contains_key(&(pid.to_string(), caller.clone(), request.epoch));
-            let self_grant = request.instance_id == caller;
-            let approved = inner
-                .sealed_recipients
-                .get(*pid)
-                .is_some_and(|set| set.contains(&request.instance_id));
-            if !approved {
-                return Err(error(
-                    HiveErrorCode::ForbiddenRight,
-                    "Not an approved recipient.",
-                ));
-            }
-            if !epoch_has_key {
-                // The first key of an epoch: a self-grant only, at epoch 1 only
-                // before any content.
-                if !self_grant || request.epoch != required || (request.epoch == 1 && has_revision)
-                {
-                    let mut detail = HiveErrorDetailV1::new(
-                        HiveErrorCode::InvalidState,
-                        "No key can start here.",
-                    );
-                    detail.reason = Some("keys_lost".into());
-                    return Err(error_with(detail));
-                }
-            } else if self_grant && !caller_holds {
-                let mut detail = HiveErrorDetailV1::new(
-                    HiveErrorCode::RevisionConflict,
-                    "This sealed vault already has a key.",
-                );
-                detail.expected = Some(u64::from(request.epoch));
-                detail.actual = Some(u64::from(request.epoch));
-                detail.reason = Some("key_exists".into());
-                return Err(error_with(detail));
-            } else if !caller_holds {
-                return Err(error(
-                    HiveErrorCode::ForbiddenRight,
-                    "The caller holds no key for that epoch.",
-                ));
-            }
-            let key = json!({
-                "schema": SEALED_KEY_SCHEMA, "vault_id": pid, "instance_id": request.instance_id,
-                "epoch": request.epoch, "wrapped_key": request.wrapped_key,
-            });
-            inner
-                .sealed_keys
-                .insert((pid.to_string(), request.instance_id, request.epoch), key);
-            Ok((204, Value::Null))
-        }
         ("GET", ["vaults", pid, "tasks"]) => {
             require(inner, HiveRight::TasksRead)?;
             let project = inner
@@ -2512,16 +2161,10 @@ fn route(
                 .projects
                 .get_mut(*pid)
                 .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown project."))?;
-            if project.sealed_epoch.is_some() != request.sealed.is_some() {
-                return Err(error(
-                    HiveErrorCode::InvalidRequest,
-                    "Sealed projects take sealed proposals only.",
-                ));
-            }
             let number = project.tasks.len() as u64 + 1;
             let mut task = json!({
                 "schema": lean_ctx_protocol::hive::tasks::TASK_SCHEMA, "vault_id": pid,
-                "number": number, "state": "proposed", "origin": request.origin,
+                "number": number, "state": "open", "origin": request.origin,
                 "created_at": created,
                 "created_by": {"kind": "instance", "label": "engine", "mine": true},
             });
@@ -2530,12 +2173,6 @@ fn route(
                 ("goal", request.goal.map(Value::from)),
                 ("acceptance", request.acceptance.map(Value::from)),
                 ("role", request.role.map(Value::from)),
-                (
-                    "sealed",
-                    request
-                        .sealed
-                        .map(|s| serde_json::to_value(s).unwrap_or_default()),
-                ),
             ] {
                 if let Some(value) = value {
                     task[field] = value;
@@ -2544,7 +2181,7 @@ fn route(
             project.tasks.push(task);
             Ok((
                 200,
-                json!({"schema": lean_ctx_protocol::hive::tasks::TASK_ACK_SCHEMA, "number": number, "state": "proposed"}),
+                json!({"schema": lean_ctx_protocol::hive::tasks::TASK_ACK_SCHEMA, "number": number, "state": "open"}),
             ))
         }
         _ => Err(error(HiveErrorCode::NotFound, "Unknown route.")),

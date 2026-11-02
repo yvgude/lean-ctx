@@ -156,7 +156,6 @@ fn data_dir_3115() -> Fixture {
             context_patch: ContextPatchV1 {
                 base_revision: 0,
                 ops: Vec::new(),
-                sealed: None,
             },
             session_ref: session_ref("old"),
             engine_screening: Screen::for_installation().counts(),
