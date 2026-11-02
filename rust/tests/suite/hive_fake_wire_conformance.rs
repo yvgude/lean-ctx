@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! The fake Hive service and the engine speak the frozen C0 1.9 wire: no
-//! error reason, and no schema id, that the contract does not name.
+//! The fake Hive service and the engine speak the C0 wire: no error reason,
+//! no query parameter and no schema id that the contract does not name.
 //!
-//! The contract's errors are its `error*.json` fixtures (code and reason, byte
-//! for byte), plus the few reasons the protocol documents without a fixture
+//! The contract's errors are its fixtures (code and reason, byte for byte):
+//! the 1.x `error*.json` files and every error in the C0 2.x copy
+//! (`hive-v2`), plus the few reasons the protocol documents without a fixture
 //! (each proven to stand in the protocol source). Every reason the fake sends
 //! and every reason the engine maps must be one of them, with its code where
 //! the source pins it; every `leanctx.hive.…` schema id the fake writes must
@@ -25,18 +26,27 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-fn rust_files(dir: &Path) -> Vec<PathBuf> {
+fn files_with(dir: &Path, ext: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
         let path = entry.expect("dir entry").path();
         if path.is_dir() {
-            out.extend(rust_files(&path));
-        } else if path.extension().is_some_and(|e| e == "rs") {
+            out.extend(files_with(&path, ext));
+        } else if path.extension().is_some_and(|e| e == ext) {
             out.push(path);
         }
     }
     out.sort();
     out
+}
+
+fn rust_files(dir: &Path) -> Vec<PathBuf> {
+    files_with(dir, "rs")
+}
+
+/// The C0 2.x contract copy (byte-identical with Hive).
+fn hive_v2() -> PathBuf {
+    root().join("crates/lean-ctx-protocol/tests/fixtures/hive-v2")
 }
 
 /// `HiveErrorCode` variant name → wire code (`ForbiddenRight` →
@@ -66,15 +76,17 @@ const DOCUMENTED_WITHOUT_FIXTURE: [&str; 0] = [];
 fn contract_reasons() -> BTreeSet<(String, String)> {
     let dir = root().join("crates/lean-ctx-protocol/tests/fixtures/hive");
     let mut pairs = BTreeSet::new();
-    for entry in std::fs::read_dir(&dir).expect("fixtures") {
-        let path = entry.expect("fixture").path();
-        let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        let json = path
-            .extension()
-            .is_some_and(|e| e.eq_ignore_ascii_case("json"));
-        if !name.starts_with("error") || !json {
-            continue;
-        }
+    let v1 = std::fs::read_dir(&dir)
+        .expect("fixtures")
+        .filter_map(|entry| {
+            let path = entry.expect("fixture").path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let json = path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("json"));
+            (name.starts_with("error") && json).then_some(path)
+        });
+    for path in v1.chain(files_with(&hive_v2(), "json")) {
         let body: serde_json::Value = serde_json::from_str(&read(&path)).expect("fixture json");
         let error = &body["error"];
         if let (Some(code), Some(reason)) = (error["code"].as_str(), error["reason"].as_str()) {
@@ -183,7 +195,7 @@ fn the_fake_hive_sends_only_contract_error_reasons() {
     let drift = check_reasons(&file, &sent);
     assert!(
         drift.is_empty(),
-        "the fake drifts from C0 1.9:\n{}",
+        "the fake drifts from the C0 contract:\n{}",
         drift.join("\n")
     );
 }
@@ -209,7 +221,7 @@ fn the_engine_maps_only_contract_error_reasons() {
     }
     assert!(
         drift.is_empty(),
-        "the engine expects a wire C0 1.9 does not have:\n{}",
+        "the engine expects a wire the C0 contract does not have:\n{}",
         drift.join("\n")
     );
 }
@@ -253,8 +265,13 @@ fn every_schema_id_the_fake_writes_is_a_protocol_constant() {
 #[test]
 fn every_query_parameter_the_engine_sends_is_a_contract_parameter() {
     let documented_re = Regex::new(r"[?&]([a-z_]+)=").unwrap();
+    let schemas: String = files_with(&hive_v2().join("schemas"), "json")
+        .iter()
+        .map(|p| read(p))
+        .collect::<Vec<_>>()
+        .join("\n");
     let documented: BTreeSet<String> = documented_re
-        .captures_iter(&protocol_source())
+        .captures_iter(&format!("{}\n{schemas}", protocol_source()))
         .map(|c| c[1].to_owned())
         .collect();
     assert!(
@@ -297,7 +314,7 @@ fn every_query_parameter_the_engine_sends_is_a_contract_parameter() {
         .collect();
     assert!(
         unknown.is_empty(),
-        "query parameters C0 1.9 does not document:\n{}",
+        "query parameters the C0 contract does not document:\n{}",
         unknown.join("\n")
     );
 }

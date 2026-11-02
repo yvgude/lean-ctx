@@ -253,7 +253,7 @@ pub(crate) fn hybrid_retrieve(
     results
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "embeddings"))]
 mod tests {
     use super::*;
     use crate::core::bm25_index::{ChunkKind, CodeChunk};

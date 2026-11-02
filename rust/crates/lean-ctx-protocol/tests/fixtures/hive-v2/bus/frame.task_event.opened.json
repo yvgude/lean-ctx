@@ -1,0 +1,11 @@
+{
+  "at": 1792800020000,
+  "by": {
+    "instance_id": "inst_3f1c2b6a8d4e4a7b9c105e2f6a7b8c01"
+  },
+  "event": "opened",
+  "number": 7,
+  "state": "open",
+  "t": "task.event",
+  "vault": "#acme/payments"
+}

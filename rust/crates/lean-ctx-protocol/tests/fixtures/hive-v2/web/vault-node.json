@@ -59,8 +59,6 @@
           "type": "reference"
         }
       ],
-      "review_state": "confirmed",
-      "reviewed_by": "none",
       "state": "active",
       "knowledge_state": "verified",
       "knowledge_reason": null,

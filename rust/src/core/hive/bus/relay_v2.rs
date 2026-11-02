@@ -42,7 +42,7 @@ pub const MAX_SUBSCRIBE: usize = 64;
 const MAX_DECIDED: usize = 5000;
 /// Idempotency-key prefix of messages that arrived through Hive (shared
 /// with the v1 relay, so `relay::is_inbound` sees them too).
-const INBOUND_KEY_PREFIX: &str = "hive:";
+pub(crate) const INBOUND_KEY_PREFIX: &str = "hive:";
 /// A `progress` step is at most this long.
 const STEP_MAX: usize = 300;
 
@@ -268,16 +268,45 @@ const PROTOCOL_FILE: &str = "bus_protocol.json";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 struct ProtocolRecord {
     bus: u8,
+    /// The minor of the C0 2.x protocol Hive answered (`2.2` → 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    minor: Option<u16>,
 }
 
 /// Record that the enrolled Hive speaks bus v2 (`true`) or only 1.x.
 pub fn record_protocol(store: &crate::core::hive::HiveStore, v2: bool) -> Result<(), HiveError> {
+    record_protocol_minor(store, v2, None)
+}
+
+/// [`record_protocol`] with the 2.x minor Hive answered.
+pub fn record_protocol_minor(
+    store: &crate::core::hive::HiveStore,
+    v2: bool,
+    minor: Option<u16>,
+) -> Result<(), HiveError> {
     store.write_config(
         PROTOCOL_FILE,
         &ProtocolRecord {
             bus: if v2 { 2 } else { 1 },
+            minor: minor.filter(|_| v2),
         },
     )
+}
+
+/// The C0 2.x minor the enrolled Hive answered, as last recorded.
+pub fn protocol_minor(store: &crate::core::hive::HiveStore) -> Option<u16> {
+    store
+        .read_config::<ProtocolRecord>(PROTOCOL_FILE)
+        .ok()
+        .flatten()
+        .filter(|r| r.bus == 2)
+        .and_then(|r| r.minor)
+}
+
+/// True when the enrolled Hive answered C0 2.2 or newer: doc nodes and
+/// decision anchors may be written.
+pub fn speaks_2_2(store: &crate::core::hive::HiveStore) -> bool {
+    protocol_minor(store).is_some_and(|minor| minor >= 2)
 }
 
 /// True when the relay should open a C0 2.0 session.
@@ -359,13 +388,7 @@ fn publish_for(
         // offers and handoffs their fields: those go through
         // `ctx_agent send`, never as a plain post.
         Some(
-            MessageType::Answer
-            | MessageType::Finding
-            | MessageType::Offer
-            | MessageType::Handoff
-            | MessageType::Need
-            | MessageType::Claim
-            | MessageType::Result,
+            MessageType::Answer | MessageType::Finding | MessageType::Offer | MessageType::Handoff,
         ) => return None,
         Some(MessageType::Progress) | None => {
             let step: String = text.chars().take(STEP_MAX).collect();
@@ -435,8 +458,8 @@ pub(crate) fn outgoing(
                 .vaults
                 .values()
                 .find(|r| r.ns == workspace && r.name == vault),
-            // Swarm buses come with V7; direct messages later.
-            Ok(Address::Swarm(_) | Address::Worker(_)) => continue,
+            // Direct messages come later.
+            Ok(Address::Worker(_)) => continue,
             Ok(Address::Local | Address::LocalAgent(_)) | Err(_) => {
                 state.decide(&entry.id);
                 continue;
@@ -485,8 +508,10 @@ pub(crate) fn outgoing(
 /// data from Hive, `relay::is_inbound`).
 fn delivered_text(message: &Value) -> String {
     let body = &message["body"];
-    if body.get("sealed").is_some() {
-        return "(sealed message: open it with `ctx_agent read place=…`)".into();
+    // A typed message carries its id, thread and addressee, so the agent
+    // can answer it (`ctx_agent reply reply_to=<id>`).
+    if let Some(line) = super::messages_v2::delivered_line(message) {
+        return line;
     }
     ["text", "statement", "step", "summary", "what"]
         .iter()
@@ -512,6 +537,7 @@ pub(crate) fn apply_delivery(
     state: &mut StateV2,
     message: &Value,
     local_workers: &BTreeSet<String>,
+    agents_of: &BTreeMap<String, Vec<String>>,
 ) -> Result<Option<(String, u64)>, String> {
     let address = message["to"]
         .as_str()
@@ -539,17 +565,37 @@ pub(crate) fn apply_delivery(
     if let Some(root) = root.filter(|_| !spoofed && !local_workers.contains(&from)) {
         let kind = message["type"].as_str().unwrap_or("progress");
         let key = format!("{INBOUND_KEY_PREFIX}{address}:{seq}");
-        registry.post_message_keyed(
-            Some(root),
-            &from,
-            None,
-            kind,
-            &delivered_text(message),
-            PrivacyLevel::Team,
-            MessagePriority::Normal,
-            None,
-            Some(&key),
-        )?;
+        let text = delivered_text(message);
+        // A message for one of this machine's workers goes to the local
+        // agents that are that worker; everything else to every agent of
+        // the project, as a vault post.
+        let addressed: &[String] = message["body"]["to_worker"]
+            .as_str()
+            .and_then(|w| agents_of.get(w))
+            .map_or(&[], Vec::as_slice);
+        let targets: Vec<Option<&str>> = if addressed.is_empty() {
+            vec![None]
+        } else {
+            addressed.iter().map(|a| Some(a.as_str())).collect()
+        };
+        for (i, to) in targets.into_iter().enumerate() {
+            let key = if i == 0 {
+                key.clone()
+            } else {
+                format!("{key}:{i}")
+            };
+            registry.post_message_keyed(
+                Some(root),
+                &from,
+                to,
+                kind,
+                &text,
+                PrivacyLevel::Team,
+                MessagePriority::Normal,
+                None,
+                Some(&key),
+            )?;
+        }
     }
     state.cursors.insert(address.clone(), seq);
     Ok(Some((address, seq)))

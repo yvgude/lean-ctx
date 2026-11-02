@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "the task is open; only a submitted result is verified",
+    "number": 7,
+    "reason": "not_submitted"
+  }
+}

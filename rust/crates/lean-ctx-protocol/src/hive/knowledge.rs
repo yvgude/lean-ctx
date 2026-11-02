@@ -12,18 +12,16 @@
 //!   (same `number`), whichever instance sent it first.
 //! - `GET /v1/vaults/{vault_id}/proposals?state=&mine=1` → [`ProposalListV1`]
 //! - 1.6: `GET /v1/vaults/{vault_id}/proposals/{number}` → [`ProposalV1`]:
-//!   the draft exactly as its engine sent it (a sealed patch stays sealed),
-//!   for engine-side review of sealed vaults
+//!   the draft exactly as its engine sent it, for engine-side review
 //! - `PUT /v1/vaults/{vault_id}/knowledge` [`KnowledgePutRequestV1`] →
 //!   [`KnowledgeRevisionV1`], or 409 `revision_conflict`; needs `knowledge.merge`.
-//!   The new revision is always `expected_revision + 1` (a sealed revision is
-//!   sealed for that number). 1.6: `merged_proposals` marks those proposals
+//!   The new revision is always `expected_revision + 1`. 1.6:
+//!   `merged_proposals` marks those proposals
 //!   merged at the new revision in the same transaction
 //!
 //! - 1.9: `GET /v1/vaults/{vault_id}/knowledge/diff?from=&to=` →
 //!   [`RevisionDiffV1`]: the ops from one released revision to another, so
-//!   an engine with a large document fetches deltas (in the clear only; a
-//!   sealed vault answers `409 invalid_state` reason `sealed`)
+//!   an engine with a large document fetches deltas
 //!
 //! Revision 0 is the empty document. A draft becomes a revision only after
 //! review in Hive.
@@ -35,16 +33,15 @@
 //! `quarantined_after`; `?revision=N` reads a quarantined one for review
 //! (right `knowledge.merge`). An engine never hands quarantined content to
 //! any agent except for that review. A person releases it, or rolls it back,
-//! within 24 hours; otherwise Hive proposes a task (origin
-//! `quarantine_timeout`). A rollback appends a new revision with the document
-//! of an earlier one (`rolls_back`). In a sealed vault an engine performs
-//! it, because only an engine can re-seal for the new number.
+//! within 24 hours. A rollback appends a new revision with the document
+//! of an earlier one (`rolls_back`).
+//!
+//! A revision, a patch and a put carry their content in the clear.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use super::anchor::{CodeAnchorV1, validate_anchors};
-use super::sealed::SealedBlobV1;
 use super::{require_schema, validate_hex64, validate_id, validate_text};
 use crate::{UtcTimestamp, ValidationError};
 
@@ -488,7 +485,8 @@ fn is_zero(value: &u64) -> bool {
     *value == 0
 }
 
-/// One revision of a vault's knowledge; exactly one of `document`/`sealed`.
+/// One revision of a vault's knowledge; [`KnowledgeRevisionV1::validate`]
+/// refuses a revision without its `document`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KnowledgeRevisionV1 {
     pub schema: String,
@@ -496,8 +494,6 @@ pub struct KnowledgeRevisionV1 {
     pub revision: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<ResearchContextDocumentV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
     pub updated_at: UtcTimestamp,
     /// 1.9: `released` unless a reviewer reads a quarantined revision.
     #[serde(default, skip_serializing_if = "RevisionState::is_released")]
@@ -505,8 +501,7 @@ pub struct KnowledgeRevisionV1 {
     /// 1.9: quarantined revisions after this delivered head.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub quarantined_after: u64,
-    /// 1.9: facts whose state is not `current` ([`super::facts`]); absent
-    /// for sealed vaults, whose states stay on the engines.
+    /// 1.9: facts whose state is not `current` ([`super::facts`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fact_states: Vec<super::facts::FactStateV1>,
     /// 1.9 (ctxpkg ids): the document tree and the revision commit
@@ -528,38 +523,24 @@ impl KnowledgeRevisionV1 {
                 "quarantined_after counts after a delivered head only",
             ));
         }
-        match (&self.document, &self.sealed) {
-            (Some(document), None) => {
-                document.validate()?;
-                let ids: HashSet<&str> = document.facts.iter().map(|f| f.id.as_str()).collect();
-                for (i, state) in self.fact_states.iter().enumerate() {
-                    state.validate()?;
-                    if !ids.contains(state.fact.as_str()) {
-                        return Err(ValidationError::new("a fact state names a missing fact"));
-                    }
-                    if i > 0 && self.fact_states[i - 1].fact >= state.fact {
-                        return Err(ValidationError::new(
-                            "fact_states must be sorted by fact without repeats",
-                        ));
-                    }
-                }
-                Ok(())
+        let document = self
+            .document
+            .as_ref()
+            .ok_or_else(|| ValidationError::new("a revision carries its document"))?;
+        document.validate()?;
+        let ids: HashSet<&str> = document.facts.iter().map(|f| f.id.as_str()).collect();
+        for (i, state) in self.fact_states.iter().enumerate() {
+            state.validate()?;
+            if !ids.contains(state.fact.as_str()) {
+                return Err(ValidationError::new("a fact state names a missing fact"));
             }
-            (None, Some(sealed)) => {
-                if !self.fact_states.is_empty()
-                    || self.ctxpkg_tree.is_some()
-                    || self.ctxpkg_commit.is_some()
-                {
-                    return Err(ValidationError::new(
-                        "a sealed revision carries no fact states and no ctxpkg ids",
-                    ));
-                }
-                sealed.validate()
+            if i > 0 && self.fact_states[i - 1].fact >= state.fact {
+                return Err(ValidationError::new(
+                    "fact_states must be sorted by fact without repeats",
+                ));
             }
-            _ => Err(ValidationError::new(
-                "a revision carries exactly one of document or sealed",
-            )),
         }
+        Ok(())
     }
 }
 
@@ -571,7 +552,7 @@ pub struct RevisionSummaryV1 {
     /// Proposal number the revision merged, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proposal: Option<u64>,
-    /// `sha256` hex of the canonical document (or ciphertext, when sealed).
+    /// `sha256` hex of the canonical document.
     pub digest: String,
     /// 1.9.
     #[serde(default, skip_serializing_if = "RevisionState::is_released")]
@@ -637,23 +618,19 @@ pub enum ProposalState {
     Rejected,
     /// 1.6: its author withdrew it.
     Withdrawn,
-    /// 1.9 (section 7): a sealed proposal that reached its auto-merge
-    /// threshold; the next engine with `knowledge.merge` merges it.
+    /// 1.9 (section 7): the proposal reached its confirmation threshold.
     Ready,
     #[serde(other)]
     Unknown,
 }
 
-/// Patch of a proposal against `base_revision`: `ops` in the clear, or
-/// `sealed` (the encrypted `ops` array) for sealed vaults.
+/// Patch of a proposal against `base_revision`, in the clear.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContextPatchV1 {
     pub base_revision: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ops: Vec<PatchOpV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
 }
 
 /// What the engine's screening removed before the draft was queued.
@@ -673,23 +650,20 @@ pub struct DraftProposalV1 {
     pub schema: String,
     /// Always `draft`; review in Hive moves it on.
     pub state: ProposalState,
-    /// One line for reviewers; required in the clear. 1.5: absent for
-    /// sealed vaults, where nothing readable leaves the engine (the real
-    /// summary is inside the sealed patch; Hive shows a placeholder).
+    /// One line for reviewers; required by validation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    /// Reviewer notes; absent for sealed vaults.
+    /// Reviewer notes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
-    /// Source references; empty for sealed vaults.
+    /// Source references.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
     pub context_patch: ContextPatchV1,
     /// Opaque, per-session id (no host or user data).
     pub session_ref: String,
     pub engine_screening: EngineScreeningV1,
-    /// 1.9: where the draft comes from; absent means `learned`. Always in
-    /// the clear, sealed vaults included.
+    /// 1.9: where the draft comes from; absent means `learned`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<DraftOrigin>,
 }
@@ -702,9 +676,7 @@ pub enum DraftOrigin {
     /// Learned from sessions (the default).
     Learned,
     /// Imported from the repo's docs or git history. Its sources are
-    /// `import:docs:<path>#<slug>` or `import:git:<sha>`; in a sealed
-    /// vault they travel only inside the sealed patch, because paths and
-    /// commit hashes are metadata too.
+    /// `import:docs:<path>#<slug>` or `import:git:<sha>`.
     Import,
     #[serde(other)]
     Unknown,
@@ -752,10 +724,8 @@ impl DraftProposalV1 {
         unique_texts("sources", &self.sources, 16, 2000)?;
         match self.origin {
             Some(DraftOrigin::Import) => {
-                if self.context_patch.sealed.is_none() && self.sources.is_empty() {
-                    return Err(ValidationError::new(
-                        "an import in the clear names its sources",
-                    ));
+                if self.sources.is_empty() {
+                    return Err(ValidationError::new("an import names its sources"));
                 }
                 if !self.sources.iter().all(|s| import_source_ok(s)) {
                     return Err(ValidationError::new(
@@ -769,27 +739,19 @@ impl DraftProposalV1 {
             Some(DraftOrigin::Learned) | None => {}
         }
         validate_id(&self.session_ref, "session_ref")?;
-        let patch = &self.context_patch;
-        match (&patch.sealed, patch.ops.is_empty()) {
-            (None, false) => {
-                if self.summary.is_none() {
-                    return Err(ValidationError::new("a draft in the clear needs a summary"));
-                }
-                if patch.ops.len() > MAX_PATCH_OPS {
-                    return Err(ValidationError::new(format!(
-                        "a patch carries 1-{MAX_PATCH_OPS} ops"
-                    )));
-                }
-                patch.ops.iter().try_for_each(PatchOpV1::validate)
-            }
-            (Some(sealed), true) => {
-                if self.summary.is_some() || self.body.is_some() || !self.sources.is_empty() {
-                    return Err(ValidationError::new("sealed drafts carry no plaintext"));
-                }
-                sealed.validate()
-            }
-            _ => Err(ValidationError::new("a patch carries either ops or sealed")),
+        if self.summary.is_none() {
+            return Err(ValidationError::new("a draft needs a summary"));
         }
+        let ops = &self.context_patch.ops;
+        if ops.is_empty() {
+            return Err(ValidationError::new("a patch carries ops"));
+        }
+        if ops.len() > MAX_PATCH_OPS {
+            return Err(ValidationError::new(format!(
+                "a patch carries 1-{MAX_PATCH_OPS} ops"
+            )));
+        }
+        ops.iter().try_for_each(PatchOpV1::validate)
     }
 }
 
@@ -832,8 +794,6 @@ pub struct KnowledgePutRequestV1 {
     pub expected_revision: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<ResearchContextDocumentV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
     /// 1.6: proposals this revision merges (draft or open ones, ≤ 50,
     /// unique); Hive marks them merged at the new revision.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -892,13 +852,10 @@ impl KnowledgePutRequestV1 {
                 return Err(ValidationError::new("a rollback merges no proposals"));
             }
         }
-        match (&self.document, &self.sealed) {
-            (Some(document), None) => document.validate(),
-            (None, Some(sealed)) => sealed.validate(),
-            _ => Err(ValidationError::new(
-                "a put carries exactly one of document or sealed",
-            )),
-        }
+        self.document
+            .as_ref()
+            .ok_or_else(|| ValidationError::new("a put carries the document"))?
+            .validate()
     }
 }
 

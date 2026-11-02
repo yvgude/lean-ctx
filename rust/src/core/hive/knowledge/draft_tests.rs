@@ -131,7 +131,6 @@ fn recapture_replaces_broken_session_drafts_with_gated_claims() {
             context_patch: ContextPatchV1 {
                 base_revision: 0,
                 ops: Vec::new(),
-                sealed: None,
             },
             session_ref: session_ref("old"),
             engine_screening: Screen::for_installation().counts(),
@@ -270,8 +269,9 @@ fn refs_added_by_a_later_remember_bring_a_rejected_fact_back() {
 /// Live 26.10. (lead decision): a vault that syncs through its C0 2.0
 /// replica gets knowledge only as signed events. Session end, save and
 /// shutdown queue no 1.x draft for it (that duplicated the claims and fed
-/// the frozen review flow as "Sent draft #1"); against a 1.x Hive the
-/// same project still drafts.
+/// the frozen review flow as "Sent draft #1"), nor for a project that is
+/// neither linked nor bound; against a 1.x Hive the same project still
+/// drafts.
 #[test]
 fn a_vault_on_the_v2_replica_gets_no_v1_draft() {
     let _data = crate::core::data_dir::isolated_data_dir();
@@ -311,6 +311,11 @@ fn a_vault_on_the_v2_replica_gets_no_v1_draft() {
         assert_eq!(draft(trigger), None, "{trigger:?}: no draft on the replica");
     }
     assert!(queued_drafts(&place).is_empty());
+    VaultMap::default().save(place.store.data_dir()).unwrap();
+    assert!(!syncs_through_replica(&place.store, &stable, &place.root));
+    assert_eq!(draft(Trigger::SessionEnd), None, "unbound: no draft either");
+    assert!(queued_drafts(&place).is_empty());
+    map.save(place.store.data_dir()).unwrap();
 
     crate::core::hive::bus::relay_v2::record_protocol(&place.store, false).unwrap();
     assert!(!syncs_through_replica(&place.store, &stable, &place.root));

@@ -3,4 +3,5 @@
 //! Test doubles shared by the merged integration suite and standalone test
 //! binaries (`#[path = "support/mod.rs"] mod support;`).
 
+#[cfg(feature = "http-server")]
 pub(crate) mod fake_hive;

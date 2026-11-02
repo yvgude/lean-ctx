@@ -343,6 +343,7 @@ mod tests {
         assert_eq!(resp.stats.model.as_deref(), Some("claude-sonnet-4"));
     }
 
+    #[cfg(feature = "http-server")]
     /// The reply of `/v1/compress` is a delivery to a destination this proxy
     /// cannot see: a protected value is masked before compression or the
     /// reply sees it, and restricted content is withheld in place (a notice
@@ -433,6 +434,7 @@ mod tests {
         assert!(resp.stats.model.is_none());
     }
 
+    #[cfg(feature = "http-server")]
     /// #702: a lossy rewrite through the gateway contract must advertise its
     /// retrieval hash in LiteLLM's regex-locked `hash=<24hex>` form, and the
     /// hash must resolve back to the verbatim original — the wire half of the
@@ -604,6 +606,7 @@ mod tests {
         assert!(!baseline.contains('\u{2500}'));
     }
 
+    #[cfg(feature = "http-server")]
     /// One tool result through the handler: the reply's reason codes (if
     /// any) and the content that came back. The reply is never a refusal.
     async fn reply_for(text: &str) -> (Option<String>, String) {
@@ -633,6 +636,7 @@ mod tests {
         (codes, content)
     }
 
+    #[cfg(feature = "http-server")]
     /// [real register and store] Under protection `/v1/compress` follows the
     /// rule of the forward path: a block the Engine delivered with a lineage
     /// is compressed, with a recovery copy stored for the proxy's project and

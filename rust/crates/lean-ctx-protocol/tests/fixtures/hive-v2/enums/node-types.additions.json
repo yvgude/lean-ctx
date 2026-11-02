@@ -1,0 +1,54 @@
+{
+  "added_in": "2.2",
+  "name": "node-types",
+  "values": [
+    {
+      "anchors": true,
+      "cas_exempt": [
+        "anchor_state",
+        "drift"
+      ],
+      "claim": false,
+      "mutable": [
+        "slug",
+        "title",
+        "type",
+        "status",
+        "description",
+        "anchors",
+        "anchor_state",
+        "drift"
+      ],
+      "places": [
+        "vault"
+      ],
+      "value": "page"
+    },
+    {
+      "cas_exempt": [],
+      "claim": false,
+      "mutable": [
+        "body",
+        "order"
+      ],
+      "places": [
+        "vault"
+      ],
+      "value": "section"
+    },
+    {
+      "cas_exempt": [],
+      "claim": false,
+      "mutable": [
+        "body",
+        "covers",
+        "status",
+        "resolved_by"
+      ],
+      "places": [
+        "vault"
+      ],
+      "value": "note"
+    }
+  ]
+}

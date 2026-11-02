@@ -4,6 +4,7 @@
 //! fake Hive. Each machine is a throwaway home; `ctx_agent` runs in this
 //! process with that machine's directories (under the test env lock), the
 //! relays run as their own `lean-ctx hive bus relay` processes.
+#![cfg(feature = "http-server")]
 
 use crate::support::fake_hive::FakeHive;
 use lean_ctx::core::hive::bus::handoff::{Handoffs, OfferState};

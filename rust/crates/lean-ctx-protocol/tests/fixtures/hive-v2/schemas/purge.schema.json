@@ -17,8 +17,7 @@
         "gdpr_erasure",
         "retention_schedule",
         "illegal_content",
-        "vault_deleted",
-        "sealed_conversion"
+        "vault_deleted"
       ]
     },
     "state": {
@@ -98,23 +97,6 @@
               "$ref": "web.schema.json#/$defs/time"
             }
           }
-        },
-        {
-          "type": "object",
-          "required": [
-            "wiki_pages"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "wiki_pages": {
-              "type": "array",
-              "minItems": 1,
-              "maxItems": 100,
-              "items": {
-                "$ref": "common.schema.json#/$defs/wiki_page_id"
-              }
-            }
-          }
         }
       ]
     },
@@ -135,8 +117,7 @@
         "keys_destroyed_at",
         "backups_clear_at",
         "acks",
-        "offline_pending",
-        "legacy_replicas"
+        "offline_pending"
       ],
       "additionalProperties": false,
       "properties": {
@@ -279,21 +260,6 @@
         "offline_pending": {
           "type": "integer",
           "minimum": 0
-        },
-        "legacy_replicas": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "active C0 1.x instances of the workspace (R98)"
-        },
-        "c0_1x_sunset_at": {
-          "anyOf": [
-            {
-              "$ref": "web.schema.json#/$defs/time"
-            },
-            {
-              "type": "null"
-            }
-          ]
         },
         "statement_of_reasons": {
           "type": "string",
@@ -441,7 +407,6 @@
         "item_count",
         "node_ids",
         "message_gids",
-        "wiki_pages",
         "cascade"
       ],
       "additionalProperties": false,
@@ -461,8 +426,7 @@
               "kind": {
                 "enum": [
                   "node",
-                  "message",
-                  "wiki_page"
+                  "message"
                 ]
               },
               "id": {
@@ -492,18 +456,11 @@
             "$ref": "common.schema.json#/$defs/msg_id"
           }
         },
-        "wiki_pages": {
-          "type": "array",
-          "items": {
-            "$ref": "common.schema.json#/$defs/wiki_page_id"
-          }
-        },
         "cascade": {
           "type": "object",
           "required": [
             "derived",
             "messages",
-            "wiki",
             "snapshots"
           ],
           "additionalProperties": false,
@@ -513,10 +470,6 @@
               "minimum": 0
             },
             "messages": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "wiki": {
               "type": "integer",
               "minimum": 0
             },
@@ -649,49 +602,6 @@
       "properties": {
         "totp_code": {
           "$ref": "web.schema.json#/$defs/totp_code"
-        }
-      }
-    },
-    "moderation_create_request": {
-      "description": "W56 POST /api/v1/moderation/purges (a Thinkery moderator, class F, R49, R51): an illegal_content purge of a public vault limited to what the report names; above 100 items it waits for a different moderator",
-      "type": "object",
-      "required": [
-        "report_id",
-        "selector",
-        "statement_of_reasons",
-        "totp_code"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "report_id": {
-          "type": "string",
-          "pattern": "^rpt_[0-9]{1,19}$"
-        },
-        "selector": {
-          "$ref": "#/$defs/selector"
-        },
-        "statement_of_reasons": {
-          "type": "string",
-          "minLength": 20,
-          "maxLength": 2000
-        },
-        "totp_code": {
-          "type": "string",
-          "pattern": "^([0-9]{6}|[0-9a-fA-F]{4}-[0-9a-fA-F]{4})$"
-        }
-      }
-    },
-    "moderation_approve_request": {
-      "description": "W56 POST /api/v1/moderation/purges/{id}/approve: a different moderator (403 purge_second_moderator otherwise)",
-      "type": "object",
-      "required": [
-        "totp_code"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "totp_code": {
-          "type": "string",
-          "pattern": "^([0-9]{6}|[0-9a-fA-F]{4}-[0-9a-fA-F]{4})$"
         }
       }
     },

@@ -6,12 +6,16 @@
 //!   compiled into the engine (self-host: `[hive] root_key`).
 //! - The lease arrives in enrollment and from `lease/renew` as
 //!   [`HiveLeaseEnvelopeV1`], signed by a key of the key set.
+//! - Hive-Protocol 2.1: an enrollment of a 2.1+ engine carries key set v3
+//!   ([`HiveKeySetV3`], C0 2.x `keyset.schema.json`) instead of v1; the
+//!   lease `kid` then names the v3 key of purpose `policy`
+//!   ([`EnrollmentKeySet`]).
 //!
 //! A lease is `Valid` until `expires_at`, `Grace` until `grace_until`, then
 //! `Lapsed`. Local tools never depend on the lease; only Hive traffic does.
 
 use chrono::{DateTime, Duration, FixedOffset};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use super::{
@@ -23,6 +27,10 @@ use crate::{UtcTimestamp, ValidationError};
 pub const LEASE_SCHEMA: &str = "leanctx.hive.lease/v1";
 pub const LEASE_ENVELOPE_SCHEMA: &str = "leanctx.hive.lease-envelope/v1";
 pub const KEYSET_SCHEMA: &str = "leanctx.hive.keyset/v1";
+/// Key set v3 (C0 2.x E13), in enrollments of Hive-Protocol 2.1+.
+pub const KEYSET_V3_SCHEMA: &str = "leanctx.hive.keyset/v3";
+/// The v3 purpose of the keys that sign leases (and policy bundles).
+pub const LEASE_KEY_PURPOSE: &str = "policy";
 
 /// Longest `expires_at - issued_at`.
 pub const MAX_LEASE_VALIDITY_HOURS: i64 = 24;
@@ -90,6 +98,7 @@ pub enum HiveRight {
     BusRelay,
     #[serde(rename = "bus.control")]
     BusControl,
+    /// Decoded and grants nothing: an engine does not use sealed vaults.
     #[serde(rename = "sealed")]
     Sealed,
     /// 1.2: the Intelligence runtime may run for this instance (what it
@@ -109,14 +118,6 @@ pub enum HiveRight {
     Unknown,
 }
 
-/// Org policy signing key pinned by the lease (no trust on first use).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PolicySignerKeyV1 {
-    pub org: String,
-    /// Ed25519 public key, 32 bytes base64.
-    pub ed25519_pub: String,
-}
-
 /// The signed lease statement.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HiveLeaseV1 {
@@ -130,7 +131,6 @@ pub struct HiveLeaseV1 {
     /// name is frozen in v1.
     pub seats_limit: u32,
     pub rights: Vec<HiveRight>,
-    pub policy_signer_keys: Vec<PolicySignerKeyV1>,
     pub issued_at: UtcTimestamp,
     pub expires_at: UtcTimestamp,
     pub grace_until: UtcTimestamp,
@@ -175,12 +175,8 @@ impl HiveLeaseV1 {
         if self.seats_limit == 0 {
             return Err(ValidationError::new("seats_limit must be positive"));
         }
-        if self.rights.len() > 64 || self.policy_signer_keys.len() > 16 {
+        if self.rights.len() > 64 {
             return Err(ValidationError::new("lease lists are too long"));
-        }
-        for key in &self.policy_signer_keys {
-            validate_id(&key.org, "policy_signer_keys.org")?;
-            validate_b64_len(&key.ed25519_pub, 32, "policy_signer_keys.ed25519_pub")?;
         }
         let issued = parse_time(&self.issued_at)?;
         let expires = parse_time(&self.expires_at)?;
@@ -363,6 +359,148 @@ impl HiveKeySetV1 {
     }
 }
 
+/// One key of a key set v3. Purposes stay strings here: the set's root
+/// signature covers them, and the engine checks each use against them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HiveKeyV3 {
+    /// `hex(blake3(public key))[..16]`.
+    pub key_id: String,
+    /// base64url (no padding) of the raw 32-byte Ed25519 key.
+    pub public_key: String,
+    pub purposes: Vec<String>,
+    /// Unix milliseconds.
+    pub created_at: u64,
+    /// Unix milliseconds; `None` while the key is in use.
+    pub revoked_at: Option<u64>,
+}
+
+/// One root signature of a key set v3.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HiveRootSignatureV3 {
+    pub key_id: String,
+    /// hex Ed25519 over `"leanctx.hive.keyset.v3\n" ‖ canonical_json({schema, keys})`.
+    pub signature: String,
+}
+
+/// Key set v3 as an enrollment of Hive-Protocol 2.1+ carries it. The
+/// engine verifies `signatures` against its trusted roots; the legacy
+/// single `signature` is for pre-3.12 engines.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HiveKeySetV3 {
+    pub schema: String,
+    pub keys: Vec<HiveKeyV3>,
+    pub signatures: Vec<HiveRootSignatureV3>,
+    pub signature: String,
+}
+
+fn lower_hex(value: &str, len: usize) -> bool {
+    value.len() == len
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+impl HiveKeySetV3 {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        require_schema(&self.schema, KEYSET_V3_SCHEMA)?;
+        if self.keys.is_empty() || self.keys.len() > 64 {
+            return Err(ValidationError::new("keys must list 1-64 keys"));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for key in &self.keys {
+            if !lower_hex(&key.key_id, 16) || !seen.insert(key.key_id.as_str()) {
+                return Err(ValidationError::new(
+                    "key_id must be 16 lowercase hex characters, once per set",
+                ));
+            }
+            if key.public_key.len() != 43
+                || !key
+                    .public_key
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+            {
+                return Err(ValidationError::new(
+                    "public_key must be base64url of 32 bytes",
+                ));
+            }
+            let mut purposes = std::collections::BTreeSet::new();
+            if key.purposes.is_empty() || !key.purposes.iter().all(|p| purposes.insert(p)) {
+                return Err(ValidationError::new("purposes must list each purpose once"));
+            }
+            if key.revoked_at.is_some_and(|at| at <= key.created_at) {
+                return Err(ValidationError::new("revoked_at must follow created_at"));
+            }
+        }
+        if self.signatures.is_empty() || self.signatures.len() > 2 {
+            return Err(ValidationError::new(
+                "signatures must list 1-2 root signatures",
+            ));
+        }
+        if !self
+            .signatures
+            .iter()
+            .all(|s| lower_hex(&s.key_id, 16) && lower_hex(&s.signature, 128))
+        {
+            return Err(ValidationError::new(
+                "a root signature is a 16-hex key_id and a 128-hex signature",
+            ));
+        }
+        validate_b64_len(&self.signature, 64, "signature")
+    }
+
+    /// The key that may sign a lease named `kid`: listed with purpose
+    /// [`LEASE_KEY_PURPOSE`].
+    pub fn lease_key(&self, kid: &str) -> Option<&HiveKeyV3> {
+        self.keys
+            .iter()
+            .find(|key| key.key_id == kid && key.purposes.iter().any(|p| p == LEASE_KEY_PURPOSE))
+    }
+}
+
+/// The key set of an enrollment: v1 for an engine below Hive-Protocol 2.1,
+/// v3 from 2.1 (told apart by `schema`). Either way the lease `kid` names a
+/// key of this set, and the engine verifies the set as it verifies that
+/// version everywhere else.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum EnrollmentKeySet {
+    V1(HiveKeySetV1),
+    V3(HiveKeySetV3),
+}
+
+impl<'de> Deserialize<'de> for EnrollmentKeySet {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let raw = Value::deserialize(deserializer)?;
+        if raw["schema"] == KEYSET_V3_SCHEMA {
+            serde_json::from_value(raw)
+                .map(Self::V3)
+                .map_err(D::Error::custom)
+        } else {
+            serde_json::from_value(raw)
+                .map(Self::V1)
+                .map_err(D::Error::custom)
+        }
+    }
+}
+
+impl EnrollmentKeySet {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        match self {
+            Self::V1(set) => set.validate(),
+            Self::V3(set) => set.validate(),
+        }
+    }
+
+    /// Whether the set lists a key that may sign a lease named `kid`.
+    pub fn signs_leases_as(&self, kid: &str) -> bool {
+        match self {
+            Self::V1(set) => set.key(kid).is_some(),
+            Self::V3(set) => set.lease_key(kid).is_some(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,7 +533,6 @@ mod tests {
             plan: HivePlan::Team,
             seats_limit: 25,
             rights: vec![HiveRight::KnowledgeRead],
-            policy_signer_keys: vec![],
             issued_at: UtcTimestamp::new("2026-10-20T12:00:00Z").unwrap(),
             expires_at: UtcTimestamp::new("2026-10-21T12:00:00Z").unwrap(),
             grace_until: UtcTimestamp::new("2026-10-28T12:00:00Z").unwrap(),
@@ -418,7 +555,7 @@ mod tests {
         assert_eq!(plan("none").display_name(), "No plan");
         assert_eq!(plan("team").display_name(), "Team");
         assert_eq!(plan("enterprise").display_name(), "Enterprise");
-        // The retired ids are not aliases.
+        // Other ids are not aliases.
         assert_eq!(plan("pro"), HivePlan::Unknown);
         assert_eq!(plan("business"), HivePlan::Unknown);
         assert_eq!(plan("community"), HivePlan::Unknown);
@@ -476,6 +613,17 @@ mod tests {
         envelope.lease["future_field"] = Value::from(1);
         assert_ne!(before, envelope.signing_input().unwrap());
         assert!(envelope.lease().is_ok());
+    }
+
+    /// The `policy_signer_keys` a Hive may still sign into a lease are
+    /// ignored (the signature covers the raw lease).
+    #[test]
+    fn policy_signer_keys_hive_still_sends_are_ignored() {
+        let mut raw = serde_json::to_value(lease()).unwrap();
+        raw["policy_signer_keys"] = serde_json::json!([]);
+        let decoded: HiveLeaseV1 = serde_json::from_value(raw).unwrap();
+        assert_eq!(decoded, lease());
+        assert!(decoded.validate().is_ok());
     }
 
     #[test]

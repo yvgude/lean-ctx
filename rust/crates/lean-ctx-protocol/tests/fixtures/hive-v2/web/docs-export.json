@@ -1,0 +1,13 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/orgs/leanctx/vaults/hive/docs/pages/n_aaaaaaaaaaaaaaaaaaaaaadpga/export.md",
+  "request": null,
+  "response": {
+    "body": "# Wiki\n\nThe wiki of a vault stores readable pages as place nodes: a page, its sections in order and the notes on them. Pages link to each other by id, for example [the item types](knowledge-items.md#types-and-bodies).\n\nW58 and its `wiki_pages` table are gone since C0 2.2. Pages export as Markdown, one file per page or a zip per vault.\n\n## How It Works\n\nEvery page is folded from the place log, like every other node.\n",
+    "content_disposition": "attachment; filename=\"hive-knowledge-wiki.md\"",
+    "content_type": "text/markdown; charset=utf-8",
+    "status": 200
+  },
+  "route": "W109"
+}

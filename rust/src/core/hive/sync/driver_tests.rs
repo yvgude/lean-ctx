@@ -332,8 +332,6 @@ fn a_clone_takes_the_snapshot_then_the_tail() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     let report = clone_place(&server, &mut replica, PLACE, &v).unwrap();
     assert!(report.cloned);
@@ -376,8 +374,6 @@ fn a_clone_before_the_snapshot_rebuild_folds_the_purge() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     let data = tempfile::tempdir().unwrap();
     let (mut replica, _) = Replica::open(data.path(), "pl_big", &[1; 32]).unwrap();
@@ -402,8 +398,6 @@ fn a_bad_segment_is_fetched_once_more_then_refused() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     let data = tempfile::tempdir().unwrap();
 
@@ -430,8 +424,6 @@ fn a_bad_segment_is_fetched_once_more_then_refused() {
     let wrong = Verifier {
         snapshot_keys: &other,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     let (mut replica, _) = Replica::open(data.path(), "pl_wrong", &[1; 32]).unwrap();
     assert!(clone_place(&Server::new(&STATEMENTS, 5), &mut replica, PLACE, &wrong).is_err());
@@ -448,8 +440,6 @@ fn two_engines_converge_on_the_same_graph() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     let data = tempfile::tempdir().unwrap();
     let (mut a, _) = Replica::open(data.path(), "pl_a", &[1; 32]).unwrap();
@@ -509,8 +499,6 @@ fn a_forged_tail_event_is_stored_but_never_folded() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     let data = tempfile::tempdir().unwrap();
     let (mut r, _) = Replica::open(data.path(), "pl_forge", &[1; 32]).unwrap();
@@ -539,8 +527,6 @@ fn unverified_events_fold_after_a_later_check_passes() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &unknown_yet,
-        sealed: false,
-        epoch_key: None,
     };
     let data = tempfile::tempdir().unwrap();
     let (mut r, _) = Replica::open(data.path(), "pl_recheck", &[1; 32]).unwrap();
@@ -552,7 +538,7 @@ fn unverified_events_fold_after_a_later_check_passes() {
 
     let ok = |e: &Value| sign::verify(e, &inst);
     for (id, event) in stored {
-        if records::event_verifies(&event, &SALT, false, &ok) {
+        if records::event_verifies(&event, &SALT, &ok) {
             r.mark_verified(&id).unwrap();
         }
     }
@@ -592,8 +578,6 @@ fn a_failover_is_reconciled_from_both_histories() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     let data = tempfile::tempdir().unwrap();
     let (mut a, _) = Replica::open(data.path(), "pl_ea", &[1; 32]).unwrap();
@@ -648,8 +632,6 @@ fn a_restored_log_below_the_cursor_is_reconciled() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     let data = tempfile::tempdir().unwrap();
     let (mut a, _) = Replica::open(data.path(), "pl_ra", &[1; 32]).unwrap();
@@ -678,8 +660,6 @@ fn a_key_lost_event_is_kept_out_and_repaired_by_its_author() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     let data = tempfile::tempdir().unwrap();
     let (mut a, _) = Replica::open(data.path(), "pl_ka", &[1; 32]).unwrap();
@@ -731,8 +711,6 @@ fn deletions_apply_while_transfer_is_used_up_without_moving_the_cursor() {
     let v = Verifier {
         snapshot_keys: &snap,
         signature_ok: &ok,
-        sealed: false,
-        epoch_key: None,
     };
     clone_place(&server, &mut replica, PLACE, &v).unwrap();
     assert_eq!(replica.cursor().unwrap(), Some(5));
@@ -771,8 +749,6 @@ fn deletions_apply_while_transfer_is_used_up_without_moving_the_cursor() {
     let strict = Verifier {
         snapshot_keys: &snap,
         signature_ok: &none,
-        sealed: false,
-        epoch_key: None,
     };
     let forged = deletions(&server, &mut other, PLACE, &strict)
         .unwrap()

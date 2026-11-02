@@ -15,9 +15,11 @@ mod frames;
 pub mod handoff;
 pub mod leases;
 pub mod messages;
+pub mod messages_v2;
 pub mod presence;
 pub mod relay;
 pub mod relay_v2;
+pub mod task_events;
 pub mod v2;
 pub mod veto;
 #[cfg(feature = "http-server")]

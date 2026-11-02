@@ -1,7 +1,6 @@
 {
   "cursors": {
-    "#acme/payments": 41,
-    "~checkout-latency": 7
+    "#acme/payments": 41
   },
   "presence": [
     {
@@ -12,8 +11,7 @@
   ],
   "protocol": "2.0",
   "subscribe": [
-    "#acme/payments",
-    "~checkout-latency"
+    "#acme/payments"
   ],
   "t": "hello"
 }

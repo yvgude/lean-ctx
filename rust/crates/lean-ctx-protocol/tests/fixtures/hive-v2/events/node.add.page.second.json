@@ -1,0 +1,51 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaadocs",
+  "body": {
+    "body_nonce": "17171717171717171717171717171717",
+    "slug": "knowledge/knowledge-items",
+    "status": "draft",
+    "title": "Knowledge Items",
+    "type": "feature"
+  },
+  "body_commit": "e231cd02a6e9b7430180582ac270179f701213bd2d6b96a9a2329bb794539156",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 22,
+  "event_id": "01M5NKARER005000000000D023",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800023000
+  },
+  "key_id": "47983724220c8521",
+  "node_type": "page",
+  "op": "node.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800023350,
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 23,
+  "signature": "0cff5d75cdd4321c0b72a447cedf960e825a1746335497df9d2a947b9794a393541581bece3d2c827ed1946ec8442c4356c31e4b3ae29b000bb3b1b5103ea80a",
+  "target": "n_aaaaaaaaaaaaaaaaaaaaaadpgb",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

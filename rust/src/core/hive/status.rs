@@ -9,9 +9,8 @@ use super::config::HiveConfig;
 use super::state::{ActivityRecord, HiveStore, InstanceRecord};
 use lean_ctx_protocol::hive::lease::{HiveLeaseV1, LeaseState};
 use lean_ctx_protocol::hive::status::{
-    HiveBusControlsInactiveV1, HiveCliStatusV1, HiveOrgPolicyStateV1, HiveStatusBusControlV1,
-    HiveStatusDraftsV1, HiveStatusFilterPackV1, HiveStatusInstanceV1, HiveStatusOrgV1,
-    HiveStatusPolicyV1, HiveStatusRequiredPackV1,
+    HiveBusControlsInactiveV1, HiveCliStatusV1, HiveStatusBusControlV1, HiveStatusDraftsV1,
+    HiveStatusFilterPackV1, HiveStatusInstanceV1, HiveStatusOrgV1,
 };
 
 /// Everything `lean-ctx hive status` shows.
@@ -31,11 +30,6 @@ pub struct HiveStatusReport {
     pub drafts_failed: Vec<super::knowledge::pull::DraftLine>,
     /// The last verified policy bundle (and why a newer one was refused).
     pub policy: super::policy::PolicyState,
-    /// Per pack of `policy.required_filter_packs`, whether the installed
-    /// filter set holds it as signed (the policy runtime's rule).
-    pub required_installed: Vec<bool>,
-    /// Why metrics are not sent (`None`: sent hourly, or no usable lease).
-    pub metrics_off: Option<&'static str>,
     /// Engine metrics v2 (`None`: no usable lease).
     pub metrics_v2: Option<super::metrics_v2::upload::MetricsV2Status>,
     /// Why receipts are not sent (`None`: sent, or no usable lease).
@@ -83,7 +77,6 @@ impl HiveStatusReport {
                 queued: u32::try_from(self.drafts_pending.len()).unwrap_or(u32::MAX),
                 refused: u32::try_from(self.drafts_failed.len()).unwrap_or(u32::MAX),
             },
-            policy: self.policy_view(),
             filter_packs: self
                 .policy
                 .filter_packs
@@ -108,41 +101,6 @@ impl HiveStatusReport {
                 .map(super::metrics_v2::upload::MetricsV2Status::wire),
         }
     }
-
-    fn policy_view(&self) -> Option<HiveStatusPolicyV1> {
-        let state = match self.policy.org_state.as_deref()? {
-            "required" => HiveOrgPolicyStateV1::Required,
-            "unpinned" => HiveOrgPolicyStateV1::Unpinned,
-            _ => return None,
-        };
-        Some(HiveStatusPolicyV1 {
-            version: self.policy.policy_version,
-            state,
-            verified_at: seconds(self.policy.verified_at.as_deref()?)?,
-            not_after: self.policy.not_after.as_deref().and_then(seconds),
-            enforced: self.policy.enforced,
-            required_filter_packs: self
-                .policy
-                .required_filter_packs
-                .iter()
-                .enumerate()
-                .map(|(i, r)| HiveStatusRequiredPackV1 {
-                    pack_id: r.pack_id.clone(),
-                    version: r.version,
-                    installed: self.required_installed.get(i).copied().unwrap_or(false),
-                })
-                .collect(),
-        })
-    }
-}
-
-/// A timestamp in the status' second-precision `Z` form.
-fn seconds(value: &str) -> Option<lean_ctx_protocol::UtcTimestamp> {
-    let parsed = DateTime::parse_from_rfc3339(value)
-        .ok()?
-        .with_timezone(&Utc);
-    lean_ctx_protocol::UtcTimestamp::new(parsed.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-        .ok()
 }
 
 /// Build the report from local state at `local_now`. Never touches the network.
@@ -168,8 +126,6 @@ pub fn report(
         drafts_pending: Vec::new(),
         drafts_failed: Vec::new(),
         policy: super::policy::load_state(store.data_dir()),
-        required_installed: Vec::new(),
-        metrics_off: None,
         metrics_v2: None,
         receipts_off: None,
         receipts_queued: super::outbox::Outbox::at(store.data_dir())
@@ -183,10 +139,6 @@ pub fn report(
         super::knowledge::pull::draft_listing(store.data_dir());
     (report.bus_controls, report.bus_controls_inactive) =
         super::bus::control::status_view(store, local_now);
-    report.required_installed = super::policy::required_packs_status(
-        &report.policy.required_filter_packs,
-        super::policy::load_filter_set(store.data_dir()).as_deref(),
-    );
     if instance.is_none() {
         return report;
     }
@@ -202,8 +154,6 @@ pub fn report(
     match session {
         Ok(session) => {
             report.lease_state = Some(session.lease.state_at(local_now));
-            report.metrics_off =
-                super::metrics::upload::status(store, config, &session.lease.lease);
             report.metrics_v2 = Some(super::metrics_v2::upload::status(
                 store,
                 config,

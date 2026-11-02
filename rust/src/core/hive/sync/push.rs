@@ -42,8 +42,8 @@ pub enum Outcome {
     Accepted { seq: u64 },
     /// Already in the log (an earlier push got through).
     Duplicate { seq: u64 },
-    /// Waiting for review; stays pending ("held for review").
-    Held { review_id: Option<String> },
+    /// Held by the place (e.g. over its retraction limit); stays pending.
+    Held,
     /// Not taken; what the engine does next is [`Next`].
     Refused {
         code: String,
@@ -112,9 +112,7 @@ pub fn results(response: &Value) -> Result<(Vec<(String, Outcome)>, Option<u64>)
             Some("duplicate") => Outcome::Duplicate {
                 seq: seq.ok_or("duplicate without seq")?,
             },
-            Some("held") => Outcome::Held {
-                review_id: s("review_id"),
-            },
+            Some("held") => Outcome::Held,
             Some("refused") => Outcome::Refused {
                 code: s("code").ok_or("refused without code")?,
                 reason: s("reason"),
@@ -199,7 +197,7 @@ mod tests {
         assert!(invalid.iter().all(|(_, o)| o.next() == Some(Next::Fail)));
 
         let (held, _) = results(&fixture("events_push.refused.held.response.json")).unwrap();
-        assert!(matches!(&held[0].1, Outcome::Held { review_id: Some(_) }));
+        assert!(matches!(&held[0].1, Outcome::Held));
         assert!(!held[0].1.logged());
 
         let (shape, _) = results(&fixture("events_push.refused.shape.response.json")).unwrap();

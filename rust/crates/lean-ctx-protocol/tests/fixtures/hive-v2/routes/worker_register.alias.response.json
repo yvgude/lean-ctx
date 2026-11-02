@@ -1,5 +1,5 @@
 {
-  "alias_key_id": "a81b399e9440c8ad",
+  "alias_key_id": "63588e1420da7615",
   "worker": {
     "card": {
       "availability": "idle",
@@ -15,9 +15,9 @@
       "tools": []
     },
     "host_app": "codex",
-    "id": "wkr_76aa2uwmpczt3cqkhfed",
+    "id": "wkr_antuyxwcovsu2lqob3ak",
     "name": "Codex · general",
-    "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+    "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
     "registered_at": 1792796400000,
     "role": "general",
     "status": "idle"

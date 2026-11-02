@@ -29,8 +29,8 @@ EVERYDAY (LeanCTX does these in the background; run them to do it now):
                               one connect chose.
 
 MORE:
-  lean-ctx hive help advanced  Sealed vaults, review, maintenance, worker mode,
-                                tasks, the agent bus and the Intelligence runtime.
+  lean-ctx hive help advanced  Review, maintenance, worker mode, tasks, the
+                                agent bus and the Intelligence runtime.
 
 Plans: Personal 3 engines, 2 connected at once; Team 5 per seat,
 3 connected at once per seat; Enterprise on request.
@@ -49,12 +49,10 @@ USAGE:
   lean-ctx hive maintain <workspace>/<vault> --stale --confirm <node_id>
   lean-ctx hive runtime install [--yes]
   lean-ctx hive bus relay [--for <seconds>]
-  lean-ctx hive grant [--yes]
-  lean-ctx hive review [merge <workspace>/<vault> <number>... | rollback <workspace>/<vault> <revision>]
   lean-ctx hive worker [status|pause|resume|stop|list|rename <wkr> <name>|register --cli <host> [--role <role>]]
   lean-ctx hive graph publish
   lean-ctx hive tasks [list|show|claim|update|submit|release|propose] …
-  lean-ctx hive status [--json] [--health]
+  lean-ctx hive status [--json]
 
 metrics     Engine metrics for the workspace (hourly counts, including full
             re-fetches of shortened output, the names of known programs and
@@ -85,21 +83,9 @@ runtime    install: with your consent, install the proprietary LeanCTX
             enforces your workspace's policy. --yes consents without asking.
 bus relay   Join this machine's agent bus to the workspace's (the daemon
             runs the same relay in the background; --for limits the run).
-grant       Sealed vaults: give the vault key to instances a maintainer
-            approved. Compare each fingerprint with that instance's own
-            `lean-ctx hive status` before you confirm; --yes confirms that
-            you did.
-review      Open proposals of your vaults, readable here even when the
-            vault is sealed; `merge` writes them as the next revision
-            (needs the knowledge.merge right); `rollback` restores the
-            document of an earlier revision as a new one (sealed vaults: opened
-            with that revision's key and sealed again with the current one).
-            `decide [<rv_id>] [--reason <code>]` (C0 2.0 sealed vaults): list the
-            items waiting for a person, or show one decrypted here, confirm
-            each command with y and let a maintainer answer in the browser.
 graph      publish: send this repository's code graph (files, symbols, imports;
             never code text) to Hive, when the vault owner turned on the
-            full graph on the web. Sealed vaults send it sealed.
+            full graph on the web.
 worker      Worker mode: your agents pull tasks you opted in for on the web,
             within its daily budget ([hive.worker] can only lower it).
             status shows the opt-in and today's use; pause/resume stop and
@@ -113,8 +99,7 @@ worker      Worker mode: your agents pull tasks you opted in for on the web,
 tasks       The vault's tasks: read them, work one under a claim (worker
             mode), report, submit a result with evidence, or propose one
             (`lean-ctx hive tasks --help`).
-status      --json prints the cockpit shape; --health adds the health figures
-            of sealed vaults, computed here and never sent.
+status      --json prints the cockpit shape.
 ";
 
 pub(crate) fn cmd_hive(args: &[String]) {
@@ -157,19 +142,10 @@ pub(crate) fn cmd_hive(args: &[String]) {
         "runtime" if rest.first().map(String::as_str) == Some("install") => {
             super::hive_connect_cmd::install_runtime(super::prompt::wants_yes(rest))
         }
-        "grant" => grant_sealed(&config, super::prompt::wants_yes(rest)),
-        "review" => super::hive_review_cmd::review(&config, rest),
         "worker" => worker(&config, rest),
         "graph" if rest.first().map(String::as_str) == Some("publish") => publish_graph(&config),
         "tasks" => super::hive_tasks_cmd::run(rest),
         "consent" => super::hive_consent_cmd::run(&config, rest),
-        "swarm" | "compute" => {
-            eprintln!(
-                "hive: `{sub}` was retired in 3.12.1 (Hive swarms and Task Compute were \
-                 removed); use `lean-ctx hive tasks` for this vault's tasks"
-            );
-            std::process::exit(2);
-        }
         other => {
             eprintln!("hive: unknown subcommand '{other}'\n");
             eprint!("{HELP}");
@@ -212,8 +188,8 @@ fn help_for(sub: &str, rest: &[String]) -> &'static str {
         sub
     };
     match topic {
-        "advanced" | "all" | "capture" | "replica" | "maintain" | "runtime" | "bus" | "grant"
-        | "review" | "worker" | "graph" | "tasks" => ADVANCED_HELP,
+        "advanced" | "all" | "capture" | "replica" | "maintain" | "runtime" | "bus" | "worker"
+        | "graph" | "tasks" => ADVANCED_HELP,
         _ => HELP,
     }
 }
@@ -272,11 +248,6 @@ fn status(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
             println!("Upgrade:      {error}");
         }
         for line in crate::core::hive::migrate::status_lines_once(&store) {
-            println!("{line}");
-        }
-    }
-    if args.iter().any(|a| a == "--health") {
-        for line in crate::core::hive::delivery::sealed_health_lines(&store) {
             println!("{line}");
         }
     }
@@ -375,13 +346,6 @@ fn print_report(current: &HiveStatusReport) {
             ),
         }
         println!("Lease:        {state}");
-        if let Ok(store) = HiveStore::open()
-            && let Some(fingerprint) = crate::core::hive::sealed::own_fingerprint(&store)
-        {
-            println!(
-                "Key print:    {fingerprint} (compare it when a member grants you a sealed vault)"
-            );
-        }
         let rights: Vec<String> = lease
             .rights
             .iter()
@@ -404,23 +368,6 @@ fn print_report(current: &HiveStatusReport) {
         println!("Last error:   {error}");
     }
     let policy = &current.policy;
-    match policy.org_state.as_deref() {
-        Some("required") if policy.enforced => println!(
-            "Company policy: v{} enforced (valid until {})",
-            policy.policy_version,
-            policy.not_after.as_deref().unwrap_or("?")
-        ),
-        Some("required") => println!(
-            "Company policy: v{} received and verified (valid until {}); enforcement needs the LeanCTX Intelligence runtime",
-            policy.policy_version,
-            policy.not_after.as_deref().unwrap_or("?")
-        ),
-        Some("unpinned") => println!(
-            "Company policy: lifted by a signed unpin (v{})",
-            policy.policy_version
-        ),
-        _ => println!("Company policy: none"),
-    }
     if !policy.filter_packs.is_empty() {
         let packs: Vec<String> = policy
             .filter_packs
@@ -429,41 +376,12 @@ fn print_report(current: &HiveStatusReport) {
             .collect();
         println!("Filter packs: {}", packs.join(", "));
     }
-    if !policy.required_filter_packs.is_empty() {
-        let packs: Vec<String> = policy
-            .required_filter_packs
-            .iter()
-            .zip(
-                current
-                    .required_installed
-                    .iter()
-                    .copied()
-                    .chain(std::iter::repeat(false)),
-            )
-            .map(|(r, ok)| {
-                let state = if ok {
-                    "installed"
-                } else {
-                    "NOT installed as signed"
-                };
-                format!("{} v{} ({state})", r.pack_id, r.version)
-            })
-            .collect();
-        println!("Required:     {}", packs.join(", "));
-    }
     if let Some(refusal) = &policy.last_refusal {
         println!(
             "Policy refused: {refusal} (not compliant with the newest bundle; the last verified one stays)"
         );
     }
-    if let Some(error) = &policy.enforcement_error {
-        println!("Enforcement:  not set up: {error}");
-    }
     if current.lease.is_some() {
-        match current.metrics_off {
-            None => println!("Metrics:      sent hourly (numbers per vault and day, no content)"),
-            Some(reason) => println!("Metrics:      not sent: {reason}"),
-        }
         if let (Some(v2), Some(instance)) = (&current.metrics_v2, &current.instance) {
             println!("Engine metrics: {}", v2.line(&instance.workspace_label()));
         }
@@ -615,15 +533,10 @@ fn maintain(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
     let writer = writer::VaultWriter::open(&session, maintain::MAINTENANCE_ROLE)?;
     let place = writer::vault_place(&record, &replica)?;
     let signer = writer.signer();
-    // Sealed vaults (§3.5.5): the tasks come from the decrypted replica (its
-    // id_salt is the sealed pk_id since the sync), the events are sealed
-    // with the newest epoch key held.
-    let seal = writer::vault_seal(&store, &record)?;
     let target = maintain::Target {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: seal.as_ref(),
     };
     let api = crate::core::hive::sync::place::SessionApi(&session);
     let place_ref = writer::vault_ref(&record);
@@ -1043,8 +956,7 @@ fn sync(config: &HiveConfig) -> Result<(), HiveError> {
         }) {
             crate::core::hive::policy::PolicyPull::Accepted(state) => {
                 println!(
-                    "Policy bundle verified (org policy v{}, {} filter packs).",
-                    state.policy_version,
+                    "Policy bundle verified ({} filter packs).",
                     state.filter_packs.len()
                 );
             }
@@ -1082,9 +994,6 @@ fn sync(config: &HiveConfig) -> Result<(), HiveError> {
     }
     for problem in &proposals.problems {
         say.refusal(&format!("hive: task proposal: {problem}"));
-    }
-    for (repo, revision) in &report.merged_ready {
-        println!("Merged the confirmed sealed proposals of {repo} into revision {revision}.");
     }
     use crate::core::hive::metrics_v2::upload::{self as hours, MetricsV2Run};
     match hours::run(&session, config, Utc::now(), true) {
@@ -1130,61 +1039,6 @@ fn sync(config: &HiveConfig) -> Result<(), HiveError> {
         // Hive served this sync: a plan was chosen meanwhile, the lock is over
         // (the lease that still names it may run for hours, E11).
         session.store.record_locked(None);
-    }
-    Ok(())
-}
-
-/// Grant the sealed vault keys this instance holds to the recipients a
-/// maintainer approved, each after its fingerprint was confirmed.
-fn grant_sealed(config: &HiveConfig, confirmed: bool) -> Result<(), HiveError> {
-    use crate::core::hive::config::HiveSealedGrants;
-    use crate::core::hive::sealed;
-    use crate::core::hive::vault::VaultMap;
-    let store = HiveStore::open()?;
-    let instance = store.instance()?.ok_or(HiveError::NotConnected)?;
-    let root = crate::core::hive::root_cert::trust_root(&store, config, &instance.url)?;
-    let session = Session::load(store, root)?;
-    let map = VaultMap::load(session.store.data_dir());
-    let mut granted = 0usize;
-    for record in map.vaults.values().filter(|record| record.sealed) {
-        let repo = format!("{}/{}", record.ns, record.name);
-        let pending = sealed::pending(&session, &record.vault_id)?;
-        if pending.recipients.is_empty() {
-            continue;
-        }
-        let epoch = pending.epoch_required;
-        if sealed::newest_held_epoch(&session.store, &record.vault_id)? != Some(epoch) {
-            println!(
-                "{repo}: {} waiting, but this instance holds no key for epoch {epoch} (another member grants them).",
-                pending.recipients.len()
-            );
-            continue;
-        }
-        for recipient in &pending.recipients {
-            println!(
-                "{repo}: {} of {} (approved by {}), fingerprint {}",
-                recipient.label,
-                recipient.owner.name,
-                recipient.approved_by.name,
-                recipient.kx_fingerprint
-            );
-            let ask = config.sealed_grants == HiveSealedGrants::Confirm;
-            if ask
-                && !super::prompt::confirm(
-                    "Does this fingerprint match the one that instance shows in `lean-ctx hive status`?",
-                    confirmed,
-                )
-            {
-                println!("  not granted.");
-                continue;
-            }
-            sealed::grant(&session, &record.vault_id, epoch, recipient)?;
-            granted += 1;
-            println!("  granted.");
-        }
-    }
-    if granted == 0 {
-        println!("No sealed vault key was granted.");
     }
     Ok(())
 }
@@ -1411,10 +1265,9 @@ fn publish_graph(config: &HiveConfig) -> Result<(), HiveError> {
         })?;
     let sent = code_graph::publish(&session, &record, std::path::Path::new(&project_root))?;
     println!(
-        "Code graph of {}/{} sent{}: {} nodes, {} edges{}.",
+        "Code graph of {}/{} sent: {} nodes, {} edges{}.",
         record.ns,
         record.name,
-        if sent.sealed { " sealed" } else { "" },
         sent.nodes,
         sent.edges,
         sent.revision_hint

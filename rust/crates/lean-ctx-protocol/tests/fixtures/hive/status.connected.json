@@ -29,13 +29,6 @@
   "org": {
     "name": "Acme AG"
   },
-  "policy": {
-    "enforced": false,
-    "not_after": "2026-11-20T12:00:00Z",
-    "state": "required",
-    "verified_at": "2026-10-20T12:00:00Z",
-    "version": 1
-  },
   "policy_refusal": null,
   "url": "https://hive.leanctx.com",
   "web_url": "https://hive.leanctx.com"

@@ -207,11 +207,27 @@ fn deliveries_land_once_never_as_a_local_agent_and_never_forwarded() {
     deliver.as_object_mut().unwrap().remove("t");
     let workers = BTreeSet::from([WORKER.to_string()]);
     assert_eq!(
-        apply_delivery(&mut s.registry, &s.map, &mut state, &deliver, &workers).unwrap(),
+        apply_delivery(
+            &mut s.registry,
+            &s.map,
+            &mut state,
+            &deliver,
+            &workers,
+            &BTreeMap::new()
+        )
+        .unwrap(),
         Some(("#acme/payments".to_string(), 2))
     );
     assert_eq!(
-        apply_delivery(&mut s.registry, &s.map, &mut state, &deliver, &workers).unwrap(),
+        apply_delivery(
+            &mut s.registry,
+            &s.map,
+            &mut state,
+            &deliver,
+            &workers,
+            &BTreeMap::new()
+        )
+        .unwrap(),
         None,
         "replay"
     );
@@ -222,9 +238,18 @@ fn deliveries_land_once_never_as_a_local_agent_and_never_forwarded() {
         .filter(|e| e.from_agent == REVIEWER)
         .collect();
     assert_eq!(landed.len(), 1);
-    assert_eq!(
-        landed[0].message,
-        "Yes; the lock is released only after the export commit."
+    // A typed message reads with its id and thread, so it can be answered.
+    assert!(
+        landed[0]
+            .message
+            .ends_with("Yes; the lock is released only after the export commit."),
+        "{}",
+        landed[0].message
+    );
+    assert!(
+        landed[0].message.contains("reply_to="),
+        "{}",
+        landed[0].message
     );
     assert!(super::super::relay::is_inbound(landed[0]));
     let worker = |_: &AgentEntry| Some(WORKER.to_string());
@@ -236,9 +261,54 @@ fn deliveries_land_once_never_as_a_local_agent_and_never_forwarded() {
     let mut spoof = deliver.clone();
     spoof["seq"] = 3.into();
     spoof["sender"]["worker_id"] = WORKER.into();
-    apply_delivery(&mut s.registry, &s.map, &mut state, &spoof, &workers).unwrap();
+    apply_delivery(
+        &mut s.registry,
+        &s.map,
+        &mut state,
+        &spoof,
+        &workers,
+        &BTreeMap::new(),
+    )
+    .unwrap();
     assert_eq!(state.cursors["#acme/payments"], 3);
     assert!(s.registry.scratchpad.iter().all(|e| e.from_agent != WORKER));
+}
+
+#[test]
+fn a_message_for_one_worker_reaches_only_its_local_agents() {
+    let mut s = setup();
+    let mut state = StateV2::default();
+    let mut deliver = fixture("bus/frame.message_deliver.json");
+    deliver.as_object_mut().unwrap().remove("t");
+    deliver["seq"] = 7.into();
+    deliver["body"]["to_worker"] = "wkr_localtesterxxxxxxx".into();
+    let target = s.registry.agents[0].agent_id.clone();
+    let agents_of = BTreeMap::from([("wkr_localtesterxxxxxxx".to_string(), vec![target.clone()])]);
+    apply_delivery(
+        &mut s.registry,
+        &s.map,
+        &mut state,
+        &deliver,
+        &BTreeSet::new(),
+        &agents_of,
+    )
+    .unwrap();
+    let landed: Vec<_> = s
+        .registry
+        .scratchpad
+        .iter()
+        .filter(|e| e.from_agent == REVIEWER)
+        .collect();
+    assert_eq!(landed.len(), 1);
+    assert_eq!(
+        landed[0].to_agent.as_deref(),
+        Some(target.as_str()),
+        "addressed, not a broadcast"
+    );
+    assert!(
+        super::super::relay::is_inbound(landed[0]),
+        "still fenced as data from Hive"
+    );
 }
 
 #[test]

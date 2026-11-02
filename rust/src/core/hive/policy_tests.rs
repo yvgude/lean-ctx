@@ -2,42 +2,16 @@
 use super::test_support::*;
 use super::*;
 use ed25519_dalek::{Signer as _, SigningKey};
-use lean_ctx_protocol::UtcTimestamp;
-use lean_ctx_protocol::hive::lease::{HivePlan, LEASE_SCHEMA, PolicySignerKeyV1};
 use lean_ctx_protocol::hive::{KEYSET_SIGNATURE_DOMAIN, signing_input_without_signature};
 
-const SIGNER: [u8; 32] = [0x4f; 32];
 const HIVE: [u8; 32] = [0x53; 32];
 const ROOT: [u8; 32] = [0x52; 32];
 
-fn lease(signers: &[[u8; 32]]) -> HiveLeaseV1 {
-    HiveLeaseV1 {
-        schema: LEASE_SCHEMA.into(),
-        lease_id: "lse_1".into(),
-        org_id: "org_acme".into(),
-        instance_id: "inst_1".into(),
-        plan: HivePlan::Team,
-        seats_limit: 25,
-        rights: vec![],
-        policy_signer_keys: signers
-            .iter()
-            .map(|s| PolicySignerKeyV1 {
-                org: "org_acme".into(),
-                ed25519_pub: public_b64(*s),
-            })
-            .collect(),
-        issued_at: UtcTimestamp::new("2026-10-20T12:00:00Z").unwrap(),
-        expires_at: UtcTimestamp::new("2026-10-21T12:00:00Z").unwrap(),
-        grace_until: UtcTimestamp::new("2026-10-27T12:00:00Z").unwrap(),
-        server_time: UtcTimestamp::new("2026-10-20T12:00:00Z").unwrap(),
-        org_settings: None,
-    }
-}
-
 fn keyset() -> HiveKeySetV1 {
+    let public = SigningKey::from_bytes(&HIVE).verifying_key();
     let mut raw = serde_json::json!({
         "schema": lean_ctx_protocol::hive::lease::KEYSET_SCHEMA,
-        "keys": [{"kid": "k1", "ed25519_pub": public_b64(HIVE), "not_after": "2099-01-01T00:00:00Z"}],
+        "keys": [{"kid": "k1", "ed25519_pub": STANDARD.encode(public.as_bytes()), "not_after": "2099-01-01T00:00:00Z"}],
     });
     let input = signing_input_without_signature(KEYSET_SIGNATURE_DOMAIN, &raw).unwrap();
     raw["signature"] =
@@ -55,42 +29,27 @@ fn now() -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-fn policy(version: u64) -> Value {
-    artifact(
-        SIGNER,
-        "org_acme",
-        version,
-        "2026-10-20T11:00:00Z",
-        "2026-11-20T12:00:00Z",
-        PACK,
-    )
+#[allow(clippy::needless_pass_by_value)] // takes the bundle a builder just made
+fn check(raw: Value) -> Result<(PolicyState, FilterSet), String> {
+    verify_bundle(&raw, &keyset(), &PolicyState::default(), now())
 }
 
-#[allow(clippy::needless_pass_by_value)] // takes the bundle a builder just made
-fn check(raw: Value, signers: &[[u8; 32]]) -> Result<(PolicyState, FilterSet), String> {
-    verify_bundle(
-        &raw,
-        &lease(signers),
-        &keyset(),
-        &PolicyState::default(),
-        now(),
-    )
+/// A TOML org policy in a bundle: `statement`, `public_key`, `signature`
+/// and `pack_toml`, signed by a key no lease pins.
+fn toml_org_policy() -> Value {
+    serde_json::json!({
+        "statement": {"schema": "leanctx.org-policy/v2", "organization_id": "org_acme", "policy_version": 3,
+                      "required_filter_packs": [{"pack_id": "ch-ids", "version": 9, "sha256": "0".repeat(64)}]},
+        "public_key": "not-a-key", "signature": "not-a-signature", "pack_toml": "name = \"floor\"\n",
+    })
 }
 
 #[test]
-fn a_policy_signed_by_the_lease_pinned_key_is_accepted_with_its_filter_rules() {
-    let (state, filters) = check(
-        bundle(
-            1,
-            Some(policy(1)),
-            vec![filter_pack(HIVE, "k1", "ch-ids", 3)],
-        ),
-        &[SIGNER],
-    )
-    .unwrap();
-    assert_eq!(state.policy_version, 1);
-    assert_eq!(state.org_state.as_deref(), Some("required"));
+fn filter_packs_signed_by_a_hive_key_are_accepted_with_their_rules() {
+    let (state, filters) =
+        check(bundle(0, None, vec![filter_pack(HIVE, "k1", "ch-ids", 3)])).unwrap();
     assert_eq!(state.filter_packs.get("ch-ids"), Some(&3));
+    assert_eq!((state.policy_version, state.org_state), (0, None));
     let rules = filter_rules(Some(&serde_json::to_string(&filters).unwrap()));
     assert_eq!(rules.redaction.len(), 1);
     assert_eq!(rules.redaction[0].0, "hive:ahv");
@@ -100,113 +59,84 @@ fn a_policy_signed_by_the_lease_pinned_key_is_accepted_with_its_filter_rules() {
     assert_eq!(filter_rules(None), FilterRules::default());
 }
 
-/// HIVE-RT-D5: the org's signature names its packs; Hive cannot drop,
-/// roll back or swap them, and a refusal keeps the last good bundle.
+/// Whatever a bundle carries in `org_policy`, `unpin` or `policy_version`
+/// is not read, so neither an unverifiable policy nor the packs it lists refuse the
+/// bundle; its filter packs apply as always.
 #[test]
-fn packs_the_signed_policy_requires_must_all_be_there_as_signed() {
-    let pack = filter_pack(HIVE, "k1", "ch-ids", 3);
-    let required = |version: u64, sha256: &str| {
-        artifact_requiring(
-            SIGNER,
-            "org_acme",
-            1,
-            "2026-10-20T11:00:00Z",
-            "2026-11-20T12:00:00Z",
-            PACK,
-            vec![RequiredFilterPackV1 {
-                pack_id: "ch-ids".into(),
-                version,
-                sha256: sha256.into(),
-            }],
-        )
-    };
-    let sha = pack["sha256"].as_str().unwrap().to_string();
-    let (state, filters) = check(
-        bundle(1, Some(required(3, &sha)), vec![pack.clone()]),
-        &[SIGNER],
-    )
-    .unwrap();
+fn a_toml_org_policy_in_the_bundle_is_ignored_and_its_filter_packs_apply() {
+    let mut raw = bundle(
+        3,
+        Some(toml_org_policy()),
+        vec![filter_pack(HIVE, "k1", "ch-ids", 3)],
+    );
+    raw["unpin"] = serde_json::json!({"statement": {"policy_version": 4}});
+    let (state, filters) = check(raw).unwrap();
     assert_eq!(state.filter_packs.get("ch-ids"), Some(&3));
     assert_eq!(filters.packs.len(), 1);
-
-    let missing = check(bundle(1, Some(required(3, &sha)), vec![]), &[SIGNER]).unwrap_err();
-    assert_eq!(missing, "required filter pack ch-ids is missing");
-    // Another pack in its place, signed by Hive, is still not the one.
-    let swapped = filter_pack_with(
-        HIVE,
-        "k1",
-        "ch-ids",
-        3,
-        serde_json::json!([{"id": "none", "kind": "regex", "pattern": "x^", "action": "redact"}]),
-    );
-    let refused = check(bundle(1, Some(required(3, &sha)), vec![swapped]), &[SIGNER]);
-    assert_eq!(
-        refused.unwrap_err(),
-        "required filter pack ch-ids version 3 is not the one the policy signed"
-    );
-    let newer = filter_pack(HIVE, "k1", "ch-ids", 4);
-    assert!(check(bundle(1, Some(required(3, &sha)), vec![newer]), &[SIGNER]).is_err());
-    // The list is part of the signature: editing it breaks the policy.
-    let mut forged = required(3, &sha);
-    forged["statement"]["required_filter_packs"] = serde_json::json!([]);
-    assert!(check(bundle(1, Some(forged), vec![]), &[SIGNER]).is_err());
-    // A malformed list is refused even when signed.
-    assert!(
-        check(
-            bundle(1, Some(required(0, &sha)), vec![pack.clone()]),
-            &[SIGNER]
-        )
-        .is_err()
-    );
-    // Packs the policy does not list still verify as before.
-    let extra = filter_pack_with(
-        HIVE,
-        "k1",
-        "extra",
-        1,
-        serde_json::json!([{"id": "falcon", "kind": "regex", "pattern": "falcon", "action": "block"}]),
-    );
-    let (state, _) = check(
-        bundle(1, Some(required(3, &sha)), vec![pack, extra]),
-        &[SIGNER],
-    )
-    .unwrap();
-    assert_eq!(state.filter_packs.len(), 2);
+    assert_eq!((state.policy_version, state.org_state), (0, None));
+    // Not even its shape is checked.
+    let mut odd = bundle(1, None, vec![]);
+    odd["org_policy"] = Value::from("text");
+    assert!(check(odd).is_ok());
 }
 
-/// The runtime check on what is installed: the verified set passes; a
-/// set edited, emptied or removed by hand does not.
+/// Org-policy fields in the stored state (a policy in force, the packs it
+/// required) are never loaded: a bundle without the policy is accepted,
+/// and the next save drops those fields.
+#[test]
+fn org_policy_fields_in_the_stored_state_never_refuse_a_bundle() {
+    let dir = tempfile::tempdir().unwrap();
+    let policy_dir = dir.path().join("policy");
+    std::fs::create_dir_all(&policy_dir).unwrap();
+    let old = serde_json::json!({
+        "etag": "\"b7\"", "policy_version": 7, "statement_digest": format!("sha256:{}", "a".repeat(64)),
+        "org_state": "required", "not_after": "2026-11-20T12:00:00Z", "enforced": true,
+        "filter_packs": {"ch-ids": 3}, "verified_at": "2026-10-19T12:00:00Z", "last_refusal": null,
+        "required_filter_packs": [{"pack_id": "ch-ids", "version": 3, "sha256": "b".repeat(64)}],
+    });
+    std::fs::write(policy_dir.join("state.json"), old.to_string()).unwrap();
+    let loaded = load_state(dir.path());
+    assert_eq!((loaded.policy_version, loaded.org_state.clone()), (0, None));
+    assert_eq!(loaded.etag.as_deref(), Some("\"b7\""));
+    assert_eq!(loaded.filter_packs.get("ch-ids"), Some(&3));
+    let (state, _) = verify_bundle(
+        &bundle(0, None, vec![filter_pack(HIVE, "k1", "ch-ids", 3)]),
+        &keyset(),
+        &loaded,
+        now(),
+    )
+    .unwrap();
+    save_state(dir.path(), &state).unwrap();
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(policy_dir.join("state.json")).unwrap()).unwrap();
+    for dropped in [
+        "policy_version",
+        "statement_digest",
+        "org_state",
+        "not_after",
+        "enforced",
+        "required_filter_packs",
+    ] {
+        assert!(saved.get(dropped).is_none(), "{dropped}: {saved}");
+    }
+    // Even the packs it required may go.
+    assert!(verify_bundle(&bundle(0, None, vec![]), &keyset(), &loaded, now()).is_ok());
+}
+
+/// The policy runtime's check on what is installed, for an org policy it
+/// holds: the verified set passes; a set edited,
+/// emptied or removed by hand does not.
 #[test]
 fn the_installed_set_must_hold_the_required_packs_as_signed() {
     let pack = filter_pack(HIVE, "k1", "ch-ids", 3);
-    let artifact = artifact_requiring(
-        SIGNER,
-        "org_acme",
-        1,
-        "2026-10-20T11:00:00Z",
-        "2026-11-20T12:00:00Z",
-        PACK,
-        vec![RequiredFilterPackV1 {
-            pack_id: "ch-ids".into(),
-            version: 3,
-            sha256: pack["sha256"].as_str().unwrap().into(),
-        }],
-    );
-    let (state, set) = check(bundle(1, Some(artifact.clone()), vec![pack]), &[SIGNER]).unwrap();
+    let artifact = serde_json::json!({"statement": {"required_filter_packs": [
+        {"pack_id": "ch-ids", "version": 3, "sha256": pack["sha256"]},
+    ]}});
+    let (_, set) = check(bundle(0, None, vec![pack])).unwrap();
     let text = artifact.to_string();
     let installed = serde_json::to_string(&set).unwrap();
     assert_eq!(required_packs_installed(&text, Some(&installed)), Ok(()));
     assert!(required_packs_installed(&text, None).is_err());
-    // The accepted state keeps the list; status answers per pack by the same rule.
-    assert_eq!(state.required_filter_packs.len(), 1);
-    assert_eq!(
-        required_packs_status(&state.required_filter_packs, Some(&installed)),
-        [true]
-    );
-    assert_eq!(
-        required_packs_status(&state.required_filter_packs, None),
-        [false]
-    );
     let mut emptied = set.clone();
     emptied.packs.clear();
     assert!(
@@ -239,84 +169,16 @@ fn the_installed_set_must_hold_the_required_packs_as_signed() {
     assert!(
         required_packs_installed(&text, Some(&serde_json::to_string(&shadowed).unwrap())).is_err()
     );
-    assert_eq!(
-        required_packs_status(
-            &state.required_filter_packs,
-            Some(&serde_json::to_string(&shadowed).unwrap())
-        ),
-        [false],
-        "status follows the runtime rule: a shadowed set installs nothing"
-    );
     let mut unlisted = set;
     unlisted.statements.clear();
     assert!(
         required_packs_installed(&text, Some(&serde_json::to_string(&unlisted).unwrap())).is_err()
     );
-    // A policy without required packs asks nothing of the set.
-    assert_eq!(
-        required_packs_installed(&policy(1).to_string(), None),
-        Ok(())
-    );
-}
-
-#[test]
-fn unpinned_signers_tampered_packs_and_wrong_orgs_are_refused() {
-    assert!(
-        check(bundle(1, Some(policy(1)), vec![]), &[[0x11; 32]]).is_err(),
-        "signer not in lease"
-    );
-    assert!(
-        check(bundle(1, Some(policy(1)), vec![]), &[]).is_err(),
-        "no trust on first use"
-    );
-    let mut tampered = policy(1);
-    tampered["pack_toml"] = Value::from(format!("{PACK}\n# changed"));
-    assert!(
-        check(bundle(1, Some(tampered), vec![]), &[SIGNER]).is_err(),
-        "pack swapped"
-    );
-    let mut forged = policy(1);
-    forged["statement"]["grace_seconds"] = Value::from(999_999);
-    assert!(
-        check(bundle(1, Some(forged), vec![]), &[SIGNER]).is_err(),
-        "statement edited"
-    );
-    let other_org = artifact(
-        SIGNER,
-        "org_other",
-        1,
-        "2026-10-20T11:00:00Z",
-        "2026-11-20T12:00:00Z",
-        PACK,
-    );
-    assert!(
-        check(bundle(1, Some(other_org), vec![]), &[SIGNER]).is_err(),
-        "other organization"
-    );
-    let expired = artifact(
-        SIGNER,
-        "org_acme",
-        1,
-        "2026-09-01T00:00:00Z",
-        "2026-10-01T00:00:00Z",
-        PACK,
-    );
-    assert!(
-        check(bundle(1, Some(expired), vec![]), &[SIGNER]).is_err(),
-        "expired"
-    );
-    let early = artifact(
-        SIGNER,
-        "org_acme",
-        1,
-        "2026-10-21T00:00:00Z",
-        "2026-11-21T00:00:00Z",
-        PACK,
-    );
-    assert!(
-        check(bundle(1, Some(early), vec![]), &[SIGNER]).is_err(),
-        "not yet valid"
-    );
+    // A policy without required packs asks nothing of the set; no
+    // statement at all is not a policy.
+    let none = serde_json::json!({"statement": {"policy_version": 1}}).to_string();
+    assert_eq!(required_packs_installed(&none, None), Ok(()));
+    assert!(required_packs_installed("{}", None).is_err());
 }
 
 #[test]
@@ -325,15 +187,11 @@ fn filter_packs_must_be_signed_valid_and_within_the_budget() {
     forged["envelope"]["signature"] =
         filter_pack([0x22; 32], "k1", "ch-ids", 3)["envelope"]["signature"].clone();
     assert!(
-        check(bundle(0, None, vec![forged]), &[]).is_err(),
+        check(bundle(0, None, vec![forged])).is_err(),
         "forged signature"
     );
     assert!(
-        check(
-            bundle(0, None, vec![filter_pack(HIVE, "k9", "ch-ids", 3)]),
-            &[]
-        )
-        .is_err(),
+        check(bundle(0, None, vec![filter_pack(HIVE, "k9", "ch-ids", 3)])).is_err(),
         "unknown kid"
     );
     let broken = filter_pack_with(
@@ -344,7 +202,7 @@ fn filter_packs_must_be_signed_valid_and_within_the_budget() {
         serde_json::json!([{"id": "x", "kind": "regex", "pattern": "(", "action": "redact"}]),
     );
     assert!(
-        check(bundle(0, None, vec![broken]), &[]).is_err(),
+        check(bundle(0, None, vec![broken])).is_err(),
         "pattern does not compile"
     );
     let unknown = filter_pack_with(
@@ -355,7 +213,7 @@ fn filter_packs_must_be_signed_valid_and_within_the_budget() {
         serde_json::json!([{"id": "x", "kind": "regex", "pattern": "a", "action": "shout"}]),
     );
     assert!(
-        check(bundle(0, None, vec![unknown]), &[]).is_err(),
+        check(bundle(0, None, vec![unknown])).is_err(),
         "unknown action"
     );
     let twice = vec![
@@ -363,7 +221,7 @@ fn filter_packs_must_be_signed_valid_and_within_the_budget() {
         filter_pack(HIVE, "k1", "b-pack", 1),
     ];
     assert!(
-        check(bundle(0, None, twice), &[]).is_err(),
+        check(bundle(0, None, twice)).is_err(),
         "rule label repeats across packs"
     );
     let many = |prefix: &str| {
@@ -378,187 +236,39 @@ fn filter_packs_must_be_signed_valid_and_within_the_budget() {
         filter_pack_with(HIVE, "k1", "p2", 1, many("b")),
     ];
     assert!(
-        check(bundle(0, None, full.clone()), &[]).is_ok(),
+        check(bundle(0, None, full.clone())).is_ok(),
         "exactly the budget"
     );
     let over = [full, vec![filter_pack_with(HIVE, "k1", "p3", 1, many("c"))]].concat();
     assert!(
-        check(bundle(0, None, over), &[]).is_err(),
+        check(bundle(0, None, over)).is_err(),
         "over the budget is refused as a whole"
     );
 }
 
 #[test]
-fn versions_only_move_forward() {
-    let lease = lease(&[SIGNER]);
-    let (accepted, _) = verify_bundle(
-        &bundle(2, Some(policy(2)), vec![]),
-        &lease,
+fn filter_pack_versions_only_move_forward() {
+    let (accepted, _) = check(bundle(0, None, vec![filter_pack(HIVE, "k1", "ch-ids", 3)])).unwrap();
+    let older = verify_bundle(
+        &bundle(0, None, vec![filter_pack(HIVE, "k1", "ch-ids", 2)]),
         &keyset(),
-        &PolicyState::default(),
+        &accepted,
         now(),
-    )
-    .unwrap();
-    assert!(
-        verify_bundle(
-            &bundle(1, Some(policy(1)), vec![]),
-            &lease,
-            &keyset(),
-            &accepted,
-            now()
-        )
-        .is_err(),
-        "downgrade"
     );
-    let other_pack = artifact(
-        SIGNER,
-        "org_acme",
-        2,
-        "2026-10-20T11:00:00Z",
-        "2026-11-20T12:00:00Z",
-        "name = \"x\"\n",
-    );
-    assert!(
-        verify_bundle(
-            &bundle(2, Some(other_pack), vec![]),
-            &lease,
-            &keyset(),
-            &accepted,
-            now()
-        )
-        .is_err(),
-        "same version, other bytes"
-    );
-    assert!(
-        verify_bundle(
-            &bundle(2, Some(policy(2)), vec![]),
-            &lease,
-            &keyset(),
-            &accepted,
-            now()
-        )
-        .is_ok(),
-        "the same statement again"
-    );
-    assert!(
-        verify_bundle(
-            &bundle(0, None, vec![]),
-            &lease,
-            &keyset(),
-            &accepted,
-            now()
-        )
-        .is_err(),
-        "silently dropped policy"
-    );
-}
-
-#[test]
-fn enforcement_installs_pins_and_enrolls_only_with_the_verifier() {
-    let _data = crate::core::data_dir::isolated_data_dir();
-    let raw = bundle(1, Some(policy(1)), vec![]);
-    let (mut state, _) = check(raw.clone(), &[SIGNER]).unwrap();
-    let installed = crate::core::policy::org::store::installed_path().unwrap();
-    let marker = crate::core::policy::org::marker::marker_path_read_only().unwrap();
-
-    enforce(&raw, &mut state, false).unwrap();
-    assert!(!state.enforced, "no verifier, nothing enforced");
-    assert!(
-        !installed.exists() && !marker.exists(),
-        "and nothing written"
-    );
-
-    enforce(&raw, &mut state, true).unwrap();
-    assert!(state.enforced);
-    let artifact: OrgPolicyArtifactV2 =
-        serde_json::from_slice(&std::fs::read(&installed).unwrap()).unwrap();
-    assert_eq!(artifact.statement.policy_version, 1);
-    let recorded =
-        crate::core::policy::org::marker::parse(&std::fs::read_to_string(&marker).unwrap())
-            .unwrap();
-    assert_eq!(recorded.organization_id.as_str(), "org_acme");
-    assert_eq!(recorded.entries.len(), 1);
     assert_eq!(
-        crate::core::policy::org::trust::pin_for(
-            "org_acme",
-            &hex::encode(SigningKey::from_bytes(&SIGNER).verifying_key().to_bytes())
-        )
-        .unwrap(),
-        crate::core::policy::org::trust::PinOutcome::AlreadyPinned
+        older.unwrap_err(),
+        "filter pack ch-ids version 2 is older than the accepted one"
     );
-
-    // A second pass never re-enrolls: the stored marker stays as it was.
-    let before = std::fs::read(&marker).unwrap();
-    enforce(&raw, &mut state, true).unwrap();
-    assert_eq!(std::fs::read(&marker).unwrap(), before);
-
-    // A signer trusted for another organization is refused, not repinned.
-    let other = artifact_for_org("org_other");
-    let mut foreign = state.clone();
-    foreign.org_state = Some("required".into());
-    assert!(enforce(&bundle(1, Some(other), vec![]), &mut foreign, true).is_err());
-}
-
-fn artifact_for_org(org: &str) -> Value {
-    artifact(
-        SIGNER,
-        org,
-        1,
-        "2026-10-20T11:00:00Z",
-        "2026-11-20T12:00:00Z",
-        PACK,
-    )
-}
-
-/// The policy (valid until 2026-11-20 12:00) signed again with
-/// `grace_seconds`.
-fn with_grace(grace_seconds: u64) -> OrgPolicyArtifactV2 {
-    let mut artifact: OrgPolicyArtifactV2 = serde_json::from_value(policy(1)).unwrap();
-    artifact.statement.grace_seconds = grace_seconds;
-    let mut signing = ORG_POLICY_SIGNATURE_DOMAIN.as_bytes().to_vec();
-    signing.extend(serde_json::to_vec(&artifact.statement).unwrap());
-    artifact.signature = Ed25519Signature::new(
-        URL_SAFE_NO_PAD.encode(SigningKey::from_bytes(&SIGNER).sign(&signing).to_bytes()),
-    )
-    .unwrap();
-    artifact
-}
-
-/// SEC-FIX follow-up: an org-signed `grace_seconds` beyond chrono's range
-/// (between i64::MAX / 1000 and u64::MAX) panicked in `Duration::seconds`
-/// or `until + grace`. Such a grace now never runs out, and a normal one
-/// still ends the policy.
-#[test]
-fn a_grace_beyond_the_representable_time_never_panics() {
-    let at = |s: &str| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc);
-    let until = at("2026-11-20T12:00:00Z");
-    assert_eq!(grace_end(until, 3600), Some(at("2026-11-20T13:00:00Z")));
-    for huge in [
-        u64::try_from(i64::MAX / 1000).unwrap() + 1,
-        u64::try_from(i64::MAX).unwrap(),
-        u64::try_from(i64::MAX).unwrap() + 1,
-        u64::MAX,
-    ] {
-        assert_eq!(grace_end(until, huge), None, "{huge}");
-    }
-    // The largest grace chrono holds still ends past `until`, but beyond
-    // the representable time: no end either.
-    assert_eq!(
-        grace_end(until, u64::try_from(i64::MAX / 1000).unwrap()),
-        None
-    );
-
-    let later = at("2030-01-01T00:00:00Z");
-    let lease = lease(&[SIGNER]);
-    assert!(verify_org_policy(&with_grace(3600), &lease, now()).is_ok());
-    assert_eq!(
-        verify_org_policy(&with_grace(3600), &lease, later),
-        Err("the policy has expired".into())
-    );
-    for huge in [u64::try_from(i64::MAX).unwrap(), u64::MAX] {
+    for version in [3, 4] {
         assert!(
-            verify_org_policy(&with_grace(huge), &lease, later).is_ok(),
-            "{huge}: a grace that never runs out keeps the policy"
+            verify_bundle(
+                &bundle(0, None, vec![filter_pack(HIVE, "k1", "ch-ids", version)]),
+                &keyset(),
+                &accepted,
+                now()
+            )
+            .is_ok(),
+            "version {version}"
         );
     }
 }

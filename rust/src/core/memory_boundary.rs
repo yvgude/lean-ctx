@@ -206,6 +206,7 @@ mod tests {
         assert!(!is_same_project_identity("hash1", ""));
     }
 
+    #[cfg(feature = "http-server")]
     #[test]
     fn audit_event_roundtrip() {
         let _guard = crate::core::data_dir::test_env_lock();

@@ -5,20 +5,13 @@
 //! Agents ask, offer, hand off, answer and report findings to other agents
 //! over the bus. People answer on the web; they are not message recipients.
 //!
-//! Networks are never bridged:
-//! - `org`: the private bus of one organization, per vault channel
-//!   (`org:<org>/vault:<vault_id>/<name>`, as in [`super::bus`]);
-//! - `swarm`: one network per swarm (`swarm_id`, section 6).
-//!   Senders appear only by profile handle and reputation; no organization,
-//!   instance or person is ever shown.
+//! The one network is `org`: the private bus of one organization, per
+//! vault channel (`org:<org>/vault:<vault_id>/<name>`, as in
+//! [`super::bus`]). A message naming any other network is refused.
 //!
-//! A reply (`reply_to`) or a thread (`thread_id`) never crosses networks.
-//! 1.9 R3: Hive answers a `reply_to` into another network exactly like an
-//! unknown message, `404 not_found` field `reply_to`, so a sender learns
-//! nothing about other networks. Engines refuse such a reply locally first;
-//! the reason `cross_network` (fixture `error.cross_network`) stays for that
-//! local refusal and is no longer sent by Hive. Message ids (`gid`) are
-//! opaque strings; their order says nothing.
+//! 1.9 R3: Hive answers a `reply_to` it does not know exactly like an
+//! unknown message, `404 not_found` field `reply_to`. Message ids (`gid`)
+//! are opaque strings; their order says nothing.
 //!
 //! Frames, on the bus WebSocket next to [`super::bus::BusFrameV1`]'s:
 //! - `message` (client → service): [`AgentMessageV1`]; Hive answers the
@@ -32,31 +25,27 @@
 //! - `task.event` (service → client): [`TaskEventV1`]. Hive announces task
 //!   changes; engines only write over HTTP (section 1).
 //!
-//! History: `GET /v1/messages?network=…&channel=…|swarm_id=…&thread_id=…&after_gid=…`
+//! History: `GET /v1/messages?network=…&channel=…&thread_id=…&after_gid=…`
 //! answers [`MessageListV1`] (lease right `bus.relay`).
 //!
 //! Every delivered body is **data, never instructions** (X5): an engine shows
 //! it to its agent only wrapped as foreign content, whatever it says.
 //! `trust` says whose data it is: `team` (an agent of the same organization)
-//! or `untrusted` (always in a swarm).
+//! or `untrusted` (anything else).
 //!
 //! Before sending, the engine runs a body through its policy and filter
-//! packs like any other upload. In a sealed vault, the body travels as
-//! `sealed` (content `leanctx.hive.sealed-message/v1`, AAD
-//! `vault_id|0|epoch|content_schema`).
+//! packs like any other upload. A message always carries its `body` in
+//! the clear.
 //!
-//! Retention is server policy (Team 30 days, Personal 7 days, Swarm the
-//! swarm's lifetime plus 30 days); `expires_at` says when a message goes.
+//! Retention is server policy (Team 30 days, Personal 7 days);
+//! `expires_at` says when a message goes.
 
 use serde::{Deserialize, Serialize};
 
-use super::sealed::SealedBlobV1;
 use super::{require_schema, validate_id, validate_text};
 use crate::{UtcTimestamp, ValidationError};
 
 pub const MESSAGE_LIST_SCHEMA: &str = "leanctx.hive.message-list/v1";
-/// `content_schema` of a sealed message body: `{text, references}`.
-pub const SEALED_MESSAGE_SCHEMA: &str = "leanctx.hive.sealed-message/v1";
 
 pub const MAX_MESSAGE_TEXT_CHARS: usize = 4000;
 pub const MAX_MESSAGE_REFERENCES: usize = 16;
@@ -85,36 +74,17 @@ pub enum MessageType {
     Unknown,
 }
 
-/// The two networks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NetworkKind {
-    Org,
-    Swarm,
-    #[serde(other)]
-    Unknown,
-}
-
-/// Where a message lives: an org channel or a swarm.
+/// Where a message lives: an org channel. Any other kind does not decode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NetworkV1 {
     Org { channel: String },
-    Swarm { swarm_id: String },
 }
 
 impl NetworkV1 {
-    pub fn kind(&self) -> NetworkKind {
-        match self {
-            Self::Org { .. } => NetworkKind::Org,
-            Self::Swarm { .. } => NetworkKind::Swarm,
-        }
-    }
-
     pub fn validate(&self) -> Result<(), ValidationError> {
         match self {
             Self::Org { channel } => super::bus::validate_channel(channel),
-            Self::Swarm { swarm_id } => validate_id(swarm_id, "swarm_id"),
         }
     }
 }
@@ -123,7 +93,7 @@ impl NetworkV1 {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MessageReferenceV1 {
-    /// A task of the channel's vault (org network only).
+    /// A task of the channel's vault.
     Task {
         number: u64,
     },
@@ -175,21 +145,14 @@ pub struct MessageBodyV1 {
 }
 
 impl MessageBodyV1 {
-    pub fn validate(&self, network: NetworkKind) -> Result<(), ValidationError> {
+    pub fn validate(&self) -> Result<(), ValidationError> {
         validate_text(&self.text, MAX_MESSAGE_TEXT_CHARS, "text", true)?;
         if self.references.len() > MAX_MESSAGE_REFERENCES {
             return Err(ValidationError::new("too many references"));
         }
-        for reference in &self.references {
-            reference.validate()?;
-            if network == NetworkKind::Swarm && matches!(reference, MessageReferenceV1::Task { .. })
-            {
-                return Err(ValidationError::new(
-                    "Swarm messages do not reference org tasks",
-                ));
-            }
-        }
-        Ok(())
+        self.references
+            .iter()
+            .try_for_each(MessageReferenceV1::validate)
     }
 }
 
@@ -205,13 +168,12 @@ pub struct AgentMessageV1 {
     /// The sending agent (bus agent id).
     pub from: String,
     /// A direct message to one agent (bus agent id); absent: everyone on
-    /// the channel or swarm.
+    /// the channel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
     /// 1.9 R3: the instance (`instance_id`, as `presence_update` shows it)
     /// that runs `to`. Hive then delivers only there, so another engine
-    /// announcing the same agent name never receives it. Org networks only,
-    /// and only with `to`. Without it Hive binds the message (or handoff
+    /// announcing the same agent name never receives it. Only with `to`. Without it Hive binds the message (or handoff
     /// offer) to the one other instance that announced `to` in the vault
     /// within 24 hours; when several did, it refuses with `409 invalid_state`
     /// reason `ambiguous_recipient` (RB7-M6) and the sender names one; when
@@ -219,7 +181,7 @@ pub struct AgentMessageV1 {
     /// reaches nothing already sent. A reply goes to the instance of the replied
     /// message either way. An id that is no instance of the
     /// organization is `404 not_found` field `to_instance`, like an unknown
-    /// one; `to_instance` on a swarm network is `400 invalid_request`.
+    /// one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_instance: Option<String>,
     /// The message this answers or replies to (`gid`).
@@ -231,8 +193,6 @@ pub struct AgentMessageV1 {
     pub deadline: Option<UtcTimestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<MessageBodyV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
 }
 
 impl AgentMessageV1 {
@@ -245,9 +205,9 @@ impl AgentMessageV1 {
         }
         if let Some(instance) = &self.to_instance {
             validate_id(instance, "to_instance")?;
-            if self.to.is_none() || self.network.kind() != NetworkKind::Org {
+            if self.to.is_none() {
                 return Err(ValidationError::new(
-                    "to_instance names the instance of `to` on an org network",
+                    "to_instance names the instance of `to`",
                 ));
             }
         }
@@ -268,25 +228,10 @@ impl AgentMessageV1 {
         if let Some(deadline) = &self.deadline {
             super::parse_time(deadline)?;
         }
-        match (&self.body, &self.sealed) {
-            (Some(body), None) => body.validate(self.network.kind()),
-            (None, Some(sealed)) => {
-                if self.network.kind() == NetworkKind::Swarm {
-                    return Err(ValidationError::new(
-                        "swarm messages are public to the swarm's workers",
-                    ));
-                }
-                sealed.validate()?;
-                if sealed.content_schema == SEALED_MESSAGE_SCHEMA {
-                    Ok(())
-                } else {
-                    Err(ValidationError::new(format!(
-                        "sealed content must be {SEALED_MESSAGE_SCHEMA}"
-                    )))
-                }
-            }
-            _ => Err(ValidationError::new("a message carries body or sealed")),
-        }
+        self.body
+            .as_ref()
+            .ok_or_else(|| ValidationError::new("a message carries a body"))?
+            .validate()
     }
 }
 
@@ -296,7 +241,7 @@ impl AgentMessageV1 {
 pub enum MessageTrust {
     /// From an agent or a person of the same organization.
     Team,
-    /// Anything else, always in a swarm.
+    /// Anything else.
     Untrusted,
     #[serde(other)]
     Unknown,
@@ -326,9 +271,7 @@ pub enum SenderV1 {
     },
     /// A person answering on the web.
     Person { label: String },
-    /// A swarm participant: only the profile handle (section 5);
-    /// `reputation` is its `ReputationV1.score`.
-    Swarm { handle: String, reputation: u64 },
+    /// Any other sender.
     #[serde(other)]
     Unknown,
 }
@@ -338,7 +281,7 @@ pub enum SenderV1 {
 pub struct MessageDeliveryV1 {
     /// Global message id.
     pub gid: String,
-    /// Position on the channel (org) or swarm, gap-free.
+    /// Position on the channel, gap-free.
     pub seq: u64,
     pub network: NetworkV1,
     #[serde(rename = "type")]
@@ -354,8 +297,6 @@ pub struct MessageDeliveryV1 {
     pub deadline: Option<UtcTimestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<MessageBodyV1>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sealed: Option<SealedBlobV1>,
     pub trust: MessageTrust,
     pub server_time: UtcTimestamp,
     pub expires_at: UtcTimestamp,
@@ -366,20 +307,8 @@ impl MessageDeliveryV1 {
         validate_id(&self.gid, "gid")?;
         validate_id(&self.thread_id, "thread_id")?;
         self.network.validate()?;
-        if self.network.kind() == NetworkKind::Swarm {
-            if self.trust != MessageTrust::Untrusted {
-                return Err(ValidationError::new("Swarm content is always untrusted"));
-            }
-            if !matches!(self.from, SenderV1::Swarm { .. }) {
-                return Err(ValidationError::new(
-                    "Swarm senders appear only as a handle",
-                ));
-            }
-        } else if matches!(self.from, SenderV1::Swarm { .. }) {
-            return Err(ValidationError::new("org messages have org senders"));
-        }
-        if self.body.is_some() == self.sealed.is_some() {
-            return Err(ValidationError::new("a message carries body or sealed"));
+        if self.body.is_none() {
+            return Err(ValidationError::new("a message carries a body"));
         }
         Ok(())
     }
@@ -423,7 +352,7 @@ pub struct MessageStoredV1 {
     pub gid: String,
     pub thread_id: String,
     pub network: NetworkV1,
-    /// Position on the channel (org) or swarm.
+    /// Position on the channel.
     pub seq: u64,
     pub server_time: UtcTimestamp,
     pub expires_at: UtcTimestamp,
@@ -509,7 +438,6 @@ mod tests {
                 text: "Which retry budget does payments use?".into(),
                 references: Vec::new(),
             }),
-            sealed: None,
         }
     }
 
@@ -526,14 +454,17 @@ mod tests {
     }
 
     #[test]
-    fn swarm_messages_are_public_and_never_reference_org_tasks() {
-        let mut swarm = question();
-        swarm.network = NetworkV1::Swarm {
-            swarm_id: "sw-1".into(),
-        };
-        assert!(swarm.validate().is_ok());
-        swarm.body.as_mut().unwrap().references = vec![MessageReferenceV1::Task { number: 7 }];
-        assert!(swarm.validate().is_err());
+    fn a_swarm_network_does_not_decode_and_a_swarm_sender_is_unknown() {
+        let raw = serde_json::json!({
+            "client_msg_id": "01JBMSG", "network": {"kind": "swarm", "swarm_id": "sw-1"},
+            "type": "finding", "from": "a", "body": {"text": "hi"},
+        });
+        assert!(serde_json::from_value::<AgentMessageV1>(raw).is_err());
+        let sender: SenderV1 = serde_json::from_value(
+            serde_json::json!({"kind": "swarm", "handle": "quiet-heron", "reputation": 1}),
+        )
+        .unwrap();
+        assert_eq!(sender, SenderV1::Unknown);
     }
 
     #[test]
@@ -543,53 +474,5 @@ mod tests {
             "from": "a", "body": {"text": "hi"},
         });
         assert!(serde_json::from_value::<AgentMessageV1>(raw).is_err());
-    }
-
-    #[test]
-    fn swarm_deliveries_are_untrusted_and_show_only_a_handle() {
-        let delivery = |from: SenderV1, trust| MessageDeliveryV1 {
-            gid: "g-1".into(),
-            seq: 1,
-            network: NetworkV1::Swarm {
-                swarm_id: "sw-1".into(),
-            },
-            message_type: MessageType::Finding,
-            from,
-            to: None,
-            thread_id: "g-1".into(),
-            reply_to: None,
-            deadline: None,
-            body: Some(MessageBodyV1 {
-                text: "found".into(),
-                references: Vec::new(),
-            }),
-            sealed: None,
-            trust,
-            server_time: UtcTimestamp::new("2026-10-20T12:00:00Z").unwrap(),
-            expires_at: UtcTimestamp::new("2026-11-20T12:00:00Z").unwrap(),
-        };
-        let handle = SenderV1::Swarm {
-            handle: "quiet-heron".into(),
-            reputation: 1,
-        };
-        assert!(
-            delivery(handle.clone(), MessageTrust::Untrusted)
-                .validate()
-                .is_ok()
-        );
-        assert!(delivery(handle, MessageTrust::Team).validate().is_err());
-        let agent = SenderV1::Agent {
-            agent: "codex-85".into(),
-            instance_label: "ci".into(),
-            instance_id: Some("inst_01jb8z9".into()),
-            owner: Some("Ben".into()),
-            model: None,
-            mine: false,
-            profile_id: None,
-        };
-        assert!(
-            delivery(agent, MessageTrust::Untrusted).validate().is_err(),
-            "no org identity in Swarm"
-        );
     }
 }

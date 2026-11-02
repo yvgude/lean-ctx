@@ -1,0 +1,6 @@
+{
+  "reason": "The retry budget fact still says 3; retry.rs sets 5 since the refactor.",
+  "schema": "leanctx.hive.task-verify/v1",
+  "verdict": "reject",
+  "worker_id": "wkr_gawyravj36igdp3irdfo"
+}

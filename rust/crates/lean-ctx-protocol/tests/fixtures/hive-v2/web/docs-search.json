@@ -1,0 +1,32 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_request",
+          "field": "q",
+          "message": "q: 1 to 16 whole words, at most 200 characters"
+        }
+      },
+      "status": 400
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/orgs/leanctx/vaults/hive/docs/search?q=wiki%20routes&limit=20",
+  "request": null,
+  "response": {
+    "body": {
+      "hits": [
+        {
+          "page_id": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+          "section_id": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+          "slug": "knowledge/wiki",
+          "snippet": "The wiki of a vault stores readable pages as place nodes: a page, its sections in order and the notes on them…",
+          "title": "Wiki"
+        }
+      ]
+    },
+    "status": 200
+  },
+  "route": "W108"
+}

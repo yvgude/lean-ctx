@@ -11,10 +11,7 @@
         "title": "Payments",
         "description": "Knowledge of the payments services.",
         "visibility": "private",
-        "sealed": false,
-        "sealed_conversion": "none",
         "presence_public": false,
-        "sealed_grants": "confirm",
         "frozen": false,
         "license": null,
         "forge": {
@@ -27,8 +24,7 @@
         },
         "counts": {
           "nodes": 14,
-          "workers": 3,
-          "open_reviews": 1
+          "workers": 3
         },
         "stars": 0,
         "followers": 0

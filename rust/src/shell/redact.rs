@@ -51,7 +51,7 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
     let filename = format!("{cmd_slug}_{}.log", &cmd_hash.as_str()[..8]);
     let path = tee_dir.join(&filename);
 
-    crate::proxy::ccr::write_tee(&path, output)?;
+    crate::core::ccr::write_tee(&path, output)?;
     let handle = path.to_string_lossy().to_string();
     crate::core::relevance_tracker::register_compressed(
         handle.clone(),

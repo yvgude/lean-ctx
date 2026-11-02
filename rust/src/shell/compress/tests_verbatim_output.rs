@@ -681,7 +681,7 @@ fn verbatim_json_crush_lossy_drops_noise_behind_recoverable_handle() {
 
     // The handle resolves to the verbatim original, dropped column included —
     // the safety contract: lossy is never irrecoverable.
-    let handle = crate::proxy::ccr::persist_json(&json).expect("same content -> same handle");
+    let handle = crate::core::ccr::persist_json(&json).expect("same content -> same handle");
     let recovered = std::fs::read_to_string(&handle).expect("tee readable");
     assert!(
         recovered.contains("2026-06-22T10:42:42.000000042Z"),

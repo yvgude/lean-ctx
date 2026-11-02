@@ -9,20 +9,13 @@
 //! entered.
 //!
 //! Reputation ([`ReputationV1`]) is derived by Hive from accepted
-//! contributions and read-only on the wire. Org and swarm reputation are
-//! separate scopes; in a swarm a participant is only a handle (D6) with its
-//! reputation and strengths, aggregated over the person's agents.
+//! contributions and read-only on the wire.
 //!
 //! Engine routes (instance token):
 //!
 //! | Route | Answer | Lease right |
 //! |---|---|---|
 //! | `GET /v1/agents` (`?mine=true`) | [`AgentProfileListV1`] (the org's profiles) | `bus.relay` |
-//! | `GET /v1/handles/{handle}` | [`HandleV1`] | none |
-//!
-//! Swarm participation limits (owner: tight; Free lower than Personal/Team)
-//! answer `429 rate_limited` reason `limit_exceeded`, with `field` naming
-//! the limit ([`SWARM_LIMITS`]), `limit`, `used` and `retry_after_s`.
 
 use serde::{Deserialize, Serialize};
 
@@ -30,20 +23,9 @@ use super::{require_schema, validate_id, validate_text};
 use crate::{UtcTimestamp, ValidationError};
 
 pub const AGENT_PROFILE_LIST_SCHEMA: &str = "leanctx.hive.agent-profile-list/v1";
-pub const HANDLE_SCHEMA: &str = "leanctx.hive.handle/v1";
 pub const MAX_ROLES: usize = 8;
 pub const MAX_STRENGTHS: usize = 16;
 pub const MAX_PROFILES_PAGE: usize = 200;
-
-/// `field` values of `limit_exceeded`.
-pub const SWARM_LIMITS: [&str; 6] = [
-    "open_swarms",
-    "active_claims",
-    "results_per_day",
-    "verifications_per_day",
-    "reports_per_day",
-    "messages_per_hour",
-];
 
 /// Derived by Hive; never written by an engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,7 +35,7 @@ pub struct ReputationV1 {
     /// Accepted contributions counted.
     pub contributions: u64,
     /// How much this participant's votes and events count, in percent:
-    /// 25 for a new Free handle, otherwise 100.
+    /// 25 for a new Free account, otherwise 100.
     pub weight_pct: u8,
 }
 
@@ -180,42 +162,5 @@ impl AgentProfileListV1 {
             return Err(ValidationError::new("profile page is too long"));
         }
         self.profiles.iter().try_for_each(AgentProfileV1::validate)
-    }
-}
-
-/// A handle: `[a-z0-9][a-z0-9-]{2,31}`.
-pub fn handle_ok(handle: &str) -> bool {
-    let b = handle.as_bytes();
-    (3..=32).contains(&b.len())
-        && (b[0].is_ascii_lowercase() || b[0].is_ascii_digit())
-        && b.iter()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-')
-}
-
-/// `GET /v1/handles/{handle}`: the public view, nothing else.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HandleV1 {
-    pub schema: String,
-    pub handle: String,
-    /// Swarm reputation; never lifted by org reputation.
-    pub reputation: ReputationV1,
-    #[serde(default)]
-    pub strengths: Vec<String>,
-    pub since: UtcTimestamp,
-}
-
-impl HandleV1 {
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        require_schema(&self.schema, HANDLE_SCHEMA)?;
-        if !handle_ok(&self.handle) {
-            return Err(ValidationError::new("handle is malformed"));
-        }
-        if self.strengths.len() > MAX_STRENGTHS {
-            return Err(ValidationError::new("at most 16 strengths"));
-        }
-        for strength in &self.strengths {
-            validate_text(strength, 64, "strength", false)?;
-        }
-        self.reputation.validate()
     }
 }

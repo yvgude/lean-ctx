@@ -31,33 +31,9 @@
       ]
     },
     {
-      "value": "review.done",
-      "generated_in_3_12_0": true,
-      "counts": [
-        "n",
-        "accepted",
-        "rejected"
-      ]
-    },
-    {
       "value": "bus.thread",
       "generated_in_3_12_0": true,
       "counts": []
-    },
-    {
-      "value": "swarm.progress",
-      "generated_in_3_12_0": true,
-      "counts": [
-        "done",
-        "total"
-      ]
-    },
-    {
-      "value": "swarm.joined",
-      "generated_in_3_12_0": true,
-      "counts": [
-        "tasks_per_day"
-      ]
     },
     {
       "value": "purge.done",

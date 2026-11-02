@@ -123,8 +123,6 @@ fn tick_once(store: &HiveStore, config: &HiveConfig) -> TickOutcome {
     {
         store.record_error(&format!("policy: {error}"));
     }
-    // The daily `POST /v1/metrics` upload is retired (it is always off,
-    // `metrics::upload::RETIRED`); engine metrics v2 carry its figures.
     // Engine metrics v2 (hourly, per vault); held back until released.
     use crate::core::hive::metrics_v2::upload::{self as hours, MetricsV2Run};
     match hours::run(&session, config, now, false) {

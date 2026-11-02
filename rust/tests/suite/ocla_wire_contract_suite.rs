@@ -1,4 +1,5 @@
 //! Golden contract tests for the public OCLA wire protocol.
+#![cfg(feature = "http-server")]
 
 use axum::body::{Body, to_bytes};
 use axum::extract::DefaultBodyLimit;

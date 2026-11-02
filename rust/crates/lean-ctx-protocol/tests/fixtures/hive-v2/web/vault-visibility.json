@@ -12,15 +12,6 @@
     {
       "body": {
         "error": {
-          "code": "sealed_public_conflict",
-          "message": "A sealed vault cannot be public."
-        }
-      },
-      "status": 409
-    },
-    {
-      "body": {
-        "error": {
           "code": "forbidden",
           "message": "Public vaults are switched off for this workspace.",
           "reason": "policy"
@@ -61,7 +52,6 @@
       "vault": {
         "counts": {
           "nodes": 0,
-          "open_reviews": 0,
           "workers": 0
         },
         "description": "How refunds, retries and payouts work.",
@@ -75,9 +65,6 @@
         "license": "CC-BY-4.0",
         "name": "payments",
         "presence_public": false,
-        "sealed": false,
-        "sealed_conversion": "none",
-        "sealed_grants": "confirm",
         "stars": 0,
         "title": "Payments",
         "viewer": {

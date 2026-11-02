@@ -535,7 +535,6 @@ fn the_applied_version_is_acked_once_with_its_unenforced_members() {
         state.by_hive,
         [
             "security.excluded_paths",
-            "sharing.auto_merge_results",
             "sharing.consent_required_for",
             "sharing.cross_team_sharing"
         ]
@@ -581,9 +580,9 @@ fn status_lines_are_deterministic_and_show_ack_unenforced_and_expiry() {
     assert_eq!(
         lines,
         [
-            "Policy:       v3 sha256:a07526bf5e03 (valid), applied until 2026-11-08T12:00:00Z",
+            "Policy:       v3 sha256:28dfd1d0382f (valid), applied until 2026-11-08T12:00:00Z",
             "Policy ack:   pending",
-            "By Hive:     security.excluded_paths, sharing.auto_merge_results, sharing.consent_required_for, sharing.cross_team_sharing (Hive refuses, this engine does not check)",
+            "By Hive:     security.excluded_paths, sharing.consent_required_for, sharing.cross_team_sharing (Hive refuses, this engine does not check)",
             "Unenforced:   none",
         ]
     );
@@ -597,7 +596,7 @@ fn status_lines_are_deterministic_and_show_ack_unenforced_and_expiry() {
     let expired = status_lines(dir.path(), &state, time("2026-11-09T00:00:00Z"), None);
     assert_eq!(
         expired[0],
-        "Policy:       v3 sha256:a07526bf5e03 (EXPIRED), its rules still apply; sensitive operations refused since 2026-11-08T12:00:00Z"
+        "Policy:       v3 sha256:28dfd1d0382f (EXPIRED), its rules still apply; sensitive operations refused since 2026-11-08T12:00:00Z"
     );
     assert_eq!(expired[1], "Policy ack:   acked at 2026-10-25T12:00:05Z");
     let floor: Floor = serde_json::from_str(

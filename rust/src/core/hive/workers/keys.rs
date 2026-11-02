@@ -103,7 +103,7 @@ pub fn worker_key(
 
 /// Fetch the place's keys since the cached cursor and store them.
 pub fn fetch(session: &Session, place_ref: &str) -> Result<(), HiveError> {
-    if !place_ref.starts_with("vault:") && !place_ref.starts_with("swarm:") {
+    if !place_ref.starts_with("vault:") {
         return Err(HiveError::Config(format!("{place_ref} is not a place")));
     }
     let store = &session.store;
@@ -193,12 +193,5 @@ mod tests {
         assert!(worker_key(&store, "vault:v", "47983724220c8521", 1_792_713_599_999).is_none());
         assert!(worker_key(&store, "vault:v", "ffffffffffffffff", 1_792_800_000_000).is_none());
         assert!(worker_key(&store, "vault:w", "47983724220c8521", 1_792_800_000_000).is_none());
-    }
-
-    #[test]
-    fn swarm_pages_carry_only_alias_keys() {
-        let swarm = page("worker_keys.response.json");
-        assert!(swarm.keys.iter().all(|k| k.kind == KeyKind::Alias));
-        assert_eq!(swarm.keys[0].worker_ids, ["wkr_76aa2uwmpczt3cqkhfed"]);
     }
 }

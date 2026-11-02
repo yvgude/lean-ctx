@@ -355,7 +355,6 @@ mod tests {
             plan: HivePlan::Personal,
             seats_limit: 2,
             rights: vec![HiveRight::KnowledgeRead],
-            policy_signer_keys: vec![],
             issued_at: UtcTimestamp::new(issued).unwrap(),
             expires_at: UtcTimestamp::new(expires).unwrap(),
             grace_until: UtcTimestamp::new(grace).unwrap(),
@@ -503,7 +502,9 @@ mod tests {
             .as_array()
             .unwrap()
         {
-            let mut doc = base.clone();
+            // Each case signs the lease of its own fixture (the Hive 2.1
+            // answer carries `policy_signer_keys: []`).
+            let mut doc = case["fixture"].as_str().map_or_else(|| base.clone(), c0);
             doc["kid"] = case["kid"].clone();
             doc["signature"] = case["signature"].clone();
             let envelope: HiveLeaseEnvelopeV1 = serde_json::from_value(doc).unwrap();

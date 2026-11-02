@@ -1,8 +1,8 @@
 {
-  "address": "~checkout-latency",
+  "address": "#acme/payments",
   "at": 1792800060000,
-  "role": "general",
+  "role": "reviewer",
   "state": "idle",
   "t": "presence.update",
-  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+  "worker_id": "wkr_gawyravj36igdp3irdfo"
 }

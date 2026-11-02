@@ -100,7 +100,6 @@ fn contradict_and_retract_queue_c0_events_and_delivery_follows() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     assert!(queue_contradiction(&target, X, Y, NOW).unwrap());
     assert!(
@@ -172,7 +171,6 @@ fn contradict_and_retract_queue_c0_events_and_delivery_follows() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     assert!(pending(&replica).is_empty() || settle_all(&replica));
     assert!(!queue_contradiction(&target, X, Y, NOW).unwrap());
@@ -202,7 +200,6 @@ fn refusals_happen_before_anything_is_queued() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     let unknown = "n_qaaaaaaaaaaaaaaaaaaaaaaaaa";
     assert!(queue_contradiction(&target, X, X, NOW).is_err(), "itself");

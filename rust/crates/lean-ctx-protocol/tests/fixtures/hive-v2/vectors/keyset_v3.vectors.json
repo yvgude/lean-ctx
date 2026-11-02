@@ -137,8 +137,20 @@
       },
       "received_at": 1792800000000,
       "sign_with": "hive_policy",
-      "signature": "dzRPJl6AvE6yaRK9Tptn4sM6n/M2lZWRatvn5b/Pc8YDUVTsKgkuHiqtm4gsM3nIR34GOKnnjnO61pmYk8evBA==",
-      "signing_input": "leanctx.hive.lease.v1\n{\"expires_at\":\"2026-10-21T12:00:00Z\",\"grace_until\":\"2026-10-27T12:00:00Z\",\"instance_id\":\"inst_01jb8z3k4m5n6p7q8r9s0t1v2w\",\"issued_at\":\"2026-10-20T12:00:00Z\",\"lease_id\":\"lse_01jb8z4a2b3c4d5e6f7g8h9j0k\",\"org_id\":\"org_acme\",\"org_settings\":{\"metrics_upload\":true,\"receipts_upload\":false},\"plan\":\"team\",\"policy_signer_keys\":[{\"ed25519_pub\":\"AOPFa5GrCgFxdLlmRer5KDZs264eh/0hv4ZmHYbz5+8=\",\"org\":\"org_acme\"}],\"rights\":[\"knowledge.read\",\"knowledge.draft\",\"knowledge.merge\",\"metrics.upload\",\"receipts.upload\",\"policy.pull\",\"bus.relay\",\"bus.control\",\"sealed\",\"runtime\"],\"schema\":\"leanctx.hive.lease/v1\",\"seats_limit\":25,\"server_time\":\"2026-10-20T12:00:00Z\"}"
+      "signature": "528FF/Gd9D/SsO43tOEStq42Qp/zRGr2fPiLLO6e8N/C3AKTc1PMjEmPoNgwACwoUHg38cjaTsvRzhsK7ALgAA==",
+      "signing_input": "leanctx.hive.lease.v1\n{\"expires_at\":\"2026-10-21T12:00:00Z\",\"grace_until\":\"2026-10-27T12:00:00Z\",\"instance_id\":\"inst_01jb8z3k4m5n6p7q8r9s0t1v2w\",\"issued_at\":\"2026-10-20T12:00:00Z\",\"lease_id\":\"lse_01jb8z4a2b3c4d5e6f7g8h9j0k\",\"org_id\":\"org_acme\",\"org_settings\":{\"metrics_upload\":true,\"receipts_upload\":false},\"plan\":\"team\",\"rights\":[\"knowledge.read\",\"knowledge.draft\",\"knowledge.merge\",\"metrics.upload\",\"receipts.upload\",\"policy.pull\",\"bus.relay\",\"bus.control\",\"runtime\"],\"schema\":\"leanctx.hive.lease/v1\",\"seats_limit\":25,\"server_time\":\"2026-10-20T12:00:00Z\"}"
+    },
+    {
+      "case": "lease with the empty policy_signer_keys that an answer to Hive-Protocol 2.0 keeps",
+      "fixture": "routes/lease_envelope.for_2_0.response.json",
+      "kid": "552e43422b3589fa",
+      "outcome": {
+        "result": "accept"
+      },
+      "received_at": 1792800000000,
+      "sign_with": "hive_policy",
+      "signature": "wNm4gHp7OfBM2iqoGEG6m7T8ipl4qwx6Id068AON+Ku9AUIBGjAZn6DRWnfabXBq4mPGNMydD/790ihRKsEDDA==",
+      "signing_input": "leanctx.hive.lease.v1\n{\"expires_at\":\"2026-10-21T12:00:00Z\",\"grace_until\":\"2026-10-27T12:00:00Z\",\"instance_id\":\"inst_01jb8z3k4m5n6p7q8r9s0t1v2w\",\"issued_at\":\"2026-10-20T12:00:00Z\",\"lease_id\":\"lse_01jb8z4a2b3c4d5e6f7g8h9j0k\",\"org_id\":\"org_acme\",\"org_settings\":{\"metrics_upload\":true,\"receipts_upload\":false},\"plan\":\"team\",\"policy_signer_keys\":[],\"rights\":[\"knowledge.read\",\"knowledge.draft\",\"knowledge.merge\",\"metrics.upload\",\"receipts.upload\",\"policy.pull\",\"bus.relay\",\"bus.control\",\"runtime\"],\"schema\":\"leanctx.hive.lease/v1\",\"seats_limit\":25,\"server_time\":\"2026-10-20T12:00:00Z\"}"
     },
     {
       "case": "lease signed by a non-policy key (control)",
@@ -150,8 +162,8 @@
       },
       "received_at": 1792800000000,
       "sign_with": "hive_control",
-      "signature": "ZWag8SGW7kNp+9YhiYg6Uu6tEavdFbbyK4ivKlA8V5KXUYumXV0srAojTzWw7Kzm5LmowIbL4Xhq8bAZGSG4Aw==",
-      "signing_input": "leanctx.hive.lease.v1\n{\"expires_at\":\"2026-10-21T12:00:00Z\",\"grace_until\":\"2026-10-27T12:00:00Z\",\"instance_id\":\"inst_01jb8z3k4m5n6p7q8r9s0t1v2w\",\"issued_at\":\"2026-10-20T12:00:00Z\",\"lease_id\":\"lse_01jb8z4a2b3c4d5e6f7g8h9j0k\",\"org_id\":\"org_acme\",\"org_settings\":{\"metrics_upload\":true,\"receipts_upload\":false},\"plan\":\"team\",\"policy_signer_keys\":[{\"ed25519_pub\":\"AOPFa5GrCgFxdLlmRer5KDZs264eh/0hv4ZmHYbz5+8=\",\"org\":\"org_acme\"}],\"rights\":[\"knowledge.read\",\"knowledge.draft\",\"knowledge.merge\",\"metrics.upload\",\"receipts.upload\",\"policy.pull\",\"bus.relay\",\"bus.control\",\"sealed\",\"runtime\"],\"schema\":\"leanctx.hive.lease/v1\",\"seats_limit\":25,\"server_time\":\"2026-10-20T12:00:00Z\"}"
+      "signature": "hd6YE0LsqwzjaIsonA8NfhYCRgTG9SG5lmtHKKvucXFWNH0H1Y7ovhVeO2PegMimghE6VkWA+piAmE70c4hcDw==",
+      "signing_input": "leanctx.hive.lease.v1\n{\"expires_at\":\"2026-10-21T12:00:00Z\",\"grace_until\":\"2026-10-27T12:00:00Z\",\"instance_id\":\"inst_01jb8z3k4m5n6p7q8r9s0t1v2w\",\"issued_at\":\"2026-10-20T12:00:00Z\",\"lease_id\":\"lse_01jb8z4a2b3c4d5e6f7g8h9j0k\",\"org_id\":\"org_acme\",\"org_settings\":{\"metrics_upload\":true,\"receipts_upload\":false},\"plan\":\"team\",\"rights\":[\"knowledge.read\",\"knowledge.draft\",\"knowledge.merge\",\"metrics.upload\",\"receipts.upload\",\"policy.pull\",\"bus.relay\",\"bus.control\",\"runtime\"],\"schema\":\"leanctx.hive.lease/v1\",\"seats_limit\":25,\"server_time\":\"2026-10-20T12:00:00Z\"}"
     }
   ],
   "rules": {

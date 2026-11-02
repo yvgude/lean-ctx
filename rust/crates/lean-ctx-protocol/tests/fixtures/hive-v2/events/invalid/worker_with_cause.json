@@ -6,7 +6,7 @@
       "op": "add",
       "path": "/cause",
       "value": {
-        "kind": "review"
+        "kind": "revert"
       }
     }
   ],

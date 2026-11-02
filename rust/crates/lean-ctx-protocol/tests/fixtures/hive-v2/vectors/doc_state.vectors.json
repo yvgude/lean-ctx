@@ -1,0 +1,212 @@
+{
+  "cases": [
+    {
+      "name": "no_state",
+      "reason": null,
+      "state": "fresh",
+      "uncovered": []
+    },
+    {
+      "name": "fresh",
+      "reason": null,
+      "set": {
+        "anchor_state": "fresh"
+      },
+      "state": "fresh",
+      "uncovered": []
+    },
+    {
+      "name": "changed_uncovered",
+      "reason": "anchor_changed",
+      "set": {
+        "anchor_state": "to_verify",
+        "drift": [
+          {
+            "observed": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "ref": "file:a.rs"
+          }
+        ]
+      },
+      "state": "stale",
+      "uncovered": [
+        "file:a.rs"
+      ]
+    },
+    {
+      "name": "changed_covered",
+      "reason": "anchor_changed",
+      "set": {
+        "anchor_state": "to_verify",
+        "drift": [
+          {
+            "observed": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "ref": "file:a.rs"
+          }
+        ],
+        "notes": [
+          {
+            "covers": [
+              {
+                "digest": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+                "ref": "file:a.rs"
+              }
+            ],
+            "status": "open"
+          }
+        ]
+      },
+      "state": "noted",
+      "uncovered": []
+    },
+    {
+      "name": "covered_an_older_move",
+      "reason": "anchor_changed",
+      "set": {
+        "anchor_state": "to_verify",
+        "drift": [
+          {
+            "observed": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "ref": "file:a.rs"
+          }
+        ],
+        "notes": [
+          {
+            "covers": [
+              {
+                "digest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+                "ref": "file:a.rs"
+              }
+            ],
+            "status": "open"
+          }
+        ]
+      },
+      "state": "stale",
+      "uncovered": [
+        "file:a.rs"
+      ]
+    },
+    {
+      "name": "resolved_note_does_not_cover",
+      "reason": "anchor_changed",
+      "set": {
+        "anchor_state": "to_verify",
+        "drift": [
+          {
+            "observed": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "ref": "file:a.rs"
+          }
+        ],
+        "notes": [
+          {
+            "covers": [
+              {
+                "digest": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+                "ref": "file:a.rs"
+              }
+            ],
+            "status": "resolved"
+          }
+        ]
+      },
+      "state": "stale",
+      "uncovered": [
+        "file:a.rs"
+      ]
+    },
+    {
+      "name": "migrated_null_cover_does_not_cover",
+      "reason": "anchor_changed",
+      "set": {
+        "anchor_state": "to_verify",
+        "drift": [
+          {
+            "observed": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "ref": "file:a.rs"
+          }
+        ],
+        "notes": [
+          {
+            "covers": [
+              {
+                "digest": null,
+                "ref": "file:a.rs"
+              }
+            ],
+            "status": "open"
+          }
+        ]
+      },
+      "state": "stale",
+      "uncovered": [
+        "file:a.rs"
+      ]
+    },
+    {
+      "name": "gone_covered",
+      "reason": "anchor_gone",
+      "set": {
+        "anchor_state": "gone",
+        "drift": [
+          {
+            "observed": null,
+            "ref": "file:a.rs"
+          }
+        ],
+        "notes": [
+          {
+            "covers": [
+              {
+                "digest": null,
+                "ref": "file:a.rs"
+              }
+            ],
+            "status": "open"
+          }
+        ]
+      },
+      "state": "noted",
+      "uncovered": []
+    },
+    {
+      "name": "cites_drift_only",
+      "reason": null,
+      "set": {
+        "anchor_state": "to_verify",
+        "drift": [
+          {
+            "observed": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "ref": "file:docs/b.md"
+          }
+        ]
+      },
+      "state": "fresh",
+      "uncovered": []
+    },
+    {
+      "name": "state_without_drift",
+      "reason": "anchor_changed",
+      "set": {
+        "anchor_state": "to_verify"
+      },
+      "state": "stale",
+      "uncovered": []
+    }
+  ],
+  "defaults": {
+    "anchor_state": null,
+    "anchors": [
+      {
+        "ref": "file:a.rs",
+        "role": "derived"
+      },
+      {
+        "ref": "file:docs/b.md",
+        "role": "cites"
+      }
+    ],
+    "drift": [],
+    "notes": []
+  },
+  "rule": "enums/doc-states.json; reason anchor_gone when anchor_state is gone or a derived drift entry has observed null, else anchor_changed; uncovered lists the derived drift refs no open note covers, in ref order"
+}

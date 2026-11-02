@@ -131,7 +131,6 @@ fn the_gate_needs_a_valid_reference_in_head() {
     let valid = gate(
         &candidate(&["file:src/lib.rs#L1-3", "file:missing.rs", "nonsense"]),
         &mut checkout,
-        false,
     );
     assert_eq!(valid, Ok(vec!["file:src/lib.rs#L1-3".to_string()]));
     for refs in [
@@ -142,7 +141,7 @@ fn the_gate_needs_a_valid_reference_in_head() {
         &["commit:0000000000"][..],
     ] {
         assert_eq!(
-            gate(&candidate(refs), &mut checkout, false),
+            gate(&candidate(refs), &mut checkout),
             Err(ReasonCode::NoReference),
             "{refs:?}"
         );
@@ -150,25 +149,17 @@ fn the_gate_needs_a_valid_reference_in_head() {
     assert!(
         gate(
             &candidate(&["test:src/lib.rs::tests::relay_drops_frames"]),
-            &mut checkout,
-            false
+            &mut checkout
         )
         .is_ok()
     );
-    assert!(
-        gate(
-            &candidate(&["https://docs.rs/blake3/"]),
-            &mut checkout,
-            false
-        )
-        .is_ok()
-    );
+    assert!(gate(&candidate(&["https://docs.rs/blake3/"]), &mut checkout).is_ok());
     let many: Vec<String> = (0..11)
         .map(|i| format!("https://example.com/{i}"))
         .collect();
     let many: Vec<&str> = many.iter().map(String::as_str).collect();
     assert_eq!(
-        gate(&candidate(&many), &mut checkout, false),
+        gate(&candidate(&many), &mut checkout),
         Err(ReasonCode::TooManyReferences)
     );
 }
@@ -182,14 +173,11 @@ fn an_unpublished_commit_is_pending_then_rejected() {
         std::sync::Arc::new(Vec::new()),
         Vec::new(),
     );
-    let mut run = CaptureRun::new(&mut screen, dir.path(), [1; 32], false, Vec::new(), 0);
+    let mut run = CaptureRun::new(&mut screen, dir.path(), [1; 32], Vec::new(), 0);
     let mut f = fact("arch", "The relay drops frames when the link is slow.");
     f.capture.refs = vec![format!("commit:{head}")];
     let c = shape(&f, None).unwrap();
-    assert_eq!(
-        gate(&c, &mut run.checkout, false),
-        Err(ReasonCode::UnpublishedRef)
-    );
+    assert_eq!(gate(&c, &mut run.checkout), Err(ReasonCode::UnpublishedRef));
     run.unpublished(&f);
     assert!(run.is_pending(&f));
     run.now_ms = PENDING_DAYS * 86_400_000 - 1;
@@ -205,22 +193,20 @@ fn an_unpublished_commit_is_pending_then_rejected() {
         &["update-ref", "refs/remotes/origin/main", &head],
     );
     let mut checkout = Checkout::new(dir.path());
-    assert!(gate(&c, &mut checkout, false).is_ok());
+    assert!(gate(&c, &mut checkout).is_ok());
 }
 
 #[test]
-fn sensitivity_follows_sealing() {
+fn only_public_claims_pass_the_gate() {
     let dir = repo();
     let mut checkout = Checkout::new(dir.path());
     let mut f = fact("arch", "The relay drops frames when the link is slow.");
     f.capture.refs = vec!["file:src/lib.rs".into()];
-    f.sensitivity = SensitivityLevel::Internal;
-    let c = shape(&f, None).unwrap();
-    assert_eq!(gate(&c, &mut checkout, false), Err(ReasonCode::Sensitivity));
-    assert!(gate(&c, &mut checkout, true).is_ok());
-    f.sensitivity = SensitivityLevel::Confidential;
-    let c = shape(&f, None).unwrap();
-    assert_eq!(gate(&c, &mut checkout, true), Err(ReasonCode::Sensitivity));
+    for level in [SensitivityLevel::Internal, SensitivityLevel::Confidential] {
+        f.sensitivity = level;
+        let c = shape(&f, None).unwrap();
+        assert_eq!(gate(&c, &mut checkout), Err(ReasonCode::Sensitivity));
+    }
 }
 
 #[test]
@@ -232,10 +218,10 @@ fn procedures_have_a_title_and_steps() {
     f.capture.steps = vec!["Build the release binary.".into(), "Tag the commit.".into()];
     let c = shape(&f, None).unwrap();
     assert_eq!(c.node_type, NodeType::Procedure);
-    assert!(gate(&c, &mut checkout, false).is_ok());
+    assert!(gate(&c, &mut checkout).is_ok());
     f.capture.steps.push("[exit:1] failed".into());
     assert_eq!(
-        gate(&shape(&f, None).unwrap(), &mut checkout, false),
+        gate(&shape(&f, None).unwrap(), &mut checkout),
         Err(ReasonCode::ProcedureShape)
     );
     f.capture.steps.pop();
@@ -245,7 +231,7 @@ fn procedures_have_a_title_and_steps() {
         cwd_hint: None,
     }];
     assert_eq!(
-        gate(&shape(&f, None).unwrap(), &mut checkout, false),
+        gate(&shape(&f, None).unwrap(), &mut checkout),
         Err(ReasonCode::ProcedureShape)
     );
 }
@@ -390,7 +376,7 @@ fn the_gate_matches_its_vectors() {
             .map(|s| s.as_str().unwrap().to_string())
             .collect();
         f.capture.commands = serde_json::from_value(case["commands"].clone()).unwrap();
-        let got = gate(&shape(&f, None).unwrap(), &mut checkout, false).map(|_| ());
+        let got = gate(&shape(&f, None).unwrap(), &mut checkout).map(|_| ());
         assert_eq!(reason(got), case["reason"].as_str(), "{case}");
     }
 }

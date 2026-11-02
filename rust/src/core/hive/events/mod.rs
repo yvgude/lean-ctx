@@ -7,7 +7,6 @@
 pub mod build;
 pub mod hlc;
 pub mod ids;
-pub mod sealed_body;
 pub mod sign;
 
 #[cfg(test)]

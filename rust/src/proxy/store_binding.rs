@@ -237,7 +237,7 @@ pub(crate) fn delivered_for_call(block: &str, call_id: &str) -> bool {
 /// register's own tool-delivery entry — for the call `call_id`, or without
 /// an id as a host that names none, the CLI, or another Engine's call
 /// would leave it. Needs protection to be active (the read is bound).
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 pub(crate) fn engine_delivers(
     project: &Path,
     file: &str,
@@ -265,13 +265,13 @@ pub(crate) fn engine_delivers(
 /// (unknown, outside any other such guard). Tests that set it hold the
 /// process-wide test lock (`data_dir::isolated_data_dir`) and drop the guard
 /// before that lock.
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 #[must_use]
 pub(crate) struct ListenerForTest {
     replaced: u8,
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 impl Drop for ListenerForTest {
     fn drop(&mut self) {
         LISTENER.store(self.replaced, Ordering::Relaxed);
@@ -279,7 +279,7 @@ impl Drop for ListenerForTest {
 }
 
 /// The proxy's listener as a test wants it: bound to `bound`.
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 pub(crate) fn listening_on(bound: IpAddr) -> ListenerForTest {
     ListenerForTest {
         replaced: LISTENER.swap(listener_state(bound), Ordering::Relaxed),
@@ -288,17 +288,17 @@ pub(crate) fn listening_on(bound: IpAddr) -> ListenerForTest {
 
 /// The variable that makes [`tests::engine_process_for_test`] the Engine
 /// process of a [`bound_host`] instead of returning at once.
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 const ENGINE_PROCESS_VAR: &str = "LEAN_CTX_TEST_ENGINE_PROCESS";
 
 /// A live process of this installation's executable, standing in for the
 /// MCP Engine of a bound host: this test binary, running only
 /// [`tests::engine_process_for_test`], which waits until its stdin closes.
 /// Killed and reaped when dropped.
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 struct EngineProcessForTest(std::process::Child);
 
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 impl EngineProcessForTest {
     fn start() -> Self {
         use std::process::{Command, Stdio};
@@ -320,7 +320,7 @@ impl EngineProcessForTest {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 impl Drop for EngineProcessForTest {
     fn drop(&mut self) {
         let _ = self.0.kill();
@@ -330,7 +330,7 @@ impl Drop for EngineProcessForTest {
 
 /// A bound standard host for a test, until dropped: the listener first goes
 /// back to what it was, then the Engine process ends.
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 #[must_use]
 pub(crate) struct BoundHostForTest {
     _listener: ListenerForTest,
@@ -348,7 +348,7 @@ pub(crate) struct BoundHostForTest {
 /// locked test isolated at that moment. With this process as the Engine, a
 /// running scenario lost its binding that way (`handle_not_followable`,
 /// 25.10.).
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 pub(crate) fn bound_host(project: &Path) -> BoundHostForTest {
     let engine = EngineProcessForTest::start();
     let identity = crate::ipc::process::identity(engine.0.id()).expect("Engine process identity");
@@ -365,7 +365,7 @@ pub(crate) fn bound_host(project: &Path) -> BoundHostForTest {
 }
 
 /// Where the presence registry of the current data directory lives.
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 pub(crate) fn registry_file() -> std::path::PathBuf {
     crate::core::data_dir::lean_ctx_data_dir()
         .expect("data directory")
@@ -376,7 +376,7 @@ pub(crate) fn registry_file() -> std::path::PathBuf {
 /// An active MCP Engine entry for `project` as the process `pid` of
 /// generation `identity` would have left it. Written under the registry's
 /// lock: MCP servers of this process may register at the same time.
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 pub(crate) fn engine_on_record(
     pid: u32,
     identity: crate::ipc::process::ProcessIdentity,
@@ -404,7 +404,7 @@ pub(crate) fn engine_on_record(
 
 /// An MCP Engine entry for `project`, of this installation's executable,
 /// whose process has exited: a real child, recorded while it ran.
-#[cfg(all(test, unix))]
+#[cfg(all(test, unix, feature = "http-server"))]
 pub(crate) fn exited_engine_on_record(project: &Path) {
     use std::process::{Command, Stdio};
 
@@ -424,7 +424,7 @@ pub(crate) fn exited_engine_on_record(project: &Path) {
     engine_on_record(child.id(), identity, project);
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use std::path::Path;

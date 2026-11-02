@@ -1,0 +1,45 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/orgs/leanctx/vaults/hive/docs",
+  "request": null,
+  "response": {
+    "body": {
+      "pages": [
+        {
+          "doc_state": {
+            "state": "fresh"
+          },
+          "head_event": "01M5NKARER005000000000D023",
+          "open_notes": 0,
+          "page_id": "n_aaaaaaaaaaaaaaaaaaaaaadpgb",
+          "sections": 0,
+          "slug": "knowledge/knowledge-items",
+          "status": "draft",
+          "title": "Knowledge Items",
+          "type": "feature",
+          "updated_seq": 23
+        },
+        {
+          "description": "The vault wiki: pages of ordered sections and notes on place nodes",
+          "doc_state": {
+            "reason": "anchor_changed",
+            "state": "noted",
+            "uncovered": []
+          },
+          "head_event": "01M5NKAYA8005000000000D029",
+          "open_notes": 1,
+          "page_id": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+          "sections": 2,
+          "slug": "knowledge/wiki",
+          "status": "canonical",
+          "title": "Wiki",
+          "type": "feature",
+          "updated_seq": 34
+        }
+      ]
+    },
+    "status": 200
+  },
+  "route": "W106"
+}

@@ -443,14 +443,7 @@ pub fn emit_ended(
             }
         };
         clock = crate::core::hive::events::hlc::send(clock, now_ms);
-        let (mut event, node_id) = episode.node_add(target.place, clock, target.signer)?;
-        if let Some(seal) = target.seal {
-            crate::core::hive::events::sealed_body::seal_event(
-                &mut event,
-                seal,
-                target.signer.key,
-            )?;
-        }
+        let (event, node_id) = episode.node_add(target.place, clock, target.signer)?;
         let event_id = event["event_id"]
             .as_str()
             .ok_or_else(|| HiveError::Local("built event without id".into()))?

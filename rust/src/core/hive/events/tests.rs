@@ -86,48 +86,6 @@ fn ids_match_the_vectors() {
             case["case"]
         );
     }
-    for case in v["seal_conversion"].as_array().unwrap() {
-        let (pk_id, seq, original) = (
-            bytes32(&case["pk_id_hex"]),
-            case["seq"].as_u64().unwrap(),
-            s(&case["original_event_id"]),
-        );
-        let domain = case.get("domain").and_then(Value::as_str);
-        // Every case states its keyed input: domain ‖ seq_be8 ‖ original id.
-        let mut input = domain.unwrap_or("seal").as_bytes().to_vec();
-        input.extend_from_slice(&seq.to_be_bytes());
-        input.extend_from_slice(original.as_bytes());
-        assert_eq!(
-            hex::encode(&input),
-            s(&case["input_hex"]),
-            "{}",
-            case["case"]
-        );
-        let derived = ids::crockford_upper(blake3::keyed_hash(&pk_id, &input).as_bytes());
-        assert_eq!(&derived[..26], s(&case["event_id"]), "{}", case["case"]);
-        let seal = ids::seal_conversion_event_id(&pk_id, seq, original);
-        match domain {
-            None => assert_eq!(seal, s(&case["event_id"]), "{}", case["case"]),
-            // Case d hashes the same bytes under the legacy "conv" domain:
-            // the two derivations never collide (R59 vs R90).
-            Some(other) => {
-                assert_ne!(seal, s(&case["event_id"]), "{}", case["case"]);
-                assert_eq!(other, "conv", "{}", case["case"]);
-                assert_eq!(
-                    ids::legacy_conversion_event_id(&pk_id, seq, original),
-                    s(&case["event_id"]),
-                    "{}",
-                    case["case"]
-                );
-            }
-        }
-    }
-    for case in v["sealed_pk_id"].as_array().unwrap() {
-        assert_eq!(
-            ids::sealed_pk_id(&bytes32(&case["place_secret_hex"])),
-            bytes32(&case["pk_id_hex"])
-        );
-    }
 }
 
 #[test]

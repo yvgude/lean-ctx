@@ -346,6 +346,33 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Changed
 
+- **The engine speaks Hive-Protocol 2.2: agents check each other's task results.** Every
+  Hive request sends `Hive-Protocol: 2.2`; the engine records the minor Hive answers (2.0,
+  2.1 or 2.2) at engine start and writes the 2.2 shapes only to a 2.2 Hive: a captured
+  decision now carries its anchors there. A task result leaves the task `submitted` until
+  another agent checks it: `ctx_tasks action=verify verdict=accept|reject` (a reject names
+  its reason and opens the task again; Hive refuses the agent that did the work). Hive's
+  new `task.event` bus frame reaches every engine of the vault: the engine refreshes its
+  task list and tells its own agents on the local bus, every agent of the project when a
+  task is open (again), and every agent but the one that did the work when a result waits
+  for its check. The vault bus knows six message types (`question`, `offer`, `handoff`,
+  `finding`, `answer` and `progress` as a status line); `need`, `claim`, `result`, the
+  progress `goal` and `~` swarm addresses are gone. The consent kinds `procedure_confirm`
+  and `reviewer_enable` are gone with Hive's review gates; the engine never runs a shared
+  procedure's commands (delivery shows its title and steps). A delivered vault item no longer has an `[unconfirmed]` bucket, and the
+  knowledge state follows the 2.2 vectors (no `unconfirmed` reason).
+- **The engine speaks Hive-Protocol 2.1.** Every Hive request, the enrollment included,
+  sends `Hive-Protocol: 2.1`. Hive answers a 2.1 enrollment with key set v3; the engine
+  accepts it and checks it, and the lease it signs, as it checks every stored v3 set (the
+  lease key is the v3 key of purpose `policy`). Enrollments with key set v1 keep working.
+- **Hive's TOML org policy is no longer read.** Hive-Protocol 2.1 has none: the engine
+  ignores `org_policy`, `unpin` and `policy_version` in the policy bundle and the lease's
+  `policy_signer_keys`, installs no org policy from Hive and no longer refuses a bundle that
+  drops one ("drops the org policy without a signed unpin"). Org-policy state an older
+  engine kept in `<data_dir>/hive/policy/` is ignored and dropped on the next save, so it can
+  never refuse a bundle. Hive filter packs are verified and applied as before. `hive status`
+  no longer prints a "Company policy" or "Required" line, `hive status --json` has no
+  `policy` field, and `hive sync` reports "Policy bundle verified (N filter packs)".
 - **`ctx_search` drops the `[∈ enclosing symbol → …]` legend line.** The `∈name@Lstart`
   tags on hits stay — agents read those symbols by name and line — but no agent in the
   benchmark transcripts used the `handle=` form the legend described; it cost about 30
@@ -439,13 +466,43 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   have no effect (see Deprecated); `autopilot evidence` still shows the local evidence. The config key
   `intelligence_runtime.context_policy_apply` is still accepted but has no effect, and a
   previously promoted policy file under `context-policy/` in the data directory is ignored.
-- lean-ctx-protocol: `HiveStatusPolicyV1` gains `required_filter_packs` (breaking for
-  struct literals) → 0.5.0. The version bump, its pins and lockfiles, the SBOM and the
-  notices follow in the next release preparation. With the same bump, the status output
-  types (`HiveCliStatusV1`, `HiveStatusPolicyV1` and their siblings) drop
-  `deny_unknown_fields` (or become `#[non_exhaustive]`), as the contract's convention for
-  response types says, so later additive fields are not breaking for typed readers.
-  The same bump removes `hive::compute` (Hive Task Compute was retired).
+- lean-ctx-protocol → 0.5.0 (breaking). The version bump, its pins and lockfiles, the SBOM
+  and the notices follow in the next release preparation. The status output types
+  (`HiveCliStatusV1` and its siblings) drop `deny_unknown_fields` (or become
+  `#[non_exhaustive]`), as the contract's convention for response types says, so later
+  additive fields are not breaking for typed readers. The same bump removes
+  `hive::compute` (Hive Task Compute), and with Hive Protocol 2.1 also
+  `hive::swarm`, the swarm network and sender (`NetworkV1::Swarm`, `SenderV1::Swarm`,
+  `NetworkKind`; `MessageBodyV1::validate` takes no network), swarm handles and limits
+  (`profiles::HandleV1`, `HANDLE_SCHEMA`, `SWARM_LIMITS`, `handle_ok`),
+  `EngineOptinV1.topics` and `TaskOriginKind::QuarantineTimeout` (a task naming it parses
+  as `Unknown`). `EnrollmentV1.keys` becomes `EnrollmentKeySet`: key set v1 (`kid`) or v3
+  (`HiveKeySetV3`, `key_id` and `purposes`, told apart by `schema`), and `validate()`
+  checks that the lease `kid` names a lease key of the set. The TOML org policy is gone:
+  `PolicyBundleV1` loses `org_policy`, `unpin` and `policy_version`, `HiveLeaseV1` loses
+  `policy_signer_keys` (with `PolicySignerKeyV1`), `validate_required_filter_packs` and
+  `unmet_required_packs` go, and `HiveCliStatusV1` loses `policy` (with
+  `HiveStatusPolicyV1`, `HiveOrgPolicyStateV1` and `HiveStatusRequiredPackV1`). Neither
+  the bundle nor the lease denies unknown fields, so what a Hive still sends there is
+  ignored; `RequiredFilterPackV1` stays for the engine's policy runtime. Sealed vaults are
+  gone, so the bump also removes `hive::sealed` (`SealedBlobV1`, `WrappedKeyV1`,
+  `SealedKeyV1`, `SealedPendingV1`, `SealedGrantRequestV1`, `SealedDraftContentV1`,
+  `kx_fingerprint`, the AAD helpers and their schemas), `SEALED_MESSAGE_SCHEMA` and the
+  `SEALED_TASK_*` schemas, and every `sealed` field (knowledge revisions, patches and
+  puts, messages and deliveries, task proposals, updates, results and views);
+  `CodeGraphPutV1.graph` is required. A revision, put, draft or message without its clear
+  content no longer validates, and `VaultV1` drops `key_epoch`: `sealed` stays as a
+  constant, and `sealed: true` fails `validate()` (`SEALED_VAULT_UNSUPPORTED`: sealed
+  vaults are not supported). `FactStateReportV1` loses `counts` (with
+  `FactStateCountsV1`) and its `states` is required. `HiveRight::Sealed` and
+  `ProposalState::Ready` still decode. With Hive Protocol 2.2 the bump also removes
+  `hive::automerge` (`AutoMergeV1`, the proposal confirm and ack shapes), `VaultV1.auto_merge`
+  and `SharingPolicyV1.auto_merge_results`, and adds the task shapes of 2.2:
+  `TaskVerifyRequestV1` with `TaskVerdict`, `TaskFieldsRequestV1` with `TaskPriority` and
+  `validate_labels`, `TaskVerificationV1`, `TaskUpdateKind`, `TaskLifecycle::Submitted`, and
+  `verified_by`, `verified_at`, `verification`, `priority`, `labels` and `fields_version` on
+  `TaskV1` (`priority`, `labels`, `fields_version` on `TaskSummaryV1`; `kind`, `verdict` on
+  `TaskUpdateV1`).
 - `lean-ctx gain` and the savings ROI report a higher, more honest prefix overhead.
   A cached prefix token now costs 0.1× input instead of nothing, and a cache miss
   costs the 1.25× write (Anthropic, OpenAI GPT-5.6+). At the default 75% hit rate the
@@ -519,6 +576,40 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Removed
 
+- **Human review of Hive knowledge** (owner decision 2026-11-01: in Hive agents work
+  together and people only watch). Gone are `lean-ctx hive review` (list and merge
+  proposals), the `ctx_tasks` actions `read`, `confirm` and `object` on knowledge
+  proposals, and the automatic objections an engine sent to 1.x proposals that contradicted
+  its knowledge. The sharing question no longer lists 1.x merges and objections. A
+  submitted task result now says another agent checks it before it is done. On a C0 2.0
+  Hive the engine queues no 1.x knowledge draft any more: neither a session draft for a
+  project that is not linked or bound, nor an import draft (`lean-ctx import docs|git`).
+  Knowledge reaches the vault as signed events through capture, and a draft still queued
+  from before is dropped on the next sync.
+- **Sealed vaults** (owner decision 2026-11-01: Hive removed them; self-hosting Hive or a
+  private cloud covers protection from the operator). Gone are `lean-ctx hive grant`,
+  `lean-ctx hive review decide`, `lean-ctx hive status --health` and the config key
+  `hive.sealed_grants` (no longer read), the sealed key store, the `v2_plain` sealing
+  conversion with its cursors under `<data>/hive/convert/`, sealed event bodies and sealed
+  places in sync (epoch keys, place secrets, `{converted: true}` tail stubs), sealed bus
+  messages, sealed drafts, revisions, code graphs and task texts, the engine-side merge of
+  `ready` sealed proposals and the re-seal after a key rotation, the engine-side review
+  decision (E41), the local trust and health figures of sealed places, and the "Key print"
+  line of `hive status`. A vault that Hive reports as sealed is refused with an error that
+  says sealed vaults are not supported. Capture keeps only `public` claims.
+- **`lean-ctx hive review rollback`.** Hive answers `GET …/knowledge?revision=n` with the
+  newest revision only (Hive bf30976d) and undoes knowledge per node (retract or restore);
+  `hive review merge` stays, and an unknown `hive review` subcommand is refused with the
+  usage.
+- **The last Hive swarm remnants.** With Hive swarms, pledges and the conductor gone
+  (C0 2.1), a `~<swarm>` bus address is no longer an address: such a post never left the
+  machine and now never will (`invalid_address`). Messages on a swarm network are no
+  longer decoded, and the own-text screening for public swarm writes is gone. The consent
+  kinds `swarm_join`, `pledge_change` and `unattended_start` are gone: a stored record of
+  one is an invalid record and approves nothing, a Hive refusal naming one is a refusal of
+  an unknown kind, and the macOS consent helper no longer shows their dialogs. Worker keys
+  are fetched for vault places only. The `quarantine_timeout` task origin is gone (Hive
+  creates no such tasks); such a task shows origin `unknown`.
 - **Episodic and procedural memory** (owner decision 2026-11-01, measured on 126 real
   tasks: procedures were never selected into a kernel plan, and episodes, tool/file run
   logs, never reached the delivered kernel trailer for code queries; decisions, findings
@@ -552,7 +643,8 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `/v1/swarms/*` and `/v1/compute/*` route). The engine drops the swarm client, participation,
   pledges and conductor, the Task Compute client, the `ctx_compute` MCP tool, `ctx_tasks`
   `scope=swarm`, `ctx_agent send swarm_id`, and `lean-ctx hive swarm`, `hive compute` and
-  `hive replica --swarm`; such calls are refused instead of reaching the org channel. Hive
+  `hive replica --swarm` (`hive swarm` and `hive compute` are unknown subcommands); such
+  calls are refused instead of reaching the org channel. Hive
   tasks, worker mode and its opt-in, durable workers and the agent bus stay.
 
 - **The Hive 1.x protocol fallback** (owner decision 2026-10-31; Hive has not shipped, keeps
@@ -560,10 +652,9 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   drops to `Hive-Protocol: 1.9` when the instance card was not answered: every request
   sends 2.0, and an answer that names another major is an error saying the engine requires
   `Hive-Protocol 2.x`, instead of being accepted as 1.x.
-- **The client of the retired daily Hive metrics upload** (`POST /v1/metrics`, a 1.x route
-  Hive drops). It was always off; `hive sync` no longer prints its "Metrics not sent" line,
-  and `hive status` keeps naming why it does not run. Engine metrics v2 (hourly) carry the
-  same figures.
+- **The client of the daily Hive metrics upload** (`POST /v1/metrics`, a route Hive does
+  not have). It was always off; `hive sync` and `hive status` no longer print a "Metrics"
+  line. Engine metrics v2 (hourly, the "Engine metrics" line) carry the same figures.
 
 - Internal clean-up, no behaviour change: modules and functions without a production
   caller are gone from the Engine (among them the process-slot guard, the recovery

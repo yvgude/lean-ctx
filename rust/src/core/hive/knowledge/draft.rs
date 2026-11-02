@@ -171,10 +171,9 @@ fn capture_session(
         return nothing();
     };
     let stable = stable_identity(&identity);
-    // A vault that syncs through its v2 replica gets knowledge only as
-    // signed events (`hive sync`); a 1.x draft would duplicate it and
-    // feed the frozen review flow.
-    if syncs_through_replica(store, &stable, root) {
+    // A C0 2.0 Hive gets knowledge only as signed events (`hive sync`),
+    // and only into a linked or bound vault: it takes no 1.x draft.
+    if crate::core::hive::bus::relay_v2::speaks_v2(store) {
         return nothing();
     }
     let data = store.data_dir();
@@ -228,7 +227,6 @@ fn capture_session(
         context_patch: ContextPatchV1 {
             base_revision: base.revision,
             ops,
-            sealed: None,
         },
         session_ref: session_ref(session_id),
         engine_screening: screening,

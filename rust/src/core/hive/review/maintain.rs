@@ -22,7 +22,6 @@
 //! with the new digests, the `HEAD` commit and `verified_at` (C0 2.0
 //! `events/field.set.anchors.json`, RESOLUTIONS R121).
 //!
-//! Sealed places derive the same tasks from the decrypted replica (§3.5.5).
 //! Retractions carry no engine-side threshold: a retraction the place holds
 //! for review comes back `held`, stays pending and is counted "sent to
 //! review" (§3.15b, CONTRACT §3.16).
@@ -339,31 +338,21 @@ pub fn field_set(
     Ok(event)
 }
 
-/// Where a run writes: the place's replica, key and signer, and for a
-/// sealed place the epoch key its events are sealed with (per-event content
-/// key, §3.3.4; `place.pk_id` is then the sealed `pk_id`).
+/// Where a run writes: the place's replica, key and signer.
 pub struct Target<'a> {
     pub replica: &'a Replica,
     pub place: &'a Place,
     pub signer: &'a Signer<'a>,
-    pub seal: Option<&'a crate::core::hive::events::sealed_body::SealKey>,
 }
 
-/// Queue a built class-W event as pending, sealed for a sealed place
-/// (maintenance, curation, and the capture lifecycle's retract, supersedes
-/// and confirm events).
-pub(crate) fn queue(target: &Target<'_>, mut event: Value, stamp: Stamp) -> Result<(), HiveError> {
-    if let Some(seal) = target.seal {
-        // A sealed event always carries `flags` (signed; C0 event schema);
-        // a maintenance field.set never adds commands.
-        event["flags"] = json!({ "commands": false });
-        crate::core::hive::events::sealed_body::seal_event(&mut event, seal, target.signer.key)?;
-    }
+/// Queue a built class-W event as pending (maintenance, curation, and the
+/// capture lifecycle's retract, supersedes and confirm events).
+pub(crate) fn queue(target: &Target<'_>, event: &Value, stamp: Stamp) -> Result<(), HiveError> {
     let id = event["event_id"]
         .as_str()
         .ok_or_else(|| HiveError::Local("built event without id".into()))?
         .to_string();
-    let bytes = serde_json::to_vec(&event).map_err(|e| HiveError::Local(e.to_string()))?;
+    let bytes = serde_json::to_vec(event).map_err(|e| HiveError::Local(e.to_string()))?;
     target
         .replica
         .add_pending(&id, stamp.wall_ms, stamp.counter, None, &bytes)
@@ -426,7 +415,7 @@ pub fn run_stale_at(
             clock,
             target.signer,
         )?;
-        queue(target, event, clock)?;
+        queue(target, &event, clock)?;
         counts.done = 1;
         // A claim the re-check had marked is current again once confirmed.
         if matches!(
@@ -443,7 +432,7 @@ pub fn run_stale_at(
                 clock,
                 target.signer,
             )?;
-            queue(target, event, clock)?;
+            queue(target, &event, clock)?;
         }
         return Ok((counts, clock));
     }
@@ -478,7 +467,7 @@ pub fn run_stale_at(
             clock,
             target.signer,
         )?;
-        queue(target, event, clock)?;
+        queue(target, &event, clock)?;
         counts.done += 1;
         match task.verdict {
             AnchorVerdict::ToVerify => counts.to_verify += 1,

@@ -1,0 +1,105 @@
+{
+  "events": [
+    {
+      "actor": {
+        "kind": "worker"
+      },
+      "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaadocs",
+      "body": {
+        "body_nonce": "1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c",
+        "field": "anchor_state",
+        "value": "to_verify"
+      },
+      "body_commit": "6289db9048129044a21c0f8663af3e7909dcb5698c13aba8cb2e9dec8b5e28b3",
+      "capture": {
+        "evidence": "observed",
+        "gate_version": 1,
+        "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+      },
+      "causal_base": 27,
+      "event_id": "01M5NKAXB0005000000000D028",
+      "hlc": {
+        "counter": 0,
+        "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "wall_ms": 1792800028000
+      },
+      "key_id": "47983724220c8521",
+      "op": "field.set",
+      "place": {
+        "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "kind": "vault"
+      },
+      "provenance": "own",
+      "provenance_claim": "own",
+      "received_at": 1792800028350,
+      "schema": "leanctx.hive.event/v2",
+      "screening": {
+        "counts": {
+          "forbidden": 0,
+          "local_path": 0,
+          "pii": 0,
+          "redaction": 0,
+          "secret": 0
+        },
+        "scanner_version": 1
+      },
+      "seq": 28,
+      "signature": "6b8e3f8c0bbb01cd32acfa4ac6c061e062160c71c2b0a852a821163c081e5c3334d1ae2b639ed417dc25cb33cc6e9e431563cf8ed1c35ab507079887e49d6400",
+      "target": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    },
+    {
+      "actor": {
+        "kind": "worker"
+      },
+      "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaadocs",
+      "body": {
+        "body_nonce": "1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d",
+        "field": "drift",
+        "value": [
+          {
+            "observed": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+            "ref": "file:crates/hive-server/src/routes/wiki_pages.rs"
+          }
+        ]
+      },
+      "body_commit": "2bfc0feb3d9f8d843468b7cd2063b03c2ecc5df331d5cb592bee40c95ae89a43",
+      "capture": {
+        "evidence": "observed",
+        "gate_version": 1,
+        "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+      },
+      "causal_base": 28,
+      "event_id": "01M5NKAYA8005000000000D029",
+      "hlc": {
+        "counter": 0,
+        "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "wall_ms": 1792800029000
+      },
+      "key_id": "47983724220c8521",
+      "op": "field.set",
+      "place": {
+        "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "kind": "vault"
+      },
+      "provenance": "own",
+      "provenance_claim": "own",
+      "received_at": 1792800029350,
+      "schema": "leanctx.hive.event/v2",
+      "screening": {
+        "counts": {
+          "forbidden": 0,
+          "local_path": 0,
+          "pii": 0,
+          "redaction": 0,
+          "secret": 0
+        },
+        "scanner_version": 1
+      },
+      "seq": 29,
+      "signature": "513ea1434f3dd8a5205e6591d27dd9ec69d6c50bfa5f2dfefbbd24556ae96338925ea7d7026fcb47f7ea28707705186c549e1522762ff668922eb3c1d2af7d0f",
+      "target": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    }
+  ]
+}

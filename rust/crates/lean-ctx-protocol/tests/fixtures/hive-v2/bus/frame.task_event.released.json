@@ -1,0 +1,11 @@
+{
+  "at": 1792800023000,
+  "by": {
+    "system": true
+  },
+  "event": "released",
+  "number": 7,
+  "state": "open",
+  "t": "task.event",
+  "vault": "#acme/payments"
+}

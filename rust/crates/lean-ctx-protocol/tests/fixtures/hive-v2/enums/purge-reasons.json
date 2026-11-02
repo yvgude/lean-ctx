@@ -24,7 +24,6 @@
     }
   ],
   "shred_only": [
-    "vault_deleted",
-    "sealed_conversion"
+    "vault_deleted"
   ]
 }

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "stale_base",
+    "head_version": 4,
+    "message": "the task's fields changed since the edit started"
+  }
+}

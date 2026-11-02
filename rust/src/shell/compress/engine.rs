@@ -172,7 +172,7 @@ pub(crate) fn verbatim_json_crush_lossy_for(
     }
     // Dropped columns must be recoverable out-of-band; bail if we cannot persist
     // (then the lossless/verbatim path keeps the data) rather than lose it.
-    let handle = crate::proxy::ccr::persist_json(output)?;
+    let handle = crate::core::ccr::persist_json(output)?;
     let body = shell_savings_footer(&res.text, original_tokens, crushed_tokens);
     Some(format!(
         "{body}\n[lean-ctx: high-entropy column(s) dropped — full data at {handle}, \
@@ -234,7 +234,7 @@ pub(crate) fn verbatim_tabular_crush_lossy_for(
     if crushed_tokens < min_output_tokens || crushed_tokens >= original_tokens {
         return None;
     }
-    let handle = crate::proxy::ccr::persist_tabular(output)?;
+    let handle = crate::core::ccr::persist_tabular(output)?;
     let body = shell_savings_footer(&res.text, original_tokens, crushed_tokens);
     Some(format!(
         "{body}\n[lean-ctx: high-entropy column(s) dropped — full data at {handle}, \
@@ -288,7 +288,7 @@ pub(crate) fn verbatim_yaml_crush_lossy_for(
     if crushed_tokens < min_output_tokens || crushed_tokens >= original_tokens {
         return None;
     }
-    let handle = crate::proxy::ccr::persist_yaml(output)?;
+    let handle = crate::core::ccr::persist_yaml(output)?;
     let body = shell_savings_footer(&res.text, original_tokens, crushed_tokens);
     Some(format!(
         "{body}\n[lean-ctx: high-entropy column(s) dropped — full data at {handle}, \
@@ -315,7 +315,7 @@ pub(crate) fn verbatim_html_crush_for(
     if crushed_tokens < min_output_tokens || crushed_tokens >= original_tokens {
         return None;
     }
-    let handle = crate::proxy::ccr::persist_html(output)?;
+    let handle = crate::core::ccr::persist_html(output)?;
     let body = shell_savings_footer(&result.text, original_tokens, crushed_tokens);
     Some(format!(
         "{body}\n[lean-ctx: HTML extracted to markdown — full page at {handle}, \

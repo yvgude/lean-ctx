@@ -2,8 +2,7 @@
 //! Typed agent messages over Hive (C0 1.9 §2, I1).
 //!
 //! Sender: `ctx_agent send|reply` checks the bus controls, screens the text
-//! like every upload, seals it in a sealed project with a key this machine
-//! holds, and queues an [`AgentMessageV1`] in the mailbox. No network in the
+//! like every upload, and queues an [`AgentMessageV1`] in the mailbox. No network in the
 //! tool call: the relay sends queued messages on its tick and settles them on
 //! `published` or `error`.
 //!
@@ -40,7 +39,7 @@ use lean_ctx_protocol::hive::bus::BusFrameV1;
 use lean_ctx_protocol::hive::messages::{
     AgentMessageV1, MAX_QUESTION_DEADLINE_HOURS, MessageBodyV1, MessageDeliveryV1,
     MessageReceiptState, MessageReceiptV1, MessageReferenceV1, MessageStatusV1, MessageStoredV1,
-    MessageTrust, MessageType, NetworkV1, SEALED_MESSAGE_SCHEMA, SenderV1, TaskEventV1,
+    MessageTrust, MessageType, NetworkV1, SenderV1, TaskEventV1,
 };
 
 const MAILBOX_FILE: &str = "messages.json";
@@ -223,7 +222,6 @@ fn now_stamp() -> String {
 fn network_key(network: &NetworkV1) -> String {
     match network {
         NetworkV1::Org { channel } => format!("org {channel}"),
-        NetworkV1::Swarm { swarm_id } => format!("swarm {swarm_id}"),
     }
 }
 
@@ -241,11 +239,10 @@ fn channel_project(channel: &str) -> Option<&str> {
         .and_then(|part| part.strip_prefix("vault:"))
 }
 
-/// The project a message concerns; `None` for a swarm (every local agent).
+/// The project a message concerns.
 fn network_project(network: &NetworkV1) -> Option<&str> {
     match network {
         NetworkV1::Org { channel } => channel_project(channel),
-        NetworkV1::Swarm { .. } => None,
     }
 }
 
@@ -385,8 +382,6 @@ pub struct SendRequest<'a> {
     pub reply_to: Option<&'a str>,
     /// Questions only: hours until an unanswered question becomes a task.
     pub deadline_hours: Option<u64>,
-    /// A swarm network to send in.
-    pub swarm_id: Option<&'a str>,
     /// `task:<n>`, `fact:<id>`, `proposal:<n>`, `commit:<sha>`, `handoff:<id>`.
     pub references: &'a [String],
 }
@@ -432,7 +427,6 @@ pub(crate) struct SendContext<'a> {
     pub store: &'a HiveStore,
     pub org_id: &'a str,
     pub vault_id: &'a str,
-    pub sealed: bool,
     /// This machine's instance id (never a recipient instance).
     pub instance_id: &'a str,
 }
@@ -468,13 +462,6 @@ pub(crate) fn send(
                     })
                 })
                 .ok_or_else(|| format!("no known message {gid:?} to reply to"))?;
-            if request.swarm_id.is_some_and(
-                |q| !matches!(&network, NetworkV1::Swarm { swarm_id } if swarm_id == q),
-            ) {
-                return Err(
-                    "a reply stays in its network (org and swarms are never bridged)".into(),
-                );
-            }
             if let Some(project) = network_project(&network)
                 && project != ctx.vault_id
             {
@@ -482,16 +469,11 @@ pub(crate) fn send(
             }
             network
         }
-        None => match request.swarm_id {
-            Some(swarm_id) => NetworkV1::Swarm {
-                swarm_id: swarm_id.into(),
-            },
-            None => NetworkV1::Org {
-                channel: channel(ctx.org_id, ctx.vault_id, GENERAL_CHANNEL),
-            },
+        None => NetworkV1::Org {
+            channel: channel(ctx.org_id, ctx.vault_id, GENERAL_CHANNEL),
         },
     };
-    let to_instance = bind_instance(ctx, &network, request)?;
+    let to_instance = bind_instance(ctx, request)?;
     if request.deadline_hours.is_some() && message_type != MessageType::Question {
         return Err("only questions carry a deadline".into());
     }
@@ -515,22 +497,9 @@ pub(crate) fn send(
     screen
         .check(request.text)
         .map_err(|blocked| format!("not sent: the text contains a {blocked}"))?;
-    let swarm = matches!(network, NetworkV1::Swarm { .. });
-    // A swarm message carries no text of this engine's repositories
-    // (R3-3e-2). The queue does not know the swarm's scope, so a team
-    // swarm is checked too.
-    if swarm {
-        crate::core::hive::own_text::check(ctx.store, &[("message", request.text)])
-            .map_err(|e| e.to_string())?;
-    }
     let body = MessageBodyV1 {
         text: request.text.to_string(),
         references,
-    };
-    let (body, sealed) = if ctx.sealed && !swarm {
-        (None, Some(seal(ctx.store, ctx.vault_id, &body)?))
-    } else {
-        (Some(body), None)
     };
     let message = AgentMessageV1 {
         client_msg_id: format!("lcm-{}", uuid::Uuid::new_v4().simple()),
@@ -541,10 +510,8 @@ pub(crate) fn send(
         to_instance,
         reply_to: request.reply_to.map(str::to_string),
         deadline,
-        body,
-        sealed,
+        body: Some(body),
     };
-    // A sealed body was validated in the clear by `seal`.
     message.validate().map_err(|e| format!("not sent: {e}"))?;
     let id = message.client_msg_id.clone();
     let queued = Mailbox::mutate(data, |mailbox| {
@@ -585,20 +552,15 @@ pub(crate) fn send(
 /// ambiguous and none leaves it unbound, so both are refused here and the
 /// sender names the instance; it is never picked silently. A
 /// reply carries none (Hive answers to the instance of the replied
-/// message), nor does a message to everyone or in a swarm.
+/// message), nor does a message to everyone.
 fn bind_instance(
     ctx: &SendContext<'_>,
-    network: &NetworkV1,
     request: &SendRequest<'_>,
 ) -> Result<Option<String>, String> {
-    let org = matches!(network, NetworkV1::Org { .. });
     match (request.to, request.to_instance) {
         (None, Some(_)) => Err("to_instance needs to_agent (a direct message)".into()),
-        (Some(_), Some(_)) if !org => {
-            Err("to_instance is for org messages; a swarm has no instances".into())
-        }
         (Some(_), Some(instance)) => Ok(Some(instance.to_string())),
-        (Some(to), None) if org && request.reply_to.is_none() => {
+        (Some(to), None) if request.reply_to.is_none() => {
             let instances = super::presence::PresenceMap::load(ctx.store.data_dir()).instances_of(
                 to,
                 ctx.instance_id,
@@ -623,40 +585,6 @@ fn bind_instance(
     }
 }
 
-/// Seal a body with the newest project key this machine holds (no network).
-fn seal(
-    store: &HiveStore,
-    vault_id: &str,
-    body: &MessageBodyV1,
-) -> Result<lean_ctx_protocol::hive::sealed::SealedBlobV1, String> {
-    use crate::core::hive::sealed;
-    body.validate(lean_ctx_protocol::hive::messages::NetworkKind::Org)
-        .map_err(|e| format!("not sent: {e}"))?;
-    let epoch = sealed::newest_held_epoch(store, vault_id)
-        .map_err(|e| format!("not sent: {e}"))?
-        .ok_or(
-            "not sent: this machine holds no key for the sealed vault yet (lean-ctx hive sync)",
-        )?;
-    let key = sealed::held_key(store, vault_id, epoch)
-        .ok_or("not sent: the sealed vault's key is unreadable")?;
-    let plain = zeroize::Zeroizing::new(serde_json::to_vec(body).map_err(|e| e.to_string())?);
-    sealed::seal(&key, vault_id, 0, epoch, SEALED_MESSAGE_SCHEMA, &plain).map_err(|e| e.to_string())
-}
-
-fn open_sealed(
-    store: &HiveStore,
-    vault_id: &str,
-    blob: &lean_ctx_protocol::hive::sealed::SealedBlobV1,
-) -> Option<MessageBodyV1> {
-    use crate::core::hive::sealed;
-    if blob.content_schema != SEALED_MESSAGE_SCHEMA {
-        return None;
-    }
-    let key = sealed::held_key(store, vault_id, blob.epoch)?;
-    let plain = sealed::open(&key, vault_id, 0, blob).ok()?;
-    serde_json::from_slice(&plain).ok()
-}
-
 fn wire<T: Serialize>(value: &T) -> String {
     serde_json::to_value(value)
         .ok()
@@ -664,7 +592,7 @@ fn wire<T: Serialize>(value: &T) -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
-/// The sender as the wrapper's `source`: never an org or instance for a swarm.
+/// The sender as the wrapper's `source`.
 fn sender_label(sender: &SenderV1) -> String {
     match sender {
         SenderV1::Agent {
@@ -673,7 +601,6 @@ fn sender_label(sender: &SenderV1) -> String {
             ..
         } => format!("{agent}@{instance_label}"),
         SenderV1::Person { label } => format!("person {label}"),
-        SenderV1::Swarm { handle, reputation } => format!("{handle} (reputation {reputation})"),
         SenderV1::Unknown => "unknown".into(),
     }
 }
@@ -691,7 +618,7 @@ fn reference_label(reference: &MessageReferenceV1) -> String {
 }
 
 /// One message as the agent sees it: a metadata line, then the body wrapped.
-fn render(store: &HiveStore, inbound: &Inbound, reader_project: Option<&str>) -> String {
+fn render(inbound: &Inbound, reader_project: Option<&str>) -> String {
     let d = &inbound.delivery;
     // Outside the fence only the engine's words and the two enums: every id
     // and the sender came from Hive or another party and stand inside it
@@ -724,15 +651,7 @@ fn render(store: &HiveStore, inbound: &Inbound, reader_project: Option<&str>) ->
     if let Some(deadline) = &d.deadline {
         head.push_str(&format!("\ndeadline: {}", deadline.as_str()));
     }
-    if let NetworkV1::Swarm { swarm_id } = &d.network {
-        head.push_str(&format!("\nswarm: {swarm_id}"));
-    }
-    let body = match (&d.body, &d.sealed) {
-        (Some(body), _) => Some(body.clone()),
-        (None, Some(blob)) => network_project(&d.network).and_then(|p| open_sealed(store, p, blob)),
-        (None, None) => None,
-    };
-    let text = match body {
+    let text = match &d.body {
         Some(body) => {
             let mut text = admitted(&body.text, reader_project);
             if !body.references.is_empty() {
@@ -741,15 +660,15 @@ fn render(store: &HiveStore, inbound: &Inbound, reader_project: Option<&str>) ->
             }
             text
         }
-        None => "(sealed; this machine holds no key for it yet)".into(),
-    };
-    let kind = match d.network {
-        NetworkV1::Swarm { .. } => UntrustedKind::Swarm,
-        NetworkV1::Org { .. } => UntrustedKind::BusMessage,
+        None => "(no body)".into(),
     };
     format!(
         "{meta}\n{}",
-        wrap(kind, "hive message", &format!("{head}\n\n{text}"))
+        wrap(
+            UntrustedKind::BusMessage,
+            "hive message",
+            &format!("{head}\n\n{text}")
+        )
     )
 }
 
@@ -889,7 +808,7 @@ pub(crate) fn inbox(
             }
         ));
         for inbound in &messages {
-            out.push_str(&render(store, inbound, Some(reader_root)));
+            out.push_str(&render(inbound, Some(reader_root)));
             out.push('\n');
         }
     }
@@ -930,13 +849,10 @@ pub fn send_from_root(
     request: &SendRequest<'_>,
 ) -> Result<String, String> {
     let connected = super::leases::connected(Path::new(project_root))?;
-    let sealed =
-        project_of(connected.store.data_dir(), project_root).is_some_and(|(_, sealed)| sealed);
     let ctx = SendContext {
         store: &connected.store,
         org_id: &connected.session.lease.lease.org_id,
         vault_id: &connected.vault_id,
-        sealed,
         instance_id: &connected.session.instance.instance_id,
     };
     send(&ctx, from, request, &mut Screen::for_installation())
@@ -949,7 +865,7 @@ pub fn inbox_for_root(
     filter: InboxFilter<'_>,
 ) -> Result<String, String> {
     let store = HiveStore::open().map_err(|e| e.to_string())?;
-    let (vault_id, _) = project_of(store.data_dir(), project_root)
+    let vault_id = project_of(store.data_dir(), project_root)
         .ok_or("this repository is not linked to a vault")?;
     inbox(&store, &vault_id, project_root, agent, filter)
 }
@@ -958,7 +874,7 @@ pub fn inbox_for_root(
 /// for `agent` in `project_root` (no network; never the content).
 pub fn waiting_hint(project_root: &str, agent: &str) -> Option<String> {
     let store = HiveStore::open().ok()?;
-    let (vault_id, _) = project_of(store.data_dir(), project_root)?;
+    let vault_id = project_of(store.data_dir(), project_root)?;
     match unread(store.data_dir(), &vault_id, agent) {
         0 => None,
         n => Some(format!(
@@ -967,11 +883,11 @@ pub fn waiting_hint(project_root: &str, agent: &str) -> Option<String> {
     }
 }
 
-/// Project id and sealing of a linked project, without a network call.
-pub(crate) fn project_of(data_dir: &Path, project_root: &str) -> Option<(String, bool)> {
+/// The vault id of a linked project, without a network call.
+pub(crate) fn project_of(data_dir: &Path, project_root: &str) -> Option<String> {
     VaultMap::load(data_dir)
         .for_root(project_root)
-        .map(|record| (record.vault_id.clone(), record.sealed))
+        .map(|record| record.vault_id.clone())
 }
 
 #[cfg(test)]

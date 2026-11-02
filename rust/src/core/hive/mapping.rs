@@ -529,12 +529,22 @@ mod tests {
             matches!(step("vault_match.bound.response.json"), Ok(Step::Mapped(v)) if v.vault.name == "payments")
         );
         assert!(
-            matches!(step("vault_match.bound_legacy.response.json"), Ok(Step::Mapped(v)) if v.sealed)
+            matches!(step("vault_match.bound_legacy.response.json"), Ok(Step::Mapped(v)) if !v.sealed)
         );
         assert!(
             matches!(step("vault_match.suggested.response.json"), Ok(Step::Suggested(v)) if v.ns == "acme")
         );
         assert_eq!(step("vault_match.none.response.json"), Ok(Step::Create));
+        // A bound sealed vault is refused, naming it.
+        let mut sealed = route_fixture("vault_match.bound.response.json");
+        sealed["vault"]["sealed"] = Value::Bool(true);
+        let refused = step_from_answer(answer(sealed)).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("sealed vaults are not supported"),
+            "{refused}"
+        );
         let mut bound = route_fixture("vault_match.bound.response.json");
         bound.as_object_mut().unwrap().remove("vault");
         assert!(

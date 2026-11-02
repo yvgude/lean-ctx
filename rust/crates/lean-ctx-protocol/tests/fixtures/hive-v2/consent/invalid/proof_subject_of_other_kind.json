@@ -1,11 +1,11 @@
 {
   "case": "proof_subject_of_other_kind",
-  "base": "consent/proof.ed25519.swarm_join.json",
+  "base": "consent/proof.p256_ecdsa_sha256.link_vault.json",
   "patch": [
     {
       "op": "replace",
       "path": "/kind",
-      "value": "pledge_change"
+      "value": "api_key_set"
     }
   ],
   "expect": {

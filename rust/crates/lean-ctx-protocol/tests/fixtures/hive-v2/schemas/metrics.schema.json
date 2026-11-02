@@ -236,7 +236,6 @@
         "security.external_model_excluded_classes",
         "security.pii",
         "sharing.allowed_vaults",
-        "sharing.auto_merge_results",
         "sharing.consent_required_for",
         "sharing.cross_team_sharing",
         "sharing.personal_workspace",
@@ -2690,7 +2689,7 @@
     "insights_settings": {
       "type": "object",
       "additionalProperties": false,
-      "description": "W103 response; PUT body has person_names and/or budget_usd_micros (K23 monthly budget line, null = none)",
+      "description": "W103 PUT response (the GET is removed since 31.10.); PUT body has person_names and/or budget_usd_micros (K23 monthly budget line, null = none)",
       "required": [
         "person_names",
         "managed_by",

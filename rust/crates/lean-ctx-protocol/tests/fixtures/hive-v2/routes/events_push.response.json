@@ -3,13 +3,11 @@
   "results": [
     {
       "event_id": "01M5NKAAS8005000000000W009",
-      "review_state": "confirmed",
       "seq": 9,
       "status": "accepted"
     },
     {
       "event_id": "01M5NKABRG005000000000W00A",
-      "review_state": "confirmed",
       "seq": 10,
       "status": "accepted"
     },

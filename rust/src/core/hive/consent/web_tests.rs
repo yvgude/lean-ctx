@@ -165,7 +165,7 @@ fn the_create_body_has_the_contract_shape() {
     let request = fixture("routes/consent_create.request.json");
     let record = Record {
         consent_id: request["consent_id"].as_str().unwrap().into(),
-        kind: Kind::SwarmJoin,
+        kind: Kind::parse(request["kind"].as_str().unwrap()).unwrap(),
         subject: request["subject"].clone(),
         subject_digest: request["subject_digest"].as_str().unwrap().into(),
         created_at: 0,

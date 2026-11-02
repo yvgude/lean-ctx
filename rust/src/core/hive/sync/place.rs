@@ -148,7 +148,6 @@ fn recheck_anchors(
     replica: &Replica,
     place: &Place,
     signer: &Signer<'_>,
-    seal: Option<&crate::core::hive::events::sealed_body::SealKey>,
     checkout: &mut capture::refs::Checkout,
     now: u64,
     clock: Stamp,
@@ -166,7 +165,6 @@ fn recheck_anchors(
         replica,
         place,
         signer,
-        seal,
     };
     match maintain::run_stale_at(&target, checkout, &req, now, clock) {
         Ok((counts, clock)) => (counts.done, clock),
@@ -358,49 +356,6 @@ fn sync_vault_once(
     let place_ref = format!("vault:{}", place_id(&record.vault_id));
     let (mk, _) = crypt::master_key(store.config_dir(), false)?;
     let (mut replica, _) = Replica::open(store.data_dir(), &record.vault_id, &mk)?;
-    // A sealed place keys its node ids, dedupe keys and body commitments
-    // with pk_id from its place secret, never with a server salt (§3.3.4).
-    // Only the sealing engine (or a v1 conversion's lease holder) creates
-    // the secret; every other member receives it with a grant. A vault
-    // sealed after creation is converted first by the engine that gets the
-    // conversion lease, which creates the secret (§3.16 `v2_plain`, V13.E3).
-    if record.sealed {
-        if let Some(outcome) =
-            crate::core::hive::convert::sync_conversion(session, record, &replica)?
-        {
-            tracing::info!(
-                "hive: sealed conversion of {}: {outcome:?}",
-                record.vault_id
-            );
-        }
-        // The first engine of an empty sealed vault creates epoch 1 and the
-        // place secret; any other one fetches its granted key, which carries
-        // the secret (R135). Then members waiting for a key are granted
-        // (auto, or confirmed before).
-        if crate::core::hive::sealed::place_secret(store, &record.vault_id)?.is_none() {
-            crate::core::hive::sealed::sealing_key(session, &record.vault_id, 0).map_err(|e| {
-                match e {
-                    // The server's `forbidden_right sealed`: no recipient approval yet.
-                    HiveError::Forbidden => HiveError::Refused(
-                        "this engine is not approved for the sealed vault yet: a maintainer \
-                         approves it in the vault's sealed settings on the web"
-                            .into(),
-                    ),
-                    other => other,
-                }
-            })?;
-        }
-        crate::core::hive::sealed::grant_known_recipients(session, &record.vault_id)?;
-        let secret =
-            crate::core::hive::sealed::place_secret(store, &record.vault_id)?.ok_or_else(|| {
-                HiveError::Refused(
-                    "sealed_secret_missing: ask a member to grant this engine access to the \
-                     sealed vault"
-                        .into(),
-                )
-            })?;
-        replica.set_id_salt(&crate::core::hive::events::ids::sealed_pk_id(&secret))?;
-    }
     // Fresh Hive keys when we can; the last verified set otherwise.
     if keyset_v3::refresh(session).is_err() && keyset_v3::load(store, session.root_key()).is_none()
     {
@@ -413,12 +368,9 @@ fn sync_vault_once(
             .map(|(_, k)| k)
             .collect();
     let check = |e: &Value| signature_ok(session, &place_ref, e);
-    let held = |epoch: u32| crate::core::hive::sealed::held_key(store, &record.vault_id, epoch);
     let verifier = Verifier {
         snapshot_keys: &snapshot_keys,
         signature_ok: &check,
-        sealed: record.sealed,
-        epoch_key: record.sealed.then_some(&held as _),
     };
     let api = SessionApi(session);
     let mut report = VaultSync::default();
@@ -448,18 +400,10 @@ fn sync_vault_once(
     // (a signer's worker can register after its key was first cached).
     if let Some(pk) = replica.id_salt()? {
         for (id, event) in replica.unverified()? {
-            if super::records::event_verifies(&event, &pk, record.sealed, &check) {
+            if super::records::event_verifies(&event, &pk, &check) {
                 replica.mark_verified(&id)?;
             }
         }
-    }
-    // A plaintext row whose sealed copy is in the log folds as a no-op and
-    // loses its plaintext body (§3.16 `v2_plain`).
-    if record.sealed
-        && let Some(pk) = replica.id_salt()?
-        && crate::core::hive::convert::settle_converted(&replica, &pk)? > 0
-    {
-        replica.refold()?;
     }
     // V4.10 / §3.16: the vault is now delivered from its replica; the facts
     // its 1.x revisions copied into the project knowledge go, and the local
@@ -513,8 +457,6 @@ fn sync_vault_once(
         let plan = plan_capture(&knowledge, since, &mut run, &graph);
         let place = super::writer::vault_place(record, &replica)?;
         let signer = writer.signer();
-        // A sealed place's events are sealed with the newest epoch key held.
-        let seal = super::writer::vault_seal(&session.store, record)?;
         // The checkout's name in `own_sources` (never shared): what the
         // capture lifecycle finds this checkout's own nodes by.
         let project_hash =
@@ -524,7 +466,7 @@ fn sync_vault_once(
             place: &place,
             signer: &signer,
             project_hash: &project_hash,
-            seal: seal.as_ref(),
+            decision_anchors: crate::core::hive::bus::relay_v2::speaks_2_2(&session.store),
         };
         let emitted = emit::emit(
             &target,
@@ -548,15 +490,8 @@ fn sync_vault_once(
         // checkout (`hive maintain --stale`, automatically): a changed
         // anchor makes the claim `outdated` until a person confirms it
         // (`--confirm`). A failed re-check never fails the sync.
-        let (rechecked, clock) = recheck_anchors(
-            &replica,
-            &place,
-            &signer,
-            seal.as_ref(),
-            &mut run.checkout,
-            now,
-            clock,
-        );
+        let (rechecked, clock) =
+            recheck_anchors(&replica, &place, &signer, &mut run.checkout, now, clock);
         report.rechecked = rechecked;
         // What the agent superseded, withdrew or re-pinned since capture
         // (the knowledge journal gates it; a failure never fails the sync).
@@ -564,7 +499,6 @@ fn sync_vault_once(
             replica: &replica,
             place: &place,
             signer: &signer,
-            seal: seal.as_ref(),
         };
         match lifecycle(
             &maintain_target,
@@ -656,8 +590,7 @@ mod capture_tests {
 
         let mut screen =
             Screen::with_rules(Vec::new(), std::sync::Arc::new(Vec::new()), Vec::new());
-        let mut run =
-            capture::CaptureRun::new(&mut screen, repo.path(), [9; 32], false, Vec::new(), 0);
+        let mut run = capture::CaptureRun::new(&mut screen, repo.path(), [9; 32], Vec::new(), 0);
         let graph = graph();
         let plan = plan_capture(&knowledge, None, &mut run, &graph);
         assert_eq!(plan.captured.len(), 1, "{:?}", plan.dropped);
@@ -686,7 +619,7 @@ mod capture_tests {
             place: &place,
             signer: &signer,
             project_hash: "ph",
-            seal: None,
+            decision_anchors: false,
         };
         let out = emit::emit(
             &target,

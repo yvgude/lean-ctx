@@ -6,6 +6,7 @@
 //!
 //! `HIVE_CONFORMANCE_URL` (+ `HIVE_CONFORMANCE_ROOT_KEY`, base64 Ed25519)
 //! runs the unauthenticated part against a real Hive deployment instead.
+#![cfg(feature = "http-server")]
 
 use crate::support::fake_hive::{FakeHive, FakeOptions};
 use base64::Engine as _;
@@ -168,15 +169,15 @@ fn connect(fake: &FakeHive) -> (Client, EnrollmentV1) {
     let keys_raw = enrollment["keys"].clone();
     let enrollment: EnrollmentV1 = decode(&enrollment);
     enrollment.validate().unwrap();
+    let EnrollmentKeySet::V1(keys) = &enrollment.keys else {
+        panic!("the fake enrolls with key set v1");
+    };
     assert!(verify(
         &FakeHive::root_public_key_b64(),
         &HiveKeySetV1::signing_input_raw(&keys_raw).unwrap(),
-        &enrollment.keys.signature
+        &keys.signature
     ));
-    let signer = enrollment
-        .keys
-        .key(&enrollment.lease.kid)
-        .expect("lease kid listed");
+    let signer = keys.key(&enrollment.lease.kid).expect("lease kid listed");
     assert!(verify(
         &signer.ed25519_pub,
         &enrollment.lease.signing_input().unwrap(),
@@ -675,15 +676,16 @@ fn conformance_against_deployed_hive() {
             let keys_raw = body["keys"].clone();
             let enrolled: EnrollmentV1 = decode(&body);
             enrolled.validate().unwrap();
+            // A `Hive-Protocol: 2.0` enrollment carries key set v1.
+            let EnrollmentKeySet::V1(keys) = &enrolled.keys else {
+                panic!("a 2.0 enrollment carries key set v1");
+            };
             assert!(verify(
                 &root,
                 &HiveKeySetV1::signing_input_raw(&keys_raw).unwrap(),
-                &enrolled.keys.signature
+                &keys.signature
             ));
-            let signer = enrolled
-                .keys
-                .key(&enrolled.lease.kid)
-                .expect("lease kid listed");
+            let signer = keys.key(&enrolled.lease.kid).expect("lease kid listed");
             assert!(
                 verify(
                     &signer.ed25519_pub,
@@ -741,7 +743,10 @@ fn conformance_against_deployed_hive() {
             assert_eq!(status, 200, "{renewed}");
             let envelope: HiveLeaseEnvelopeV1 = decode(&renewed);
             envelope.validate_shape().unwrap();
-            let signer = enrolled.keys.key(&envelope.kid).expect("kid listed");
+            let EnrollmentKeySet::V1(keys) = &enrolled.keys else {
+                panic!("a 2.0 enrollment carries key set v1");
+            };
+            let signer = keys.key(&envelope.kid).expect("kid listed");
             assert!(verify(
                 &signer.ed25519_pub,
                 &envelope.signing_input().unwrap(),

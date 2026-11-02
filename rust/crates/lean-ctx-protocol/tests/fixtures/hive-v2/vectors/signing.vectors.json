@@ -1,24 +1,14 @@
 {
   "aliases": [
     {
-      "hlc_node": "0e9c7f2455744dc1",
+      "hlc_node": "0977d237d397964f",
       "instance": "instance_a",
-      "key_id": "a81b399e9440c8ad",
-      "name": "a_swarm",
-      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
-      "public_key_b64url": "1HZQs--lIIolw9omhGSgaKzks52xjpJnHmaS6-c5y2I",
-      "public_key_hex": "d47650b3efa5208a25c3da268464a068ace4b39db18e92671e6692ebe739cb62",
-      "seed_hex": "8de28f4994cfad1479b9fe24698d3160ad11b6782b2d41bcdb1d6b173ad9b87d"
-    },
-    {
-      "hlc_node": "f448df82109b0d1e",
-      "instance": "instance_b",
-      "key_id": "25d7ed7d64c599b2",
-      "name": "b_swarm",
-      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
-      "public_key_b64url": "P2XUmAd0Nxqg00qeGLr5gtx0BkUabi2pHjQ1-8IBeMA",
-      "public_key_hex": "3f65d4980774371aa0d34a9e18baf982dc7406451a6e2da91e3435fbc20178c0",
-      "seed_hex": "8214f5b6199b66f9a5ecf94f0c51825c43e75708a950d0fbda7bfb454ae820bb"
+      "key_id": "63588e1420da7615",
+      "name": "a_vault",
+      "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+      "public_key_b64url": "k1tBMGpHks2vQ566wm_OgWM2mwJV8auvwYtgR8UXX-k",
+      "public_key_hex": "935b41306a4792cdaf439ebac26fce8163369b0255f1abafc18b6047c5175fe9",
+      "seed_hex": "e8059c5c5e7b943975297dde13024892995ffa82c9c191f2d09516d757d38f4d"
     }
   ],
   "canonical_json": [
@@ -62,13 +52,6 @@
       "signing_input": "leanctx.hive.event.v2\n{\"actor\":{\"kind\":\"worker\"},\"body_commit\":\"8822df5777f67d58e2588e368ec433905afb8641635dbdb476d74330c2787b9d\",\"capture\":{\"evidence\":\"observed\",\"gate_version\":1,\"reasons_passed_hash\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\"},\"causal_base\":0,\"event_id\":\"01M5NKA2Z8005000000000W001\",\"hlc\":{\"counter\":0,\"node\":\"6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b\",\"wall_ms\":1792800001000},\"key_id\":\"47983724220c8521\",\"node_type\":\"fact\",\"op\":\"node.add\",\"place\":{\"id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"kind\":\"vault\"},\"provenance_claim\":\"own\",\"schema\":\"leanctx.hive.event/v2\",\"screening\":{\"counts\":{\"forbidden\":0,\"local_path\":0,\"pii\":0,\"redaction\":0,\"secret\":0},\"scanner_version\":1},\"target\":\"n_tyvnza7clspg4cpmb7ew7fvl7b\",\"worker_id\":\"wkr_vk4oelpv5lzjmev44hun\"}"
     },
     {
-      "envelope_digest": "4ad900dc88e8c5c81b456acfa8a77a03b7d711bf0ad48eaf9d2c735f8f24ae43",
-      "fixture": "events/node.add.result.json",
-      "key_id": "a81b399e9440c8ad",
-      "signature": "c63da3b70d0d0a9bf3f0b17ae6d84c0d43d7fd3b73c496d872f7ef886ed2093851fd7c5a4ba40759d0c7b62a6bfe88ba102d2392e0c3f9acfa63363d6bbcaf02",
-      "signing_input": "leanctx.hive.event.v2\n{\"actor\":{\"kind\":\"worker\"},\"body_commit\":\"c63e8f41e9a2cde6eb9d9eff40f249907b2eb8fdbec76e50902332444a2e4b52\",\"capture\":{\"evidence\":\"observed\",\"gate_version\":1,\"reasons_passed_hash\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\"},\"causal_base\":3,\"event_id\":\"01M5NKA5X0005G00000000W004\",\"hlc\":{\"counter\":0,\"node\":\"0e9c7f2455744dc1\",\"wall_ms\":1792800004000},\"key_id\":\"a81b399e9440c8ad\",\"node_type\":\"result\",\"op\":\"node.add\",\"place\":{\"id\":\"9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02\",\"kind\":\"swarm\"},\"provenance_claim\":\"workspace\",\"schema\":\"leanctx.hive.event/v2\",\"screening\":{\"counts\":{\"forbidden\":0,\"local_path\":0,\"pii\":0,\"redaction\":0,\"secret\":0},\"scanner_version\":1},\"target\":\"n_aaaaaaaaaaaaaaaaaaaaaadaam\",\"worker_id\":\"wkr_76aa2uwmpczt3cqkhfed\"}"
-    },
-    {
       "envelope_digest": "0404890879075eafb4a2d9143614deb7d780f708768ec8b2b62d61d6752429bd",
       "fixture": "events/system.retract.person.json",
       "key_id": "4fc7bebc302357bd",
@@ -81,13 +64,6 @@
       "key_id": "4fc7bebc302357bd",
       "signature": "4266d51313355f58ca97527c8809451609eaf7e193cc89659599f0116eafb1292feb0189284c367fe331279d1eeb41f6fe0f0044abef9f752c478d59eecac302",
       "signing_input": "leanctx.hive.event.v2\n{\"actor\":{\"kind\":\"server\"},\"body_commit\":\"b2b9624c0d54b10baafa4347c56c8bfd86b269542311fd9a2311424f5a9874a8\",\"causal_base\":12,\"event_id\":\"01M5NKAEP8005000000000W00D\",\"hlc\":{\"counter\":0,\"node\":\"4fc7bebc302357bd\",\"wall_ms\":1792800013000},\"key_id\":\"4fc7bebc302357bd\",\"op\":\"purge\",\"place\":{\"id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"kind\":\"vault\"},\"schema\":\"leanctx.hive.event/v2\"}"
-    },
-    {
-      "envelope_digest": "21af567090a12adaa53990039d62fa3209c62ce09ea3fb1391290490d9656f0e",
-      "fixture": "events/node.add.sealed.json",
-      "key_id": "47983724220c8521",
-      "signature": "4489705bf11830d11b5fbddcbbcf48fab91f055bc9582ad04758d7b9e160df37930cd3ef9596abe1e5524158df005d3b3faa948299cf1daeece050f55d2bbc00",
-      "signing_input": "leanctx.hive.event.v2\n{\"actor\":{\"kind\":\"worker\"},\"body_commit\":\"b9708b0e19aefc0f4776e089b0706acd5c2d03e36a248e7562561c6641eb1aca\",\"capture\":{\"evidence\":\"observed\",\"gate_version\":1,\"reasons_passed_hash\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\"},\"causal_base\":0,\"epoch\":1,\"event_id\":\"01M5NKA2Z8006000000000W001\",\"flags\":{\"commands\":false},\"hlc\":{\"counter\":0,\"node\":\"6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b\",\"wall_ms\":1792800001000},\"key_id\":\"47983724220c8521\",\"node_type\":\"fact\",\"op\":\"node.add\",\"place\":{\"id\":\"c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03\",\"kind\":\"vault\"},\"provenance_claim\":\"own\",\"schema\":\"leanctx.hive.event/v2\",\"screening\":{\"counts\":{\"forbidden\":0,\"local_path\":0,\"pii\":0,\"redaction\":0,\"secret\":0},\"scanner_version\":1},\"target\":\"n_4mndss76mipfgf6fk2wsnkmnd5\",\"worker_id\":\"wkr_vk4oelpv5lzjmev44hun\"}"
     }
   ],
   "keys": {
@@ -206,24 +182,7 @@
     {
       "created_at_ms": 1792700000000,
       "id_salt_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-      "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
-      "sealed": false
-    },
-    {
-      "created_at_ms": 1792750000000,
-      "id_salt_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
-      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
-      "sealed": false
-    },
-    {
-      "created_at_ms": 1792700000000,
-      "epoch_keys": {
-        "1": "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
-      },
-      "pk_id_hex": "2ecd00816d667153da3e0e855b777579fa73f26088bd66ab9729ae000c4da45e",
-      "place": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
-      "place_secret_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
-      "sealed": true
+      "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01"
     }
   ],
   "rules": {
@@ -234,9 +193,8 @@
     "event_domain": "leanctx.hive.event.v2\n",
     "key_id": "hex(blake3(public_key))[..16]",
     "presence_key_id": "presence keys: hex(sha256(public key encoding))[..16] (R58); ed25519 encoding = raw 32 bytes",
-    "sealed_pk_id": "HKDF-SHA256(ikm = place_secret, salt = empty, info = \"leanctx.hive.node-id.v1\", L = 32)",
     "signature": "Ed25519, 128 lowercase hex",
-    "signing_input": "event_domain ‖ canonical_json(event without body, ck_wrapped, signature and the server fields seq, received_at, provenance, review_state, reviewed_by, review_id, batch_id, purged, revoked_signer, legacy)",
+    "signing_input": "event_domain ‖ canonical_json(event without body, signature and the server fields seq, received_at, provenance, batch_id, purged, revoked_signer, legacy)",
     "worker_alias_key": "HKDF-SHA256(ikm = instance seed, salt = \"leanctx.hive.worker-alias.v1\", info = empty, L = 32)",
     "worker_id_alias": "\"wkr_\" + base32lower(blake3_keyed(worker_alias_key, host_app ‖ \"|\" ‖ role ‖ \"|\" ‖ place_ref))[..20]",
     "worker_id_workspace": "\"wkr_\" + base32lower(blake3(instance_id ‖ \"|\" ‖ host_app ‖ \"|\" ‖ role))[..20]"
@@ -259,18 +217,10 @@
     {
       "host_app": "codex",
       "instance": "instance_a",
-      "name": "a_swarm_codex",
-      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+      "name": "a_vault_codex",
+      "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
       "role": "general",
-      "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
-    },
-    {
-      "host_app": "claude-code",
-      "instance": "instance_b",
-      "name": "b_swarm_conductor",
-      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
-      "role": "conductor",
-      "worker_id": "wkr_cxdouocvevdhm22vpdrh"
+      "worker_id": "wkr_antuyxwcovsu2lqob3ak"
     }
   ]
 }

@@ -42,24 +42,10 @@ impl PlaceApi for crate::core::hive::transport::HiveClient {
 pub struct Verifier<'a> {
     pub snapshot_keys: &'a [[u8; 32]],
     pub signature_ok: &'a dyn Fn(&Value) -> bool,
-    /// The place is sealed (purge tombstones carry an unkeyed commit).
-    pub sealed: bool,
-    /// A sealed place's epoch keys held by this engine: received bodies are
-    /// opened with them before their checks (§3.3.4 step 5).
-    pub epoch_key: Option<&'a dyn Fn(u32) -> Option<zeroize::Zeroizing<[u8; 32]>>>,
 }
 
 fn protocol(what: impl std::fmt::Display) -> HiveError {
     HiveError::Protocol(what.to_string())
-}
-
-/// Open the sealed events or records in `items` with the held epoch keys.
-fn open_sealed(items: Option<&mut Vec<Value>>, place: &str, verifier: &Verifier<'_>) {
-    if let (Some(items), Some(keys)) = (items, verifier.epoch_key) {
-        for item in items {
-            crate::core::hive::events::sealed_body::open_received(item, place, keys);
-        }
-    }
 }
 
 fn place_path(place: &str) -> String {
@@ -157,8 +143,7 @@ fn clone_once(
         .get("rev")
         .and_then(Value::as_u64)
         .ok_or_else(|| protocol("manifest without rev"))?;
-    // Non-sealed places carry the server's id_salt; sealed places derive
-    // pk_id from the place secret (V4.11).
+    // The place carries the server's id_salt.
     if let Some(salt) = manifest.get("id_salt").and_then(Value::as_str) {
         let salt: [u8; 32] = hex::decode(salt)
             .ok()
@@ -176,15 +161,8 @@ fn clone_once(
         let path = format!("{base}/snapshot/{rev}/segments/{}", meta.n);
         let mut attempt = 0;
         let events = loop {
-            let mut lines = segment_records(&api.get_bytes(&path, MAX_SEGMENT_BYTES)?)?;
-            open_sealed(Some(&mut lines), place, verifier);
-            match records::import_segment(
-                &meta,
-                &lines,
-                &pk,
-                verifier.sealed,
-                verifier.signature_ok,
-            ) {
+            let lines = segment_records(&api.get_bytes(&path, MAX_SEGMENT_BYTES)?)?;
+            match records::import_segment(&meta, &lines, &pk, verifier.signature_ok) {
                 Ok(events) => break events,
                 Err(_) if attempt == 0 => attempt += 1,
                 Err(e) => return Err(protocol(format!("segment_unavailable: {e}"))),
@@ -214,16 +192,9 @@ pub fn tail(
     let mut since = replica.cursor()?.unwrap_or(0);
     let mut stored = 0;
     let mut lost = Vec::new();
-    let mut converted = Vec::new();
     for _ in 0..MAX_TAIL_PAGES {
-        let mut page = api.get(&format!("{}/events?since={since}", place_path(place)))?;
-        open_sealed(
-            page.get_mut("events").and_then(Value::as_array_mut),
-            place,
-            verifier,
-        );
-        let page = records::tail_page(&page, &pk, verifier.sealed, verifier.signature_ok)
-            .map_err(protocol)?;
+        let page = api.get(&format!("{}/events?since={since}", place_path(place)))?;
+        let page = records::tail_page(&page, &pk, verifier.signature_ok).map_err(protocol)?;
         // Failover (R48): a higher epoch, or a log that lost events below
         // our cursor, is reconciled before anything of this page is kept.
         let known = replica.epoch()?;
@@ -253,28 +224,14 @@ pub fn tail(
                 .flatten()
                 .map(str::to_string)
         }));
-        converted.extend_from_slice(&page.converted);
-        let last = page
-            .events
-            .iter()
-            .map(|e| e.seq)
-            .chain(page.converted.iter().copied())
-            .max();
-        let empty = page.events.is_empty() && page.converted.is_empty();
+        let last = page.events.iter().map(|e| e.seq).max();
+        let empty = page.events.is_empty();
         match page.next_since.or(last) {
             Some(next) if next > since && !empty => since = next,
             _ => break,
         }
     }
-    // A sealing conversion replaced these plaintext seqs (R90): their rows
-    // fold as no-ops from now on, and the cursor moves past them.
-    replica.mark_converted(&converted)?;
     replica.refold()?;
-    if let Some(top) = converted.iter().max()
-        && replica.cursor()?.is_none_or(|at| at < *top)
-    {
-        replica.set_cursor(*top)?;
-    }
     let repaired = repair_key_lost(api, replica, place, &lost)?;
     if refetch_lost(api, replica, place, &pk, verifier)? > 0 {
         replica.refold()?;
@@ -294,8 +251,6 @@ const MAX_BODY_REFETCH: usize = 100;
 /// Fetch the content of `key_lost` rows again (E6); a body that verifies
 /// with the stored envelope (signature and `body_commit`) is stored and the
 /// row folds. Returns how many came back.
-// lean-ctx: non-sealed places only; sealed E6 answers ({ct, nonce,
-// ck_wrapped, epoch}) are read with V4.11's place secret.
 fn refetch_lost(
     api: &dyn PlaceApi,
     replica: &Replica,
@@ -303,9 +258,6 @@ fn refetch_lost(
     pk: &[u8; 32],
     verifier: &Verifier<'_>,
 ) -> Result<usize, HiveError> {
-    if verifier.sealed {
-        return Ok(0);
-    }
     let mut restored = 0;
     for id in replica.key_lost_ids()?.into_iter().take(MAX_BODY_REFETCH) {
         let answer = api.get(&format!("{}/events/{id}/body", place_path(place)))?;
@@ -316,7 +268,7 @@ fn refetch_lost(
             continue;
         };
         event["body"] = body.clone();
-        if records::event_verifies(&event, pk, false, verifier.signature_ok) {
+        if records::event_verifies(&event, pk, verifier.signature_ok) {
             replica.restore_body(&id, body)?;
             restored += 1;
         }
@@ -374,20 +326,13 @@ pub fn deletions(
         return Ok(Some(crate::core::hive::replica::fold::Graph::default()));
     };
     let pk = pk_id(replica)?;
-    let mut page = api.get(&format!("{}/events?since={since}", place_path(place)))?;
-    open_sealed(
-        page.get_mut("events").and_then(Value::as_array_mut),
-        place,
-        verifier,
-    );
-    let page =
-        records::tail_page(&page, &pk, verifier.sealed, verifier.signature_ok).map_err(protocol)?;
+    let page = api.get(&format!("{}/events?since={since}", place_path(place)))?;
+    let page = records::tail_page(&page, &pk, verifier.signature_ok).map_err(protocol)?;
     let str_of = |e: &Value, k: &str| e.get(k).and_then(Value::as_str).map(str::to_string);
-    let tombstones_only = page.converted.is_empty()
-        && page
-            .events
-            .iter()
-            .all(|e| e.event.get("op").and_then(Value::as_str) == Some("purge"));
+    let tombstones_only = page
+        .events
+        .iter()
+        .all(|e| e.event.get("op").and_then(Value::as_str) == Some("purge"));
     if page.next_since.is_some_and(|n| n > since) || !tombstones_only {
         return Ok(None);
     }
@@ -481,14 +426,8 @@ pub fn reconcile(
     let mut since = from - 1;
     let mut fetched = Vec::new();
     for _ in 0..MAX_TAIL_PAGES {
-        let mut page = api.get(&format!("{}/events?since={since}", place_path(place)))?;
-        open_sealed(
-            page.get_mut("events").and_then(Value::as_array_mut),
-            place,
-            verifier,
-        );
-        let page = records::tail_page(&page, &pk, verifier.sealed, verifier.signature_ok)
-            .map_err(protocol)?;
+        let page = api.get(&format!("{}/events?since={since}", place_path(place)))?;
+        let page = records::tail_page(&page, &pk, verifier.signature_ok).map_err(protocol)?;
         let last = page.events.iter().map(|e| e.seq).max();
         let empty = page.events.is_empty();
         fetched.extend(page.events);

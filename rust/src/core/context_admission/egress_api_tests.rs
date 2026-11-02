@@ -4,9 +4,9 @@
 //! the policy epoch. Credential fixtures are split with `concat!` so the
 //! repository's own secret scanners never see a literal key.
 
-use lean_ctx_protocol::context_gateway::{
-    ClassificationV1, ContextDispositionV1, EgressAdmissionOutcomeV1, ReasonCodeV1,
-};
+#[cfg(feature = "http-server")]
+use lean_ctx_protocol::context_gateway::{ClassificationV1, EgressAdmissionOutcomeV1};
+use lean_ctx_protocol::context_gateway::{ContextDispositionV1, ReasonCodeV1};
 use serde_json::json;
 
 use super::AdmissionPolicy;
@@ -24,6 +24,7 @@ const REMOTE: EgressTarget<'static> = EgressTarget {
     upstream_base: "https://api.anthropic.com",
 };
 
+#[cfg(feature = "http-server")]
 const LOCAL: EgressTarget<'static> = EgressTarget {
     provider: "OpenAI",
     model: Some("llama"),
@@ -42,10 +43,12 @@ fn user(text: &str) -> serde_json::Value {
     json!({"model": "m", "messages": [{"role": "user", "content": text}]})
 }
 
+#[cfg(feature = "http-server")]
 fn code(value: &str) -> ReasonCodeV1 {
     ReasonCodeV1::new(value).expect("valid reason code")
 }
 
+#[cfg(feature = "http-server")]
 /// One receipt for the caller-content admission and the final-content
 /// admission: redaction provenance of the first, decision of the second, the
 /// higher classification.
@@ -110,6 +113,7 @@ fn joined_outcome_keeps_original_provenance_and_the_final_decision() {
     );
 }
 
+#[cfg(feature = "http-server")]
 /// Outcomes of different epochs are never merged: the result is a typed
 /// refusal whose receipt carries `policy.changed`, not a joined outcome.
 #[test]
@@ -197,6 +201,7 @@ fn a_transient_environment_change_cannot_split_fingerprint_and_decision() {
     assert!(!epoch.is_current(None));
 }
 
+#[cfg(feature = "http-server")]
 /// A caller that refuses after admission gets a receipt with the deny decision,
 /// and reads reason codes instead of parsing the refusal text.
 #[test]
@@ -361,6 +366,7 @@ fn a_runtime_change_that_keeps_a_detector_ends_the_policy_epoch() {
     assert!(epoch.is_current(None), "the same runtime again");
 }
 
+#[cfg(feature = "http-server")]
 /// A receipt as JSON without the two fields that come from the capture's
 /// clock (the id is seeded with the start instant, the duration measures it).
 fn without_clock(
@@ -373,6 +379,7 @@ fn without_clock(
     value
 }
 
+#[cfg(feature = "http-server")]
 /// A note states something about the request in its receipt and is not a
 /// source: two notes with two codes are itemized as two allow decisions on the
 /// fixed note object, and `sources` — inspected, permitted, selected, blocked

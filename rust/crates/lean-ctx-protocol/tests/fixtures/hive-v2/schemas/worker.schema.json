@@ -140,7 +140,7 @@
       }
     },
     "worker_register_request": {
-      "description": "E10 POST /v1/workers; signed by the instance key, domain leanctx.hive.worker.v1\\n, over the body without signature. place + alias_pubkey + hlc_node: exactly for swarms (and public vaults); refused elsewhere (400 invalid_body).",
+      "description": "E10 POST /v1/workers; signed by the instance key, domain leanctx.hive.worker.v1\\n, over the body without signature. place + alias_pubkey + hlc_node: exactly for public vaults; refused elsewhere (400 invalid_body).",
       "type": "object",
       "required": [
         "worker_id",
@@ -296,7 +296,7 @@
       }
     },
     "worker_keys_response": {
-      "description": "E8; in swarms and public vaults only alias keys, worker_ids are aliases, no instance id or instance key.",
+      "description": "E8; in public vaults only alias keys, worker_ids are aliases, no instance id or instance key.",
       "type": "object",
       "required": [
         "keys",

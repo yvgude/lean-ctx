@@ -32,11 +32,10 @@ pub enum HiveErrorCode {
     NotFound,
     /// 409 with `limit`/`used`: every instance seat is taken.
     InstanceLimit,
-    /// 409 with `expected`/`actual`: knowledge moved on (1.5: `reason`
-    /// `key_exists` when a first sealed key was already granted).
+    /// 409 with `expected`/`actual`: knowledge moved on.
     RevisionConflict,
     /// 409 with `reason` (1.5): the object is not in a state that allows
-    /// this (`keys_lost`, `epoch_rotating`, `sealed`).
+    /// this.
     InvalidState,
     /// 401: the instance lease is past `grace_until`; renew or reconnect.
     LeaseExpired,
@@ -139,7 +138,7 @@ pub struct HiveErrorDetailV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<HiveUploadKind>,
     /// 1.5: machine-readable detail of the code (`[a-z_]`, ≤ 64), e.g.
-    /// `key_exists`, `epoch_rotating`, `sealed_plaintext`, `required`.
+    /// `required`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// 1.5: the request field the error is about (`invalid_request`).
@@ -159,7 +158,7 @@ pub struct HiveErrorDetailV1 {
     /// `not_permitted` with `check: role`: the role the agent is present in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_role: Option<String>,
-    /// 2.x `plan_required`: the feature the plan lacks (`compute`, `repos`,
+    /// 2.x `plan_required`: the feature the plan lacks (`repos`,
     /// `internal_vaults`, …; absent from a 1.x Hive, where it means Hive
     /// itself). `limit`/`used` carry a counted feature's numbers.
     #[serde(default, skip_serializing_if = "Option::is_none")]

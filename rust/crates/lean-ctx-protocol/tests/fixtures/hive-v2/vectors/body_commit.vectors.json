@@ -43,31 +43,5 @@
       "id_salt_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     }
   ],
-  "rule": "body_commit = hex(blake3_keyed(id_salt, canonical_json(body))); every op body except purge carries body_nonce (16 bytes, hex); sealed places use the engine-held pk_id over the plaintext body",
-  "rule_sealed_tombstone": "purge tombstones (actor.kind = server) in SEALED places: body_commit = hex(blake3(canonical_json(body))), unkeyed (the server holds no id_salt there); non-sealed tombstones stay keyed with id_salt; engines verify sealed tombstones with this rule",
-  "sealed_tombstone": [
-    {
-      "body": {
-        "bus_cascade": [
-          {
-            "bus": {
-              "id": "card-vault",
-              "kind": "v",
-              "ws": "acme"
-            },
-            "seq": 10
-          }
-        ],
-        "cascade": [],
-        "purge_id": "prg_aaaaaaaaaaaaaaaaaaaaaaezym",
-        "reason": "leaked_secret",
-        "targets": [
-          "01M5NKA2Z8006000000000W001"
-        ]
-      },
-      "body_commit": "3c1943efbd31110bae09ff4e2c1db50dc51535a93bf20bc6d04d8ec872e33d66",
-      "canonical": "{\"bus_cascade\":[{\"bus\":{\"id\":\"card-vault\",\"kind\":\"v\",\"ws\":\"acme\"},\"seq\":10}],\"cascade\":[],\"purge_id\":\"prg_aaaaaaaaaaaaaaaaaaaaaaezym\",\"reason\":\"leaked_secret\",\"targets\":[\"01M5NKA2Z8006000000000W001\"]}",
-      "fixture": "events/purge.sealed.json"
-    }
-  ]
+  "rule": "body_commit = hex(blake3_keyed(id_salt, canonical_json(body))); every op body except purge carries body_nonce (16 bytes, hex)"
 }

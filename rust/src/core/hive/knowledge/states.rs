@@ -13,8 +13,7 @@
 //!   Hive turns a contradiction nobody fixes within a day into a task.
 //!
 //! A report replaces this engine's earlier one for the revision, so it is
-//! sent only when it changed. A sealed project reports counts only: which
-//! facts are in doubt, and why, stays on the engine.
+//! sent only when it changed.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -33,8 +32,8 @@ use crate::core::knowledge::ProjectKnowledge;
 use crate::core::knowledge::anchors::{self, AnchorState};
 use lean_ctx_protocol::UtcTimestamp;
 use lean_ctx_protocol::hive::facts::{
-    FACT_STATE_REPORT_SCHEMA, FactStateAckV1, FactStateCountsV1, FactStateKind, FactStateReason,
-    FactStateReportV1, FactStateV1, MAX_CONTRADICTED_BY,
+    FACT_STATE_REPORT_SCHEMA, FactStateAckV1, FactStateKind, FactStateReason, FactStateReportV1,
+    FactStateV1, MAX_CONTRADICTED_BY,
 };
 
 const SENT_FILE: &str = "fact-states.json";
@@ -45,8 +44,6 @@ struct Sent {
     revision: u64,
     #[serde(default)]
     states: Vec<FactStateV1>,
-    #[serde(default)]
-    counts: Option<FactStateCountsV1>,
 }
 
 /// One fact's doubt, without its `since`.
@@ -207,46 +204,32 @@ fn build(
         return None;
     }
     let doubts = doubts(root, record, base, screen);
-    let (states, counts) = if record.sealed {
-        let contradicted = doubts
-            .iter()
-            .filter(|d| d.kind() == FactStateKind::Contradicted)
-            .count() as u64;
-        let counts = FactStateCountsV1 {
-            to_verify: doubts.len() as u64 - contradicted,
-            contradicted,
-        };
-        (None, Some(counts))
-    } else {
-        let states = doubts
-            .into_iter()
-            .map(|d| {
-                let mut state = FactStateV1 {
-                    fact: d.fact.clone(),
-                    state: d.kind(),
-                    reasons: d.reasons.iter().copied().collect(),
-                    moved_to: d.moved_to.clone(),
-                    contradicted_by: d.contradicted_by.iter().cloned().collect(),
-                    since: stamp(now),
-                };
-                if let Some(before) = sent.states.iter().find(|s| {
-                    sent.revision == base.revision
-                        && s.fact == state.fact
-                        && s.state == state.state
-                        && s.reasons == state.reasons
-                }) {
-                    state.since = before.since.clone();
-                }
-                state
-            })
-            .collect();
-        (Some(states), None)
-    };
+    let states = doubts
+        .into_iter()
+        .map(|d| {
+            let mut state = FactStateV1 {
+                fact: d.fact.clone(),
+                state: d.kind(),
+                reasons: d.reasons.iter().copied().collect(),
+                moved_to: d.moved_to.clone(),
+                contradicted_by: d.contradicted_by.iter().cloned().collect(),
+                since: stamp(now),
+            };
+            if let Some(before) = sent.states.iter().find(|s| {
+                sent.revision == base.revision
+                    && s.fact == state.fact
+                    && s.state == state.state
+                    && s.reasons == state.reasons
+            }) {
+                state.since = before.since.clone();
+            }
+            state
+        })
+        .collect();
     Some(FactStateReportV1 {
         schema: FACT_STATE_REPORT_SCHEMA.into(),
         revision: base.revision,
         states,
-        counts,
     })
 }
 
@@ -259,9 +242,7 @@ fn load_sent(data: &Path, vault_id: &str) -> Sent {
 }
 
 fn unchanged(sent: &Sent, report: &FactStateReportV1) -> bool {
-    sent.revision == report.revision
-        && report.states.as_deref().unwrap_or_default() == sent.states.as_slice()
-        && report.counts == sent.counts
+    sent.revision == report.revision && report.states == sent.states
 }
 
 /// Report `record`'s fact states when they changed; `Some(ack)` when sent.
@@ -299,8 +280,7 @@ pub fn report(
         .map_err(|e| HiveError::Protocol(format!("fact states: {e}")))?;
     let stored = Sent {
         revision: report.revision,
-        states: report.states.unwrap_or_default(),
-        counts: report.counts,
+        states: report.states,
     };
     let bytes = serde_json::to_vec(&stored).map_err(|e| HiveError::Local(e.to_string()))?;
     write_private(&base_dir(data, &record.vault_id)?, SENT_FILE, &bytes)?;
@@ -312,12 +292,12 @@ mod tests {
     use super::*;
     use lean_ctx_protocol::hive::knowledge::{FactV1, ResearchContextDocumentV1};
 
-    fn record(sealed: bool, root: &Path) -> VaultRecord {
+    fn record(root: &Path) -> VaultRecord {
         VaultRecord {
             vault_id: "0123456789abcdef0123456789abcdef".into(),
             ns: "acme".into(),
             name: "billing".into(),
-            sealed,
+            sealed: false,
             roots: vec![root.to_string_lossy().into_owned()],
         }
     }
@@ -379,12 +359,12 @@ mod tests {
         std::fs::write(root.join("src/a.md"), "retry twice\n").unwrap();
         std::fs::remove_file(root.join("src/c.md")).unwrap();
 
-        let rec = record(false, root);
+        let rec = record(root);
         let mut screen =
             Screen::with_rules(Vec::new(), std::sync::Arc::new(Vec::new()), Vec::new());
         let report = build(root, &rec, &base, &Sent::default(), now(), &mut screen).unwrap();
         report.validate().unwrap();
-        let states = report.states.as_ref().unwrap();
+        let states = &report.states;
         assert_eq!(
             states
                 .iter()
@@ -409,33 +389,10 @@ mod tests {
         let sent = Sent {
             revision: report.revision,
             states: states.clone(),
-            counts: None,
         };
         let later = now() + chrono::Duration::hours(3);
         let again = build(root, &rec, &base, &sent, later, &mut screen).unwrap();
         assert!(unchanged(&sent, &again));
-
-        // Sealed: counts only, no fact ids, no paths.
-        let sealed = build(
-            root,
-            &record(true, root),
-            &base,
-            &Sent::default(),
-            now(),
-            &mut screen,
-        )
-        .unwrap();
-        sealed.validate().unwrap();
-        assert_eq!(sealed.states, None);
-        assert_eq!(
-            sealed.counts,
-            Some(FactStateCountsV1 {
-                to_verify: 2,
-                contradicted: 0
-            })
-        );
-        let wire = serde_json::to_string(&sealed).unwrap();
-        assert!(!wire.contains("f.changed") && !wire.contains("src/"));
     }
 
     /// Where an anchor moved to is outbound content: a new path the screen
@@ -503,7 +460,7 @@ mod tests {
         );
         let report = build(
             root,
-            &record(false, root),
+            &record(root),
             &base,
             &Sent::default(),
             now(),
@@ -511,7 +468,7 @@ mod tests {
         )
         .unwrap();
         report.validate().unwrap();
-        let states = report.states.as_ref().unwrap();
+        let states = &report.states;
         assert_eq!(
             states
                 .iter()

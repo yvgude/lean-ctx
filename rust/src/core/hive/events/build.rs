@@ -28,11 +28,10 @@ const MAX_ANCHORS: usize = 16;
 /// The place an event is written to.
 #[derive(Debug, Clone)]
 pub struct Place {
-    /// `vault` or `swarm`.
+    /// `vault`, the only place kind.
     pub kind: String,
     pub id: String,
-    /// The place id key (`id_salt`, or the sealed `pk_id`): node ids and
-    /// body commitments.
+    /// The place id key (`id_salt`): node ids and body commitments.
     pub pk_id: [u8; 32],
     /// Last server `seq` folded here.
     pub causal_base: u64,
@@ -61,7 +60,7 @@ impl<'a> Signer<'a> {
         }
     }
 
-    /// An alias signer (public vaults, swarms, R38): the alias key of
+    /// An alias signer (alias places, R38): the alias key of
     /// `place_ref` and its keyed 16-hex `hlc.node`.
     pub fn alias(
         alias_key: &'a SigningKey,
@@ -152,12 +151,13 @@ pub fn applies_and_anchors(refs: &[String], checkout: &mut Checkout) -> (Vec<Str
 }
 
 /// The body of a claim node (`fact`, `decision`, `gotcha`, `finding`) or a
-/// procedure.
+/// procedure. A decision carries its anchors only on a C0 2.2 Hive
+/// (`decision_anchors`, §4.1); before that `decision_body` has none.
 pub fn claim_body(
     c: &CaptureCandidate,
     applies_to: &[String],
     anchors: Vec<Value>,
-    sealed: bool,
+    decision_anchors: bool,
 ) -> Result<Value, HiveError> {
     let mut body = Map::new();
     body.insert("body_nonce".into(), Value::String(sign::new_body_nonce()?));
@@ -188,22 +188,14 @@ pub fn claim_body(
         if !applies_to.is_empty() {
             body.insert("applies_to".into(), json!(applies_to));
         }
-        body.insert(
-            "sensitivity".into(),
-            Value::from(
-                if sealed && c.sensitivity > crate::core::sensitivity::SensitivityLevel::Public {
-                    "internal"
-                } else {
-                    "public"
-                },
-            ),
-        );
+        body.insert("sensitivity".into(), Value::from("public"));
     }
-    if matches!(
-        c.node_type,
-        NodeType::Fact | NodeType::Gotcha | NodeType::Procedure
-    ) && !anchors.is_empty()
-    {
+    let anchored = match c.node_type {
+        NodeType::Fact | NodeType::Gotcha | NodeType::Procedure => true,
+        NodeType::Decision => decision_anchors,
+        NodeType::Finding => false,
+    };
+    if anchored && !anchors.is_empty() {
         body.insert("anchors".into(), Value::Array(anchors));
     }
     Ok(Value::Object(body))

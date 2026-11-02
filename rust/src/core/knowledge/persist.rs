@@ -913,6 +913,7 @@ impl ProjectKnowledge {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "embeddings")]
     use fs2::FileExt;
 
     // --- #1802: `auto_capture = false` must hold at the store, not the callers ---
@@ -1041,6 +1042,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "embeddings")]
     #[test]
     fn file_lock_is_exclusive_across_handles() {
         // flock-style locks are tied to the open file description, so two

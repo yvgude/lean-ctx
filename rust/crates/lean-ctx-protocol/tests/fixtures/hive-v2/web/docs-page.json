@@ -1,0 +1,107 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "no such page"
+        }
+      },
+      "status": 404
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/orgs/leanctx/vaults/hive/docs/pages/n_aaaaaaaaaaaaaaaaaaaaaadpga",
+  "request": null,
+  "response": {
+    "body": {
+      "anchor_state": "to_verify",
+      "anchors": [
+        {
+          "commit": "83936d237f7b373029ebc6fa51f13d747656b1cd",
+          "digest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+          "ref": "file:crates/hive-server/src/routes/wiki_pages.rs",
+          "verified_at": 1792800020000
+        },
+        {
+          "commit": "83936d237f7b373029ebc6fa51f13d747656b1cd",
+          "digest": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+          "mode": "content",
+          "ref": "glob:web/src/lib/render/wiki*.ts",
+          "verified_at": 1792800020000
+        },
+        {
+          "commit": "83936d237f7b373029ebc6fa51f13d747656b1cd",
+          "digest": "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b",
+          "ref": "file:docs/API.md",
+          "role": "cites",
+          "verified_at": 1792800020000
+        }
+      ],
+      "dangling": [],
+      "description": "The vault wiki: pages of ordered sections and notes on place nodes",
+      "doc_state": {
+        "reason": "anchor_changed",
+        "state": "noted",
+        "uncovered": []
+      },
+      "drift": [
+        {
+          "observed": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+          "ref": "file:crates/hive-server/src/routes/wiki_pages.rs"
+        }
+      ],
+      "head_event": "01M5NKAYA8005000000000D029",
+      "links_in": [],
+      "links_out": [
+        {
+          "page_id": "n_aaaaaaaaaaaaaaaaaaaaaadpgb",
+          "slug": "knowledge/knowledge-items",
+          "title": "Knowledge Items"
+        }
+      ],
+      "notes": [
+        {
+          "about": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+          "body": "wiki_pages.rs now only answers 410 gone; the section on W58 still describes the old routes.",
+          "covers": [
+            {
+              "digest": "7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+              "ref": "file:crates/hive-server/src/routes/wiki_pages.rs"
+            }
+          ],
+          "created_seq": 25,
+          "head_event": "01M5NKATD8005000000000D025",
+          "note_id": "n_aaaaaaaaaaaaaaaaaaaaaadnta",
+          "status": "open"
+        }
+      ],
+      "page_id": "n_aaaaaaaaaaaaaaaaaaaaaadpga",
+      "sections": [
+        {
+          "body": "\nThe wiki of a vault stores readable pages as place nodes: a page, its sections in order and the notes on them. Pages link to each other by id, for example [the item types](hive:n_aaaaaaaaaaaaaaaaaaaaaadpgb#types-and-bodies).\n\nW58 and its `wiki_pages` table are gone since C0 2.2. Pages export as Markdown, one file per page or a zip per vault.\n\n",
+          "head_event": "01M5NKB180005000000000D032",
+          "order": 1024,
+          "section_id": "n_aaaaaaaaaaaaaaaaaaaaaadsea",
+          "updated_seq": 32
+        },
+        {
+          "body": "## How It Works\n\nEvery page is folded from the place log, like every other node.\n",
+          "head_event": "01M5NKB278005000000000D033",
+          "heading": "How It Works",
+          "level": 2,
+          "order": 2048,
+          "section_id": "n_aaaaaaaaaaaaaaaaaaaaaadseb",
+          "updated_seq": 33
+        }
+      ],
+      "slug": "knowledge/wiki",
+      "status": "canonical",
+      "title": "Wiki",
+      "type": "feature",
+      "updated_seq": 34
+    },
+    "status": 200
+  },
+  "route": "W107"
+}

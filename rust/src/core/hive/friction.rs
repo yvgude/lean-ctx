@@ -3,7 +3,7 @@
 //! friction log (`core::agents::friction`) summed for one closed hour per
 //! vault into the C0 2.0 counts of a collaboration `finding`
 //! (`about: collaboration`, `counts`, `window`; CONTRACT §3.19.2). Counts
-//! and ids only, never text; sealed vaults get none.
+//! and ids only, never text.
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -114,7 +114,7 @@ fn append_hour(dir: &std::path::Path, finding: &HourFinding) {
     }
 }
 
-/// Count a merge conflict when a bound, non-sealed checkout an active agent
+/// Count a merge conflict when a bound checkout an active agent
 /// works in has unmerged paths that the last sample did not see; `seen`
 /// carries the conflicted checkouts from one sample to the next, so one
 /// conflict counts once however long it lasts.
@@ -123,10 +123,7 @@ pub fn sample_merge_conflicts(store: &HiveStore, seen: &mut std::collections::BT
     let registry = crate::core::agents::AgentRegistry::load_or_create();
     let mut roots: BTreeMap<&str, &str> = BTreeMap::new();
     for agent in registry.list_active(None) {
-        if vaults
-            .for_root(&agent.project_root)
-            .is_some_and(|record| !record.sealed)
-        {
+        if vaults.for_root(&agent.project_root).is_some() {
             roots
                 .entry(agent.project_root.as_str())
                 .or_insert(agent.agent_id.as_str());
@@ -264,7 +261,7 @@ impl HourFinding {
 
 /// The findings of the hour `[from, to)`: the signals of `events` and the
 /// agent time of `agents`, attributed to the vault of their checkout
-/// (`vaults`, sealed ones left out) and to the worker `worker_of` names for
+/// (`vaults`) and to the worker `worker_of` names for
 /// their agent. A signal without a known agent counts for the vault of its
 /// checkout under the vault's sending worker. Vaults without friction and
 /// without agent time get no finding.
@@ -276,12 +273,7 @@ pub(crate) fn hour_findings(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> Vec<HourFinding> {
-    let place_of = |root: &str| {
-        vaults
-            .for_root(root)
-            .filter(|record| !record.sealed)
-            .map(super::bus::relay_v2::address_of)
-    };
+    let place_of = |root: &str| vaults.for_root(root).map(super::bus::relay_v2::address_of);
     // vault → worker → agent seconds, and vault → C0 key → count.
     let mut time: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new();
     let mut counts: BTreeMap<String, BTreeMap<&'static str, u32>> = BTreeMap::new();
@@ -380,21 +372,16 @@ mod tests {
 
     fn vaults() -> VaultMap {
         let mut map = VaultMap::default();
-        for (id, ns, name, sealed, root) in [
-            ("v1", "acme", "payments", false, "/w/pay"),
-            ("v2", "acme", "secret", true, "/w/secret"),
-        ] {
-            map.vaults.insert(
-                id.into(),
-                VaultRecord {
-                    vault_id: id.into(),
-                    ns: ns.into(),
-                    name: name.into(),
-                    sealed,
-                    roots: vec![root.into()],
-                },
-            );
-        }
+        map.vaults.insert(
+            "v1".into(),
+            VaultRecord {
+                vault_id: "v1".into(),
+                ns: "acme".into(),
+                name: "payments".into(),
+                sealed: false,
+                roots: vec!["/w/pay".into()],
+            },
+        );
         map
     }
 
@@ -418,8 +405,8 @@ mod tests {
     }
 
     /// One finding per vault and hour: signals and agent time of the
-    /// vault's checkouts, sent by the worker with the most agent time;
-    /// sealed vaults and other hours get nothing.
+    /// vault's checkouts, sent by the worker with the most agent time; a
+    /// checkout outside every vault and other hours get nothing.
     #[test]
     fn an_hour_sums_into_one_finding_per_vault() {
         let agents = [
@@ -437,7 +424,7 @@ mod tests {
             ),
             agent(
                 "mcp-c",
-                "/w/secret",
+                "/w/scratch",
                 "2026-10-24T08:00:00Z",
                 "2026-10-24T09:00:00Z",
             ),
@@ -465,7 +452,7 @@ mod tests {
         assert_eq!(
             findings.len(),
             1,
-            "the sealed vault gets none: {findings:?}"
+            "a checkout outside every vault gets none: {findings:?}"
         );
         let finding = &findings[0];
         assert_eq!(finding.to, "#acme/payments");

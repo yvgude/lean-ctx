@@ -51,7 +51,6 @@
             "security": {},
             "context": {},
             "sharing": {
-              "auto_merge_results": false,
               "cross_team_sharing": false
             }
           },
@@ -74,7 +73,7 @@
           "merge": "union",
           "enforcement": "server",
           "engine_field": null,
-          "server_point": "unsealed vaults: a push, task result, draft or code graph with a code anchor path the globs match is refused; sealed vaults stay advisory (the server cannot read their anchors)"
+          "server_point": "a push, task result, draft or code graph with a code anchor path the globs match is refused"
         },
         {
           "path": "security.block_secrets",
@@ -228,14 +227,14 @@
           "merge": "intersection",
           "enforcement": "server",
           "engine_field": null,
-          "server_point": "every engine route that names a vault (resolve, match, reads, pushes, tasks, reviews, bus v1/v2, presence, metrics): a vault outside the list is refused, a new vault too"
+          "server_point": "every engine route that names a vault (resolve, match, reads, pushes, tasks, bus, metrics): a vault outside the list is refused, a new vault too"
         },
         {
           "path": "sharing.cross_team_sharing",
           "merge": "false_wins",
           "enforcement": "server",
           "engine_field": null,
-          "server_point": "false: moving a vault to another workspace (W11) and making it public (W26) are refused"
+          "server_point": "false: moving a vault to another workspace (W11) is refused"
         },
         {
           "path": "sharing.task_claim_min_role",
@@ -243,13 +242,6 @@
           "enforcement": "server",
           "engine_field": null,
           "server_point": "task claim and claim renew by an engine whose owner's role is lower are refused"
-        },
-        {
-          "path": "sharing.auto_merge_results",
-          "merge": "false_wins",
-          "enforcement": "server",
-          "engine_field": null,
-          "server_point": "false: a task result's plain ops are held as a proposal for a person instead of entering the shared log"
         },
         {
           "path": "sharing.consent_required_for",
@@ -270,7 +262,7 @@
           "merge": "false_wins",
           "enforcement": "server",
           "engine_field": null,
-          "server_point": "POST /v1/metrics/hours and POST /v1/metrics: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices and day entries refused; absent at every level = the plan default (Team, Business on; Community, Pro off until the person confirms once, 403 sharing_not_confirmed)"
+          "server_point": "POST /v1/metrics/hours: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
         }
       ]
     }

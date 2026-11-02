@@ -11,8 +11,5 @@
       "version": 3
     }
   ],
-  "org_policy": null,
-  "policy_version": 0,
-  "schema": "leanctx.hive.policy-bundle/v1",
-  "unpin": null
+  "schema": "leanctx.hive.policy-bundle/v1"
 }

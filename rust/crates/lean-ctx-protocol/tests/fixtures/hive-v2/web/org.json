@@ -13,8 +13,6 @@
       "retention_class": "standard",
       "data_region_label": "CH",
       "time_zone": "Europe/Zurich",
-      "c0_1x_instances": 2,
-      "c0_1x_sunset_at": null,
       "organisation": {
         "slug": "acme-group",
         "name": "Acme Group"

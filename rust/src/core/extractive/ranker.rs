@@ -146,7 +146,7 @@ pub(super) fn select(
     kept
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "embeddings"))]
 mod tests {
     use super::*;
 

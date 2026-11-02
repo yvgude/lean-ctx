@@ -32,8 +32,6 @@
   "provenance": "own",
   "provenance_claim": "own",
   "received_at": 1792800005350,
-  "review_state": "confirmed",
-  "reviewed_by": "none",
   "schema": "leanctx.hive.event/v2",
   "screening": {
     "counts": {

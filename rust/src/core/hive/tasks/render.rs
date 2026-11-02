@@ -48,20 +48,29 @@ fn result_line(result: &TaskResultV1) -> String {
     format!("\nResult: {carrier} ({} evidence)", result.evidence.len())
 }
 
-/// What a result did, from Hive's answer: a 1.x Hive holds it for a
-/// decision (`submitted`), Hive v5 ends the task (`done` or `failed`).
+/// What a result did, from Hive's answer: `submitted` waits for a second
+/// agent's check, `done` or `failed` ends the task.
 #[must_use]
 pub fn render_result_ack(ack: &TaskAckV1) -> String {
     let n = ack.number;
     match ack.state {
         TaskState::Submitted => {
-            format!(
-                "Result submitted on task #{n}; a person or the review threshold decides on it."
-            )
+            format!("Result submitted on task #{n}; another agent checks it before it is done.")
         }
         TaskState::Done => format!("Task #{n} completed with this result."),
         TaskState::Failed => format!("Task #{n} ended as failed with this result."),
         other => format!("Result recorded on task #{n} (now {}).", state(other)),
+    }
+}
+
+/// What a verdict did (C0 2.2 E48): `done`, or `open` again.
+#[must_use]
+pub fn render_verify_ack(ack: &TaskAckV1) -> String {
+    let n = ack.number;
+    match ack.state {
+        TaskState::Done => format!("Task #{n} is done: the result is accepted."),
+        TaskState::Open => format!("Task #{n} is open again: the result is rejected."),
+        other => format!("Verdict recorded on task #{n} (now {}).", state(other)),
     }
 }
 
@@ -71,7 +80,6 @@ fn origin(origin: TaskOriginKind) -> &'static str {
         TaskOriginKind::Agent => "agent",
         TaskOriginKind::Contradiction => "contradiction",
         TaskOriginKind::Question => "question",
-        TaskOriginKind::QuarantineTimeout => "quarantine timeout",
         TaskOriginKind::Unknown => "unknown",
     }
 }
@@ -94,7 +102,7 @@ pub fn render_list(list: &TaskListV1, limit: usize) -> String {
                 .map(|role| format!(" role={role}"))
                 .unwrap_or_default(),
             if task.mine { " mine" } else { "" },
-            task.title.as_deref().unwrap_or("(sealed)"),
+            task.title.as_deref().unwrap_or("(untitled)"),
         ));
     }
     let more = list.tasks.len().saturating_sub(limit);
@@ -142,22 +150,11 @@ pub fn render_task(view: &TaskView) -> String {
         )),
         (None, None) => {}
     }
-    let (title, goal, acceptance) = match (&view.content, task.sealed.is_some()) {
-        (Some(content), _) => (
-            Some(content.title.as_str()),
-            content.goal.as_deref(),
-            Some(content.acceptance.as_str()),
-        ),
-        (None, true) => {
-            out.push_str("\nSealed; this machine holds no key for it yet.");
-            (None, None, None)
-        }
-        (None, false) => (
-            task.title.as_deref(),
-            task.goal.as_deref(),
-            task.acceptance.as_deref(),
-        ),
-    };
+    let (title, goal, acceptance) = (
+        task.title.as_deref(),
+        task.goal.as_deref(),
+        task.acceptance.as_deref(),
+    );
     let mut body = String::new();
     if let Some(title) = title {
         body.push_str(&format!("Title: {title}\n"));
@@ -174,12 +171,12 @@ pub fn render_task(view: &TaskView) -> String {
     out.push_str(&wrap(UntrustedKind::TaskBody, &source, body.trim_end()));
     if !task.updates.is_empty() {
         let mut updates = String::new();
-        for (update, summary) in task.updates.iter().zip(&view.update_summaries) {
+        for update in &task.updates {
             updates.push_str(&format!(
                 "{} {}: {}\n",
                 update.at.as_str(),
                 update.by.label,
-                summary.as_deref().unwrap_or("(sealed)")
+                update.summary.as_deref().unwrap_or("(no summary)")
             ));
         }
         out.push_str("\nUpdates:\n");

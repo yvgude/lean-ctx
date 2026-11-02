@@ -1,0 +1,15 @@
+{
+  "approved_at": 1792800091000,
+  "consent_id": "cns_efghi234567abcde",
+  "kind": "link_vault",
+  "presence_key_id": "ef1bd9c792ccc768",
+  "signature": "Uyo3HoooykGNhQg-4FuaFmX7N6ht8k-RLmm-I84KVcFv83G5Fe37Z0XguzA0s0DLtAbspfrZQIzbMMVEEaIFCA",
+  "subject": {
+    "bound_repo": "gitlab.acme.example/acme/payments",
+    "link_digest": "7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+    "remote_seen": "gitlab.acme.example/acme/payments",
+    "target_vault": null,
+    "vault": "acme/payments"
+  },
+  "subject_digest": "d8270aab608ff3a69d627953aa9cedaafc6c0cb931b07855dfda7b7440abede4"
+}

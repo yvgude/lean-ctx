@@ -71,6 +71,8 @@ pub struct MessageArgs {
     pub reply_to: Option<String>,
     pub deadline_hours: Option<u64>,
     pub references: Vec<String>,
+    /// reply to a handoff: take it (`true`) or decline it (C0 2.0 bus).
+    pub accept: Option<bool>,
 }
 
 impl MessageArgs {
@@ -99,6 +101,13 @@ pub fn handle_message(
     let Some(agent) = current_agent_id else {
         return "Error: agent must be registered first (use action=register)".to_string();
     };
+    // A C0 2.0 Hive: typed messages travel on the vault bus and arrive on
+    // the local bus, so `inbox` reads it and `send|reply` queue a publish.
+    let v2 = crate::core::hive::HiveStore::open()
+        .is_ok_and(|store| crate::core::hive::bus::relay_v2::speaks_v2(&store));
+    if v2 {
+        return handle_message_v2(action, args, project_root, agent);
+    }
     if action == "inbox" {
         let filter = InboxFilter {
             message_type: args.message_type.as_deref(),
@@ -124,12 +133,46 @@ pub fn handle_message(
         to_instance: args.to_instance.as_deref(),
         reply_to,
         deadline_hours: args.deadline_hours,
-        swarm_id: None,
         references: &args.references,
     };
     match send_from_root(project_root, agent, &request) {
         Ok(id) => format!(
             "Queued [{}] {id}; the Hive relay sends it (types: {TYPES})",
+            message_type.unwrap_or("?")
+        ),
+        Err(error) => format!("Error: {error}"),
+    }
+}
+
+/// [`handle_message`] on a C0 2.0 Hive ([`crate::core::hive::bus::messages_v2`]).
+fn handle_message_v2(action: &str, args: &MessageArgs, project_root: &str, agent: &str) -> String {
+    use crate::core::hive::bus::messages_v2::{Extras, send};
+    if action == "inbox" {
+        return match read_messages_as(agent, project_root, true) {
+            Ok(text) | Err(text) => text,
+        };
+    }
+    let Some(text) = args.text.as_deref() else {
+        return format!("Error: message is required for {action}");
+    };
+    let reply_to = args.reply_to.as_deref();
+    if action == "reply" && reply_to.is_none() {
+        return "Error: reply_to (the msg_… id of the message answered) is required".to_string();
+    }
+    let message_type = args
+        .message_type
+        .as_deref()
+        .or((action == "reply").then_some("answer"));
+    let extras = Extras {
+        to_worker: args.to.as_deref(),
+        reply_to,
+        accept: args.accept,
+        resource: args.references.first().map(String::as_str),
+        refs: &args.references,
+    };
+    match send(project_root, agent, message_type, text, extras) {
+        Ok(id) => format!(
+            "Queued [{}] {id}; the Hive relay sends it to the vault's agents",
             message_type.unwrap_or("?")
         ),
         Err(error) => format!("Error: {error}"),
@@ -475,6 +518,12 @@ fn handle_action(
                 instance.as_deref().map(|id| (id, book.as_slice())),
                 chrono::Utc::now(),
             );
+            if let Some(store) = &store {
+                roster.push_str(&crate::core::hive::bus::presence::render_remote(
+                    store.data_dir(),
+                    chrono::Utc::now(),
+                ));
+            }
             roster.push_str(&sessions);
             roster
         }

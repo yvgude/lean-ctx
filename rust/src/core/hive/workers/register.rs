@@ -215,9 +215,11 @@ pub fn announce_instance(
         } else {
             ConsentChannel::TtyOnly
         };
+    let minor = std::cell::Cell::new(None);
     let exchanged = session.with_client(|client| {
         let (status, answer) =
             card_exchange(client, &keys, &session.instance.instance_id, channel, false)?;
+        minor.set(client.answered_minor());
         if status == 401 {
             // The session renews the token and asks once more.
             return Err(HiveError::from_response(status, &answer));
@@ -225,14 +227,15 @@ pub fn announce_instance(
         Ok((status, answer))
     });
     // E44 exists only on a C0 2.0 Hive: its status (not the body, whose
-    // details may change) tells the relay which bus protocol to speak.
+    // details may change) tells the relay which bus protocol to speak, and
+    // the answer's `Hive-Protocol` minor which 2.x writes it takes.
     let speaks = match &exchanged {
         Ok((status, _)) if (200..300).contains(status) => Some(true),
         Ok((404, _)) | Err(HiveError::NotFound) => Some(false),
         _ => None,
     };
     if let Some(v2) = speaks {
-        crate::core::hive::bus::relay_v2::record_protocol(&session.store, v2)?;
+        crate::core::hive::bus::relay_v2::record_protocol_minor(&session.store, v2, minor.get())?;
     }
     let result = exchanged.and_then(|(status, answer)| card_from(status, answer));
     // The owner account web consents are checked against (§3.8.2 step 6).
@@ -425,7 +428,7 @@ mod tests {
                 role: "general",
                 name: "Codex · general",
                 card: &card,
-                alias_place: Some("swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02"),
+                alias_place: Some("vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01"),
             },
         )
         .unwrap();

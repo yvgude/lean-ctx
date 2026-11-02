@@ -1,50 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Org policy and filter packs.
+//! Filter packs.
 //!
-//! `GET /v1/policy/bundle?since=<policy_version>` (`If-None-Match`) →
-//! [`PolicyBundleV1`] or 304.
+//! `GET /v1/policy/bundle` (`If-None-Match`) → [`PolicyBundleV1`] or 304.
 //!
-//! `org_policy` is an `OrgPolicyArtifactV2`
-//! `{statement, public_key, signature, pack_toml, unpin?}`:
-//! - `statement` is `OrgPolicyStatementV2` (`leanctx.org-policy/v2`), signed
-//!   as `"leanctx.org-policy.v2\n" || serde_json::to_vec(statement)` in field
-//!   declaration order (schema, organization_id, key_id, policy_version,
-//!   issued_at, not_before, not_after, grace_seconds, pack_digest,
-//!   required_filter_packs), by a key the lease pins in
-//!   `policy_signer_keys`;
-//! - `required_filter_packs` (C 1.8) lists the filter packs the policy puts
-//!   in force as [`RequiredFilterPackV1`], ascending by `pack_id`; it is left
-//!   out when empty, so a statement without it keeps its 1.7 bytes. Every
-//!   listed pack must be in the same bundle with that version and statement
-//!   digest ([`unmet_required_packs`]): Hive signs filter packs with its
-//!   own key, and only this list binds them to the organization's signature.
-//!   Signers sort the list before signing. Hive includes the field only when
-//!   the org requires packs; engines below 1.8 refuse such a statement as a
-//!   whole (unknown field), so their last good bundle stays. A received
-//!   statement with an explicit `"required_filter_packs": []` verifies
-//!   against the bytes without the field: same meaning, other wire bytes,
-//!   harmless. Packs the list does not name may still arrive; a filter pack
-//!   can only tighten (`redact`, `block`), never loosen, so an extra pack
-//!   is harmless;
-//! - `pack_toml` is the pack itself (UTF-8 TOML, at most 1 MiB) and
-//!   `statement.pack_digest` = `"sha256:" + hex(sha256(pack_toml))`;
-//! - encodings follow `team_context`: `public_key`/`signature` base64url
-//!   without padding, `key_id` = `"key:ed25519-"` + the first 32 hex chars of
-//!   sha256(public key), timestamps RFC 3339 `Z`.
-//!
-//! Top-level `unpin` is the signed unpin envelope
-//! (`leanctx.org-policy-unpin.v2\n`) when no policy artifact is current.
-//! Both stay raw JSON here and are verified by the engine's org-policy
-//! verifier; a failed verification never replaces the last good bundle.
-//! Fixture `policy_bundle.signed.response` and `vectors.org_policy` pin the
-//! exact bytes.
+//! Hive-Protocol 2.1 has no TOML org policy: the bundle carries filter
+//! packs only. The `org_policy`, `unpin` and `policy_version` fields a Hive
+//! may still send are not part of [`PolicyBundleV1`] and are ignored.
 //!
 //! Filter packs carry their statement as base64 bytes, signed by a Hive
 //! key under [`FILTER_PACK_SIGNATURE_DOMAIN`].
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::{
     FILTER_PACK_SIGNATURE_DOMAIN, require_schema, validate_b64_bounded, validate_b64_len,
@@ -216,7 +183,9 @@ pub struct FilterPackRefV1 {
     pub envelope: SignedStatementV1,
 }
 
-/// A filter pack an org policy requires: field order is the signed byte order.
+/// A filter pack a TOML org policy statement required: field order is the
+/// signed byte order. Hive-Protocol 2.1 sends no org policy; the engine's
+/// policy runtime still reads it from a policy it kept from before.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RequiredFilterPackV1 {
@@ -228,7 +197,8 @@ pub struct RequiredFilterPackV1 {
 }
 
 /// At most [`MAX_FILTER_PACKS`], ids strictly ascending (one encoding per
-/// set), versions from 1, digests lowercase hex.
+/// set), versions from 1, digests lowercase hex. The signed org policy v2
+/// contract (`ee/contracts/team-company`) validates its required packs with it.
 pub fn validate_required_filter_packs(
     packs: &[RequiredFilterPackV1],
 ) -> Result<(), ValidationError> {
@@ -251,50 +221,16 @@ pub fn validate_required_filter_packs(
     Ok(())
 }
 
-/// Why `available` does not satisfy `required`, one line per unmet pack
-/// (empty when every required pack is there with its version and digest).
-pub fn unmet_required_packs(
-    required: &[RequiredFilterPackV1],
-    available: &[FilterPackRefV1],
-) -> Vec<String> {
-    required
-        .iter()
-        .filter_map(
-            |r| match available.iter().find(|p| p.pack_id == r.pack_id) {
-                None => Some(format!("required filter pack {} is missing", r.pack_id)),
-                Some(p) if p.version != r.version => Some(format!(
-                    "required filter pack {} is version {}, the policy requires {}",
-                    r.pack_id, p.version, r.version
-                )),
-                Some(p) if p.sha256 != r.sha256 => Some(format!(
-                    "required filter pack {} version {} is not the one the policy signed",
-                    r.pack_id, r.version
-                )),
-                Some(_) => None,
-            },
-        )
-        .collect()
-}
-
 /// Response of `GET /v1/policy/bundle`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PolicyBundleV1 {
     pub schema: String,
-    /// Highest version in the org's policy sequence (0 = never published).
-    pub policy_version: u64,
-    pub org_policy: Option<Value>,
-    pub unpin: Option<Value>,
     pub filter_packs: Vec<FilterPackRefV1>,
 }
 
 impl PolicyBundleV1 {
     pub fn validate(&self) -> Result<(), ValidationError> {
         require_schema(&self.schema, POLICY_BUNDLE_SCHEMA)?;
-        for envelope in [&self.org_policy, &self.unpin].into_iter().flatten() {
-            if !envelope.is_object() {
-                return Err(ValidationError::new("policy envelopes must be objects"));
-            }
-        }
         if self.filter_packs.len() > MAX_FILTER_PACKS {
             return Err(ValidationError::new("too many filter packs"));
         }
@@ -308,5 +244,26 @@ impl PolicyBundleV1 {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The org-policy fields a Hive may still send (`org_policy`, `unpin`,
+    /// `policy_version`) are ignored, whatever they hold.
+    #[test]
+    fn org_policy_fields_hive_still_sends_are_ignored() {
+        let sent: PolicyBundleV1 = serde_json::from_value(serde_json::json!({
+            "schema": POLICY_BUNDLE_SCHEMA, "policy_version": 3,
+            "org_policy": "not an envelope", "unpin": null, "filter_packs": [],
+        }))
+        .unwrap();
+        assert!(sent.validate().is_ok());
+        assert_eq!(
+            serde_json::to_value(&sent).unwrap(),
+            serde_json::json!({"schema": POLICY_BUNDLE_SCHEMA, "filter_packs": []})
+        );
     }
 }

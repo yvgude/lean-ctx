@@ -3,6 +3,7 @@
 //! Simulates two agents (separate Cursor tabs) sharing file reads through the
 //! daemon's `/ocla/v1/delivery/{record,check,stats}` endpoints. This validates
 //! the complete cross-process pipeline without requiring actual Unix sockets.
+#![cfg(feature = "http-server")]
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};

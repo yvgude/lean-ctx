@@ -103,7 +103,7 @@ pub(crate) fn splice_inband_in_place(value: &mut Value) -> bool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "http-server"))]
 mod tests {
     use super::*;
     use crate::core::ccr::tests::big;

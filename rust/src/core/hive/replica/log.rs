@@ -133,9 +133,8 @@ impl Replica {
 
     /// Every stored event as the fold sees it, in `seq` order. A `key_lost`
     /// event moves the cursor like a failed signature and never folds until
-    /// its content is repaired; a row a sealing conversion replaced
-    /// (`converted`, R90) moves it too and never folds again (its sealed copy
-    /// carries the effect).
+    /// its content is repaired. A row marked `converted` moves it too and never
+    /// folds again.
     pub fn fold_events(&self) -> Result<Vec<FoldEvent>, HiveError> {
         let mut stmt = self
             .conn

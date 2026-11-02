@@ -190,7 +190,7 @@ fn fixed_peer_client() -> reqwest::Client {
 }
 
 impl RemoteTransport {
-    #[cfg(test)]
+    #[cfg(all(test, feature = "http-server"))]
     pub(crate) fn with_test_tls_root(mut self, certificate: reqwest::Certificate) -> Self {
         self.client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -935,6 +935,7 @@ fn enqueue_permanent_failure_for_peer(
 mod tests {
     use std::collections::HashMap;
 
+    #[cfg(feature = "http-server")]
     use axum::{Router, http::StatusCode, routing::post};
 
     use super::*;
@@ -1008,6 +1009,7 @@ mod tests {
     }
     use crate::core::a2a_transport::{AgentIdentityV1, TransportContentType};
 
+    #[cfg(feature = "http-server")]
     #[tokio::test]
     async fn relay_clients_do_not_follow_redirects_after_deserialization() {
         use std::sync::{
@@ -1136,6 +1138,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "http-server")]
     #[tokio::test]
     async fn task_response_is_complete_bounded_utf8_and_explicitly_unverified() {
         let mut task = envelope("{}");
@@ -1163,6 +1166,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "http-server")]
     #[tokio::test]
     async fn interrupted_task_response_is_not_accepted_as_complete() {
         let mut task = envelope("{}");
@@ -1271,6 +1275,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "http-server")]
     #[tokio::test]
     async fn remote_retry_refreshes_timestamp_and_signature_for_authority_receiver() {
         let signing_key = "retry-signing-secret";
@@ -1336,6 +1341,7 @@ mod tests {
         server.abort();
     }
 
+    #[cfg(feature = "http-server")]
     #[tokio::test]
     async fn permanent_remote_failure_is_persisted_with_exact_scope() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

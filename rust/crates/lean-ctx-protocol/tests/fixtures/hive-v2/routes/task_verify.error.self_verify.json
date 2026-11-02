@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "forbidden_right",
+    "message": "the worker that sent a result does not verify it",
+    "number": 7,
+    "reason": "self_verify"
+  }
+}

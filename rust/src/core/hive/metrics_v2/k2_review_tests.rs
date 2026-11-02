@@ -222,7 +222,6 @@ fn lease(plan: HivePlan) -> HiveLeaseV1 {
         plan,
         seats_limit: 25,
         rights: vec![HiveRight::MetricsUpload],
-        policy_signer_keys: vec![],
         issued_at: UtcTimestamp::new("2026-10-26T12:00:00Z").unwrap(),
         expires_at: UtcTimestamp::new("2026-10-27T12:00:00Z").unwrap(),
         grace_until: UtcTimestamp::new("2026-11-02T12:00:00Z").unwrap(),
@@ -347,31 +346,6 @@ fn k2_finding_disconnect_keeps_metrics_and_receipts_recording() {
     assert!(
         !hive.join("receipts.enabled").is_file(),
         "Engine receipts keep being queued for Hive after disconnect"
-    );
-}
-
-/// K3 / SPEC §0: "the new policy member gates them too". The C0 1.x
-/// `POST /v1/metrics` upload (`metrics::upload::run`, every scheduler tick)
-/// checks only the engine switch, the lease right and the workspace switch;
-/// it ignores the sharing gate, so a Personal engine that never
-/// confirmed (or one whose policy rule is off) still sends daily totals,
-/// agents, model spend, the device's host name and the checkout folder name.
-#[test]
-fn k2_finding_v1_metrics_ignore_the_sharing_gate() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = HiveStore::at(dir.path().join("config"), dir.path().join("hive"));
-    let config = HiveConfig::default();
-    let lease = lease(HivePlan::NoPlan);
-    let v2 = gate::decide_with(&store, &config, &instance(), &lease, None, at(16, 0));
-    assert!(!v2.is_on(), "precondition: v2 sharing is off");
-    let v1 = crate::core::hive::metrics::upload::blocked_by(
-        &config,
-        &lease,
-        &crate::core::hive::metrics::local_state::UploadState::default(),
-    );
-    assert!(
-        v1.is_some(),
-        "v1 metrics are sent while engine-metrics sharing is off"
     );
 }
 

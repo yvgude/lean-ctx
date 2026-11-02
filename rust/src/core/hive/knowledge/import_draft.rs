@@ -5,9 +5,7 @@
 //! An import draft is a learning draft with `origin: import` and the import
 //! source of each fact (`import:docs:<path>#<slug>`, `import:git:<sha>`):
 //! the same planning against the last pulled base and the same screening,
-//! queued only, sent by [`super::pull`]. A sealed project gets the sources
-//! inside the sealed patch only ([`super::pull`] seals the draft as a
-//! whole); `origin` stays in the clear. A draft carries at most 16 sources
+//! queued only, sent by [`super::pull`]. A draft carries at most 16 sources
 //! and [`MAX_PATCH_OPS`] facts, so a large import becomes several drafts.
 
 use std::path::Path;
@@ -87,7 +85,9 @@ fn summary_and_body(facts: &[FactV1]) -> (String, String) {
 
 /// Plan, screen and queue the imported facts of the project at `root` that
 /// changed since its last import draft. Returns the outbox ids (none when
-/// there is nothing to propose or Hive is not set up here).
+/// there is nothing to propose, Hive is not set up here, or the Hive speaks
+/// C0 2.0: it takes the imported facts from the knowledge store as signed
+/// events through capture, never as a 1.x draft).
 pub fn enqueue_import_drafts(
     store: &HiveStore,
     config: &HiveConfig,
@@ -96,7 +96,11 @@ pub fn enqueue_import_drafts(
     screen: &mut Screen,
     now: DateTime<Utc>,
 ) -> Result<Vec<String>, HiveError> {
-    if config.enabled == Some(false) || !config.auto_capture || store.instance()?.is_none() {
+    if config.enabled == Some(false)
+        || !config.auto_capture
+        || store.instance()?.is_none()
+        || crate::core::hive::bus::relay_v2::speaks_v2(store)
+    {
         return Ok(Vec::new());
     }
     let Some(identity) = project_identity(root) else {
@@ -145,7 +149,6 @@ pub fn enqueue_import_drafts(
                     .into_iter()
                     .map(|fact| PatchOpV1::AddFact { fact })
                     .collect(),
-                sealed: None,
             },
             session_ref: session_ref(session_id),
             engine_screening: screening,

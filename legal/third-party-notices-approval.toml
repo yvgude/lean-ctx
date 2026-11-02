@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "d32e30dcf0641129515ceb236617649d297dadd9ca27b320a5011bff24961d18"
+approved_content_sha256 = "22938c1bafeab558ce8db4b830a233f7a32e2554e1a4549c83cb8908fcd59f15"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.1 after the first engine crate split; third-party Cargo packages unchanged (599), the only notice changes are the input digests, the Cargo graph 607 -> 612 (the own workspace crates lean-ctx-patterns, -workgraph, -compress, -fs, -syntax) and SBOM components 552 -> 557. Owner okay in the 3.12.1 integration lead session on 2026-11-01 (answer \"Freigeben\" to the notices question naming old a3b2e085 and new pending 39fd5a61)."
-approved_at = "2026-11-01"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.1 after the Hive C0 2.1/2.2 engine sync; notice content unchanged (599 third-party Cargo packages, Cargo graph 612, same SBOM components), only the Cargo.lock and SBOM input digests change because curve25519-dalek is no longer a direct dependency. Owner okay in the 3.12.1 integration lead session on 2026-11-02 (answer \"Freigeben\" to the notices question naming old d32e30dc and new pending c10143a0)."
+approved_at = "2026-11-02"

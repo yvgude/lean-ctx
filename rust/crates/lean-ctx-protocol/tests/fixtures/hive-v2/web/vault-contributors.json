@@ -9,13 +9,11 @@
         {
           "events_30d": 214,
           "handle": "yves",
-          "reviews_30d": 9,
           "role": "owner"
         },
         {
           "events_30d": 57,
           "handle": "mara",
-          "reviews_30d": 23,
           "role": "maintainer"
         }
       ],

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! How Hive helped in a project (X4), per Hive project and UTC day, as
-//! engine metrics v2 sample it: counts and durations only, the same for
-//! sealed projects. `<data>/hive/metrics/hive-use.json`, 0600, the last
+//! engine metrics v2 sample it: counts and durations only.
+//! `<data>/hive/metrics/hive-use.json`, 0600, the last
 //! `KEEP_DAYS` days.
 //!
 //! - M1 `knowledge_hits_referenced`: Hive facts an agent asked for and got

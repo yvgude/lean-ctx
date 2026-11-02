@@ -31,6 +31,10 @@ pub const ORG_SALT_SCHEMA: &str = "leanctx.hive.org-salt/v1";
 pub const VAULT_RESOLVE_REQUEST_SCHEMA: &str = "leanctx.hive.vault-resolve-request/v1";
 pub const VAULT_SCHEMA: &str = "leanctx.hive.vault/v1";
 
+/// Why a vault that says it is sealed is refused.
+pub const SEALED_VAULT_UNSUPPORTED: &str = "Hive sent a sealed vault, but sealed vaults are not \
+     supported; self-host Hive or use a private cloud to keep content off the shared service";
+
 /// Longest vault label, in characters.
 pub const MAX_VAULT_LABEL_CHARS: usize = 64;
 
@@ -137,19 +141,12 @@ pub struct VaultV1 {
     pub schema: String,
     pub vault_id: String,
     pub vault: VaultRefV1,
-    /// End-to-end sealed vault: content only as `SealedBlobV1`.
+    /// `false` or absent: a `true` fails [`VaultV1::validate`] with
+    /// [`SEALED_VAULT_UNSUPPORTED`].
+    #[serde(default)]
     pub sealed: bool,
-    /// Current sealed key epoch, present when `sealed`. 1.9 R3: `0` means
-    /// the vault has no key yet (created sealed on the web); the first engine
-    /// that seals content creates epoch 1.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key_epoch: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    /// 1.9 (section 7): the vault's auto-merge threshold; absent means
-    /// people merge.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub auto_merge: Option<super::automerge::AutoMergeV1>,
     /// 1.9 (section 8): `full` when the owner publishes the code graph;
     /// absent means `anchors`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -162,13 +159,8 @@ impl VaultV1 {
         super::validate_vault_id(&self.vault_id)?;
         validate_id(&self.vault.ns, "vault.ns")?;
         validate_id(&self.vault.name, "vault.name")?;
-        if self.sealed != self.key_epoch.is_some() {
-            return Err(ValidationError::new(
-                "key_epoch is present exactly when the vault is sealed",
-            ));
-        }
-        if let Some(auto_merge) = &self.auto_merge {
-            auto_merge.validate()?;
+        if self.sealed {
+            return Err(ValidationError::new(SEALED_VAULT_UNSUPPORTED));
         }
         if let Some(label) = &self.label {
             validate_text(label, MAX_VAULT_LABEL_CHARS, "label", false)?;
@@ -188,5 +180,34 @@ mod tests {
         assert_eq!(id.len(), 64);
         assert_eq!(id, stable_identity("git:github.com/yvgude/lean-ctx"));
         assert_ne!(id, stable_identity("git:github.com/yvgude/other"));
+    }
+
+    #[test]
+    fn a_sealed_vault_is_refused() {
+        let vault = |sealed: bool| -> VaultV1 {
+            serde_json::from_value(serde_json::json!({
+                "schema": VAULT_SCHEMA,
+                "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42",
+                "vault": {"ns": "acme", "name": "payments"},
+                "sealed": sealed,
+                "sealed_conversion": "none",
+            }))
+            .unwrap()
+        };
+        assert!(vault(false).validate().is_ok());
+        let plain: VaultV1 = serde_json::from_value(serde_json::json!({
+            "schema": VAULT_SCHEMA,
+            "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42",
+            "vault": {"ns": "acme", "name": "payments"},
+        }))
+        .expect("a vault without `sealed` decodes");
+        assert!(!plain.sealed && plain.validate().is_ok());
+        let error = vault(true).validate().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("sealed vaults are not supported"),
+            "{error}"
+        );
     }
 }

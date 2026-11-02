@@ -221,6 +221,7 @@ fn looks_like_version_accepts_releases_rejects_typos() {
     assert!(!looks_like_version("3"));
 }
 
+#[cfg(feature = "secure-update")]
 #[test]
 fn checksum_parser_rejects_duplicate_asset_entries() {
     let digest = "a".repeat(64);
@@ -228,6 +229,7 @@ fn checksum_parser_rejects_duplicate_asset_entries() {
     assert_eq!(parse_sha256sums(&sums, "lean-ctx-linux.tar.gz"), None);
 }
 
+#[cfg(feature = "secure-update")]
 #[test]
 fn manifest_validation_is_fail_closed() {
     let asset = "lean-ctx-linux.tar.gz";
@@ -260,6 +262,7 @@ fn manifest_validation_is_fail_closed() {
     assert!(validate_manifest(&missing_payload, "v3.9.20", asset).is_err());
 }
 
+#[cfg(feature = "secure-update")]
 #[test]
 fn manifest_json_accepts_additive_inventory_without_weakening_payload_checks() {
     let asset = "lean-ctx-linux.tar.gz";
@@ -373,6 +376,7 @@ fn receipt_integrity_digest_is_tamper_evident() {
     assert!(validate_receipt_integrity(&receipt).is_err());
 }
 
+#[cfg(feature = "secure-update")]
 #[test]
 fn manifest_rejects_malformed_payload_digest() {
     let asset = "lean-ctx-linux.tar.gz";

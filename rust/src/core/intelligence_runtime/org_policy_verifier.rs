@@ -204,37 +204,6 @@ pub(crate) fn verify(
     Err(VerifierCallError::Unavailable)
 }
 
-/// Whether an organization policy could be verified here now: the Runtime is
-/// enabled and accepted, its active package authenticates and declares the
-/// verifier, and the runtime would be licensed for it — a package that needs
-/// no entitlement, a commercial licence configuration, or a Hive lease for
-/// a package that takes one. Reads local state only — no process, no
-/// install, no network. It re-authenticates the package, so callers should
-/// not ask per request.
-#[cfg(any(unix, windows))]
-pub(crate) fn org_policy_verifier_available() -> bool {
-    let config = crate::core::config::Config::load_global().intelligence_runtime;
-    if !config.enabled || !config.accept_proprietary || !super::bootstrap::permits_config(&config) {
-        return false;
-    }
-    let Ok(trust) = super::trust_key(&config.trust_key_hex) else {
-        return false;
-    };
-    let root = std::path::Path::new(&config.root);
-    let Ok(package) = super::install::verified_active(root, &config.manifest_sha256, &trust) else {
-        return false;
-    };
-    super::health::supports_org_policy_verifier(&package)
-        && (package.description["entitlement_required"] != true
-            || super::license::configuration_path(root, &config.manifest_sha256, &trust).is_ok()
-            || super::session::runtime_lease_b64(&package).is_some())
-}
-
-#[cfg(not(any(unix, windows)))]
-pub(crate) fn org_policy_verifier_available() -> bool {
-    false
-}
-
 #[derive(Serialize)]
 struct Input<'a> {
     request: &'a OrgPolicyVerifyRequestV1,
@@ -420,32 +389,6 @@ mod tests {
 
     type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
     const NOW: &str = "2026-10-10T09:00:01Z";
-
-    /// The probe answers from local state only: without an enabled, accepted
-    /// and installed Runtime it is false, and asking it installs nothing.
-    #[test]
-    fn verifier_probe_is_false_without_an_enabled_installed_runtime() -> TestResult {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let runtime = tempfile::tempdir()?;
-        let root = runtime.path().join("runtime");
-        let config = crate::core::config::Config::path().ok_or("config path")?;
-        std::fs::create_dir_all(config.parent().ok_or("config dir")?)?;
-        for section in [
-            String::new(),
-            "[intelligence_runtime]\nenabled = true\n".to_string(),
-            format!(
-                "[intelligence_runtime]\nenabled = true\naccept_proprietary = true\nroot = {:?}\nmanifest_sha256 = \"{}\"\ntrust_key_hex = \"{}\"\n",
-                root.display().to_string(),
-                "a".repeat(64),
-                "b".repeat(64)
-            ),
-        ] {
-            std::fs::write(&config, section)?;
-            assert!(!org_policy_verifier_available());
-        }
-        assert!(!root.exists(), "the probe must not create the runtime root");
-        Ok(())
-    }
 
     fn at(value: &str) -> TestResult<TeamTimestampV1> {
         Ok(TeamTimestampV1::new(value)?)

@@ -19,7 +19,6 @@
 //!   claims while it runs (`keeper`) and gives them back on stop.
 //! - Text leaving the machine (summaries, proposals, release reasons) passes
 //!   the outbox screening; a text it refuses is not sent, never rewritten.
-//!   Sealed projects send it sealed (AAD `vault_id|number|epoch|schema`).
 //! - Text arriving from Hive (titles, goals, summaries of people and other
 //!   agents) reaches the agent only fenced as foreign data
 //!   ([`crate::core::hive::untrusted::wrap`], X5).
@@ -37,7 +36,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::Deserialize;
 
 use crate::core::hive::HiveError;
 use crate::core::hive::TaskRefusal;
@@ -45,24 +44,22 @@ use crate::core::hive::auth::Session;
 use crate::core::hive::config::HiveConfig;
 use crate::core::hive::knowledge::screening::Screen;
 use crate::core::hive::metrics::hive_use;
-use crate::core::hive::sealed;
 use crate::core::hive::state::HiveStore;
 use crate::core::hive::vault::{VaultMap, VaultRecord};
 use crate::core::hive::worker::{self, Admission, EvidenceSummary, Refusal, TaskScope};
 use claims::HeldClaim;
 use client::TasksApi;
 use lean_ctx_protocol::hive::lease::{HiveRight, LeaseState};
-use lean_ctx_protocol::hive::sealed::SealedBlobV1;
 use lean_ctx_protocol::hive::tasks::{
-    EvidenceKind, EvidenceV1, MAX_CLAIM_MINUTES, MIN_CLAIM_MINUTES, SEALED_TASK_RESULT_SCHEMA,
-    SEALED_TASK_UPDATE_SCHEMA, TASK_CLAIM_RENEW_SCHEMA, TASK_CLAIM_REQUEST_SCHEMA,
-    TASK_RELEASE_SCHEMA, TASK_RESULT_SCHEMA, TASK_UPDATE_SCHEMA, TaskAckV1,
-    TaskClaimRenewRequestV1, TaskClaimRequestV1, TaskListV1, TaskOutcome, TaskReleaseRequestV1,
-    TaskResultRequestV1, TaskUpdateRequestV1, TaskV1, UsageV1,
+    EvidenceKind, EvidenceV1, MAX_CLAIM_MINUTES, MIN_CLAIM_MINUTES, TASK_CLAIM_RENEW_SCHEMA,
+    TASK_CLAIM_REQUEST_SCHEMA, TASK_RELEASE_SCHEMA, TASK_RESULT_SCHEMA, TASK_UPDATE_SCHEMA,
+    TASK_VERIFY_SCHEMA, TaskAckV1, TaskClaimRenewRequestV1, TaskClaimRequestV1, TaskListV1,
+    TaskOutcome, TaskReleaseRequestV1, TaskResultRequestV1, TaskUpdateRequestV1, TaskV1,
+    TaskVerdict, TaskVerifyRequestV1, UsageV1,
 };
 
 pub use client::ListFilter;
-pub use render::{render_list, render_result_ack, render_task};
+pub use render::{render_list, render_result_ack, render_task, render_verify_ack};
 
 /// The time one task call may take in all.
 pub const BUDGET: Duration = Duration::from_secs(5);
@@ -128,7 +125,6 @@ impl Connected {
         Link {
             data_dir: self.store.data_dir(),
             vault_id: &self.project.vault_id,
-            sealed: self.project.sealed,
             root: &self.root,
             via: Via::Session(&self.session),
             budget: BUDGET,
@@ -148,7 +144,6 @@ enum Via<'a> {
 struct Link<'a> {
     data_dir: &'a Path,
     vault_id: &'a str,
-    sealed: bool,
     root: &'a Path,
     via: Via<'a>,
     budget: Duration,
@@ -220,49 +215,6 @@ impl Link<'_> {
         }
     }
 
-    fn session(&self) -> Result<&Session, HiveError> {
-        match &self.via {
-            Via::Session(session) => Ok(session),
-            #[cfg(test)]
-            Via::Origin(_) => Err(HiveError::NotConnected),
-        }
-    }
-
-    /// Seal `content` for task `number` (0 for a proposal).
-    fn seal<T: Serialize>(
-        &self,
-        number: u64,
-        content_schema: &str,
-        content: &T,
-    ) -> Result<SealedBlobV1, HiveError> {
-        // Only a key this machine already holds: a tool call never fetches
-        // keys or rotates the repo (that is `lean-ctx hive sync`). A key
-        // Hive has moved past is refused there, and nothing leaves.
-        let session = self.session()?;
-        let held = sealed::newest_held_epoch(&session.store, self.vault_id)?.and_then(|epoch| {
-            sealed::held_key(&session.store, self.vault_id, epoch).map(|key| (epoch, key))
-        });
-        let Some((epoch, key)) = held else {
-            return Err(HiveError::Refused(
-                "this sealed vault's key is not on this machine yet; run `lean-ctx hive sync`"
-                    .into(),
-            ));
-        };
-        let bytes = zeroize::Zeroizing::new(
-            serde_json::to_vec(content).map_err(|e| HiveError::Local(e.to_string()))?,
-        );
-        sealed::seal(&key, self.vault_id, number, epoch, content_schema, &bytes)
-    }
-
-    /// Open the sealed `blob` of task `number`; `None` when this machine
-    /// holds no key for its epoch.
-    fn open<T: DeserializeOwned>(&self, number: u64, blob: &SealedBlobV1) -> Option<T> {
-        let session = self.session().ok()?;
-        let key = sealed::held_key(&session.store, self.vault_id, blob.epoch)?;
-        let bytes = sealed::open(&key, self.vault_id, number, blob).ok()?;
-        serde_json::from_slice(&bytes).ok()
-    }
-
     /// Task `number` of this project as the worker gate sees it.
     fn scope(&self, number: u64) -> TaskScope {
         TaskScope {
@@ -317,36 +269,10 @@ impl Link<'_> {
     }
 }
 
-/// `{title, goal?, acceptance}` of a sealed task.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskContent {
-    pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub goal: Option<String>,
-    pub acceptance: String,
-}
-
-/// `{summary}` of a sealed update.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct SealedSummary {
-    summary: String,
-}
-
-/// `{summary, evidence}` of a sealed result.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct SealedResult {
-    summary: String,
-    evidence: Vec<EvidenceV1>,
-}
-
-/// A task as the agent reads it: the view, its sealed parts opened.
+/// A task as the agent reads it: the view and its local claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskView {
     pub task: TaskV1,
-    /// The opened content of a sealed task.
-    pub content: Option<TaskContent>,
-    /// The opened summary of each sealed update, in order.
-    pub update_summaries: Vec<Option<String>>,
     /// The claim end when this machine holds the claim.
     pub held_until: Option<String>,
 }
@@ -437,7 +363,7 @@ fn list_via(link: &Link<'_>, filter: &ListFilter) -> Result<TaskListV1, HiveErro
     link.call(|api| api.list(filter))
 }
 
-/// One task, its sealed parts opened where this machine holds the key.
+/// One task.
 pub fn show(project_root: &Path, number: u64) -> Result<TaskView, HiveError> {
     let c = connected(project_root, HiveRight::TasksRead)?;
     show_via(&c.link(), number)
@@ -448,34 +374,10 @@ fn show_via(link: &Link<'_>, number: u64) -> Result<TaskView, HiveError> {
     Ok(view_of(link, task))
 }
 
-/// `task` as the caller sees it: sealed parts opened with the keys this
-/// machine holds, its local claim (no request).
+/// `task` as the caller sees it, with its local claim (no request).
 fn view_of(link: &Link<'_>, task: TaskV1) -> TaskView {
-    let number = task.number;
-    let content = task
-        .sealed
-        .as_ref()
-        .and_then(|blob| link.open::<TaskContent>(number, blob));
-    let update_summaries = task
-        .updates
-        .iter()
-        .map(|update| {
-            update.summary.clone().or_else(|| {
-                update
-                    .sealed
-                    .as_ref()
-                    .and_then(|blob| link.open::<SealedSummary>(number, blob))
-                    .map(|sealed| sealed.summary)
-            })
-        })
-        .collect();
-    let held_until = claims::find(link.data_dir, link.vault_id, number).map(|held| held.until);
-    TaskView {
-        task,
-        content,
-        update_summaries,
-        held_until,
-    }
+    let held_until = claims::find(link.data_dir, link.vault_id, task.number).map(|held| held.until);
+    TaskView { task, held_until }
 }
 
 /// A granted claim, as the caller may see it (no lease id, no token).
@@ -645,8 +547,47 @@ fn renew_via(link: &Link<'_>, number: u64, agent: &str) -> Result<HeldClaim, Hiv
     Ok(held)
 }
 
-/// Give task `number` back; `reason` is one line (left out in sealed
-/// projects).
+/// Check the submitted result of task `number` as `agent` (C0 2.2 E48):
+/// `accept` makes it done, `reject` (with its reason) opens it again. The
+/// agent names itself as on its claims; Hive refuses the agent that did the
+/// work (`self_verify`) and a task that is not submitted.
+pub fn verify(
+    project_root: &Path,
+    number: u64,
+    agent: &str,
+    verdict: TaskVerdict,
+    reason: Option<&str>,
+) -> Result<TaskAckV1, HiveError> {
+    let c = connected(project_root, HiveRight::TasksWork)?;
+    verify_via(&c.link(), number, agent, verdict, reason)
+}
+
+fn verify_via(
+    link: &Link<'_>,
+    number: u64,
+    agent: &str,
+    verdict: TaskVerdict,
+    reason: Option<&str>,
+) -> Result<TaskAckV1, HiveError> {
+    let reason = reason.map(str::trim).filter(|reason| !reason.is_empty());
+    screened(&[("verify reason", reason)])?;
+    let request = TaskVerifyRequestV1 {
+        schema: TASK_VERIFY_SCHEMA.into(),
+        worker_id: agent.to_owned(),
+        verdict,
+        reason: reason.map(str::to_owned),
+    };
+    let key = blake3::hash(
+        serde_json::to_string(&(link.vault_id, number, &request))
+            .unwrap_or_default()
+            .as_bytes(),
+    )
+    .to_hex()[..32]
+        .to_string();
+    link.call(|api| api.verify(number, &request, &key))
+}
+
+/// Give task `number` back; `reason` is one line.
 pub fn release(
     project_root: &Path,
     number: u64,
@@ -667,9 +608,7 @@ fn release_via(
     reason: Option<&str>,
 ) -> Result<TaskAckV1, HiveError> {
     let held = link.held(number, agent)?;
-    let reason = reason
-        .map(str::trim)
-        .filter(|reason| !reason.is_empty() && !link.sealed);
+    let reason = reason.map(str::trim).filter(|reason| !reason.is_empty());
     screened(&[("release reason", reason)])?;
     let request = TaskReleaseRequestV1 {
         schema: TASK_RELEASE_SCHEMA.into(),
@@ -755,31 +694,18 @@ fn update_via(
     let held = link.held(number, agent)?;
     let summary = summary.trim();
     screened(&[("summary", Some(summary))])?;
-    let (summary, sealed) = if link.sealed {
-        let content = SealedSummary {
-            summary: summary.to_owned(),
-        };
-        (
-            None,
-            Some(link.seal(number, SEALED_TASK_UPDATE_SCHEMA, &content)?),
-        )
-    } else {
-        (Some(summary.to_owned()), None)
-    };
     let request = TaskUpdateRequestV1 {
         schema: TASK_UPDATE_SCHEMA.into(),
         claim: held.claim,
-        summary,
-        sealed,
+        summary: Some(summary.to_owned()),
         usage,
     };
     link.settle(number, link.call(|api| api.update(number, &request)))
 }
 
-/// Submit the result of the claimed task `number`: it ends the claim. A
-/// 1.x Hive turns it into a proposal a person (or an auto-merge threshold)
-/// decides on (`submitted`); Hive v5 ends the task (`done`, or `failed`
-/// for [`TaskOutcome::Failed`]).
+/// Submit the result of the claimed task `number`: it ends the claim. The
+/// task waits for a second agent's check (`submitted`), or ends at once
+/// (`done`, or `failed` for [`TaskOutcome::Failed`]).
 ///
 /// A result never carries a draft: knowledge the work produced travels
 /// through the capture gate and `hive sync` like any other (signed E5
@@ -905,27 +831,13 @@ fn submit_via(
         },
     )
     .map_err(|refusal| HiveError::Refused(refusal.to_string()))?;
-    let (summary, evidence, sealed) = if link.sealed {
-        let content = SealedResult {
-            summary: summary.to_owned(),
-            evidence,
-        };
-        (
-            None,
-            Vec::new(),
-            Some(link.seal(number, SEALED_TASK_RESULT_SCHEMA, &content)?),
-        )
-    } else {
-        (Some(summary.to_owned()), evidence, None)
-    };
     let outcome = negotiated_outcome(link, number, outcome)?;
     let request = TaskResultRequestV1 {
         schema: TASK_RESULT_SCHEMA.into(),
         claim: held.claim,
-        summary,
+        summary: Some(summary.to_owned()),
         evidence,
         draft: None,
-        sealed,
         usage,
         outcome,
     };

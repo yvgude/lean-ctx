@@ -1,15 +1,15 @@
 {
   "errors": [],
   "method": "GET",
-  "path": "/api/v1/buses/s/acme/checkout-latency/presence",
+  "path": "/api/v1/buses/v/acme/payments/presence",
   "request": null,
   "response": {
     "body": [
       {
         "at": "2026-10-24T08:31:00Z",
-        "role": "general",
+        "role": "backend",
         "state": "active",
-        "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+        "worker_id": "wkr_vk4oelpv5lzjmev44hun"
       }
     ],
     "status": 200

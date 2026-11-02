@@ -324,7 +324,7 @@ pub fn queue(
                     out.clock,
                     target.signer,
                 )?;
-                maintain::queue(target, event, out.clock)?;
+                maintain::queue(target, &event, out.clock)?;
                 out.superseded += 1;
             }
             Action::Retract { node } => {
@@ -336,7 +336,7 @@ pub fn queue(
                     out.clock,
                     target.signer,
                 )?;
-                maintain::queue(target, event, out.clock)?;
+                maintain::queue(target, &event, out.clock)?;
                 out.retracted += 1;
             }
             Action::Confirm { node } => {
@@ -361,7 +361,7 @@ pub fn queue(
                     out.clock,
                     target.signer,
                 )?;
-                maintain::queue(target, event, out.clock)?;
+                maintain::queue(target, &event, out.clock)?;
                 out.clock = hlc::send(out.clock, now_ms);
                 let event = maintain::field_set(
                     target.place,
@@ -372,7 +372,7 @@ pub fn queue(
                     out.clock,
                     target.signer,
                 )?;
-                maintain::queue(target, event, out.clock)?;
+                maintain::queue(target, &event, out.clock)?;
                 out.confirmed += 1;
             }
         }

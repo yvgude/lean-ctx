@@ -4,7 +4,6 @@
 //! queue of own events not yet in that log. Folding events and the sync
 //! routes follow the C0 2.0 wire shapes.
 
-pub mod converted;
 pub mod crypt;
 pub mod fold;
 pub mod history;

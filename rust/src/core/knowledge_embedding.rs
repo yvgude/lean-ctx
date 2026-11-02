@@ -693,6 +693,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "embeddings")]
     #[test]
     fn observation_tier_boosts_only_synthesized_summaries() {
         use crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE;
@@ -743,6 +744,7 @@ mod tests {
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 
+    #[cfg(feature = "embeddings")]
     #[test]
     fn concurrent_remember_keeps_all_embeddings() {
         // #412: the embedding-index read-modify-write must be serialized under
@@ -954,6 +956,7 @@ mod tests {
         assert_eq!(idx.entries[0].key, "cache");
     }
 
+    #[cfg(feature = "embeddings")]
     #[test]
     fn recency_decay_recent() {
         let fact = KnowledgeFact {
@@ -993,6 +996,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "embeddings")]
     #[test]
     fn recency_decay_old() {
         let old_date = chrono::Utc::now() - chrono::Duration::days(100);
@@ -1094,6 +1098,7 @@ mod tests {
         assert!(output.contains("[s:85%]"));
     }
 
+    #[cfg(feature = "embeddings")]
     #[test]
     fn semantic_dup_flags_high_cosine_other_key() {
         let _policy = crate::core::policy::runtime::lock_test_override(); // remember() admits through the process-wide policy
@@ -1133,6 +1138,7 @@ mod tests {
         assert!(dups[0].similarity >= 0.86);
     }
 
+    #[cfg(feature = "embeddings")]
     #[test]
     fn semantic_dup_excludes_self_and_judged() {
         let _policy = crate::core::policy::runtime::lock_test_override(); // remember() admits through the process-wide policy

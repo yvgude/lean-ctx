@@ -5,9 +5,9 @@
 //!
 //! The answer is kept in `<config_dir>/hive/sharing.json` (0600), so later
 //! sessions and later connects to the same workspace ask nothing. A "no"
-//! switches every outbound channel off in `[hive]`, and fact states and
-//! automatic 1.x merges and objections check it ([`declined`]). Pulling the
-//! workspace's knowledge and policy goes on. Nothing here talks to Hive.
+//! switches every outbound channel off in `[hive]`, and fact states check
+//! it ([`declined`]). Pulling the workspace's knowledge and policy goes on.
+//! Nothing here talks to Hive.
 
 use std::path::Path;
 
@@ -79,9 +79,8 @@ pub fn record_from(
     Ok(decision)
 }
 
-/// Whether the person said no to sharing with `org_id`: the channels a
-/// "no" cannot switch off in `[hive]` (fact states, automatic 1.x merges
-/// and objections) check this.
+/// Whether the person said no to sharing with `org_id`: the channel a
+/// "no" cannot switch off in `[hive]` (fact states) checks this.
 pub fn declined(store: &HiveStore, org_id: &str) -> bool {
     decision(store, org_id).is_some_and(|d| !d.shared)
 }
@@ -102,10 +101,7 @@ pub fn shared_items(config: &HiveConfig) -> Vec<&'static str> {
         );
     }
     items.push(
-        "fact states: which of the workspace's facts no longer match this checkout (fact ids, the reason, and where a moved anchor is now; counts only for sealed vaults)",
-    );
-    items.push(
-        "on a Hive before 2.0: the automatic merge of knowledge proposals that reached their threshold, and objections to proposals your agents judged contradicting",
+        "fact states: which of the workspace's facts no longer match this checkout (fact ids, the reason, and where a moved anchor is now)",
     );
     if config.bus == HiveBusMode::Auto {
         items.push("your agents' presence and the bus messages they send to the workspace");
@@ -253,15 +249,13 @@ mod tests {
     #[test]
     fn the_summary_names_each_channel_that_is_on_and_a_no_turns_all_off() {
         let mut config = HiveConfig::default();
-        // Exactly what is sent: knowledge, fact states, 1.x merges and
-        // objections, bus with friction counts, task traffic; never usage
-        // totals or receipts, which this version does not send.
+        // Exactly what is sent: knowledge, fact states, bus with friction
+        // counts, task traffic; never usage totals or receipts, which this
+        // version does not send.
         let items = shared_items(&config).join("\n");
         for sent in [
             "knowledge",
             "fact states",
-            "automatic merge",
-            "objections",
             "bus messages",
             "friction counts",
             "task traffic",

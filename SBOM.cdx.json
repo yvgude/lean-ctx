@@ -16853,7 +16853,6 @@
         "registry+https://github.com/rust-lang/crates.io-index#chacha20poly1305@0.10.1",
         "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
         "registry+https://github.com/rust-lang/crates.io-index#clap@4.6.6",
-        "registry+https://github.com/rust-lang/crates.io-index#curve25519-dalek@4.1.3",
         "registry+https://github.com/rust-lang/crates.io-index#dashmap@6.2.1",
         "registry+https://github.com/rust-lang/crates.io-index#dirs@6.0.0",
         "registry+https://github.com/rust-lang/crates.io-index#ed25519-dalek@2.2.0",
@@ -20850,7 +20849,7 @@
       },
       {
         "name": "leanctx:cargo-lock-sha256",
-        "value": "8446a84ff552675ec7d0b9593857c170f8054c3ab03ab9db063d682009a1a73a"
+        "value": "b22136d62dce29b3cfdf7d21b0e9dde9139a6669a17fc3d9c5623476ec59a1a6"
       }
     ],
     "tools": [

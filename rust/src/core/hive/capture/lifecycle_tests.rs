@@ -216,7 +216,7 @@ fn a_marked_claim_is_confirmed_only_when_the_local_fact_holds_here() {
 }
 
 #[test]
-fn queued_events_are_signed_sealed_like_curation_and_carry_no_content() {
+fn queued_events_are_signed_like_curation_and_carry_no_content() {
     let data = tempfile::tempdir().unwrap();
     let (replica, _) = Replica::open(data.path(), "pl_lifecycle", &[3; 32]).unwrap();
     let key = SigningKey::from_bytes(&[0x49; 32]);
@@ -235,7 +235,6 @@ fn queued_events_are_signed_sealed_like_curation_and_carry_no_content() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     let repo = crate::core::hive::capture::tests::repo();
     let mut checkout = Checkout::new(repo.path());

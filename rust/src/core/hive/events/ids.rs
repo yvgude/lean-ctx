@@ -83,22 +83,3 @@ pub fn legacy_conversion_event_id(pk_id: &[u8; 32], revision: u64, item_key: &st
     h.update(item_key.as_bytes());
     crockford_upper(h.finalize().as_bytes())[..26].to_string()
 }
-
-/// Event id of a sealing conversion copy (`seal_conversion`, R90).
-pub fn seal_conversion_event_id(pk_id: &[u8; 32], seq: u64, original_event_id: &str) -> String {
-    let mut h = blake3::Hasher::new_keyed(pk_id);
-    h.update(b"seal");
-    h.update(&seq.to_be_bytes());
-    h.update(original_event_id.as_bytes());
-    crockford_upper(h.finalize().as_bytes())[..26].to_string()
-}
-
-/// `pk_id` of a sealed place: `HKDF-SHA256(ikm = place_secret, salt =
-/// empty, info = "leanctx.hive.node-id.v1", L = 32)`.
-pub fn sealed_pk_id(place_secret: &[u8; 32]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    hkdf::Hkdf::<sha2::Sha256>::new(None, place_secret)
-        .expand(b"leanctx.hive.node-id.v1", &mut out)
-        .expect("32 bytes is a valid HKDF length");
-    out
-}

@@ -1,0 +1,41 @@
+{
+  "cases": [
+    {
+      "heading": "Wiki",
+      "slug": "wiki"
+    },
+    {
+      "heading": "What It Does",
+      "slug": "what-it-does"
+    },
+    {
+      "heading": "C0 2.2: Docs!",
+      "slug": "c0-22-docs"
+    },
+    {
+      "heading": "`base_event` (CAS)",
+      "slug": "baseevent-cas"
+    },
+    {
+      "heading": "Rules And Edge Cases",
+      "slug": "rules-and-edge-cases"
+    },
+    {
+      "heading": "Two  Spaces",
+      "slug": "two--spaces"
+    },
+    {
+      "heading": "Über Pages",
+      "slug": "ber-pages"
+    },
+    {
+      "heading": "Rules And Edge Cases",
+      "slug": "rules-and-edge-cases-1"
+    },
+    {
+      "heading": "Rules And Edge Cases",
+      "slug": "rules-and-edge-cases-2"
+    }
+  ],
+  "rule": "GitHub style: lowercase, each space to -, drop every character outside [a-z0-9-]; over every ATX heading of the page markdown (the # title included) in reading order, a repeat gets -1, -2, ..."
+}

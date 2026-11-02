@@ -6,9 +6,7 @@
 //! `knowledge.read`): one released revision's knowledge as typed nodes and
 //! edges, for the web view and for engines that link it to their code graph.
 //! Hive derives it from the document, the anchors, the tasks and the
-//! contribution credits; nobody writes it. A sealed vault answers
-//! `409 invalid_state` reason `sealed`: its engines derive the same view
-//! locally after opening the revision.
+//! contribution credits; nobody writes it.
 //!
 //! With a published code graph (section 8, `code_graph` `full`, clear
 //! vaults) the code nodes and their `contains|imports|calls` edges come

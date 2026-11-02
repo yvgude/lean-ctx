@@ -2,7 +2,7 @@
   "error": {
     "code": "consent_required",
     "message": "Approve this on your engine or in the browser first.",
-    "kind": "swarm_join",
+    "kind": "link_vault",
     "reason": "missing"
   }
 }

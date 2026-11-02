@@ -271,7 +271,6 @@ fn an_anchor_change_yields_to_verify_and_a_gone_file_gone() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     let mut co = Checkout::new(&root);
     // No model, no network: the deterministic task alone.
@@ -351,7 +350,6 @@ fn a_state_already_folded_is_not_written_again() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     let counts = run_stale(
         &target,
@@ -386,7 +384,6 @@ fn only_a_confirm_clears_an_earlier_mark_with_fresh() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     let start = crate::core::hive::events::hlc::Stamp::default();
     let (counts, _) = run_stale_at(
@@ -451,7 +448,6 @@ fn confirm_reanchors_the_claim_at_head_with_verified_at() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     let now = 1_792_800_018_000;
     let mut co = Checkout::new(&root);
@@ -512,7 +508,6 @@ fn host_mode_dedupe_makes_no_e42_call() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     let api = Recorder::default();
     for args in [
@@ -573,9 +568,8 @@ fn the_place_holds_the_51st_event_and_it_stays_pending_as_sent_to_review() {
             replica: &replica,
             place: &place,
             signer: &signer,
-            seal: None,
         };
-        queue(&target, e, clock).unwrap();
+        queue(&target, &e, clock).unwrap();
     }
     let api = Recorder {
         hold: vec![ids[50].clone()],
@@ -585,7 +579,6 @@ fn the_place_holds_the_51st_event_and_it_stays_pending_as_sent_to_review() {
         replica: &replica,
         place: &place,
         signer: &signer,
-        seal: None,
     };
     let (counts, _) = run_host(
         &target,
@@ -608,49 +601,6 @@ fn the_place_holds_the_51st_event_and_it_stays_pending_as_sent_to_review() {
         .map(|(id, _)| id)
         .collect();
     assert!(left.contains(&ids[50]), "held stays pending");
-}
-
-#[test]
-fn a_sealed_place_gets_its_maintenance_events_sealed() {
-    let (_dir, root) = checkout();
-    let data = tempfile::tempdir().unwrap();
-    let replica = replica_at(data.path(), &head(&root));
-    std::fs::write(root.join("src/lib.rs"), LIB_V2).unwrap();
-    git(&root, &["commit", "-qam", "two"]);
-    let key = key();
-    let signer = signer(&key);
-    let place = place();
-    let seal = crate::core::hive::events::sealed_body::SealKey {
-        epoch: 1,
-        key: zeroize::Zeroizing::new([3; 32]),
-    };
-    let target = Target {
-        replica: &replica,
-        place: &place,
-        signer: &signer,
-        seal: Some(&seal),
-    };
-    let counts = run_stale(
-        &target,
-        &mut Checkout::new(&root),
-        &req(&["acme/pay", "--stale"]),
-        1_792_800_000_000,
-    )
-    .unwrap();
-    assert_eq!(counts.to_verify, 1);
-    let events = pending(&replica);
-    assert_eq!(events.len(), 1);
-    let e = &events[0];
-    assert!(e["body"].get("ct").is_some(), "the body is ciphertext");
-    assert!(e["body"].get("field").is_none());
-    assert!(e["ck_wrapped"].is_string());
-    assert_eq!(e["epoch"], 1);
-    assert_eq!(
-        e["flags"],
-        json!({"commands": false}),
-        "sealed events carry flags"
-    );
-    assert!(sign::verify(e, &key.verifying_key().to_bytes()));
 }
 
 /// KNOWLEDGE-5's lesson (v5 2.2.1): the engine wrote `anchor_state` on

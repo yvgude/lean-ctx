@@ -896,7 +896,7 @@ mod admission_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "embeddings"))]
 mod tests {
     use super::resolve_call_callee_site;
     use crate::core::semantic::EvidenceGrade;

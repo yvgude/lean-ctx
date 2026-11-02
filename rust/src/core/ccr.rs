@@ -750,6 +750,7 @@ pub(crate) mod tests {
         assert_eq!(hash, litellm_hash(&content));
     }
 
+    #[cfg(feature = "http-server")]
     #[test]
     fn retrieve_litellm_resolves_persisted_content() {
         let _lock = crate::core::data_dir::test_env_lock();
@@ -761,6 +762,7 @@ pub(crate) mod tests {
         assert!(recovered.contains("litellm retrievable original"));
     }
 
+    #[cfg(feature = "http-server")]
     #[test]
     fn retrieve_litellm_is_shape_locked_to_the_guardrail_regex() {
         let _lock = crate::core::data_dir::test_env_lock();

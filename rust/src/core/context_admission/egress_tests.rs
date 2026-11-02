@@ -3,8 +3,10 @@
 //! shapes the proxy forwards. Credential fixtures are split with `concat!`
 //! so the repository's own secret scanners never see a literal key.
 
+#[cfg(feature = "http-server")]
+use lean_ctx_protocol::context_gateway::EgressAdmissionOutcomeV1;
 use lean_ctx_protocol::context_gateway::{
-    ClassificationV1, DeliveryOutcomeV1, DestinationLocalityV1, EgressAdmissionOutcomeV1,
+    ClassificationV1, DeliveryOutcomeV1, DestinationLocalityV1,
 };
 use serde_json::{Value, json};
 use std::path::Path;
@@ -875,6 +877,7 @@ fn project_redaction_cannot_downgrade_original_gateway_classification() {
     }
 }
 
+#[cfg(feature = "http-server")]
 #[test]
 #[serial_test::serial(cache_telemetry)]
 fn project_policy_change_invalidates_clean_memo_and_receipt_digest() {
@@ -935,6 +938,7 @@ fn gateway_reload_invalidates_project_egress_policy_epoch() {
     );
 }
 
+#[cfg(feature = "http-server")]
 #[test]
 #[serial_test::serial(cache_telemetry)]
 fn project_policy_epoch_change_before_publication_returns_no_result() {
@@ -1141,6 +1145,7 @@ fn existing_tampered_receipt_cannot_satisfy_a_persistence_requirement() {
     assert!(super::receipt_store::persist_in(&dir, &receipt, PROXY_RECEIPT_KEY, None).is_err());
 }
 
+#[cfg(feature = "http-server")]
 #[test]
 #[serial_test::serial(cache_telemetry)]
 fn lifecycle_receipt_withholds_even_if_a_caller_supplies_forwarded_bytes() {

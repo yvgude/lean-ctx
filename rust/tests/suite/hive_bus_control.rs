@@ -3,6 +3,7 @@
 //! Bus control frames (`hold`, `veto`, `stop`, `resume`) from the fake Hive
 //! through the relay into the admission state, across a reconnect and a
 //! disconnect, in a throwaway home.
+#![cfg(feature = "http-server")]
 
 use crate::support::fake_hive::FakeHive;
 use lean_ctx::core::hive::HiveStore;
