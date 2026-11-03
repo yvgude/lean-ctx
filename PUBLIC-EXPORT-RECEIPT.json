@@ -331,11 +331,11 @@
    "size": 1033
   },
   {
-   "blob": "e4e43bd08ccfedbb312c73f75949047c5d1cee99",
+   "blob": "f7e749beb55d577799f0753bfdaddb46208cc2fb",
    "mode": "100644",
    "path": "CHANGELOG.md",
-   "sha256": "5202bab1d4e646f05aec88caca1d6470d099ea6924bd8647bc514973780078ce",
-   "size": 1215731
+   "sha256": "37d1574e7212eab29d1a86994a09e2f36aa0bb9805891e2cc27a194657d25303",
+   "size": 1215794
   },
   {
    "blob": "77a7c7a520af8fc8b4df372eb5bd5fddcefbfecf",
@@ -3180,11 +3180,11 @@
    "size": 8690
   },
   {
-   "blob": "f76ba0aadf82a504fb00f75cd2ee256c88bdd2a9",
+   "blob": "903a5fb7c8128dd94f3b9970cd93b00071897447",
    "mode": "100644",
    "path": "docs/reference/generated/config-keys.md",
-   "sha256": "6bf242ac5df56ac89432856a01d3f13cb5abd954645d226df48b1ae0bdc87a69",
-   "size": 71555
+   "sha256": "a7562b50d2eae3a35ea384ef4ff7b10dabb748a2ac09c392fdfeab9a04c7137d",
+   "size": 71612
   },
   {
    "blob": "2c5050b1d9f7207fe6763446ae95b3460a2b1da8",
@@ -20435,11 +20435,11 @@
    "size": 12072
   },
   {
-   "blob": "c912f0c1426d5c793a741587bb2368c7784135c6",
+   "blob": "9c1519ceceb405c60006a9b0bc7d746e50c3ed7e",
    "mode": "100644",
    "path": "rust/src/core/config/proxy.rs",
-   "sha256": "6259f1567e8251849971ee3e92ea2581e31801dbe0f0c019fe4e8df89a33d112",
-   "size": 67451
+   "sha256": "d25f025d7a32867a9081efc09c8e0bcfee64f15bbb6c435cba7d137fdc8cd4d6",
+   "size": 67395
   },
   {
    "blob": "23476d6e1c5fdc912d1e5cba619ab90798b81967",
@@ -20512,11 +20512,11 @@
    "size": 19736
   },
   {
-   "blob": "fcf65ba0e491496bff18ba147f46f66bbf4118cd",
+   "blob": "6c15373ea8893241e27f9d9940178d9d3b5b4782",
    "mode": "100644",
    "path": "rust/src/core/config/schema/sections_advanced.rs",
-   "sha256": "7c183fb980e482dfef6bae280f1cedbfe6de38bbce3fb66ec761299948400294",
-   "size": 38044
+   "sha256": "2514eb3b76cc938a3b5d02419fce07db7c0dfa6d04413d09bc940bae54d4f908",
+   "size": 38101
   },
   {
    "blob": "06d415d46d96b7c563de07be20f5b39b440ae336",
@@ -32921,7 +32921,7 @@
  ],
  "manifest_sha256": "e9e923ead0330e9ebe42cf73ab0f6f9bbbed81099953cdf17e8ce112ef426083",
  "schema": 1,
- "source_commit": "4c7666032e3e3845478cc9fb61e61a87e7494cb2",
+ "source_commit": "a08397c34bcc07061a8e07f6a02a745ba11dd107",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "e38054106e9bb6cd604d5daafbf92f7e84495e2540baf3518361e2fe7207f5fa"
+ "tree_sha256": "c39280fe4571750bfe8c2cc25f5494767c3b4f36d6e4b8410fbf42c91c83a3ef"
 }
