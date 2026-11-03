@@ -14,8 +14,10 @@ class CargoAliasTests(unittest.TestCase):
     def test_crate_config_carries_only_the_fast_alias(self):
         config = tomllib.loads(CRATE_CONFIG.read_text(encoding="utf-8"))
         # No [build] section: a job budget here would override every
-        # developer's own Cargo settings.
-        self.assertEqual(set(config), {"alias"})
+        # developer's own Cargo settings. The one target section links the
+        # MSVC runtime statically (#2178).
+        self.assertEqual(set(config), {"alias", "target"})
+        self.assertEqual(set(config["target"]), {"x86_64-pc-windows-msvc"})
         self.assertIn("--profile dev-fast", config["alias"]["fast"])
         root_config = ROOT / ".cargo/config.toml"
         if root_config.is_file():  # private line only; never exported

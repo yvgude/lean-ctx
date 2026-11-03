@@ -10,11 +10,22 @@ use lean_ctx::core::tokens::count_tokens;
 /// independent of the caller-supplied `max_results`.
 const MAX_RESULTS: usize = 500;
 
+/// `*` and `?` stay inside one path component (#2182); `**` still recurses.
+const STRICT_SEPARATORS: glob::MatchOptions = glob::MatchOptions {
+    case_sensitive: true,
+    require_literal_separator: true,
+    require_literal_leading_dot: false,
+};
+
 /// Finds files matching a glob `pattern` under `dir` with compressed output.
 ///
 /// Unlike `ctx_search` which matches file *content*, this matches file *paths*.
 /// Uses the `ignore` crate for gitignore-aware, hidden-aware walking and matches
 /// against the standard `glob` crate's pattern syntax (`*.rs`, `**/*.ts`, …).
+/// In a pattern with a `/`, `*` and `?` never cross a directory boundary
+/// (`src/*.rs` lists only `src`'s own files) and `**` matches any depth
+/// (`src/**/*.rs`). A pattern without `/` (`*.rs`) matches file names at any
+/// depth.
 ///
 /// The walk is ordered by path (`sort_by_file_path`) so that — even when the
 /// result set is truncated to `max_results` — the *set* of returned files, not
@@ -55,6 +66,10 @@ pub fn handle(
         Ok(m) => m,
         Err(e) => return (format!("ERROR: invalid glob pattern '{pattern}': {e}"), 0),
     };
+    // #2182: `*` and `?` never cross `/`; only a whole `**` component spans
+    // directories. A pattern with no `/` (`*.rs`, `Cargo.toml`) names a file
+    // at any depth, so it is matched against the file name alone.
+    let match_file_name = !repaired.contains('/');
 
     let mut matches = Vec::new();
     let mut files_walked = 0u32;
@@ -118,9 +133,13 @@ pub fn handle(
         let rel_path = Path::new(&admitted)
             .strip_prefix(root)
             .unwrap_or(Path::new(&admitted));
-        let rel_str = rel_path.to_string_lossy();
+        let candidate = if match_file_name {
+            rel_path.file_name().map_or(rel_path, Path::new)
+        } else {
+            rel_path
+        };
 
-        if glob_matcher.matches(&rel_str) {
+        if glob_matcher.matches_path_with(candidate, STRICT_SEPARATORS) {
             let short_path = protocol::shorten_path_relative(&admitted, &root.to_string_lossy());
             matches.push((short_path, admitted));
         }
@@ -232,6 +251,52 @@ mod tests {
     }
 
     use super::*;
+
+    /// Fixture for #2182: `src/a.rs`, `src/sub/b.rs` and `top.rs`.
+    fn separator_fixture() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/sub")).unwrap();
+        std::fs::write(dir.path().join("src/a.rs"), "").unwrap();
+        std::fs::write(dir.path().join("src/sub/b.rs"), "").unwrap();
+        std::fs::write(dir.path().join("top.rs"), "").unwrap();
+        dir
+    }
+
+    #[test]
+    fn single_star_with_directory_stays_in_that_directory() {
+        let dir = separator_fixture();
+        let (out, _) = handle("src/*.rs", &dir.path().to_string_lossy(), true, true, 100);
+        assert!(out.contains("a.rs"), "{out}");
+        assert!(!out.contains("b.rs"), "`*` must not cross `/`: {out}");
+        assert!(!out.contains("top.rs"), "{out}");
+        assert!(out.contains("1 files matched"), "{out}");
+    }
+
+    #[test]
+    fn slash_free_pattern_matches_file_names_at_any_depth() {
+        let dir = separator_fixture();
+        let (out, _) = handle("*.rs", &dir.path().to_string_lossy(), true, true, 100);
+        assert!(out.contains("top.rs"), "{out}");
+        assert!(out.contains("a.rs"), "{out}");
+        assert!(out.contains("b.rs"), "{out}");
+        assert!(out.contains("3 files matched"), "{out}");
+    }
+
+    #[test]
+    fn double_star_with_directory_recurses() {
+        let dir = separator_fixture();
+        let (out, _) = handle(
+            "src/**/*.rs",
+            &dir.path().to_string_lossy(),
+            true,
+            true,
+            100,
+        );
+        assert!(out.contains("a.rs"), "{out}");
+        assert!(out.contains("b.rs"), "{out}");
+        assert!(!out.contains("top.rs"), "{out}");
+        assert!(out.contains("2 files matched"), "{out}");
+    }
 
     #[test]
     fn glob_results_are_deterministically_ordered() {

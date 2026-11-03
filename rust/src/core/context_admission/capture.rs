@@ -878,7 +878,7 @@ pub fn is_note(decision: &ContextDecisionV1) -> bool {
 
 /// Build the call's receipt, or `None` when no governed source was admitted.
 /// The receipt is validated before it is returned; an inconsistent receipt is
-/// never produced. Product callers use [`finish_for_presenter`]; this form
+/// never produced. Product callers use `finish_for_presenter`; this form
 /// without a presenter is what the tests call.
 #[cfg(any(test, feature = "test-support"))]
 pub fn finish(

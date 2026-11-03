@@ -2,15 +2,15 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED AND APPROVED
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:da4a0eb75df6c18fba96f66a293e8d4d5d186058d4a4e1166e5db6d5aa95dfbb
+Content-Digest: sha256:81fb0e0afb341ba0179d18f3a219a90fa676885c51b852288e62692e80345754
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
 Cargo.lock SHA-256: 51d03d76fc7ecadd77f622efcd7add3da53f5d53f2973c1c2efca72b49293515
 Cargo metadata inventory SHA-256: ecf8f62963d7200572a0d8925e71534384c3a8d18ca26cf96ecd4147ba383123
-SBOM.cdx.json SHA-256: f388e460ec913c108db49217a0031ea3d1d601408be2c0cba9ace419fd0f4857
+SBOM.cdx.json SHA-256: c86a714c4ad681434e52c475261330297ca1fa74ed54c6637b17567a25fcb8fe
 SBOM components: 558
-Asset manifest SHA-256: 35ec053b1c84e72a19f758a60b460bae51e843115af0068ca4eb12ecad52495c
+Asset manifest SHA-256: e0e23ba3409222c534ca6f2b60047753e9435f0d5b6a99169b7beac21b2715ac
 npm package-lock.json SHA-256: bf393664d199c189c280f2556107743f0c61963228bbc65706111b3d24bd2230
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
 Cargo graph packages: 618

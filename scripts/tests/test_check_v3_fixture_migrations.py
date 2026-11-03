@@ -20,7 +20,7 @@ class V3FixtureMigrationGateTests(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.root = Path(self.tempdir.name)
         fixture = self.root / "rust/tests/fixtures/v3/execution-receipt-v1.json"
-        test = self.root / "rust/tests/v3_receipt_fixture_migration.rs"
+        test = self.root / "rust/crates/lean-ctx/tests/v3_receipt_fixture_migration.rs"
         fixture.parent.mkdir(parents=True)
         test.parent.mkdir(parents=True, exist_ok=True)
         fixture.write_text("{}\n", encoding="utf-8")

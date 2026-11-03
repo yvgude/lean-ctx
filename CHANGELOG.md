@@ -899,6 +899,16 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   check was printed. They now read the stored counts read-only, run with a 10 s limit and
   report "skipped (busy)" instead of waiting. `doctor --json` prints a single JSON
   document; daemon diagnostics no longer precede it on stdout.
+- **The Claude Code cockpit counts a session started outside the project (#2181).** With
+  Claude Code started in the home directory and the agent working in a project, the pane
+  showed 0 for every value: it kept only sessions whose project contained the start
+  directory, before it looked at which Claude Code a session belongs to. The Claude Code
+  that started a session now decides, as for the status line; among several of its
+  sessions the start directory's project wins.
+- **A single `*` in `ctx_glob` stays in its directory (#2182).** `rust/src/*.rs` also
+  returned files from subdirectories such as `rust/src/core/`, because `*` matched across
+  `/`. In a pattern with a `/`, `*` and `?` now stay within one directory and only `**`
+  recurses; a pattern without `/`, such as `*.rs`, still finds matching files at any depth.
 - **Freed memory goes back to the operating system (#2075).** The allocator's purge was a
   silent no-op, tree-sitter allocated outside it and the search index kept every project
   resident, so the daemon's memory only grew. Freed pages are now returned, the index drops

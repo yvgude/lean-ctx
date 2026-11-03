@@ -35,7 +35,7 @@ only.
 
 The cohort is read by the V3 receipt migration tests
 (`rust/src/core/task_receipt_migration.rs`,
-`rust/tests/v3_receipt_fixture_migration.rs`), the round-trip test
+`rust/crates/lean-ctx/tests/v3_receipt_fixture_migration.rs`), the round-trip test
 `rust/tests/suite/execution_receipt_roundtrip.rs` and the fixture matrix gate
 `scripts/check-v3-fixture-migrations.py` (`docs/migration/v3-fixture-matrix-v1.json`).
 

@@ -9,7 +9,7 @@
       "migration": "read_only_compatibility_projection",
       "authority": "non_authoritative",
       "canonical_successor": "ReceiptDocumentV1",
-      "test": "rust/tests/v3_receipt_fixture_migration.rs"
+      "test": "rust/crates/lean-ctx/tests/v3_receipt_fixture_migration.rs"
     },
     {
       "id": "task-spine-001",

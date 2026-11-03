@@ -20842,7 +20842,7 @@
           "version": "3.12.1"
         }
       ],
-      "description": "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI Systems behind the lean-ctx CLI, MCP server and proxy integrations.",
+      "description": "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI agents behind the lean-ctx CLI, MCP server and proxy integrations.",
       "externalReferences": [
         {
           "type": "website",

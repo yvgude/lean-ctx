@@ -463,7 +463,7 @@ pub fn seed_stub_backend(project_root: &str, language: &'static str, backend: Bo
     );
 }
 
-/// Serializes tests that seed [`BACKENDS`] stubs: `BACKENDS` is process-global,
+/// Serializes tests that seed `BACKENDS` stubs: `BACKENDS` is process-global,
 /// so two parallel tests seeding the same key would race (one stub overwrites
 /// the other between seed and use). Hold this for the whole test.
 #[cfg(any(test, feature = "test-support"))]

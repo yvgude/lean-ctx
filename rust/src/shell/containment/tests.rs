@@ -8,7 +8,7 @@
 //! belongs to none of the contained groups and must be alive at the end.
 //!
 //! The helper processes are this test binary itself, started on the ignored
-//! test [`containment_helper`]; the guard and the starter run the same
+//! test `containment_helper`; the guard and the starter run the same
 //! functions the hidden modes of the `lean-ctx` binary run.
 
 use std::io::{BufRead as _, BufReader, Write as _};
@@ -61,7 +61,7 @@ fn containment_helper() {
     containment_helper_main();
 }
 
-/// The body of the ignored helper test [`HELPER_TEST`]; the server crate's
+/// The body of the ignored helper test `HELPER_TEST`; the server crate's
 /// unit-test harness mounts a helper test at the same path that runs it.
 pub fn containment_helper_main() {
     let mode = std::env::var(HELPER_ENV).expect("helper mode");

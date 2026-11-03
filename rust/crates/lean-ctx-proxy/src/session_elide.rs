@@ -17,7 +17,7 @@
 //! Elision deliberately does. It is bounded:
 //!
 //! - the window is the cache-aware staircase of
-//!   [`history_prune::prune_boundary`]: it advances only in whole strides of
+//!   `history_prune::prune_boundary`: it advances only in whole strides of
 //!   16 messages and keeps at least 8, so the cached prefix breaks once per
 //!   stride, not every turn;
 //! - the stub is a pure function of the block's text (#498), so a block
