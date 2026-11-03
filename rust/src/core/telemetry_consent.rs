@@ -69,8 +69,11 @@ pub fn ci_detected(lookup: impl Fn(&str) -> Option<String>) -> bool {
 /// job's environment (`host_env`). `LEAN_CTX_TELEMETRY_IN_CI=1` opts a
 /// machine that sets a CI marker for other reasons back in.
 pub fn running_in_ci() -> bool {
-    // Unit tests run inside CI themselves; detection is covered by `ci_detected`.
-    if cfg!(test) {
+    // Unit tests run inside CI themselves; detection is covered by
+    // `ci_detected`. That covers the unit-test harnesses of the crates above
+    // the engine too (`lean_ctx_server-…` and the others, which see this
+    // engine without `cfg(test)`), never the binary their tests spawn.
+    if crate::core::data_dir::sandboxed() {
         return false;
     }
     let opted_in = crate::core::host_env::var("LEAN_CTX_TELEMETRY_IN_CI")

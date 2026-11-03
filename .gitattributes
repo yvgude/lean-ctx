@@ -19,6 +19,11 @@ rust/data/product-capabilities.toml text eol=lf
 # CRLF checkout on Windows would make genuine fixtures fail verification.
 rust/src/core/updater/testdata/** -text
 
+# The 3.11.0 migration journal fixtures (#2175): the receipt pins the SHA-256 of
+# the pre-v4 config bytes, so a CRLF checkout on Windows reads as a tampered
+# backup ("backup-mismatch").
+rust/tests/fixtures/config_migration_v3_11_0/** -text
+
 
 # Shipped database migrations are immutable: deployed databases recorded their
 # bytes (ee/governance/migrations/legacy-history.txt). A whitespace "fix" changes

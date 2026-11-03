@@ -93,8 +93,9 @@ mod tests {
     #[test]
     fn a_read_cut_by_the_turn_budget_is_never_stubbed() {
         let _guard = isolated();
-        let _limit = lean_ctx::test_env::EnvVarGuard::set("LEAN_CTX_TURN_FRESH_LIMIT", "50");
-        let controller = (1..=400)
+        // Larger than the default turn budget, so no process-wide override is
+        // needed: setting LEAN_CTX_TURN_FRESH_LIMIT raced with parallel tests.
+        let controller = (1..=2500)
             .map(|i| format!("{i:>6}|  register_route_{i}(request, response);"))
             .collect::<Vec<_>>()
             .join("\n");

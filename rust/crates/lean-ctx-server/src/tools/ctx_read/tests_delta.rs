@@ -719,10 +719,11 @@ fn delta_explicit_decision_is_byte_stable() {
 /// unchanged file delivers the body again instead of the `[unchanged]` stub.
 #[test]
 fn a_full_read_cut_by_the_turn_budget_is_not_marked_delivered() {
-    let _limit = lean_ctx::test_env::EnvVarGuard::set("LEAN_CTX_TURN_FRESH_LIMIT", "50");
+    // Larger than the default turn budget: overriding LEAN_CTX_TURN_FRESH_LIMIT
+    // process-wide made parallel full reads in this module cut too.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("routes.ts");
-    let body = (1..=400)
+    let body = (1..=2500)
         .map(|i| format!("register_route_{i}(request, response);"))
         .collect::<Vec<_>>()
         .join("\n");
