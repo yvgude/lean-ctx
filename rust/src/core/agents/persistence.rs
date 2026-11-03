@@ -11,13 +11,13 @@ use std::path::PathBuf;
 /// an old process can still update its legacy registry record without erasing
 /// the immutable identity captured by a new binary.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct ProcessIdentityIndex {
+pub struct ProcessIdentityIndex {
     #[serde(default)]
     identities: HashMap<String, ProcessIdentity>,
 }
 
 impl ProcessIdentityIndex {
-    pub(crate) fn load() -> Self {
+    pub fn load() -> Self {
         let Ok(path) = identity_index_path() else {
             return Self::default();
         };
@@ -27,7 +27,7 @@ impl ProcessIdentityIndex {
             .unwrap_or_default()
     }
 
-    pub(crate) fn get(&self, agent_id: &str) -> Option<&ProcessIdentity> {
+    pub fn get(&self, agent_id: &str) -> Option<&ProcessIdentity> {
         self.identities.get(agent_id)
     }
 
@@ -114,7 +114,7 @@ pub(super) fn generate_short_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }
 
-pub(crate) struct FileLock {
+pub struct FileLock {
     file: std::fs::File,
 }
 
@@ -126,7 +126,7 @@ pub(crate) struct FileLock {
 pub(crate) const ACQUIRE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl FileLock {
-    pub(crate) fn acquire(path: &std::path::Path) -> Result<Self, String> {
+    pub fn acquire(path: &std::path::Path) -> Result<Self, String> {
         Self::acquire_with_timeout(path, ACQUIRE_TIMEOUT)
     }
 

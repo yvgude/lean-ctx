@@ -89,7 +89,7 @@
       "owner": "mcp-runtime",
       "boundary": "Local MCP client process to LeanCtxServer through the hybrid stdio transport.",
       "evidence": [
-        {"kind": "source", "source": "rust/src/server/server_handler.rs", "language": "rust", "symbol_kind": "function", "symbol": "call_tool"}
+        {"kind": "source", "source": "rust/crates/lean-ctx-server/src/server/server_handler.rs", "language": "rust", "symbol_kind": "function", "symbol": "call_tool"}
       ],
       "non_goals": ["Does not establish proprietary IDE full-inline interception."]
     },
@@ -137,7 +137,7 @@
       "owner": "proxy-runtime",
       "boundary": "Loopback HTTP ingress through provider routers to configured upstreams.",
       "evidence": [
-        {"kind": "source", "source": "rust/src/proxy/mod.rs", "language": "rust", "symbol_kind": "function", "symbol": "start_proxy_with_token"}
+        {"kind": "source", "source": "rust/crates/lean-ctx-proxy/src/lib.rs", "language": "rust", "symbol_kind": "function", "symbol": "start_proxy_with_token"}
       ],
       "non_goals": ["Integrated routing is not a certified transparent proxy for every provider feature."]
     },
@@ -222,8 +222,8 @@
       "owner": "proxy-runtime",
       "boundary": "Production OpenAI-shaped request-body transformer called by the provider handler.",
       "evidence": [
-        {"kind": "source", "source": "rust/src/proxy/openai.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
-        {"kind": "test", "source": "rust/src/proxy/openai.rs", "language": "rust", "symbol_kind": "test", "symbol": "openai_prose_compression_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
+        {"kind": "source", "source": "rust/crates/lean-ctx-proxy/src/openai.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
+        {"kind": "test", "source": "rust/crates/lean-ctx-proxy/src/openai.rs", "language": "rust", "symbol_kind": "test", "symbol": "openai_prose_compression_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
       ],
       "non_goals": ["Does not claim full OpenAI API surface coverage."]
     },
@@ -235,8 +235,8 @@
       "owner": "proxy-runtime",
       "boundary": "Production Anthropic-shaped request-body transformer called by the provider handler.",
       "evidence": [
-        {"kind": "source", "source": "rust/src/proxy/anthropic.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
-        {"kind": "test", "source": "rust/src/proxy/anthropic.rs", "language": "rust", "symbol_kind": "test", "symbol": "compress_request_body_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
+        {"kind": "source", "source": "rust/crates/lean-ctx-proxy/src/anthropic.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
+        {"kind": "test", "source": "rust/crates/lean-ctx-proxy/src/anthropic.rs", "language": "rust", "symbol_kind": "test", "symbol": "compress_request_body_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
       ],
       "non_goals": ["Does not claim full Anthropic API surface coverage."]
     },
@@ -248,8 +248,8 @@
       "owner": "proxy-runtime",
       "boundary": "Production Gemini-shaped request-body transformer called by the provider handler.",
       "evidence": [
-        {"kind": "source", "source": "rust/src/proxy/google.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
-        {"kind": "test", "source": "rust/src/proxy/google.rs", "language": "rust", "symbol_kind": "test", "symbol": "gemini_compression_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
+        {"kind": "source", "source": "rust/crates/lean-ctx-proxy/src/google.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
+        {"kind": "test", "source": "rust/crates/lean-ctx-proxy/src/google.rs", "language": "rust", "symbol_kind": "test", "symbol": "gemini_compression_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
       ],
       "non_goals": ["Does not claim full Google AI API surface coverage."]
     },
@@ -261,8 +261,8 @@
       "owner": "proxy-runtime",
       "boundary": "Production Responses-shaped request-body transformer called by the provider handler.",
       "evidence": [
-        {"kind": "source", "source": "rust/src/proxy/openai_responses.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
-        {"kind": "test", "source": "rust/src/proxy/openai_responses.rs", "language": "rust", "symbol_kind": "test", "symbol": "responses_compression_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
+        {"kind": "source", "source": "rust/crates/lean-ctx-proxy/src/openai_responses.rs", "language": "rust", "symbol_kind": "function", "symbol": "compress_request_body"},
+        {"kind": "test", "source": "rust/crates/lean-ctx-proxy/src/openai_responses.rs", "language": "rust", "symbol_kind": "test", "symbol": "responses_compression_is_deterministic", "covers_source_symbols": ["compress_request_body"]}
       ],
       "non_goals": ["Does not claim every Responses event type is transformed."]
     },
@@ -274,8 +274,8 @@
       "owner": "proxy-runtime",
       "boundary": "Production decision that selects the no-idle-timeout upstream client for SSE-shaped requests.",
       "evidence": [
-        {"kind": "source", "source": "rust/src/proxy/forward.rs", "language": "rust", "symbol_kind": "function", "symbol": "expects_unbounded_stream"},
-        {"kind": "test", "source": "rust/src/proxy/forward/tests.rs", "language": "rust", "symbol_kind": "test", "symbol": "long_lived_stream_detection_honors_sse_accept_header", "covers_source_symbols": ["expects_unbounded_stream"]}
+        {"kind": "source", "source": "rust/crates/lean-ctx-proxy/src/forward.rs", "language": "rust", "symbol_kind": "function", "symbol": "expects_unbounded_stream"},
+        {"kind": "test", "source": "rust/crates/lean-ctx-proxy/src/forward/tests.rs", "language": "rust", "symbol_kind": "test", "symbol": "long_lived_stream_detection_honors_sse_accept_header", "covers_source_symbols": ["expects_unbounded_stream"]}
       ],
       "non_goals": ["Streaming survival does not prove semantic parity for every event schema."]
     },
@@ -287,8 +287,8 @@
       "owner": "proxy-runtime",
       "boundary": "Production conversion of accepted local WebSocket create events into upstream Responses bodies.",
       "evidence": [
-        {"kind": "source", "source": "rust/src/proxy/openai_responses_ws.rs", "language": "rust", "symbol_kind": "function", "symbol": "build_upstream_body"},
-        {"kind": "test", "source": "rust/src/proxy/openai_responses_ws.rs", "language": "rust", "symbol_kind": "test", "symbol": "build_upstream_body_rejects_non_create_events", "covers_source_symbols": ["build_upstream_body"]}
+        {"kind": "source", "source": "rust/crates/lean-ctx-proxy/src/openai_responses_ws.rs", "language": "rust", "symbol_kind": "function", "symbol": "build_upstream_body"},
+        {"kind": "test", "source": "rust/crates/lean-ctx-proxy/src/openai_responses_ws.rs", "language": "rust", "symbol_kind": "test", "symbol": "build_upstream_body_rejects_non_create_events", "covers_source_symbols": ["build_upstream_body"]}
       ],
       "non_goals": ["The bridge is not a general bidirectional provider WebSocket proxy."]
     },
@@ -350,7 +350,7 @@
       "owner": "proxy-runtime",
       "boundary": "Config-derived listener and provider upstream selection.",
       "evidence": [
-        {"kind": "source", "source": "rust/src/proxy/mod.rs", "language": "rust", "symbol_kind": "struct", "symbol": "ProxyState"}
+        {"kind": "source", "source": "rust/crates/lean-ctx-proxy/src/lib.rs", "language": "rust", "symbol_kind": "struct", "symbol": "ProxyState"}
       ],
       "non_goals": ["No centralized fleet policy or remote configuration claim."]
     },

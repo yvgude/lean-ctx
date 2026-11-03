@@ -33,7 +33,7 @@ static CLI_OVERLAY: RwLock<Option<CliOverlay>> = RwLock::new(None);
 /// Install the per-run CLI filter overlay (repeatable `--include`/`--exclude`
 /// globs, `--no-gitignore`/`--respect-gitignore`). Called once by the `index`
 /// CLI dispatch before any build starts.
-pub(crate) fn set_cli_overlay(
+pub fn set_cli_overlay(
     include: Vec<String>,
     exclude: Vec<String>,
     respect_gitignore: Option<bool>,
@@ -60,7 +60,7 @@ pub(crate) fn cli_overlay_active() -> bool {
 
 /// The resolved corpus-membership filter for one indexing run.
 #[derive(Debug)]
-pub(crate) struct IndexFileFilter {
+pub struct IndexFileFilter {
     include: Vec<glob::Pattern>,
     exclude: Vec<glob::Pattern>,
     /// Whether walkers should honor `.gitignore`/global/exclude files.
@@ -73,7 +73,7 @@ impl IndexFileFilter {
     /// `--include` replaces the config include set for this run (a one-off
     /// experiment declares its corpus outright); an explicit gitignore flag
     /// overrides the config boolean.
-    pub(crate) fn effective() -> Self {
+    pub fn effective() -> Self {
         let cfg = crate::core::config::Config::load();
         Self::resolve(&cfg)
     }
@@ -132,7 +132,7 @@ impl IndexFileFilter {
     /// forward slashes. Exclude wins over include; a non-empty include list
     /// admits matching files only; the empty filter admits everything
     /// (byte-for-byte today's behavior).
-    pub(crate) fn is_excluded(&self, rel_path: &str) -> bool {
+    pub fn is_excluded(&self, rel_path: &str) -> bool {
         if self.exclude.iter().any(|p| p.matches(rel_path)) {
             return true;
         }
@@ -151,7 +151,7 @@ impl IndexFileFilter {
     /// One-line human/JSON summary of the active filter for `index status`.
     /// `None` when the filter is the do-nothing default, so default output
     /// stays byte-identical.
-    pub(crate) fn summary(&self) -> Option<String> {
+    pub fn summary(&self) -> Option<String> {
         if !self.is_active() {
             return None;
         }

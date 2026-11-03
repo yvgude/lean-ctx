@@ -19,8 +19,8 @@
 //! round-trip.
 //!
 //! On a machine connected to Hive, `lean-ctx import docs` queues the facts
-//! it added or changed as import drafts
-//! ([`crate::core::hive::knowledge::import_draft`]).
+//! it added or changed as import drafts (the Hive connector's knowledge
+//! import drafts).
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -423,7 +423,7 @@ fn is_instruction_file(relative: &Path) -> bool {
 /// below `project_root` into facts. Nothing is stored here.
 #[must_use]
 pub fn import(project_root: &Path, paths: &[PathBuf]) -> ImportResult {
-    use crate::tools::admitted_sources::{self, SourceRead};
+    use crate::core::admitted_sources::{self, SourceRead};
     let mut result = ImportResult::default();
     let Ok(root) = project_root.canonicalize() else {
         result.refuse(SourceRefusal::Unreadable);

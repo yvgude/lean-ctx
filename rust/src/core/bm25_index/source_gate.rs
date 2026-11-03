@@ -11,7 +11,7 @@
 //!
 //! So an index its store loaded or handed out is asked again for every chunk
 //! it is about to serve: the source is read NOW through the admitted rooted
-//! reader (`tools::admitted_sources::read` — path jail, role, project policy,
+//! reader (`core::admitted_sources::read` — path jail, role, project policy,
 //! gateway, decided on the original bytes), and the chunk is served only if
 //! that read is storable and still contains the chunk's text. A source that
 //! is gone, outside the root, withheld, restricted, lossily decoded, changed
@@ -60,7 +60,7 @@
 //!
 //! ONE gateway snapshot per gate: the gateway rules are captured when the
 //! gate is built (or handed in by a caller that already judged something
-//! under a snapshot, [`SourceGate::with_admission`]) and every decision of
+//! under a snapshot, `SourceGate::with_admission`) and every decision of
 //! the gate uses them — file reads, provider re-admission, the content
 //! admission of chunk text, originless decisions. A configuration that
 //! changes and changes back during a call cannot admit a source the
@@ -110,7 +110,7 @@ const MAX_PROVIDER_CHECKS: usize = 16;
 const PROVIDER_BUDGET: std::time::Duration = std::time::Duration::from_secs(3);
 
 /// The serve-time check of one search over one index.
-pub(crate) struct SourceGate {
+pub struct SourceGate {
     root: PathBuf,
     tool: &'static str,
     /// Per source asked so far: the admitted text as the reader returns it
@@ -449,7 +449,7 @@ impl SourceGate {
     fn read(&self, source: &str) -> Option<String> {
         let path = self.root.join(source);
         // NOTE the argument order of this entry: root first.
-        let read = crate::tools::admitted_sources::read_with_admission(
+        let read = crate::core::admitted_sources::read_with_admission(
             self.root.to_str()?,
             path.to_str()?,
             self.tool,
@@ -468,7 +468,7 @@ fn normalised(text: &str) -> String {
 /// Whether `chunk` may be served through `gate`. Without a gate — a view
 /// built in the running call from sources the reader returned then — every
 /// chunk is served.
-pub(crate) fn chunk_served(gate: &mut Option<SourceGate>, chunk: &CodeChunk) -> bool {
+pub fn chunk_served(gate: &mut Option<SourceGate>, chunk: &CodeChunk) -> bool {
     gate.as_mut()
         .is_none_or(|gate| gate.serves(&chunk.file_path, &chunk.content))
 }
@@ -483,7 +483,7 @@ impl BM25Index {
     }
 
     /// The gate of one search: `None` for an index without a root.
-    pub(crate) fn source_gate(&self) -> Option<SourceGate> {
+    pub fn source_gate(&self) -> Option<SourceGate> {
         self.source_root
             .as_deref()
             .map(|root| SourceGate::new(root, SEARCH_TOOL).with_origins(&self.provider_origins))
@@ -512,7 +512,7 @@ impl BM25Index {
 /// (`SourceGate::in_root_scope`), so such a search also ends in `None`. A
 /// root that cannot be resolved has no view: `None`. Without a root (a view
 /// built in the running call, no gate) the search runs as it is.
-pub(crate) fn pinned<T>(root: Option<&Path>, search: impl FnOnce() -> T) -> Option<T> {
+pub fn pinned<T>(root: Option<&Path>, search: impl FnOnce() -> T) -> Option<T> {
     let Some(root) = root else {
         return Some(search());
     };

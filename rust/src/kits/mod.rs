@@ -313,7 +313,7 @@ fn validate_modes(modes: &[String], field: &str) -> Result<(), KitError> {
         return Err(KitError::new(format!("{field} must not be empty")));
     }
     for mode in modes {
-        crate::tools::ctx_read::ReadMode::from_str(mode).map_err(|error| {
+        crate::core::read_mode::ReadMode::from_str(mode).map_err(|error| {
             KitError::new(format!(
                 "{field} contains unsupported mode '{mode}': {error}"
             ))

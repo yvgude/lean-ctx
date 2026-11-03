@@ -31,7 +31,7 @@ use crate::core::{
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct HostOutcomeRequest {
+pub struct HostOutcomeRequest {
     pub schema_version: u32,
     pub receipt_digest: Sha256Digest,
     pub context_decision_digest: Sha256Digest,
@@ -50,10 +50,7 @@ pub(super) struct HostOutcomeResult {
 }
 
 impl HostReceiptAuthority {
-    pub(crate) fn observe_outcome(
-        &self,
-        request: &HostOutcomeRequest,
-    ) -> Result<serde_json::Value> {
+    pub fn observe_outcome(&self, request: &HostOutcomeRequest) -> Result<serde_json::Value> {
         let result = self.observe_outcome_bound(request, None)?;
         Ok(serde_json::json!({"schema_version":1,
             "receipt_id":result.publication.receipt_id,

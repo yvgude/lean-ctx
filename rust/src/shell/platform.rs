@@ -1,9 +1,7 @@
-use std::io::{self, IsTerminal};
-
 /// Sets `LC_CTYPE=C.UTF-8` when no UTF-8 locale is inherited from the parent
 /// process. Without this, commands treat bytes >127 as non-printable (C locale),
 /// mangling Cyrillic, CJK, emoji, etc.
-pub(crate) fn apply_utf8_locale(cmd: &mut std::process::Command) {
+pub fn apply_utf8_locale(cmd: &mut std::process::Command) {
     let has_utf8 = std::env::var("LC_ALL")
         .or_else(|_| std::env::var("LC_CTYPE"))
         .or_else(|_| std::env::var("LANG"))
@@ -21,7 +19,7 @@ pub(crate) fn apply_utf8_locale(cmd: &mut std::process::Command) {
 /// pointing at e.g. an `exec nu` snippet would otherwise silently replace the
 /// shell. Cleared to empty so the expansion names no file. No-op in effect for
 /// PowerShell/cmd, which ignore both variables.
-pub(crate) fn apply_profile_free_env(cmd: &mut std::process::Command) {
+pub fn apply_profile_free_env(cmd: &mut std::process::Command) {
     cmd.env("BASH_ENV", "").env("ENV", "");
 }
 
@@ -169,11 +167,11 @@ pub fn is_container() -> bool {
 
 /// Returns true if stdin is NOT a terminal (pipe, /dev/null, etc.)
 pub fn is_non_interactive() -> bool {
-    !io::stdin().is_terminal()
+    !crate::core::host_env::stdin_is_terminal()
 }
 
 /// Returns `true` when `shell_path` points to a PowerShell executable.
-pub(crate) fn is_powershell(shell_path: &str) -> bool {
+pub fn is_powershell(shell_path: &str) -> bool {
     let name = std::path::Path::new(shell_path)
         .file_name()
         .and_then(|n| n.to_str())
@@ -214,12 +212,12 @@ pub(crate) fn powershell_profile_path(home: &std::path::Path) -> std::path::Path
 /// file PowerShell never reads and the proxy receives no traffic (#558). We ask
 /// PowerShell itself for `$PROFILE.CurrentUserCurrentHost` — authoritative under any
 /// folder redirection — preferring `pwsh` (7+) then Windows PowerShell, and fall back
-/// to [`powershell_profile_path`] only when no PowerShell host can be launched (in
+/// to `powershell_profile_path` only when no PowerShell host can be launched (in
 /// which case the profile is moot anyway).
 ///
 /// Non-Windows hosts keep the static `~/.config/powershell` path (never `~/Documents`,
 /// #356) and never spawn a process.
-pub(crate) fn resolve_powershell_profile_path(home: &std::path::Path) -> std::path::PathBuf {
+pub fn resolve_powershell_profile_path(home: &std::path::Path) -> std::path::PathBuf {
     #[cfg(windows)]
     {
         if let Some(active) = query_active_powershell_profile() {
@@ -304,7 +302,7 @@ pub fn shell_name() -> String {
 ///   the word through unchanged. Agents emit `--include=*.go` etc.
 /// - `equals`: zsh expands `=foo` to the path of the `foo` binary, so
 ///   `echo ===` fails with "= not found". Agents use `===` as separators.
-pub(crate) fn zsh_safe_command(command: &str, shell: &str) -> String {
+pub fn zsh_safe_command(command: &str, shell: &str) -> String {
     if cfg!(unix) {
         let basename = std::path::Path::new(shell)
             .file_name()

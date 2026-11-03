@@ -11,7 +11,7 @@
   "group": "total",
   "filters": {
     "vault": null,
-    "engine": null,
+    "instance": null,
     "person": null,
     "workspace": null
   },
@@ -30,11 +30,11 @@
     "since": "2026-10-26T15:00:00Z"
   },
   "coverage": {
-    "engines_reporting": 1,
-    "engines_connected": 1,
-    "sharing_off_engines": 0,
+    "instances_reporting": 1,
+    "instances_connected": 1,
+    "sharing_off_instances": 0,
     "first_bucket_at": "2026-10-26T15:00:00Z",
-    "engines": [
+    "instances": [
       {
         "id": "inst_5d1f3b7a9c2e4f6a8b0d1c3e5f7a9b2d",
         "label": "ada-mbp",
@@ -93,7 +93,7 @@
     "spend.cached_tokens": "measured",
     "spend.usd_micros": "estimated",
     "knowledge.facts_current": "measured",
-    "engines.active": "derived"
+    "instances.active": "derived"
   },
   "totals": {
     "tokens.input": 8420000,
@@ -135,7 +135,7 @@
     "spend.cached_tokens": 12900000,
     "spend.usd_micros": 84213000,
     "knowledge.facts_current": 1240,
-    "engines.active": 6
+    "instances.active": 6
   },
   "previous_totals": {
     "tokens.input": 0,
@@ -177,7 +177,7 @@
     "spend.cached_tokens": 0,
     "spend.usd_micros": 0,
     "knowledge.facts_current": 0,
-    "engines.active": 0
+    "instances.active": 0
   },
   "deltas": {
     "tokens.input": {
@@ -336,7 +336,7 @@
       "abs": 1240,
       "pct": null
     },
-    "engines.active": {
+    "instances.active": {
       "abs": 6,
       "pct": null
     }
@@ -386,7 +386,7 @@
         "spend.cached_tokens": 0,
         "spend.usd_micros": 0,
         "knowledge.facts_current": 0,
-        "engines.active": 14
+        "instances.active": 14
       }
     },
     {
@@ -431,7 +431,7 @@
         "spend.cached_tokens": 0,
         "spend.usd_micros": 0,
         "knowledge.facts_current": 0,
-        "engines.active": 15
+        "instances.active": 15
       }
     },
     {
@@ -476,7 +476,7 @@
         "spend.cached_tokens": 0,
         "spend.usd_micros": 0,
         "knowledge.facts_current": 0,
-        "engines.active": 16
+        "instances.active": 16
       }
     },
     {
@@ -521,7 +521,7 @@
         "spend.cached_tokens": 0,
         "spend.usd_micros": 0,
         "knowledge.facts_current": 0,
-        "engines.active": 17
+        "instances.active": 17
       }
     },
     {
@@ -566,7 +566,7 @@
         "spend.cached_tokens": 0,
         "spend.usd_micros": 0,
         "knowledge.facts_current": 0,
-        "engines.active": 18
+        "instances.active": 18
       }
     },
     {
@@ -611,7 +611,7 @@
         "spend.cached_tokens": 0,
         "spend.usd_micros": 0,
         "knowledge.facts_current": 0,
-        "engines.active": 14
+        "instances.active": 14
       }
     },
     {
@@ -656,7 +656,7 @@
         "spend.cached_tokens": 0,
         "spend.usd_micros": 0,
         "knowledge.facts_current": 0,
-        "engines.active": 15
+        "instances.active": 15
       }
     }
   ],
@@ -750,12 +750,12 @@
       {
         "detector": "aws_access_key",
         "count": 9,
-        "engines": 3
+        "instances": 3
       },
       {
         "detector": "github_token",
         "count": 5,
-        "engines": 1
+        "instances": 1
       }
     ],
     "models": [

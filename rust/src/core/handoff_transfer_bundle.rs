@@ -15,13 +15,13 @@ const MAX_NEXT_STEP_CHARS: usize = 1_000;
 const MAX_TASK_CHARS: usize = 4_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BundlePrivacyV1 {
+pub enum BundlePrivacyV1 {
     Redacted,
     Full,
 }
 
 impl BundlePrivacyV1 {
-    pub(crate) fn parse(s: Option<&str>) -> Self {
+    pub fn parse(s: Option<&str>) -> Self {
         match s.unwrap_or("redacted").trim().to_lowercase().as_str() {
             "full" => Self::Full,
             _ => Self::Redacted,
@@ -58,7 +58,7 @@ pub struct HandoffTransferBundleV1 {
 }
 
 /// Signature over the whole bundle except `signature` itself.
-pub(crate) const BOUND_SIGNATURE_SCHEME: &str = "ed25519-bound-v2";
+pub const BOUND_SIGNATURE_SCHEME: &str = "ed25519-bound-v2";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectIdentityV1 {
@@ -80,7 +80,7 @@ pub struct ProofFileV1 {
     pub bytes: u64,
 }
 
-pub(crate) fn build_bundle_v1(
+pub fn build_bundle_v1(
     mut ledger: HandoffLedgerV1,
     project_root: Option<&str>,
     privacy: BundlePrivacyV1,
@@ -141,10 +141,7 @@ pub(crate) fn build_bundle_v1(
     }
 }
 
-pub(crate) fn sign_bundle(
-    bundle: &mut HandoffTransferBundleV1,
-    agent_id: &str,
-) -> Result<(), String> {
+pub fn sign_bundle(bundle: &mut HandoffTransferBundleV1, agent_id: &str) -> Result<(), String> {
     // One atomic key resolution — signature and embedded public key must come
     // from the same keypair (two separate lookups raced with concurrent
     // data-dir changes and produced unverifiable bundles).
@@ -171,7 +168,7 @@ pub(crate) fn sign_bundle(
 /// Integrity only: the key travels inside the bundle, so `claimed_signer` is
 /// an identity *claim* unless `trusted` is set (GHSA-gvg8-285q-m62g).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct VerifiedSignature {
+pub struct VerifiedSignature {
     /// The bundle's `signer_agent_id`.
     pub claimed_signer: String,
     /// Fingerprint of the embedded public key (see `signer_trust::key_fingerprint`).
@@ -186,7 +183,7 @@ pub(crate) struct VerifiedSignature {
 
 impl VerifiedSignature {
     /// Human-readable status that never claims identity without an anchor.
-    pub(crate) fn describe(&self) -> String {
+    pub fn describe(&self) -> String {
         let fp = &self.key_fingerprint;
         let who = &self.claimed_signer;
         if self.trusted {
@@ -203,7 +200,7 @@ impl VerifiedSignature {
 
     /// Stable machine status for JSON responses.
     #[cfg(any(test, feature = "http-server"))]
-    pub(crate) fn status(&self) -> &'static str {
+    pub fn status(&self) -> &'static str {
         if self.trusted {
             "verified"
         } else if self.signer_bound {
@@ -220,7 +217,7 @@ impl VerifiedSignature {
 /// import; only the complete absence of all signature fields counts as
 /// [`Unsigned`](BundleSignatureStatus::Unsigned).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum BundleSignatureStatus {
+pub enum BundleSignatureStatus {
     /// Signature verifies against the embedded key; see [`VerifiedSignature`]
     /// for whether the signer identity is bound and trusted.
     Signed(VerifiedSignature),
@@ -232,7 +229,7 @@ pub(crate) enum BundleSignatureStatus {
 
 /// Classify a bundle's signature for import-time enforcement (GL #465).
 #[must_use]
-pub(crate) fn check_bundle_signature(bundle: &HandoffTransferBundleV1) -> BundleSignatureStatus {
+pub fn check_bundle_signature(bundle: &HandoffTransferBundleV1) -> BundleSignatureStatus {
     if bundle.signature.is_none()
         && bundle.signer_public_key.is_none()
         && bundle.signer_agent_id.is_none()
@@ -292,9 +289,7 @@ pub(crate) fn verify_bundle_signature(
     })
 }
 
-pub(crate) fn serialize_bundle_v1_pretty(
-    bundle: &HandoffTransferBundleV1,
-) -> Result<String, String> {
+pub fn serialize_bundle_v1_pretty(bundle: &HandoffTransferBundleV1) -> Result<String, String> {
     let json = serde_json::to_string_pretty(bundle).map_err(|e| e.to_string())?;
     if json.len() > MAX_BUNDLE_BYTES {
         return Err(format!(
@@ -306,7 +301,7 @@ pub(crate) fn serialize_bundle_v1_pretty(
     Ok(json)
 }
 
-pub(crate) fn parse_bundle_v1(json: &str) -> Result<HandoffTransferBundleV1, String> {
+pub fn parse_bundle_v1(json: &str) -> Result<HandoffTransferBundleV1, String> {
     let b: HandoffTransferBundleV1 = serde_json::from_str(json).map_err(|e| e.to_string())?;
     if b.schema_version != crate::core::contracts::HANDOFF_TRANSFER_BUNDLE_V1_SCHEMA_VERSION {
         return Err(format!(
@@ -318,7 +313,7 @@ pub(crate) fn parse_bundle_v1(json: &str) -> Result<HandoffTransferBundleV1, Str
     Ok(b)
 }
 
-pub(crate) fn write_bundle_v1(path: &Path, json: &str) -> Result<(), String> {
+pub fn write_bundle_v1(path: &Path, json: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "ERROR: invalid path".to_string())?;
@@ -336,7 +331,7 @@ pub(crate) fn write_bundle_v1(path: &Path, json: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn read_bundle_v1(path: &Path) -> Result<HandoffTransferBundleV1, String> {
+pub fn read_bundle_v1(path: &Path) -> Result<HandoffTransferBundleV1, String> {
     let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     if json.len() > MAX_BUNDLE_BYTES {
         return Err(format!(
@@ -348,7 +343,7 @@ pub(crate) fn read_bundle_v1(path: &Path) -> Result<HandoffTransferBundleV1, Str
     parse_bundle_v1(&json)
 }
 
-pub(crate) fn project_identity_warning(
+pub fn project_identity_warning(
     bundle: &HandoffTransferBundleV1,
     project_root: &str,
 ) -> Option<String> {

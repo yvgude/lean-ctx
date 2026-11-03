@@ -69,8 +69,11 @@ pub fn ci_detected(lookup: impl Fn(&str) -> Option<String>) -> bool {
 /// job's environment (`host_env`). `LEAN_CTX_TELEMETRY_IN_CI=1` opts a
 /// machine that sets a CI marker for other reasons back in.
 pub fn running_in_ci() -> bool {
-    // Unit tests run inside CI themselves; detection is covered by `ci_detected`.
-    if cfg!(test) {
+    // Unit tests run inside CI themselves; detection is covered by
+    // `ci_detected`. That covers the unit-test harnesses of the crates above
+    // the engine too (`lean_ctx_server-…` and the others, which see this
+    // engine without `cfg(test)`), never the binary their tests spawn.
+    if crate::core::data_dir::sandboxed() {
         return false;
     }
     let opted_in = crate::core::host_env::var("LEAN_CTX_TELEMETRY_IN_CI")
@@ -178,7 +181,7 @@ fn notice_text() -> String {
 /// first interactive command. Never prints for MCP, hooks or piped use, never
 /// when telemetry is already off or blocked, and never touches stdout.
 pub fn maybe_show_notice() {
-    if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
+    if !(std::io::stderr().is_terminal() && crate::core::host_env::stdin_is_terminal()) {
         return;
     }
     if notice_seen() || !telemetry_would_send() {
@@ -189,7 +192,7 @@ pub fn maybe_show_notice() {
     mark_notice_seen();
 }
 
-pub(crate) fn telemetry_would_send() -> bool {
+pub fn telemetry_would_send() -> bool {
     let Ok(config) = crate::core::config::Config::try_load_global() else {
         return false;
     };

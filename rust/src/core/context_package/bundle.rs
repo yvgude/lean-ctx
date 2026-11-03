@@ -10,7 +10,7 @@ pub(crate) const FORMAT_VERSION: u32 = 1;
 
 /// A portable, self-contained context package.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ContextPackage {
+pub struct ContextPackage {
     pub format_version: u32,
     pub created_at: DateTime<Utc>,
     pub project_root: String,
@@ -25,7 +25,7 @@ pub(crate) struct ContextPackage {
 
 /// Human-readable metadata about the package.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PackageMetadata {
+pub struct PackageMetadata {
     pub agent_id: Option<String>,
     pub description: Option<String>,
     pub tool_calls: u32,
@@ -34,7 +34,7 @@ pub(crate) struct PackageMetadata {
 
 /// The essential slice of session state to restore.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SessionSlice {
+pub struct SessionSlice {
     pub task: Option<TaskInfo>,
     pub findings: Vec<Finding>,
     pub decisions: Vec<Decision>,
@@ -45,7 +45,7 @@ pub(crate) struct SessionSlice {
 
 /// A knowledge fact (compact, portable representation).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct KnowledgeFact {
+pub struct KnowledgeFact {
     #[serde(default)]
     pub origin: crate::core::knowledge::FactOrigin,
     pub category: String,
@@ -60,7 +60,7 @@ impl ContextPackage {
         self.format_version <= FORMAT_VERSION
     }
 
-    pub(crate) fn summary_line(&self) -> String {
+    pub fn summary_line(&self) -> String {
         let desc = self
             .metadata
             .description

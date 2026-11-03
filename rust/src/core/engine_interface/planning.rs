@@ -13,7 +13,7 @@ use super::{CAPABILITY_ID, CAPABILITY_VERSION, MAX_TRANSPORT_BUDGET_TOKENS};
 use crate::core::{canonical::canonical_serialize, ocla::adapters::native_context::manifest};
 
 /// Select only the installed native operation; a recommendation is not admission.
-pub(crate) fn native_plan(
+pub fn native_plan(
     task: &TaskEnvelopeV1,
     admission: &EnginePolicyAdmissionV1,
 ) -> Result<ExecutionPlanV1, String> {
@@ -214,7 +214,7 @@ fn finalize_native_plan(
     Ok(plan)
 }
 
-pub(crate) fn validate_native_plan(
+pub fn validate_native_plan(
     task: &TaskEnvelopeV1,
     plan: &ExecutionPlanV1,
     admission: &EnginePolicyAdmissionV1,

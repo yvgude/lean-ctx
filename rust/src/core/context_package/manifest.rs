@@ -12,7 +12,7 @@ use super::graph_model::{GraphSummary, MarketplaceMeta};
 /// and old readers (which tolerate unknown fields) keep working.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum PackageKind {
+pub enum PackageKind {
     #[default]
     Context,
     Skills,
@@ -21,7 +21,7 @@ pub(crate) enum PackageKind {
 }
 
 impl PackageKind {
-    pub(crate) fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Context => "context",
             Self::Skills => "skills",
@@ -38,10 +38,10 @@ impl PackageKind {
 
 /// Serialization is derived (`remote = "Self"` makes the derives inherent
 /// functions); [`Deserialize`] first folds the spec's dependency map forms into
-/// the list this engine writes, see [`normalize_dependencies`].
+/// the list this engine writes, see `normalize_dependencies`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(remote = "Self")]
-pub(crate) struct PackageManifest {
+pub struct PackageManifest {
     pub schema_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conformance_level: Option<u32>,
@@ -163,7 +163,7 @@ fn dependency_entries(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PackageSignature {
+pub struct PackageSignature {
     pub algorithm: String,
     pub public_key: String,
     pub value: String,
@@ -176,7 +176,7 @@ pub(crate) struct PackageSignature {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum PackageLayer {
+pub enum PackageLayer {
     Knowledge,
     Graph,
     Session,
@@ -186,7 +186,7 @@ pub(crate) enum PackageLayer {
 }
 
 impl PackageLayer {
-    pub(crate) fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Knowledge => "knowledge",
             Self::Graph => "graph",
@@ -199,7 +199,7 @@ impl PackageLayer {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct PackageDependency {
+pub struct PackageDependency {
     pub name: String,
     pub version_req: String,
     #[serde(default)]
@@ -207,14 +207,14 @@ pub(crate) struct PackageDependency {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PackageIntegrity {
+pub struct PackageIntegrity {
     pub sha256: String,
     pub content_hash: String,
     pub byte_size: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PackageProvenance {
+pub struct PackageProvenance {
     pub tool: String,
     pub tool_version: String,
     pub project_hash: Option<String>,
@@ -223,7 +223,7 @@ pub(crate) struct PackageProvenance {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct CompatibilitySpec {
+pub struct CompatibilitySpec {
     #[serde(default)]
     pub min_lean_ctx_version: Option<String>,
     #[serde(default)]
@@ -233,7 +233,7 @@ pub(crate) struct CompatibilitySpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct PackageStats {
+pub struct PackageStats {
     pub knowledge_facts: u32,
     pub graph_nodes: u32,
     pub graph_edges: u32,

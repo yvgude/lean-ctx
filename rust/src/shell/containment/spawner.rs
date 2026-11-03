@@ -42,8 +42,11 @@ struct Link {
 }
 
 /// The command that starts a helper.
-#[cfg(not(test))]
 fn helper_command() -> std::io::Result<Command> {
+    #[cfg(any(test, feature = "test-support"))]
+    if super::harness_helper() {
+        return harness_helper_command();
+    }
     let mut command = Command::new(std::env::current_exe()?);
     command.arg(super::HELPER_MODE);
     Ok(command)
@@ -51,8 +54,8 @@ fn helper_command() -> std::io::Result<Command> {
 
 /// In the unit tests the running binary is the test harness; its helper test
 /// runs the same helper function.
-#[cfg(test)]
-fn helper_command() -> std::io::Result<Command> {
+#[cfg(any(test, feature = "test-support"))]
+fn harness_helper_command() -> std::io::Result<Command> {
     if HELPER_BROKEN.load(Ordering::Relaxed) {
         return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
     }
@@ -180,7 +183,7 @@ impl Link {
 
     fn send(&self, request: &Request, descriptors: &[std::os::fd::RawFd]) -> Result<(), Unsent> {
         let _one_frame = self.sending.lock().unwrap_or_else(PoisonError::into_inner);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if matches!(request, Request::Spawn { .. }) && SEND_FAILS_ONCE.swap(false, Ordering::SeqCst)
         {
             return Err(Unsent::Nothing);
@@ -204,7 +207,7 @@ fn link() -> Option<Arc<Link>> {
 
 /// The Engine ends in order: the helper exits and ends nothing. Without this
 /// message the helper takes the closed socket for the Engine's death.
-pub(crate) fn shutdown_spawn_helper() {
+pub fn shutdown_spawn_helper() {
     let link = LINK.lock().unwrap_or_else(PoisonError::into_inner).take();
     if let Some(link) = link {
         // Unsent: the helper is gone already and signals nothing either way.
@@ -214,7 +217,7 @@ pub(crate) fn shutdown_spawn_helper() {
 }
 
 /// What became of the request to start a shell through the helper.
-pub(crate) enum HelperSpawn {
+pub enum HelperSpawn {
     /// The helper is the shell's parent.
     Helped {
         child: HelpedChild,
@@ -230,8 +233,8 @@ pub(crate) enum HelperSpawn {
 /// Starts the shell described by `command` — program, arguments, environment
 /// and working directory; its input is null and its outputs are the returned
 /// pipes — as a child of this process's spawn helper.
-pub(crate) fn spawn_shell(command: &Command) -> HelperSpawn {
-    if !super::GUARD_HOST.load(Ordering::Relaxed) {
+pub fn spawn_shell(command: &Command) -> HelperSpawn {
+    if !super::guard_host() {
         // Not the `lean-ctx` binary: nothing here can be started as a helper.
         // Same limit, and same single debug line, as `guard_child`.
         super::note_no_guard_host();
@@ -371,7 +374,7 @@ impl Link {
 /// A shell whose parent is the spawn helper. What the Engine does with a
 /// child process, it does with this through the helper: learn its exit, end
 /// its group, let go of it.
-pub(crate) struct HelpedChild {
+pub struct HelpedChild {
     call: u64,
     pid: u32,
     link: Arc<Link>,
@@ -472,7 +475,7 @@ impl HelpedChild {
             return true;
         }
         self.settled = true;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if RELEASE_FAILS_ONCE.swap(false, Ordering::SeqCst) {
             return false;
         }
@@ -498,46 +501,46 @@ impl Drop for HelpedChild {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 static SEND_FAILS_ONCE: AtomicBool = AtomicBool::new(false);
 
 /// Tests only: the next spawn request fails before one byte of it is sent.
-#[cfg(test)]
-pub(crate) fn fail_next_spawn_send_for_test() {
+#[cfg(any(test, feature = "test-support"))]
+pub fn fail_next_spawn_send_for_test() {
     SEND_FAILS_ONCE.store(true, Ordering::SeqCst);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 static RELEASE_FAILS_ONCE: AtomicBool = AtomicBool::new(false);
 
 /// Tests only: the next release is not sent, as with a closed socket.
-#[cfg(test)]
-pub(crate) fn fail_next_release_send_for_test() {
+#[cfg(any(test, feature = "test-support"))]
+pub fn fail_next_release_send_for_test() {
     RELEASE_FAILS_ONCE.store(true, Ordering::SeqCst);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 static HELPER_FAULT: Mutex<Option<&'static str>> = Mutex::new(None);
 
 /// Tests only: the fault every helper started from now on runs with (see
 /// `spawn_helper::start_with_fault`); `None` for a sound helper.
-#[cfg(test)]
-pub(crate) fn set_helper_fault_for_test(fault: Option<&'static str>) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn set_helper_fault_for_test(fault: Option<&'static str>) {
     *HELPER_FAULT.lock().unwrap_or_else(PoisonError::into_inner) = fault;
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 static HELPER_BROKEN: AtomicBool = AtomicBool::new(false);
 
 /// Tests only: while set, no helper can be started in this process.
-#[cfg(test)]
-pub(crate) fn break_helper_for_test(broken: bool) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn break_helper_for_test(broken: bool) {
     HELPER_BROKEN.store(broken, Ordering::Relaxed);
 }
 
 /// Tests only: the process id of this process's live helper, if any.
-#[cfg(test)]
-pub(crate) fn helper_pid_for_test() -> Option<u32> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn helper_pid_for_test() -> Option<u32> {
     let slot = LINK.lock().unwrap_or_else(PoisonError::into_inner);
     let link = slot
         .as_ref()
@@ -552,8 +555,8 @@ pub(crate) fn helper_pid_for_test() -> Option<u32> {
 
 /// Tests only: ends this process's helper by its handle, as a crash would,
 /// and waits until its end was seen.
-#[cfg(test)]
-pub(crate) fn kill_helper_for_test() {
+#[cfg(any(test, feature = "test-support"))]
+pub fn kill_helper_for_test() {
     let link = LINK
         .lock()
         .unwrap_or_else(PoisonError::into_inner)

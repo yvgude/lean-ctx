@@ -11,7 +11,7 @@ use std::process::ExitStatus;
 /// The shell-convention exit code of a finished child: its exit code, or
 /// `128 + signal` when a signal terminated it (130 SIGINT, 137 SIGKILL,
 /// 143 SIGTERM, …).
-pub(crate) fn exit_code(status: ExitStatus) -> i32 {
+pub fn exit_code(status: ExitStatus) -> i32 {
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
@@ -60,7 +60,7 @@ pub(crate) fn signal_name(code: i32) -> Option<&'static str> {
 /// leading newline. `None` on success. Timeouts (124, #815) and signal
 /// terminations are spelled out so an agent does not mistake them for an
 /// ordinary failure.
-pub(crate) fn exit_marker(code: i32) -> Option<String> {
+pub fn exit_marker(code: i32) -> Option<String> {
     match code {
         0 => None,
         124 => Some("[exit:124 — command timed out]".to_string()),
@@ -73,7 +73,7 @@ pub(crate) fn exit_marker(code: i32) -> Option<String> {
 
 /// [`exit_marker`] as a footer: empty on success, otherwise the marker on its
 /// own line.
-pub(crate) fn exit_footer(code: i32) -> String {
+pub fn exit_footer(code: i32) -> String {
     exit_marker(code).map_or_else(String::new, |m| format!("\n{m}"))
 }
 

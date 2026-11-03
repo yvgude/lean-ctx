@@ -1042,7 +1042,7 @@ fn simple_hash(content: &str) -> String {
 /// [`CallGraph`] records in `file_hashes` — without building or loading a
 /// call graph. For callers that need only the hashes (semantic cache keys
 /// and project revision), which is a fraction of a call-graph build.
-pub(crate) fn current_file_hashes(inputs: &CallGraphInputs) -> HashMap<String, String> {
+pub fn current_file_hashes(inputs: &CallGraphInputs) -> HashMap<String, String> {
     inputs
         .file_paths
         .par_iter()

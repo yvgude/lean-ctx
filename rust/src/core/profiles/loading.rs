@@ -35,7 +35,7 @@ fn profiles_dir_project() -> Option<PathBuf> {
 /// 3. Built-in defaults
 ///
 /// Applies inheritance chain (max depth 5 to prevent cycles).
-pub(crate) fn load_profile(name: &str) -> Option<Profile> {
+pub fn load_profile(name: &str) -> Option<Profile> {
     load_profile_recursive(name, 0)
 }
 
@@ -320,9 +320,9 @@ static ACTIVE_PROFILE_OVERRIDE: RwLock<Option<String>> = RwLock::new(None);
 
 /// Returns the currently active profile name.
 ///
-/// Resolution order: in-process override (see [`set_active_profile`]) →
+/// Resolution order: in-process override (see `set_active_profile`) →
 /// `LEAN_CTX_PROFILE` env var → config.toml `profile` field → "coder".
-pub(crate) fn active_profile_name() -> String {
+pub fn active_profile_name() -> String {
     if let Some(name) = ACTIVE_PROFILE_OVERRIDE
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -343,7 +343,7 @@ pub(crate) fn active_profile_name() -> String {
 }
 
 /// Loads the currently active profile.
-pub(crate) fn active_profile() -> Profile {
+pub fn active_profile() -> Profile {
     let name = active_profile_name();
     if let Some(p) = load_profile(&name) {
         p
@@ -363,7 +363,7 @@ pub(crate) fn active_profile() -> Profile {
 /// Records the selection in a thread-safe in-process override (see
 /// [`active_profile_name`]) and returns the resolved profile after applying
 /// inheritance.
-pub(crate) fn set_active_profile(name: &str) -> Result<Profile, String> {
+pub fn set_active_profile(name: &str) -> Result<Profile, String> {
     let name = name.trim();
     if name.is_empty() {
         return Err("profile name is empty".to_string());
@@ -380,7 +380,7 @@ pub(crate) fn set_active_profile(name: &str) -> Result<Profile, String> {
 }
 
 /// Lists all available profile names (built-in + on-disk).
-pub(crate) fn list_profiles() -> Vec<ProfileInfo> {
+pub fn list_profiles() -> Vec<ProfileInfo> {
     let mut profiles: HashMap<String, ProfileInfo> = HashMap::new();
 
     for (name, p) in builtin_profiles() {
@@ -430,7 +430,7 @@ pub(crate) fn list_profiles() -> Vec<ProfileInfo> {
 
 /// Information about an available profile.
 #[derive(Debug, Clone)]
-pub(crate) struct ProfileInfo {
+pub struct ProfileInfo {
     pub name: String,
     pub description: String,
     pub source: ProfileSource,
@@ -438,7 +438,7 @@ pub(crate) struct ProfileInfo {
 
 /// Where a profile was loaded from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ProfileSource {
+pub enum ProfileSource {
     Builtin,
     Global,
     Project,
@@ -455,6 +455,6 @@ impl std::fmt::Display for ProfileSource {
 }
 
 /// Formats a profile as TOML for display or file creation.
-pub(crate) fn format_as_toml(profile: &Profile) -> String {
+pub fn format_as_toml(profile: &Profile) -> String {
     toml::to_string_pretty(profile).unwrap_or_else(|_| "[error serializing profile]".to_string())
 }

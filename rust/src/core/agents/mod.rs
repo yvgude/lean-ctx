@@ -1,7 +1,8 @@
 #[cfg(feature = "http-server")]
 mod bridge;
 mod diary;
-pub(crate) mod friction;
+pub mod friction;
+pub mod host_mirror;
 mod persistence;
 pub(crate) mod reaper;
 mod registry;
@@ -11,9 +12,9 @@ mod types;
 
 #[cfg(feature = "http-server")]
 pub(crate) use bridge::*;
-pub(crate) use diary::*;
-pub(crate) use persistence::*;
+pub use diary::*;
+pub use persistence::*;
 #[allow(unreachable_pub, unused_imports)]
 pub use registry::*;
-pub(crate) use roles::*;
-pub(crate) use types::*;
+pub use roles::*;
+pub use types::*;

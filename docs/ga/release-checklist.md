@@ -6,7 +6,7 @@
 > order and public capability status follow the
 > [canonical positioning](../POSITIONING_CANONICAL.md), [public claims contract](../contracts/public-product-claims-v1.md)
 > and [Vision](../../VISION.md). This document
-> is the public LeanCTX Engine release boundary; maintainer-only operator notes do
+> is public LeanCTX | OSS release boundary; maintainer-only operator notes do
 > not replace or weaken any gate below.
 
 ## Overview

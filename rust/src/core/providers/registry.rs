@@ -124,7 +124,7 @@ impl ProviderRegistry {
     }
 
     /// Execute and convert results to ContentChunks for BM25/embedding ingest.
-    pub(crate) fn execute_bound(
+    pub fn execute_bound(
         &self,
         provider_id: &str,
         action: &str,

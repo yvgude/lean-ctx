@@ -91,7 +91,7 @@ pub fn active_resolved_checked() -> Result<Option<ResolvedPolicy>, String> {
 /// one authority's rules with another's identity: there is no second read
 /// between the two. Whoever reuses a kept resolution captures again and
 /// compares fingerprints first.
-pub(crate) struct AuthoritySnapshot {
+pub struct AuthoritySnapshot {
     fingerprint: blake3::Hash,
     /// The fingerprint's state before the marker text.
     before_marker: blake3::Hasher,
@@ -103,7 +103,7 @@ pub(crate) struct AuthoritySnapshot {
 impl AuthoritySnapshot {
     /// Reads the three inputs once. Paths are part of the fingerprint and
     /// absence is distinct from emptiness; any read error is an error.
-    pub(crate) fn capture() -> Result<Self, String> {
+    pub fn capture() -> Result<Self, String> {
         let (policy_path, policy_required) = store::selected_source()?;
         let mut hash = blake3::Hasher::new();
         // The artifact alone is read at its own, larger bound; trust store
@@ -142,7 +142,7 @@ impl AuthoritySnapshot {
     }
 
     #[cfg(any(test, feature = "enterprise"))]
-    pub(crate) fn fingerprint(&self) -> blake3::Hash {
+    pub fn fingerprint(&self) -> blake3::Hash {
         self.fingerprint
     }
 
@@ -162,7 +162,7 @@ impl AuthoritySnapshot {
     /// recorded requirement a missing policy is an error and a version-one
     /// policy does not qualify; a version-two artifact is not a version-one
     /// artifact and fails to parse, which is an error too.
-    pub(crate) fn resolve(&self) -> Result<Option<ResolvedPolicy>, String> {
+    pub fn resolve(&self) -> Result<Option<ResolvedPolicy>, String> {
         self.resolve_observed().map(|(floor, _)| floor)
     }
 
@@ -402,7 +402,7 @@ pub(crate) enum ObservedState {
 /// sequence of the organization's statement; it is NOT the `version` a policy
 /// pack carries in its own text, which stays the pack's.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Observation {
+pub struct Observation {
     state: ObservedState,
     /// `sha256:<hex>` of the accepted statement: the policy, or the unpin.
     statement: String,
@@ -415,8 +415,8 @@ pub(crate) struct Observation {
 impl Observation {
     /// A signed unpin as a verification would have observed it. Tests only:
     /// outside of them an observation comes from `verify_v2` and nowhere else.
-    #[cfg(test)]
-    pub(crate) fn unpinned_for_test(policy_version: u64, fill: char) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn unpinned_for_test(policy_version: u64, fill: char) -> Self {
         Self {
             state: ObservedState::Unpinned,
             statement: format!("sha256:{}", fill.to_string().repeat(64)),
@@ -433,7 +433,7 @@ impl Observation {
         &self.statement
     }
 
-    pub(crate) fn policy_version(&self) -> u64 {
+    pub fn policy_version(&self) -> u64 {
         self.policy_version
     }
 
@@ -456,12 +456,23 @@ pub(crate) struct Lifetime {
 impl Lifetime {
     /// A decision signed up to `horizon` and asked under `deadline`. Tests
     /// only: outside of them a lifetime comes from `verify_v2` and nowhere else.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn for_test(
         horizon: Option<chrono::DateTime<chrono::Utc>>,
         deadline: std::time::Instant,
     ) -> Self {
         Self { horizon, deadline }
+    }
+
+    /// A lifetime restored from its stored signed horizon, for a holder that
+    /// outlives the request which obtained the decision and so only ever
+    /// checks [`Self::check_horizon`]. Its request deadline has passed by
+    /// construction: [`Self::check`] refuses it.
+    pub(crate) fn restored(horizon: Option<chrono::DateTime<chrono::Utc>>) -> Self {
+        Self {
+            horizon,
+            deadline: std::time::Instant::now(),
+        }
     }
 
     /// The signed instant an enforced policy runs out at, for the compiled

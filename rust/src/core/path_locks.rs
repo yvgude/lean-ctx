@@ -26,7 +26,7 @@ const MAX_ENTRIES: usize = 500;
 ///
 /// The same path always yields the same `Arc<Mutex<()>>`, so callers across
 /// threads serialize on it. Different paths yield independent mutexes.
-pub(crate) fn per_file_lock(path: &str) -> Arc<Mutex<()>> {
+pub fn per_file_lock(path: &str) -> Arc<Mutex<()>> {
     static FILE_LOCKS: std::sync::OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
         std::sync::OnceLock::new();
     let map = FILE_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));

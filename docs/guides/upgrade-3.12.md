@@ -8,6 +8,28 @@ focus changes that ship in the same release (removed MCP tools, the Cockpit repl
 built-in dashboard and more) are described in
 [focus-2026-10.md](../migration/focus-2026-10.md).
 
+## Claude Code: governor setup by default (next 3.12.x release)
+
+From the release after 3.12.0 (see the CHANGELOG), Claude Code runs lean-ctx as the
+**governor setup**: Claude Code's native tools, the `lean-ctx hook govern` PostToolUse
+hook (re-read and re-run dedup, lossless and template collapse of large Bash output), the
+`lean-ctx hook rewrite-enforce` PreToolUse hook (security checks only), a 2-line rules block
+in `~/.claude/CLAUDE.md`, and no lean-ctx MCP server. It was measured cheaper per request
+than the MCP tools, mostly because their schemas and rules no longer ride every request.
+
+| You have | What the update does | To keep the MCP tools |
+| --- | --- | --- |
+| No lean-ctx setup for Claude Code | `setup` / `init --agent claude` installs the governor setup | `lean-ctx init --agent claude --mode hybrid` |
+| The standard (MCP) setup, no explicit mode | Switched to the governor setup once, after backups | `lean-ctx init --agent claude --mode hybrid` (switches back and is never migrated again) |
+| An explicit mode (`init --mode …`, or `hook_mode` in the config, which `lean-ctx harden` writes) | Nothing | — |
+| The governor setup you chose earlier (`--mode governor` / `governor-mcp`) | Turns the rules R1.read, R1.bash, R2 and R4 on (R3 shadow) where `[governor]` does not set them yet, once, after a config backup; hooks and MCP entry stay | `lean-ctx init --agent claude --mode hybrid` |
+
+Before switching, lean-ctx copies `~/.claude/settings.json`, `~/.claude.json`,
+`~/.claude/CLAUDE.md` and its `config.toml` next to the originals
+(`*.pre-governor-<version>.bak`) and prints what changed. Rule modes are in `[governor]`
+in the config. Other AI tools keep their setup. Details:
+[Claude Code guide](claude-code.md#governor-setup-default).
+
 ## At a glance
 
 | You use today | What 3.12 changes | What you do |
@@ -136,6 +158,20 @@ account.
   binary — runs with your account's rights and can still change the config in your home.
   The gate checks command lines, not what admitted programs do (#1367); only an OS sandbox
   closes that.
+
+## Hosts with tool hooks: governor setup without MCP
+
+Hosts with tool hooks get the governor setup by default: native tools, LeanCTX
+hooks, a short rules block and no LeanCTX MCP server. CodeBuddy gets the full
+governor (as Claude Code); Cursor, Codex CLI, Gemini CLI and Copilot CLI get the
+enforcement hook only (allowlist and secret-path denies; tool results stay
+native). Hosts without hooks keep the MCP setup. The per-host table is in
+[governor-hosts.md](../reference/governor-hosts.md).
+
+- New installs (`lean-ctx init --agent <host>`, `lean-ctx setup`) get it unless
+  `hook_mode` / `LEAN_CTX_HOOK_MODE` pins a mode.
+- Back to the MCP setup: `lean-ctx init --agent <host> --mode hybrid`.
+- Opt in on an existing setup: `lean-ctx init --agent <host> --mode governor`.
 
 ## Going back to 3.11
 

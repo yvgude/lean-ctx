@@ -25,7 +25,7 @@ use crate::core::mcp_catalog::config::{GatewayServer, TransportKind};
 
 /// The `[addon]` table.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AddonMeta {
+pub struct AddonMeta {
     pub name: String,
     pub version: String,
     pub description: String,
@@ -34,7 +34,7 @@ pub(crate) struct AddonMeta {
 
 /// The `[mcp]` table, when present.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct McpWiring {
+pub struct McpWiring {
     pub transport: TransportKind,
     pub command: String,
     pub args: Vec<String>,
@@ -53,7 +53,7 @@ pub(crate) struct McpWiring {
 impl McpWiring {
     /// One line a human can check before consenting — the whole point of
     /// showing it is that the reader recognises what will be spawned.
-    pub(crate) fn describe(&self) -> String {
+    pub fn describe(&self) -> String {
         match self.transport {
             TransportKind::Stdio => {
                 if self.args.is_empty() {
@@ -93,7 +93,7 @@ impl McpWiring {
 
 /// A parsed authoring manifest.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct AddonManifest {
+pub struct AddonManifest {
     pub addon: AddonMeta,
     pub mcp: Option<McpWiring>,
 }
@@ -195,7 +195,7 @@ fn resolve_integration(
 /// a stdio server without a command, an http server without a URL, or a URL
 /// that is not `http(s)`. Catching those here means the error names the
 /// manifest line, not a spawn failure hours later.
-pub(crate) fn parse(text: &str) -> Result<AddonManifest, String> {
+pub fn parse(text: &str) -> Result<AddonManifest, String> {
     let doc: toml::Value = toml::from_str(text).map_err(|e| format!("lean-ctx-addon.toml: {e}"))?;
 
     let addon_table = doc

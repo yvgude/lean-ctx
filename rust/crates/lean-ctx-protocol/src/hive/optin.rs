@@ -38,12 +38,45 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::messages::NetworkV1;
 use super::{require_schema, validate_id};
 use crate::{UtcTimestamp, ValidationError};
 
-pub const ENGINE_OPTIN_SCHEMA: &str = "leanctx.hive.engine-optin/v1";
-pub const ENGINE_OPTIN_STOP_SCHEMA: &str = "leanctx.hive.engine-optin-stop/v1";
+/// A network an engine may pull questions from: an org channel
+/// (`org:<org_id>/vault:<vault_id>/<name>`). Any other kind does not decode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum NetworkV1 {
+    Org { channel: String },
+}
+
+impl NetworkV1 {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        match self {
+            Self::Org { channel } => validate_channel(channel),
+        }
+    }
+}
+
+/// Validate `org:<org>/vault:<vault_id>/<name>`.
+fn validate_channel(channel: &str) -> Result<(), ValidationError> {
+    let mut parts = channel.splitn(3, '/');
+    let org = parts.next().and_then(|part| part.strip_prefix("org:"));
+    let vault = parts.next().and_then(|part| part.strip_prefix("vault:"));
+    let name = parts.next();
+    match (org, vault, name) {
+        (Some(org), Some(vault), Some(name)) => {
+            validate_id(org, "channel org")?;
+            super::validate_vault_id(vault)?;
+            validate_id(name, "channel name")
+        }
+        _ => Err(ValidationError::new(
+            "channel must be org:<org>/vault:<vault>/<name>",
+        )),
+    }
+}
+
+pub const ENGINE_OPTIN_SCHEMA: &str = "leanctx.hive.instance-optin/v1";
+pub const ENGINE_OPTIN_STOP_SCHEMA: &str = "leanctx.hive.instance-optin-stop/v1";
 pub const DEFAULT_DAILY_TASKS: u32 = 5;
 pub const MAX_DAILY_TASKS: u32 = 100;
 pub const MAX_OPTIN_VAULTS: usize = 200;
@@ -94,7 +127,7 @@ pub struct EngineOptinV1 {
     /// Vaults (`vault_id`) whose tasks the agents may pull.
     #[serde(default)]
     pub vaults: Vec<String>,
-    /// Networks whose questions they may pull (section 2 `NetworkV1`).
+    /// Networks whose questions they may pull ([`NetworkV1`]).
     #[serde(default)]
     pub networks: Vec<NetworkV1>,
     pub daily_budget: DailyBudgetV1,

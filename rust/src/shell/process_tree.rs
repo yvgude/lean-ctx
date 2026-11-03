@@ -15,18 +15,18 @@
 
 use std::process::{Child, Command};
 
-/// The process tree of one spawned command. Create it with [`ProcessTree::start`]
+/// The process tree of one spawned command. Create it with `ProcessTree::start`
 /// right after spawning a command prepared by [`ProcessTree::prepare`].
-pub(crate) struct ProcessTree {
+pub struct ProcessTree {
     #[cfg(windows)]
     job: Option<job::ProcessJob>,
 }
 
 impl ProcessTree {
     /// Configure `cmd` so its tree can be contained. On Windows this spawns the
-    /// child suspended — [`ProcessTree::start`] must follow every successful
+    /// child suspended — `ProcessTree::start` must follow every successful
     /// spawn. It sets the creation flags, so callers must not set their own.
-    pub(crate) fn prepare(cmd: &mut Command) {
+    pub fn prepare(cmd: &mut Command) {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -79,7 +79,7 @@ impl ProcessTree {
     /// without having run, and the error says so. (Unix calls start behind
     /// their guard instead, `shell::containment::start_behind_guard`.)
     #[cfg(not(unix))]
-    pub(crate) fn spawn_contained(command: &mut Command) -> std::io::Result<(Child, Self)> {
+    pub fn spawn_contained(command: &mut Command) -> std::io::Result<(Child, Self)> {
         Self::prepare(command);
         let mut child = command.spawn()?;
         let tree = Self::start(&mut child).map_err(std::io::Error::other)?;
@@ -139,12 +139,12 @@ fn boxed(pipe: impl std::io::Read + Send + 'static) -> Box<dyn std::io::Read + S
 
 /// A started MCP shell: the process, its output, and what the caller has to
 /// show in front of the result, if anything.
-pub(crate) struct StartedShell {
-    pub(crate) child: ShellChild,
-    pub(crate) stdout: ShellPipe,
-    pub(crate) stderr: ShellPipe,
+pub struct StartedShell {
+    pub child: ShellChild,
+    pub stdout: ShellPipe,
+    pub stderr: ShellPipe,
     /// A fixed, content-free line (see `shell::containment`).
-    pub(crate) notice: Option<&'static str>,
+    pub notice: Option<&'static str>,
 }
 
 /// The shell of one MCP shell call, whoever its parent is.
@@ -153,7 +153,7 @@ pub(crate) struct StartedShell {
 /// it holds the shell's session and ends it should this process die. Where
 /// there is no helper — Windows, a host that is not `lean-ctx`, a helper that
 /// could not be started — this process is the parent, as it always was.
-pub(crate) enum ShellChild {
+pub enum ShellChild {
     Direct {
         child: Child,
         tree: ProcessTree,
@@ -166,7 +166,7 @@ impl ShellChild {
     /// Starts the shell that `cmd` describes, in a session of its own on
     /// Unix, with its output piped. `cmd` must have been through
     /// [`ProcessTree::prepare`] and must not set its own standard streams.
-    pub(crate) fn start(cmd: &mut Command) -> Result<StartedShell, String> {
+    pub fn start(cmd: &mut Command) -> Result<StartedShell, String> {
         #[cfg(unix)]
         let notice = {
             use crate::shell::containment::{HelperSpawn, spawn_shell};
@@ -207,7 +207,7 @@ impl ShellChild {
     }
 
     /// The shell's process id; on Unix also the id of the group it leads.
-    pub(crate) fn id(&self) -> u32 {
+    pub fn id(&self) -> u32 {
         match self {
             Self::Direct { child, .. } => child.id(),
             #[cfg(unix)]
@@ -216,7 +216,7 @@ impl ShellChild {
     }
 
     /// The exit status, if the shell has exited. Reaps a direct child.
-    pub(crate) fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+    pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
         match self {
             Self::Direct { child, .. } => child.try_wait(),
             #[cfg(unix)]
@@ -224,9 +224,9 @@ impl ShellChild {
         }
     }
 
-    /// Ends the shell and everything it started ([`ProcessTree::kill`]). The
+    /// Ends the shell and everything it started (`ProcessTree::kill`). The
     /// group is signalled by the shell's parent, while the shell is unreaped.
-    pub(crate) fn kill(&mut self) {
+    pub fn kill(&mut self) {
         match self {
             Self::Direct { child, tree } => tree.kill(child),
             #[cfg(unix)]
@@ -235,7 +235,7 @@ impl ShellChild {
     }
 
     /// Waits for a shell that was just killed to be reaped.
-    pub(crate) fn wait(&mut self) {
+    pub fn wait(&mut self) {
         match self {
             Self::Direct { child, .. } => {
                 let _ = child.wait();
@@ -246,12 +246,12 @@ impl ShellChild {
     }
 
     /// Hands the tree back after the command exited on its own
-    /// ([`ProcessTree::release`]): what it left running stays.
+    /// (`ProcessTree::release`): what it left running stays.
     ///
     /// `Some`: the fixed notice for a release that could not be handed to
     /// the shell's helper — whether what the command left running is still
     /// running is then not known. The caller shows it with the result.
-    pub(crate) fn release(self) -> Option<&'static str> {
+    pub fn release(self) -> Option<&'static str> {
         match self {
             Self::Direct { tree, .. } => {
                 tree.release();
@@ -268,7 +268,7 @@ impl ShellChild {
     /// whether the command was started, or before the shell's exit was
     /// known. The call's outcome is then not known in full. Never the case
     /// for a direct child.
-    pub(crate) fn lost_notice(&self) -> Option<&'static str> {
+    pub fn lost_notice(&self) -> Option<&'static str> {
         match self {
             Self::Direct { .. } => None,
             #[cfg(unix)]
@@ -294,7 +294,7 @@ impl ShellChild {
 /// The request is taken out of the environment first, as the starter does, so
 /// no process the Engine starts sees or repeats it.
 #[cfg(windows)]
-pub(crate) fn contain_requested_session() {
+pub fn contain_requested_session() {
     use std::io::Write;
     const SESSION_ENV: &str = "LEAN_CTX_SESSION_CONTAINMENT";
     const SESSION_ACK: &[u8] = b"{\"leanctx_session_containment\":1}\n";

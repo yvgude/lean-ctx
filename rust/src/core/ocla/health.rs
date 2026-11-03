@@ -16,7 +16,7 @@ use super::unified_ledger::{FileUnifiedLedger, UnifiedLedger};
 static STARTED_AT: OnceLock<Instant> = OnceLock::new();
 static DLQ: OnceLock<DeadLetterQueue> = OnceLock::new();
 
-pub(crate) fn dead_letter_queue() -> &'static DeadLetterQueue {
+pub fn dead_letter_queue() -> &'static DeadLetterQueue {
     DLQ.get_or_init(|| {
         #[cfg(test)]
         {

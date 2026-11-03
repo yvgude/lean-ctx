@@ -437,7 +437,7 @@ pub fn active_role() -> Role {
     if let Some(role) = crate::core::policy::runtime::pinned_role() {
         return role;
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     if let Ok(Some(role)) = TEST_ACTIVE_ROLE.try_with(|slot| slot.borrow().clone()) {
         return role;
     }
@@ -445,13 +445,13 @@ pub fn active_role() -> Role {
     load_role(&name).unwrap_or_else(builtin_coder)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 tokio::task_local! {
     static TEST_ACTIVE_ROLE: std::cell::RefCell<Option<Role>>;
 }
 
-#[cfg(test)]
-pub(crate) fn with_test_active_role<T>(role: Role, operation: impl FnOnce() -> T) -> T {
+#[cfg(any(test, feature = "test-support"))]
+pub fn with_test_active_role<T>(role: Role, operation: impl FnOnce() -> T) -> T {
     TEST_ACTIVE_ROLE.sync_scope(std::cell::RefCell::new(Some(role)), operation)
 }
 
@@ -465,14 +465,14 @@ pub(crate) fn set_test_active_role(role: Role) {
 /// drop, so a switch to `reviewer` or `admin` neither races another such test
 /// nor leaks into unrelated tests. Tests that only need a role for their own
 /// thread use [`with_test_active_role`] instead.
-#[cfg(test)]
-pub(crate) struct GlobalRoleGuard {
+#[cfg(any(test, feature = "test-support"))]
+pub struct GlobalRoleGuard {
     previous: String,
     _lock: std::sync::MutexGuard<'static, ()>,
 }
 
-#[cfg(test)]
-pub(crate) fn lock_global_role() -> GlobalRoleGuard {
+#[cfg(any(test, feature = "test-support"))]
+pub fn lock_global_role() -> GlobalRoleGuard {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let lock = LOCK
         .lock()
@@ -483,13 +483,13 @@ pub(crate) fn lock_global_role() -> GlobalRoleGuard {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for GlobalRoleGuard {
     fn drop(&mut self) {
         let slot = ACTIVE_ROLE_NAME.get_or_init(|| std::sync::Mutex::new(String::new()));
-        *slot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = self.previous.clone();
+        slot.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone_from(&self.previous);
     }
 }
 

@@ -7,7 +7,7 @@
 //! never candidates: they spend budget without explaining anything.
 //!
 //! Every file is read through the common rooted admitted reader
-//! (`tools::admitted_sources::read`, G01) — the reader `ctx_read` uses: path
+//! (`core::admitted_sources::read`, G01) — the reader `ctx_read` uses: path
 //! jail, project policy and gateway decide on the original, and the bundle
 //! only ever holds the text that reader delivered. The checks here (secret-like
 //! path, size, binary) run in addition and can only remove more.
@@ -16,7 +16,7 @@ use std::path::Path;
 
 use ignore::overrides::OverrideBuilder;
 
-use crate::tools::admitted_sources::SourceRead;
+use crate::core::admitted_sources::SourceRead;
 
 /// Files larger than this are listed as skipped instead of read. Also the
 /// byte budget handed to the admitted reader for each file, so the cost of a
@@ -178,7 +178,7 @@ fn read_candidate(root: &str, abs: &Path, path: String) -> Candidate {
     }
     let abs_text = abs.to_string_lossy();
     let mut remaining = usize::try_from(MAX_FILE_BYTES).unwrap_or(usize::MAX);
-    match crate::tools::admitted_sources::read(&abs_text, root, READER_TOOL, &mut remaining) {
+    match crate::core::admitted_sources::read(&abs_text, root, READER_TOOL, &mut remaining) {
         // A source the decoder could not represent completely was "binary"
         // to the bundle before and stays out.
         SourceRead::Admitted(read) if read.complete => Candidate {

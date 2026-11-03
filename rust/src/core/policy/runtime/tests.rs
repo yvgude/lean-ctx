@@ -64,8 +64,8 @@ fn allow_list_is_exclusive() {
     assert!(!p.tool_allowed("ctx_shell"));
 }
 
-fn hive(redaction: &[(&str, &str)]) -> crate::core::hive::policy::FilterRules {
-    crate::core::hive::policy::FilterRules {
+fn hive(redaction: &[(&str, &str)]) -> crate::core::policy::hive_filters::FilterRules {
+    crate::core::policy::hive_filters::FilterRules {
         redaction: redaction
             .iter()
             .map(|(label, pattern)| ((*label).to_string(), (*pattern).to_string()))

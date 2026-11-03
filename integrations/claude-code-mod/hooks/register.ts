@@ -594,7 +594,7 @@ function extractJobId(result: ToolCallResult): string | undefined {
 
 // ctx_shell reports background state as MCP `structuredContent`
 // (`{ jobId, state, exitCode?, archiveId?, summary }`, or `{ jobId, errorCode }`
-// for an expired id — rust/src/server/tool_trait.rs). Hosts often render
+// for an expired id — rust/crates/lean-ctx-server/src/server/tool_trait.rs). Hosts often render
 // only that object as the text block, so a JSON text block is the second
 // source; the `[background:…]` text header is the last resort.
 function readShellFields(raw: unknown, extraText?: string): JsonRecord {

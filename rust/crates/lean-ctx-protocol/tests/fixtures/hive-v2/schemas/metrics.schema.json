@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.leanctx.com/hive-v2/schemas/metrics.schema.json",
-  "title": "Engine metrics v2 (Release C, telemetry SPEC)",
-  "description": "Hourly engine metric buckets (POST /v1/metrics/hours, signed by the instance key), the sharing state (GET /v1/metrics/sharing, POST /v1/metrics/sharing/confirm, W104), the Insights responses (W99 workspace, W100 company, GET /v1/metrics/insights for the engine), export (W101), delete (W102; engine DELETE /v1/metrics/hours) and settings (W103). Aggregated counters only: never content, paths, prompts, model output, secret values, command lines or free text; unknown members are refused. Bucket key (instance from the bearer token, hour, vault); a higher rev replaces the hour. Retention: until the account is deleted or the customer deletes it. Gate: policy member sharing.share_engine_metrics (false_wins, server) and the plan default.",
+  "title": "Instance metrics v2 (Release C, telemetry SPEC)",
+  "description": "Hourly instance metric buckets (POST /v1/metrics/hours, signed by the instance key), the sharing state (GET /v1/metrics/sharing, POST /v1/metrics/sharing/confirm, W104), the Insights responses (W99 workspace, W100 company, GET /v1/metrics/insights for the instance), export (W101), delete (W102; instance DELETE /v1/metrics/hours) and settings (W103). Aggregated counters only: never content, paths, prompts, model output, secret values, command lines or free text; unknown members are refused. Bucket key (instance from the bearer token, hour, vault); a higher rev replaces the hour. Retention: until the account is deleted or the customer deletes it. Gate: policy member sharing.share_instance_metrics (false_wins, server) and the plan default.",
   "$defs": {
     "time": {
       "type": "string",
@@ -55,7 +55,7 @@
         "org",
         "workspace",
         "vault",
-        "engine"
+        "instance"
       ]
     },
     "range": {
@@ -115,7 +115,7 @@
         "spend.cached_tokens",
         "spend.usd_micros",
         "knowledge.facts_current",
-        "engines.active"
+        "instances.active"
       ]
     },
     "trust_label": {
@@ -158,6 +158,7 @@
         "ctx_delta",
         "ctx_discover",
         "ctx_discover_tools",
+        "ctx_doc",
         "ctx_edit",
         "ctx_execute",
         "ctx_expand",
@@ -209,7 +210,7 @@
         "shell",
         "other"
       ],
-      "description": "closed registry: the engine's KNOWN_TOOLS (lean-ctx-protocol metrics_v2); anything else is `other`"
+      "description": "closed registry: the instance's KNOWN_TOOLS (lean-ctx-protocol metrics_v2); anything else is `other`"
     },
     "rule": {
       "enum": [
@@ -239,7 +240,7 @@
         "sharing.consent_required_for",
         "sharing.cross_team_sharing",
         "sharing.personal_workspace",
-        "sharing.share_engine_metrics",
+        "sharing.share_instance_metrics",
         "sharing.task_claim_min_role",
         "gateway.budget_exceeded",
         "gateway.cross_project",
@@ -310,7 +311,7 @@
         "unknown",
         "other"
       ],
-      "description": "closed registry: the engine's KNOWN_HOSTS (MCP client ids); anything else is `other`"
+      "description": "closed registry: the instance's KNOWN_HOSTS (MCP client ids); anything else is `other`"
     },
     "provider": {
       "enum": [
@@ -323,7 +324,7 @@
         "unknown",
         "other"
       ],
-      "description": "closed registry: the engine's KNOWN_PROVIDERS; anything else is `other`"
+      "description": "closed registry: the instance's KNOWN_PROVIDERS; anything else is `other`"
     },
     "model": {
       "enum": [
@@ -351,7 +352,7 @@
         "fallback-blended",
         "other"
       ],
-      "description": "closed registry: the engine's KNOWN_MODELS (price-table keys); anything else (fine-tuned, custom) is `other`"
+      "description": "closed registry: the instance's KNOWN_MODELS (price-table keys); anything else (fine-tuned, custom) is `other`"
     },
     "name": {
       "enum": [
@@ -420,7 +421,7 @@
         "windsurf",
         "zed"
       ],
-      "description": "the engine's WireName rule: a known host, provider or model, or `other` (host/provider/model fields use their own narrower registries)"
+      "description": "the instance's WireName rule: a known host, provider or model, or `other` (host/provider/model fields use their own narrower registries)"
     },
     "program": {
       "enum": [
@@ -496,7 +497,7 @@
         "zed",
         "other"
       ],
-      "description": "closed registry: the engine's HOST_FAMILIES (agent host families, from the MCP client id); anything else is `other`"
+      "description": "closed registry: the instance's HOST_FAMILIES (agent host families, from the MCP client id); anything else is `other`"
     },
     "detector": {
       "enum": [
@@ -758,7 +759,7 @@
     "slice": {
       "type": "object",
       "additionalProperties": false,
-      "description": "counters of one engine, one UTC hour, one vault: absolute values for the hour, not deltas",
+      "description": "counters of one instance, one UTC hour, one vault: absolute values for the hour, not deltas",
       "required": [
         "vault",
         "tokens",
@@ -1052,7 +1053,7 @@
           "items": {
             "$ref": "#/$defs/unregulated_row"
           },
-          "description": "K13: activity no rule covers, by kind and name; program = a name of the engine's known-program table, never a command line; anything else is `other`"
+          "description": "K13: activity no rule covers, by kind and name; program = a name of the instance's known-program table, never a command line; anything else is `other`"
         },
         "secret_hits": {
           "type": "array",
@@ -1194,7 +1195,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 4294967295,
-          "description": "grows per (engine, hour) each time the engine rebuilds the hour; Hive keeps the highest"
+          "description": "grows per (instance, hour) each time the instance rebuilds the hour; Hive keeps the highest"
         },
         "slices": {
           "type": "array",
@@ -1213,24 +1214,24 @@
       "description": "POST /v1/metrics/hours body, at most 512 KiB; the instance is the bearer token's; counts against the transfer quota",
       "required": [
         "schema",
-        "engine",
+        "instance",
         "buckets",
         "key_id",
         "signature"
       ],
       "properties": {
         "schema": {
-          "const": "leanctx.hive.engine-metrics/v2"
+          "const": "leanctx.hive.instance-metrics/v2"
         },
-        "engine": {
+        "instance": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "engine_version",
+            "instance_version",
             "os"
           ],
           "properties": {
-            "engine_version": {
+            "instance_version": {
               "type": "string",
               "pattern": "^[A-Za-z0-9.+-]{1,32}$"
             },
@@ -1258,7 +1259,7 @@
         },
         "signature": {
           "$ref": "common.schema.json#/$defs/signature",
-          "description": "Ed25519 over \"leanctx.hive.engine-metrics.v2\\n\" || canonical_json(body without signature)"
+          "description": "Ed25519 over \"leanctx.hive.instance-metrics.v2\\n\" || canonical_json(body without signature)"
         }
       }
     },
@@ -1322,7 +1323,7 @@
       ],
       "properties": {
         "schema": {
-          "const": "leanctx.hive.engine-metrics-ack/v2"
+          "const": "leanctx.hive.instance-metrics-ack/v2"
         },
         "accepted": {
           "type": "integer",
@@ -1349,7 +1350,7 @@
     "sharing_state": {
       "type": "object",
       "additionalProperties": false,
-      "description": "whether this engine (engine routes) or this workspace (web) shares metrics now; policy = the level that set sharing.share_engine_metrics (null: no level sets it); since = start of the current sharing period: no hour before it is sent or accepted",
+      "description": "whether this instance (instance routes) or this workspace (web) shares metrics now; policy = the level that set sharing.share_instance_metrics (null: no level sets it); since = start of the current sharing period: no hour before it is sent or accepted",
       "required": [
         "state",
         "plan_default",
@@ -1459,7 +1460,7 @@
     "metrics": {
       "type": "object",
       "additionalProperties": false,
-      "description": "flat metric names (SPEC §1.2); sums except knowledge.facts_current (gauge) and engines.active (distinct engines, derived)",
+      "description": "flat metric names (SPEC §1.2); sums except knowledge.facts_current (gauge) and instances.active (distinct instances, derived)",
       "required": [
         "tokens.input",
         "tokens.output",
@@ -1500,7 +1501,7 @@
         "spend.cached_tokens",
         "spend.usd_micros",
         "knowledge.facts_current",
-        "engines.active"
+        "instances.active"
       ],
       "properties": {
         "tokens.input": {
@@ -1698,7 +1699,7 @@
           "minimum": 0,
           "maximum": 9007199254740992
         },
-        "engines.active": {
+        "instances.active": {
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740992
@@ -1757,10 +1758,10 @@
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "engine"
+                "instance"
               ],
               "properties": {
-                "engine": {
+                "instance": {
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
@@ -1777,7 +1778,7 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 120,
-                      "description": "the engine label when names are visible or it is the caller's, else a pseudonym (`Engine 2C9E`)"
+                      "description": "the instance label when names are visible or it is the caller's, else a pseudonym (`Instance 2C9E`)"
                     },
                     "owner": {
                       "$ref": "#/$defs/person"
@@ -1965,7 +1966,7 @@
         "group": {
           "enum": [
             "total",
-            "engine",
+            "instance",
             "person",
             "vault",
             "workspace"
@@ -1974,10 +1975,10 @@
         "filters": {
           "type": "object",
           "additionalProperties": false,
-          "description": "the engine route accepts engine=self (the calling instance); totals are exact integer sums of the stored buckets (K24 parity)",
+          "description": "the instance route accepts instance=self (the calling instance); totals are exact integer sums of the stored buckets (K24 parity)",
           "required": [
             "vault",
-            "engine",
+            "instance",
             "person",
             "workspace"
           ],
@@ -1992,7 +1993,7 @@
                 }
               ]
             },
-            "engine": {
+            "instance": {
               "anyOf": [
                 {
                   "$ref": "#/$defs/instance_id"
@@ -2050,24 +2051,24 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "engines_reporting",
-            "engines_connected",
-            "sharing_off_engines",
+            "instances_reporting",
+            "instances_connected",
+            "sharing_off_instances",
             "first_bucket_at",
-            "engines"
+            "instances"
           ],
           "properties": {
-            "engines_reporting": {
+            "instances_reporting": {
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740992
             },
-            "engines_connected": {
+            "instances_connected": {
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740992
             },
-            "sharing_off_engines": {
+            "sharing_off_instances": {
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740992
@@ -2082,13 +2083,13 @@
                 }
               ]
             },
-            "engines": {
+            "instances": {
               "type": "array",
               "maxItems": 2000,
               "items": {
-                "$ref": "#/$defs/coverage_engine"
+                "$ref": "#/$defs/coverage_instance"
               },
-              "description": "every engine of the scope the caller may see (same visibility as rows), with its sharing state"
+              "description": "every instance of the scope the caller may see (same visibility as rows), with its sharing state"
             }
           }
         },
@@ -2242,7 +2243,7 @@
                 "required": [
                   "detector",
                   "count",
-                  "engines"
+                  "instances"
                 ],
                 "properties": {
                   "detector": {
@@ -2253,7 +2254,7 @@
                     "minimum": 0,
                     "maximum": 9007199254740992
                   },
-                  "engines": {
+                  "instances": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740992
@@ -2333,14 +2334,14 @@
           "items": {
             "$ref": "#/$defs/price_row"
           },
-          "description": "list prices Hive estimates cost and model conversion with (K23); the same table the engine's Numbers explained shows"
+          "description": "list prices Hive estimates cost and model conversion with (K23); the same table the instance's Numbers explained shows"
         }
       }
     },
-    "coverage_engine": {
+    "coverage_instance": {
       "type": "object",
       "additionalProperties": false,
-      "description": "one engine of the scope; workspace is set in company scope; level names who switched sharing off",
+      "description": "one instance of the scope; workspace is set in company scope; level names who switched sharing off",
       "required": [
         "id",
         "label",
@@ -2577,7 +2578,7 @@
           "items": {
             "$ref": "#/$defs/metric_doc"
           },
-          "description": "every flat metric with its formula (K9 Numbers explained, shared by the engine and Hive)"
+          "description": "every flat metric with its formula (K9 Numbers explained, shared by the instance and Hive)"
         },
         "never_sent": {
           "type": "array",
@@ -2607,11 +2608,11 @@
     "export_line": {
       "type": "object",
       "additionalProperties": false,
-      "description": "W101 one JSONL line per (hour, engine, vault); CSV has the same columns with metrics flattened to their names; labels pseudonymised unless names are visible",
+      "description": "W101 one JSONL line per (hour, instance, vault); CSV has the same columns with metrics flattened to their names; labels pseudonymised unless names are visible",
       "required": [
         "hour",
-        "engine",
-        "engine_label",
+        "instance",
+        "instance_label",
         "person",
         "person_label",
         "vault",
@@ -2622,10 +2623,10 @@
         "hour": {
           "$ref": "#/$defs/hour"
         },
-        "engine": {
+        "instance": {
           "$ref": "#/$defs/instance_id"
         },
-        "engine_label": {
+        "instance_label": {
           "type": "string",
           "minLength": 1,
           "maxLength": 120
@@ -2668,10 +2669,10 @@
     "delete_response": {
       "type": "object",
       "additionalProperties": false,
-      "description": "W102 and engine DELETE /v1/metrics/hours (every bucket of the calling instance)",
+      "description": "W102 and instance DELETE /v1/metrics/hours (every bucket of the calling instance)",
       "required": [
         "deleted_buckets",
-        "engines"
+        "instances"
       ],
       "properties": {
         "deleted_buckets": {
@@ -2679,7 +2680,7 @@
           "minimum": 0,
           "maximum": 9007199254740992
         },
-        "engines": {
+        "instances": {
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740992
@@ -2698,7 +2699,7 @@
       "properties": {
         "person_names": {
           "type": "boolean",
-          "description": "false (default): people and engines are pseudonymised in every view and export"
+          "description": "false (default): people and instances are pseudonymised in every view and export"
         },
         "managed_by": {
           "enum": [

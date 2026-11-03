@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The seam through which the optional runtime is licensed.
 //!
-//! A lease is opaque bytes signed by LeanCTX Hive: this engine never parses a
+//! A lease is opaque bytes signed by LeanCTX | Hive: this engine never parses a
 //! plan, a seat count or an expiry from it, it only hands the bytes to the
-//! runtime, which verifies them against its own Hive key. The connector
-//! (`core::hive`) registers the one process-wide [`LeaseSource`]; without a
-//! registered source there is no lease.
+//! runtime, which verifies them against its own Hive key. The Hive
+//! connector registers the one process-wide [`LeaseSource`] at start-up,
+//! before the first tool call; without a registered source there is no
+//! lease.
 
 use std::sync::{Arc, RwLock};
 
 /// One Hive-signed runtime lease, kept as the exact bytes Hive issued.
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct RuntimeLeaseV1(Vec<u8>);
+pub struct RuntimeLeaseV1(Vec<u8>);
 
 impl RuntimeLeaseV1 {
-    pub(crate) fn from_bytes(bytes: Vec<u8>) -> Self {
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
         Self(bytes)
     }
 
@@ -31,7 +32,7 @@ impl std::fmt::Debug for RuntimeLeaseV1 {
 }
 
 /// Where the current lease comes from.
-pub(crate) trait LeaseSource: Send + Sync {
+pub trait LeaseSource: Send + Sync {
     /// The lease to present now; `None` means not licensed.
     fn current(&self) -> Option<RuntimeLeaseV1>;
 }
@@ -39,7 +40,7 @@ pub(crate) trait LeaseSource: Send + Sync {
 static SOURCE: RwLock<Option<Arc<dyn LeaseSource>>> = RwLock::new(None);
 
 /// Registers the process-wide lease source. A later call replaces it.
-pub(crate) fn set_lease_source(source: Box<dyn LeaseSource>) {
+pub fn set_lease_source(source: Box<dyn LeaseSource>) {
     let source: Arc<dyn LeaseSource> = Arc::from(source);
     *SOURCE
         .write()
@@ -56,11 +57,9 @@ pub(crate) fn current_lease() -> Option<RuntimeLeaseV1> {
     source.current()
 }
 
-/// The current lease as base64, the form the runtime exchange carries;
-/// registers the Hive source first.
+/// The current lease as base64, the form the runtime exchange carries.
 pub(crate) fn current_lease_b64() -> Option<String> {
     use base64::Engine as _;
-    crate::core::hive::runtime_lease::ensure_registered();
     let lease = current_lease()?;
     Some(base64::engine::general_purpose::STANDARD.encode(lease.as_bytes()))
 }

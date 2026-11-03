@@ -14,7 +14,7 @@ fn knowledge_dir(project_hash: &str) -> Result<PathBuf, String> {
 }
 
 /// The directory of `project_root`'s store (`knowledge.json`, its journal).
-pub(crate) fn knowledge_dir_of(project_root: &str) -> Result<PathBuf, String> {
+pub fn knowledge_dir_of(project_root: &str) -> Result<PathBuf, String> {
     knowledge_dir(&hash_project_root(project_root))
 }
 
@@ -158,7 +158,7 @@ fn store_is_policy_safe(
 pub(crate) const MACHINE_DERIVED_PREFIX: &str = "auto:";
 
 /// Whether this fact was derived by lean-ctx rather than written by a person.
-pub(crate) fn is_machine_derived(category: &str, key: &str) -> bool {
+pub fn is_machine_derived(category: &str, key: &str) -> bool {
     category.trim_start().starts_with(MACHINE_DERIVED_PREFIX)
         || key.trim_start().starts_with(MACHINE_DERIVED_PREFIX)
 }
@@ -315,7 +315,7 @@ impl ProjectKnowledge {
 
     /// Load one admitted, non-migrating read view for an export operation.
     /// Hidden rows are omitted from the view and never rewrite the durable store.
-    pub(crate) fn load_for_admission(
+    pub fn load_for_admission(
         project_root: &str,
         admission: &super::protection::KnowledgeAdmission,
     ) -> Result<Option<Self>, String> {
@@ -341,7 +341,7 @@ impl ProjectKnowledge {
 
     /// Optional capture must not trigger legacy migration writes during a read,
     /// or replace an unreadable existing store with a newly created empty one.
-    pub(crate) fn load_for_checked_capture(project_root: &str) -> Result<Self, String> {
+    pub fn load_for_checked_capture(project_root: &str) -> Result<Self, String> {
         let hash = hash_project_root(project_root);
         let path = knowledge_dir(&hash)?.join("knowledge.json");
         match std::fs::symlink_metadata(&path) {
@@ -485,7 +485,7 @@ impl ProjectKnowledge {
     /// just-stored vectors, degrading semantic recall (issue #412, a #326
     /// follow-up).
     #[cfg(feature = "embeddings")]
-    pub(crate) fn with_project_lock<T>(project_root: &str, f: impl FnOnce() -> T) -> T {
+    pub fn with_project_lock<T>(project_root: &str, f: impl FnOnce() -> T) -> T {
         let hash = hash_project_root(project_root);
         let lock = knowledge_lock(&hash);
         let _guard = lock
@@ -562,7 +562,7 @@ impl ProjectKnowledge {
         Self::mutate_locked_with_admission(project_root, &admission, f)
     }
 
-    pub(crate) fn mutate_locked_with_admission<T>(
+    pub fn mutate_locked_with_admission<T>(
         project_root: &str,
         admission: &super::protection::KnowledgeAdmission,
         f: impl FnOnce(&mut Self) -> T,

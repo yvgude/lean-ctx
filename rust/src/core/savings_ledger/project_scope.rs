@@ -57,7 +57,7 @@ impl ProjectScope {
     }
 
     /// The scope of `project` over `(session id, session folder)` pairs.
-    pub(crate) fn from_sessions<'a>(
+    pub fn from_sessions<'a>(
         project: &Path,
         sessions: impl Iterator<Item = (&'a str, &'a str)>,
     ) -> Self {

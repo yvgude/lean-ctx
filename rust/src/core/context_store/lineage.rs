@@ -20,7 +20,7 @@ pub(crate) const LINEAGE_SCHEMA_VERSION: u32 = 1;
 
 /// One ledger observation, without its chain fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct LineageStepV1 {
+pub struct LineageStepV1 {
     pub sequence: u64,
     pub kind: &'static str,
     pub timestamp: String,
@@ -30,7 +30,7 @@ pub(crate) struct LineageStepV1 {
 
 /// One governed delivery, summarized from its verified receipt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct LineageDeliveryV1 {
+pub struct LineageDeliveryV1 {
     pub digest: String,
     pub verified: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,7 +43,7 @@ pub(crate) struct LineageDeliveryV1 {
 
 /// Independent evidence about dispatch, never inferred from admission or billing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct EgressLineageV1 {
+pub struct EgressLineageV1 {
     pub admission: Option<lean_ctx_protocol::context_gateway::EgressAdmissionReceiptV1>,
     pub observations: Vec<lean_ctx_protocol::context_gateway::EgressTransportObservationV1>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -51,7 +51,7 @@ pub(crate) struct EgressLineageV1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct DeliverySummaryV1 {
+pub struct DeliverySummaryV1 {
     pub outcome: String,
     /// Existing count fields describe this boundary, never inferred model usage.
     pub delivery_semantics: &'static str,
@@ -69,7 +69,7 @@ pub(crate) struct DeliverySummaryV1 {
 /// The task's lineage. `gaps` names every missing link in the chain
 /// plan → delivery → outcome, so an incomplete record never reads as complete.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct TaskLineageV1 {
+pub struct TaskLineageV1 {
     pub schema_version: u32,
     pub task_id: String,
     /// The tenant/project scope the lineage was looked up in.
@@ -87,7 +87,7 @@ pub(crate) struct TaskLineageV1 {
 /// Whether the ledger's entries for this task id belong to the requested
 /// tenant/project scope, proven by the task envelope the ledger references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LedgerScope {
+pub enum LedgerScope {
     /// The envelope names this scope, or the ledger has no entry for the task.
     Verified,
     /// The envelope names another scope: the entries are not shown.
@@ -96,7 +96,7 @@ pub(crate) enum LedgerScope {
     Unverified,
 }
 
-pub(crate) fn build(
+pub fn build(
     task_id: &str,
     events: Result<Vec<ExecutionEvent>, String>,
     ledger_scope: LedgerScope,
@@ -393,7 +393,7 @@ pub(crate) fn ledger_scope(events: &[ExecutionEvent], scope: &str) -> LedgerScop
 
 /// Load a task's lineage within one tenant/project scope from this machine's
 /// stores.
-pub(crate) fn load(scope: &str, task_id: &str) -> TaskLineageV1 {
+pub fn load(scope: &str, task_id: &str) -> TaskLineageV1 {
     let events = crate::core::execution_ledger::ExecutionLedgerStore::from_default()
         .and_then(|store| store.by_task_verified(task_id))
         .map_err(|error| error.to_string());

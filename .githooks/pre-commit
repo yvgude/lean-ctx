@@ -151,8 +151,8 @@ run_step "clippy (tests)" "Fix warnings before committing." \
 # Generated reference docs must match the tool/config definitions —
 # the CI Documentation job runs the same check and fails otherwise.
 if printf '%s\n' "$staged_names" | grep -qE '^rust/src/(tools|tool_defs|core/config)'; then
-    run_step "generated docs" "Run: cd rust && cargo run --example gen_docs --features dev-tools" \
-        cargo run --quiet --example gen_docs --features dev-tools -- --check
+    run_step "generated docs" "Run: cd rust && cargo run -p lean-ctx-server --example gen_docs --features dev-tools" \
+        cargo run -p lean-ctx-server --quiet --example gen_docs --features dev-tools -- --check
 fi
 
 rm -rf "$LOG_DIR"

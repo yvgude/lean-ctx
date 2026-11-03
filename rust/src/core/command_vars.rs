@@ -15,7 +15,7 @@ use super::shell_allowlist::Separator;
 
 /// The variables known to hold a value when one segment starts.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct KnownVars {
+pub struct KnownVars {
     literals: HashMap<String, String>,
     /// `$TMPDIR` may no longer hold the environment's value: the command
     /// assigned it something this cannot read, or ran a segment that can
@@ -64,7 +64,7 @@ impl KnownVars {
 /// segment that can rebind variables some other way (`read`, `for`, `eval`,
 /// `source`, …) forgets everything known so far. Where this cannot follow the
 /// shell it knows less, and an unknown variable leaves the target refused.
-pub(crate) fn literal_assignments_before_each_segment(
+pub fn literal_assignments_before_each_segment(
     command: &str,
     segment_count: usize,
 ) -> Vec<KnownVars> {
@@ -152,7 +152,7 @@ pub(crate) fn literal_assignments_before_each(
 /// Expand a target that starts with `$NAME` or `${NAME}` from `known` — which
 /// includes `$TMPDIR` from the environment unless the command rebound it.
 /// `None` when the target starts with no variable or an unknown one.
-pub(crate) fn expand_leading_variable(path: &str, known: &KnownVars) -> Option<String> {
+pub fn expand_leading_variable(path: &str, known: &KnownVars) -> Option<String> {
     expand_with(path, known, || std::env::var("TMPDIR").ok())
 }
 

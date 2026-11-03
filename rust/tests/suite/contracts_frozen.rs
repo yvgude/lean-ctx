@@ -20,7 +20,7 @@ use lean_ctx::core::contracts::{ContractStatus, contract_docs};
 use sha2::{Digest, Sha256};
 
 fn contracts_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/contracts")
+    crate::engine_dir().join("../docs/contracts")
 }
 
 fn snapshot_path() -> PathBuf {

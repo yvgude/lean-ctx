@@ -37,7 +37,7 @@ pub fn hints_for_file(
 ///
 /// Range-scoped reads use this to discard file-level and out-of-window hints
 /// without allowing higher-weight irrelevant hints to hide a relevant one.
-pub(crate) fn hints_for_file_matching(
+pub fn hints_for_file_matching(
     file_path: &str,
     edges: &[IndexEdge],
     project_root: &str,

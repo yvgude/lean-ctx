@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 /// The file a bundle of the project `root` may be written to, or the reason
 /// it may not. `candidate` is the absolute destination the caller named.
-pub(crate) fn destination(tool: &str, root: &Path, candidate: &Path) -> Result<PathBuf, String> {
+pub fn destination(tool: &str, root: &Path, candidate: &Path) -> Result<PathBuf, String> {
     let (output, _) = crate::core::io_boundary::jail_and_check_export_path(tool, candidate, root)?;
     // The jail also admits lean-ctx's own data and state directories and
     // configured allow paths; a bundle of project sources belongs inside the

@@ -8,7 +8,7 @@ use crate::core::contracts::MCP_MANIFEST_SCHEMA_VERSION;
 /// The mode list advertised in `ctx_read`'s schema. Shared with the runtime so
 /// an unknown-mode error can name exactly what the schema promises — the two
 /// drifting apart is what let `diff` be advertised but rejected (#1584).
-pub(crate) const READ_MODES: [&str; 10] = [
+pub const READ_MODES: [&str; 10] = [
     "auto",
     "full",
     "map",
@@ -61,8 +61,7 @@ pub fn default_manifest_path() -> PathBuf {
 }
 
 pub fn manifest_value() -> Value {
-    let registry = crate::server::registry::build_registry();
-    let granular_tools: Vec<Tool> = registry.tool_defs();
+    let granular_tools: Vec<Tool> = crate::core::tool_catalog::tool_defs();
 
     let mut unified_tools: Vec<Tool> = crate::tool_defs::unified_tool_defs();
     unified_tools.sort_by_key(|t| t.name.clone());

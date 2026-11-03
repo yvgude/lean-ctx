@@ -215,9 +215,9 @@ fn handle_requests(socket: RawFd, inbox: &mut Inbox, held: &mut Vec<Held>) -> Op
                 else {
                     return Some(false);
                 };
-                #[cfg(test)]
+                #[cfg(any(test, feature = "test-support"))]
                 let started = start_with_fault(spec, stdout, stderr);
-                #[cfg(not(test))]
+                #[cfg(not(any(test, feature = "test-support")))]
                 let started = start(spec, stdout, stderr);
                 // An error here means that no program was executed: the
                 // Engine may take `SpawnFailed` as proof of that.
@@ -280,7 +280,7 @@ fn start(spec: SpawnSpec, stdout: OwnedFd, stderr: OwnedFd) -> std::io::Result<C
 /// `refuse`: answers a failed start without starting anything.
 /// `die-after-start`: starts the shell, gives it time to do what it does, and
 /// dies before the Engine is told.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn start_with_fault(spec: SpawnSpec, stdout: OwnedFd, stderr: OwnedFd) -> std::io::Result<Child> {
     match std::env::var(super::tests::FAULT_ENV).as_deref() {
         Ok("refuse") => Err(std::io::Error::other("refused for a test")),
@@ -302,7 +302,7 @@ fn end_group_once(held: &mut Held) {
     }
     held.killed = true;
     let group = held.child.id() as libc::pid_t;
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     GROUP_SIGNAL_LOG.with(|log| {
         log.borrow_mut()
             .push(exited_unreaped(&mut held.child).is_ok());
@@ -382,7 +382,7 @@ pub(super) fn exit_status(raw: i32) -> std::process::ExitStatus {
     std::process::ExitStatus::from_raw(raw)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// For each group signal of [`end_group_once`]: whether the leader was
     /// this process's unreaped child at that moment.
@@ -392,7 +392,7 @@ thread_local! {
 
 /// Tests only: runs one shell through the helper's own start, kill and reap
 /// steps in this process and returns the signal log and the group.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn kill_path_for_test(spec: SpawnSpec) -> (Vec<bool>, libc::pid_t, bool) {
     let (_reader, writer) = std::io::pipe().expect("pipe");
     let stderr = writer.try_clone().expect("clone");

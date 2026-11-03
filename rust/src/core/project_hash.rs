@@ -1,13 +1,19 @@
-use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
+
+use lean_ctx_fs::stable_hash::StableHasher;
 
 /// Computes a composite hash from the project root path and any detected
 /// project identity markers (git remote, manifest file, etc.).
 ///
 /// This prevents hash collisions when different projects share the same
 /// mount path (e.g. Docker volumes at `/workspace`).
-pub(crate) fn hash_project_root(root: &str) -> String {
+///
+/// The hash names the project's stores on disk, so it uses
+/// [`StableHasher`]: the same algorithm the engine has used since v3.3.2,
+/// but fixed in code instead of borrowed from std's unspecified
+/// `DefaultHasher`, so a toolchain update cannot move the stores.
+pub fn hash_project_root(root: &str) -> String {
     // Normalize the path separator/casing first so the SAME directory always
     // produces the SAME hash regardless of which interface resolved it. On
     // Windows the MCP server reports forward slashes (`D:/repo`) while the CLI
@@ -16,10 +22,10 @@ pub(crate) fn hash_project_root(root: &str) -> String {
     // other (issue #325). `normalize_tool_path` is a no-op for clean POSIX
     // paths, so non-Windows hashes are unaffected.
     let root = crate::core::pathutil::normalize_tool_path(root);
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = StableHasher::new();
     root.hash(&mut hasher);
 
-    if let Some(identity) = project_identity(&root) {
+    if let Some(identity) = identity_at(&root, Worktrees::Keep) {
         identity.hash(&mut hasher);
     }
 
@@ -30,7 +36,7 @@ pub(crate) fn hash_project_root(root: &str) -> String {
 /// Kept for auto-migration from old knowledge directories.
 pub(crate) fn hash_path_only(root: &str) -> String {
     let root = crate::core::pathutil::normalize_tool_path(root);
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = StableHasher::new();
     root.hash(&mut hasher);
     format!("{:016x}", hasher.finish())
 }
@@ -49,7 +55,23 @@ pub(crate) fn hash_path_only(root: &str) -> String {
 ///
 /// Returns `None` when no identity marker is found, in which case
 /// the hash falls back to path-only (same behaviour as pre-3.3.2).
-pub(crate) fn project_identity(root: &str) -> Option<String> {
+///
+/// A linked git worktree has the origin of its main checkout, so both are
+/// one project (Hive, handoff bundles).
+pub fn project_identity(root: &str) -> Option<String> {
+    identity_at(root, Worktrees::Follow)
+}
+
+/// Whether a linked worktree's origin is read from its main checkout.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Worktrees {
+    Follow,
+    /// The local store hash keeps the identity it had before worktrees were
+    /// followed: a worktree's knowledge directory must not move.
+    Keep,
+}
+
+fn identity_at(root: &str, worktrees: Worktrees) -> Option<String> {
     let root = Path::new(root);
 
     // Explicit identity file — highest priority. Ideal for Docker containers
@@ -58,7 +80,7 @@ pub(crate) fn project_identity(root: &str) -> Option<String> {
     if let Some(id) = explicit_identity_file(root) {
         return Some(format!("explicit:{id}"));
     }
-    if let Some(url) = git_remote_url(root) {
+    if let Some(url) = git_remote_url(root, worktrees) {
         return Some(format!("git:{url}"));
     }
     if let Some(name) = cargo_package_name(root) {
@@ -98,13 +120,13 @@ pub(crate) fn legacy_unnormalized_hashes(root: &str) -> Vec<String> {
         return Vec::new();
     }
 
-    let mut composite = DefaultHasher::new();
+    let mut composite = StableHasher::new();
     root.hash(&mut composite);
-    if let Some(identity) = project_identity(root) {
+    if let Some(identity) = identity_at(root, Worktrees::Keep) {
         identity.hash(&mut composite);
     }
 
-    let mut path_only = DefaultHasher::new();
+    let mut path_only = StableHasher::new();
     root.hash(&mut path_only);
 
     vec![
@@ -180,8 +202,11 @@ fn explicit_identity_file(root: &Path) -> Option<String> {
     Some(id)
 }
 
-fn git_remote_url(root: &Path) -> Option<String> {
-    let config = root.join(".git").join("config");
+fn git_remote_url(root: &Path, worktrees: Worktrees) -> Option<String> {
+    let config = match worktrees {
+        Worktrees::Follow => git_config_path(root)?,
+        Worktrees::Keep => root.join(".git").join("config"),
+    };
     let content = std::fs::read_to_string(config).ok()?;
 
     let mut in_origin = false;
@@ -200,6 +225,26 @@ fn git_remote_url(root: &Path) -> Option<String> {
         }
     }
     None
+}
+
+/// The git config of the checkout at `root`. In a linked worktree `.git` is
+/// a file (`gitdir: <common>/.git/worktrees/<name>`); the remotes live in
+/// the common directory its `commondir` names.
+fn git_config_path(root: &Path) -> Option<std::path::PathBuf> {
+    let dot_git = root.join(".git");
+    if dot_git.is_dir() {
+        return Some(dot_git.join("config"));
+    }
+    let pointer = std::fs::read_to_string(&dot_git).ok()?;
+    let gitdir = pointer
+        .lines()
+        .find_map(|line| line.strip_prefix("gitdir:"))?;
+    let gitdir = root.join(gitdir.trim());
+    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+        Ok(common) => gitdir.join(common.trim()),
+        Err(_) => gitdir,
+    };
+    Some(common.join("config"))
 }
 
 fn normalize_git_url(url: &str) -> String {
@@ -404,6 +449,20 @@ mod tests {
         );
     }
 
+    /// Pinned: the store names already on users' disks (the hash of earlier
+    /// releases, written with std's `DefaultHasher`). A change here moves
+    /// every project's knowledge, archive and session stores.
+    #[test]
+    fn store_names_are_pinned() {
+        let root = "/nonexistent/lean-ctx-pin";
+        assert_eq!(hash_path_only(root), "828234413450efd8");
+        assert_eq!(hash_project_root(root), "828234413450efd8");
+        let mut composite = StableHasher::new();
+        root.hash(&mut composite);
+        "cargo:pinned".hash(&mut composite);
+        assert_eq!(format!("{:016x}", composite.finish()), "24e8039aa75448a6");
+    }
+
     #[test]
     fn legacy_unnormalized_hashes_empty_for_clean_posix() {
         // POSIX paths already normalize to themselves: no split ever occurred,
@@ -466,14 +525,14 @@ mod tests {
         .unwrap();
 
         let hash_a = {
-            let mut hasher = DefaultHasher::new();
+            let mut hasher = StableHasher::new();
             shared_path.hash(&mut hasher);
             let id = project_identity(dir_a.path().to_str().unwrap()).unwrap();
             id.hash(&mut hasher);
             format!("{:016x}", hasher.finish())
         };
         let hash_b = {
-            let mut hasher = DefaultHasher::new();
+            let mut hasher = StableHasher::new();
             shared_path.hash(&mut hasher);
             let id = project_identity(dir_b.path().to_str().unwrap()).unwrap();
             id.hash(&mut hasher);
@@ -619,6 +678,73 @@ mod tests {
 
         let id = project_identity(dir.path().to_str().unwrap());
         assert_eq!(id, Some("git:github.com/user/repo".into()));
+    }
+
+    /// A linked worktree as `git worktree add` lays it out: `.git` is a file
+    /// naming its admin directory, whose `commondir` leads to the config.
+    #[test]
+    fn a_linked_worktree_has_the_origin_of_its_main_checkout() {
+        let tmp = tempfile::tempdir().unwrap();
+        let main = tmp.path().join("main");
+        let admin = main.join(".git").join("worktrees").join("wt");
+        fs::create_dir_all(&admin).unwrap();
+        fs::write(
+            main.join(".git").join("config"),
+            "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = git@github.com:yves/hive.git\n",
+        )
+        .unwrap();
+        fs::write(admin.join("commondir"), "../..\n").unwrap();
+        let worktree = tmp.path().join("wt");
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(
+            worktree.join(".git"),
+            format!("gitdir: {}\n", admin.display()),
+        )
+        .unwrap();
+        fs::write(worktree.join("Cargo.toml"), "[package]\nname = \"hive\"\n").unwrap();
+        let worktree = worktree.to_str().unwrap();
+
+        assert_eq!(
+            project_identity(worktree),
+            project_identity(main.to_str().unwrap())
+        );
+        assert_eq!(
+            project_identity(worktree),
+            Some("git:github.com/yves/hive".into())
+        );
+        // The local store keeps the hash it had: its knowledge stays put.
+        assert_eq!(
+            identity_at(worktree, Worktrees::Keep),
+            Some("cargo:hive".into())
+        );
+        // Hashed as `hash_project_root` sees it (macOS: /var → /private/var).
+        let mut before = StableHasher::new();
+        crate::core::pathutil::normalize_tool_path(worktree).hash(&mut before);
+        "cargo:hive".hash(&mut before);
+        assert_eq!(
+            hash_project_root(worktree),
+            format!("{:016x}", before.finish())
+        );
+    }
+
+    /// A relative `gitdir:` and an admin directory without `commondir`.
+    #[test]
+    fn a_relative_gitdir_without_commondir_reads_its_own_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let admin = tmp.path().join("modules").join("sub");
+        fs::create_dir_all(&admin).unwrap();
+        fs::write(
+            admin.join("config"),
+            "[remote \"origin\"]\n\turl = https://gitlab.example.com/team/sub.git\n",
+        )
+        .unwrap();
+        let checkout = tmp.path().join("sub");
+        fs::create_dir_all(&checkout).unwrap();
+        fs::write(checkout.join(".git"), "gitdir: ../modules/sub\n").unwrap();
+        assert_eq!(
+            project_identity(checkout.to_str().unwrap()),
+            Some("git:https://gitlab.example.com/team/sub".into())
+        );
     }
 
     #[test]

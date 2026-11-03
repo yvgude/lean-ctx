@@ -11,7 +11,7 @@ const BOOTSTRAP_CONFIDENCE: f32 = 0.95;
 /// is never empty on a new project.
 ///
 /// This does not use placeholders — it only derives values from the filesystem and/or index.
-pub(crate) fn bootstrap_if_empty(
+pub fn bootstrap_if_empty(
     knowledge: &mut ProjectKnowledge,
     project_root: &str,
     graph: Option<&GraphProvider>,

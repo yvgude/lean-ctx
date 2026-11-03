@@ -200,7 +200,7 @@
       }
     },
     "worker": {
-      "description": "Engine-facing Worker (E10/E11 responses). The web W33 Worker shape is separate.",
+      "description": "Instance-facing Worker (E10/E11 responses). The web W33 Worker shape is separate.",
       "type": "object",
       "required": [
         "id",
@@ -292,6 +292,45 @@
       "properties": {
         "worker": {
           "$ref": "#/$defs/worker"
+        }
+      }
+    },
+    "worker_retire": {
+      "description": "C0 2.2 DELETE /v1/workers/{wkr} (instance auth like E11): the instance retires its own workspace worker: out of the worker cap, its task claims released, its bus presence closed. 204 without body, also when already retired; unknown id 404 not_found; another instance's worker 409 worker_not_owned. E10 with the same id reactivates it (201, counted against the cap again; worker_cap_reached when full).",
+      "type": "object",
+      "required": [
+        "method",
+        "path",
+        "request",
+        "response"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": "DELETE"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/v1/workers/wkr_[a-z2-7]{20}$"
+        },
+        "request": {
+          "type": "null"
+        },
+        "response": {
+          "type": "object",
+          "required": [
+            "status",
+            "body"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": 204
+            },
+            "body": {
+              "type": "null"
+            }
+          }
         }
       }
     },
@@ -481,14 +520,14 @@
       "description": "E44 PATCH /v1/instances/{id}/card; signed by the instance key, domain leanctx.hive.instance_card.v1\\n. presence_key may only be null (clears the binding).",
       "type": "object",
       "required": [
-        "engine_version",
+        "instance_version",
         "consent_channel",
         "key_id",
         "signature"
       ],
       "additionalProperties": false,
       "properties": {
-        "engine_version": {
+        "instance_version": {
           "type": "string",
           "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
         },
@@ -549,14 +588,14 @@
         "card": {
           "type": "object",
           "required": [
-            "engine_version",
+            "instance_version",
             "consent_channel",
             "updated_at"
           ],
           "additionalProperties": false,
           "properties": {
-            "engine_version": {
-              "$ref": "#/$defs/instance_card_request/properties/engine_version"
+            "instance_version": {
+              "$ref": "#/$defs/instance_card_request/properties/instance_version"
             },
             "consent_channel": {
               "enum": [

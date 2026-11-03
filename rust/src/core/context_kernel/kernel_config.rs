@@ -125,7 +125,7 @@ pub fn from_env() -> KernelFeatures {
 }
 
 /// Global test lock for all kernel modules sharing global state.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub static KERNEL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 #[cfg(test)]
 mod tests {

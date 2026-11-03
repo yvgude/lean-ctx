@@ -16,7 +16,7 @@ use super::{
 };
 use crate::core::context_kernel::autopilot::TaskAutopilotDecision;
 
-pub(super) fn capture(
+pub(crate) fn capture(
     authority: &HostReceiptAuthority,
     task: &TaskEnvelopeV1,
     plan: &ExecutionPlanV1,

@@ -89,7 +89,7 @@ pub struct FileUnifiedLedger {
 }
 
 impl FileUnifiedLedger {
-    pub(crate) fn from_data_dir() -> OclaResult<Self> {
+    pub fn from_data_dir() -> OclaResult<Self> {
         let data_dir = crate::core::data_dir::lean_ctx_data_dir()
             .map_err(|error| OclaError::InvalidRequest(error.clone()))?;
         Ok(Self::new(data_dir.join("savings/unified_ledger.jsonl")))
@@ -131,7 +131,7 @@ impl FileUnifiedLedger {
     }
 
     /// Compares legacy and unified entries by hash and reports accounting drift.
-    pub(crate) fn reconcile(&self) -> OclaResult<ReconciliationReport> {
+    pub fn reconcile(&self) -> OclaResult<ReconciliationReport> {
         let legacy = self.read_legacy_events();
         let unified = self.read_events()?;
         let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();

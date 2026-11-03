@@ -89,7 +89,7 @@ const readModeSchema = Type.Union([
 ], { description: "Override auto-selection: full=complete(≤turn budget; raw=true beyond) anchored=full+anchors(edit via ctx_patch) diff=git-delta map=structure signatures=API raw=exact-bytes lines:N-M=window auto=smart(default)" });
 
 // Kept field-compatible with the canonical MCP `ctx_read` schema (registry in
-// rust/src/tools/registered/ctx_read.rs) so the tool looks identical across
+// rust/crates/lean-ctx-server/src/tools/registered/ctx_read.rs) so the tool looks identical across
 // harnesses: Codex sees `start_line`/`fresh`, Pi must too (GH #432). `offset` is
 // the historical Pi alias for `start_line`; both are accepted.
 const readSchema = Type.Object({

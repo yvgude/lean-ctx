@@ -104,9 +104,11 @@ fn categorize(name: &str) -> Category {
         | ".first_run_wow_done" => Category::Cache,
 
         // --- runtime: ephemeral, left in place ---
-        "daemon.pid" | "daemon.sock" | "daemon-stderr.log" | "dashboard.launch.json" => {
-            Category::Runtime
-        }
+        "daemon.pid"
+        | "daemon.identity.json"
+        | "daemon.sock"
+        | "daemon-stderr.log"
+        | "dashboard.launch.json" => Category::Runtime,
         n if n.starts_with(".graph-idx-") => Category::Runtime,
 
         _ => Category::Data,
@@ -154,7 +156,7 @@ struct PlannedMove {
 }
 
 /// Outcome of a migration run, surfaced through `doctor --fix`.
-pub(crate) struct MigrationReport {
+pub struct MigrationReport {
     /// The single directory that was split.
     pub source: PathBuf,
     /// `(entry, category)` for every entry successfully relocated (moved or
@@ -375,7 +377,7 @@ fn detect() -> Option<(PathBuf, Targets)> {
 
 /// Count entries that a split would relocate, for the read-only `doctor` report.
 /// Returns `None` when no migration applies.
-pub(crate) fn pending() -> Option<(PathBuf, usize)> {
+pub fn pending() -> Option<(PathBuf, usize)> {
     let (src, targets) = detect()?;
     let n = entries_to_move(&src, &targets).len();
     if n == 0 {
@@ -387,7 +389,7 @@ pub(crate) fn pending() -> Option<(PathBuf, usize)> {
 /// Split a legacy/mixed single-dir install into the four XDG dirs. Returns
 /// `None` when nothing applies (fresh install, explicit `LEAN_CTX_DATA_DIR`, or
 /// already split). Drives `lean-ctx doctor --fix`.
-pub(crate) fn migrate() -> Option<MigrationReport> {
+pub fn migrate() -> Option<MigrationReport> {
     let (src, targets) = detect()?;
     let report = migrate_from(&src, &targets);
     if report.is_empty() {
@@ -423,11 +425,11 @@ pub(crate) fn migrate() -> Option<MigrationReport> {
 ///
 /// [`heal`]: crate::core::layout_pin::heal
 #[must_use]
-pub(crate) fn residual_legacy_present() -> bool {
+pub fn residual_legacy_present() -> bool {
     dirs::home_dir().is_some_and(|h| h.join(".lean-ctx").is_dir())
 }
 
-pub(crate) fn reclaim_legacy() -> Option<MigrationReport> {
+pub fn reclaim_legacy() -> Option<MigrationReport> {
     // Any directory override, not only the data dir (GH #2007).
     if crate::core::paths::dir_override_active() {
         return None;

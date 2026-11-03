@@ -63,13 +63,13 @@ async function main(): Promise<void> {
   }
 
   const httpServer = await client.callToolText("ctx_read", {
-    path: "rust/src/http_server/mod.rs",
+    path: "rust/crates/lean-ctx/src/http_server/mod.rs",
     mode: "lines:300-370",
   });
   const routes = extractHttpRoutes(httpServer);
   if (routes.length === 0) {
     throw new Error(
-      'Could not extract HTTP routes from rust/src/http_server/mod.rs (expected .route("/...") entries)'
+      'Could not extract HTTP routes from rust/crates/lean-ctx/src/http_server/mod.rs (expected .route("/...") entries)'
     );
   }
 

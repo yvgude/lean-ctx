@@ -7,7 +7,7 @@
 //! rather than a second implementation that drifts.
 //!
 //! The one difference that matters: these bytes are executable, so
-//! [`super::verify::validate_addon`] additionally pins the `.wasm` extension
+//! `super::verify::validate_addon` additionally pins the `.wasm` extension
 //! and the WebAssembly magic before anything is written.
 
 use std::path::{Path, PathBuf};
@@ -33,12 +33,12 @@ pub(crate) fn addons_dir(store_root: &Path, name: &str, version: &str) -> PathBu
 /// An earlier version of this code had `install` write under the registry root
 /// (`<data_dir>/packages`) while discovery scanned `<data_dir>` — every addon
 /// installed fine and none of them ever loaded.
-pub(crate) fn store_root() -> Result<PathBuf, String> {
+pub fn store_root() -> Result<PathBuf, String> {
     Ok(crate::core::data_dir::lean_ctx_data_dir()?.join(super::registry::PACKAGES_DIR))
 }
 
 /// The root every installed addon lives under. Discovery walks this.
-pub(crate) fn addons_root(store_root: &Path) -> PathBuf {
+pub fn addons_root(store_root: &Path) -> PathBuf {
     store_root.join("addons")
 }
 
@@ -117,7 +117,7 @@ pub(crate) fn materialize_modules(
 /// last". Not by parsing the version: the manifest contract calls `version`
 /// author-declared and free-form, so it is not reliably orderable, whereas the
 /// install that wrote the directory is a fact.
-pub(crate) fn installed_modules(store_root: &Path) -> Vec<PathBuf> {
+pub fn installed_modules(store_root: &Path) -> Vec<PathBuf> {
     let root = addons_root(store_root);
     let Ok(addon_dirs) = std::fs::read_dir(&root) else {
         return Vec::new();

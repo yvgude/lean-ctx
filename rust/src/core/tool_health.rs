@@ -44,7 +44,7 @@ const DEDICATED_INSTRUCTION_CLIENTS: &[&str] = &["codex", "codebuddy"];
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ToolStatus {
+pub enum ToolStatus {
     /// Called regularly — earns its schema cost.
     Active,
     /// Used, but rarely, while carrying a heavy schema.
@@ -57,7 +57,7 @@ pub(crate) enum ToolStatus {
 
 impl ToolStatus {
     #[must_use]
-    pub(crate) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             ToolStatus::Active => "active",
             ToolStatus::LowUse => "low-use",
@@ -68,7 +68,7 @@ impl ToolStatus {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct ToolEntry {
+pub struct ToolEntry {
     pub name: String,
     pub schema_tokens: usize,
     pub calls: u64,
@@ -81,7 +81,7 @@ pub(crate) struct ToolEntry {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct RuleEntry {
+pub struct RuleEntry {
     pub path: String,
     pub file_tokens: usize,
     pub lean_ctx_tokens: usize,
@@ -91,7 +91,7 @@ pub(crate) struct RuleEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
-pub(crate) struct KnowledgeHealth {
+pub struct KnowledgeHealth {
     pub total_facts: usize,
     pub active_facts: usize,
     pub stale_facts: usize,
@@ -101,7 +101,7 @@ pub(crate) struct KnowledgeHealth {
 /// Measured agent-behavior signals (turn economy): how reads and tool chains
 /// actually happen, from local telemetry only.
 #[derive(Debug, Clone, Serialize, Default)]
-pub(crate) struct BehaviorHealth {
+pub struct BehaviorHealth {
     /// Explicit full/raw share of recorded `ctx_read` mode invocations (%),
     /// `None` until mode telemetry exists.
     pub heavy_read_share_pct: Option<u8>,
@@ -179,7 +179,7 @@ fn behavior_health(
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct ToolHealthReport {
+pub struct ToolHealthReport {
     pub tool_profile: String,
     pub advertised_tools: usize,
     pub tool_schema_tokens: usize,
@@ -391,7 +391,7 @@ pub(crate) fn build_report(
 
 fn resolve_tool_profile() -> String {
     let cfg = crate::core::config::Config::load();
-    if crate::server::tool_visibility::explicit_profile(&cfg) {
+    if crate::core::tool_visibility::explicit_profile(&cfg) {
         cfg.tool_profile_effective().as_str().to_string()
     } else {
         "lean (default)".to_string()
@@ -428,12 +428,13 @@ fn knowledge_health(project: &Path) -> KnowledgeHealth {
 
 /// Gathers real on-disk telemetry for `home`/`project` and builds the report.
 #[must_use]
-pub(crate) fn compute(home: &Path, project: &Path) -> ToolHealthReport {
-    let advertised = crate::server::tool_visibility::advertised_tool_defs_default();
+pub fn compute(home: &Path, project: &Path) -> ToolHealthReport {
+    let advertised = crate::core::tool_visibility::advertised_tool_defs_default();
     let usage = CostStore::load();
     let rules = collect_rules_files(home, project);
     let duplicates = duplicate_clients(&rules);
-    let instructions = crate::instructions::build_instructions(crate::tools::CrpMode::effective());
+    let instructions =
+        crate::instructions::build_instructions(crate::core::protocol::CrpMode::effective());
     let instruction_tokens = crate::core::tokens::count_tokens(&instructions);
     let knowledge = knowledge_health(project);
     let mut report = build_report(
@@ -763,24 +764,6 @@ mod tests {
             "no telemetry → no verdict"
         );
         assert!(empty.action.is_empty(), "{:?}", empty.action);
-    }
-
-    #[test]
-    fn compute_smoke_runs_and_counts_advertised_tools() {
-        // `advertised_tool_defs_default()` reads process-global env (tool
-        // profile, unified/full mode) and config, so it is not pure. Isolate the
-        // data dir and serialize on the shared test-env lock — otherwise a
-        // concurrent env-mutating test (e.g. the minimal-arm overhead test that
-        // sets LEAN_CTX_TOOL_PROFILE=minimal) can flip the profile between the two
-        // calls below, making the counts disagree. Latent race; surfaced once a
-        // slower sibling test shifted parallel scheduling (#945).
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let tmp = tempfile::tempdir().unwrap();
-        let report = compute(tmp.path(), tmp.path());
-        let expected = crate::server::tool_visibility::advertised_tool_defs_default().len();
-        assert_eq!(report.advertised_tools, expected);
-        assert!(report.tool_schema_tokens > 0);
-        assert!(report.fixed_total_tokens >= report.tool_schema_tokens);
     }
 
     /// GH #838: `shell` alias inherits usage from `ctx_shell`.

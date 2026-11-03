@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 /// What the heal pass did with the stray data-dir `config.toml`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HealAction {
+pub enum HealAction {
     /// The stray copy became the canonical config (canonical was absent/empty).
     Adopted,
     /// Canonical config already existed; the stray copy was moved aside.
@@ -30,7 +30,7 @@ pub(crate) enum HealAction {
 
 /// Outcome of a config-heal pass, surfaced through setup / `doctor`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ConfigHealReport {
+pub struct ConfigHealReport {
     pub action: HealAction,
     /// The stray `config.toml` that was relocated out of the data dir.
     pub from: PathBuf,
@@ -41,7 +41,7 @@ pub(crate) struct ConfigHealReport {
 /// Relocate a stray data-dir `config.toml` into the canonical config dir.
 /// Returns `None` when there is nothing to do (single-dir layout, or no stray
 /// config in the data dir).
-pub(crate) fn heal() -> Option<ConfigHealReport> {
+pub fn heal() -> Option<ConfigHealReport> {
     let config_dir = crate::core::paths::config_dir().ok()?;
     let data_dir = crate::core::paths::data_dir().ok()?;
     heal_between(&config_dir, &data_dir)
@@ -101,7 +101,7 @@ pub(crate) fn heal_all() -> Vec<ConfigHealReport> {
 /// Read-only check used by `doctor`: returns the stray data-dir `config.toml`
 /// that [`heal`] would relocate, or `None` when the CLI and the MCP server
 /// already resolve the same config (no divergence).
-pub(crate) fn pending() -> Option<PathBuf> {
+pub fn pending() -> Option<PathBuf> {
     let config_dir = crate::core::paths::config_dir().ok()?;
     let data_dir = crate::core::paths::data_dir().ok()?;
     if config_dir == data_dir {

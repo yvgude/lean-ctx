@@ -99,7 +99,7 @@ pub(crate) fn is_trusted(subject: &str, public_key_hex: &str) -> bool {
 
 /// Outcome of [`pin_if_absent`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PinOutcome {
+pub enum PinOutcome {
     /// The key was already the pinned key for this subject.
     AlreadyPinned,
     /// No key was pinned; this one is now (trust on first use).
@@ -125,7 +125,7 @@ pub(crate) fn pinned_key_conflict(subject: &str, public_key_hex: &str) -> Option
 
 /// Trust-on-first-use pin: record `public_key_hex` for `subject` unless a key
 /// is already pinned, in which case it must match.
-pub(crate) fn pin_if_absent(
+pub fn pin_if_absent(
     subject: &str,
     public_key_hex: &str,
     source: &str,

@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 
 use lean_ctx_protocol::CapabilityManifestV1;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use std::cell::Cell;
 
 use super::adapters::registry::AdapterRegistry;
@@ -33,7 +33,7 @@ use super::traits::{
 
 static GLOBAL_REGISTRY: OnceLock<OclaRegistry> = OnceLock::new();
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static TEST_REGISTRY: Cell<*mut OclaRegistry> = const { Cell::new(std::ptr::null_mut()) };
 }
@@ -59,7 +59,7 @@ pub struct OclaRegistry {
 
 impl OclaRegistry {
     pub fn global() -> &'static Self {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(registry) = TEST_REGISTRY.with(|slot| {
             let ptr = slot.get();
             (!ptr.is_null()).then(|| {
@@ -164,19 +164,19 @@ impl OclaRegistry {
     }
 }
 
-#[cfg(test)]
-pub(crate) struct TestRegistryGuard {
+#[cfg(any(test, feature = "test-support"))]
+pub struct TestRegistryGuard {
     previous: *mut OclaRegistry,
 }
 
-#[cfg(test)]
-pub(crate) fn with_test_registry(registry: OclaRegistry) -> TestRegistryGuard {
+#[cfg(any(test, feature = "test-support"))]
+pub fn with_test_registry(registry: OclaRegistry) -> TestRegistryGuard {
     let registry = Box::leak(Box::new(registry));
     let previous = TEST_REGISTRY.with(|slot| slot.replace(registry));
     TestRegistryGuard { previous }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for TestRegistryGuard {
     fn drop(&mut self) {
         TEST_REGISTRY.with(|slot| slot.set(self.previous));
@@ -188,7 +188,7 @@ mod tests {
     use super::*;
     use crate::core::ocla::capability_fabric::normalize_manifest;
     use crate::core::ocla::traits::{
-        EfficiencyAnalyzer, ObservationHook, OclaService, OutcomeTracker, SavingsLedger,
+        EfficiencyAnalyzer, ObservationHook, OclaService, SavingsLedger,
     };
     use crate::core::ocla::types::{
         AgentEnvelope, CompressionRequest, ConfigTuningRequest, ConnectorJob, EfficiencyAnalysis,
@@ -348,8 +348,6 @@ mod tests {
 
     struct SpyEfficiency(Arc<AtomicUsize>);
     struct SpySavings(Arc<AtomicUsize>);
-    struct SpyObservation(Arc<AtomicUsize>);
-    struct SpyOutcome(Arc<AtomicUsize>);
 
     macro_rules! spy_capability {
         ($name:ty, $kind:expr) => {
@@ -363,8 +361,6 @@ mod tests {
 
     spy_capability!(SpyEfficiency, OclaCapabilityKind::EfficiencyAnalyzer);
     spy_capability!(SpySavings, OclaCapabilityKind::SavingsLedger);
-    spy_capability!(SpyObservation, OclaCapabilityKind::ObservationHook);
-    spy_capability!(SpyOutcome, OclaCapabilityKind::OutcomeTracker);
 
     impl EfficiencyAnalyzer for SpyEfficiency {
         fn analyze_efficiency(&self, sample: EfficiencySample) -> OclaResult<EfficiencyAnalysis> {
@@ -387,21 +383,6 @@ mod tests {
 
         fn project_savings(&self, evidence: SavingsEvidence) -> OclaResult<String> {
             self.record_savings(evidence)
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl ObservationHook for SpyObservation {
-        async fn observe(&self, _observation: Observation) -> OclaResult<()> {
-            self.0.fetch_add(1, Ordering::Relaxed);
-            Ok(())
-        }
-    }
-
-    impl OutcomeTracker for SpyOutcome {
-        fn record_outcome(&self, _outcome: Outcome) -> OclaResult<()> {
-            self.0.fetch_add(1, Ordering::Relaxed);
-            Ok(())
         }
     }
 
@@ -658,24 +639,5 @@ mod tests {
         // predictor, so a read no longer asks for it.
         assert_eq!(efficiency_calls.load(Ordering::Relaxed), 0);
         assert_eq!(savings_calls.load(Ordering::Relaxed), 1);
-    }
-
-    #[tokio::test]
-    async fn mcp_metrics_project_observation_but_leave_outcome_to_lifecycle() {
-        let _dir = crate::core::data_dir::isolated_data_dir();
-        let observation_calls = Arc::new(AtomicUsize::new(0));
-        let outcome_calls = Arc::new(AtomicUsize::new(0));
-        let mut registry = OclaRegistry::with_builtins();
-        registry.observation_hook = Arc::new(SpyObservation(observation_calls.clone()));
-        registry.outcome_tracker = Arc::new(SpyOutcome(outcome_calls.clone()));
-        let _guard = with_test_registry(registry);
-        let server = crate::tools::LeanCtxServer::new();
-
-        server
-            .record_call_with_timing("ctx_read", 100, 40, Some("full".into()), 3)
-            .await;
-
-        assert_eq!(observation_calls.load(Ordering::Relaxed), 1);
-        assert_eq!(outcome_calls.load(Ordering::Relaxed), 0);
     }
 }

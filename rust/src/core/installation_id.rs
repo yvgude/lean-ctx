@@ -125,7 +125,7 @@ fn with_deletion_lock<T>(
 /// The installation ID `get_or_create` would return, if one exists, without
 /// creating, migrating or adopting anything: for read-only views such as the
 /// dashboard. `None` while no ID was ever created.
-pub(crate) fn existing() -> Option<String> {
+pub fn existing() -> Option<String> {
     let path = identity_path().ok()?;
     if let Some(identity) = read_identity(&path) {
         return Some(identity.installation_id);
@@ -141,12 +141,12 @@ pub(crate) fn existing() -> Option<String> {
 }
 
 /// Return the existing installation ID or generate a fresh UUID v4.
-pub(crate) fn get_or_create() -> Result<String, String> {
+pub fn get_or_create() -> Result<String, String> {
     Ok(get_or_create_identity()?.0)
 }
 
 /// Read one lock-consistent installation ID and deletion credential snapshot.
-pub(crate) fn get_or_create_identity() -> Result<(String, String), String> {
+pub fn get_or_create_identity() -> Result<(String, String), String> {
     with_deletion_lock(get_or_create_identity_locked)
 }
 
@@ -196,7 +196,7 @@ fn load_or_create_id(dir: &std::path::Path) -> Result<String, String> {
 }
 
 /// Regenerate the installation ID (for `lean-ctx telemetry reset-id`).
-pub(crate) fn reset() -> Result<String, String> {
+pub fn reset() -> Result<String, String> {
     with_deletion_lock(|dir| {
         let identity = TelemetryIdentity {
             installation_id: generate_uuid_v4(),
@@ -341,7 +341,7 @@ fn is_valid_uuid(s: &str) -> bool {
 }
 
 /// Return the masked form `abcd…wxyz` for display.
-pub(crate) fn masked(id: &str) -> String {
+pub fn masked(id: &str) -> String {
     if id.len() < 8 {
         return "********".to_string();
     }

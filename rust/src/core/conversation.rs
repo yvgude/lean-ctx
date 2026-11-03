@@ -11,7 +11,7 @@
 //! `session_id` instead, which `load_active_transcript` returns as the scope id
 //! so a new session never inherits a prior one's stubs (#1004). Either way it
 //! carries a 2h TTL and we read it via
-//! [`crate::hook_handlers::load_active_transcript`] but
+//! [`crate::core::host_state::load_active_transcript`] but
 //! cache it behind a short TTL so the read hot path never stats+parses a file on
 //! every call. The last-known-good value is retained across a transient refresh
 //! miss, so a momentary read failure never spuriously invalidates valid stubs.
@@ -37,7 +37,7 @@
 //!
 //! ### Zero detection lag, and the host limit (#1042)
 //!
-//! The stub decision resolves the caller with [`current_conversation_id_fresh`],
+//! The stub decision resolves the caller with `current_conversation_id_fresh`,
 //! which re-samples `active_transcript.json` (bypassing the `REFRESH_TTL`
 //! cache) and notes the writer *before* the gate runs. A freshly-appeared second
 //! chat is therefore detected with no lag, closing the small window in which a
@@ -86,7 +86,7 @@ fn seen_store() -> &'static RwLock<Vec<(String, Instant)>> {
     SEEN.get_or_init(|| RwLock::new(Vec::new()))
 }
 
-pub(crate) fn scope_enabled() -> bool {
+pub fn scope_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
         !matches!(
@@ -200,7 +200,7 @@ fn subagent_scope() -> Option<String> {
 ///
 /// Answers from the `REFRESH_TTL` cache when warm, so the read hot path never
 /// stats+parses a file on every call.
-pub(crate) fn current_conversation_id() -> Option<String> {
+pub fn current_conversation_id() -> Option<String> {
     resolve_conversation_id(Freshness::Cached)
 }
 
@@ -211,7 +211,7 @@ pub(crate) fn current_conversation_id() -> Option<String> {
 /// TTL lag and a stub can never leak to chat B in the window before detection
 /// catches up (#1042). The cost is one tiny, OS-cached transcript read per
 /// re-read — negligible against the source re-read it guards.
-pub(crate) fn current_conversation_id_fresh() -> Option<String> {
+pub fn current_conversation_id_fresh() -> Option<String> {
     resolve_conversation_id(Freshness::Fresh)
 }
 
@@ -252,7 +252,7 @@ fn cache_is_usable(freshness: Freshness, age: Duration, ttl: Duration) -> bool {
 }
 
 fn refresh() -> Option<String> {
-    let fresh = crate::hook_handlers::load_active_transcript().and_then(|(_, conv)| conv);
+    let fresh = crate::core::host_state::load_active_transcript().and_then(|(_, conv)| conv);
     if let Some(id) = fresh.as_deref() {
         note_conversation_seen(id);
     }
@@ -344,12 +344,12 @@ static ONE_SHOT_PROCESS: AtomicBool = AtomicBool::new(false);
 /// can be in context (#2060). Such a process still resolves the shared
 /// `active_transcript.json` conversation id, which made earlier deliveries
 /// look like its own.
-pub(crate) fn mark_one_shot_process() {
+pub fn mark_one_shot_process() {
     ONE_SHOT_PROCESS.store(true, Ordering::Relaxed);
 }
 
 /// Whether [`mark_one_shot_process`] ran in this process.
-pub(crate) fn is_one_shot_process() -> bool {
+pub fn is_one_shot_process() -> bool {
     ONE_SHOT_PROCESS.load(Ordering::Relaxed)
 }
 
@@ -362,7 +362,7 @@ pub(crate) fn is_one_shot_process() -> bool {
 /// the scope is only process-derived (#1801). Then every stub is withheld.
 ///
 /// A one-shot process never serves a stub (#2060), in legacy mode included.
-pub(crate) fn conversation_allows_stub(current: Option<&str>, delivered: Option<&str>) -> bool {
+pub fn conversation_allows_stub(current: Option<&str>, delivered: Option<&str>) -> bool {
     !ONE_SHOT_PROCESS.load(Ordering::Relaxed)
         && allows_stub(
             scope_enabled(),
@@ -411,10 +411,7 @@ fn allows_stub(
 /// because without a current conversation id we cannot prove the content is in
 /// the new process's context, and a wrong cold stub would resurrect exactly the
 /// cross-chat hazard #954 closed. Also withheld under concurrency (#1040).
-pub(crate) fn conversation_allows_cold_stub(
-    current: Option<&str>,
-    delivered: Option<&str>,
-) -> bool {
+pub fn conversation_allows_cold_stub(current: Option<&str>, delivered: Option<&str>) -> bool {
     allows_cold_stub(
         multiple_conversations_recent() || scope_cannot_identify_caller(),
         current,
@@ -426,6 +423,31 @@ pub(crate) fn conversation_allows_cold_stub(
 /// the same meaning as in [`allows_stub`].
 fn allows_cold_stub(unprovable: bool, current: Option<&str>, delivered: Option<&str>) -> bool {
     !unprovable && matches!((current, delivered), (Some(c), Some(d)) if c == d)
+}
+
+/// Detects a subagent (forked agent) execution context.
+///
+/// A subagent must never be served a stub for content only the parent received.
+/// That used to be enforced by force-freshing *every* subagent read; with
+/// conversation scoping (#954/#955) the subagent instead runs under its own scope
+/// ([`current_conversation_id`] → `task:{id}` or `proc:{id}`), so
+/// the stub gate withholds cross-agent stubs precisely while restoring the
+/// subagent's *own* cheap re-reads. The blanket force-fresh is therefore kept
+/// only as the fallback when scoping is disabled (#956).
+///
+/// Checks `CURSOR_TASK_ID` (Cursor) and `CLAUDE_CODE_ENTRYPOINT=local-agent`
+/// (future Claude Code subagent marker). Current Claude Code is handled by
+/// per-process scoping in this module (#1292).
+pub fn is_subagent_context() -> bool {
+    static IS_SUBAGENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *IS_SUBAGENT.get_or_init(|| {
+        std::env::var("CURSOR_TASK_ID").is_ok_and(|v| !v.is_empty())
+            || std::env::var("CLAUDE_CODE_ENTRYPOINT")
+                .ok()
+                .as_deref()
+                .map(str::trim)
+                == Some("local-agent")
+    })
 }
 
 #[cfg(test)]

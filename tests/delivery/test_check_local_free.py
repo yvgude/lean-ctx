@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Plan, licence and entitlement checks may live only in rust/src/core/hive/."""
+"""Plan, licence and entitlement checks may live only in rust/crates/lean-ctx-hive/src/."""
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -19,7 +19,7 @@ class LocalFreeTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.write("rust/src/core/cache.rs", "fn cache() {}\n")
-        self.write("rust/src/core/hive/plan.rs", 'fn gate() { require_pro(); std::env::var("LEAN_CTX_PLAN"); }\n')
+        self.write("rust/crates/lean-ctx-hive/src/plan.rs", 'fn gate() { require_pro(); std::env::var("LEAN_CTX_PLAN"); }\n')
         self.allow("")
 
     def write(self, path, text):

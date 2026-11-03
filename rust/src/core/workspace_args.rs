@@ -3,18 +3,18 @@
 //! and by the agent-shell allowlist, so both judge the same verb.
 
 /// One parsed `lean-ctx workspace` invocation.
-pub(crate) struct Parsed {
-    pub(crate) verb: String,
-    pub(crate) positional: Option<String>,
-    pub(crate) file: Option<String>,
-    pub(crate) id: Option<String>,
-    pub(crate) expect_revision: Option<String>,
-    pub(crate) read_only: bool,
-    pub(crate) json: bool,
+pub struct Parsed {
+    pub verb: String,
+    pub positional: Option<String>,
+    pub file: Option<String>,
+    pub id: Option<String>,
+    pub expect_revision: Option<String>,
+    pub read_only: bool,
+    pub json: bool,
 }
 
 /// Parse the arguments after `lean-ctx workspace`.
-pub(crate) fn parse(args: &[String]) -> Result<Parsed, String> {
+pub fn parse(args: &[String]) -> Result<Parsed, String> {
     let mut parsed = Parsed {
         verb: String::new(),
         positional: None,

@@ -17,7 +17,7 @@ fn publish(root: &std::path::Path, path: &std::path::Path, output: &str) -> Stri
     scope(root, || {
         runtime::with_source_view(|| {
             let mut remaining = crate::core::limits::max_read_bytes();
-            let read = crate::tools::ctx_read::read_file_for_tool_rooted_with_path(
+            let read = crate::core::rooted_read::read_file_for_tool_rooted_with_path(
                 path.to_str().unwrap(),
                 root.to_str().unwrap(),
                 "ctx_execute",
@@ -332,28 +332,6 @@ fn oversized_discovery_entry_does_not_hide_smaller_older_entries() {
     });
 }
 
-#[tokio::test]
-async fn file_handler_publishes_only_a_successful_verified_binding() {
-    let _data = crate::core::data_dir::isolated_data_dir();
-    let _policy = policy();
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("source.txt");
-    std::fs::write(&path, "public source").unwrap();
-    let ((_, outcome), authority) = authority::capture(async {
-        crate::tools::ctx_execute::handle_file(path.to_str().unwrap(), None, root.path().to_str())
-    })
-    .await;
-    assert_eq!(outcome, crate::server::tool_trait::ShellOutcome::Exit(0));
-    assert!(authority.is_some());
-    std::fs::write(&path, "CONFIDENTIAL\nsource").unwrap();
-    let ((_, outcome), authority) = authority::capture(async {
-        crate::tools::ctx_execute::handle_file(path.to_str().unwrap(), None, root.path().to_str())
-    })
-    .await;
-    assert_eq!(outcome, crate::server::tool_trait::ShellOutcome::Blocked);
-    assert!(authority.is_none());
-}
-
 #[test]
 fn source_checks_share_the_original_byte_budget() {
     let _data = crate::core::data_dir::isolated_data_dir();
@@ -393,7 +371,7 @@ fn governed_without_pack() -> crate::core::data_dir::IsolatedDataDir {
 
 fn source_authority(root: &std::path::Path, path: &std::path::Path) -> authority::ArchiveAuthority {
     let mut remaining = crate::core::limits::max_read_bytes();
-    let read = crate::tools::ctx_read::read_file_for_tool_rooted_with_path(
+    let read = crate::core::rooted_read::read_file_for_tool_rooted_with_path(
         path.to_str().unwrap(),
         root.to_str().unwrap(),
         "ctx_read",
@@ -431,8 +409,7 @@ fn every_copy_of_a_two_source_excerpt_is_withheld_when_one_source_loses_its_righ
     let reference = |text: &str, authority: &authority::ArchiveAuthority| {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
         loop {
-            let stored =
-                crate::server::reference_store::store_with_authority(text, Some(authority));
+            let stored = crate::core::reference_store::store_with_authority(text, Some(authority));
             if stored.is_some() || std::time::Instant::now() >= deadline {
                 return stored.expect("reference stored");
             }
@@ -475,7 +452,7 @@ fn every_copy_of_a_two_source_excerpt_is_withheld_when_one_source_loses_its_righ
                 "{case}: listing"
             );
             assert_eq!(
-                crate::server::reference_store::resolve(&both_ref).is_some(),
+                crate::core::reference_store::resolve(&both_ref).is_some(),
                 expected,
                 "{case}: reference"
             );
@@ -486,7 +463,7 @@ fn every_copy_of_a_two_source_excerpt_is_withheld_when_one_source_loses_its_righ
                 "{case}: B archive"
             );
             assert_eq!(
-                crate::server::reference_store::resolve(&b_ref).as_deref(),
+                crate::core::reference_store::resolve(&b_ref).as_deref(),
                 Some(only_b),
                 "{case}: B reference"
             );

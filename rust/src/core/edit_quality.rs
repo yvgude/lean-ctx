@@ -283,14 +283,14 @@ fn ext_of(path: &str) -> String {
 /// (empty = file was never read through lean-ctx → no signal, skipped).
 /// Compression-correlated failures additionally arm the one-shot per-path
 /// escalation so the next auto read of `path` resolves to `full`.
-pub(crate) fn record_edit_outcome(path: &str, last_mode: &str, success: bool) {
+pub fn record_edit_outcome(path: &str, last_mode: &str, success: bool) {
     record_outcome_with(path, last_mode, success, Escalation::Full);
 }
 
 /// Like [`record_edit_outcome`], but a failure is a `ctx_patch` anchor-staleness
 /// miss: the recovery is a *fresh anchored read* (the model edits by reference),
 /// so the next auto read escalates to `anchored` instead of `full` (#1008).
-pub(crate) fn record_anchored_edit_outcome(path: &str, last_mode: &str, success: bool) {
+pub fn record_anchored_edit_outcome(path: &str, last_mode: &str, success: bool) {
     record_outcome_with(path, last_mode, success, Escalation::Anchored);
 }
 
@@ -415,7 +415,7 @@ pub(crate) fn is_risky_mode(path: &str, mode: &str) -> bool {
 }
 
 /// Snapshot for `ctx_metrics`: (risky pairs, per-pair stats, escalations served).
-pub(crate) fn metrics_snapshot() -> serde_json::Value {
+pub fn metrics_snapshot() -> serde_json::Value {
     let Ok(store) = global().lock() else {
         return serde_json::json!({});
     };

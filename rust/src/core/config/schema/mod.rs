@@ -78,6 +78,74 @@ fn key_enum_with_env(values: &[&str], default: &str, desc: &str, env: &str) -> K
     }
 }
 
+/// `[governor]`: the Claude Code governor's rule modes and per-host pins.
+fn governor_section() -> SectionSchema {
+    let modes = ["on", "shadow", "off"];
+    let mut keys = BTreeMap::new();
+    for (rule, builtin, env, what) in [
+        (
+            "r1_read",
+            "on",
+            "LEAN_CTX_GOVERNOR_R1_READ",
+            "identical re-read of an unchanged file",
+        ),
+        (
+            "r1_bash",
+            "shadow",
+            "LEAN_CTX_GOVERNOR_R1_BASH",
+            "identical re-run of a viewer command",
+        ),
+        (
+            "r2",
+            "shadow",
+            "LEAN_CTX_GOVERNOR_R2",
+            "lossless repeat collapse of large Bash output",
+        ),
+        (
+            "r3",
+            "shadow",
+            "LEAN_CTX_GOVERNOR_R3",
+            "output already in context (never above shadow)",
+        ),
+        (
+            "r4",
+            "shadow",
+            "LEAN_CTX_GOVERNOR_R4",
+            "template collapse of large Bash output",
+        ),
+    ] {
+        keys.insert(
+            rule.into(),
+            key_enum_with_env(
+                &modes,
+                builtin,
+                &format!(
+                    "Governor rule {rule}: {what}. Unset = built-in default; a governor \
+                     install writes on (r3: shadow). LEAN_CTX_GOVERNOR caps every rule"
+                ),
+                env,
+            ),
+        );
+    }
+    keys.insert(
+        "pinned".into(),
+        key(
+            "table",
+            serde_json::json!({}),
+            "Setup mode chosen per host, e.g. claude = \"hybrid\". Written by `lean-ctx init \
+             --agent <host> --mode <mode>`; a pinned host is never switched to the governor \
+             by setup or an update",
+        ),
+    );
+    SectionSchema {
+        description: "Claude Code governor (`hook govern`): rule modes (env \
+                      LEAN_CTX_GOVERNOR_* overrides) and per-host setup pins. The governor \
+                      is the default Claude Code setup."
+            .into(),
+        keys,
+    }
+}
+
 /// `hook_mode` (root section); kept here so `sections_core.rs` stays under the
 /// LOC gate.
 fn hook_mode_key() -> KeySchema {
@@ -137,7 +205,7 @@ impl ConfigSchema {
         sections_core::build(&mut sections);
         sections_features::build(&mut sections);
         sections_advanced::build(&mut sections);
-        sections.insert("hive".into(), crate::core::hive::config::schema_section());
+        sections.insert("hive".into(), crate::core::config::hive::schema_section());
         sections.insert("intelligence_runtime".into(), SectionSchema {
             description: "Global-only optional runtime consent and independent staging pins; project overrides never apply".into(),
             keys: [

@@ -1,7 +1,7 @@
 # lean-ctx-patterns
 
 Deterministic shell-output compression patterns and token counting for the
-[LeanCTX Engine](https://github.com/yvgude/lean-ctx).
+[LeanCTX | OSS](https://github.com/yvgude/lean-ctx).
 
 Every pattern is a pure text transform: a command line and its output go in,
 and a shorter rendering of that output (or `None`) comes out. Engine policy

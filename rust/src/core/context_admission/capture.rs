@@ -5,7 +5,7 @@
 //! The MCP dispatcher opens a capture around each call; the read choke point
 //! appends one content-free decision per admitted object, including from the
 //! detached read workers (`TaskSpine::spawn_thread` carries the capture). When
-//! the call's final result exists, [`finish`] turns the decisions into a
+//! the call's final result exists, `finish` turns the decisions into a
 //! validated `ContextDecisionReceiptV1` whose digest binds exactly the bytes
 //! that were returned. Nothing here holds or persists content.
 
@@ -23,11 +23,11 @@ use lean_ctx_protocol::{PolicyId, ProtocolReference, Sha256Digest, TaskId};
 use super::AdmissionCounts;
 
 tokio::task_local! {
-    pub(crate) static ADMISSIONS: Option<Arc<AdmissionCapture>>;
+    pub static ADMISSIONS: Option<Arc<AdmissionCapture>>;
 }
 
 /// The capture of the call running on this task or worker, if any.
-pub(crate) fn current() -> Option<Arc<AdmissionCapture>> {
+pub fn current() -> Option<Arc<AdmissionCapture>> {
     ADMISSIONS.try_with(Clone::clone).ok().flatten()
 }
 
@@ -46,7 +46,7 @@ struct Recorded {
 /// the call decide under the rules of its entry, whatever is configured by
 /// the time they run.
 #[derive(Debug, Clone)]
-pub(crate) struct CallSnapshot {
+pub struct CallSnapshot {
     admission: super::stores::StoreAdmission,
     protected: bool,
     pack: Option<(String, String)>,
@@ -60,7 +60,7 @@ pub(crate) type OrgObservation = crate::core::policy::org::Observation;
 
 /// The organization decision a capture's admissions were made under.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) enum OrgEvidence {
+pub enum OrgEvidence {
     /// No verifier decision was observed.
     #[default]
     None,
@@ -89,7 +89,7 @@ impl CallSnapshot {
     /// the pack are those of the request's project. Inside an open capture
     /// that carries a snapshot (a run that is part of a call) the gateway
     /// rules are that call's.
-    pub(crate) fn take() -> Self {
+    pub fn take() -> Self {
         let admission = super::carrier::gateway_snapshot();
         let protected =
             super::stored::source_authority_required_under(admission.admission_policy());
@@ -111,7 +111,7 @@ impl CallSnapshot {
     }
 
     /// The gateway rules of the call.
-    pub(crate) fn admission(&self) -> &super::stores::StoreAdmission {
+    pub fn admission(&self) -> &super::stores::StoreAdmission {
         &self.admission
     }
 
@@ -139,7 +139,7 @@ pub(crate) const MAX_SOURCE_REFERENCE_BYTES: usize = 256;
 
 /// The name a reader showed for a source it delivered.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum SourceName {
+pub enum SourceName {
     /// A project file: its path relative to the project.
     Path(String),
     /// Not a project file: the id it has at its origin (the path in a
@@ -197,13 +197,13 @@ pub(crate) fn note_source(project: &std::path::Path, canonical_path: &str) {
     capture.name_source(object, reference);
 }
 
-/// [`note_source`] for a source that is not a project file (G08): `id` is
+/// `note_source` for a source that is not a project file (G08): `id` is
 /// what its reader shows for it — the path it has at its origin, a
 /// provider's source id. Called by the reader right after it admitted the
 /// source, on the same thread, and only for a source it delivers. The same
 /// bounds apply; an empty or over-long id is counted, not recorded. The
 /// sidecar keeps it only if it passes the release check as a word.
-pub(crate) fn note_source_id(id: &str) {
+pub fn note_source_id(id: &str) {
     let Some((capture, object)) = unnamed_decision() else {
         return;
     };
@@ -224,7 +224,7 @@ fn unnamed_decision() -> Option<(Arc<AdmissionCapture>, Sha256Digest)> {
 
 /// Everything one call contributes to its receipt.
 #[derive(Debug)]
-pub(crate) struct AdmissionCapture {
+pub struct AdmissionCapture {
     started: Instant,
     records: Mutex<Vec<Recorded>>,
     /// Decisions beyond `MAX_DECISIONS` are counted in full, never dropped.
@@ -269,13 +269,13 @@ impl Default for AdmissionCapture {
 }
 
 impl AdmissionCapture {
-    pub(crate) fn new() -> Arc<Self> {
+    pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
     }
 
     /// The capture of one call, carrying the policy snapshot taken at the
     /// call's entry.
-    pub(crate) fn for_call(snapshot: CallSnapshot) -> Arc<Self> {
+    pub fn for_call(snapshot: CallSnapshot) -> Arc<Self> {
         Arc::new(Self {
             snapshot: Some(snapshot),
             ..Self::default()
@@ -283,7 +283,7 @@ impl AdmissionCapture {
     }
 
     /// The call's policy snapshot, when this capture was opened for a call.
-    pub(crate) fn snapshot(&self) -> Option<&CallSnapshot> {
+    pub fn snapshot(&self) -> Option<&CallSnapshot> {
         self.snapshot.as_ref()
     }
 
@@ -295,7 +295,7 @@ impl AdmissionCapture {
 
     /// The references the admitted readers named, by the object digest of
     /// the decision each belongs to, and how many were not recorded.
-    pub(crate) fn source_references(&self) -> (Vec<(Sha256Digest, SourceName)>, u32) {
+    pub fn source_references(&self) -> (Vec<(Sha256Digest, SourceName)>, u32) {
         let sources = self.sources.lock().unwrap_or_else(PoisonError::into_inner);
         (sources.named.clone(), sources.omitted)
     }
@@ -447,14 +447,14 @@ impl AdmissionCapture {
     }
 
     /// The measured original token count reported by the tool for this call.
-    pub(crate) fn set_original_tokens(&self, tokens: u64) {
+    pub fn set_original_tokens(&self, tokens: u64) {
         *self
             .original_tokens
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(tokens);
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -510,7 +510,7 @@ impl AdmissionCapture {
 
     /// The itemized decisions with the counts admission measured for each,
     /// for the trace sidecar: what a V1 receipt holds only as totals.
-    pub(crate) fn itemized(&self) -> Vec<(ContextDecisionV1, AdmissionCounts)> {
+    pub fn itemized(&self) -> Vec<(ContextDecisionV1, AdmissionCounts)> {
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -604,7 +604,7 @@ impl AdmissionCapture {
 
     /// Whether an admitted source carried prompt-injection signals; the
     /// dispatcher's own output scan must then not count the same text again.
-    pub(crate) fn flagged_injection(&self) -> bool {
+    pub fn flagged_injection(&self) -> bool {
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -823,17 +823,17 @@ impl Overflow {
 }
 
 /// Identity of the call the receipt describes.
-pub(crate) struct CallIdentity<'a> {
-    pub(crate) agent_id: Option<&'a str>,
+pub struct CallIdentity<'a> {
+    pub agent_id: Option<&'a str>,
     /// Where the context goes, when the caller knows it (the proxy does).
-    pub(crate) destination: Option<DestinationV1>,
+    pub destination: Option<DestinationV1>,
 }
 
 /// The delivered result as the host receives it.
-pub(crate) struct Delivered<'a> {
-    pub(crate) text: &'a str,
-    pub(crate) is_error: bool,
-    pub(crate) tokens: u64,
+pub struct Delivered<'a> {
+    pub text: &'a str,
+    pub is_error: bool,
+    pub tokens: u64,
 }
 
 fn reference(prefix: &str, raw: &str) -> Option<ProtocolReference> {
@@ -868,7 +868,7 @@ pub(super) fn note_object() -> Sha256Digest {
 
 /// Whether `decision` is a note — a statement about a source the receipt
 /// already counts — and not a source of its own. For readers of receipts.
-pub(crate) fn is_note(decision: &ContextDecisionV1) -> bool {
+pub fn is_note(decision: &ContextDecisionV1) -> bool {
     let note = note_object();
     // A version 2 receipt names the note keyed under this installation's key.
     decision.object == note
@@ -878,10 +878,10 @@ pub(crate) fn is_note(decision: &ContextDecisionV1) -> bool {
 
 /// Build the call's receipt, or `None` when no governed source was admitted.
 /// The receipt is validated before it is returned; an inconsistent receipt is
-/// never produced. Product callers use [`finish_for_presenter`]; this form
+/// never produced. Product callers use `finish_for_presenter`; this form
 /// without a presenter is what the tests call.
-#[cfg(test)]
-pub(crate) fn finish(
+#[cfg(any(test, feature = "test-support"))]
+pub fn finish(
     capture: &AdmissionCapture,
     identity: &CallIdentity<'_>,
     delivered: &Delivered<'_>,

@@ -10,7 +10,7 @@
 //! 4. [`distill`] applies the requested research-compression mode.
 //! 5. [`citation`] attaches source attribution.
 //!
-//! The single entry point is [`read_url`]; the [`crate::tools::registered::ctx_url_read`]
+//! The single entry point is [`read_url`]; the `tools::registered::ctx_url_read`
 //! MCP tool is a thin wrapper over it.
 
 pub mod citation;

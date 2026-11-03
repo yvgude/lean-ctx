@@ -3,7 +3,7 @@
 > **Context Gateway for AI Systems. Control what your AI can see.**
 
 LeanCTX sits between AI and the systems it reads: **SELECT → CONTROL → LEARN → PROVE**.
-LeanCTX Engine implements context selection, supported controls, local task and
+LeanCTX | OSS implements context selection, supported controls, local task and
 knowledge continuity, and bounded evidence. LeanCTX SDK connects applications to
 that runtime. Learn means context continuity, not model training.
 Within the Engine, the technical context lifecycle is:

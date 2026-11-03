@@ -26,7 +26,7 @@ use crate::core::shell_allowlist::{Separator, segments_with_separators, strip_al
 
 /// How much of a file a shell read delivered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ShellReadKind {
+pub enum ShellReadKind {
     /// The whole file, unfiltered.
     Full,
     /// A window or filtered slice of it.
@@ -36,9 +36,9 @@ pub(crate) enum ShellReadKind {
 /// The files one shell command reads and rewrites, paths as written
 /// (relative paths joined onto a preceding `cd DIR`).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct ShellFileEffects {
-    pub(crate) reads: Vec<(String, ShellReadKind)>,
-    pub(crate) edits: Vec<String>,
+pub struct ShellFileEffects {
+    pub reads: Vec<(String, ShellReadKind)>,
+    pub edits: Vec<String>,
 }
 
 /// Nested `sh -c`/`lean-ctx -c` levels followed; deeper ones are not read.
@@ -48,7 +48,7 @@ const MAX_NESTED_SHELLS: usize = 16;
 /// shell gate validates is not analysed: the hooks run this before the gate,
 /// and each nested `sh -c` level is another recursive pass.
 #[must_use]
-pub(crate) fn analyze(command: &str) -> ShellFileEffects {
+pub fn analyze(command: &str) -> ShellFileEffects {
     if command.len() > crate::core::shell_allowlist::MAX_VALIDATED_COMMAND_BYTES {
         return ShellFileEffects::default();
     }
@@ -193,7 +193,7 @@ fn analyze_nested(command: &str, depth: usize) -> ShellFileEffects {
 /// `*** Delete File:` and `*** Move to:` headers. Shared with the host-edit
 /// hook, which receives Codex `apply_patch` calls as raw patch text.
 #[must_use]
-pub(crate) fn apply_patch_targets(text: &str) -> Vec<String> {
+pub fn apply_patch_targets(text: &str) -> Vec<String> {
     if !text.contains("*** Begin Patch") {
         return Vec::new();
     }

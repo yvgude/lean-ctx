@@ -29,7 +29,7 @@ pub(crate) const STORE_KNOWLEDGE: &str = "knowledge";
 
 /// One journal line.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub(crate) struct JournalLine {
+pub struct JournalLine {
     pub timestamp: String,
     pub store: String,
     pub item: String,
@@ -43,7 +43,7 @@ fn journal_path() -> Result<PathBuf, String> {
         .join("legacy-context.jsonl"))
 }
 
-pub(crate) fn read_journal() -> Vec<JournalLine> {
+pub fn read_journal() -> Vec<JournalLine> {
     journal_path()
         .ok()
         .and_then(|path| std::fs::read_to_string(path).ok())
@@ -56,19 +56,14 @@ pub(crate) fn read_journal() -> Vec<JournalLine> {
 }
 
 /// Whether `item` was adopted into the project `partition` before.
-pub(crate) fn adopted(journal: &[JournalLine], item: &str, partition: &str) -> bool {
+pub fn adopted(journal: &[JournalLine], item: &str, partition: &str) -> bool {
     journal
         .iter()
         .any(|line| line.item == item && line.project == partition && line.outcome == "adopted")
 }
 
 /// Append one outcome (append-only, owner-only permissions).
-pub(crate) fn record(
-    store: &str,
-    item: &str,
-    partition: &str,
-    adopted: bool,
-) -> Result<(), String> {
+pub fn record(store: &str, item: &str, partition: &str, adopted: bool) -> Result<(), String> {
     let path = journal_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
@@ -287,7 +282,7 @@ pub(crate) fn auto_adopt_archives() {
 /// facts partition (once per process and project): legacy facts whose
 /// `source_session` is a session of this project, and facts archived for
 /// this very path under an earlier identity of the project.
-pub(crate) fn auto_adopt_facts(project_root: &str) {
+pub fn auto_adopt_facts(project_root: &str) {
     let partition = crate::core::project_hash::hash_project_root(project_root);
     if !first_pass(STORE_FACTS_ARCHIVE, &partition) {
         return;
@@ -331,7 +326,7 @@ pub(crate) fn auto_adopt_facts(project_root: &str) {
 /// Copy `ctx_memory` facts stored for this very path under an earlier
 /// identity of the project into its current partition (once per process and
 /// project), through the admission of a normal write.
-pub(crate) fn auto_adopt_shared_context(project_root: &str) {
+pub fn auto_adopt_shared_context(project_root: &str) {
     let partition = crate::core::project_hash::hash_project_root(project_root);
     if !first_pass(STORE_SHARED_CONTEXT, &partition) {
         return;
@@ -360,7 +355,7 @@ pub(crate) fn auto_adopt_shared_context(project_root: &str) {
 }
 
 /// The journal and listing id of a shared-context fact.
-pub(crate) fn shared_context_item(id: &str) -> String {
+pub fn shared_context_item(id: &str) -> String {
     format!("{STORE_SHARED_CONTEXT}:{}", &id[..id.len().min(16)])
 }
 
@@ -466,7 +461,7 @@ pub(crate) fn copy_knowledge_partition(old: &str, project_root: &str) -> Result<
 }
 
 /// The facts of one legacy facts archive with their stable item ids.
-pub(crate) fn legacy_facts_of(
+pub fn legacy_facts_of(
     path: &Path,
     envelope: &serde_json::Value,
 ) -> Vec<(String, serde_json::Value)> {

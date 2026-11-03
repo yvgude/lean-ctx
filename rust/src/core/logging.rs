@@ -9,13 +9,13 @@ use tracing_subscriber::util::SubscriberInitExt;
 ///
 /// Respects `LEAN_CTX_LOG` and `RUST_LOG` environment variables for filter control.
 /// Defaults to `warn` level — keeps CLI output clean.
-pub(crate) fn init_logging() {
+pub fn init_logging() {
     init_with_default("warn");
 }
 
 /// Initialize logging for daemon/MCP mode (stderr, defaults to `info`).
 /// Daemon logs go to a file, so verbosity is fine.
-pub(crate) fn init_mcp_logging() {
+pub fn init_mcp_logging() {
     init_with_default("info");
 }
 

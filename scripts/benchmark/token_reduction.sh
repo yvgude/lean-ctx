@@ -22,7 +22,7 @@ task_name() {
 run_raw() {
   case "$1" in
     1) LEAN_CTX_DISABLED=1 cat rust/src/core/mod.rs;;
-    2) LEAN_CTX_DISABLED=1 cat rust/src/server/registry.rs;;
+    2) LEAN_CTX_DISABLED=1 cat rust/crates/lean-ctx-server/src/server/registry.rs;;
     3) (cd rust && LEAN_CTX_DISABLED=1 cargo test --lib -- triage 2>&1);;
     4) LEAN_CTX_DISABLED=1 git log --oneline -20;;
     5) LEAN_CTX_DISABLED=1 git diff --stat HEAD~5;;
@@ -37,7 +37,7 @@ run_raw() {
 run_compressed() {
   case "$1" in
     1) lean-ctx read rust/src/core/mod.rs;;
-    2) lean-ctx read rust/src/server/registry.rs;;
+    2) lean-ctx read rust/crates/lean-ctx-server/src/server/registry.rs;;
     3) lean-ctx -c 'cd rust && cargo test --lib -- triage 2>&1';;
     4) lean-ctx -c 'git log --oneline -20';;
     5) lean-ctx -c 'git diff --stat HEAD~5';;

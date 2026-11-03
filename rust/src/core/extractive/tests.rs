@@ -147,7 +147,7 @@ fn back_half_query(doc: &str) -> Option<String> {
 /// Head-to-head: extractive (centrality) vs truncation over a real prose
 /// corpus, reporting token savings AND a meaning-retention fidelity for each.
 /// `#[ignore]`d (needs the embedding model + is slow); reproduce with:
-/// `cargo test -p lean-ctx --lib --features embeddings \
+/// `cargo test -p lean-ctx-engine --lib --features embeddings \
 ///  core::extractive::tests::bench_extractive_vs_truncation -- --ignored --nocapture`.
 #[cfg(feature = "embeddings")]
 #[test]

@@ -16,7 +16,7 @@ use crate::core::tokens::count_tokens;
 /// uses `serde_json::to_string_pretty` which preserves struct order, keeping
 /// the bytes stable across runs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SubAgentContractV1 {
+pub struct SubAgentContractV1 {
     pub contract_version: u32,
     pub task: String,
     pub budget_tokens: usize,
@@ -27,7 +27,7 @@ pub(crate) struct SubAgentContractV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct ContractFact {
+pub struct ContractFact {
     pub category: String,
     pub key: String,
     pub value: String,
@@ -41,7 +41,7 @@ pub(crate) const RETURN_FORMAT_V1: &str = "Report results as lines of 'category/
 /// Build a deterministic briefing pack: task + the most relevant current
 /// facts, greedily filled (in stable relevance order) until `budget_tokens`
 /// is reached. The task itself is always included; the budget governs facts.
-pub(crate) fn build_briefing_pack(
+pub fn build_briefing_pack(
     knowledge: &ProjectKnowledge,
     task: &str,
     budget_tokens: usize,
@@ -83,14 +83,14 @@ pub(crate) fn build_briefing_pack(
 }
 
 /// Serialize a pack with stable formatting (struct field order, pretty JSON).
-pub(crate) fn serialize_pack(pack: &SubAgentContractV1) -> Result<String, String> {
+pub fn serialize_pack(pack: &SubAgentContractV1) -> Result<String, String> {
     serde_json::to_string_pretty(pack).map_err(|e| format!("contract serialization failed: {e}"))
 }
 
 /// Parse sub-agent return lines (`category/key: value`) into structured
 /// facts. Lines that don't match the contract format are reported back as
 /// rejects instead of being silently dropped.
-pub(crate) fn parse_return_lines(input: &str) -> (Vec<ContractFact>, Vec<String>) {
+pub fn parse_return_lines(input: &str) -> (Vec<ContractFact>, Vec<String>) {
     let mut facts = Vec::new();
     let mut rejected = Vec::new();
 

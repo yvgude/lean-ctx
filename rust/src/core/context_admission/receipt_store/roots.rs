@@ -14,7 +14,7 @@
 //! `<data>/gateway/roots/<key>.txt` — the canonical root, nothing else.
 //!
 //! Indexes written before the one key existed stay readable: a reader looks
-//! up the canonical key and the spelling it was given ([`latest_in`]).
+//! up the canonical key and the spelling it was given (`latest_in`).
 //! Writers write the canonical key only. A reader that finds receipts of a
 //! root that is not registered yet, or under an older spelling, registers
 //! the root and remembers that one spelling (`remember_found`), so the
@@ -27,14 +27,14 @@ use super::{LoadError, StoredReceipt};
 
 /// The receipt index of an Engine-interface invocation that works on no
 /// project (`signer-info`, `engine runtime …`).
-pub(crate) const ENGINE_KEY: &str = "<engine>";
+pub const ENGINE_KEY: &str = "<engine>";
 
 /// Parent directories a reader climbs to find the repository root, and the
 /// depth below the repository root down to which a registered root counts
 /// as part of it.
 pub(crate) const MAX_DEPTH: usize = 16;
 /// Roots of one repository a reader lists besides the one it was asked for.
-pub(crate) const MAX_REPOSITORY_ROOTS: usize = 16;
+pub const MAX_REPOSITORY_ROOTS: usize = 16;
 /// Registry entries a reader examines.
 pub(crate) const MAX_REGISTERED: usize = 512;
 /// Upper bound of one registered root.
@@ -55,7 +55,7 @@ fn is_reserved(key: &str) -> bool {
 /// trailing separators are removed. A launchd-standalone process does not
 /// resolve a path under a TCC-protected directory (#356) and keeps the
 /// spelling it was given. A reserved index name is returned unchanged.
-pub(crate) fn canonical(project_root: &str) -> String {
+pub fn canonical(project_root: &str) -> String {
     if is_reserved(project_root) {
         return project_root.to_owned();
     }
@@ -181,7 +181,7 @@ fn in_repository(repository: &Path, root: &Path) -> bool {
 }
 
 /// The roots whose receipt indexes a reader of `project_root` lists, in
-/// reading order: `project_root` itself (as given — [`latest_in`] reads its
+/// reading order: `project_root` itself (as given — `latest_in` reads its
 /// canonical key and that spelling), the repository root at or above it,
 /// then the other registered roots of the same repository in name order —
 /// at most [`MAX_REPOSITORY_ROOTS`] besides the first. The same list for
@@ -189,10 +189,10 @@ fn in_repository(repository: &Path, root: &Path) -> bool {
 /// `lean-ctx inspect` and the dashboard show the same receipts wherever
 /// each was started.
 ///
-/// Without a repository root (none within [`MAX_DEPTH`] parents, or the
+/// Without a repository root (none within `MAX_DEPTH` parents, or the
 /// path may not be probed) the repository is `project_root` itself: the
 /// registered roots below it are listed, nothing above it.
-pub(crate) fn of_repository(project_root: &str) -> Vec<String> {
+pub fn of_repository(project_root: &str) -> Vec<String> {
     match super::gateway_dir() {
         Some(dir) => of_repository_in(&dir, project_root),
         None => vec![project_root.to_owned()],
@@ -281,7 +281,7 @@ pub(super) fn latest_in(
 /// ([`of_repository`]): those of `project_root` first, then those of the
 /// other roots in reading order, each receipt once. Receipts carry no time,
 /// so "newest first" holds within one root's index, not across roots.
-pub(crate) fn latest_of_repository(
+pub fn latest_of_repository(
     project_root: &str,
     limit: usize,
 ) -> Vec<(String, Result<StoredReceipt, LoadError>)> {

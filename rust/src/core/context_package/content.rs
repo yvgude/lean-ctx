@@ -8,7 +8,7 @@ use crate::core::knowledge::{ConsolidatedInsight, KnowledgeFact, ProjectPattern}
 use super::graph_model::ContextGraph;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct PackageContent {
+pub struct PackageContent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub knowledge: Option<KnowledgeLayer>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -23,12 +23,12 @@ pub(crate) struct PackageContent {
     pub context_graph: Option<ContextGraph>,
     /// `kind=addon` payload (GH #724/#726): the embedded addon manifest.
     /// Absent for every other kind — enforced by
-    /// [`super::verify::validate_kind_coherence`].
+    /// `super::verify::validate_kind_coherence`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub addon: Option<AddonContent>,
     /// `kind=skills` payload (GH #724/#727): named, verified content blobs.
     /// Absent for every other kind — enforced by
-    /// [`super::verify::validate_kind_coherence`].
+    /// `super::verify::validate_kind_coherence`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub documents: Option<DocumentsContent>,
     /// Portable P6 checkpoint envelope. Presence is coherent IFF the manifest
@@ -42,9 +42,9 @@ pub(crate) const CHECKPOINT_PACKAGE_SCHEMA_V1: &str = "leanctx.ctxpkg-checkpoint
 /// Carries the public live checkpoint, not the historical SDK envelope.
 pub(crate) const CHECKPOINT_PACKAGE_SCHEMA_V2: &str = "leanctx.ctxpkg-checkpoint/v2";
 /// Carries canonical V2 with artifact lineage; never demoted to live V1.
-pub(crate) const CHECKPOINT_PACKAGE_SCHEMA_V3: &str = "leanctx.ctxpkg-checkpoint/v3";
+pub const CHECKPOINT_PACKAGE_SCHEMA_V3: &str = "leanctx.ctxpkg-checkpoint/v3";
 /// Carries canonical Unicode V3; older carrier versions remain strict.
-pub(crate) const CHECKPOINT_PACKAGE_SCHEMA_V4: &str = "leanctx.ctxpkg-checkpoint/v4";
+pub const CHECKPOINT_PACKAGE_SCHEMA_V4: &str = "leanctx.ctxpkg-checkpoint/v4";
 pub(crate) const MAX_CHECKPOINT_PACKAGE_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_CHECKPOINT_SOURCES: usize = 128;
 pub(crate) const MAX_CHECKPOINT_ENTRIES: usize = 256;
@@ -56,7 +56,7 @@ pub(crate) const MAX_CHECKPOINT_PACKAGE_PINS: usize = 128;
 /// Package integrity alone does not authorize session adoption.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct CheckpointPackageContentV1 {
+pub struct CheckpointPackageContentV1 {
     pub schema_version: String,
     pub checkpoint: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -70,7 +70,7 @@ pub(crate) struct CheckpointPackageContentV1 {
 /// and the per-platform `[artifacts]` tables (GH #725) all live inside it,
 /// so nothing is duplicated at the pack layer that could drift.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct AddonContent {
+pub struct AddonContent {
     /// Verbatim `lean-ctx-addon.toml` text (authoring contract
     /// `docs/contracts/addon-manifest-v1.md`).
     pub manifest_toml: String,
@@ -103,7 +103,7 @@ pub(crate) const MAX_ADDON_TOTAL_BYTES: usize = 16 * 1024 * 1024;
 /// verified *content*; interpretation belongs to the consumer (an addon like
 /// lean-md, or the agent itself).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub(crate) struct DocumentsContent {
+pub struct DocumentsContent {
     /// Sorted by `path` (byte order) — deterministic pack bytes (#498).
     pub files: Vec<DocumentBlob>,
 }
@@ -123,12 +123,12 @@ pub(crate) const MAX_DOCUMENTS_TOTAL_BYTES: usize = 8 * 1024 * 1024;
 /// The hash pins the decoded bytes, so tampering with the stored body (or a
 /// decompression bug) is detected before anything lands on disk.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct DocumentBlob {
+pub struct DocumentBlob {
     /// Relative, `/`-separated path inside the pack (e.g. `skills/review.md`).
     pub path: String,
     /// SHA-256 (lowercase hex) of the plaintext bytes.
     pub sha256: String,
-    /// Body encoding — currently always [`DOCUMENT_ENCODING_ZSTD_B64`].
+    /// Body encoding — currently always `DOCUMENT_ENCODING_ZSTD_B64`.
     pub encoding: String,
     /// base64(zstd(plaintext)).
     pub body: String,
@@ -136,7 +136,7 @@ pub(crate) struct DocumentBlob {
 
 impl DocumentBlob {
     /// Build a blob from plaintext bytes (deterministic: fixed zstd level).
-    pub(crate) fn from_plaintext(path: &str, bytes: &[u8]) -> Result<Self, String> {
+    pub fn from_plaintext(path: &str, bytes: &[u8]) -> Result<Self, String> {
         let compressed =
             zstd::encode_all(bytes, 3).map_err(|e| format!("zstd compress {path}: {e}"))?;
         Ok(Self {
@@ -150,7 +150,7 @@ impl DocumentBlob {
     /// Decode and verify the body against its `sha256` pin. Any mismatch —
     /// tampered body, wrong hash, corrupt compression — is an error; callers
     /// never see unverified bytes.
-    pub(crate) fn decode_verified(&self) -> Result<Vec<u8>, String> {
+    pub fn decode_verified(&self) -> Result<Vec<u8>, String> {
         if self.encoding != DOCUMENT_ENCODING_ZSTD_B64 {
             return Err(format!(
                 "`{}`: unsupported encoding `{}` (newer lean-ctx required)",
@@ -200,7 +200,7 @@ fn base64_decode(text: &str) -> Result<Vec<u8>, String> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct KnowledgeLayer {
+pub struct KnowledgeLayer {
     pub facts: Vec<KnowledgeFact>,
     pub patterns: Vec<ProjectPattern>,
     pub insights: Vec<ConsolidatedInsight>,
@@ -208,14 +208,14 @@ pub(crate) struct KnowledgeLayer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct GraphLayer {
+pub struct GraphLayer {
     pub nodes: Vec<GraphNodeExport>,
     pub edges: Vec<GraphEdgeExport>,
     pub exported_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct GraphNodeExport {
+pub struct GraphNodeExport {
     pub kind: String,
     pub name: String,
     pub file_path: String,
@@ -228,7 +228,7 @@ pub(crate) struct GraphNodeExport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct GraphEdgeExport {
+pub struct GraphEdgeExport {
     pub source_path: String,
     pub source_name: String,
     pub target_path: String,
@@ -239,7 +239,7 @@ pub(crate) struct GraphEdgeExport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SessionLayer {
+pub struct SessionLayer {
     pub task_description: Option<String>,
     pub findings: Vec<SessionFinding>,
     pub decisions: Vec<SessionDecision>,
@@ -249,7 +249,7 @@ pub(crate) struct SessionLayer {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SessionFinding {
+pub struct SessionFinding {
     pub summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
@@ -258,26 +258,26 @@ pub(crate) struct SessionFinding {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SessionDecision {
+pub struct SessionDecision {
     pub summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PatternsLayer {
+pub struct PatternsLayer {
     pub patterns: Vec<ProjectPattern>,
     pub exported_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct GotchasLayer {
+pub struct GotchasLayer {
     pub gotchas: Vec<GotchaExport>,
     pub exported_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct GotchaExport {
+pub struct GotchaExport {
     pub id: String,
     pub category: String,
     pub severity: String,
@@ -325,7 +325,7 @@ impl PackageContent {
         self.active_layer_count() == 0
     }
 
-    pub(crate) fn estimated_token_count(&self) -> usize {
+    pub fn estimated_token_count(&self) -> usize {
         let json = serde_json::to_string(self).unwrap_or_default();
         json.len() / 4
     }

@@ -85,12 +85,12 @@ impl ContextOverhead {
     /// clients with an instruction cap get a different block.
     #[must_use]
     pub fn measure_for_client(client_name: &str) -> Self {
-        let tools = crate::server::tool_visibility::advertised_tool_defs_default();
+        let tools = crate::core::tool_visibility::advertised_tool_defs_default();
         let tool_count = tools.len();
         let tool_schema_tokens = tools.iter().map(tool_tokens).sum();
 
         let instructions = crate::instructions::build_instructions_with_client(
-            crate::tools::CrpMode::effective(),
+            crate::core::protocol::CrpMode::effective(),
             client_name,
         );
         let instruction_tokens = count_tokens(&instructions);
@@ -118,7 +118,7 @@ impl ContextOverhead {
 }
 
 impl ContextOverhead {
-    /// Per-turn prefix of the opt-in Claude Code governor setup (governor
+    /// Per-turn prefix of the Claude Code governor setup (governor
     /// design v1, slice 1). Its hooks emit no session or per-prompt text, so
     /// the prefix is the rule block plus, in the MCP arm, one deferred-tool
     /// name line per tool: initialize instructions are suppressed
@@ -126,15 +126,13 @@ impl ContextOverhead {
     /// Tool Search until fetched (`alwaysLoad: false`). The name-line cost
     /// models Claude Code's deferred-tool listing [inference, bench-verified].
     #[must_use]
-    pub(crate) fn measure_governor(
-        arm: crate::hooks::agents::claude_governor::GovernorArm,
-    ) -> Self {
-        use crate::hooks::agents::claude_governor::{GovernorArm, rules_block};
-        let rules_block_tokens = count_tokens(rules_block(arm));
+    pub fn measure_governor(arm: crate::core::claude_host::GovernorArm) -> Self {
+        use crate::core::claude_host::{GovernorArm, rules_block};
+        let rules_block_tokens = rules_block(arm).map_or(0, count_tokens);
         let (tool_count, tool_schema_tokens) = match arm {
             GovernorArm::NoMcp => (0, 0),
             GovernorArm::McpDeferred => {
-                let tools = crate::server::tool_visibility::advertised_tool_defs_default();
+                let tools = crate::core::tool_visibility::advertised_tool_defs_default();
                 let names: Vec<String> = tools
                     .iter()
                     .map(|t| format!("mcp__lean-ctx__{}", t.name))
@@ -173,7 +171,7 @@ pub const NATIVE_BASELINE_TOKENS_PER_TURN: u64 = 2400;
 /// subtracted.
 #[must_use]
 pub fn native_baseline_tokens_per_turn() -> u64 {
-    if crate::hooks::replace_mode_chosen() {
+    if crate::core::hook_mode::replace_mode_chosen() {
         NATIVE_BASELINE_TOKENS_PER_TURN
     } else {
         0
@@ -272,23 +270,6 @@ pub mod tests {
     use super::*;
 
     #[test]
-    fn measure_reports_nonzero_components() {
-        // Isolated (default) config: shared rules injection, no pinned profile —
-        // every component carries tokens. `isolated_data_dir` also holds the env
-        // lock, so a concurrent test toggling the knobs can't perturb this.
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let o = ContextOverhead::measure();
-        assert!(o.tool_count > 0, "must expose at least one tool");
-        assert!(o.tool_schema_tokens > 0, "tool schemas carry tokens");
-        assert!(o.instruction_tokens > 0, "instructions carry tokens");
-        assert!(o.rules_block_tokens > 0, "rules block carries tokens");
-        assert_eq!(
-            o.total_tokens(),
-            o.tool_schema_tokens + o.instruction_tokens + o.rules_block_tokens
-        );
-    }
-
-    #[test]
     fn total_is_sum_of_parts() {
         let o = ContextOverhead {
             tool_count: 10,
@@ -378,7 +359,7 @@ pub mod tests {
              Windows-only shell hint), budget {}.\n\
              Editing a `tool_def` description also changes \
              docs/reference/generated/mcp-tools.md — re-run \
-             `cargo run --example gen_docs --features dev-tools` or the Documentation \
+             `cargo run -p lean-ctx-server --example gen_docs --features dev-tools` or the Documentation \
              job fails too. Neither consequence is visible from the diff.",
             o.total_tokens(),
             o.tool_schema_tokens,
@@ -390,8 +371,11 @@ pub mod tests {
 
     #[test]
     fn default_arm_per_turn_prefix_stays_within_budget_per_client() {
-        // The arm users actually get: no pinned profile (lazy core), default
-        // instructions, rules injection on. The minimal-arm guard above never
+        // The standard MCP arm: no pinned profile (lazy core), default
+        // instructions, rules injection on. Every non-Claude host gets it; on
+        // Claude Code it is the explicit `--mode hybrid` choice since the
+        // governor became the default there (owner 2026-11-01; guarded by
+        // `governor_arm_per_turn_prefix_stays_within_budget`). The minimal-arm guard above never
         // saw this surface, so the default could grow unnoticed (Optimierungsplan
         // P1). Budgets are the measured 3.12.0 baseline plus a small margin, on
         // the largest platform; lowering them is the goal, raising them needs a
@@ -423,9 +407,9 @@ pub mod tests {
         let install_carrier = |client: &str, home: &std::path::Path| {
             let target = match client {
                 "claude-code" => {
-                    crate::hooks::agents::sync_claude_global_rules_block(
+                    crate::core::claude_md::sync_claude_global_rules_block(
                         home,
-                        crate::hooks::recommend_hook_mode("claude"),
+                        crate::core::hook_mode::recommend_hook_mode("claude"),
                     )
                     .expect("claude block");
                     return;
@@ -480,40 +464,6 @@ pub mod tests {
             over.is_empty(),
             "default-arm per-turn prefix over budget:\n{}",
             over.join("\n")
-        );
-    }
-
-    #[test]
-    fn governor_arm_per_turn_prefix_stays_within_budget() {
-        // Governor design v1 §3: the opt-in Claude Code governor wins on short
-        // tasks only by costing ~0, so its prefix is guarded like the default
-        // arm above. Measured at introduction (macOS): governor (no MCP) 86 tok
-        // (rules only), governor-mcp 201 tok (12 deferred names 121 + rules 80),
-        // against 2952 for the default claude-code arm. The budgets add a small
-        // margin; raising them needs a reason in the commit.
-        use crate::hooks::agents::claude_governor::GovernorArm;
-        const BUDGETS: &[(GovernorArm, usize)] =
-            &[(GovernorArm::NoMcp, 100), (GovernorArm::McpDeferred, 220)];
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let default_claude = ContextOverhead::measure_for_client("claude-code").total_tokens();
-        for &(arm, budget) in BUDGETS {
-            let o = ContextOverhead::measure_governor(arm);
-            assert_eq!(o.instruction_tokens, 0, "{arm:?}: no instructions");
-            assert!(
-                o.total_tokens() <= budget,
-                "{arm:?}: governor prefix {} tok (schemas/names {} + rules {}), budget {budget}",
-                o.total_tokens(),
-                o.tool_schema_tokens,
-                o.rules_block_tokens,
-            );
-            assert!(
-                o.total_tokens() * 10 < default_claude,
-                "{arm:?} ≪ default arm"
-            );
-        }
-        assert_eq!(
-            ContextOverhead::measure_governor(GovernorArm::NoMcp).tool_count,
-            0
         );
     }
 

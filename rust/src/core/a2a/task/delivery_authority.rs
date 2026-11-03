@@ -367,7 +367,7 @@ mod tests {
         let second = profile.sign_request(check(&path)).expect("second lookup");
         assert_ne!(signed.authority.nonce, second.authority.nonce);
         let (mut certificate, policy, host_key) =
-            super::super::delivery_delegation::tests::fixture();
+            super::super::delivery_delegation::test_support::fixture();
         certificate.child_agent = profile.agent_id.clone();
         certificate.project_root = root.path().canonicalize().expect("canonical root");
         certificate.privacy = profile.privacy;

@@ -165,16 +165,6 @@ mod tests {
     }
 
     #[test]
-    fn lists_real_tools_and_read_modes() {
-        let v = capabilities_value();
-        assert!(
-            v["tools"]["total"].as_u64().unwrap_or(0) > 0,
-            "expected at least one tool"
-        );
-        assert!(v["read_modes"]["modes"].is_array());
-    }
-
-    #[test]
     fn extensions_expose_registry_builtins() {
         let v = capabilities_value();
         let ext = &v["extensions"];

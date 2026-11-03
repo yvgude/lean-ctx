@@ -18,12 +18,7 @@ impl SessionState {
     /// No file, a file that cannot be bound (missing, outside the project,
     /// not permitted, restricted) or a session without a project root: the
     /// finding is recorded unbound.
-    pub(crate) fn add_finding_for_file(
-        &mut self,
-        file: Option<&str>,
-        line: Option<u32>,
-        summary: &str,
-    ) {
+    pub fn add_finding_for_file(&mut self, file: Option<&str>, line: Option<u32>, summary: &str) {
         self.add_finding(file, line, summary);
         self.bind_last_finding(|project| bindings::sources_at(project, &[file?], "ctx_session"));
     }
@@ -33,7 +28,7 @@ impl SessionState {
     /// and is passed only when the tool declares every source: the finding
     /// is then bound to exactly those files. `None`, or an incomplete set:
     /// recorded unbound.
-    pub(crate) fn add_finding_from_call(
+    pub fn add_finding_from_call(
         &mut self,
         file: Option<&str>,
         summary: &str,
@@ -70,7 +65,7 @@ impl SessionState {
     /// call's capture; a finding without a binding marks the capture
     /// incomplete and is delivered as before. Without protection every
     /// finding is delivered and nothing is published.
-    pub(crate) fn finding_served(&self, finding: &super::types::Finding) -> bool {
+    pub fn finding_served(&self, finding: &super::types::Finding) -> bool {
         bindings::serve(
             &Item::SessionFinding {
                 session: &self.id,
@@ -163,8 +158,9 @@ mod tests {
         let (_directory, root) = project();
         let path = format!("{root}/build.rs");
         std::fs::write(&path, "fn main() { panic!(\"linker\") }\n").expect("source");
-        let admitted = crate::tools::ctx_read::read_file_for_tool_rooted(&path, &root, "ctx_read")
-            .expect("admitted read");
+        let admitted =
+            crate::core::rooted_read::read_file_for_tool_rooted(&path, &root, "ctx_read")
+                .expect("admitted read");
         let capture =
             ArchiveAuthority::file(std::path::Path::new(&root), &path, "ctx_read", &admitted)
                 .expect("protection is active: the read is bound");

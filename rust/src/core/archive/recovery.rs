@@ -24,13 +24,13 @@ use super::delivered::{self, Lineage, LineageRefusal};
 
 /// Address of a recovery copy: 64 lowercase hex characters.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RecoveryId(String);
+pub struct RecoveryId(String);
 
 impl RecoveryId {
     /// `None` for anything that is not a canonical id: an untrusted handle
     /// never supplies path components.
     #[must_use]
-    pub(crate) fn parse(id: &str) -> Option<Self> {
+    pub fn parse(id: &str) -> Option<Self> {
         (id.len() == 64
             && id
                 .bytes()
@@ -39,14 +39,14 @@ impl RecoveryId {
     }
 
     #[must_use]
-    pub(crate) fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
 /// Why no recovery copy is stored or returned. Content-free.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RecoveryRefusal {
+pub enum RecoveryRefusal {
     /// No lineage, an incomplete one, or an entry without one.
     UnknownLineage,
     /// A caller-supplied source has no current presentation.
@@ -111,7 +111,7 @@ fn lineage_id(lineage: &Lineage, content: &str) -> Option<String> {
 /// file source includes "storable") and the text itself may enter a store
 /// unchanged. Storing the same text under the same lineage again returns the
 /// same id.
-pub(crate) fn store_recovery_with_lineage(
+pub fn store_recovery_with_lineage(
     original: &str,
     lineage: &Lineage,
 ) -> Result<RecoveryId, RecoveryRefusal> {
@@ -187,7 +187,7 @@ fn issued(id: &RecoveryId) {
 /// stored with the copy must hold now; the stored text must still pass the
 /// current content rules unchanged. The released text is registered as
 /// delivered under that lineage.
-pub(crate) fn retrieve_recovery_checked(id: &RecoveryId) -> Result<String, RecoveryRefusal> {
+pub fn retrieve_recovery_checked(id: &RecoveryId) -> Result<String, RecoveryRefusal> {
     let entry = super::read_entry(id.as_str()).ok_or(RecoveryRefusal::Missing)?;
     let Some(lineage) = entry.lineage else {
         // A file-bound copy: the archive's own checked read, which re-admits
@@ -253,7 +253,7 @@ fn readmitted(id: &RecoveryId, content: &str) -> bool {
 /// nothing is checked, released or recorded. For a caller that must decide
 /// whether the copy is its request's BEFORE the text is read.
 #[must_use]
-pub(crate) fn recovery_lineage(id: &RecoveryId) -> Option<Lineage> {
+pub fn recovery_lineage(id: &RecoveryId) -> Option<Lineage> {
     super::read_entry(id.as_str())?.lineage
 }
 
@@ -290,7 +290,7 @@ mod tests {
     fn file_lineage(root: &Path, name: &str, content: &str) -> Lineage {
         let path = root.join(name);
         std::fs::write(&path, content).expect("source");
-        let admitted = crate::tools::ctx_read::read_file_for_tool_rooted(
+        let admitted = crate::core::rooted_read::read_file_for_tool_rooted(
             path.to_str().expect("utf-8 path"),
             root.to_str().expect("utf-8 root"),
             "ctx_read",

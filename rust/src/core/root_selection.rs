@@ -40,9 +40,9 @@ const MAX_FILE_BYTES: u64 = 256 * 1024;
 /// One root selection: the chosen root, every candidate in the order the
 /// host reported it, and the rule that chose.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct RootSelection {
+pub struct RootSelection {
     pub(crate) rule: String,
-    pub(crate) chosen_root: String,
+    pub chosen_root: String,
     pub(crate) candidates: Vec<String>,
 }
 
@@ -54,7 +54,7 @@ impl RootSelection {
     }
 
     /// The `selection` object of `GET /api/scope`.
-    pub(crate) fn scope_json(&self) -> serde_json::Value {
+    pub fn scope_json(&self) -> serde_json::Value {
         serde_json::json!({
             "rule": self.rule,
             "chosen_root": self.chosen_root,
@@ -64,7 +64,7 @@ impl RootSelection {
     }
 
     /// One line for an MCP response that names the binding.
-    pub(crate) fn notice(&self) -> String {
+    pub fn notice(&self) -> String {
         let others: Vec<&str> = self
             .candidates
             .iter()
@@ -99,7 +99,7 @@ fn canonical(path: &str) -> String {
 /// fallback and is listed as a candidate only when a marker made it the
 /// choice. A `preferred` root (most recent first) that is among the
 /// candidates wins over the rule.
-pub(crate) fn select(paths: Vec<String>, preferred: &[String]) -> Option<RootSelection> {
+pub fn select(paths: Vec<String>, preferred: &[String]) -> Option<RootSelection> {
     let mut dirs: Vec<String> = Vec::new();
     for path in paths {
         if Path::new(&path).is_dir() && !dirs.contains(&path) {
@@ -180,7 +180,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// the other candidates (no longer chosen) are removed; a selection without
 /// alternatives removes the chosen root's record. Best effort: a failure only
 /// means the choice is not shown.
-pub(crate) fn record(selection: &RootSelection) {
+pub fn record(selection: &RootSelection) {
     let Some(dir) = data_dir() else { return };
     record_in(&dir, selection);
 }
@@ -204,7 +204,7 @@ fn record_in(dir: &Path, selection: &RootSelection) {
 }
 
 /// The recorded selection that chose `root` among several candidates.
-pub(crate) fn recorded_for(root: &str) -> Option<RootSelection> {
+pub fn recorded_for(root: &str) -> Option<RootSelection> {
     recorded_in(&data_dir()?, root)
 }
 
@@ -241,7 +241,7 @@ fn preferences_in(dir: &Path) -> Preferences {
 
 /// Prefer `root` (canonical, an existing safe directory) whenever it is one
 /// of several workspace roots.
-pub(crate) fn prefer(root: &str) -> Result<(), String> {
+pub fn prefer(root: &str) -> Result<(), String> {
     let dir = crate::core::data_dir::lean_ctx_data_dir()?;
     prefer_in(&dir, root)
 }

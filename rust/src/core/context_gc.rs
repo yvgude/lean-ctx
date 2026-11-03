@@ -4,7 +4,7 @@ const PRESSURE_THRESHOLD_TOKENS: usize = 50_000;
 const TARGET_AFTER_GC_TOKENS: usize = 35_000;
 
 #[allow(dead_code)]
-pub(crate) struct GcResult {
+pub struct GcResult {
     pub tokens_freed: usize,
     pub tokens_before: usize,
     pub tokens_after: usize,
@@ -34,7 +34,7 @@ pub(crate) fn run_gc(cache: &mut SessionCache) -> GcResult {
     }
 }
 
-pub(crate) fn maybe_gc(cache: &mut SessionCache) -> Option<GcResult> {
+pub fn maybe_gc(cache: &mut SessionCache) -> Option<GcResult> {
     if should_run_gc(cache) {
         Some(run_gc(cache))
     } else {

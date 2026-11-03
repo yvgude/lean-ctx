@@ -36,7 +36,7 @@ pub(crate) const FILE_NAME: &str = "workspace-trust.toml";
 /// One trusted workspace: its canonical path plus the content hash of the
 /// `.lean-ctx.toml` reviewed at trust time (empty when no local file existed).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct TrustedWorkspace {
+pub struct TrustedWorkspace {
     /// Canonicalized absolute workspace root.
     pub path: String,
     /// blake3 hash of `.lean-ctx.toml` at trust time; empty = none present then.
@@ -47,7 +47,7 @@ pub(crate) struct TrustedWorkspace {
 
 /// The pinned trust set, persisted as `workspace-trust.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct TrustStore {
+pub struct TrustStore {
     #[serde(default, rename = "workspace", skip_serializing_if = "Vec::is_empty")]
     pub workspaces: Vec<TrustedWorkspace>,
 }
@@ -59,7 +59,7 @@ pub(crate) fn store_path() -> Result<PathBuf, String> {
 
 /// Load the pinned set. A missing file is the common case and yields an empty
 /// store, never an error.
-pub(crate) fn load() -> Result<TrustStore, String> {
+pub fn load() -> Result<TrustStore, String> {
     let path = store_path()?;
     if !path.exists() {
         return Ok(TrustStore::default());
@@ -181,16 +181,16 @@ pub(crate) fn is_pinned_in_store(store: &Path, root: &Path, config_hash: &str) -
 }
 
 /// Whether `root` is trusted at its current `.lean-ctx.toml` content. Reads the
-/// file to compute the hash; prefer [`is_trusted_for`] when the caller already
+/// file to compute the hash; prefer `is_trusted_for` when the caller already
 /// holds it (e.g. config load).
 #[must_use]
-pub(crate) fn is_trusted(root: &Path) -> bool {
+pub fn is_trusted(root: &Path) -> bool {
     is_trusted_for(root, &config_hash_for(root))
 }
 
 /// Trust `root` at its current `.lean-ctx.toml` content. Re-trusting an already
 /// trusted path refreshes its pinned hash (and timestamp). Returns the entry.
-pub(crate) fn trust(root: &Path) -> Result<TrustedWorkspace, String> {
+pub fn trust(root: &Path) -> Result<TrustedWorkspace, String> {
     let canon = canonical(root);
     if canon.is_empty() {
         return Err("cannot resolve workspace path".into());
@@ -215,7 +215,7 @@ pub(crate) fn trust(root: &Path) -> Result<TrustedWorkspace, String> {
 }
 
 /// Remove `root` from the trust store. Returns `true` when an entry was removed.
-pub(crate) fn untrust(root: &Path) -> Result<bool, String> {
+pub fn untrust(root: &Path) -> Result<bool, String> {
     let canon = canonical(root);
     let mut store = load()?;
     let before = store.workspaces.len();
@@ -230,7 +230,7 @@ pub(crate) fn untrust(root: &Path) -> Result<bool, String> {
 /// All trusted workspaces from the persisted store (env overrides excluded —
 /// those are provenance-free and shown separately by callers when relevant).
 #[must_use]
-pub(crate) fn list() -> Vec<TrustedWorkspace> {
+pub fn list() -> Vec<TrustedWorkspace> {
     load().map(|s| s.workspaces).unwrap_or_default()
 }
 

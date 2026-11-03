@@ -88,8 +88,8 @@ pub fn admit_budgeted_request(scope: &str, tokens: u64, usd: f64) -> Result<(), 
     Ok(())
 }
 
-#[cfg(test)]
-pub(crate) fn set_test_budget_limit(limit: BudgetLimit) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn set_test_budget_limit(limit: BudgetLimit) {
     let mut store = budget_store()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

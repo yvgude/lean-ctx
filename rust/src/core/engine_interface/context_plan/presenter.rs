@@ -24,7 +24,7 @@ use crate::core::archive::presented::{self, PresenterCapability};
 /// The one refusal for everything about a capability on this transport:
 /// shown where none belongs, missing where one is needed, unreadable,
 /// unknown, expired, revoked, or not issuable.
-pub(crate) const CAPABILITY_REFUSED: &str = "presenter_capability_refused";
+pub const CAPABILITY_REFUSED: &str = "presenter_capability_refused";
 
 /// Materialize `request` as its v1 payload and record the presentations
 /// under a presenter capability.
@@ -35,7 +35,7 @@ pub(crate) const CAPABILITY_REFUSED: &str = "presenter_capability_refused";
 /// - `renew`: `shown` is the capability from the host's capability file; it
 ///   must be an issued one that is neither expired nor revoked. It is never
 ///   returned again.
-pub(crate) fn materialize_v2(
+pub fn materialize_v2(
     root: &Path,
     request: &EngineContextSourceMaterializationRequestV2,
     shown: Option<PresenterCapability>,

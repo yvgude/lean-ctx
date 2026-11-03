@@ -1,6 +1,6 @@
 # LeanCTX — Context Gateway for VS Code, Cursor and Windsurf
 
-Inspect **LeanCTX Engine** activity in the project you have open. The extension
+Inspect **LeanCTX** activity in the project you have open. The extension
 is part of LeanCTX, the **Context Gateway for AI Systems**.
 **Control what your AI can see.** Its status item reports recorded activity:
 

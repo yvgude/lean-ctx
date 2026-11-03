@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! `--dry-run` writes nothing: `setup` and `onboard` plans run in their own
+//! `--dry-run` writes nothing: `setup`, `onboard` and `init --agent` plans run in their own
 //! process against a sandbox HOME whose lean-ctx config/data/state/cache dirs
 //! all live inside it, so the whole tree is compared byte for byte. A
 //! separate process keeps other tests' background writers out of the
@@ -125,6 +125,32 @@ fn setup_and_onboard_dry_runs_write_nothing() {
         "{}",
         String::from_utf8_lossy(&onboard.stderr)
     );
+
+    // `init --agent` ran the agent and governor setup before its dry-run
+    // check (community PR #2169 by ZacKienzle2).
+    for args in [
+        &["init", "--agent", "claude", "--dry-run"][..],
+        &[
+            "init",
+            "--agent",
+            "cursor",
+            "--mode",
+            "governor",
+            "--dry-run",
+        ][..],
+    ] {
+        let init = run(bin, &home, args);
+        assert!(
+            init.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&init.stderr)
+        );
+        assert!(
+            stdout(&init).contains("Would configure"),
+            "{args:?}: {}",
+            stdout(&init)
+        );
+    }
 
     assert_eq!(
         snapshot(&home),

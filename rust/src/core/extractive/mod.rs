@@ -29,7 +29,7 @@ mod ranker;
 #[cfg(feature = "embeddings")]
 mod segment;
 
-pub(crate) use ranker::RankMode;
+pub use ranker::RankMode;
 
 /// Too few units to rank meaningfully → let the caller fall back.
 #[cfg(feature = "embeddings")]
@@ -51,13 +51,13 @@ const MAX_SEGMENTS: usize = 512;
 /// and ignored for [`RankMode::Centrality`].
 #[cfg(feature = "embeddings")]
 #[must_use]
-pub(crate) fn rank_and_squeeze(
+pub fn rank_and_squeeze(
     text: &str,
     budget_chars: usize,
     mode: RankMode,
     anchor: Option<&str>,
 ) -> Option<String> {
-    let engine = crate::tools::ctx_knowledge::embeddings::embedding_engine_nonblocking()?;
+    let engine = crate::core::embedding_access::embedding_engine_nonblocking()?;
 
     let segs = segment::segment(text);
     if segs.len() < MIN_SEGMENTS || segs.len() > MAX_SEGMENTS {
@@ -89,7 +89,7 @@ pub(crate) fn rank_and_squeeze(
 /// Stub when the `embeddings` feature is disabled: always falls back.
 #[cfg(not(feature = "embeddings"))]
 #[must_use]
-pub(crate) fn rank_and_squeeze(
+pub fn rank_and_squeeze(
     _text: &str,
     _budget_chars: usize,
     _mode: RankMode,

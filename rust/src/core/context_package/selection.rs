@@ -26,7 +26,7 @@ pub(crate) const SELECTABLE_LAYERS: &[&str] =
 /// The caller's choice. Empty lists mean "no restriction"; facts pass when
 /// they match every category/key restriction given, or are named in `facts`.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct PackSelection {
+pub struct PackSelection {
     pub layers: Vec<String>,
     pub categories: Vec<String>,
     pub keys: Vec<String>,
@@ -55,7 +55,7 @@ impl PackSelection {
         Ok(())
     }
 
-    pub(crate) fn wants(&self, layer: &str) -> bool {
+    pub fn wants(&self, layer: &str) -> bool {
         if self.layers.is_empty() {
             DEFAULT_LAYERS.contains(&layer)
         } else {
@@ -84,7 +84,7 @@ impl PackSelection {
 
 /// Everything about the package besides its content.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct PackRequest {
+pub struct PackRequest {
     pub name: String,
     pub version: String,
     pub description: String,
@@ -99,13 +99,13 @@ pub(crate) struct PackRequest {
 
 /// A fact the selection left out for a reason the caller must see.
 #[derive(Debug, Clone)]
-pub(crate) struct Withheld {
+pub struct Withheld {
     pub fact: String,
     pub reason: String,
 }
 
 /// The package a create would store, plus what it left out.
-pub(crate) struct PackPlan {
+pub struct PackPlan {
     pub manifest: PackageManifest,
     pub content: PackageContent,
     /// Facts merged from a package that grants no redistribution.
@@ -117,7 +117,7 @@ pub(crate) struct PackPlan {
 }
 
 /// Build the selected package in memory. Nothing is written.
-pub(crate) fn plan(
+pub fn plan(
     project_root: &str,
     request: &PackRequest,
     session: Option<&crate::core::session::SessionState>,
@@ -271,7 +271,7 @@ impl PackPlan {
     /// What the package holds: counts, fact status, what was left out. The
     /// preview also lists every item (title, status, source, validity) and
     /// whether the install's admission would take the package as built.
-    pub(crate) fn render(&self, preview: bool) -> String {
+    pub fn render(&self, preview: bool) -> String {
         let m = &self.manifest;
         let c = &self.content;
         let mut out = String::new();

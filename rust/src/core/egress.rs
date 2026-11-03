@@ -33,7 +33,7 @@ use serde_json::{Map, Value};
 /// `new_text` (anchored ops / create / replace_symbol) and each `ops[].new_text`
 /// of a batch — all are concatenated for inspection.
 #[must_use]
-pub(crate) fn write_payload(
+pub fn write_payload(
     tool: &str,
     args: Option<&Map<String, Value>>,
 ) -> Option<(String, &'static str)> {
@@ -148,7 +148,7 @@ impl EgressConfig {
 /// already reached in the trailing 60 s. A poisoned state fails closed: egress
 /// remains blocked rather than panicking or bypassing the configured limit.
 #[must_use]
-pub(crate) fn check_rate(max_per_min: u32) -> bool {
+pub fn check_rate(max_per_min: u32) -> bool {
     check_rate_at(rate_state(), Instant::now(), max_per_min)
 }
 

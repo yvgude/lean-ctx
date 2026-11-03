@@ -58,15 +58,12 @@ impl Default for ContextOsRuntime {
 
 impl ContextOsRuntime {
     fn try_new() -> Result<Self, ObservationPersistenceError> {
-        #[cfg(test)]
-        let path = crate::core::data_dir::test_sandbox_dir()
-            .join("context-os")
-            .join("context-os.db");
-        #[cfg(not(test))]
-        let path = crate::core::data_dir::lean_ctx_data_dir()
-            .map_err(std::io::Error::other)?
-            .join("context-os")
-            .join("context-os.db");
+        let base = if crate::core::data_dir::sandboxed() {
+            crate::core::data_dir::test_sandbox_dir()
+        } else {
+            crate::core::data_dir::lean_ctx_data_dir().map_err(std::io::Error::other)?
+        };
+        let path = base.join("context-os").join("context-os.db");
         let bus = ContextBus::try_open_at(path)?;
 
         Ok(Self {

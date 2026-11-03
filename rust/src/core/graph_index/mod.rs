@@ -304,8 +304,8 @@ impl ProjectIndex {
     /// The graph serves a reference only while its file exists inside the
     /// project root (`property_graph::served`), so an index over invented
     /// paths serves nothing. Keep the returned directory for the test.
-    #[cfg(test)]
-    pub(crate) fn on_disk(mut self, also: &[&str]) -> (Self, tempfile::TempDir) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn on_disk(mut self, also: &[&str]) -> (Self, tempfile::TempDir) {
         let directory = tempfile::tempdir().expect("project directory");
         let root = std::fs::canonicalize(directory.path()).expect("canonical project root");
         let mut texts: HashMap<String, String> = self
@@ -1246,7 +1246,7 @@ fn process_scan_targets(
     }
 }
 
-pub(crate) fn find_symbol_range(content: &str, sig: &signatures::Signature) -> (usize, usize) {
+pub fn find_symbol_range(content: &str, sig: &signatures::Signature) -> (usize, usize) {
     let lines: Vec<&str> = content.lines().collect();
     let mut start = 0;
 

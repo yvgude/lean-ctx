@@ -1,7 +1,7 @@
 {
   "route": "W99",
   "method": "GET",
-  "path": "/api/v1/orgs/platform/insights?range=30d&group=engine",
+  "path": "/api/v1/orgs/platform/insights?range=30d&group=instance",
   "request": null,
   "response": {
     "status": 200,
@@ -15,10 +15,10 @@
       },
       "range": "30d",
       "resolution": "day",
-      "group": "engine",
+      "group": "instance",
       "filters": {
         "vault": null,
-        "engine": null,
+        "instance": null,
         "person": null,
         "workspace": null
       },
@@ -37,11 +37,11 @@
         "since": "2026-10-02T07:00:00Z"
       },
       "coverage": {
-        "engines_reporting": 6,
-        "engines_connected": 7,
-        "sharing_off_engines": 1,
+        "instances_reporting": 6,
+        "instances_connected": 7,
+        "sharing_off_instances": 1,
         "first_bucket_at": "2026-09-30T08:00:00Z",
-        "engines": [
+        "instances": [
           {
             "id": "inst_5d1f3b7a9c2e4f6a8b0d1c3e5f7a9b2d",
             "label": "ada-mbp",
@@ -60,7 +60,7 @@
           },
           {
             "id": "inst_7e2a4c6e8a0c2e4a6c8e0a2c4e6a8c0e",
-            "label": "Engine 2C9E",
+            "label": "Instance 2C9E",
             "owner": {
               "ref": "p_7c3e1a9b5d2f8e04",
               "label": "Person 7C3E",
@@ -70,7 +70,7 @@
             "yours": false,
             "workspace": null,
             "sharing": "off",
-            "level": "engine",
+            "level": "instance",
             "last_bucket_at": "2026-10-20T16:00:00Z",
             "connected": true
           }
@@ -116,7 +116,7 @@
         "spend.cached_tokens": "measured",
         "spend.usd_micros": "estimated",
         "knowledge.facts_current": "measured",
-        "engines.active": "derived"
+        "instances.active": "derived"
       },
       "totals": {
         "tokens.input": 8420000,
@@ -158,7 +158,7 @@
         "spend.cached_tokens": 12900000,
         "spend.usd_micros": 84213000,
         "knowledge.facts_current": 1240,
-        "engines.active": 6
+        "instances.active": 6
       },
       "previous_totals": {
         "tokens.input": 7100000,
@@ -200,7 +200,7 @@
         "spend.cached_tokens": 11000000,
         "spend.usd_micros": 79010000,
         "knowledge.facts_current": 1180,
-        "engines.active": 5
+        "instances.active": 5
       },
       "deltas": {
         "tokens.input": {
@@ -359,7 +359,7 @@
           "abs": 60,
           "pct": 5.1
         },
-        "engines.active": {
+        "instances.active": {
           "abs": 1,
           "pct": 20.0
         }
@@ -404,7 +404,7 @@
         "spend.cached_tokens": 0,
         "spend.usd_micros": 0,
         "knowledge.facts_current": 0,
-        "engines.active": 1
+        "instances.active": 1
       },
       "average": {
         "persons": 5,
@@ -448,7 +448,7 @@
           "spend.cached_tokens": 0,
           "spend.usd_micros": 0,
           "knowledge.facts_current": 0,
-          "engines.active": 1
+          "instances.active": 1
         }
       },
       "series": [
@@ -494,7 +494,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 14
+            "instances.active": 14
           }
         },
         {
@@ -539,7 +539,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 15
+            "instances.active": 15
           }
         },
         {
@@ -584,7 +584,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 16
+            "instances.active": 16
           }
         },
         {
@@ -629,7 +629,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 17
+            "instances.active": 17
           }
         },
         {
@@ -674,7 +674,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 18
+            "instances.active": 18
           }
         },
         {
@@ -719,7 +719,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 14
+            "instances.active": 14
           }
         },
         {
@@ -764,7 +764,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 15
+            "instances.active": 15
           }
         },
         {
@@ -809,7 +809,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 16
+            "instances.active": 16
           }
         },
         {
@@ -854,7 +854,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 17
+            "instances.active": 17
           }
         },
         {
@@ -899,7 +899,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 18
+            "instances.active": 18
           }
         },
         {
@@ -944,7 +944,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 14
+            "instances.active": 14
           }
         },
         {
@@ -989,7 +989,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 15
+            "instances.active": 15
           }
         },
         {
@@ -1034,7 +1034,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 16
+            "instances.active": 16
           }
         },
         {
@@ -1079,7 +1079,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 17
+            "instances.active": 17
           }
         },
         {
@@ -1124,7 +1124,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 18
+            "instances.active": 18
           }
         },
         {
@@ -1169,7 +1169,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 14
+            "instances.active": 14
           }
         },
         {
@@ -1214,7 +1214,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 15
+            "instances.active": 15
           }
         },
         {
@@ -1259,7 +1259,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 16
+            "instances.active": 16
           }
         },
         {
@@ -1304,7 +1304,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 17
+            "instances.active": 17
           }
         },
         {
@@ -1349,7 +1349,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 18
+            "instances.active": 18
           }
         },
         {
@@ -1394,7 +1394,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 14
+            "instances.active": 14
           }
         },
         {
@@ -1439,7 +1439,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 15
+            "instances.active": 15
           }
         },
         {
@@ -1484,7 +1484,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 16
+            "instances.active": 16
           }
         },
         {
@@ -1529,7 +1529,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 17
+            "instances.active": 17
           }
         },
         {
@@ -1574,7 +1574,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 18
+            "instances.active": 18
           }
         },
         {
@@ -1619,7 +1619,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 14
+            "instances.active": 14
           }
         },
         {
@@ -1664,7 +1664,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 15
+            "instances.active": 15
           }
         },
         {
@@ -1709,7 +1709,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 16
+            "instances.active": 16
           }
         },
         {
@@ -1754,7 +1754,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 17
+            "instances.active": 17
           }
         },
         {
@@ -1799,7 +1799,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 18
+            "instances.active": 18
           }
         }
       ],
@@ -1893,12 +1893,12 @@
           {
             "detector": "aws_access_key",
             "count": 9,
-            "engines": 3
+            "instances": 3
           },
           {
             "detector": "github_token",
             "count": 5,
-            "engines": 1
+            "instances": 1
           }
         ],
         "models": [
@@ -1931,7 +1931,7 @@
       "rows": [
         {
           "key": {
-            "engine": {
+            "instance": {
               "id": "inst_5d1f3b7a9c2e4f6a8b0d1c3e5f7a9b2d",
               "label": "ada-mbp",
               "owner": {
@@ -1983,7 +1983,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 1
+            "instances.active": 1
           },
           "previous": {
             "tokens.input": 4300000,
@@ -2025,14 +2025,14 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 1
+            "instances.active": 1
           }
         },
         {
           "key": {
-            "engine": {
+            "instance": {
               "id": "inst_7e2a4c6e8a0c2e4a6c8e0a2c4e6a8c0e",
-              "label": "Engine 2C9E",
+              "label": "Instance 2C9E",
               "owner": {
                 "ref": "p_7c3e1a9b5d2f8e04",
                 "label": "Person 7C3E",
@@ -2082,7 +2082,7 @@
             "spend.cached_tokens": 0,
             "spend.usd_micros": 0,
             "knowledge.facts_current": 0,
-            "engines.active": 1
+            "instances.active": 1
           },
           "previous": null
         }

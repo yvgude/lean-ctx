@@ -20,7 +20,7 @@ use super::{
 /// ([`refuse_redaction_marker`]).
 pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
     refuse_redaction_marker(command)?;
-    use crate::core::hive::metrics_v2::signals;
+    use crate::core::hive_signals as signals;
     let mode = ShellSecurity::resolve();
     let decided = match mode {
         ShellSecurity::Off => Ok(()),
@@ -1080,7 +1080,7 @@ pub(super) fn is_project_root_binary(token: &str) -> bool {
     if !canonical.is_file() {
         return false;
     }
-    let Some(root) = crate::server::derive_project_root_from_cwd() else {
+    let Some(root) = crate::core::mcp_roots::derive_project_root_from_cwd() else {
         return false;
     };
     let root_path = std::path::Path::new(&root);

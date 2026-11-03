@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+use super::protected_for_test as protected;
 use super::*;
-use crate::core::policy::{parse, resolve, runtime::TestPolicyOverride};
-
-pub(crate) fn protected(extra: &str) -> TestPolicyOverride {
-    let pack = parse(&format!(
-        "name = \"storage-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n{extra}"
-    ))
-    .unwrap();
-    TestPolicyOverride::set(Some(resolve(&pack).unwrap()))
-}
+use crate::core::policy::runtime::TestPolicyOverride;
 
 #[test]
 fn protected_originless_copies_are_withheld_before_persistence() {

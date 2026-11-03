@@ -20,7 +20,7 @@ use crate::core::session::SessionState;
 use super::types::{ContextSnapshotV1, SnapshotSessionV1};
 
 /// What [`restore`] should do beyond the always-on session resume.
-pub(crate) struct RestoreOptions {
+pub struct RestoreOptions {
     /// Project the snapshot belongs to (selects the live session + git repo).
     pub project_root: String,
     /// Check out the snapshot's git commit (refused if the tree is dirty).
@@ -29,7 +29,7 @@ pub(crate) struct RestoreOptions {
 
 /// Git side-effect outcome of a restore.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum GitRestore {
+pub enum GitRestore {
     /// Caller didn't ask to touch git.
     Skipped,
     /// Snapshot has no commit anchor (or git is unavailable) to check out.
@@ -44,7 +44,7 @@ pub(crate) enum GitRestore {
 
 /// What a session merge changed — pure, drives tests and CLI output.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct SessionMerge {
+pub struct SessionMerge {
     pub task: Option<String>,
     pub progress_pct: Option<u8>,
     pub decisions_added: usize,
@@ -52,7 +52,7 @@ pub(crate) struct SessionMerge {
 }
 
 /// Full outcome of a [`restore`].
-pub(crate) struct RestoreOutcome {
+pub struct RestoreOutcome {
     pub session: SessionMerge,
     pub git: GitRestore,
     /// Whether the snapshot actually carried a session slice to resume from.
@@ -61,7 +61,7 @@ pub(crate) struct RestoreOutcome {
 
 /// Restore a snapshot into the live project state: resume its session, and —
 /// when `opts.checkout_git` — check out its git anchor (guarded).
-pub(crate) fn restore(
+pub fn restore(
     snapshot: &ContextSnapshotV1,
     opts: &RestoreOptions,
 ) -> Result<RestoreOutcome, String> {

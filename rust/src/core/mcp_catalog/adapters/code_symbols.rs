@@ -13,7 +13,7 @@
 
 use crate::core::property_graph::CodeGraph;
 
-struct RefEdge {
+pub struct RefEdge {
     from: String,
     to: String,
     kind: String,
@@ -34,7 +34,7 @@ pub fn ingest(server: &str, _tool: &str, text: &str, project_root: &str) {
     }
 }
 
-fn parse(text: &str) -> Vec<RefEdge> {
+pub fn parse(text: &str) -> Vec<RefEdge> {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(text.trim()) else {
         return Vec::new();
     };

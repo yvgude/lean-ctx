@@ -70,7 +70,7 @@ pub(crate) fn unambiguous_match(path: &Path) -> Option<PathBuf> {
     }
 }
 
-/// [`unambiguous_match`], plus one more mechanical slip: a path built from a
+/// `unambiguous_match`, plus one more mechanical slip: a path built from a
 /// search result's directory-relative hit on the wrong prefix
 /// (`src/app/signal/test_x.py` after a search under `tests/` listed
 /// `signal/test_x.py`). The file is then looked up under the whole
@@ -78,7 +78,7 @@ pub(crate) fn unambiguous_match(path: &Path) -> Option<PathBuf> {
 /// longest trailing part with `path`, and that part names at least its
 /// directory and file (`signal/test_x.py`) — a bare file-name match stays a
 /// suggestion.
-pub(crate) fn unambiguous_match_in(path: &Path, project_root: &Path) -> Option<PathBuf> {
+pub fn unambiguous_match_in(path: &Path, project_root: &Path) -> Option<PathBuf> {
     if let Some(found) = unambiguous_match(path) {
         return Some(found);
     }
@@ -94,7 +94,7 @@ pub(crate) fn unambiguous_match_in(path: &Path, project_root: &Path) -> Option<P
 }
 
 /// The suggestions as a one-line suffix for an error message, or "".
-pub(crate) fn hint(path: &Path) -> String {
+pub fn hint(path: &Path) -> String {
     let found = suggestions(path);
     match found.as_slice() {
         [] => String::new(),

@@ -2,8 +2,8 @@
 //! Commit acknowledgement without replacing edits made during background I/O.
 
 use super::{SaveError, SessionState};
+use crate::core::bounded_lock::{read_for, write_for};
 use crate::core::context_checkpoint::CanonicalSession;
-use crate::server::bounded_lock::{read_for, write_for};
 use lean_ctx_protocol::Sha256Digest;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -35,7 +35,7 @@ const FOLLOWING_SAVE_LANE_WAIT: Duration = Duration::from_mins(1);
 /// follower that gets the lane afterwards yields it unused, because the
 /// shutdown save is about to store the last state itself.
 #[derive(Debug, Default)]
-pub(crate) struct SaveGate {
+pub struct SaveGate {
     lane: tokio::sync::Mutex<()>,
     follower: AtomicBool,
     closing: AtomicBool,
@@ -53,11 +53,11 @@ pub(super) struct SaveOutcome {
     pub(super) result: Result<(), SaveError>,
 }
 
-pub(crate) struct SharedSaveReceipt {
-    pub(crate) id: String,
-    pub(crate) version: u32,
+pub struct SharedSaveReceipt {
+    pub id: String,
+    pub version: u32,
     /// True only when the owner still has the exact version saved by this call.
-    pub(crate) current: bool,
+    pub current: bool,
 }
 
 impl SaveOutcome {
@@ -218,7 +218,7 @@ impl SessionState {
 
     /// Synchronous MCP adapter with the same save lane, detached projection,
     /// version check, and owner acknowledgement as save_shared.
-    pub(crate) fn save_shared_sync(owner: &Arc<RwLock<Self>>) -> Result<SharedSaveReceipt, String> {
+    pub fn save_shared_sync(owner: &Arc<RwLock<Self>>) -> Result<SharedSaveReceipt, String> {
         let gate = read_for(owner, "session save owner", SYNC_SAVE_GUARD_WAIT)
             .ok_or_else(|| "session is busy; retry the save".to_string())?
             .save_gate
@@ -291,15 +291,15 @@ impl SessionState {
         })
     }
 
-    pub(crate) async fn save_shared_logged(owner: Arc<RwLock<Self>>) {
+    pub async fn save_shared_logged(owner: Arc<RwLock<Self>>) {
         if let Err(error) = Self::save_shared_background(owner).await {
             tracing::warn!(%error, "session persistence failed; unsaved state retained");
         }
     }
 
     /// The save of a server that is ending: the same save, behind the same
-    /// lane. Background followers are told to yield ([`SaveGate`]); a save
-    /// already in flight is waited for up to [`SHUTDOWN_SAVE_LANE_WAIT`].
+    /// lane. Background followers are told to yield (`SaveGate`); a save
+    /// already in flight is waited for up to `SHUTDOWN_SAVE_LANE_WAIT`.
     ///
     /// `true`: the owner's current version is acknowledged as durable.
     /// `false`: it is not, and the log says why. A save that failed (lane not
@@ -307,7 +307,7 @@ impl SessionState {
     /// not repeated blindly — its changes stay pending as after any failed
     /// save, and there is no later save in this process to pick them up. A
     /// session that CHANGED while it was being saved is saved once more.
-    pub(crate) async fn save_shared_at_shutdown(owner: Arc<RwLock<Self>>) -> bool {
+    pub async fn save_shared_at_shutdown(owner: Arc<RwLock<Self>>) -> bool {
         let gate = owner.read().await.save_gate.clone();
         gate.closing.store(true, Ordering::Release);
         let durable = Self::save_last_state(&owner, SHUTDOWN_SAVE_LANE_WAIT).await;

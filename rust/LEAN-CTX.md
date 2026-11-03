@@ -2,7 +2,7 @@
 <!-- lean-ctx-rules -->
 <!-- version: 13 -->
 
-LeanCTX (lean-ctx) — Context Gateway for AI Systems.
+LeanCTX (lean-ctx) — Context Gateway for AI agents.
 
 lean-ctx routing — the host's built-in tools map to:
 • Read/cat -> ctx_read(path, mode)

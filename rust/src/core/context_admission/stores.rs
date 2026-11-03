@@ -83,7 +83,7 @@ impl StoreAdmission {
 
     /// The immutable detector snapshot used to admit a bounded source batch.
     /// Callers must still reauthorize this snapshot before publishing derived data.
-    pub(crate) fn admission_policy(&self) -> &AdmissionPolicy {
+    pub fn admission_policy(&self) -> &AdmissionPolicy {
         &self.policy
     }
 
@@ -102,10 +102,7 @@ impl StoreAdmission {
 
     /// Revalidate both the project authority and global Gateway content digest
     /// immediately before an admitted filesystem publication.
-    pub(crate) fn authorize_publication(
-        &self,
-        authority: &PublicationAuthority,
-    ) -> Result<(), String> {
+    pub fn authorize_publication(&self, authority: &PublicationAuthority) -> Result<(), String> {
         if self.epoch == u64::MAX || !self.is_current() || !self.matches_current_config() {
             return Err("session admission policy changed; retry".into());
         }
@@ -165,7 +162,7 @@ impl StoreAdmission {
 
     /// Admit a shell command before writing it to persistent shell artifacts.
     #[must_use]
-    pub(crate) fn admit_shell_command(&self, text: &str) -> Option<String> {
+    pub fn admit_shell_command(&self, text: &str) -> Option<String> {
         // Project policy sees original text before Gateway redactions.
         crate::core::policy::content::protect_active(text).ok()?;
         let admitted = self.admit_text(text)?;
@@ -177,7 +174,7 @@ impl StoreAdmission {
     /// Admit captured shell output for persistent retention. Incomplete capture
     /// is never made storable, even when Developer mode permits live delivery.
     #[must_use]
-    pub(crate) fn admit_shell_output(
+    pub fn admit_shell_output(
         &self,
         text: &str,
         completeness: OutputCompleteness,
@@ -192,7 +189,7 @@ impl StoreAdmission {
     /// whose only gap is a pipe still held by a process the command left
     /// running is kept; delivery re-admits it with its real completeness.
     #[must_use]
-    pub(crate) fn admit_background_output(
+    pub fn admit_background_output(
         &self,
         text: &str,
         completeness: OutputCompleteness,

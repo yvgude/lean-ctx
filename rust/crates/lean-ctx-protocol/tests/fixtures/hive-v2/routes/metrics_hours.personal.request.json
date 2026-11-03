@@ -143,11 +143,11 @@
       ]
     }
   ],
-  "engine": {
-    "engine_version": "3.12.0",
+  "instance": {
+    "instance_version": "3.12.0",
     "os": "linux"
   },
   "key_id": "47983724220c8521",
-  "schema": "leanctx.hive.engine-metrics/v2",
-  "signature": "5d7f62f592f4c074ac862a060374ce6851e108c150074226fc908432358b385eedb115ce64eb791b78beb43ff23b69807e1ca12ae810e6a379b92ad442cde703"
+  "schema": "leanctx.hive.instance-metrics/v2",
+  "signature": "14477ceac3fbcd4e00df7a0aa0601e99baf139b306dc48c9fd359cc2ad1420f9c76f940b99e90cf7c6c55e2f0098b1e6543e5890ccaa68d28e9652033c33ae06"
 }

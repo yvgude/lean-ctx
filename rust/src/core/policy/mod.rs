@@ -20,11 +20,14 @@
 //! - `allow_tools` — the child **overrides** when set (an allowlist is a
 //!   deliberate posture choice, not an accumulating set).
 
+pub mod audit_filter;
 pub mod builtin;
 pub mod content;
 pub mod coverage;
-pub(crate) mod diagnostics;
+pub mod diagnostics;
 pub mod floor;
+pub mod hive_filters;
+pub mod hive_floor;
 pub mod org;
 pub mod runtime;
 
@@ -33,7 +36,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) mod files;
+pub mod files;
 
 /// Maximum `extends` chain depth (defense against runaway chains; built-ins
 /// use at most 2).
@@ -255,11 +258,7 @@ fn unique_model_ceilings<'a>(groups: impl Iterator<Item = &'a Vec<String>>) -> V
         .collect()
 }
 
-pub(crate) fn model_allowed_by_ceilings(
-    primary: &[String],
-    groups: &[Vec<String>],
-    model: &str,
-) -> bool {
+pub fn model_allowed_by_ceilings(primary: &[String], groups: &[Vec<String>], model: &str) -> bool {
     let matches = |patterns: &[String]| {
         patterns
             .iter()
@@ -269,7 +268,7 @@ pub(crate) fn model_allowed_by_ceilings(
 }
 
 /// Glob-lite matching shared by project admission and the gateway.
-pub(crate) fn model_pattern_matches(pattern: &str, model: &str) -> bool {
+pub fn model_pattern_matches(pattern: &str, model: &str) -> bool {
     let pattern = pattern.trim().as_bytes();
     let model = model.trim().as_bytes();
     // Dynamic programming avoids exponential wildcard backtracking.
@@ -962,7 +961,7 @@ alow_tools = ["ctx_read"]
         // A former built-in that moved to a paid tier says so.
         let p = minimal("regulated", Some("healthcare"));
         let err = resolve(&p).expect_err("not bundled");
-        assert!(err.to_string().contains("LeanCTX Hive"), "{err}");
+        assert!(err.to_string().contains("LeanCTX | Hive"), "{err}");
 
         // Self-reference is the minimal cycle reachable without registering
         // custom packs (built-ins are acyclic by construction + test below).

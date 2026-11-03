@@ -130,7 +130,7 @@ bounded in size and honour `timeout_secs` (default 20, max 60).
 ## 7. Where it fits
 
 `ctx_url_read` ships with the binary and is registered in
-`rust/src/server/registry.rs`, so it is exposed automatically wherever lean-ctx
+`rust/crates/lean-ctx-server/src/server/registry.rs`, so it is exposed automatically wherever lean-ctx
 runs as an MCP server — no extra configuration. Pair it with
 `ctx_knowledge` to remember what you learned, and it becomes a durable research
 loop that survives the session.

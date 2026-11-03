@@ -28,17 +28,17 @@
 //! - **Recorded:** only a complete lineage whose every source holds at the
 //!   time of the record. Anything else records nothing: unknown stays
 //!   unknown. Owner decision E3: a restricted source is in no lineage.
-//! - **Same text, second lineage:** united per project ([`Lineage::join`]);
+//! - **Same text, second lineage:** united per project (`Lineage::join`);
 //!   the text is admitted only while every source of the union holds.
 //!   Lineages of different projects are kept side by side.
 //! - **Persistence and bounds:** see `archive::register`; 64 texts per shard
-//!   (oldest evicted), [`MAX_LINEAGES_PER_TEXT`] projects per text,
-//!   [`MAX_AGE_SECONDS`] age. The files name local paths and source ids: they
+//!   (oldest evicted), `MAX_LINEAGES_PER_TEXT` projects per text,
+//!   `MAX_AGE_SECONDS` age. The files name local paths and source ids: they
 //!   never enter a receipt, a log line or client-visible text.
 //! - **Call ids:** a tool delivery may additionally name the host's id of the
-//!   tool call it answered ([`record_tool_delivery_for_call`]); at most
-//!   [`MAX_CALLS_PER_LINEAGE`] per text and project, oldest evicted. They are
-//!   host-supplied metadata, answer only [`delivered_to_call`], are never part
+//!   tool call it answered (`record_tool_delivery_for_call`); at most
+//!   `MAX_CALLS_PER_LINEAGE` per text and project, oldest evicted. They are
+//!   host-supplied metadata, answer only `delivered_to_call`, are never part
 //!   of a lineage handle that leaves this module, and are never copied to a
 //!   derived text.
 
@@ -71,7 +71,7 @@ const REGISTER: Register = Register {
 /// What a delivered text derives from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Lineage {
+pub struct Lineage {
     /// Project files the Engine itself read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     files: Option<ArchiveAuthority>,
@@ -103,7 +103,7 @@ pub(crate) struct Lineage {
 /// Why a lineage does not authorize its text now. Content-free: no path,
 /// object reference, source id or digest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LineageRefusal {
+pub enum LineageRefusal {
     /// No lineage, or an incomplete one.
     Unknown,
     /// A caller-supplied source has no current presentation.
@@ -127,7 +127,7 @@ impl std::fmt::Display for LineageRefusal {
 impl Lineage {
     /// Lineage of text derived from project files only.
     #[must_use]
-    pub(crate) fn of_files(authority: ArchiveAuthority) -> Self {
+    pub fn of_files(authority: ArchiveAuthority) -> Self {
         Self {
             incomplete: authority.is_incomplete(),
             files: Some(authority),
@@ -140,7 +140,7 @@ impl Lineage {
     /// Lineage of text derived from caller-supplied sources only. An empty
     /// set is not a lineage: it is unknown.
     #[must_use]
-    pub(crate) fn of_presented(presented: Vec<PresentedBinding>) -> Self {
+    pub fn of_presented(presented: Vec<PresentedBinding>) -> Self {
         let mut lineage = Self {
             files: None,
             presented: Vec::new(),
@@ -187,7 +187,7 @@ impl Lineage {
     /// names is added, never dropped; the text then needs every source of
     /// both. Parts of different projects make the lineage unknown. Call ids
     /// are not sources: the other side's are dropped, this side's stay.
-    pub(crate) fn join(&mut self, other: Self) {
+    pub fn join(&mut self, other: Self) {
         self.incomplete |= other.incomplete;
         if let (Some(mine), Some(theirs)) = (self.project(), other.project())
             && mine != theirs
@@ -266,7 +266,7 @@ impl Lineage {
     /// published; a lineage that names a caller-presented source, and an
     /// incomplete one, mark the capture incomplete — that reply stays
     /// unknown rather than being recorded under its file part alone.
-    pub(crate) fn publish_files(&self) {
+    pub fn publish_files(&self) {
         match self.files_only() {
             Some(files) => files.clone().publish(),
             None => super::authority::mark_unbound(),
@@ -302,7 +302,7 @@ impl Lineage {
     /// file source, an incomplete lineage, no source. The ids are
     /// content-free and authorize nothing — ask [`Lineage::still_admitted`].
     #[must_use]
-    pub(crate) fn presented_source_ids(&self) -> Option<Vec<String>> {
+    pub fn presented_source_ids(&self) -> Option<Vec<String>> {
         if self.files.is_some() || !self.is_complete() {
             return None;
         }
@@ -318,7 +318,7 @@ impl Lineage {
 
     /// Whether the lineage names every source of its text.
     #[must_use]
-    pub(crate) fn is_complete(&self) -> bool {
+    pub fn is_complete(&self) -> bool {
         !self.incomplete
             && (self.files.is_some() || !self.presented.is_empty())
             && self
@@ -337,7 +337,7 @@ impl Lineage {
     ///   and a presentation of exactly that binding must exist that was
     ///   admitted under the current policy identity within the validity.
     ///   This says nothing about the caller's or a provider's own copy.
-    pub(crate) fn still_admitted(&self) -> Result<(), LineageRefusal> {
+    pub fn still_admitted(&self) -> Result<(), LineageRefusal> {
         if !self.is_complete() {
             return Err(LineageRefusal::Unknown);
         }
@@ -348,6 +348,37 @@ impl Lineage {
         {
             return Err(LineageRefusal::SourceNoLongerAdmitted);
         }
+        self.presented_still_current()
+    }
+
+    /// Current permission of every bound source, for returning a
+    /// provider-sealed item (#2177). Call inside the `REQUEST_PROJECT` scope
+    /// of the request the item returns in.
+    ///
+    /// Identical to [`Lineage::still_admitted`] except for the files: every
+    /// file must still be permitted for its tool under the current policy
+    /// and role, complete and storable (not restricted, E3), but it may have
+    /// CHANGED since it was read (`ArchiveAuthority::still_permitted`). A
+    /// read → think → edit loop therefore keeps its sealed items; a source
+    /// that is gone, withheld or restricted refuses them. Presented bindings
+    /// are checked exactly as in [`Lineage::still_admitted`].
+    pub fn still_permitted(&self) -> Result<(), LineageRefusal> {
+        if !self.is_complete() {
+            return Err(LineageRefusal::Unknown);
+        }
+        if self
+            .files
+            .as_ref()
+            .is_some_and(|files| !files.still_permitted())
+        {
+            return Err(LineageRefusal::SourceNoLongerAdmitted);
+        }
+        self.presented_still_current()
+    }
+
+    /// The presented half of [`Lineage::still_admitted`] and
+    /// [`Lineage::still_permitted`]: the same for both.
+    fn presented_still_current(&self) -> Result<(), LineageRefusal> {
         let mut not_presented = false;
         for binding in &self.presented {
             if !binding.matches_request() {
@@ -368,7 +399,7 @@ impl Lineage {
 
 /// The register key of a delivered text: BLAKE3 over its exact bytes.
 #[must_use]
-pub(crate) fn digest(delivered_text: &str) -> String {
+pub fn digest(delivered_text: &str) -> String {
     blake3::hash(delivered_text.as_bytes()).to_hex().to_string()
 }
 
@@ -379,7 +410,7 @@ pub(crate) fn digest(delivered_text: &str) -> String {
 /// is now on record; `false` leaves the text's lineage unknown (malformed
 /// digest, incomplete lineage, a source that does not hold now — including
 /// every restricted source —, no request project, a bound, or the lock).
-pub(crate) fn record_lineage(delivered_text_digest: &str, lineage: &Lineage) -> bool {
+pub fn record_lineage(delivered_text_digest: &str, lineage: &Lineage) -> bool {
     lineage.still_admitted().is_ok()
         && store_at(delivered_text_digest, lineage, None, register::now())
 }
@@ -400,7 +431,7 @@ pub(crate) fn record_lineage(delivered_text_digest: &str, lineage: &Lineage) -> 
 ///
 /// Checked here: the lineage is complete and every source holds at this
 /// moment. Otherwise nothing is recorded and the derived text is unknown.
-pub(crate) fn record_derived(derived_text_digest: &str, lineage: &Lineage) -> bool {
+pub fn record_derived(derived_text_digest: &str, lineage: &Lineage) -> bool {
     record_lineage(derived_text_digest, lineage)
 }
 
@@ -411,7 +442,7 @@ pub(crate) fn record_derived(derived_text_digest: &str, lineage: &Lineage) -> bo
 /// The handle is returned whether or not its sources still hold — ask
 /// [`Lineage::still_admitted`] inside the request's project scope.
 #[must_use]
-pub(crate) fn lineage_of(delivered_text_digest: &str) -> Option<Lineage> {
+pub fn lineage_of(delivered_text_digest: &str) -> Option<Lineage> {
     lineage_at(delivered_text_digest, register::now())
 }
 
@@ -422,13 +453,14 @@ pub(crate) fn lineage_of(delivered_text_digest: &str) -> Option<Lineage> {
 /// (unknown stays unknown). Returns the number of blocks recorded.
 ///
 /// `declares_every_source` is the tool's `publishes_every_source` for this
-/// call ([`declares_every_source`]) AND the caller's own statement that it
+/// call (`tools::registered::ctx_call::declares_every_source`) AND the
+/// caller's own statement that it
 /// mixed no text without source authority (session-derived context, hints
 /// from derived stores) into the delivered blocks; a caller that did passes
 /// `false`. `capture` is what `authority::capture` / `capture_sync` returned
 /// around the handler. `delivered_blocks` are the exact delivered bytes,
 /// after all changes. Call inside the request's `REQUEST_PROJECT` scope.
-pub(crate) fn record_tool_delivery(
+pub fn record_tool_delivery(
     declares_every_source: bool,
     is_error: bool,
     capture: Option<ArchiveAuthority>,
@@ -444,9 +476,9 @@ pub(crate) fn record_tool_delivery(
 }
 
 /// A call id as this register records and looks it up: 1 to
-/// [`MAX_CALL_ID_BYTES`] bytes of `[A-Za-z0-9_-]`. Anything else is no id.
+/// `MAX_CALL_ID_BYTES` bytes of `[A-Za-z0-9_-]`. Anything else is no id.
 #[must_use]
-pub(crate) fn valid_call_id(call_id: &str) -> bool {
+pub fn valid_call_id(call_id: &str) -> bool {
     (1..=MAX_CALL_ID_BYTES).contains(&call_id.len())
         && call_id
             .bytes()
@@ -461,7 +493,7 @@ pub(crate) fn valid_call_id(call_id: &str) -> bool {
 /// absent or malformed id notes nothing. The id is metadata of the host: it
 /// is persisted only in the register files and appears in no tool output,
 /// receipt, log line or refusal.
-pub(crate) fn record_tool_delivery_for_call(
+pub fn record_tool_delivery_for_call(
     declares_every_source: bool,
     is_error: bool,
     capture: Option<ArchiveAuthority>,
@@ -496,7 +528,7 @@ pub(crate) fn record_tool_delivery_for_call(
 /// This identifies a delivery; like the rest of the register it authorizes
 /// nothing — the lineage still has to hold ([`Lineage::still_admitted`]).
 #[must_use]
-pub(crate) fn delivered_to_call(delivered_text_digest: &str, call_id: &str) -> bool {
+pub fn delivered_to_call(delivered_text_digest: &str, call_id: &str) -> bool {
     if !valid_call_id(call_id) {
         return false;
     }
@@ -512,25 +544,6 @@ pub(crate) fn delivered_to_call(delivered_text_digest: &str, call_id: &str) -> b
                     && lineage.calls.iter().any(|known| known == call_id)
             })
         })
-}
-
-/// Whether the tool that runs for `name` + `args` declares that it reads
-/// every source through the admitted readers (`McpTool::publishes_every_source`).
-/// A `ctx_call` wrapper is unwrapped one level, as admission does; an unknown
-/// tool or an unresolvable wrapper declares nothing.
-#[must_use]
-pub(crate) fn declares_every_source(
-    registry: &crate::server::registry::ToolRegistry,
-    name: &str,
-    args: Option<&serde_json::Map<String, serde_json::Value>>,
-) -> bool {
-    crate::tools::registered::ctx_call::resolve(name, args)
-        .ok()
-        .and_then(|(inner, inner_args)| {
-            let tool = registry.get_arc(&inner)?;
-            Some(tool.publishes_every_source(inner_args.as_ref()))
-        })
-        .unwrap_or(false)
 }
 
 /// For a caller that has verified `authority` in this very step (archive
@@ -648,7 +661,7 @@ mod tests {
     fn authority_of(root: &Path, name: &str, content: &str) -> ArchiveAuthority {
         let path = root.join(name);
         std::fs::write(&path, content).expect("source");
-        let admitted = crate::tools::ctx_read::read_file_for_tool_rooted(
+        let admitted = crate::core::rooted_read::read_file_for_tool_rooted(
             path.to_str().expect("utf-8 path"),
             root.to_str().expect("utf-8 root"),
             "ctx_read",
@@ -700,11 +713,36 @@ mod tests {
             // Exact bytes: any re-wrapping is a different text.
             assert!(lineage_of(&digest("pub fn kept() {}")).is_none());
             assert!(lineage_of("not-a-digest").is_none());
+            assert_eq!(found.still_permitted(), Ok(()));
+
+            // An edit after the read (#2177): the bytes no longer match, so
+            // reuse is refused, but the source is still permitted — a sealed
+            // item derived from it may return.
+            std::fs::write(root.join("kept.rs"), "pub fn kept() { edited() }\n")
+                .expect("edit the source");
+            assert_eq!(
+                found.still_admitted(),
+                Err(LineageRefusal::SourceNoLongerAdmitted)
+            );
+            assert_eq!(found.still_permitted(), Ok(()));
+
+            // An edit that makes the source restricted (E3): no longer
+            // permitted, so nothing derived from it returns.
+            std::fs::write(root.join("kept.rs"), "*** TOP SECRET ***\nlaunch window\n")
+                .expect("restrict the source");
+            assert_eq!(
+                found.still_permitted(),
+                Err(LineageRefusal::SourceNoLongerAdmitted)
+            );
 
             std::fs::remove_file(root.join("kept.rs")).expect("delete the source");
             let found = lineage_of(&delivered).expect("the handle is still on record");
             assert_eq!(
                 found.still_admitted(),
+                Err(LineageRefusal::SourceNoLongerAdmitted)
+            );
+            assert_eq!(
+                found.still_permitted(),
                 Err(LineageRefusal::SourceNoLongerAdmitted)
             );
         });

@@ -31,7 +31,7 @@ static TTL_LAPSES: AtomicU64 = AtomicU64::new(0);
 static PREFIX_CHANGES: AtomicU64 = AtomicU64::new(0);
 
 /// Count one attributed outcome.
-pub(crate) fn record_outcome(outcome: CacheOutcome) {
+pub fn record_outcome(outcome: CacheOutcome) {
     let counter = match outcome {
         CacheOutcome::ColdStart => &COLD_STARTS,
         CacheOutcome::WarmReuse => &WARM_REUSES,

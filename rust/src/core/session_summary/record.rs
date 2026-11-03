@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// A persisted, recallable session summary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SummaryRecord {
+pub struct SummaryRecord {
     /// Stable id: `<session-id>-<seq>`.
     pub id: String,
     pub session_id: String,
@@ -81,7 +81,7 @@ impl SummaryRecord {
 /// An owned snapshot built while holding the session lock, then persisted off the
 /// hot path. Keeps the lock hold minimal (no disk I/O under the lock).
 #[derive(Debug, Clone)]
-pub(crate) struct SummaryCandidate {
+pub struct SummaryCandidate {
     pub session_id: String,
     pub created_at: DateTime<Utc>,
     pub title: String,

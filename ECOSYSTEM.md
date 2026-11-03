@@ -6,7 +6,7 @@ Earlier ecosystem proposals are preserved in Git history. Current LeanCTX is a
 **Context Gateway for AI Systems**: **Control what your AI can see.**
 
 The [canonical positioning](docs/POSITIONING_CANONICAL.md) and
-[Vision](VISION.md) define today's product boundaries. The LeanCTX Engine and
+[Vision](VISION.md) define today's product boundaries. LeanCTX | OSS and
 LeanCTX SDK are components of one product. Enterprise is separately licensed;
 its documented release determines availability.
 

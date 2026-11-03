@@ -48,7 +48,7 @@ fn is_injected(key: &str) -> bool {
 fn admitted_rule(project_root: &str, source: &str) -> Option<String> {
     let path = Path::new(project_root).join(source);
     let mut remaining = crate::core::limits::max_read_bytes();
-    crate::tools::ctx_read::read_file_for_tool_rooted_admitted(
+    crate::core::rooted_read::read_file_for_tool_rooted_admitted(
         path.to_str()?,
         project_root,
         "ctx_read",
@@ -77,11 +77,7 @@ const MAX_RULES_SUFFIX_TOKENS: usize = 800;
 /// Discover and format rules applicable to `file_path` that haven't been
 /// injected yet in this session. Returns an empty string when no new rules
 /// apply or when the client natively handles rule injection.
-pub(crate) fn rules_suffix_for_read(
-    file_path: &str,
-    project_root: &str,
-    client_id: &str,
-) -> String {
+pub fn rules_suffix_for_read(file_path: &str, project_root: &str, client_id: &str) -> String {
     let cfg = crate::core::config::Config::load();
     if cfg.declines_rule_steering() || client_natively_injects_rules(client_id) {
         return String::new();

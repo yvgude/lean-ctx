@@ -20,7 +20,7 @@ fn tcc_standalone_daemon_never_touches_documents() {
         return;
     }
 
-    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/tcc_sandbox.sh");
+    let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/tcc_sandbox.sh");
     let status = std::process::Command::new("bash")
         .arg(script)
         .env("LEAN_CTX_BIN", env!("CARGO_BIN_EXE_lean-ctx"))

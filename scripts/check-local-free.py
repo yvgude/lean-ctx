@@ -6,10 +6,11 @@
     python3 scripts/check-local-free.py --json     # machine-readable report
     python3 scripts/check-local-free.py --list     # every file with a gating symbol
 
-Every tracked ``rust/src/**/*.rs`` file is scanned for gating symbols
+Every tracked ``*.rs`` file of the Engine (``rust/src``) and of the crates split
+out of it (``SCAN_ROOTS``) is scanned for gating symbols
 (entitlements, plan or licence checks, the billing capability CLI) in its code;
 comments and doc comments are not code and are skipped. A hit is allowed only
-under ``rust/src/core/hive/`` or in a file listed in
+under ``rust/crates/lean-ctx-hive/src/`` or in a file listed in
 ``product/local-free-allowlist.toml`` with an owner (strand B or C) and a reason.
 A listed file that no longer has a hit, or is no longer tracked, is a stale entry
 and fails too, so the allowlist only shrinks. Contract:
@@ -30,8 +31,22 @@ except ModuleNotFoundError:  # Python < 3.11
     tomllib = None
 
 ROOT = Path(__file__).resolve().parents[1]
-SCAN_ROOT = "rust/src"
-HIVE_ROOT = "rust/src/core/hive/"
+# The Engine and the crates split out of it (rust/CRATE_MAP.md): code that
+# moved out of rust/src stays scanned. A crate split out later joins this list.
+SCAN_ROOTS = (
+    "rust/src",
+    "rust/crates/lean-ctx",
+    "rust/crates/lean-ctx-compress",
+    "rust/crates/lean-ctx-fs",
+    "rust/crates/lean-ctx-hive",
+    "rust/crates/lean-ctx-patterns",
+    "rust/crates/lean-ctx-hooks",
+    "rust/crates/lean-ctx-proxy",
+    "rust/crates/lean-ctx-server",
+    "rust/crates/lean-ctx-syntax",
+    "rust/crates/lean-ctx-workgraph",
+)
+HIVE_ROOT = "rust/crates/lean-ctx-hive/src/"
 ALLOWLIST = "product/local-free-allowlist.toml"
 OWNERS = ("B", "C")
 # Test-only files carry fixtures of the gate, not the gate itself.
@@ -100,12 +115,12 @@ def strip_comments(text: str) -> str:
 
 def tracked(root: Path) -> list[str]:
     try:
-        result = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", SCAN_ROOT],
+        result = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "--", *SCAN_ROOTS],
                                 capture_output=True, check=True)
         names = [name for name in result.stdout.decode("utf-8").split("\0") if name]
     except (OSError, subprocess.CalledProcessError):
-        base = root / SCAN_ROOT
-        names = [path.relative_to(root).as_posix() for path in base.rglob("*.rs")] if base.is_dir() else []
+        names = [path.relative_to(root).as_posix() for scan in SCAN_ROOTS if (root / scan).is_dir()
+                 for path in (root / scan).rglob("*.rs")]
     return sorted(name for name in names if name.endswith(".rs") and not TEST_FILE.search(name)
                   and (root / name).is_file())
 

@@ -124,7 +124,7 @@ fn a_changed_hive_filter_set_is_a_new_snapshot() {
     std::fs::write(&path, BASE).unwrap();
     let mut cache = RefreshCache::default();
     let first = cache.refresh(root.path()).unwrap().unwrap();
-    let set = crate::core::hive::policy::filter_set_path().unwrap();
+    let set = crate::core::policy::hive_filters::filter_set_path().unwrap();
     std::fs::create_dir_all(set.parent().unwrap()).unwrap();
     std::fs::write(&set, "{}").unwrap();
     let changed = cache.refresh(root.path()).unwrap().unwrap();

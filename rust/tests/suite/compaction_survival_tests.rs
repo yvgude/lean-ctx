@@ -1,8 +1,10 @@
 use lean_ctx::core::session::SessionState;
 
 fn make_session_with_data() -> SessionState {
-    let mut session = SessionState::default();
-    session.id = "test-session-compaction".to_string();
+    let mut session = SessionState {
+        id: "test-session-compaction".to_string(),
+        ..SessionState::default()
+    };
     // A real project root: the reply of a session whose project does not
     // exist is withheld (`ctx_session resume` admits its text under that
     // project's policy). One directory for the whole test process; its last
@@ -153,13 +155,13 @@ fn resume_block_with_files() {
 #[test]
 fn session_resume_action() {
     let mut session = make_session_with_data();
-    let result = lean_ctx::tools::ctx_session::handle(
+    let result = lean_ctx_server::tools::ctx_session::handle(
         &mut session,
         &[],
         "resume",
         None,
         None,
-        lean_ctx::tools::ctx_session::SessionToolOptions {
+        lean_ctx_server::tools::ctx_session::SessionToolOptions {
             format: None,
             path: None,
             write: false,

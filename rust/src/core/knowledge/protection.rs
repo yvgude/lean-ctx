@@ -17,7 +17,7 @@ mod tests;
 #[path = "protection_transition_tests.rs"]
 mod transition_tests;
 
-pub(crate) fn current(root: &str) -> Result<Option<Arc<runtime::ActivePolicy>>, String> {
+pub fn current(root: &str) -> Result<Option<Arc<runtime::ActivePolicy>>, String> {
     if let Some(request) = diagnostics::request_project()
         && crate::core::pathutil::safe_canonicalize_bounded(&request, 2000)
             != crate::core::pathutil::safe_canonicalize_bounded(Path::new(root), 2000)
@@ -44,7 +44,7 @@ enum TypedSessionField {
 /// One policy snapshot used for a complete knowledge operation. Text is never
 /// rewritten in a persisted record: any blocked or changed string withholds the
 /// complete record so its version identity and lineage remain truthful.
-pub(crate) struct KnowledgeAdmission {
+pub struct KnowledgeAdmission {
     root: String,
     gateway: StoreAdmission,
     project: Option<Arc<runtime::ActivePolicy>>,
@@ -64,7 +64,7 @@ static VERDICTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<
 const VERDICTS_MAX: usize = 4_000_000;
 
 impl KnowledgeAdmission {
-    pub(crate) fn capture(root: &str) -> Result<Self, String> {
+    pub fn capture(root: &str) -> Result<Self, String> {
         let project = current(root)?;
         let project_digest = project.as_deref().map(policy_digest).transpose()?;
         let gateway = StoreAdmission::current();
@@ -386,11 +386,11 @@ impl KnowledgeAdmission {
         &self.gateway
     }
 
-    pub(crate) fn admits_archive_value(&self, value: &serde_json::Value) -> bool {
+    pub fn admits_archive_value(&self, value: &serde_json::Value) -> bool {
         self.exact_value(value)
     }
 
-    pub(crate) fn authorize_gateway(&self) -> Result<(), String> {
+    pub fn authorize_gateway(&self) -> Result<(), String> {
         if !self.gateway.is_current() || StoreAdmission::current().digest() != self.gateway.digest()
         {
             return Err("knowledge Gateway policy changed; retry".into());
@@ -402,7 +402,7 @@ impl KnowledgeAdmission {
         Ok(())
     }
 
-    pub(crate) fn authorize_publication(
+    pub fn authorize_publication(
         &self,
         authority: &runtime::PublicationAuthority,
     ) -> Result<(), String> {

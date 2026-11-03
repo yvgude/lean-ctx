@@ -21,14 +21,14 @@ use super::entropy::jaccard_similarity;
 
 /// Compilation output mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CompileMode {
+pub enum CompileMode {
     HandleManifest,
     Compressed,
     FullPrompt,
 }
 
 impl CompileMode {
-    pub(crate) fn parse(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.trim().to_lowercase().as_str() {
             "compressed" => Self::Compressed,
             "full" | "full_prompt" => Self::FullPrompt,
@@ -66,7 +66,7 @@ pub struct CompileCandidate {
 
 /// Result of a compilation run.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct CompileResult {
+pub struct CompileResult {
     pub run_id: String,
     pub mode: String,
     pub budget_total: usize,
@@ -81,7 +81,7 @@ pub(crate) struct CompileResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct SelectedItem {
+pub struct SelectedItem {
     pub id: String,
     pub path: String,
     pub view: String,
@@ -91,7 +91,7 @@ pub(crate) struct SelectedItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub(crate) struct ExcludedItem {
+pub struct ExcludedItem {
     pub id: String,
     pub path: String,
     pub reason: String,
@@ -120,7 +120,7 @@ pub(crate) struct CompileSelection {
 ///
 /// This implements a greedy knapsack: pinned items first, then by efficiency
 /// (Phi/token), with automatic view downgrade under budget pressure.
-pub(crate) fn compile(
+pub fn compile(
     candidates: &[CompileCandidate],
     budget: TokenBudget,
     mode: CompileMode,
@@ -429,7 +429,7 @@ fn best_affordable_view(costs: &ViewCosts, budget_left: usize) -> Option<(ViewKi
 }
 
 /// Format the compilation result for display.
-pub(crate) fn format_compile_result(result: &CompileResult) -> String {
+pub fn format_compile_result(result: &CompileResult) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "[compiled] {} mode, {}/{} tokens\n",

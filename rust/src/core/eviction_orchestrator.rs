@@ -16,7 +16,7 @@ use super::memory_guard;
 
 type SharedCache = Arc<tokio::sync::RwLock<SessionCache>>;
 
-pub(crate) struct EvictionOrchestrator {
+pub struct EvictionOrchestrator {
     cache: SharedCache,
     bm25_cache: SharedBm25Cache,
     controller: Mutex<HomeostasisController>,
@@ -49,7 +49,7 @@ static TARGETS: std::sync::LazyLock<Mutex<EvictionRegistry>> =
     std::sync::LazyLock::new(|| Mutex::new(EvictionRegistry::default()));
 
 /// Register a server-local eviction target without extending its lifetime.
-pub(crate) fn register(target: &Arc<EvictionOrchestrator>) {
+pub fn register(target: &Arc<EvictionOrchestrator>) {
     TARGETS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -58,7 +58,7 @@ pub(crate) fn register(target: &Arc<EvictionOrchestrator>) {
 
 /// Fan process-wide RSS pressure out to every live server-local cache.
 /// Returns whether any eviction target actually reclaimed resident memory.
-pub(crate) fn on_memory_pressure(level: memory_guard::PressureLevel) -> bool {
+pub fn on_memory_pressure(level: memory_guard::PressureLevel) -> bool {
     let live = TARGETS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -84,7 +84,7 @@ pub(crate) fn on_memory_pressure(level: memory_guard::PressureLevel) -> bool {
 }
 
 impl EvictionOrchestrator {
-    pub(crate) fn new(cache: SharedCache, bm25_cache: SharedBm25Cache) -> Self {
+    pub fn new(cache: SharedCache, bm25_cache: SharedBm25Cache) -> Self {
         let token_budget = super::cache::max_cache_tokens();
         Self {
             cache,

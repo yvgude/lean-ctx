@@ -13,7 +13,7 @@
 //!
 //! Design notes:
 //! - The index is built with the *same* walk config and file filters as
-//!   `ctx_search` (see [`crate::tools::ctx_search`]) so the searchable universe
+//!   `ctx_search` (see `tools::ctx_search`) so the searchable universe
 //!   is identical — that is what guarantees recall parity.
 //! - Only `[A-Za-z0-9_]` trigrams are indexed. Lookups only ever use trigrams
 //!   from pure-identifier queries, so this is both sufficient and memory-bounded.
@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 use glob::Pattern;
 use ignore::WalkBuilder;
 
-use crate::tools::ctx_search::{MAX_FILE_SIZE, MAX_WALK_DEPTH, is_binary_ext, is_generated_file};
+use crate::core::search_walk::{MAX_FILE_SIZE, MAX_WALK_DEPTH, is_binary_ext, is_generated_file};
 
 /// Upper bound on indexed files; larger trees fall back to the walk path.
 const MAX_FILES: usize = 200_000;
@@ -438,7 +438,7 @@ pub fn boundary_skipped_files(
 
     let walker = WalkBuilder::new(root_path)
         .hidden(false)
-        .max_depth(Some(crate::tools::ctx_search::MAX_WALK_DEPTH))
+        .max_depth(Some(crate::core::search_walk::MAX_WALK_DEPTH))
         .git_ignore(respect_gitignore)
         .git_global(respect_gitignore)
         .git_exclude(respect_gitignore)
@@ -603,12 +603,12 @@ fn finalize_sig(sum: u64, count: usize) -> u64 {
 }
 
 /// Cheap, stat-only signature of the *current* on-disk corpus for `root`.
-/// Compared against [`SearchIndex::signature`] in [`get_fresh`] to detect any
+/// Compared against `SearchIndex::signature` in [`get_fresh`] to detect any
 /// change — content edits (including via tools lean-ctx never observes),
 /// additions, renames and deletions — so a stale candidate set can never
 /// silently drop a real match. `None` mirrors a non-indexable root (the caller
 /// then walks directly).
-pub(crate) fn corpus_signature(
+pub fn corpus_signature(
     root: &str,
     respect_gitignore: bool,
     allow_secret_paths: bool,

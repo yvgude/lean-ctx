@@ -20,7 +20,7 @@ pub(crate) fn capture_finding(project_root: &str, finding: &AutoFinding) {
     capture_finding_from_tool(project_root, finding, "ctx_knowledge", &finding.summary);
 }
 
-pub(crate) fn capture_finding_from_tool(
+pub fn capture_finding_from_tool(
     project_root: &str,
     finding: &AutoFinding,
     source_tool: &str,
@@ -111,7 +111,7 @@ fn derive_key(finding: &AutoFinding) -> String {
 }
 
 /// Extract knowledge-worthy patterns from tool output that auto_findings misses.
-pub(crate) fn extract_extra(tool_name: &str, output: &str) -> Option<AutoFinding> {
+pub fn extract_extra(tool_name: &str, output: &str) -> Option<AutoFinding> {
     match tool_name {
         "ctx_edit" | "ctx_multi_edit" => extract_edit_finding(output),
         "ctx_diff" => extract_diff_finding(output),

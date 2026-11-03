@@ -245,17 +245,17 @@ pub(crate) fn allowed(id: &str, provider: &str) -> bool {
     grant(id).is_some_and(|grant| grant.provider == provider)
 }
 
-#[cfg(test)]
-pub(crate) mod tests_support {
+#[cfg(any(test, feature = "test-support"))]
+pub mod tests_support {
     use super::{WithheldBlock, block_id, record};
 
     /// An isolated data directory (and with it a fresh receipt key).
-    pub(crate) fn isolated() -> crate::core::data_dir::IsolatedDataDir {
+    pub fn isolated() -> crate::core::data_dir::IsolatedDataDir {
         crate::core::data_dir::isolated_data_dir()
     }
 
     /// Record a withheld block with `codes` and return its id.
-    pub(crate) fn seed_block(codes: &[&str]) -> String {
+    pub fn seed_block(codes: &[&str]) -> String {
         let object = lean_ctx_protocol::Sha256Digest::new(format!("sha256:{}", "ab".repeat(32)))
             .expect("digest");
         let id = block_id(&object).expect("receipt key");

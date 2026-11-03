@@ -197,6 +197,16 @@ identity so aliases cannot race.
 Guarded entry points read, merge, back up and write this same resolved path;
 backups live beside the canonical target, not beside an alias. Existing
 alias-side backups are left untouched.
+The migration writer (`write_atomic_config_migration_checked`) also classifies,
+resumes, extends (two-phase, via the `.v4-migration.next.json` sidecar) or
+archives an existing `.v4-migration` journal inside this same hold (#2175):
+plain file reads, create-without-overwrite and atomic replaces through the
+lock-free `write_atomic` core, no other lock. Rollback settles a leftover
+sidecar inside its own hold of the same lock. The per-config once-per-state
+warning marker for a refused migration is written by the loader after the
+writer has returned, outside the hold. The empty sibling
+`<config>.v4-migration.lock` left by 3.11.x is never deleted: unlinking a lock
+file that an older process may still open would split mutual exclusion.
 
 **Scope — stated narrowly.** This lock serializes *holders of this lock file*.
 It is **not** a universal config-write authority, and should not be described

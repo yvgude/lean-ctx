@@ -42,7 +42,7 @@ fn nearest_git_boundary(start: &Path) -> Option<PathBuf> {
 /// in both trees and a bare `exists()` probe silently picks the stale one.
 /// A monorepo subdirectory (`cd rust/`) shares the boundary → not diverged;
 /// either side without any `.git` upward → no signal → not diverged.
-pub(crate) fn shell_cwd_is_divergent_checkout(project_root: &str, shell_cwd: &str) -> bool {
+pub fn shell_cwd_is_divergent_checkout(project_root: &str, shell_cwd: &str) -> bool {
     if shell_cwd == project_root {
         return false;
     }
@@ -204,7 +204,7 @@ pub fn resolve_tool_path_refusing(
 /// launched from `~`), and nothing exists at `resolved`. Without it agents got
 /// "file not found: ~/src/main.rs" and searched the wrong tree. `None` when the
 /// path is absolute, exists, or `base` is an ordinary working directory.
-pub(crate) fn unbound_relative_path(raw: &str, resolved: &Path, base: &str) -> Option<String> {
+pub fn unbound_relative_path(raw: &str, resolved: &Path, base: &str) -> Option<String> {
     let normalized = crate::core::pathutil::normalize_tool_path(raw);
     if Path::new(&normalized).is_absolute() || resolved.exists() {
         return None;

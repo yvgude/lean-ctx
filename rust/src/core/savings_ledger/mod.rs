@@ -138,7 +138,7 @@ fn repo_hash() -> &'static str {
 
 /// The ledger's attribution for a folder: the first 16 hex digits of SHA-256
 /// over its path text.
-pub(crate) fn hash_folder(folder: &str) -> String {
+pub fn hash_folder(folder: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(folder.as_bytes());
@@ -157,7 +157,7 @@ fn agent_id() -> String {
 /// the units the provider actually bills (#685). Resolved once per process from
 /// the same model `model_and_price` resolves — for the default O200kBase model
 /// (OpenAI/Cursor/unknown) this is `o200k_base`, so the common path is unchanged.
-pub(crate) fn ledger_family() -> crate::core::tokens::TokenizerFamily {
+pub fn ledger_family() -> crate::core::tokens::TokenizerFamily {
     static CACHE: OnceLock<crate::core::tokens::TokenizerFamily> = OnceLock::new();
     *CACHE.get_or_init(|| crate::core::tokens::detect_tokenizer(&model_and_price().0))
 }

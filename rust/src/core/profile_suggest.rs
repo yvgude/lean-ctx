@@ -33,14 +33,14 @@ const MAX_WALK_FILES: usize = 50_000;
 
 /// Files counted for one language. Serialized for `--json`.
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct LanguageCount {
+pub struct LanguageCount {
     pub language: String,
     pub files: usize,
 }
 
 /// Deterministic, locally-detected signals about the repo + environment.
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct RepoSignals {
+pub struct RepoSignals {
     pub root: String,
     pub source_files: usize,
     pub languages: Vec<LanguageCount>,
@@ -54,7 +54,7 @@ pub(crate) struct RepoSignals {
 
 /// Key settings the suggestion recommends alongside the profile.
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct RecommendedSettings {
+pub struct RecommendedSettings {
     /// `proxy.history_mode` — `None` ⇒ leave the default untouched.
     pub history_mode: Option<String>,
     /// `output_density`.
@@ -65,7 +65,7 @@ pub(crate) struct RecommendedSettings {
 
 /// A task-oriented profile the user can switch to, with the situation it fits.
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct ProfileAlternative {
+pub struct ProfileAlternative {
     pub profile: String,
     pub when: String,
 }
@@ -73,7 +73,7 @@ pub(crate) struct ProfileAlternative {
 /// The full recommendation: a primary profile, why, the settings, and
 /// task-oriented alternatives.
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct Suggestion {
+pub struct Suggestion {
     pub profile: String,
     pub rationale: Vec<String>,
     pub settings: RecommendedSettings,
@@ -83,7 +83,7 @@ pub(crate) struct Suggestion {
 /// Scans `root` and collects [`RepoSignals`]. Respects `.gitignore` (so vendored
 /// / build dirs don't skew the language mix) and is bounded by `MAX_WALK_FILES`.
 #[must_use]
-pub(crate) fn analyze(root: &str) -> RepoSignals {
+pub fn analyze(root: &str) -> RepoSignals {
     let root_path = Path::new(root);
 
     let mut lang_counts: BTreeMap<&'static str, usize> = BTreeMap::new();
@@ -153,7 +153,7 @@ pub(crate) fn analyze(root: &str) -> RepoSignals {
 /// Maps signals to a recommendation. Pure and deterministic (no I/O), so the
 /// heuristic is fully unit-tested.
 #[must_use]
-pub(crate) fn suggest(signals: &RepoSignals) -> Suggestion {
+pub fn suggest(signals: &RepoSignals) -> Suggestion {
     let polyglot = signals.languages.len() >= POLYGLOT_LANGS;
     let large = signals.source_files >= LARGE_REPO_FILES;
     let small = signals.source_files <= SMALL_REPO_FILES;

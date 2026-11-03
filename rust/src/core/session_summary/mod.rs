@@ -1,7 +1,7 @@
 //! AI session summaries (#292): periodically distil the working session into a
 //! compact, semantically-recallable digest.
 //!
-//! Pipeline: [`generate::build_candidate`] (under the session lock, cheap, owned)
+//! Pipeline: `generate::build_candidate` (under the session lock, cheap, owned)
 //! → [`maybe_record_periodic`] (off the hot path: cadence check + persist) →
 //! [`recall::recall`] (semantic when embeddings are warm, else lexical).
 //!
@@ -9,11 +9,11 @@
 //! summary.
 
 pub(crate) mod generate;
-pub(crate) mod recall;
+pub mod recall;
 pub(crate) mod record;
 pub(crate) mod store;
 
-pub(crate) use recall::recall;
+pub use recall::recall;
 pub(crate) use record::{SummaryCandidate, SummaryRecord};
 
 use crate::core::session::SessionState;
@@ -25,16 +25,13 @@ fn config() -> crate::core::config::SummariesConfig {
 
 /// Build a lock-free candidate from the live session. Call while holding the
 /// session lock; persist the result off the hot path with [`maybe_record_periodic`].
-pub(crate) fn build_candidate(session: &SessionState) -> SummaryCandidate {
+pub fn build_candidate(session: &SessionState) -> SummaryCandidate {
     generate::build_candidate(session)
 }
 
 /// Record `candidate` iff enabled and the turn cadence is due. Returns the title
 /// of the recorded summary, or `None` if skipped.
-pub(crate) fn maybe_record_periodic(
-    project_root: &str,
-    candidate: SummaryCandidate,
-) -> Option<String> {
+pub fn maybe_record_periodic(project_root: &str, candidate: SummaryCandidate) -> Option<String> {
     let cfg = config();
     if !cfg.enabled || !candidate.has_content {
         return None;
@@ -53,10 +50,7 @@ pub(crate) fn maybe_record_periodic(
 }
 
 /// Force-record a summary now (explicit action), ignoring the turn cadence.
-pub(crate) fn record_now(
-    project_root: &str,
-    candidate: SummaryCandidate,
-) -> Result<String, String> {
+pub fn record_now(project_root: &str, candidate: SummaryCandidate) -> Result<String, String> {
     if !candidate.has_content {
         return Err("session has nothing to summarize yet".to_string());
     }
@@ -90,7 +84,7 @@ fn record_into(
 /// The stored summaries of a project as they may be served NOW (oldest
 /// first): each record through the originless rule, a record that is not
 /// released left out. The store on disk is not touched by this view.
-pub(crate) fn list(project_root: &str) -> Vec<SummaryRecord> {
+pub fn list(project_root: &str) -> Vec<SummaryRecord> {
     served(SummaryStore::load_or_create(project_root)).summaries
 }
 

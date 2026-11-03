@@ -7,7 +7,7 @@ mod install;
 mod shared;
 mod uninstall;
 
-pub(crate) use install::{COMMANDCODE_MCP_INSTRUCTIONS, validate_claude_binary};
+pub use install::{COMMANDCODE_MCP_INSTRUCTIONS, validate_claude_binary};
 pub use shared::auto_approve_tools;
 pub use uninstall::remove_lean_ctx_mcp_server;
 // Routers below dispatch to every install/uninstall writer; a glob keeps the
@@ -56,6 +56,14 @@ pub fn write_config_with_options_and_rule_steering(
     opts: WriteOptions,
     allow_rule_steering: bool,
 ) -> Result<WriteResult, String> {
+    // A host on the governor setup has no LeanCTX MCP server; setup, doctor
+    // and refresh paths all write through here.
+    if crate::core::governor_hosts::suppresses_mcp(&target.agent_key, &target.config_path) {
+        return Ok(WriteResult {
+            action: WriteAction::Already,
+            note: Some("governor setup: no MCP server".to_string()),
+        });
+    }
     if let Some(parent) = target.config_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -96,10 +104,11 @@ pub fn remove_lean_ctx_server(
         | ConfigType::QoderSettings
         | ConfigType::CommandCode
         | ConfigType::ClineCli
-        | ConfigType::OmpMcp => remove_lean_ctx_mcp_server(&target.config_path, opts),
-        ConfigType::VsCodeMcp | ConfigType::CopilotCli => {
-            remove_lean_ctx_vscode_server(&target.config_path, opts)
-        }
+        | ConfigType::OmpMcp
+        // Copilot CLI's `mcp-config.json` uses `mcpServers` (`write_copilot_cli`),
+        // not VS Code's `servers`; removing under `servers` left the entry behind.
+        | ConfigType::CopilotCli => remove_lean_ctx_mcp_server(&target.config_path, opts),
+        ConfigType::VsCodeMcp => remove_lean_ctx_vscode_server(&target.config_path, opts),
         ConfigType::Codex => remove_lean_ctx_codex_server(&target.config_path),
         ConfigType::OpenCode | ConfigType::Crush => {
             remove_lean_ctx_named_json_server(&target.config_path, "mcp", opts)

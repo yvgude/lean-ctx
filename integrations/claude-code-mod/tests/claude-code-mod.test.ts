@@ -447,7 +447,7 @@ test("one watcher coalesces terminal jobs into one bounded wake", async ($, on) 
   expect(wakes[0]).not.toContain("line-05");
 });
 
-// The shapes the real ctx_shell sends (rust/src/server/tool_trait.rs): the
+// The shapes the real ctx_shell sends (rust/crates/lean-ctx-server/src/server/tool_trait.rs): the
 // launch ack is rendered only as a JSON text block, and a finished job's
 // status carries structuredContent with isError=true when exit != 0.
 test("real ctx_shell shapes: JSON-text ack, structured failed status, transient miss keeps watching", async ($, on) => {

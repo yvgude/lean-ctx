@@ -125,7 +125,7 @@ fn claude_status_line_active() -> bool {
                     .get("statusLine")
                     .and_then(|line| line.get("command"))
                     .and_then(serde_json::Value::as_str)
-                    .map(crate::hooks::agents::is_lean_ctx_statusline)
+                    .map(crate::core::claude_host::is_lean_ctx_statusline)
             })
             .unwrap_or(false)
     });

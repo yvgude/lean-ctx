@@ -16,26 +16,26 @@ use crate::core::contracts::CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION;
 
 /// Maximum number of lineage items embedded in a snapshot (mirrors the live IR
 /// ring buffer cap so a snapshot can hold the full retained lineage).
-pub(crate) const MAX_SNAPSHOT_LINEAGE_ITEMS: usize = 128;
+pub const MAX_SNAPSHOT_LINEAGE_ITEMS: usize = 128;
 
 /// Maximum number of ledger items embedded in a snapshot.
-pub(crate) const MAX_SNAPSHOT_LEDGER_ITEMS: usize = 256;
+pub const MAX_SNAPSHOT_LEDGER_ITEMS: usize = 256;
 
 /// Maximum number of session decisions / files embedded in the session slice.
-pub(crate) const MAX_SNAPSHOT_SESSION_LIST: usize = 64;
+pub const MAX_SNAPSHOT_SESSION_LIST: usize = 64;
 
 /// A git-anchored, signed, temporal snapshot of the context-layer state.
 ///
 /// `snapshot_id` and `signature` are excluded from the canonical body that is
-/// hashed (see [`super::digest`]): the id is the BLAKE3 of that body, and the
+/// hashed (see `super::digest`): the id is the BLAKE3 of that body, and the
 /// signature is computed over the id. This makes the id content-addressed and
 /// deterministic — the same layer state yields the same id (modulo `created_at`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct ContextSnapshotV1 {
+pub struct ContextSnapshotV1 {
     /// Schema version — always [`CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION`].
     pub schema_version: u32,
     /// Content-addressed identity: BLAKE3 hex of the canonical body. Empty until
-    /// computed by [`super::digest::finalize_id`] or [`super::signing::sign_snapshot`].
+    /// computed by `super::digest::finalize_id` or `super::signing::sign_snapshot`.
     pub snapshot_id: String,
     /// Id of the previous snapshot in this project's timeline (chain link).
     pub parent_id: Option<String>,
@@ -84,7 +84,7 @@ impl ContextSnapshotV1 {
 
 /// Git anchor for a snapshot — the repository state it is pinned to.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct GitAnchorV1 {
+pub struct GitAnchorV1 {
     /// Commit SHA the snapshot is anchored to (short or full), if in a repo.
     pub commit: Option<String>,
     /// Branch name at snapshot time.
@@ -95,7 +95,7 @@ pub(crate) struct GitAnchorV1 {
 
 /// Project identity — hashes only, never raw paths (privacy doctrine).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SnapshotProjectV1 {
+pub struct SnapshotProjectV1 {
     /// Hash of the project root path.
     pub root_hash: Option<String>,
     /// Hash of the project's remote/git identity (stable across clones).
@@ -104,7 +104,7 @@ pub(crate) struct SnapshotProjectV1 {
 
 /// Token return-on-investment captured at snapshot time.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SnapshotRoiV1 {
+pub struct SnapshotRoiV1 {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub tokens_saved: u64,
@@ -115,7 +115,7 @@ pub(crate) struct SnapshotRoiV1 {
 
 /// Distilled lineage slice — what entered the context window, from Context IR.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SnapshotLineageV1 {
+pub struct SnapshotLineageV1 {
     /// Total items the IR has ever recorded (may exceed `items.len()`).
     pub items_recorded: u64,
     /// Bounded, most-recent lineage items (≤ [`MAX_SNAPSHOT_LINEAGE_ITEMS`]).
@@ -124,7 +124,7 @@ pub(crate) struct SnapshotLineageV1 {
 
 /// One lineage entry: a tool call that contributed to the context window.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SnapshotLineageItemV1 {
+pub struct SnapshotLineageItemV1 {
     pub seq: u64,
     /// Source kind: `read` | `shell` | `search` | `provider` | `other`.
     pub kind: String,
@@ -139,7 +139,7 @@ pub(crate) struct SnapshotLineageItemV1 {
 
 /// Distilled ledger slice — why each item was in the window, with its Φ-score.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SnapshotLedgerV1 {
+pub struct SnapshotLedgerV1 {
     pub window_size: usize,
     pub total_tokens_sent: usize,
     pub total_tokens_saved: usize,
@@ -149,7 +149,7 @@ pub(crate) struct SnapshotLedgerV1 {
 
 /// One ledger entry: an item the layer decided about, with its state + Φ.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct SnapshotLedgerItemV1 {
+pub struct SnapshotLedgerItemV1 {
     pub path: String,
     /// Context state: `candidate` | `included` | `excluded` | `pinned` |
     /// `stale` | `shadowed`.
@@ -161,7 +161,7 @@ pub(crate) struct SnapshotLedgerItemV1 {
 
 /// Distilled session slice — the task and decisions behind the snapshot.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SnapshotSessionV1 {
+pub struct SnapshotSessionV1 {
     pub session_id: Option<String>,
     pub task: Option<String>,
     /// Bounded decision summaries (≤ [`MAX_SNAPSHOT_SESSION_LIST`]).
@@ -174,7 +174,7 @@ pub(crate) struct SnapshotSessionV1 {
 
 /// ed25519 signature over a snapshot's `snapshot_id`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SnapshotSignatureV1 {
+pub struct SnapshotSignatureV1 {
     /// Always `"ed25519"`.
     pub algorithm: String,
     /// Signer's public verifying key, hex-encoded (the publisher identity).

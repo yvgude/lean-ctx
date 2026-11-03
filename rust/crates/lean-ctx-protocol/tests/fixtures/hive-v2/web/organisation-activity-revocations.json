@@ -11,7 +11,7 @@
         {
           "id": "4f8dce96-7052-4b1e-9da4-6ec29fb01345",
           "at": "2026-10-24T16:00:00Z",
-          "engine": {
+          "instance": {
             "id": "4f8dce96-7052-4b1e-9da4-6ec29fb01345",
             "label": "bob-ci"
           },

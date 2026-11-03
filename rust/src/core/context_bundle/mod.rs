@@ -8,7 +8,7 @@
 //! (what chat UIs count) or `o200k_base` tokens.
 
 pub(crate) mod collect;
-pub(crate) mod export;
+pub mod export;
 pub(crate) mod limit;
 pub(crate) mod rank;
 pub(crate) mod render;
@@ -22,12 +22,12 @@ use std::path::{Path, PathBuf};
 
 use crate::core::ib::intent::{TaskIntent, classify_text};
 
-pub(crate) use limit::{Unit, parse_limit};
+pub use limit::{Unit, parse_limit};
 use render::Detail;
 
-pub(crate) const DEFAULT_LIMIT: usize = 128_000;
-pub(crate) const DEFAULT_KNOWLEDGE_CATEGORIES: &[&str] = &["decision", "architecture", "solution"];
-pub(crate) const DEFAULT_KNOWLEDGE_LIMIT: usize = 10;
+pub const DEFAULT_LIMIT: usize = 128_000;
+pub const DEFAULT_KNOWLEDGE_CATEGORIES: &[&str] = &["decision", "architecture", "solution"];
+pub const DEFAULT_KNOWLEDGE_LIMIT: usize = 10;
 
 /// Share of the limit the directory tree may take before it is collapsed.
 const TREE_PERCENT: usize = 15;
@@ -43,7 +43,7 @@ const DOCUMENT_OPEN: &str = "<bundle generator=\"lean-ctx\"";
 
 /// What to bundle and how big it may get.
 #[derive(Debug, Clone)]
-pub(crate) struct BundleOptions {
+pub struct BundleOptions {
     pub root: PathBuf,
     /// Directory or file to bundle, relative to `root` or absolute inside it.
     pub scope: Option<PathBuf>,
@@ -63,7 +63,7 @@ pub(crate) struct BundleOptions {
 }
 
 impl BundleOptions {
-    pub(crate) fn new(root: PathBuf) -> Self {
+    pub fn new(root: PathBuf) -> Self {
         Self {
             root,
             scope: None,
@@ -82,7 +82,7 @@ impl BundleOptions {
 
 /// Where a ranked file ended up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Placement {
+pub enum Placement {
     Full,
     Signatures,
     /// Not included; the reason is shown in the report.
@@ -101,7 +101,7 @@ impl Placement {
 
 /// A ranked file and its placement.
 #[derive(Debug, Clone)]
-pub(crate) struct PlannedFile {
+pub struct PlannedFile {
     pub path: String,
     pub score: f64,
     pub placement: Placement,
@@ -111,14 +111,14 @@ pub(crate) struct PlannedFile {
 
 /// A file that was never a candidate for inclusion.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Withheld {
+pub struct Withheld {
     pub path: String,
     pub reason: String,
 }
 
 /// Where the task description came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum IntentSource {
+pub enum IntentSource {
     Argument,
     Session,
     None,
@@ -126,7 +126,7 @@ pub(crate) enum IntentSource {
 
 /// A rendered bundle plus everything needed to explain it.
 #[derive(Debug, Clone)]
-pub(crate) struct Bundle {
+pub struct Bundle {
     pub xml: String,
     /// Size of `xml` in `unit`.
     pub size: usize,
@@ -143,11 +143,11 @@ pub(crate) struct Bundle {
 }
 
 impl Bundle {
-    pub(crate) fn fits(&self) -> bool {
+    pub fn fits(&self) -> bool {
         self.size <= self.limit
     }
 
-    pub(crate) fn count(&self, label: &str) -> usize {
+    pub fn count(&self, label: &str) -> usize {
         self.files
             .iter()
             .filter(|f| f.placement.label() == label)
@@ -155,7 +155,7 @@ impl Bundle {
     }
 
     /// Human-readable allocation report.
-    pub(crate) fn report(&self) -> String {
+    pub fn report(&self) -> String {
         report::render(self)
     }
 }
@@ -170,7 +170,7 @@ impl Bundle {
 /// than one source set can name (`archive::authority::MAX_SOURCES`). The
 /// call's source capture is therefore marked incomplete — the candidate's
 /// mark for a mixed output — and no lineage is recorded for the result.
-pub(crate) fn build(opts: &BundleOptions) -> Result<Bundle, String> {
+pub fn build(opts: &BundleOptions) -> Result<Bundle, String> {
     crate::core::archive::authority::mark_unbound();
     let root = opts
         .root

@@ -214,7 +214,7 @@ pub fn is_unpinned_alias(name: &str) -> bool {
 ///
 /// #509: symbol lookup folded into `ctx_search` (action="symbol"), so the
 /// former `ctx_symbol` entry is gone — one search entry, not two.
-const MINIMAL_TOOLS: &[&str] = &[
+pub const MINIMAL_TOOLS: &[&str] = &[
     "ctx_read",
     "ctx_shell",
     "ctx_search",
@@ -348,25 +348,6 @@ mod tests {
     fn parse_unknown_returns_none() {
         assert_eq!(ToolProfile::parse("unknown"), None);
         assert_eq!(ToolProfile::parse(""), None);
-    }
-
-    #[test]
-    fn minimal_profile_schema_budget() {
-        // tool_profile=minimal advertises the 9-tool surgical set; the schemas
-        // they re-send every turn (description + input schema) must stay small.
-        // This is the tool-side of the faithful-arm per-turn prefix tax (#361).
-        const MINIMAL_SCHEMA_BUDGET_TOKENS: usize = 2800;
-        let defs = crate::server::registry::build_registry().tool_defs();
-        let total: usize = defs
-            .iter()
-            .filter(|t| MINIMAL_TOOLS.contains(&t.name.as_ref()))
-            .map(crate::core::context_overhead::tool_tokens)
-            .sum();
-        assert!(total > 0, "minimal tools must exist in the registry");
-        assert!(
-            total <= MINIMAL_SCHEMA_BUDGET_TOKENS,
-            "minimal-profile tool schemas = {total} tok, budget {MINIMAL_SCHEMA_BUDGET_TOKENS}"
-        );
     }
 
     #[test]

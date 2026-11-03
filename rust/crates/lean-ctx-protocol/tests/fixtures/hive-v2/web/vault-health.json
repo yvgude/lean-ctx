@@ -24,7 +24,7 @@
         "low": 1
       },
       "capture_gate": {
-        "engines": 2,
+        "instances": 2,
         "considered": 140,
         "captured": 31,
         "rejected": {

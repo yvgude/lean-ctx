@@ -215,22 +215,38 @@ fn concurrent_cache_hits_are_lossless() {
     // Shared (no RwLock): proves SessionCache is Sync and hit recording is
     // lock-free and atomic — the whole point of the read-mostly refactor.
     let cache = Arc::new(cache);
+    // Every hit also appends a durable cache-hit observation (an fsync), so
+    // each call costs milliseconds: 8 x 1,000 iterations took 130-170 s.
+    // What the test proves is that no hit is lost or double-counted while
+    // threads record hits on the same entries at the same time. That needs
+    // real overlap, not volume: a barrier releases all threads together and
+    // the overlap assertion below fails the test if they ran one after
+    // another, so a smaller run cannot pass vacuously.
     let threads = 8;
-    let iters = 1_000;
+    let iters = 25;
+    let start = Arc::new(std::sync::Barrier::new(threads));
     let handles: Vec<_> = (0..threads)
         .map(|_| {
             let c = Arc::clone(&cache);
+            let start = Arc::clone(&start);
             std::thread::spawn(move || {
+                start.wait();
+                let began = std::time::Instant::now();
                 for _ in 0..iters {
-                    c.record_cache_hit("/a.rs");
-                    c.record_cache_hit("/b.rs");
+                    assert!(c.record_cache_hit("/a.rs").is_some());
+                    assert!(c.record_cache_hit("/b.rs").is_some());
                 }
+                (began, std::time::Instant::now())
             })
         })
         .collect();
-    for h in handles {
-        h.join().unwrap();
-    }
+    let spans: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+    let last_start = spans.iter().map(|(began, _)| *began).max().unwrap();
+    let first_end = spans.iter().map(|(_, ended)| *ended).min().unwrap();
+    assert!(
+        last_start < first_end,
+        "premise: all threads must record hits concurrently"
+    );
     let total = (threads * iters) as u64;
     assert_eq!(cache.get_stats().cache_hits(), total * 2);
     assert_eq!(cache.get("/a.rs").unwrap().read_count(), 1 + total as u32);

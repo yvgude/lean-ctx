@@ -10,13 +10,13 @@
 use std::path::Path;
 
 /// The project this process acts for, from `args` and the working directory.
-pub(crate) fn detect_project_root(args: &[String]) -> String {
+pub fn detect_project_root(args: &[String]) -> String {
     detect_project_root_in(args, std::env::current_dir().ok().as_deref())
 }
 
 /// The project a command that writes project-scoped state acts for; `Err`
 /// instead of `~`, `/` or an agent directory (AP04-G10).
-pub(crate) fn require_project_root() -> Result<String, String> {
+pub fn require_project_root() -> Result<String, String> {
     require_project_root_in(std::env::current_dir().ok().as_deref())
 }
 
@@ -55,7 +55,7 @@ fn detect_project_root_in(args: &[String], cwd: Option<&Path>) -> String {
     if let Ok(root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
         && !root.trim().is_empty()
     {
-        return crate::server::roots::reconcile_pinned_root(
+        return crate::core::mcp_roots::reconcile_pinned_root(
             normalize_explicit_root(&root),
             cwd_root,
         );
@@ -84,7 +84,7 @@ fn expand_home(path: &str) -> String {
     path.to_string()
 }
 
-pub(crate) fn promote_to_git_root(path: &str) -> String {
+pub fn promote_to_git_root(path: &str) -> String {
     let mut p = Path::new(path);
     loop {
         // A dotfiles repository at `~` is not the project of everything below.
@@ -106,7 +106,7 @@ pub(crate) fn promote_to_git_root(path: &str) -> String {
 /// agent config dir) is refused like `lean-ctx call` does, unless the jail is
 /// disabled (`path_jail = false`), because jailing to `~` would admit every
 /// file the user owns.
-pub(crate) fn jail_cli_read_path(raw: &str, project_root: &str) -> Result<String, String> {
+pub fn jail_cli_read_path(raw: &str, project_root: &str) -> Result<String, String> {
     let candidate = if Path::new(raw).is_relative() {
         std::env::current_dir().map_or_else(
             |_| raw.to_string(),
@@ -129,7 +129,7 @@ pub(crate) fn jail_cli_read_path(raw: &str, project_root: &str) -> Result<String
 /// Whether `lean-ctx read <raw>` from this process would be refused (#1903).
 /// Shell-hook rewriters keep such reads on the native command instead of
 /// turning a working `cat` into an access-denied error.
-pub(crate) fn cli_read_is_refused(raw: &str) -> bool {
+pub fn cli_read_is_refused(raw: &str) -> bool {
     jail_cli_read_path(raw, &detect_project_root(&[])).is_err()
 }
 

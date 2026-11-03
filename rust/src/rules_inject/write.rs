@@ -18,7 +18,7 @@ use super::content::rules_content;
 /// including those the user disabled (#1849). Shared with the MCP
 /// instructions and with drift detection, so all three name the same tools.
 pub(super) fn profile_for_target(cfg: &Config, target_name: &str) -> ToolProfile {
-    crate::server::tool_visibility::guidance_profile(cfg, target_name)
+    crate::core::tool_visibility::guidance_profile(cfg, target_name)
 }
 
 pub(super) fn inject_rules(target: &RulesTarget) -> Result<RulesResult, String> {

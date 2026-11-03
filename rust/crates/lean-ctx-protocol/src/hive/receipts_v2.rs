@@ -27,7 +27,7 @@ use crate::ValidationError;
 
 pub const RECEIPTS_V2_SCHEMA: &str = "leanctx.hive.receipts/v2";
 pub const RECEIPTS_V2_ACK_SCHEMA: &str = "leanctx.hive.receipts-ack/v2";
-pub const ENGINE_RECEIPT_V2_SCHEMA: &str = "leanctx.engine-receipt/v2";
+pub const ENGINE_RECEIPT_V2_SCHEMA: &str = "leanctx.instance-receipt/v2";
 /// Domain of the batch signature (instance key).
 pub const RECEIPTS_DOMAIN: &str = "leanctx.hive.receipts.v2\n";
 /// `POST /v1/receipts`, relative to the engine API base.
@@ -141,7 +141,7 @@ schema_const!(ReceiptsAckSchema, RECEIPTS_V2_ACK_SCHEMA);
 schema_const!(EngineReceiptSchema, ENGINE_RECEIPT_V2_SCHEMA);
 schema_const!(EngineIdConst, RECEIPT_ENGINE_ID);
 schema_const!(CapabilityIdConst, RECEIPT_CAPABILITY_ID);
-schema_const!(EngineKindConst, "engine");
+schema_const!(EngineKindConst, "instance");
 
 /// `schema_version: 1` and nothing else.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -225,8 +225,8 @@ pub enum FailureCode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReceiptEngineV2 {
-    pub engine_id: EngineIdConst,
-    pub engine_version: ReceiptSemver,
+    pub instance_id: EngineIdConst,
+    pub instance_version: ReceiptSemver,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -249,7 +249,7 @@ pub struct PolicyAdmissionV2 {
 pub struct ReceiptInvocationV2 {
     pub schema_version: SchemaVersionOne,
     pub invocation_id: InvocationIdV2,
-    pub engine: ReceiptEngineV2,
+    pub instance: ReceiptEngineV2,
     pub operation: ReceiptOperationV2,
     pub input_hmac: ReceiptHmac,
     /// 1-256.

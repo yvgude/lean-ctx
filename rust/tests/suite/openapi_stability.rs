@@ -10,12 +10,12 @@
 //!   requirement) fail CI: frozen surfaces evolve via `/v2`, not in place.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use lean_ctx::core::openapi::endpoints;
 
 fn snapshot_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/reference/openapi-v1.snapshot.json")
+    crate::engine_dir().join("../docs/reference/openapi-v1.snapshot.json")
 }
 
 /// "METHOD path" → auth. Summaries are documentation, not contract — they are

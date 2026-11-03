@@ -400,9 +400,6 @@ fn parse_mr(v: &serde_json::Value) -> ProviderItem {
 mod authorization_tests;
 
 #[cfg(test)]
-mod source_rights_tests;
-
-#[cfg(test)]
 mod tests {
     use super::{issues_endpoint, merge_requests_endpoint, pipelines_endpoint};
 

@@ -11,7 +11,7 @@ use super::manifest::{
     PackageStats,
 };
 
-pub(crate) struct PackageBuilder {
+pub struct PackageBuilder {
     name: String,
     version: String,
     description: String,
@@ -64,7 +64,7 @@ impl ContentScope {
 }
 
 impl PackageBuilder {
-    pub(crate) fn new(name: &str, version: &str) -> Self {
+    pub fn new(name: &str, version: &str) -> Self {
         Self {
             name: name.to_string(),
             version: version.to_string(),
@@ -97,7 +97,7 @@ impl PackageBuilder {
         self
     }
 
-    pub(crate) fn description(mut self, desc: &str) -> Self {
+    pub fn description(mut self, desc: &str) -> Self {
         self.description = desc.to_string();
         self
     }
@@ -112,7 +112,7 @@ impl PackageBuilder {
         self
     }
 
-    pub(crate) fn checkpoint(mut self, checkpoint: CheckpointPackageContentV1) -> Self {
+    pub fn checkpoint(mut self, checkpoint: CheckpointPackageContentV1) -> Self {
         self.content.checkpoint = Some(checkpoint);
         self
     }
@@ -190,7 +190,7 @@ impl PackageBuilder {
         self
     }
 
-    pub(crate) fn add_session(mut self, session: &crate::core::session::SessionState) -> Self {
+    pub fn add_session(mut self, session: &crate::core::session::SessionState) -> Self {
         let journal: crate::core::session::AttachSessionJournalV1 =
             session.attach_session_journal_v1();
         let has_content = journal.task.is_some()
@@ -422,7 +422,7 @@ impl PackageBuilder {
         self
     }
 
-    pub(crate) fn build(mut self) -> Result<(PackageManifest, PackageContent), String> {
+    pub fn build(mut self) -> Result<(PackageManifest, PackageContent), String> {
         if self.name.is_empty() {
             return Err("package name is required".into());
         }

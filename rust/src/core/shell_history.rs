@@ -4,7 +4,7 @@
 
 /// The user's shell history lines (zsh, fish, PowerShell or bash), admitted
 /// as carrier text before anything is derived from them.
-pub(crate) fn load_shell_history() -> Vec<String> {
+pub fn load_shell_history() -> Vec<String> {
     let shell = std::env::var("SHELL").unwrap_or_default();
     let Some(home) = dirs::home_dir() else {
         return Vec::new();

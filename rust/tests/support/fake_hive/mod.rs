@@ -63,14 +63,14 @@ pub(crate) struct FakeOptions {
     pub(crate) lease_hours: i64,
     pub(crate) grace_days: i64,
     /// Answer every request with `426 upgrade_required`.
-    pub(crate) min_engine: Option<String>,
+    pub(crate) min_instance: Option<String>,
     /// `org_settings` signed into each lease (`None`: an older service).
     pub(crate) org_settings: Option<HiveOrgSettingsV1>,
     /// Refuse `POST /v1/metrics` with `upload_disabled` (the org switched it
     /// off after the current lease was issued).
     pub(crate) refuse_metrics: bool,
     /// At the seat limit, answer as a Pro org whose revoked engine's slot
-    /// cools down until this time (`409 quota_exceeded registered_engines`,
+    /// cools down until this time (`409 quota_exceeded registered_instances`,
     /// `cooldown_days: 7`, API §3 / P7) instead of `instance_limit`.
     pub(crate) slot_cooldown_until: Option<String>,
     /// C0 2.1 device setup: `None` a Hive without it (no `features`);
@@ -79,6 +79,12 @@ pub(crate) struct FakeOptions {
     pub(crate) device_setup: Option<bool>,
     /// Every HTTP answer comes this much later (a slow Hive).
     pub(crate) answer_delay: Option<std::time::Duration>,
+    /// Answer the instance card (E44) and worker registration (E10). The
+    /// card tells the engine that this Hive speaks C0 2.x: its relay
+    /// connects to the bus only after it, and its knowledge and message
+    /// paths switch to 2.x. Off by default, so the other suites keep the
+    /// paths they test.
+    pub(crate) instance_card: bool,
 }
 
 impl Default for FakeOptions {
@@ -98,12 +104,13 @@ impl Default for FakeOptions {
             ],
             lease_hours: MAX_LEASE_VALIDITY_HOURS,
             grace_days: MAX_LEASE_GRACE_DAYS,
-            min_engine: None,
+            min_instance: None,
             org_settings: None,
             refuse_metrics: false,
             slot_cooldown_until: None,
             device_setup: None,
             answer_delay: None,
+            instance_card: false,
         }
     }
 }
@@ -136,8 +143,6 @@ struct Revision {
     document: Option<Value>,
     created_at: DateTime<Utc>,
     proposal: Option<u64>,
-    /// The earlier revision this one restores (a rollback).
-    rolls_back: Option<u64>,
     state: RevisionState,
 }
 
@@ -160,6 +165,14 @@ struct Project {
     tasks: Vec<Value>,
     /// X2 (Team): a threshold merge is quarantined.
     quarantine: bool,
+}
+
+/// One open bus socket: its instance, where its frames go, and the
+/// addresses its latest hello subscribed.
+struct BusSocket {
+    instance: String,
+    sender: tokio::sync::mpsc::UnboundedSender<String>,
+    subscribed: BTreeSet<String>,
 }
 
 struct BusLease {
@@ -189,31 +202,29 @@ struct Inner {
     metrics_sharing: Option<lean_ctx_protocol::hive::metrics_v2::SharingStateV2>,
     receipts: BTreeMap<String, String>,
     policy_bundle: Value,
+    /// Bus messages stored so far, as `message.deliver` carries them.
     bus_events: Vec<Value>,
-    /// Instance that published each event (aligned with `bus_events`).
+    /// Instance that published each message (aligned with `bus_events`).
     bus_origins: Vec<String>,
+    /// Last `seq` per bus address (`#ws/vault`).
     bus_seq: BTreeMap<String, u64>,
-    /// `client_msg_id → (channel, seq)`: a republish is answered, not stored again.
-    bus_client_ids: HashMap<String, (String, u64)>,
-    /// Open bus sockets: `(instance id, frame sender)`.
-    bus_sockets: Vec<(String, tokio::sync::mpsc::UnboundedSender<String>)>,
-    /// `(instance, channel, seq)` of every `ack` received.
-    bus_acks: Vec<(String, String, u64)>,
-    /// `control` frames sent so far, replayed on every `hello` like Hive does.
-    bus_controls: Vec<String>,
-    /// `(instance, announced agents)` of every `hello` received, in order.
-    bus_hellos: Vec<(String, BTreeSet<String>)>,
+    /// `client_msg_id → message.stored`: a republish is answered, not stored again.
+    bus_client_ids: HashMap<String, Value>,
+    /// Open bus sockets.
+    bus_sockets: Vec<BusSocket>,
+    /// `(instance, presence entries)` of every `hello` received, in order.
+    bus_hellos: Vec<(String, Vec<Value>)>,
+    /// `(instance, address, seq)` of every `message.deliver` sent.
+    bus_deliveries: Vec<(String, String, u64)>,
+    /// `(address, worker id) → (instance, presence.update frame)`, sent to
+    /// every later hello that subscribes the address.
+    bus_presence: BTreeMap<(String, String), (String, Value)>,
     /// Bus sessions (WebSocket connections) opened so far.
     bus_sessions: usize,
     /// Bus connects still to refuse with 503 (a Hive that is down).
     bus_refusals: usize,
     /// Bumped by `restart_bus`: every open bus socket drops, like a restart.
     bus_restart: tokio::sync::watch::Sender<u64>,
-    /// `agent → (instance, presence_update frame)`, sent to every hello.
-    bus_presence: BTreeMap<String, (String, Value)>,
-    /// `handoff_id → (offering instance, offer frame, decided)`; open offers
-    /// are redelivered on every hello until decided.
-    bus_handoffs: BTreeMap<String, (String, Value, bool)>,
     bus_leases: Vec<BusLease>,
     fencing: BTreeMap<(String, String, String), u64>,
     /// Repos created on the web: (ns, name) → whether this org's instances may contribute.
@@ -267,20 +278,18 @@ impl FakeHive {
             bus_seq: BTreeMap::new(),
             bus_client_ids: HashMap::new(),
             bus_sockets: Vec::new(),
-            bus_acks: Vec::new(),
-            bus_controls: Vec::new(),
             bus_hellos: Vec::new(),
+            bus_deliveries: Vec::new(),
+            bus_presence: BTreeMap::new(),
             bus_sessions: 0,
             bus_refusals: 0,
             bus_restart: tokio::sync::watch::channel(0).0,
-            bus_presence: BTreeMap::new(),
-            bus_handoffs: BTreeMap::new(),
             bus_leases: Vec::new(),
             fencing: BTreeMap::new(),
             web_repos: BTreeMap::new(),
             requests: Vec::new(),
             optin: serde_json::from_str(include_str!(
-                "../../../crates/lean-ctx-protocol/tests/fixtures/hive/engine_optin.none.response.json"
+                "../../../crates/lean-ctx-protocol/tests/fixtures/hive/instance_optin.none.response.json"
             ))
             .expect("opt-in fixture"),
         }));
@@ -428,7 +437,6 @@ impl FakeHive {
             document: Some(document),
             created_at: now,
             proposal: None,
-            rolls_back: None,
             state: RevisionState::Released,
         });
         revision
@@ -439,17 +447,6 @@ impl FakeHive {
         if let Some(project) = self.lock().projects.get_mut(project_id) {
             project.quarantine = on;
         }
-    }
-
-    /// The state of revision `n`.
-    pub(crate) fn revision_state(&self, project_id: &str, n: u64) -> Option<RevisionState> {
-        self.lock()
-            .projects
-            .get(project_id)?
-            .revisions
-            .iter()
-            .find(|r| r.revision == n)
-            .map(|r| r.state)
     }
 
     /// The state of proposal `number` (`"draft"`, `"ready"`, `"merged"` …).
@@ -464,21 +461,6 @@ impl FakeHive {
         serde_json::to_value(proposal.state).ok()
     }
 
-    /// Revision `n` of a project as stored: `(document, rolls_back)`.
-    pub(crate) fn revision(
-        &self,
-        project_id: &str,
-        n: u64,
-    ) -> Option<(Option<Value>, Option<u64>)> {
-        self.lock()
-            .projects
-            .get(project_id)?
-            .revisions
-            .iter()
-            .find(|r| r.revision == n)
-            .map(|r| (r.document.clone(), r.rolls_back))
-    }
-
     /// Create a repo on the web; `contributable` decides whether instances may bind to it.
     pub(crate) fn create_web_repo(&self, ns: &str, name: &str, contributable: bool) {
         self.lock()
@@ -490,49 +472,25 @@ impl FakeHive {
         self.lock().policy_bundle = bundle;
     }
 
-    /// Store a bus event as if another instance published it; returns its seq.
-    pub(crate) fn inject_event(&self, channel: &str, from: &str, kind: &str, body: &Value) -> u64 {
+    /// Store a bus message as if `worker_id` on another machine published
+    /// it to `address` (`#ws/vault`); returns its seq.
+    pub(crate) fn inject_event(
+        &self,
+        address: &str,
+        worker_id: &str,
+        kind: &str,
+        body: &Value,
+    ) -> u64 {
         let mut inner = self.lock();
-        let seq = {
-            let seq = inner.bus_seq.entry(channel.to_string()).or_insert(0);
-            *seq += 1;
-            *seq
-        };
-        let event = json!({
-            "t": "deliver", "seq": seq, "channel": channel, "from": from, "kind": kind,
-            "priority": "normal", "privacy": "team", "body": body,
-            "server_time": stamp(inner.now),
+        let now_ms = ms(inner.now);
+        let message = json!({
+            "schema": lean_ctx_hive::bus::v2::BUS_SCHEMA,
+            "client_msg_id": next_id(&mut inner, "cmi"),
+            "to": address, "type": kind, "worker_id": worker_id, "body": body,
+            "sender": {"kind": "worker", "worker_id": worker_id, "host_app": "codex",
+                       "name": "other-box · Codex · dev", "owner_handle": "mara"},
         });
-        inner.bus_events.push(event.clone());
-        inner.bus_origins.push("external".into());
-        for (_, socket) in &inner.bus_sockets {
-            let _ = socket.send(event.to_string());
-        }
-        seq
-    }
-
-    /// Send a `control` frame (`control_id`, `target_agent`?, `target_ref`?,
-    /// `action`, `reason`, `issued_by`, `seq`) to every connected instance,
-    /// stamped with the fake's clock; replayed to every later `hello`.
-    pub(crate) fn send_control(&self, control: Value) {
-        let mut inner = self.lock();
-        let mut frame = control;
-        frame["t"] = Value::from("control");
-        frame["server_time"] = Value::from(stamp(inner.now));
-        let text = frame.to_string();
-        for (_, socket) in &inner.bus_sockets {
-            let _ = socket.send(text.clone());
-        }
-        inner.bus_controls.push(text);
-    }
-
-    /// `handoff_id → (offering instance, decided)` of the handoffs seen.
-    pub(crate) fn handoffs(&self) -> BTreeMap<String, (String, bool)> {
-        self.lock()
-            .bus_handoffs
-            .iter()
-            .map(|(id, (origin, _, decided))| (id.clone(), (origin.clone(), *decided)))
-            .collect()
+        store_message(&mut inner, "external", message, now_ms)
     }
 
     /// Bus leases live on the fake clock: `(agent, instance, fencing token)`.
@@ -546,9 +504,21 @@ impl FakeHive {
             .collect()
     }
 
-    /// `(instance, channel, seq)` of the acks received.
-    pub(crate) fn bus_acks(&self) -> Vec<(String, String, u64)> {
-        self.lock().bus_acks.clone()
+    /// `(instance, address, seq)` of the `message.deliver` frames sent.
+    pub(crate) fn bus_deliveries(&self) -> Vec<(String, String, u64)> {
+        self.lock().bus_deliveries.clone()
+    }
+
+    /// Workers present on the bus: `(address, worker id) → (instance, role)`.
+    pub(crate) fn bus_presence(&self) -> BTreeMap<(String, String), (String, String)> {
+        self.lock()
+            .bus_presence
+            .iter()
+            .map(|(key, (instance, frame))| {
+                let role = frame["role"].as_str().unwrap_or_default().to_string();
+                (key.clone(), (instance.clone(), role))
+            })
+            .collect()
     }
 
     /// Ids of the projects resolved so far.
@@ -561,7 +531,7 @@ impl FakeHive {
         self.lock()
             .bus_sockets
             .iter()
-            .map(|(id, _)| id.clone())
+            .map(|socket| socket.instance.clone())
             .collect()
     }
 
@@ -583,31 +553,31 @@ impl FakeHive {
             .send_modify(|generation| *generation += 1);
     }
 
-    /// `(instance, announced agents)` of every `hello` received, in order.
-    pub(crate) fn bus_hellos(&self) -> Vec<(String, BTreeSet<String>)> {
+    /// `(instance, presence entries)` of every `hello` received, in order.
+    pub(crate) fn bus_hellos(&self) -> Vec<(String, Vec<Value>)> {
         self.lock().bus_hellos.clone()
     }
 
-    /// Bus events stored so far (deliver frames).
+    /// Bus messages stored so far.
     pub(crate) fn bus_events(&self) -> Vec<Value> {
         self.lock().bus_events.clone()
     }
 }
 
-/// `GET /v1/bus`: the WebSocket relay. Frames from one instance reach every
-/// other connected instance, never the sender; `hello` cursors replay what
-/// an instance missed.
+/// `GET /v1/bus`: the bus v2 socket (C0 2.x E14). A message one instance
+/// publishes reaches every other socket that subscribed its address, never
+/// the sender; `hello` cursors replay what an instance missed.
 async fn bus_socket(
     State(shared): State<Shared>,
     headers: HeaderMap,
     upgrade: axum::extract::ws::WebSocketUpgrade,
 ) -> Response {
     let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
-    if header(HEADER_NAMES) != Some(NAMES_VAULT) {
-        let (status, body) = error(
-            HiveErrorCode::InvalidRequest,
-            "Hive-Names: vault header is required.",
-        );
+    let major = header(HEADER_PROTOCOL)
+        .and_then(lean_ctx_protocol::hive::parse_protocol_header)
+        .map(|(major, _)| major);
+    if major != Some(2) {
+        let (status, body) = error(HiveErrorCode::UpgradeRequired, "Unsupported Hive protocol.");
         return reply(status, body);
     }
     let instance = {
@@ -630,6 +600,42 @@ async fn bus_socket(
     }
 }
 
+fn ms(time: DateTime<Utc>) -> u64 {
+    u64::try_from(time.timestamp_millis()).unwrap_or_default()
+}
+
+/// Store `message` (a publish, without `t`) as Hive does: the next `seq` of
+/// its address, an id, its thread; deliver it to every other socket that
+/// follows the address. Returns its `seq`.
+fn store_message(inner: &mut Inner, origin: &str, mut message: Value, now_ms: u64) -> u64 {
+    let address = message["to"].as_str().unwrap_or_default().to_string();
+    let seq = {
+        let seq = inner.bus_seq.entry(address.clone()).or_insert(0);
+        *seq += 1;
+        *seq
+    };
+    let id = format!("msg_{seq:016x}");
+    message["id"] = id.clone().into();
+    message["seq"] = seq.into();
+    let thread = message["reply_to"].as_str().unwrap_or(&id).to_string();
+    message["thread_id"] = thread.into();
+    message["received_at"] = now_ms.into();
+    message["provenance"] = "workspace".into();
+    inner.bus_events.push(message.clone());
+    inner.bus_origins.push(origin.to_string());
+    message["t"] = "message.deliver".into();
+    let text = message.to_string();
+    let mut sent = Vec::new();
+    for socket in &inner.bus_sockets {
+        if socket.instance != origin && socket.subscribed.contains(&address) {
+            let _ = socket.sender.send(text.clone());
+            sent.push((socket.instance.clone(), address.clone(), seq));
+        }
+    }
+    inner.bus_deliveries.extend(sent);
+    seq
+}
+
 async fn bus_session(shared: Shared, instance: String, socket: axum::extract::ws::WebSocket) {
     use axum::extract::ws::Message;
     use futures::{SinkExt as _, StreamExt as _};
@@ -643,7 +649,11 @@ async fn bus_session(shared: Shared, instance: String, socket: axum::extract::ws
     let mut restart = {
         let mut inner = lock(&shared);
         inner.bus_sessions += 1;
-        inner.bus_sockets.push((instance.clone(), sender.clone()));
+        inner.bus_sockets.push(BusSocket {
+            instance: instance.clone(),
+            sender: sender.clone(),
+            subscribed: BTreeSet::new(),
+        });
         inner.bus_restart.subscribe()
     };
     let writer = tokio::spawn(async move {
@@ -653,8 +663,8 @@ async fn bus_session(shared: Shared, instance: String, socket: axum::extract::ws
             }
         }
     });
-    // Agents the latest hello on this socket announced: like Hive, frames
-    // from any other agent are refused (a later hello replaces the list).
+    // Workers the hello on this socket announced: like Hive, a publish
+    // from any other worker is refused.
     let mut announced: BTreeSet<String> = BTreeSet::new();
     loop {
         let message = tokio::select! {
@@ -668,150 +678,130 @@ async fn bus_session(shared: Shared, instance: String, socket: axum::extract::ws
         let Message::Text(text) = message else {
             continue;
         };
-        let Ok(frame) = serde_json::from_str::<BusFrameV1>(&text) else {
+        let Ok(frame) = serde_json::from_str::<Value>(&text) else {
             continue;
         };
         let mut inner = lock(&shared);
-        let now = stamp(inner.now);
-        match frame {
-            BusFrameV1::Hello {
-                cursors, agents, ..
-            } => {
-                announced = agents.iter().map(|a| a.agent_id.clone()).collect();
-                inner.bus_hellos.push((instance.clone(), announced.clone()));
-                for (event, origin) in inner.bus_events.iter().zip(&inner.bus_origins) {
-                    let channel = event["channel"].as_str().unwrap_or_default();
-                    let seq = event["seq"].as_u64().unwrap_or(0);
-                    if origin != &instance && cursors.get(channel).is_none_or(|last| seq > *last) {
-                        let _ = sender.send(event.to_string());
+        let now_ms = ms(inner.now);
+        match frame["t"].as_str().unwrap_or_default() {
+            "hello" => {
+                let subscribe: BTreeSet<String> = frame["subscribe"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|a| a.as_str().map(str::to_string))
+                    .collect();
+                let presence: Vec<Value> =
+                    frame["presence"].as_array().cloned().unwrap_or_default();
+                announced = presence
+                    .iter()
+                    .filter_map(|p| p["worker_id"].as_str().map(str::to_string))
+                    .collect();
+                inner.bus_hellos.push((instance.clone(), presence.clone()));
+                if let Some(socket) = inner
+                    .bus_sockets
+                    .iter_mut()
+                    .find(|s| s.sender.same_channel(&sender))
+                {
+                    socket.subscribed.clone_from(&subscribe);
+                }
+                let _ = sender.send(
+                    json!({"t": "hello.ack", "server_time": now_ms, "subscribed": subscribe, "denied": [], "epochs": {}})
+                        .to_string(),
+                );
+                // What this instance missed on its addresses.
+                let mut replayed = Vec::new();
+                for (message, origin) in inner.bus_events.iter().zip(&inner.bus_origins) {
+                    let address = message["to"].as_str().unwrap_or_default();
+                    let seq = message["seq"].as_u64().unwrap_or(0);
+                    let after = frame["cursors"][address].as_u64().unwrap_or(0);
+                    if origin != &instance && subscribe.contains(address) && seq > after {
+                        let mut deliver = message.clone();
+                        deliver["t"] = "message.deliver".into();
+                        let _ = sender.send(deliver.to_string());
+                        replayed.push((instance.clone(), address.to_string(), seq));
                     }
                 }
-                for control in &inner.bus_controls {
-                    let _ = sender.send(control.clone());
-                }
-                // Presence: the new agents to everyone, everyone to the newcomer.
-                for agent in agents {
-                    let frame = json!({
-                        "t": "presence_update", "agent_id": agent.agent_id, "instance_id": instance,
-                        "role": agent.role, "vault_id": agent.vault_id, "state": "active",
-                        "server_time": now,
-                    });
-                    for (_, socket) in &inner.bus_sockets {
-                        let _ = socket.send(frame.to_string());
+                inner.bus_deliveries.extend(replayed);
+                // Presence: the hello's workers to everyone on the address,
+                // everyone else's to the newcomer.
+                for address in &subscribe {
+                    for entry in &presence {
+                        let update = json!({
+                            "t": "presence.update", "address": address,
+                            "worker_id": entry["worker_id"], "role": entry["role"],
+                            "state": entry["state"], "at": now_ms,
+                        });
+                        for socket in &inner.bus_sockets {
+                            if socket.instance != instance && socket.subscribed.contains(address) {
+                                let _ = socket.sender.send(update.to_string());
+                            }
+                        }
+                        let worker = entry["worker_id"].as_str().unwrap_or_default().to_string();
+                        inner
+                            .bus_presence
+                            .insert((address.clone(), worker), (instance.clone(), update));
                     }
-                    inner
-                        .bus_presence
-                        .insert(agent.agent_id, (instance.clone(), frame));
                 }
-                for (owner, frame) in inner.bus_presence.values() {
-                    if owner != &instance {
-                        let _ = sender.send(frame.to_string());
-                    }
-                }
-                for (origin, offer, decided) in inner.bus_handoffs.values() {
-                    if !decided && origin != &instance {
-                        let _ = sender.send(offer.to_string());
+                for ((address, _), (owner, update)) in &inner.bus_presence {
+                    if owner != &instance && subscribe.contains(address) {
+                        let _ = sender.send(update.to_string());
                     }
                 }
             }
-            BusFrameV1::HandoffOffer {
-                handoff_id,
-                channel,
-                from,
-                to,
-                bundle_ref,
-                deadline,
-            } => {
-                let offer = json!({
-                    "t": "handoff.offer", "handoff_id": handoff_id, "channel": channel, "from": from,
-                    "to": to, "bundle_ref": bundle_ref, "deadline": deadline,
-                });
-                if inner.bus_handoffs.contains_key(&handoff_id) {
-                    let _ = sender.send(json!({"t": "error", "error": {"code": "invalid_request", "message": "handoff_id is already used"}}).to_string());
+            "place.publish" => {
+                let client_msg_id = frame["client_msg_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let worker = frame["worker_id"].as_str().unwrap_or_default();
+                if !announced.contains(worker) {
+                    let _ = sender.send(
+                        json!({"t": "error", "client_msg_id": client_msg_id, "code": "invalid_request"})
+                            .to_string(),
+                    );
                     continue;
                 }
-                for (other, socket) in &inner.bus_sockets {
-                    if other != &instance {
-                        let _ = socket.send(offer.to_string());
+                if let Some(stored) = inner.bus_client_ids.get(&client_msg_id) {
+                    let _ = sender.send(stored.to_string());
+                    continue;
+                }
+                let mut message = frame.clone();
+                if let Some(fields) = message.as_object_mut() {
+                    fields.remove("t");
+                }
+                message["sender"] = json!({"kind": "worker", "worker_id": worker,
+                    "host_app": "claude-code", "name": "box · Claude Code", "owner_handle": "yves"});
+                let seq = store_message(&mut inner, &instance, message, now_ms);
+                let stored = inner.bus_events.last().cloned().unwrap_or_default();
+                let answer = json!({
+                    "t": "message.stored", "client_msg_id": client_msg_id,
+                    "id": stored["id"], "seq": seq, "thread_id": stored["thread_id"],
+                });
+                inner.bus_client_ids.insert(client_msg_id, answer.clone());
+                let _ = sender.send(answer.to_string());
+            }
+            "presence.update" => {
+                let address = frame["address"].as_str().unwrap_or_default().to_string();
+                let worker = frame["worker_id"].as_str().unwrap_or_default().to_string();
+                for socket in &inner.bus_sockets {
+                    if socket.instance != instance && socket.subscribed.contains(&address) {
+                        let _ = socket.sender.send(frame.to_string());
                     }
                 }
                 inner
-                    .bus_handoffs
-                    .insert(handoff_id, (instance.clone(), offer, false));
+                    .bus_presence
+                    .insert((address, worker), (instance.clone(), frame.clone()));
             }
-            BusFrameV1::HandoffAck { ref handoff_id, .. }
-            | BusFrameV1::HandoffReject { ref handoff_id, .. } => {
-                let reply = serde_json::to_value(&frame).unwrap_or_default();
-                let Some((origin, _, decided)) = inner.bus_handoffs.get_mut(handoff_id) else {
-                    let _ = sender.send(json!({"t": "error", "error": {"code": "not_found", "message": "no open handoff"}}).to_string());
-                    continue;
-                };
-                if *decided {
-                    let _ = sender.send(json!({"t": "error", "error": {"code": "not_found", "message": "no open handoff"}}).to_string());
-                    continue;
-                }
-                *decided = true;
-                let origin = origin.clone();
-                for (other, socket) in &inner.bus_sockets {
-                    if *other == origin {
-                        let _ = socket.send(reply.to_string());
-                    }
-                }
-            }
-            BusFrameV1::Publish {
-                client_msg_id,
-                channel,
-                to,
-                from,
-                kind,
-                priority,
-                privacy,
-                body,
-            } => {
-                if !announced.contains(&from) {
-                    let _ = sender.send(json!({"t": "error", "client_msg_id": client_msg_id, "error": {"code": "invalid_request", "message": format!("agent {from} was not announced in hello")}}).to_string());
-                    continue;
-                }
-                if let Some((channel, seq)) = inner.bus_client_ids.get(&client_msg_id).cloned() {
-                    let _ = sender.send(json!({"t": "published", "client_msg_id": client_msg_id, "channel": channel, "seq": seq, "server_time": now}).to_string());
-                    continue;
-                }
-                let seq = {
-                    let seq = inner.bus_seq.entry(channel.clone()).or_insert(0);
-                    *seq += 1;
-                    *seq
-                };
-                let mut event = json!({
-                    "t": "deliver", "seq": seq, "channel": channel, "from": from, "kind": kind,
-                    "priority": priority, "privacy": privacy, "body": body, "server_time": now,
-                });
-                if let Some(to) = &to {
-                    event["to"] = Value::from(to.clone());
-                }
-                inner.bus_events.push(event.clone());
-                inner.bus_origins.push(instance.clone());
-                inner
-                    .bus_client_ids
-                    .insert(client_msg_id.clone(), (channel.clone(), seq));
-                let _ = sender.send(json!({"t": "published", "client_msg_id": client_msg_id, "channel": channel, "seq": seq, "server_time": now}).to_string());
-                for (other, socket) in &inner.bus_sockets {
-                    if other != &instance {
-                        let _ = socket.send(event.to_string());
-                    }
-                }
-            }
-            BusFrameV1::Ping { nonce } => {
-                let _ = sender.send(json!({"t": "pong", "nonce": nonce}).to_string());
-            }
-            BusFrameV1::Ack { channel, seq } => {
-                inner.bus_acks.push((instance.clone(), channel, seq));
+            "ping" => {
+                let _ = sender.send(json!({"t": "pong"}).to_string());
             }
             _ => {}
         }
     }
     lock(&shared)
         .bus_sockets
-        .retain(|(_, socket)| !socket.same_channel(&sender));
+        .retain(|socket| !socket.sender.same_channel(&sender));
     writer.abort();
 }
 
@@ -960,9 +950,9 @@ async fn handle(
         body: String::from_utf8_lossy(&body).into_owned(),
     });
     let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
-    if let Some(min) = inner.options.min_engine.clone() {
+    if let Some(min) = inner.options.min_instance.clone() {
         let mut detail = HiveErrorDetailV1::new(HiveErrorCode::UpgradeRequired, "Update lean-ctx.");
-        detail.min_engine = Some(min.clone());
+        detail.min_instance = Some(min.clone());
         let (status, body) = error_with(detail);
         let mut response = reply(status, body);
         response.headers_mut().insert(
@@ -1022,7 +1012,8 @@ async fn handle(
         }
     };
 
-    let idempotency = if method == Method::POST {
+    // E10 is idempotent by the worker id it registers.
+    let idempotency = if method == Method::POST && segments.as_slice() != ["workers"] {
         let Some(key) = header(HEADER_IDEMPOTENCY_KEY) else {
             let (status, body) = error(
                 HiveErrorCode::InvalidRequest,
@@ -1284,7 +1275,7 @@ fn route(
                     HiveErrorCode::QuotaExceeded,
                     format!("This workspace has used all its engine slots ({used} of {limit})."),
                 );
-                detail.resource = Some("registered_engines".into());
+                detail.resource = Some("registered_instances".into());
                 detail.limit = Some(u64::from(limit));
                 detail.used = Some(u64::from(used));
                 detail.reset_at = Some(reset);
@@ -1419,6 +1410,30 @@ fn route(
             inner.tokens.retain(|_, (owner, _)| owner != id);
             Ok((204, Value::Null))
         }
+        // E44: only a C0 2.x Hive has the instance card.
+        ("PATCH", ["instances", id, "card"]) if inner.options.instance_card => {
+            if Some(*id) != instance {
+                return Err(error(HiveErrorCode::Unauthorized, "Not this instance."));
+            }
+            let mut card: Value = serde_json::from_str(include_str!(
+                "../../../crates/lean-ctx-protocol/tests/fixtures/hive-v2/routes/instance_card.response.json"
+            ))
+            .expect("instance card fixture");
+            card["presence_key"] = Value::Null;
+            Ok((200, card))
+        }
+        // E10: the worker as registered (idempotent by its id).
+        ("POST", ["workers"]) if inner.options.instance_card => {
+            let request: Value = parse(body)?;
+            Ok((
+                200,
+                json!({"worker": {
+                    "id": request["worker_id"], "name": request["name"], "place": null,
+                    "status": "online", "registered_at": ms(inner.now),
+                    "host_app": request["host_app"], "role": request["role"], "card": request["card"],
+                }}),
+            ))
+        }
         ("GET", ["keys"]) => Ok((200, keyset())),
         // The fake is hosted-like: no root certificate.
         ("GET", ["root-cert"]) => Err(error(HiveErrorCode::NotFound, "No root certificate.")),
@@ -1472,18 +1487,8 @@ fn route(
                 .projects
                 .get(*pid)
                 .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown project."))?;
-            let asked = query_param(query, "revision").and_then(|n| n.parse::<u64>().ok());
-            let (revision, document, state, quarantined) = if let Some(n) = asked {
-                project
-                    .revisions
-                    .iter()
-                    .find(|r| r.revision == n)
-                    .map(|r| (r.revision, r.document.clone(), r.state, 0))
-                    .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown revision."))?
-            } else {
-                let (revision, document, quarantined) = delivered(project);
-                (revision, document, RevisionState::Released, quarantined)
-            };
+            // Only the delivered head is served.
+            let (revision, document, quarantined) = delivered(project);
             let if_none_match = headers.get("if-none-match").and_then(|v| v.to_str().ok());
             if quarantined == 0 && if_none_match == Some(format!("\"{revision}\"").as_str()) {
                 return Ok((304, Value::Null));
@@ -1492,57 +1497,11 @@ fn route(
                 "schema": KNOWLEDGE_REVISION_SCHEMA, "vault_id": pid, "revision": revision,
                 "updated_at": stamp(project.revisions.last().map_or(now, |r| r.created_at)),
             });
-            if state != RevisionState::Released {
-                response["state"] = serde_json::to_value(state).unwrap_or_default();
-            }
             if quarantined > 0 {
                 response["quarantined_after"] = json!(quarantined);
             }
             if let Some(document) = document {
                 response["document"] = document;
-            }
-            Ok((200, response))
-        }
-        ("GET", ["vaults", pid, "knowledge", "revisions"]) => {
-            require(inner, HiveRight::KnowledgeRead)?;
-            let project = inner
-                .projects
-                .get(*pid)
-                .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown project."))?;
-            let after = query_param(query, "after")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0u64);
-            let limit = query_param(query, "limit")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(MAX_REVISIONS_PAGE)
-                .min(MAX_REVISIONS_PAGE);
-            let page: Vec<&Revision> = project
-                .revisions
-                .iter()
-                .filter(|r| r.revision > after)
-                .take(limit + 1)
-                .collect();
-            let more = page.len() > limit;
-            let revisions: Vec<Value> = page
-                .iter()
-                .take(limit)
-                .map(|r| {
-                    let content = r.document.clone().unwrap_or_default();
-                    let digest = Sha256::digest(canonical_json(&content).unwrap_or_default());
-                    let mut summary = json!({
-                        "revision": r.revision, "created_at": stamp(r.created_at),
-                        "digest": hex::encode(digest),
-                    });
-                    if let Some(proposal) = r.proposal {
-                        summary["proposal"] = Value::from(proposal);
-                    }
-                    summary
-                })
-                .collect();
-            let mut response =
-                json!({"schema": REVISION_LIST_SCHEMA, "vault_id": pid, "revisions": revisions});
-            if more {
-                response["next_after"] = Value::from(page[limit - 1].revision);
             }
             Ok((200, response))
         }
@@ -1665,88 +1624,6 @@ fn route(
                 .expect("ack json"),
             ))
         }
-        ("PUT", ["vaults", pid, "knowledge"]) => {
-            require(inner, HiveRight::KnowledgeMerge)?;
-            let request: KnowledgePutRequestV1 = parse(body)?;
-            valid(request.validate())?;
-            let project = inner
-                .projects
-                .get_mut(*pid)
-                .ok_or_else(|| error(HiveErrorCode::NotFound, "Unknown project."))?;
-            let current = project.revisions.last().map_or(0, |r| r.revision);
-            if request.expected_revision != current {
-                let mut detail =
-                    HiveErrorDetailV1::new(HiveErrorCode::RevisionConflict, "Knowledge moved on.");
-                detail.expected = Some(request.expected_revision);
-                detail.actual = Some(current);
-                return Err(error_with(detail));
-            }
-            // All named proposals must be draft or open, else nothing is written.
-            for number in &request.merged_proposals {
-                let Some(proposal) = project.proposals.iter().find(|p| p.number == *number) else {
-                    let mut detail =
-                        HiveErrorDetailV1::new(HiveErrorCode::NotFound, "Unknown proposal.");
-                    detail.number = Some(*number);
-                    return Err(error_with(detail));
-                };
-                if !matches!(proposal.state, ProposalState::Draft | ProposalState::Open) {
-                    let mut detail = HiveErrorDetailV1::new(
-                        HiveErrorCode::InvalidState,
-                        "That proposal is not open.",
-                    );
-                    detail.reason = Some("proposal_state".into());
-                    detail.number = Some(*number);
-                    return Err(error_with(detail));
-                }
-            }
-            let revision = current + 1;
-            // X2: a rollback is released at once and undoes everything after
-            // its target; anything after a quarantined revision waits behind
-            // it.
-            let pending = project
-                .revisions
-                .iter()
-                .any(|r| r.state == RevisionState::Quarantined);
-            let state = if let Some(target) = request.rolls_back {
-                for undone in &mut project.revisions {
-                    if undone.revision > target {
-                        undone.state = RevisionState::RolledBack;
-                    }
-                }
-                RevisionState::Released
-            } else if pending {
-                RevisionState::Quarantined
-            } else {
-                RevisionState::Released
-            };
-            for proposal in &mut project.proposals {
-                if request.merged_proposals.contains(&proposal.number) {
-                    proposal.state = ProposalState::Merged;
-                }
-            }
-            let document = request
-                .document
-                .map(|d| serde_json::to_value(d).unwrap_or_default());
-            project.revisions.push(Revision {
-                revision,
-                document: document.clone(),
-                created_at: now,
-                proposal: request.merged_proposals.first().copied(),
-                rolls_back: request.rolls_back,
-                state,
-            });
-            let mut response = json!({
-                "schema": KNOWLEDGE_REVISION_SCHEMA, "vault_id": pid, "revision": revision,
-                "updated_at": stamp(now),
-            });
-            if state != RevisionState::Released {
-                response["state"] = serde_json::to_value(state).unwrap_or_default();
-            }
-            if let Some(document) = document {
-                response["document"] = document;
-            }
-            Ok((200, response))
-        }
         ("GET", ["metrics", "sharing"]) => {
             require(inner, HiveRight::MetricsUpload)?;
             Ok((
@@ -1775,7 +1652,7 @@ fn route(
             inner.metrics_hours.retain(|(owner, _), _| *owner != caller);
             Ok((
                 200,
-                json!({"deleted_buckets": before - inner.metrics_hours.len(), "engines": 1}),
+                json!({"deleted_buckets": before - inner.metrics_hours.len(), "instances": 1}),
             ))
         }
         ("POST", ["metrics", "hours"]) => {
@@ -1942,51 +1819,6 @@ fn route(
             }
             Ok((200, inner.policy_bundle.clone()))
         }
-        ("GET", ["bus", "poll"]) => {
-            require(inner, HiveRight::BusRelay)?;
-            let cursor: usize = query_param(query, "cursor")
-                .and_then(|c| c.strip_prefix("c_"))
-                .and_then(|c| c.parse().ok())
-                .unwrap_or(0);
-            let frames: Vec<Value> = inner
-                .bus_events
-                .iter()
-                .skip(cursor)
-                .take(MAX_BUS_EVENTS_PAGE)
-                .cloned()
-                .collect();
-            let next = cursor + frames.len();
-            Ok((
-                200,
-                json!({"schema": BUS_POLL_SCHEMA, "frames": frames, "cursor": format!("c_{next}")}),
-            ))
-        }
-        ("GET", ["bus", "channels", channel, "events"]) => {
-            require(inner, HiveRight::BusRelay)?;
-            valid(validate_channel(channel))?;
-            let after = query_param(query, "after_seq")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0u64);
-            let limit = query_param(query, "limit")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(MAX_BUS_EVENTS_PAGE)
-                .min(MAX_BUS_EVENTS_PAGE);
-            let matching: Vec<Value> = inner
-                .bus_events
-                .iter()
-                .filter(|e| e["channel"] == *channel && e["seq"].as_u64().unwrap_or(0) > after)
-                .take(limit + 1)
-                .cloned()
-                .collect();
-            let more = matching.len() > limit;
-            let events: Vec<Value> = matching.into_iter().take(limit).collect();
-            let mut response =
-                json!({"schema": BUS_EVENTS_SCHEMA, "channel": channel, "events": events});
-            if more && let Some(last) = response["events"].as_array().and_then(|e| e.last()) {
-                response["next_after_seq"] = last["seq"].clone();
-            }
-            Ok((200, response))
-        }
         ("POST", ["bus", "leases"]) => {
             require(inner, HiveRight::BusRelay)?;
             let request: BusLeaseRequestV1 = parse(body)?;
@@ -2122,7 +1954,7 @@ fn route(
                 return refuse(
                     HiveErrorCode::InvalidState,
                     "optin_inactive",
-                    "This engine is not opted in.",
+                    "This instance is not opted in.",
                 );
             }
             if optin["optin_id"].as_str() != Some(sent) {

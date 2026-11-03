@@ -49,7 +49,7 @@ const SETTERS: &[&str] = &[
 /// `LEAN_CTX_*` variable — the shell security mode, the allowlist, the config
 /// and data directories, the path jail — is lean-ctx's own policy, which a
 /// command line must not set for the lean-ctx it starts.
-pub(crate) const LEAN_CTX_RUN_CONTROL_ENV: &[&str] = &[
+pub const LEAN_CTX_RUN_CONTROL_ENV: &[&str] = &[
     "LEAN_CTX_DISABLED",
     "LEAN_CTX_NO_HOOK",
     "LEAN_CTX_RAW",

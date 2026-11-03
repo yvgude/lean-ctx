@@ -1,0 +1,5 @@
+telemetry = { enabled = true, preference = "explicitly_enabled" }
+compression_level = "standard"
+
+[cloud]
+contribute_enabled = false

@@ -356,8 +356,8 @@
         "purged_nodes": {},
         "tombstones": []
       },
-      "name": "two_engines_interleaved",
-      "shows": "two engines add the same claim (first text kept, only the seq moves), retract/restore by seq, edge retract"
+      "name": "two_instances_interleaved",
+      "shows": "two instances add the same claim (first text kept, only the seq moves), retract/restore by seq, edge retract"
     },
     {
       "arrivals": [

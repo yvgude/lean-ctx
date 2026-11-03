@@ -55,7 +55,7 @@ pub(super) struct Admission {
 
 /// A package shipped as files: the root-signed catalog of its channel and
 /// this host target's package, read without any network.
-pub(super) struct Bundle {
+pub(crate) struct Bundle {
     pub(super) catalog: Vec<u8>,
     pub(super) catalog_signature: Vec<u8>,
     pub(super) archive: Vec<u8>,

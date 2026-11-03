@@ -14,7 +14,7 @@ async fn streamable_http_stateless_json_tool_call_works() {
     std::fs::write(&file_path, "hello\n").expect("write file");
 
     let root_str = dir.path().to_string_lossy().to_string();
-    let base = lean_ctx::tools::LeanCtxServer::new_with_project_root(Some(&root_str));
+    let base = lean_ctx_server::tools::LeanCtxServer::new_with_project_root(Some(&root_str));
 
     let service_factory = move || Ok(base.clone());
     let cfg = StreamableHttpServerConfig::default()

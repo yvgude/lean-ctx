@@ -1,6 +1,6 @@
 const RELEVANCE_THRESHOLD: f64 = 0.05;
 
-fn tokenize(s: &str) -> Vec<String> {
+pub fn tokenize(s: &str) -> Vec<String> {
     s.to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|t| t.len() >= 2)
@@ -57,19 +57,14 @@ pub(crate) fn file_relevance_for_task(path: &str, task_description: &str) -> f64
     score.clamp(0.0, 1.0)
 }
 
-pub(crate) fn irrelevant_stub(path: &str, line_count: usize, byte_count: u64) -> String {
+pub fn irrelevant_stub(path: &str, line_count: usize, byte_count: u64) -> String {
     format!(
         "[file exists: {path} ({line_count} lines, {byte_count} bytes) — \
          skipped: low relevance to current task]"
     )
 }
 
-pub(crate) fn should_gate(
-    path: &str,
-    mode: &str,
-    task: Option<&str>,
-    touched_paths: &[String],
-) -> bool {
+pub fn should_gate(path: &str, mode: &str, task: Option<&str>, touched_paths: &[String]) -> bool {
     if mode != "auto" {
         return false;
     }

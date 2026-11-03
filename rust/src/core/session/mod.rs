@@ -1,9 +1,9 @@
-pub(crate) mod admission;
+pub mod admission;
 pub mod caller;
 mod compaction;
 mod finding_sources;
 mod heuristics;
-pub(crate) mod housekeeping;
+pub mod housekeeping;
 mod journal;
 mod paths;
 mod persistence;
@@ -12,9 +12,13 @@ mod save_outcome;
 mod slot;
 mod state;
 pub(crate) use journal::AttachSessionJournalV1;
-#[cfg(test)]
-pub(crate) use state::{GIT_TASK_INTENT, INFERRED_TASK_INTENT};
-pub(crate) use state::{extract_session_facts, is_auto_task_intent};
+#[cfg(any(test, feature = "test-support"))]
+/// `TaskInfo.intent` of a task inferred from the working tree (tests).
+pub const GIT_TASK_INTENT: &str = state::GIT_TASK_INTENT;
+#[cfg(any(test, feature = "test-support"))]
+/// `TaskInfo.intent` of a task inferred from touched files (tests).
+pub const INFERRED_TASK_INTENT: &str = state::INFERRED_TASK_INTENT;
+pub use state::{extract_session_facts, is_auto_task_intent};
 mod types;
 pub(crate) use paths::{EngineSessionId, parse_engine_session_id};
 

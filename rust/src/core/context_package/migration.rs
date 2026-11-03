@@ -14,7 +14,7 @@ pub(crate) const PACKAGE_MIGRATION_RECEIPT_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PackageMigrationReceipt {
+pub struct PackageMigrationReceipt {
     pub receipt_version: u32,
     pub source_file: String,
     pub output_file: String,
@@ -24,7 +24,7 @@ pub(crate) struct PackageMigrationReceipt {
     pub source_retained_for_rollback: bool,
 }
 
-pub(crate) fn rollback_legacy_package(receipt_path: &Path) -> Result<PathBuf, String> {
+pub fn rollback_legacy_package(receipt_path: &Path) -> Result<PathBuf, String> {
     let _lock = lock_package_migration(receipt_path)?;
     reject_symlink(receipt_path, "migration receipt")?;
     let receipt_bytes =
@@ -106,14 +106,14 @@ fn sync_parent(parent: &Path) -> Result<(), String> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PackageMigrationResult {
+pub struct PackageMigrationResult {
     pub output_path: PathBuf,
     pub receipt_path: PathBuf,
     pub already_migrated: bool,
     pub receipt: PackageMigrationReceipt,
 }
 
-pub(crate) fn migrate_legacy_package(path: &Path) -> Result<PackageMigrationResult, String> {
+pub fn migrate_legacy_package(path: &Path) -> Result<PackageMigrationResult, String> {
     if path
         .symlink_metadata()
         .is_ok_and(|metadata| metadata.file_type().is_symlink())

@@ -38,7 +38,7 @@ use crate::core::context_admission::carrier::Withheld;
 use crate::core::context_admission::stored::SourceRef;
 
 /// Most ledgers one merge reads.
-pub(crate) const MAX_MERGE_INPUTS: usize = 8;
+pub const MAX_MERGE_INPUTS: usize = 8;
 /// Decisions and next steps a merged ledger keeps, as `create_ledger` does.
 const MAX_DECISIONS: usize = 10;
 const MAX_NEXT_STEPS: usize = 20;
@@ -48,7 +48,7 @@ const SOURCE_CHANGED: &str = "store.source_changed";
 /// A fact key that carries more than one value across the inputs. Every
 /// value stays in the merged ledger.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FactConflict {
+pub struct FactConflict {
     pub category: String,
     pub key: String,
     pub values: usize,
@@ -57,7 +57,7 @@ pub(crate) struct FactConflict {
 /// What a bound cut from the merged ledger: the parts beyond each bound,
 /// counted after duplicates collapsed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Dropped {
+pub struct Dropped {
     pub findings: usize,
     pub facts: usize,
     pub curated_refs: usize,
@@ -69,7 +69,7 @@ pub(crate) struct Dropped {
 
 /// The result of a merge: the stored ledger and what the reply reports.
 #[derive(Debug)]
-pub(crate) struct MergeOutcome {
+pub struct MergeOutcome {
     pub ledger: HandoffLedgerV1,
     pub path: PathBuf,
     pub conflicts: Vec<FactConflict>,
@@ -98,7 +98,7 @@ impl Input {
 }
 
 /// Merge the stored ledgers at `paths` into a new stored ledger.
-pub(crate) fn merge_ledgers(paths: &[PathBuf]) -> Result<MergeOutcome, String> {
+pub fn merge_ledgers(paths: &[PathBuf]) -> Result<MergeOutcome, String> {
     let unique: BTreeSet<&Path> = paths.iter().map(PathBuf::as_path).collect();
     if unique.len() > MAX_MERGE_INPUTS {
         return Err(format!("merge reads at most {MAX_MERGE_INPUTS} ledgers"));

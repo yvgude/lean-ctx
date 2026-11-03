@@ -10,12 +10,12 @@ use crate::{dropin, marked_block};
 static INSTALLED_HOOK_REFRESH: OnceLock<fn()> = OnceLock::new();
 
 /// Register the installed shell-hook refresh. The first registration wins.
-pub(crate) fn register_installed_hook_refresh(refresh: fn()) {
+pub fn register_installed_hook_refresh(refresh: fn()) {
     let _ = INSTALLED_HOOK_REFRESH.set(refresh);
 }
 
 /// Bring installed shell hooks up to this binary, if a refresh is registered.
-pub(crate) fn refresh_installed_shell_hooks() {
+pub fn refresh_installed_shell_hooks() {
     if let Some(refresh) = INSTALLED_HOOK_REFRESH.get() {
         refresh();
     }

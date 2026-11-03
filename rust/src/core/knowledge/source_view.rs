@@ -9,7 +9,7 @@ use super::{FactOrigin, KnowledgeFact, ProjectKnowledge, WithheldKnowledge};
 mod tests;
 
 impl ProjectKnowledge {
-    pub(crate) fn admit_sources(self) -> Self {
+    pub fn admit_sources(self) -> Self {
         let root = self.project_root.clone();
         let original = self.clone();
         if let Ok(view) = crate::core::policy::runtime::with_project_source_view(&root, || {
@@ -26,7 +26,7 @@ impl ProjectKnowledge {
     /// the engine wrapped them at storage are wrapped here; a store written
     /// back (`mutate_locked`) keeps them so.
     fn with_pulled_values_wrapped(mut self) -> Self {
-        use crate::core::hive::untrusted::{UntrustedKind, is_wrapped, wrap};
+        use crate::core::untrusted::{UntrustedKind, is_wrapped, wrap};
         for fact in &mut self.facts {
             if let Some(origin) = fact.hive_origin().map(str::to_string)
                 && !is_wrapped(&fact.value)
@@ -179,6 +179,6 @@ pub(crate) fn imported_origin(origin: &FactOrigin) -> FactOrigin {
     }
 }
 
-pub(crate) fn same_record(a: &KnowledgeFact, b: &KnowledgeFact) -> bool {
+pub fn same_record(a: &KnowledgeFact, b: &KnowledgeFact) -> bool {
     a.category == b.category && a.key == b.key && a.value == b.value && a.origin == b.origin
 }

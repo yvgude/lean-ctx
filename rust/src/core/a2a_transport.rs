@@ -14,8 +14,8 @@ const MAX_ENVELOPE_BYTES: usize = 2_000_000;
 /// Domain tag prefixed to every signing transcript. Bumped from the previous
 /// delimiter-joined `v2:` header, which authenticated only `sender.agent_id`.
 const SIGNING_DOMAIN: &[u8] = b"leanctx.a2a.transport.sig.v3\0";
-pub(crate) const LEGACY_DELIVERY_ID_METADATA: &str = "legacy_delivery_id";
-pub(crate) const LEGACY_DELIVERY_SENT_AT_METADATA: &str = "legacy_delivery_sent_at";
+pub const LEGACY_DELIVERY_ID_METADATA: &str = "legacy_delivery_id";
+pub const LEGACY_DELIVERY_SENT_AT_METADATA: &str = "legacy_delivery_sent_at";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -230,7 +230,7 @@ impl TransportEnvelopeV1 {
     }
 }
 
-pub(crate) fn serialize_envelope(envelope: &TransportEnvelopeV1) -> Result<String, String> {
+pub fn serialize_envelope(envelope: &TransportEnvelopeV1) -> Result<String, String> {
     envelope.relay_record()?;
     let json = serde_json::to_string_pretty(envelope).map_err(|e| e.to_string())?;
     if json.len() > MAX_ENVELOPE_BYTES {
@@ -243,7 +243,7 @@ pub(crate) fn serialize_envelope(envelope: &TransportEnvelopeV1) -> Result<Strin
     Ok(json)
 }
 
-pub(crate) fn parse_envelope(json: &str) -> Result<TransportEnvelopeV1, String> {
+pub fn parse_envelope(json: &str) -> Result<TransportEnvelopeV1, String> {
     if json.len() > MAX_ENVELOPE_BYTES {
         return Err(format!(
             "envelope too large ({} bytes, max {})",

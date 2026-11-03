@@ -88,7 +88,7 @@ pub(crate) fn entry_model(entry: &LedgerEntry) -> String {
     model
 }
 
-pub(crate) fn ledger_kind(entry: &LedgerEntry) -> u8 {
+pub fn ledger_kind(entry: &LedgerEntry) -> u8 {
     if entry.bounce_adjustment.unwrap_or(0) > 0 {
         return 2;
     }

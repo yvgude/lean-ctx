@@ -12,16 +12,16 @@ mod secret_windows;
 #[cfg(windows)]
 pub(crate) use secret_windows::read_secret_stdout;
 
-pub(crate) struct CapturedOutput {
-    pub(crate) output: std::process::Output,
-    pub(crate) timed_out: bool,
+pub struct CapturedOutput {
+    pub output: std::process::Output,
+    pub timed_out: bool,
     pub(crate) cancelled: bool,
 }
 
 /// Bound captured bytes without allowing inherited handles to extend waiting.
 /// Length checks stop oversized writers; temporary-file growth between polls
 /// is not an operating-system disk quota. `None` preserves unlimited waiting.
-pub(crate) fn run_with_output_limits(
+pub fn run_with_output_limits(
     command: &mut std::process::Command,
     timeout: Option<std::time::Duration>,
     stdout_limit: usize,
@@ -470,18 +470,18 @@ fn reap_child(
 // Test recorder: for every group signal of this thread, whether the leader
 // was still unreaped at that moment. A signal after the reap would be a
 // signal to a number that may already belong to another group.
-#[cfg(all(test, unix))]
+#[cfg(all(any(test, feature = "test-support"), unix))]
 thread_local! {
     static GROUP_SIGNAL_LOG: std::cell::RefCell<Vec<bool>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(any(test, feature = "test-support"), unix))]
 pub(crate) fn take_group_signal_log() -> Vec<bool> {
     GROUP_SIGNAL_LOG.with(|log| std::mem::take(&mut *log.borrow_mut()))
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(any(test, feature = "test-support"), unix))]
 fn leader_unreaped(pid: libc::pid_t) -> bool {
     // SAFETY: an all-zero siginfo_t is a valid out-parameter; WNOWAIT leaves
     // the child waitable. The call fails once the child has been reaped.
@@ -512,7 +512,7 @@ fn stop_remaining_process_group(
     // child's pid, which is ours only while the child is unreaped. Every
     // caller observes the exit with `child_exited` (no reap) and reaps after
     // this returns.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     GROUP_SIGNAL_LOG.with(|log| log.borrow_mut().push(leader_unreaped(pgid)));
     // SAFETY: the child was spawned as leader of its dedicated process group
     // and is unreaped, so its pid cannot name another group.

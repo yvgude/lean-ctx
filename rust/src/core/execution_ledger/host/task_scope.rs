@@ -20,7 +20,7 @@ pub(super) struct HostTaskScope {
 impl HostReceiptAuthority {
     /// Recheck signer and exact workspace on every call, including cached replay.
     /// Saved sessions and MCP arguments cannot grant or change this identity.
-    pub(crate) fn admit_task_identity(
+    pub fn admit_task_identity(
         &self,
         project_root: Option<&str>,
     ) -> Result<Option<AdmittedTaskIdentity>, &'static str> {

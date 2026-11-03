@@ -1,0 +1,1051 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Measured per-model spend meter.
+//!
+//! [`record`] aggregates the real provider usage extracted by [`super::usage`]
+//! into per-model token sums, prices them with the shared
+//! `ModelPricing` table, and
+//! persists the totals to `proxy_usage.json` so the dashboard, CLI and the
+//! savings ledger (which run in *other* processes) can read the user's real
+//! provider bill.
+//!
+//! Unlike [`lean_ctx::core::proxy_metrics`] (which resets per proxy lifetime), this meter is a
+//! lifetime-cumulative spend counter: [`resume_from_disk`] seeds the in-memory
+//! totals on proxy startup so a restart never zeroes the user's measured spend.
+
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+use serde::Serialize;
+
+use lean_ctx::core::gain::model_pricing::ModelPricing;
+use lean_ctx::core::ocla::{OclaRegistry, UsageSink};
+pub use lean_ctx::core::proxy_usage::{CohortUsage, load_persisted};
+use lean_ctx::core::proxy_usage::{
+    LastModel, MeasuredSlice, ModelUsage, PersistedUsage, usage_path,
+};
+
+/// Projects one managed, provider-measured turn into the OCLA usage sink.
+///
+/// This is deliberately one-way and best-effort: the existing meter remains
+/// authoritative for billing/ledger totals, while OCLA receives a validated
+/// payload-free projection only when complete lineage is present.
+fn project_ocla_usage(u: &super::usage::RealUsage, sink: &dyn UsageSink) {
+    use futures::FutureExt;
+    let Ok(Some(record)) = u.to_ocla_usage_record() else {
+        return;
+    };
+    let _ = sink.record_usage(record).now_or_never();
+}
+
+/// Adds one finalized turn to a running total. The totals themselves are the
+/// on-disk record of [`lean_ctx::core::proxy_usage`]; only the meter sees a turn.
+trait AddTurn {
+    fn add(&mut self, u: &super::usage::RealUsage);
+}
+
+impl AddTurn for ModelUsage {
+    fn add(&mut self, u: &super::usage::RealUsage) {
+        if let Some(observation) = &u.response_observation {
+            self.add_observation(observation.clone());
+        }
+        self.requests += 1;
+        self.input_tokens += u.input_tokens;
+        self.output_tokens += u.output_tokens;
+        self.cache_read_tokens += u.cache_read_tokens;
+        self.cache_write_tokens += u.cache_write_tokens;
+        self.reasoning_tokens += u.reasoning_tokens;
+        if let Some(cost) = u.provider_cost_usd {
+            self.measured.merge(&MeasuredSlice {
+                requests: 1,
+                input_tokens: u.input_tokens,
+                output_tokens: u.output_tokens,
+                cache_read_tokens: u.cache_read_tokens,
+                cache_write_tokens: u.cache_write_tokens,
+                cost_usd: cost,
+            });
+        }
+        // Verified-savings pair (#701): only when the probe answered by the
+        // time the billed usage arrived — both sides of the pair or neither.
+        if let Some(counted) = u
+            .wire
+            .as_deref()
+            .and_then(|w| w.counterfactual.as_ref())
+            .and_then(super::counterfactual::CounterfactualSlot::get)
+        {
+            self.counterfactual_requests += 1;
+            self.counterfactual_input_tokens += counted;
+            self.counterfactual_billed_tokens +=
+                u.input_tokens + u.cache_read_tokens + u.cache_write_tokens;
+        }
+    }
+}
+
+impl AddTurn for CohortUsage {
+    fn add(&mut self, u: &super::usage::RealUsage) {
+        self.requests += 1;
+        self.input_tokens += u.input_tokens;
+        self.output_tokens += u.output_tokens;
+        self.sum_sq_output += u.output_tokens.saturating_mul(u.output_tokens);
+        let prompt = u
+            .input_tokens
+            .saturating_add(u.cache_read_tokens)
+            .saturating_add(u.cache_write_tokens);
+        self.prompt_tokens += prompt;
+        self.sum_sq_prompt += prompt.saturating_mul(prompt);
+    }
+}
+
+/// One model's measured, priced spend for `/status` and the dashboard.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ModelSpend {
+    pub model: String,
+    pub requests: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    pub reasoning_tokens: u64,
+    pub cost_usd: f64,
+    /// Share of `cost_usd` the provider itself reported (OpenRouter usage
+    /// accounting, #1179) — a bill, not a table estimate.
+    pub measured_cost_usd: f64,
+    /// Requests covered by that provider-reported cost.
+    pub measured_requests: u64,
+    /// True when part of the cost had to be priced from a heuristic/fallback
+    /// match — never set by measured or exactly-priced spend.
+    pub pricing_estimated: bool,
+}
+
+/// Cohort-store key for an input-compression holdout arm (#1905). Prefixed so
+/// it never collides with the output-savings arms stored as `control` /
+/// `treatment`, which keeps existing files and readers unchanged.
+#[must_use]
+pub fn compression_cohort_key(arm: super::holdout::Arm) -> String {
+    format!("compression:{}", arm.as_str())
+}
+
+fn last_model_store() -> &'static Mutex<Option<LastModel>> {
+    static STORE: OnceLock<Mutex<Option<LastModel>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(None))
+}
+
+/// Distinct-model bucket cap. `record` keys on the raw response model string, so
+/// overflow folds into "unknown" to keep the map bounded (real model names < ~50).
+const MAX_TRACKED_MODELS: usize = 256;
+
+fn store() -> &'static Mutex<HashMap<String, ModelUsage>> {
+    static STORE: OnceLock<Mutex<HashMap<String, ModelUsage>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Distinct projects kept apart; turns of further projects stay in the device total.
+const MAX_TRACKED_PROJECTS: usize = 512;
+
+fn project_store() -> &'static Mutex<HashMap<String, HashMap<String, ModelUsage>>> {
+    static STORE: OnceLock<Mutex<HashMap<String, HashMap<String, ModelUsage>>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cohort_store() -> &'static Mutex<HashMap<String, CohortUsage>> {
+    static STORE: OnceLock<Mutex<HashMap<String, CohortUsage>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Seeds the in-memory totals from `proxy_usage.json`. Call once on proxy
+/// startup so measured spend is cumulative across restarts. Idempotent-ish: it
+/// merges the persisted totals into whatever is in memory (normally empty).
+pub fn resume_from_disk() {
+    let Some(persisted) = load_persisted() else {
+        return;
+    };
+    {
+        let mut last = last_model_store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if last.is_none() {
+            last.clone_from(&persisted.last_model);
+        }
+    }
+    let mut map = store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    merge_models(&mut map, persisted.models);
+    drop(map);
+    let mut projects = project_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for (project, models) in persisted.projects {
+        merge_models(projects.entry(project).or_default(), models);
+    }
+    drop(projects);
+    let mut cohorts = cohort_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for (arm, usage) in persisted.cohorts {
+        cohorts.entry(arm).or_default().merge(&usage);
+    }
+}
+
+fn merge_models(map: &mut HashMap<String, ModelUsage>, models: HashMap<String, ModelUsage>) {
+    for (model, usage) in models {
+        let acc = map.entry(model).or_default();
+        acc.requests += usage.requests;
+        acc.input_tokens += usage.input_tokens;
+        acc.output_tokens += usage.output_tokens;
+        acc.cache_read_tokens += usage.cache_read_tokens;
+        acc.cache_write_tokens += usage.cache_write_tokens;
+        acc.reasoning_tokens += usage.reasoning_tokens;
+        acc.counterfactual_requests += usage.counterfactual_requests;
+        acc.counterfactual_input_tokens += usage.counterfactual_input_tokens;
+        acc.counterfactual_billed_tokens += usage.counterfactual_billed_tokens;
+        acc.measured.merge(&usage.measured);
+        for observation in usage.response_observations {
+            acc.add_observation(observation);
+        }
+    }
+}
+
+/// Records one turn's measured usage against its model bucket (and its
+/// output-savings cohort, when tagged) and persists.
+pub fn record(u: &super::usage::RealUsage) {
+    // Gateway store subscription (enterprise#17): forward the full record to
+    // the installed sink (no-op locally). Never blocks the request path.
+    super::usage_sink::push(u);
+
+    // R33: Feed measured usage into kernel envelope pipeline.
+    {
+        let label = u.wire.as_ref().map_or("Unknown", |w| {
+            // provider_kind_from_label expects a static or owned string;
+            // the label lives long enough for the conversion call.
+            match w.provider.as_str() {
+                "Anthropic" => "Anthropic",
+                "OpenAI" | "ChatGPT" => "OpenAI",
+                "Gemini" => "Gemini",
+                "Bedrock" => "Bedrock",
+                "Azure" => "Azure",
+                _ => "Unknown",
+            }
+        });
+        let envelope = super::usage_parity::real_usage_to_envelope(u, label);
+        lean_ctx::core::context_kernel::envelope_bridge::record_proxy_envelope(&envelope);
+    }
+
+    // OCLA projection: keep the canonical usage capability on the same single
+    // finalized-turn choke-point without feeding back into billing or ledger
+    // aggregation. Invalid/missing lineage stays explicitly unmanaged.
+    project_ocla_usage(u, OclaRegistry::global().usage_sink.as_ref());
+
+    // Budget windows (enterprise#25): book this turn's measured cost against
+    // the person/day and project/month accumulators the policy gate checks.
+    // The provider's own reported charge wins (#1179); local turns book the
+    // shadow rate — the same valuation the usage store applies — so
+    // local-only budgets stay meaningful.
+    #[cfg(feature = "enterprise")]
+    if let Some(wire) = u.wire.as_deref()
+        && (wire.person.is_some() || wire.project.is_some())
+    {
+        let baseline = lean_ctx::core::config::Config::load()
+            .proxy
+            .baseline
+            .clone();
+        #[allow(clippy::cast_precision_loss)]
+        let cost_usd = if wire.is_local {
+            let billable =
+                u.input_tokens + u.output_tokens + u.cache_read_tokens + u.cache_write_tokens;
+            baseline.effective_local_shadow_rate() / 1_000_000.0 * billable as f64
+        } else if let Some(measured) = u.provider_cost_usd {
+            measured
+        } else {
+            lean_ctx::core::gain::model_pricing::ModelPricing::load()
+                .quote(Some(&u.model))
+                .cost
+                .estimate_usd(
+                    u.input_tokens,
+                    u.output_tokens,
+                    u.cache_write_tokens,
+                    u.cache_read_tokens,
+                )
+        };
+        super::policy_gate::record_spend(wire.person.as_deref(), wire.project.as_deref(), cost_usd);
+    }
+
+    // Mechanism attribution into the local savings ledger (enterprise#19):
+    // provider prompt-cache reads billed below the input rate. Best-effort,
+    // never blocking. A model swap is never booked as a LeanCTX saving.
+    if u.cache_read_tokens > 0 {
+        let cost = lean_ctx::core::gain::model_pricing::ModelPricing::load()
+            .quote(Some(&u.model))
+            .cost;
+        #[allow(clippy::cast_precision_loss)]
+        let discount_usd =
+            (cost.input_per_m - cost.cache_read_per_m) / 1_000_000.0 * u.cache_read_tokens as f64;
+        lean_ctx::core::savings_ledger::record_caching_event(
+            &u.model,
+            u.cache_read_tokens,
+            discount_usd,
+            u.wire.as_deref().and_then(|w| w.project_key.as_deref()),
+        );
+    }
+
+    // Remember the foreground model for attribution in other processes
+    // (savings ledger). Background models never count as "the model in use".
+    let model = u.model.trim();
+    if !model.is_empty()
+        && model != "unknown"
+        && !lean_ctx::core::model_registry::is_background_model(model)
+    {
+        *last_model_store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(LastModel {
+            model: model.to_string(),
+            at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        });
+    }
+
+    let key = normalize_key(&u.model);
+    {
+        let mut map = store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let key = if !map.contains_key(&key) && map.len() >= MAX_TRACKED_MODELS {
+            "unknown".to_string()
+        } else {
+            key
+        };
+        map.entry(key.clone()).or_default().add(u);
+        drop(map);
+        if let Some(project) = u.wire.as_deref().and_then(|w| w.project_key.as_deref()) {
+            let mut projects = project_store()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if projects.contains_key(project) || projects.len() < MAX_TRACKED_PROJECTS {
+                projects
+                    .entry(project.to_string())
+                    .or_default()
+                    .entry(key)
+                    .or_default()
+                    .add(u);
+            }
+        }
+    }
+    if u.cohort.output.is_some() || u.cohort.compression.is_some() {
+        let mut cohorts = cohort_store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(arm) = u.cohort.output {
+            cohorts.entry(arm.as_str().to_string()).or_default().add(u);
+        }
+        if let Some(arm) = u.cohort.compression {
+            cohorts
+                .entry(compression_cohort_key(arm))
+                .or_default()
+                .add(u);
+        }
+    }
+    persist();
+}
+
+/// Live output-savings cohort totals (#895). Empty until a holdout runs.
+#[must_use]
+pub fn cohort_snapshot() -> HashMap<String, CohortUsage> {
+    cohort_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+/// Cross-process read of the persisted output-savings cohort totals.
+#[must_use]
+pub fn persisted_cohorts() -> HashMap<String, CohortUsage> {
+    load_persisted().map(|p| p.cohorts).unwrap_or_default()
+}
+
+fn normalize_key(model: &str) -> String {
+    let m = model.trim();
+    if m.is_empty() {
+        "unknown".to_string()
+    } else {
+        m.to_string()
+    }
+}
+
+/// Live per-model measured spend, priced and sorted by USD descending.
+pub fn snapshot() -> Vec<ModelSpend> {
+    let map = store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    price_models(&map)
+}
+
+/// Total measured spend across all models (live in-memory totals).
+pub fn total_cost_usd() -> f64 {
+    snapshot().iter().map(|m| m.cost_usd).sum()
+}
+
+/// Cross-model verified-savings totals (#701) for `/status` and the dashboard.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct VerifiedSavings {
+    /// Requests covered by a successful `count_tokens` probe.
+    pub requests: u64,
+    /// Provider-counted input tokens those requests would have billed
+    /// without lean-ctx.
+    pub counterfactual_input_tokens: u64,
+    /// Input-side tokens (input + cache read + cache write) they actually
+    /// billed.
+    pub billed_input_tokens: u64,
+    /// `counterfactual - billed`; negative when stub overhead outweighed the
+    /// squeeze — reported honestly, never clamped.
+    pub verified_saved_tokens: i64,
+}
+
+/// Aggregated provider-verified savings across all models (#701), or `None`
+/// until at least one probe-covered request has been recorded. Unlike the
+/// `tokens_saved` estimate (bytes/4), both sides of this pair were counted by
+/// the provider on the same request — receipts, not estimates.
+pub fn verified_savings() -> Option<VerifiedSavings> {
+    let map = store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    verified_of(&map)
+}
+
+/// Pure aggregation behind [`verified_savings`], shared with tests.
+#[allow(clippy::cast_possible_wrap)]
+fn verified_of(map: &HashMap<String, ModelUsage>) -> Option<VerifiedSavings> {
+    let (mut requests, mut counterfactual, mut billed) = (0u64, 0u64, 0u64);
+    for usage in map.values() {
+        requests += usage.counterfactual_requests;
+        counterfactual += usage.counterfactual_input_tokens;
+        billed += usage.counterfactual_billed_tokens;
+    }
+    (requests > 0).then(|| VerifiedSavings {
+        requests,
+        counterfactual_input_tokens: counterfactual,
+        billed_input_tokens: billed,
+        verified_saved_tokens: counterfactual as i64 - billed as i64,
+    })
+}
+
+/// Prices a model usage map into sorted [`ModelSpend`] rows. Pure: shared by the
+/// in-memory snapshot and the cross-process [`persisted_snapshot`].
+pub fn price_models(map: &HashMap<String, ModelUsage>) -> Vec<ModelSpend> {
+    let pricing = ModelPricing::load();
+    let mut rows: Vec<ModelSpend> = map
+        .iter()
+        .map(|(model, usage)| price_one(&pricing, model, usage))
+        .collect();
+    rows.sort_by(|a, b| {
+        b.cost_usd
+            .partial_cmp(&a.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    rows
+}
+
+fn price_one(pricing: &ModelPricing, model: &str, usage: &ModelUsage) -> ModelSpend {
+    let quote = pricing.quote(Some(model));
+    // Measured-first (#1179): turns whose response carried the provider's own
+    // USD charge book that exact amount; only the remainder is table-priced.
+    let m = &usage.measured;
+    let derived_cost = quote.cost.estimate_usd(
+        usage.input_tokens.saturating_sub(m.input_tokens),
+        usage.output_tokens.saturating_sub(m.output_tokens),
+        usage
+            .cache_write_tokens
+            .saturating_sub(m.cache_write_tokens),
+        usage.cache_read_tokens.saturating_sub(m.cache_read_tokens),
+    );
+    let derived_requests = usage.requests.saturating_sub(m.requests);
+    ModelSpend {
+        model: model.to_string(),
+        requests: usage.requests,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        cache_read_tokens: usage.cache_read_tokens,
+        cache_write_tokens: usage.cache_write_tokens,
+        reasoning_tokens: usage.reasoning_tokens,
+        cost_usd: m.cost_usd + derived_cost,
+        measured_cost_usd: m.cost_usd,
+        measured_requests: m.requests,
+        // Fully measured spend is never an estimate, whatever the table says.
+        pricing_estimated: quote.match_kind.is_estimated() && derived_requests > 0,
+    }
+}
+
+/// Atomically writes the current in-memory totals to disk.
+fn persist() {
+    let Some(path) = usage_path() else {
+        return;
+    };
+    let models = {
+        let map = store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.clone()
+    };
+    let cohorts = {
+        let map = cohort_store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.clone()
+    };
+    let last_model = last_model_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let projects = project_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let payload = PersistedUsage {
+        ts: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        models,
+        cohorts,
+        last_model,
+        projects,
+    };
+    let Ok(json) = serde_json::to_string(&payload) else {
+        return;
+    };
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, json).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+}
+
+/// Cross-process priced spend rows, read from disk.
+pub fn persisted_snapshot() -> Vec<ModelSpend> {
+    load_persisted()
+        .map(|p| price_models(&p.models))
+        .unwrap_or_default()
+}
+
+/// Priced spend rows of the projects whose key `keep` accepts, summed per model.
+pub fn persisted_snapshot_where(keep: impl Fn(&str) -> bool) -> Vec<ModelSpend> {
+    let Some(persisted) = load_persisted() else {
+        return Vec::new();
+    };
+    let mut models: HashMap<String, ModelUsage> = HashMap::new();
+    for (project, usage) in persisted.projects {
+        if keep(&project) {
+            merge_models(&mut models, usage);
+        }
+    }
+    price_models(&models)
+}
+
+/// Priced spend per project key (the device view's split).
+pub fn persisted_projects() -> Vec<(String, Vec<ModelSpend>)> {
+    let Some(persisted) = load_persisted() else {
+        return Vec::new();
+    };
+    let mut rows: Vec<(String, Vec<ModelSpend>)> = persisted
+        .projects
+        .iter()
+        .map(|(project, models)| (project.clone(), price_models(models)))
+        .collect();
+    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn usage(
+        model: &str,
+        input: u64,
+        output: u64,
+        cache_read: u64,
+    ) -> super::super::usage::RealUsage {
+        super::super::usage::RealUsage {
+            model: model.to_string(),
+            input_tokens: input,
+            output_tokens: output,
+            cache_read_tokens: cache_read,
+            ..Default::default()
+        }
+    }
+
+    /// #895: resuming from disk must carry the sums of squares and prompt
+    /// totals; dropping them zeroed the variance after every proxy restart and
+    /// turned the CI into a zero-width "measurement".
+    #[test]
+    fn cohort_merge_keeps_every_running_total() {
+        let mut persisted = CohortUsage::default();
+        for (out, cached) in [(150, 900), (210, 1_200), (180, 0)] {
+            persisted.add(&usage("claude-sonnet-4.5", 1_000, out, cached));
+        }
+        let mut resumed = CohortUsage::default();
+        resumed.merge(&persisted);
+        assert_eq!(resumed, persisted, "every field survives the restart");
+        assert!(resumed.variance_output().is_some_and(|v| v > 0.0));
+
+        // Merging into live in-memory totals adds field by field.
+        let mut live = CohortUsage::default();
+        live.add(&usage("claude-sonnet-4.5", 500, 100, 0));
+        let expected_sum_sq = live.sum_sq_output + persisted.sum_sq_output;
+        live.merge(&persisted);
+        assert_eq!(live.requests, 4);
+        assert_eq!(live.sum_sq_output, expected_sum_sq);
+        assert_eq!(live.prompt_tokens, 500 + persisted.prompt_tokens);
+    }
+
+    /// A turn whose request named a project is booked to the device total and
+    /// to that project; one that named none to the device total only. Both
+    /// survive the file round trip.
+    #[test]
+    fn spend_is_split_per_project_and_persisted() {
+        let _dir = lean_ctx::core::data_dir::isolated_data_dir();
+        let project = format!("{:016x}", std::process::id() as u64 * 7919 + 17);
+        let other = format!("{:016x}", std::process::id() as u64 * 7919 + 18);
+        let turn = |key: Option<&str>, input| super::super::usage::RealUsage {
+            wire: Some(Box::new(super::super::usage::WireContext {
+                project_key: key.map(str::to_string),
+                ..Default::default()
+            })),
+            ..usage("claude-sonnet-4.5", input, 10, 0)
+        };
+        record(&turn(Some(&project), 1_000));
+        record(&turn(Some(&project), 500));
+        record(&turn(Some(&other), 200));
+        record(&turn(None, 100));
+
+        let mine = persisted_snapshot_where(|key| key == project);
+        assert_eq!(mine.len(), 1);
+        assert_eq!(mine[0].requests, 2);
+        assert_eq!(mine[0].input_tokens, 1_500);
+        let persisted = load_persisted().expect("persisted");
+        let device = &persisted.models["claude-sonnet-4.5"];
+        let split: u64 = persisted_projects()
+            .iter()
+            .filter(|(key, _)| *key == project || *key == other)
+            .flat_map(|(_, models)| models.iter().map(|m| m.input_tokens))
+            .sum();
+        assert_eq!(split, 1_700);
+        assert!(
+            device.input_tokens >= 1_800,
+            "the device total keeps every turn, named or not"
+        );
+    }
+
+    /// 3.12.1: counting each proxied request once in the kernel evidence must
+    /// not rewrite what the savings ledger already holds. A pre-existing legacy
+    /// entry and the caching event of an earlier turn keep their exact bytes and
+    /// still verify; the next turn appends exactly one event.
+    #[test]
+    fn recording_a_turn_leaves_earlier_savings_ledger_entries_unchanged() {
+        use lean_ctx::core::savings_ledger::{self, event::SavingsEvent, store};
+        let _dir = lean_ctx::core::data_dir::isolated_data_dir();
+        let path = store::default_path().expect("ledger path");
+        let legacy: SavingsEvent = serde_json::from_value(serde_json::json!({
+            "ts": "2026-06-01T12:00:00+00:00",
+            "tool": "ctx_read",
+            "model_id": "claude-3.5-sonnet",
+            "tokenizer": "o200k_base",
+            "baseline_tokens": 1000,
+            "actual_tokens": 300,
+            "saved_tokens": 700,
+            "bounce_adjustment": 0,
+            "unit_price_per_m_usd": 3.0,
+            "saved_usd": 0.0021,
+            "repo_hash": "repo",
+            "agent_id": "local",
+            "prev_hash": "",
+            "entry_hash": ""
+        }))
+        .expect("legacy fixture");
+        store::append(&path, legacy).expect("append fixture");
+        record(&usage("claude-sonnet-4.5", 1_000, 50, 400));
+        let before = std::fs::read(&path).expect("ledger bytes");
+        let before_events = savings_ledger::all_events();
+        assert_eq!(before_events.len(), 2, "fixture plus one caching event");
+
+        record(&usage("claude-sonnet-4.5", 2_000, 80, 600));
+
+        let after = std::fs::read(&path).expect("ledger bytes");
+        assert!(after.starts_with(&before), "earlier entries are untouched");
+        let after_events = savings_ledger::all_events();
+        assert_eq!(after_events.len(), 3, "one turn appends one event");
+        for (old, new) in before_events.iter().zip(&after_events) {
+            assert_eq!(old.entry_hash, new.entry_hash);
+            assert_eq!(old.saved_tokens, new.saved_tokens);
+            assert_eq!(old.saved_usd.to_bits(), new.saved_usd.to_bits());
+        }
+        let verified = savings_ledger::verify();
+        assert!(verified.valid, "{verified:?}");
+        assert_eq!(verified.total, 3);
+    }
+
+    /// #701: the verified pair is recorded only when the probe answered — both
+    /// sides of the pair or neither, never a half row.
+    #[test]
+    fn counterfactual_pair_recorded_only_when_probe_answered() {
+        let slot = super::super::counterfactual::CounterfactualSlot::new();
+        slot.set(5_000);
+        let with_probe = super::super::usage::RealUsage {
+            wire: Some(Box::new(super::super::usage::WireContext {
+                counterfactual: Some(slot),
+                ..Default::default()
+            })),
+            cache_write_tokens: 200,
+            ..usage("claude-sonnet-4.5", 1_000, 0, 300)
+        };
+        let mut acc = ModelUsage::default();
+        acc.add(&with_probe);
+        assert_eq!(acc.counterfactual_requests, 1);
+        assert_eq!(acc.counterfactual_input_tokens, 5_000);
+        // billed side = input + cache read + cache write of the same turn.
+        assert_eq!(acc.counterfactual_billed_tokens, 1_000 + 300 + 200);
+
+        // Empty slot (probe failed / still in flight) → row degrades to the
+        // estimate: no pair recorded, normal usage still counted.
+        let empty = super::super::usage::RealUsage {
+            wire: Some(Box::new(super::super::usage::WireContext {
+                counterfactual: Some(super::super::counterfactual::CounterfactualSlot::new()),
+                ..Default::default()
+            })),
+            ..usage("claude-sonnet-4.5", 1_000, 0, 0)
+        };
+        acc.add(&empty);
+        assert_eq!(acc.requests, 2);
+        assert_eq!(acc.counterfactual_requests, 1, "empty slot adds no pair");
+
+        // No wire context at all (tests / non-forward paths) → no pair.
+        acc.add(&usage("claude-sonnet-4.5", 10, 0, 0));
+        assert_eq!(acc.counterfactual_requests, 1);
+    }
+
+    /// #701: cross-model aggregation and the honest signed difference.
+    #[test]
+    fn verified_of_aggregates_and_reports_signed_savings() {
+        let mut map = HashMap::new();
+        assert!(verified_of(&map).is_none(), "no coverage → None, not zeros");
+
+        map.insert(
+            "claude-sonnet-4.5".to_string(),
+            ModelUsage {
+                counterfactual_requests: 2,
+                counterfactual_input_tokens: 10_000,
+                counterfactual_billed_tokens: 6_000,
+                ..Default::default()
+            },
+        );
+        // Stub overhead outweighed the squeeze on this model: billed MORE
+        // than the counterfactual. The total must subtract honestly.
+        map.insert(
+            "claude-haiku-4.5".to_string(),
+            ModelUsage {
+                counterfactual_requests: 1,
+                counterfactual_input_tokens: 1_000,
+                counterfactual_billed_tokens: 1_400,
+                ..Default::default()
+            },
+        );
+        let v = verified_of(&map).expect("covered rows present");
+        assert_eq!(v.requests, 3);
+        assert_eq!(v.counterfactual_input_tokens, 11_000);
+        assert_eq!(v.billed_input_tokens, 7_400);
+        assert_eq!(v.verified_saved_tokens, 3_600);
+
+        map.get_mut("claude-sonnet-4.5")
+            .unwrap()
+            .counterfactual_input_tokens = 0;
+        map.get_mut("claude-sonnet-4.5")
+            .unwrap()
+            .counterfactual_billed_tokens = 0;
+        let negative = verified_of(&map).unwrap();
+        assert_eq!(
+            negative.verified_saved_tokens, -400,
+            "a net-negative verified saving is reported, never clamped"
+        );
+    }
+
+    /// #701: persisted usage files from before the feature load cleanly and
+    /// the new fields round-trip.
+    #[test]
+    fn counterfactual_fields_roundtrip_and_default_for_legacy_files() {
+        let legacy = r#"{"ts":1,"models":{"m":{"requests":1,"input_tokens":10,"output_tokens":5,"cache_read_tokens":0,"cache_write_tokens":0,"reasoning_tokens":0}}}"#;
+        let p: PersistedUsage = serde_json::from_str(legacy).expect("legacy file loads");
+        assert_eq!(p.models["m"].counterfactual_requests, 0);
+
+        let mut p = PersistedUsage::default();
+        p.models.insert(
+            "m".into(),
+            ModelUsage {
+                counterfactual_requests: 4,
+                counterfactual_input_tokens: 9_999,
+                counterfactual_billed_tokens: 5_555,
+                ..Default::default()
+            },
+        );
+        let back: PersistedUsage =
+            serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back.models["m"].counterfactual_input_tokens, 9_999);
+        assert_eq!(back.models["m"].counterfactual_billed_tokens, 5_555);
+    }
+
+    #[test]
+    fn prices_known_model_with_cache_split() {
+        let mut map = HashMap::new();
+        let mut acc = ModelUsage::default();
+        acc.add(&usage("claude-sonnet-4.5", 1_000_000, 1_000_000, 1_000_000));
+        map.insert("claude-sonnet-4.5".to_string(), acc);
+
+        let rows = price_models(&map);
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        // input 3.00 + output 15.00 + cache_read 0.30 (per 1M) = 18.30.
+        assert!(
+            (row.cost_usd - 18.30).abs() < 1e-6,
+            "cost was {}",
+            row.cost_usd
+        );
+        assert!(!row.pricing_estimated, "exact model match");
+        assert_eq!(row.requests, 1);
+    }
+
+    #[test]
+    fn unknown_model_prices_with_fallback_and_is_estimated() {
+        let mut map = HashMap::new();
+        let mut acc = ModelUsage::default();
+        acc.add(&usage("some-novel-model-xyz", 1_000_000, 0, 0));
+        map.insert("some-novel-model-xyz".to_string(), acc);
+
+        let rows = price_models(&map);
+        assert!(rows[0].pricing_estimated, "fallback pricing is estimated");
+        assert!(rows[0].cost_usd > 0.0);
+    }
+
+    /// #1179: turns carrying the provider's own charge book that USD; only the
+    /// remaining (unmeasured) turns are table-priced — and a fully measured
+    /// model is never flagged as estimated, even when the table has no entry.
+    /// (Model name chosen to never hit the embedded or live price tables.)
+    #[test]
+    fn measured_provider_cost_replaces_table_estimate() {
+        const MODEL: &str = "vendor/unlisted-model-20990101";
+        let mut acc = ModelUsage::default();
+        let mut measured = usage(MODEL, 431_600, 22_700, 126_700);
+        measured.provider_cost_usd = Some(0.05);
+        acc.add(&measured);
+
+        let mut map = HashMap::new();
+        map.insert(MODEL.to_string(), acc.clone());
+        let row = &price_models(&map)[0];
+        assert!(
+            (row.cost_usd - 0.05).abs() < 1e-12,
+            "the bill, not the table"
+        );
+        assert!((row.measured_cost_usd - 0.05).abs() < 1e-12);
+        assert_eq!(row.measured_requests, 1);
+        assert!(
+            !row.pricing_estimated,
+            "fully measured spend is not an estimate"
+        );
+
+        // A second, unmeasured turn on the same model: its tokens are priced
+        // from the table ON TOP of the measured USD, never double-counted
+        // (10k tokens at the $2.50/M blended fallback ≈ $0.025).
+        acc.add(&usage(MODEL, 10_000, 0, 0));
+        let mut map = HashMap::new();
+        map.insert(MODEL.to_string(), acc);
+        let row = &price_models(&map)[0];
+        assert!(row.cost_usd > 0.05, "unmeasured remainder adds table cost");
+        assert!(row.cost_usd < 0.2, "measured slice must not be re-priced");
+        assert!(
+            row.pricing_estimated,
+            "unmeasured remainder is heuristically priced"
+        );
+    }
+
+    #[test]
+    fn measured_slice_roundtrips_and_defaults_for_legacy_files() {
+        let legacy = r#"{"ts":1,"models":{"m":{"requests":1,"input_tokens":10,"output_tokens":5,"cache_read_tokens":0,"cache_write_tokens":0,"reasoning_tokens":0}}}"#;
+        let p: PersistedUsage = serde_json::from_str(legacy).expect("legacy file loads");
+        assert_eq!(p.models["m"].measured, MeasuredSlice::default());
+
+        let mut p = PersistedUsage::default();
+        let mut acc = ModelUsage::default();
+        let mut m = usage("m", 100, 10, 0);
+        m.provider_cost_usd = Some(0.5);
+        acc.add(&m);
+        p.models.insert("m".into(), acc);
+        let back: PersistedUsage =
+            serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back.models["m"].measured.requests, 1);
+        assert!((back.models["m"].measured.cost_usd - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn dominant_model_picks_highest_token_real_model() {
+        let mut models = HashMap::new();
+        models.insert("claude-haiku-4.5".to_string(), {
+            let mut u = ModelUsage::default();
+            u.add(&usage("claude-haiku-4.5", 100, 100, 0));
+            u
+        });
+        models.insert("claude-opus-4.5".to_string(), {
+            let mut u = ModelUsage::default();
+            u.add(&usage("claude-opus-4.5", 10_000, 10_000, 0));
+            u
+        });
+        models.insert("unknown".to_string(), {
+            let mut u = ModelUsage::default();
+            u.add(&usage("unknown", 999_999, 0, 0));
+            u
+        });
+        let dominant = models
+            .iter()
+            .filter(|(m, _)| m.as_str() != "unknown")
+            .max_by_key(|(_, u)| u.billable_tokens())
+            .map(|(m, _)| m.clone());
+        assert_eq!(dominant.as_deref(), Some("claude-opus-4.5"));
+    }
+
+    #[test]
+    fn empty_model_buckets_as_unknown() {
+        assert_eq!(normalize_key("  "), "unknown");
+        assert_eq!(normalize_key(""), "unknown");
+        assert_eq!(normalize_key("gpt-5.4"), "gpt-5.4");
+    }
+
+    #[test]
+    fn cohort_avg_output_is_mean_per_turn() {
+        let mut c = CohortUsage::default();
+        assert_eq!(c.avg_output(), None, "no observations → None");
+        c.add(&usage("m", 10, 100, 0));
+        c.add(&usage("m", 10, 50, 0));
+        assert_eq!(c.requests, 2);
+        assert_eq!(c.output_tokens, 150);
+        assert!((c.avg_output().unwrap() - 75.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn persisted_usage_without_cohorts_field_loads() {
+        // proxy_usage.json written before #895 has no `cohorts` key; serde(default)
+        // must backfill an empty map so old files stay loadable.
+        let json = r#"{"ts":1,"models":{"gpt-5.4":{"requests":1,"input_tokens":10,"output_tokens":5,"cache_read_tokens":0,"cache_write_tokens":0,"reasoning_tokens":0}}}"#;
+        let p: PersistedUsage = serde_json::from_str(json).expect("loads legacy file");
+        assert_eq!(p.models.len(), 1);
+        assert!(p.cohorts.is_empty());
+    }
+
+    #[test]
+    fn persisted_usage_roundtrips_cohorts() {
+        let mut p = PersistedUsage::default();
+        p.cohorts.insert(
+            "control".into(),
+            CohortUsage {
+                requests: 3,
+                input_tokens: 30,
+                output_tokens: 300,
+                sum_sq_output: 30_000,
+                ..CohortUsage::default()
+            },
+        );
+        let json = serde_json::to_string(&p).unwrap();
+        let back: PersistedUsage = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.cohorts.get("control").unwrap().output_tokens, 300);
+    }
+
+    #[test]
+    fn managed_usage_projects_once_and_unmanaged_is_skipped() {
+        let sink = lean_ctx::core::ocla::builtin::usage_sink::BuiltinUsageSink::new();
+        let usage = super::super::usage::RealUsage {
+            model: "gpt-5".into(),
+            input_tokens: 100,
+            output_tokens: 40,
+            cache_read_tokens: 20,
+            cache_write_tokens: 5,
+            wire: Some(Box::new(super::super::usage::WireContext {
+                lineage: Some(lean_ctx::core::ocla::OclaRequestContext {
+                    request_id: "request-1".into(),
+                    session_id: "session-1".into(),
+                    agent_id: "agent-1".into(),
+                    content_ref: "blake3:content".into(),
+                    tenant_id: None,
+                    trace_id: "tr-unit".into(),
+                    task_id: None,
+                    parent_task_id: None,
+                }),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        project_ocla_usage(&usage, &sink);
+        assert_eq!(sink.record_count(), 1);
+        assert_eq!(sink.total_input_tokens(), 125);
+        assert_eq!(sink.total_output_tokens(), 40);
+
+        project_ocla_usage(
+            &super::super::usage::RealUsage {
+                model: "unmanaged".into(),
+                input_tokens: 999,
+                ..Default::default()
+            },
+            &sink,
+        );
+        assert_eq!(sink.record_count(), 1);
+    }
+
+    /// Counts the records the global registry's usage sink receives.
+    struct SpyUsage(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl lean_ctx::core::ocla::traits::OclaService for SpyUsage {
+        fn capability(&self) -> lean_ctx::core::ocla::types::OclaCapability {
+            lean_ctx::core::ocla::types::OclaCapability::available(
+                lean_ctx::core::ocla::types::OclaCapabilityKind::UsageSink,
+            )
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl UsageSink for SpyUsage {
+        async fn record_usage(
+            &self,
+            _usage: lean_ctx::core::ocla::types::UsageRecord,
+        ) -> lean_ctx::core::ocla::OclaResult<()> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn proxy_request_projects_measured_usage_to_usage_spy() {
+        let _dir = lean_ctx::core::data_dir::isolated_data_dir();
+        let usage_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut registry = OclaRegistry::with_builtins();
+        registry.usage_sink = std::sync::Arc::new(SpyUsage(usage_calls.clone()));
+        let _guard = lean_ctx::core::ocla::registry::with_test_registry(registry);
+        let usage = super::super::usage::RealUsage {
+            model: "test-model".into(),
+            input_tokens: 11,
+            output_tokens: 7,
+            wire: Some(Box::new(super::super::usage::WireContext {
+                lineage: Some(lean_ctx::core::ocla::OclaRequestContext {
+                    request_id: "request-1".into(),
+                    session_id: "session-1".into(),
+                    agent_id: "agent-1".into(),
+                    content_ref: "file:test.rs".into(),
+                    tenant_id: None,
+                    trace_id: "tr-unit".into(),
+                    task_id: None,
+                    parent_task_id: None,
+                }),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+
+        record(&usage);
+
+        assert_eq!(usage_calls.load(std::sync::atomic::Ordering::Relaxed), 1);
+    }
+}

@@ -15,9 +15,14 @@ use std::sync::Arc;
 use super::{ReceiptSubject, observed, trace};
 use crate::core::context_admission::capture::{AdmissionCapture, CallSnapshot, Delivered};
 
+/// A mandatory receipt for a frame could not be stored: the frame must not be
+/// written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReceiptMissing;
+
 /// One call whose response is still to be written: its admission capture
 /// (with the policy snapshot of its entry) and the endpoint it ran.
-pub(crate) struct FrameCall {
+pub struct FrameCall {
     capture: Arc<AdmissionCapture>,
     endpoint: String,
 }
@@ -25,7 +30,7 @@ pub(crate) struct FrameCall {
 impl FrameCall {
     /// Open the capture of one call and take its ONE policy snapshot — the
     /// entry of the call. Call inside the request scope when there is one.
-    pub(crate) fn open(endpoint: &str) -> Self {
+    pub fn open(endpoint: &str) -> Self {
         Self {
             capture: AdmissionCapture::for_call(CallSnapshot::take()),
             endpoint: endpoint.to_owned(),
@@ -33,7 +38,7 @@ impl FrameCall {
     }
 
     /// The capture the call's work runs inside (`capture::ADMISSIONS`).
-    pub(crate) fn capture(&self) -> Arc<AdmissionCapture> {
+    pub fn capture(&self) -> Arc<AdmissionCapture> {
         self.capture.clone()
     }
 
@@ -45,20 +50,20 @@ impl FrameCall {
     ///   handle after the bytes were handed over.
     /// - `Ok(None)`: no protection and nothing to observe (a receipt for
     ///   admitted sources may still have been stored, as on the MCP path).
-    /// - `Err(())`: the receipt is mandatory and missing — `bytes` must not
+    /// - `Err(ReceiptMissing)`: the receipt is mandatory and missing — `bytes` must not
     ///   be written.
     ///
     /// The same rule as for an MCP result applies to bytes no admission
     /// decided on: under protection they are receipted as exactly that
     /// (`delivery.no_source_decision`); only the closed content-free set
     /// (no bytes, a typed gateway notice) owes nothing.
-    pub(crate) fn seal(
+    pub fn seal(
         self,
         project_root: &str,
         bytes: &[u8],
         is_error: bool,
         delivery: fn(&str, &CallSnapshot) -> trace::Delivery,
-    ) -> Result<Option<observed::Prepared>, ()> {
+    ) -> Result<Option<observed::Prepared>, ReceiptMissing> {
         let duty = super::Duty::of(&self.capture);
         if self.capture.is_empty() && !duty.mandatory {
             return Ok(None);
@@ -85,7 +90,7 @@ impl FrameCall {
         );
         tracing::debug!("context gateway receipt: {}", record.summary());
         if record.withholds(duty.mandatory) {
-            return Err(());
+            return Err(ReceiptMissing);
         }
         Ok(record.into_prepared())
     }

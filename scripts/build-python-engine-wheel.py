@@ -76,7 +76,7 @@ def _entry(name: str, data: bytes, mode: int = 0o644) -> tuple[zipfile.ZipInfo, 
 
 
 def _launcher(binary_name: str, expected_sha256: str) -> bytes:
-    source = f'''"""Verified launcher for the bundled LeanCTX Engine."""
+    source = f'''"""Verified launcher for the bundled LeanCTX binary."""
 from __future__ import annotations
 
 import hashlib
@@ -94,15 +94,15 @@ def main() -> None:
     path = os.fspath(binary)
     metadata = os.stat(path, follow_symlinks=False)
     if not stat.S_ISREG(metadata.st_mode):
-        raise RuntimeError("bundled LeanCTX Engine is not a regular file")
+        raise RuntimeError("bundled LeanCTX binary is not a regular file")
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     if digest.hexdigest() != EXPECTED_SHA256:
-        raise RuntimeError("bundled LeanCTX Engine failed integrity verification")
+        raise RuntimeError("bundled LeanCTX binary failed integrity verification")
     if os.name != "nt" and not os.access(path, os.X_OK):
-        raise RuntimeError("bundled LeanCTX Engine is not executable")
+        raise RuntimeError("bundled LeanCTX binary is not executable")
     if os.name == "nt":
         raise SystemExit(subprocess.call([path, *sys.argv[1:]], shell=False))
     os.execv(path, [path, *sys.argv[1:]])
@@ -141,14 +141,14 @@ def build_wheel(
     metadata = f"""Metadata-Version: 2.4
 Name: {distribution}
 Version: {version}
-Summary: Platform-specific LeanCTX Engine binary for the Thinkery LeanCTX SDK
+Summary: Platform-specific LeanCTX | OSS binary for the Thinkery LeanCTX SDK
 Description-Content-Type: text/plain
 License-Expression: Apache-2.0
 License-File: LICENSE
 Requires-Python: >=3.9
 Classifier: Programming Language :: Python :: 3
 
-This package contains the LeanCTX Engine binary required by AgentContext.
+This package contains the LeanCTX | OSS binary required by AgentContext.
 """.encode("utf-8")
     wheel = f"""Wheel-Version: 1.0
 Generator: lean-ctx-engine-wheel/1

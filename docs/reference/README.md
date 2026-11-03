@@ -1,11 +1,11 @@
-# LeanCTX Engine reference
+# LeanCTX | OSS reference
 
 **Context Gateway for AI Systems**
 
 **Control what your AI can see.**
 
 **Select → Control → Learn → Prove** describes the product. This reference documents the
-local LeanCTX Engine; the LeanCTX SDK exposes supported application interfaces.
+local LeanCTX | OSS; the LeanCTX SDK exposes supported application interfaces.
 The agent, model, task logic and retry policy remain the integrator's responsibility.
 
 Start with [What is LeanCTX?](../what-is-leanctx.md), then the

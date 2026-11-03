@@ -1,7 +1,7 @@
 # lean-ctx-workgraph
 
 The bounded multi-agent work graph, budget cascade and outcome evaluation
-model of the [LeanCTX Engine](https://github.com/yvgude/lean-ctx).
+model of the [LeanCTX | OSS](https://github.com/yvgude/lean-ctx).
 
 It holds pure data and rules: parent/child delegation with budget inheritance,
 fan-out and depth limits, stop conditions, execution fences and receipts, plus

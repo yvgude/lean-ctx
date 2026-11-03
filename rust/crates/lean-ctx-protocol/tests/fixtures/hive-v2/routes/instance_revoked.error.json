@@ -1,7 +1,7 @@
 {
   "error": {
     "code": "instance_revoked",
-    "message": "This engine was revoked.",
+    "message": "This instance was revoked.",
     "revocation": {
       "compromised_since": 1792796400000,
       "instance_id": "8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c",

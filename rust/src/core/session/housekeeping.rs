@@ -6,7 +6,7 @@
 //! session files (1,617 sessions and 894 orphaned locks in the report). Once a
 //! day, from the server's background housekeeping:
 //! - lock files whose session JSON is gone are removed, if nobody holds them;
-//! - a store above [`AUTO_PRUNE_MIN_SESSIONS`] is pruned with the explicit
+//! - a store above `AUTO_PRUNE_MIN_SESSIONS` is pruned with the explicit
 //!   cleanup rules (`session_retention_days`; the newest session per project
 //!   and the global latest pointer are always kept, and facts are persisted
 //!   before a session is removed).
@@ -23,14 +23,14 @@ const DAY_MARKER: &str = "session_housekeeping_day";
 
 /// What one housekeeping pass did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct HousekeepingReport {
+pub struct HousekeepingReport {
     pub orphan_locks_removed: usize,
     pub sessions_pruned: u32,
 }
 
 /// Run the pass at most once per UTC day. `None` when it already ran today or
 /// there is no session store.
-pub(crate) fn run_daily() -> Option<HousekeepingReport> {
+pub fn run_daily() -> Option<HousekeepingReport> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let marker = crate::core::paths::state_dir().ok()?.join(DAY_MARKER);
     if std::fs::read_to_string(&marker).is_ok_and(|day| day.trim() == today) {

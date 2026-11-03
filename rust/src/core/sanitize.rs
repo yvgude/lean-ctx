@@ -1,9 +1,9 @@
 const MAX_METADATA_LEN: usize = 200;
 
-pub(crate) fn neutralize_metadata(input: &str) -> String {
+pub fn neutralize_metadata(input: &str) -> String {
     // Foreign content in the X5 wrapper keeps its markers: only the body is
     // neutralised and cut, so the end marker is never lost.
-    if crate::core::hive::untrusted::is_wrapped(input) {
+    if crate::core::untrusted::is_wrapped(input) {
         let lines: Vec<&str> = input.lines().collect();
         if let [header, preamble, body @ .., close] = lines.as_slice()
             && !body.is_empty()
@@ -39,7 +39,7 @@ fn neutralize_plain(input: &str) -> String {
     out
 }
 
-pub(crate) fn neutralize_shell_content(input: &str) -> String {
+pub fn neutralize_shell_content(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     let mut i = 0;
     let chars: Vec<char> = input.chars().collect();
@@ -98,7 +98,7 @@ fn safe_label(label: &str) -> String {
 /// [`FENCE_REFUSAL`] and nothing of the content. Untrusted content is never
 /// emitted unfenced, and never behind a marker its author could compute: a
 /// key derived from anything guessable would be exactly that.
-pub(crate) fn fence_content(label: &str, content: &str) -> String {
+pub fn fence_content(label: &str, content: &str) -> String {
     let key_file = crate::core::paths::data_dir()
         .ok()
         .map(|dir| dir.join(FENCE_KEY_FILE));
@@ -107,8 +107,7 @@ pub(crate) fn fence_content(label: &str, content: &str) -> String {
 
 /// What [`fence_content`] returns instead of a fenced block when it has no
 /// secure key: one constant, with no part of the label or the content.
-pub(crate) const FENCE_REFUSAL: &str =
-    "[lean-ctx: content withheld — no secure fence key available]";
+pub const FENCE_REFUSAL: &str = "[lean-ctx: content withheld — no secure fence key available]";
 
 fn fence_with(key: Option<&[u8; 32]>, label: &str, content: &str) -> String {
     let Some(key) = key else {

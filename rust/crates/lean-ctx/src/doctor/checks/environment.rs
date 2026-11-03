@@ -1,0 +1,1104 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Install/environment wiring: shell hooks, MCP registration, editor
+//! surfaces, session state, container env, CWD sanity, LSP servers.
+
+#[allow(clippy::wildcard_imports)]
+use crate::doctor::common::*;
+use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, WHITE, YELLOW};
+use std::net::TcpListener;
+
+/// Cognition v2 activation: how many science-backed subsystems have actually
+/// fired on this install. Proves the stack is wired (not dead code) without
+/// needing external instrumentation — `lean-ctx introspect cognition` drills in.
+pub(crate) fn cognition_activity_outcome() -> Outcome {
+    let snap = lean_ctx::core::introspect::snapshot();
+    let total = snap.len();
+    let active = snap.iter().filter(|(_, a)| a.count > 0).count();
+    // Before any tool calls have run nothing has fired yet — neutral, not a
+    // failure. Always pass; the value is the visibility, not a gate.
+    let line = if active == 0 {
+        format!(
+            "{BOLD}Cognition{RST}  {DIM}no activity recorded yet{RST}  {DIM}(inspect: lean-ctx introspect cognition){RST}"
+        )
+    } else {
+        format!(
+            "{BOLD}Cognition{RST}  {GREEN}{active}/{total} subsystems active{RST}  {DIM}(details: lean-ctx introspect cognition){RST}"
+        )
+    };
+    Outcome { ok: true, line }
+}
+/// Reports the format-aware passthrough (#342): output already in a compact,
+/// token-oriented format (TOON by default) is preserved verbatim instead of
+/// recompressed, so an agent's proof-of-output-shape survives intact.
+pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
+    let cfg = lean_ctx::core::config::Config::load();
+    if cfg.preserve_compact_formats.is_empty() {
+        return Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Compact-format passthrough{RST}  {YELLOW}off{RST}  {DIM}(set preserve_compact_formats to keep e.g. TOON verbatim){RST}"
+            ),
+        };
+    }
+    Outcome {
+        ok: true,
+        line: format!(
+            "{BOLD}Compact-format passthrough{RST}  {GREEN}{}{RST}  {DIM}(preserved verbatim, not recompressed){RST}",
+            cfg.preserve_compact_formats.join(", ")
+        ),
+    }
+}
+
+/// Surfaces the post-dispatch output-triage filter state (#1534): the 3.9.19
+/// filter dropped MCP tool output while `doctor` reported every check green.
+/// From 3.9.20 the filter is opt-in (`decision_loop.max_filter_level`,
+/// default 0) and this line keeps its state on the board either way.
+pub(crate) fn output_triage_outcome() -> Outcome {
+    output_triage_outcome_for(
+        lean_ctx::core::config::Config::load()
+            .decision_loop
+            .max_filter_level,
+    )
+}
+
+pub(super) fn output_triage_outcome_for(max_filter_level: u8) -> Outcome {
+    if max_filter_level == 0 {
+        return Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Output triage{RST}  {GREEN}off{RST}  {DIM}(decision_loop.max_filter_level = 0 — tool output is never dropped){RST}"
+            ),
+        };
+    }
+    Outcome {
+        ok: true,
+        line: format!(
+            "{BOLD}Output triage{RST}  {YELLOW}active (max level {max_filter_level}){RST}  {DIM}(lossy; disable: lean-ctx config set decision_loop.max_filter_level 0){RST}"
+        ),
+    }
+}
+
+pub(crate) fn shell_aliases_outcome() -> Outcome {
+    let Some(home) = dirs::home_dir() else {
+        return Outcome {
+            ok: false,
+            line: format!("{BOLD}Shell aliases{RST}  {RED}could not resolve home directory{RST}"),
+        };
+    };
+
+    let mut parts = Vec::new();
+    let mut needs_update = Vec::new();
+
+    let zsh = home.join(".zshrc");
+    if rc_contains_lean_ctx(&zsh) {
+        parts.push(format!("{DIM}~/.zshrc{RST}"));
+        if !rc_has_pipe_guard(&zsh) && is_active_shell("~/.zshrc") {
+            needs_update.push("~/.zshrc");
+        }
+    }
+    let bash = home.join(".bashrc");
+    if rc_contains_lean_ctx(&bash) {
+        parts.push(format!("{DIM}~/.bashrc{RST}"));
+        if !rc_has_pipe_guard(&bash) && is_active_shell("~/.bashrc") {
+            needs_update.push("~/.bashrc");
+        }
+    }
+
+    let fish = home.join(".config").join("fish").join("config.fish");
+    if rc_contains_lean_ctx(&fish) {
+        parts.push(format!("{DIM}~/.config/fish/config.fish{RST}"));
+        if !rc_has_pipe_guard(&fish) && is_active_shell("~/.config/fish/config.fish") {
+            needs_update.push("~/.config/fish/config.fish");
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let ps_profile = home
+            .join("Documents")
+            .join("PowerShell")
+            .join("Microsoft.PowerShell_profile.ps1");
+        let ps_profile_legacy = home
+            .join("Documents")
+            .join("WindowsPowerShell")
+            .join("Microsoft.PowerShell_profile.ps1");
+        if rc_contains_lean_ctx(&ps_profile) {
+            parts.push(format!("{DIM}PowerShell profile{RST}"));
+            if !rc_has_pipe_guard(&ps_profile) {
+                needs_update.push("PowerShell profile");
+            }
+        } else if rc_contains_lean_ctx(&ps_profile_legacy) {
+            parts.push(format!("{DIM}WindowsPowerShell profile{RST}"));
+            if !rc_has_pipe_guard(&ps_profile_legacy) {
+                needs_update.push("WindowsPowerShell profile");
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        let hint = if cfg!(windows) {
+            "no \"lean-ctx\" in PowerShell profile, ~/.zshrc or ~/.bashrc"
+        } else {
+            "no \"lean-ctx\" in ~/.zshrc, ~/.bashrc, or ~/.config/fish/config.fish"
+        };
+        Outcome {
+            ok: false,
+            line: format!("{BOLD}Shell aliases{RST}  {RED}{hint}{RST}"),
+        }
+    } else if !needs_update.is_empty() {
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}Shell aliases{RST}  {YELLOW}outdated hook in {} — run {BOLD}lean-ctx init --global{RST}{YELLOW} to fix (pipe guard missing){RST}",
+                needs_update.join(", ")
+            ),
+        }
+    } else {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Shell aliases{RST}  {GREEN}lean-ctx referenced in {}{RST}",
+                parts.join(", ")
+            ),
+        }
+    }
+}
+pub(crate) fn skip_agent_aliases_outcome() -> Outcome {
+    let cfg = lean_ctx::core::config::Config::load();
+    if !cfg.skip_agent_aliases {
+        return Outcome {
+            ok: true,
+            line: format!("{BOLD}Agent aliases{RST}  {DIM}enabled (claude, codex, gemini){RST}"),
+        };
+    }
+    let warn = if cfg.shell_activation == lean_ctx::core::config::ShellActivation::AgentsOnly {
+        format!(
+            "  {YELLOW}hint: shell_activation=agents-only — compression still active via _lc() hook{RST}"
+        )
+    } else {
+        String::new()
+    };
+    Outcome {
+        ok: true,
+        line: format!(
+            "{BOLD}Agent aliases{RST}  {GREEN}skipped (skip_agent_aliases = true){RST}{warn}"
+        ),
+    }
+}
+
+pub(crate) fn mcp_config_outcome() -> Outcome {
+    let Some(home) = dirs::home_dir() else {
+        return Outcome {
+            ok: false,
+            line: format!("{BOLD}MCP config{RST}  {RED}could not resolve home directory{RST}"),
+        };
+    };
+
+    let locations = mcp_config_locations(&home);
+    let location_names = lean_ctx_mcp_location_names(&home);
+    let mut found: Vec<String> = Vec::new();
+    let mut exists_no_ref: Vec<String> = Vec::new();
+
+    // The Claude Code governor setup has no lean-ctx MCP server by design.
+    let claude_governor = lean_ctx_hooks::hooks::agents::claude_governor::is_installed(&home);
+    for loc in &locations {
+        if claude_governor && loc.name == "Claude Code" {
+            found.push(format!(
+                "{} {DIM}(governor setup — hooks, no MCP server){RST}",
+                loc.name
+            ));
+            continue;
+        }
+        if std::fs::read_to_string(&loc.path).is_ok() {
+            if location_names.contains(loc.name) {
+                found.push(format!("{} {DIM}({}){RST}", loc.name, loc.display));
+            } else {
+                exists_no_ref.push(loc.name.to_string());
+            }
+        }
+    }
+
+    found.sort();
+    found.dedup();
+    exists_no_ref.sort();
+    exists_no_ref.dedup();
+
+    if !found.is_empty() {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}MCP config{RST}  {GREEN}lean-ctx found in: {}{RST}",
+                found.join(", ")
+            ),
+        }
+    } else if !exists_no_ref.is_empty() {
+        let has_claude = exists_no_ref.iter().any(|n| n.starts_with("Claude Code"));
+        let cause = if has_claude {
+            format!(
+                "{DIM}(Claude Code may overwrite ~/.claude.json on startup — lean-ctx entry missing from mcpServers){RST}"
+            )
+        } else {
+            String::new()
+        };
+        let hint = if has_claude {
+            format!("{DIM}(run: lean-ctx doctor --fix OR lean-ctx init --agent claude){RST}")
+        } else {
+            format!("{DIM}(run: lean-ctx doctor --fix OR lean-ctx setup){RST}")
+        };
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}MCP config{RST}  {YELLOW}config exists for {} but mcpServers does not contain lean-ctx{RST}  {cause} {hint}",
+                exists_no_ref.join(", "),
+            ),
+        }
+    } else {
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}MCP config{RST}  {YELLOW}no MCP config found{RST}  {DIM}(run: lean-ctx setup){RST}"
+            ),
+        }
+    }
+}
+/// WSL2 + VS Code (GH #669): VS Code's start-on-demand MCP lifecycle has a
+/// known client-side race — the first tool call of a fresh conversation can
+/// fire against cached tool metadata before the server's implementation is
+/// bound, failing with `Cannot read properties of undefined (reading 'invoke')`
+/// (microsoft/vscode#321150). Cold starts on WSL2 widen that window. Purely
+/// informational (ok: true): the defect is upstream, a retry always succeeds.
+pub(crate) fn wsl_vscode_mcp_outcome() -> Option<Outcome> {
+    if !lean_ctx::core::io_health::is_wsl() {
+        return None;
+    }
+    let home = dirs::home_dir()?;
+    if !lean_ctx_mcp_location_names(&home).contains("VS Code") {
+        return None;
+    }
+    Some(Outcome {
+        ok: true,
+        line: format!(
+            "{BOLD}WSL2 + VS Code{RST}  {YELLOW}known first-call race in VS Code's MCP client{RST}  {DIM}(a fresh conversation's first ctx_* call may fail with \"reading 'invoke'\" — retry succeeds; upstream: microsoft/vscode#321150. Mitigation: run the MCP server once via \"MCP: List Servers\" → lean-ctx → Start){RST}"
+        ),
+    })
+}
+
+pub(crate) fn port_3333_outcome() -> Outcome {
+    match TcpListener::bind("127.0.0.1:3333") {
+        Ok(_listener) => Outcome {
+            ok: true,
+            line: format!("{BOLD}Cockpit port 3333{RST}  {GREEN}available on 127.0.0.1{RST}"),
+        },
+        // #644: a busy port is only a problem if it's *not* us. Reuse the dashboard's
+        // own auth-aware /api/version probe (single source of truth) so our own
+        // running dashboard reads as healthy rather than a false conflict.
+        Err(_) if crate::dashboard::dashboard_responding("127.0.0.1", 3333) => Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Cockpit port 3333{RST}  {GREEN}already serving the LeanCTX Cockpit{RST}  {DIM}(http://localhost:3333){RST}"
+            ),
+        },
+        Err(e) => Outcome {
+            ok: false,
+            line: format!("{BOLD}Cockpit port 3333{RST}  {RED}not available: {e}{RST}"),
+        },
+    }
+}
+pub(crate) fn pi_outcome() -> Option<Outcome> {
+    let pi_result = std::process::Command::new("pi").arg("--version").output();
+
+    match pi_result {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let has_plugin = std::process::Command::new("pi")
+                .args(["list"])
+                .output()
+                .is_ok_and(|o| {
+                    o.status.success() && String::from_utf8_lossy(&o.stdout).contains("pi-lean-ctx")
+                });
+
+            let has_mcp = dirs::home_dir()
+                .map(|h| h.join(".pi/agent/mcp.json"))
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .is_some_and(|c| c.contains("lean-ctx"));
+
+            if has_plugin && has_mcp {
+                Some(Outcome {
+                    ok: true,
+                    line: format!(
+                        "{BOLD}Pi Coding Agent{RST}  {GREEN}{version}, pi-lean-ctx + MCP configured{RST}"
+                    ),
+                })
+            } else if has_plugin {
+                Some(Outcome {
+                    ok: true,
+                    line: format!(
+                        "{BOLD}Pi Coding Agent{RST}  {GREEN}{version}, pi-lean-ctx installed{RST}  {DIM}(MCP not configured — embedded bridge active){RST}"
+                    ),
+                })
+            } else {
+                Some(Outcome {
+                    ok: false,
+                    line: format!(
+                        "{BOLD}Pi Coding Agent{RST}  {YELLOW}{version}, but pi-lean-ctx not installed{RST}  {DIM}(run: pi install npm:pi-lean-ctx){RST}"
+                    ),
+                })
+            }
+        }
+        _ => None,
+    }
+}
+pub(crate) fn plan_mode_outcomes() -> Vec<Outcome> {
+    let status = lean_ctx::core::editor_registry::plan_mode::check_plan_mode_status();
+    let mut results = Vec::new();
+
+    if let Some(configured) = status.vscode_configured {
+        if configured {
+            results.push(Outcome {
+                ok: true,
+                line: format!(
+                    "{BOLD}Plan mode{RST}  VS Code  {GREEN}planAgent tools configured{RST}"
+                ),
+            });
+        } else {
+            results.push(Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Plan mode{RST}  VS Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx setup){RST}"
+                ),
+            });
+        }
+    }
+
+    // The no-MCP governor has no lean-ctx tools a plan-mode allow-list could
+    // name, so there is nothing to configure.
+    let claude_no_mcp_governor = lean_ctx::core::home::resolve_home_dir()
+        .and_then(|h| lean_ctx_hooks::hooks::agents::claude_governor::installed_arm(&h))
+        == Some(lean_ctx_hooks::hooks::agents::claude_governor::GovernorArm::NoMcp);
+    if claude_no_mcp_governor && status.claude_configured.is_some() {
+        results.push(Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Plan mode{RST}  Claude Code  {GREEN}governor setup{RST}  {DIM}(no MCP tools to allow){RST}"
+            ),
+        });
+    } else if let Some(configured) = status.claude_configured {
+        if configured {
+            results.push(Outcome {
+                ok: true,
+                line: format!("{BOLD}Plan mode{RST}  Claude Code  {GREEN}permissions present{RST}"),
+            });
+        } else {
+            results.push(Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Plan mode{RST}  Claude Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx setup){RST}"
+                ),
+            });
+        }
+    }
+
+    results
+}
+pub(crate) fn session_state_outcome() -> Outcome {
+    use lean_ctx::core::session::SessionState;
+
+    match SessionState::load_latest() {
+        Some(session) => {
+            let root = session.project_root.as_deref().unwrap_or("(not set)");
+            let cwd = session.shell_cwd.as_deref().unwrap_or("(not tracked)");
+            Outcome {
+                ok: true,
+                line: format!(
+                    "{BOLD}Session state{RST}  {GREEN}active{RST}  {DIM}root: {root}, cwd: {cwd}, v{}{RST}",
+                    session.version
+                ),
+            }
+        }
+        // No session for THIS cwd — but sessions for other workspaces may be
+        // live (GH #694: doctor run from a shell whose cwd is not one of the
+        // open project roots claimed "no active session" and looked broken).
+        // Surface the recent sessions with their roots instead of denying
+        // their existence.
+        None => match &recent_sessions_line(chrono::Utc::now()) {
+            Some(line) => Outcome {
+                ok: true,
+                line: format!(
+                    "{BOLD}Session state{RST}  {YELLOW}none for this directory{RST}  {DIM}{line}{RST}"
+                ),
+            },
+            None => Outcome {
+                ok: true,
+                line: format!(
+                    "{BOLD}Session state{RST}  {WHITE}no active session{RST}  {DIM}(will be created on first tool call){RST}"
+                ),
+            },
+        },
+    }
+}
+
+/// Renders "recent: root1 (2h ago), root2 (5m ago)" for the newest sessions
+/// across ALL workspaces (multi-window setups, GH #694). `None` when no
+/// session exists at all.
+fn recent_sessions_line(now: chrono::DateTime<chrono::Utc>) -> Option<String> {
+    format_recent_sessions(lean_ctx::core::session::SessionState::list_sessions(), now)
+}
+
+pub(crate) fn format_recent_sessions(
+    sessions: Vec<lean_ctx::core::session::SessionSummary>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<String> {
+    let mut seen_roots = std::collections::HashSet::new();
+    let mut parts = Vec::new();
+    for s in sessions {
+        let Some(root) = s.project_root.filter(|r| !r.is_empty()) else {
+            continue;
+        };
+        if !seen_roots.insert(root.clone()) {
+            continue;
+        }
+        let display_root = std::path::Path::new(&root)
+            .file_name()
+            .map_or_else(|| root.clone(), |n| n.to_string_lossy().into_owned());
+        parts.push(format!(
+            "{display_root} ({})",
+            humanize_age(now.signed_duration_since(s.updated_at))
+        ));
+        if parts.len() == 3 {
+            break;
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(format!("recent: {}", parts.join(", ")))
+    }
+}
+
+pub(crate) fn humanize_age(age: chrono::Duration) -> String {
+    let mins = age.num_minutes();
+    if mins < 1 {
+        "just now".to_string()
+    } else if mins < 60 {
+        format!("{mins}m ago")
+    } else if mins < 48 * 60 {
+        format!("{}h ago", mins / 60)
+    } else {
+        format!("{}d ago", mins / (24 * 60))
+    }
+}
+pub(crate) fn docker_env_outcomes() -> Vec<Outcome> {
+    if !lean_ctx::shell::is_container() {
+        return vec![];
+    }
+    let env_sh = lean_ctx::core::paths::config_dir().map_or_else(
+        |_| "/root/.lean-ctx/env.sh".to_string(),
+        |d| d.join("env.sh").to_string_lossy().to_string(),
+    );
+
+    let mut outcomes = vec![];
+
+    let shell_name = std::env::var("SHELL").unwrap_or_default();
+    let is_bash = shell_name.contains("bash") || shell_name.is_empty();
+
+    if is_bash {
+        let has_bash_env = std::env::var("BASH_ENV").is_ok();
+        outcomes.push(if has_bash_env {
+            Outcome {
+                ok: true,
+                line: format!(
+                    "{BOLD}BASH_ENV{RST}  {GREEN}set{RST}  {DIM}({}){RST}",
+                    std::env::var("BASH_ENV").unwrap_or_default()
+                ),
+            }
+        } else {
+            Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}BASH_ENV{RST}  {RED}not set{RST}  {YELLOW}(add to Dockerfile: ENV BASH_ENV=\"{env_sh}\"){RST}"
+                ),
+            }
+        });
+    }
+
+    let has_claude_env = std::env::var("CLAUDE_ENV_FILE").is_ok();
+    outcomes.push(if has_claude_env {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}CLAUDE_ENV_FILE{RST}  {GREEN}set{RST}  {DIM}({}){RST}",
+                std::env::var("CLAUDE_ENV_FILE").unwrap_or_default()
+            ),
+        }
+    } else {
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}CLAUDE_ENV_FILE{RST}  {RED}not set{RST}  {YELLOW}(for Claude Code: ENV CLAUDE_ENV_FILE=\"{env_sh}\"){RST}"
+            ),
+        }
+    });
+
+    outcomes
+}
+
+/// Hive filter packs, shown only on an enrolled instance. A refused bundle
+/// (a pack not as signed, malformed, over the rule limit) is a warning,
+/// never a failure: local work goes on under the last verified bundle.
+/// Local files only — no network.
+pub(crate) fn hive_policy_outcome() -> Option<Outcome> {
+    use lean_ctx_hive::{policy, state::HiveStore};
+    let store = HiveStore::open().ok()?;
+    store.instance().ok().flatten()?;
+    let state = policy::load_state(store.data_dir());
+    let line = match (&state.last_refusal, state.filter_packs.len()) {
+        (Some(refusal), _) => format!(
+            "{BOLD}Hive policy{RST}     {YELLOW}bundle refused: {refusal}{RST}  {DIM}(the last verified bundle stays; see lean-ctx hive status){RST}"
+        ),
+        (None, 0) => format!("{BOLD}Hive policy{RST}     {DIM}no filter packs from Hive{RST}"),
+        (None, packs) => {
+            format!("{BOLD}Hive policy{RST}     {GREEN}{packs} filter pack(s) verified{RST}")
+        }
+    };
+    Some(Outcome { ok: true, line })
+}
+
+/// The optional lean-ctx Claude Code mod: shown when Claude Code is present,
+/// never a failure when absent (it is opt-in). File-only — no `claude` spawn.
+pub(crate) fn claude_mod_outcome() -> Option<Outcome> {
+    use lean_ctx_hooks::hooks::agents::claude_mod;
+    let claude_dir = std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".claude")))?;
+    if !claude_dir.is_dir() {
+        return None;
+    }
+    let versions = claude_mod::cached_versions(&claude_dir);
+    let want = claude_mod::mod_version();
+    let line = if versions.contains(&claude_mod::cache_dir_name(&want)) {
+        format!("{BOLD}Claude Code mod{RST}  {GREEN}installed ({want}){RST}")
+    } else if let Some(old) = versions.last() {
+        format!(
+            "{BOLD}Claude Code mod{RST}  {YELLOW}{old} — this instance ships {want}{RST}  {DIM}(run: lean-ctx claude-mod install){RST}"
+        )
+    } else {
+        format!(
+            "{BOLD}Claude Code mod{RST}  {DIM}not installed — optional: wake-not-poll, Bash shaping, /leanctx (run: lean-ctx claude-mod install){RST}"
+        )
+    };
+    Some(Outcome { ok: true, line })
+}
+
+pub(crate) fn skill_files_outcome() -> Outcome {
+    let Some(home) = dirs::home_dir() else {
+        return Outcome {
+            ok: false,
+            line: format!("{BOLD}SKILL.md{RST}  {RED}could not resolve home directory{RST}"),
+        };
+    };
+
+    let candidates = [
+        ("Claude Code", home.join(".claude/skills/lean-ctx/SKILL.md")),
+        (
+            "CodeBuddy",
+            home.join(".codebuddy/skills/lean-ctx/SKILL.md"),
+        ),
+        ("Cursor", home.join(".cursor/skills/lean-ctx/SKILL.md")),
+        (
+            "Codex CLI",
+            lean_ctx::core::home::resolve_codex_dir()
+                .unwrap_or_else(|| home.join(".codex"))
+                .join("skills/lean-ctx/SKILL.md"),
+        ),
+        (
+            "GitHub Copilot",
+            home.join(".copilot/skills/lean-ctx/SKILL.md"),
+        ),
+        (
+            "OpenCode",
+            home.join(".config/opencode/skills/lean-ctx/SKILL.md"),
+        ),
+    ];
+
+    let mut found: Vec<&str> = Vec::new();
+    for (name, path) in &candidates {
+        if path.exists() {
+            found.push(name);
+        }
+    }
+
+    // The governor setup drops the skill listing (it rides every request).
+    let governor = [
+        "claude",
+        "codebuddy",
+        "cursor",
+        "gemini",
+        "codex",
+        "copilot",
+    ]
+    .iter()
+    .filter_map(|key| lean_ctx_hooks::hooks::governor_default::host(key))
+    .any(|h| (h.is_installed)(&home));
+    if found.is_empty() && governor {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}SKILL.md{RST}  {GREEN}not needed{RST}  {DIM}(governor setup carries no skill listing){RST}"
+            ),
+        }
+    } else if found.is_empty() {
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}SKILL.md{RST}  {YELLOW}not installed{RST}  {DIM}(run: lean-ctx setup){RST}"
+            ),
+        }
+    } else {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}SKILL.md{RST}  {GREEN}installed for {}{RST}",
+                found.join(", ")
+            ),
+        }
+    }
+}
+/// GH #594 config parity: surface whether the CLI and the editor-spawned MCP
+/// server resolve the *same* `config.toml`.
+///
+/// The current MCP writers never emit an `env` block, so any editor entry that
+/// still pins `LEAN_CTX_DATA_DIR` is stale and would force that editor's MCP
+/// server into single-dir mode — reading a different config than this CLI. This
+/// complements the stray-config heal check (which catches the *symptom*, a
+/// config.toml already stranded in the data dir) by flagging the *cause* before
+/// a divergent file is ever written, and it always prints the resolved path so
+/// users can compare it against `lean-ctx config path` run inside their editor.
+/// Extract the editor-baked `LEAN_CTX_DATA_DIR` value from raw config text.
+///
+/// Works across the JSON / TOML / YAML editor configs because all three write
+/// the value as the first double-quoted token after the key on its line
+/// (`LEAN_CTX_DATA_DIR = "…"`, `"LEAN_CTX_DATA_DIR": "…"`, `LEAN_CTX_DATA_DIR: "…"`).
+/// `~/`, `$HOME` and `$XDG_DATA_HOME` are expanded so the result can be compared
+/// against the CLI's resolved standard data dir; a trailing separator is trimmed.
+pub(crate) fn pinned_data_dir(content: &str) -> Option<std::path::PathBuf> {
+    const KEY: &str = "LEAN_CTX_DATA_DIR";
+    let line = content.lines().find(|l| l.contains(KEY))?;
+    let after_key = &line[line.find(KEY)? + KEY.len()..];
+    // Skip the assignment separator (`=` for TOML, `:` for JSON/YAML). In JSON
+    // the key's own closing quote precedes the separator, so anchoring on the
+    // separator avoids mistaking that quote for the value's opening quote.
+    let after_sep = &after_key[after_key.find(['=', ':'])? + 1..];
+    let open = after_sep.find('"')? + 1;
+    let rest = &after_sep[open..];
+    let raw = rest[..rest.find('"')?].trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let mut s = raw.to_string();
+    if let Ok(home) = std::env::var("HOME") {
+        s = s.replace("${HOME}", &home).replace("$HOME", &home);
+    }
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        s = s
+            .replace("${XDG_DATA_HOME}", &xdg)
+            .replace("$XDG_DATA_HOME", &xdg);
+    }
+    let path = match s.strip_prefix("~/") {
+        Some(tail) => dirs::home_dir()?.join(tail),
+        None => std::path::PathBuf::from(s.trim_end_matches('/')),
+    };
+    Some(std::path::PathBuf::from(
+        path.to_string_lossy().trim_end_matches('/'),
+    ))
+}
+
+pub(crate) fn config_parity_outcome() -> Outcome {
+    let config_path = lean_ctx::core::config::Config::path()
+        .map_or_else(|| "<unresolved>".to_string(), |p| p.display().to_string());
+
+    // Only a *non-standard* pin actually moves the MCP server's config.toml away
+    // from the CLI's (#594). A pin equal to the standard `$XDG_DATA_HOME/lean-ctx`
+    // is data-only and keeps parity, so it must NOT be flagged (no false alarm
+    // for the value editors used to bake by default).
+    let mut divergent: Vec<String> = match dirs::home_dir() {
+        Some(home) => lean_ctx::core::editor_registry::detect::build_targets(&home)
+            .into_iter()
+            .filter(|t| {
+                std::fs::read_to_string(&t.config_path)
+                    .ok()
+                    .filter(|c| c.contains("lean-ctx"))
+                    .and_then(|c| pinned_data_dir(&c))
+                    .is_some_and(|pin| lean_ctx::core::paths::data_pin_diverges_config(&pin))
+            })
+            .map(|t| t.name.to_string())
+            .collect(),
+        None => Vec::new(),
+    };
+    divergent.sort_unstable();
+    divergent.dedup();
+
+    if divergent.is_empty() {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}config parity{RST}  {GREEN}CLI + MCP agree{RST}  {DIM}{config_path}  (verify in your editor: lean-ctx config path){RST}"
+            ),
+        }
+    } else {
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}config parity{RST}  {YELLOW}{} pin a non-standard LEAN_CTX_DATA_DIR in their MCP config{RST}  {DIM}-> that editor's MCP server resolves a different config.toml than the CLI ({config_path}); run: lean-ctx setup (or doctor --fix) to unify{RST}",
+                divergent.join(", ")
+            ),
+        }
+    }
+}
+/// A user-global agent MCP entry that pins `LEAN_CTX_PROJECT_ROOT` /
+/// `LEAN_CTX_EXTRA_ROOTS` binds every session of that agent — in any repo — to
+/// one project. Builds before the pin heal wrote these themselves.
+pub(crate) fn project_pin_outcome() -> Outcome {
+    let pinned = dirs::home_dir()
+        .map(|home| lean_ctx_hooks::hooks::project_pins::pinned_agent_configs(&home))
+        .unwrap_or_default();
+    if pinned.is_empty() {
+        return Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Project binding{RST}  {GREEN}per session{RST}  {DIM}(no agent config pins a project){RST}"
+            ),
+        };
+    }
+    let list = pinned
+        .iter()
+        .map(|(agent, path)| format!("{agent} ({})", path.display()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Outcome {
+        ok: false,
+        line: format!(
+            "{BOLD}Project binding{RST}  {YELLOW}pinned globally in {list}{RST}  {DIM}-> every session of that agent opens the same project; run: lean-ctx doctor --fix, then restart the agent{RST}"
+        ),
+    }
+}
+
+/// How the code graph uses the language servers listed below.
+pub(crate) fn semantic_mode_outcome() -> Outcome {
+    use lean_ctx::core::config::{Config, SemanticMode};
+    let explain = match SemanticMode::effective(&Config::load()) {
+        SemanticMode::Off => "off  — structural graph only, no semantic backend is queried",
+        SemanticMode::Auto => {
+            "auto — verifies graph edges with servers that are already running or a live IDE; never starts one in the background"
+        }
+        SemanticMode::Eager => {
+            "eager — background graph enrichment may start the language servers below (trusted workspaces only; others run as auto)"
+        }
+    };
+    Outcome {
+        ok: true,
+        line: format!("{BOLD}semantic_mode{RST}  {explain}"),
+    }
+}
+
+/// Per-language verified share of the current project's call edges, when the
+/// project has a property graph. Opening a graph is read-only here: doctor
+/// never builds one.
+pub(crate) fn semantic_coverage_outcomes() -> Vec<Outcome> {
+    let Some(root) = lean_ctx::core::config::Config::find_project_root() else {
+        return Vec::new();
+    };
+    if !lean_ctx::core::property_graph::graph_dir(&root)
+        .join("graph.db")
+        .exists()
+    {
+        return Vec::new();
+    }
+    let Ok(graph) = lean_ctx::core::property_graph::CodeGraph::open(&root) else {
+        return Vec::new();
+    };
+    use lean_ctx::core::semantic::coverage::{coverage_by_language, coverage_lines};
+    coverage_lines(&coverage_by_language(&graph), &root)
+        .into_iter()
+        .map(|line| Outcome {
+            ok: true,
+            line: format!("{BOLD}coverage{RST} {}", line.trim_start()),
+        })
+        .collect()
+}
+
+pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
+    use lean_ctx::lsp::config::{KNOWN_SERVERS, resolve_server};
+
+    KNOWN_SERVERS
+        .iter()
+        .map(|info| match resolve_server(info.language, None) {
+            Some(server) => Outcome {
+                ok: true,
+                line: format!(
+                    "{BOLD}{}{RST}  {GREEN}✓ {}{RST}  {DIM}{}{RST}",
+                    info.language,
+                    server.binary_name(),
+                    server.binary_path().display()
+                ),
+            },
+            None => Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}{}{RST}  {DIM}not installed{RST}  {YELLOW}{}{RST}",
+                    info.language, info.install_hint
+                ),
+            },
+        })
+        .collect()
+}
+/// True when `cwd_str` points inside an IDE/agent config directory rather than a
+/// real project (LM Studio, Claude, CodeBuddy, Codex). Matches both POSIX (`/`)
+/// and Windows (`\`) separators so the warning fires on every platform.
+pub(crate) fn cwd_looks_like_agent_dir(cwd_str: &str) -> bool {
+    lean_ctx::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd_str))
+}
+
+/// IDE-specific hint for doctor output when project root detection fails.
+fn detect_ide_hint() -> String {
+    if std::env::var("CURSOR_PROJECT_DIR").is_ok()
+        || std::env::var("WORKSPACE_FOLDER_PATHS").is_ok()
+    {
+        return "IDE: Cursor (env vars present, root should auto-resolve).".into();
+    }
+    if std::env::var("VSCODE_WORKSPACE_FOLDER").is_ok() {
+        return "IDE: VS Code (roots/list should resolve the project).".into();
+    }
+    if std::env::var("CLAUDE_PROJECT_DIR").is_ok() {
+        return "IDE: Claude Code.".into();
+    }
+    if std::env::var("WINDSURF_PROJECT_DIR").is_ok() {
+        return "IDE: Windsurf.".into();
+    }
+    if std::env::var("CODEX_SANDBOX_DIR").is_ok() {
+        return "IDE: Codex.".into();
+    }
+    if std::env::var("TRAE_PROJECT_DIR").is_ok() {
+        return "IDE: Trae.".into();
+    }
+    if std::env::var("KIRO_PROJECT_DIR").is_ok() {
+        return "IDE: Kiro.".into();
+    }
+    "No IDE env var detected. If issues persist: lean-ctx init --agent <your-ide> from project dir."
+        .into()
+}
+
+/// Warn if lean-ctx is running as an MCP server from a directory that lacks
+/// a project marker and looks like an IDE/agent tool directory (e.g. .lmstudio,
+/// .claude). This usually means the MCP client launched the process from the
+/// wrong CWD, causing "path escapes project root" errors for every tool call.
+pub(crate) fn mcp_server_cwd_outcome() -> Outcome {
+    let is_mcp = lean_ctx::core::runtime_flags::mcp_server_enabled();
+    if !is_mcp {
+        return Outcome {
+            ok: true,
+            line: format!("{BOLD}MCP server CWD{RST}  {DIM}(not running as MCP server){RST}"),
+        };
+    }
+
+    let Ok(cwd) = std::env::current_dir() else {
+        return Outcome {
+            ok: true,
+            line: format!("{BOLD}MCP server CWD{RST}  {YELLOW}could not resolve{RST}"),
+        };
+    };
+
+    let has_marker = lean_ctx::core::pathutil::has_project_marker(&cwd);
+    let cwd_str = cwd.to_string_lossy();
+    let suspicious = cwd_looks_like_agent_dir(&cwd_str);
+
+    if has_marker {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}MCP server CWD{RST}  {GREEN}under project root{RST}  {DIM}{}{RST}",
+                cwd.display()
+            ),
+        }
+    } else if suspicious {
+        let ide_hint = detect_ide_hint();
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}MCP server CWD{RST}  {YELLOW}launched from IDE config dir{RST}                   {DIM}cwd={} — lean-ctx auto-corrects to the real project on first                  file access (zero-config). {ide_hint}{RST}",
+                cwd.display()
+            ),
+        }
+    } else {
+        let ide_hint = detect_ide_hint();
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}MCP server CWD{RST}  {YELLOW}no project marker in CWD{RST}                   {DIM}cwd={} — lean-ctx auto-corrects to the real project on first                  file access. {ide_hint}{RST}",
+                cwd.display()
+            ),
+        }
+    }
+}
+
+/// GH #1470: Detect version skew between CLI binary and installed agent-bridge
+/// packages (pi-lean-ctx, Cursor extension, CodeBuddy extension).
+pub(crate) fn version_skew_outcomes() -> Vec<Outcome> {
+    let cli_version = env!("CARGO_PKG_VERSION");
+    let mut results = Vec::new();
+
+    // 1) pi-lean-ctx npm package version
+    if let Some(pi_ver) = detect_pi_lean_ctx_version() {
+        let ok = versions_compatible(cli_version, &pi_ver);
+        let status = if ok {
+            format!("{GREEN}{pi_ver}{RST}")
+        } else {
+            format!(
+                "{RED}{pi_ver} (CLI is {cli_version}){RST}  {DIM}update: pi install npm:pi-lean-ctx@latest{RST}"
+            )
+        };
+        results.push(Outcome {
+            ok,
+            line: format!("{BOLD}Bridge version: pi-lean-ctx{RST}  {status}"),
+        });
+    }
+
+    // 2) Cursor extension version (from package.json in known paths)
+    if let Some(ext_ver) = detect_cursor_extension_version() {
+        let ok = versions_compatible(cli_version, &ext_ver);
+        let status = if ok {
+            format!("{GREEN}{ext_ver}{RST}")
+        } else {
+            format!(
+                "{RED}{ext_ver} (CLI is {cli_version}){RST}  {DIM}update the lean-ctx extension in Cursor{RST}"
+            )
+        };
+        results.push(Outcome {
+            ok,
+            line: format!("{BOLD}Bridge version: Cursor extension{RST}  {status}"),
+        });
+    }
+
+    results
+}
+
+/// Two versions are "compatible" if their major.minor match.
+/// For pre-1.0 (0.x.y), major.minor.patch must match exactly.
+fn versions_compatible(cli: &str, bridge: &str) -> bool {
+    let cli_parts: Vec<&str> = cli.split('.').collect();
+    let bridge_parts: Vec<&str> = bridge.split('.').collect();
+
+    if cli_parts.len() < 2 || bridge_parts.len() < 2 {
+        return cli == bridge;
+    }
+
+    let cli_major = cli_parts[0];
+    let cli_minor = cli_parts[1];
+    let bridge_major = bridge_parts[0];
+    let bridge_minor = bridge_parts[1];
+
+    if cli_major == "0" || bridge_major == "0" {
+        cli == bridge
+    } else {
+        cli_major == bridge_major && cli_minor == bridge_minor
+    }
+}
+
+fn detect_pi_lean_ctx_version() -> Option<String> {
+    let output = std::process::Command::new("pi")
+        .args(["list", "--json"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        let text_output = std::process::Command::new("pi")
+            .args(["list"])
+            .output()
+            .ok()?;
+        if !text_output.status.success() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&text_output.stdout);
+        for line in text.lines() {
+            if line.contains("pi-lean-ctx") {
+                if let Some(at_pos) = line.rfind('@') {
+                    let ver = line[at_pos + 1..].trim();
+                    if !ver.is_empty() {
+                        return Some(ver.to_string());
+                    }
+                }
+            }
+        }
+        return None;
+    }
+
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    if let Some(packages) = json.as_array() {
+        for pkg in packages {
+            let name = pkg.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            if name == "pi-lean-ctx" || name.contains("pi-lean-ctx") {
+                if let Some(ver) = pkg.get("version").and_then(|v| v.as_str()) {
+                    return Some(ver.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn detect_cursor_extension_version() -> Option<String> {
+    let home = dirs::home_dir()?;
+    let ext_dir = home.join(".cursor").join("extensions");
+    if !ext_dir.is_dir() {
+        return None;
+    }
+
+    let entries = std::fs::read_dir(&ext_dir).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.contains("lean-ctx") || name_str.contains("leanctx") {
+            let pkg_json = entry.path().join("package.json");
+            if let Ok(content) = std::fs::read_to_string(&pkg_json) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(ver) = json.get("version").and_then(|v| v.as_str()) {
+                        return Some(ver.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod version_skew_tests {
+    use super::*;
+
+    #[test]
+    fn compatible_same_version() {
+        assert!(versions_compatible("3.9.18", "3.9.18"));
+    }
+
+    #[test]
+    fn compatible_same_major_minor() {
+        assert!(versions_compatible("3.9.18", "3.9.20"));
+    }
+
+    #[test]
+    fn incompatible_different_minor() {
+        assert!(!versions_compatible("3.9.18", "3.8.18"));
+    }
+
+    #[test]
+    fn incompatible_different_major() {
+        assert!(!versions_compatible("3.9.18", "4.9.18"));
+    }
+
+    #[test]
+    fn pre_1_0_requires_exact() {
+        assert!(!versions_compatible("0.9.1", "0.9.2"));
+        assert!(versions_compatible("0.9.1", "0.9.1"));
+    }
+}

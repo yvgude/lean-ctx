@@ -2,14 +2,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ContextGraph {
+pub struct ContextGraph {
     pub format: String,
     pub nodes: Vec<ContextNode>,
     pub edges: Vec<ContextEdge>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ContextNode {
+pub struct ContextNode {
     pub id: String,
     #[serde(rename = "type")]
     pub node_type: String,
@@ -39,7 +39,7 @@ pub(crate) struct ContextNode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ContextEdge {
+pub struct ContextEdge {
     pub from: String,
     pub to: String,
     #[serde(rename = "type")]
@@ -65,7 +65,7 @@ fn is_zero_u32(v: &u32) -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct GraphSummary {
+pub struct GraphSummary {
     pub node_count: u32,
     pub edge_count: u32,
     #[serde(default)]
@@ -77,7 +77,7 @@ pub(crate) struct GraphSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct MarketplaceMeta {
+pub struct MarketplaceMeta {
     #[serde(default)]
     pub categories: Vec<String>,
     #[serde(default)]

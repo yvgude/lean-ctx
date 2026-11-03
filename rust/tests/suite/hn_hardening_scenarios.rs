@@ -11,15 +11,15 @@ use std::io::Write;
 /// After D8/E1 splits, `call_tool.rs` delegates to submodules in `call_tool/`.
 fn server_dispatch_src() -> String {
     [
-        include_str!("../../src/server/mod.rs"),
-        include_str!("../../src/server/call_tool.rs"),
-        include_str!("../../src/server/call_tool/pipeline.rs"),
-        include_str!("../../src/server/call_tool/guarded.rs"),
-        include_str!("../../src/server/call_tool/outcome.rs"),
-        include_str!("../../src/server/call_tool/policy.rs"),
-        include_str!("../../src/server/server_handler.rs"),
-        include_str!("../../src/server/post_process.rs"),
-        include_str!("../../src/server/post_dispatch.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/mod.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool/pipeline.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool/guarded.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool/outcome.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool/policy.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/server_handler.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/post_process.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/post_dispatch.rs"),
     ]
     .join("\n")
 }
@@ -169,7 +169,7 @@ mod double_compression_guard {
         // Verify the dispatch_tool return type includes saved_tokens (the
         // third element carries the shell outcome for MCP isError, GH #389)
         // and content_blocks (fourth element for image/binary MCP output).
-        let src = include_str!("../../src/server/dispatch/mod.rs");
+        let src = include_str!("../../crates/lean-ctx-server/src/server/dispatch/mod.rs");
         assert!(
             src.contains("Option<Vec<ContentBlock>>"),
             "dispatch_tool must return (String, saved_tokens, shell_outcome, content_blocks)"
@@ -234,7 +234,8 @@ mod cache_hit_messages {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let result =
+            lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // First read should return full content
         assert!(
@@ -256,11 +257,12 @@ mod cache_hit_messages {
 
         let mut cache = SessionCache::new();
         // First read
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         // Second read (cache hit)
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         // Third read (should have proof line since read_count >= 2)
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let result =
+            lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         assert!(
             result.contains("unchanged since your last read")
@@ -278,7 +280,7 @@ mod cache_hit_messages {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Modify file
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -292,7 +294,8 @@ mod cache_hit_messages {
                 .unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let result =
+            lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             result.contains("version 2") || result.contains("new_function"),
             "modified file must return new content"
@@ -442,7 +445,7 @@ mod confidence_signal {
     fn scenario_high_compression_hint_format() {
         // Verify the hint format exists in source. The local var was renamed
         // savings_pct -> pct in the shell-fidelity refactor (42a186a65c).
-        let src = include_str!("../../src/tools/registered/ctx_shell.rs");
+        let src = include_str!("../../crates/lean-ctx-server/src/tools/registered/ctx_shell.rs");
         assert!(
             src.contains("compressed {pct:.0}%: full output at"),
             "high compression hint must use correct format"
@@ -568,7 +571,10 @@ mod first_contact {
             block.contains("ctx_tokens <= crate::tools::autonomy::AUTO_CONTEXT_MAX_TOKENS"),
             "auto_context must enforce the shared token budget: {block}"
         );
-        assert_eq!(lean_ctx::tools::autonomy::AUTO_CONTEXT_MAX_TOKENS, 400);
+        assert_eq!(
+            lean_ctx_server::tools::autonomy::AUTO_CONTEXT_MAX_TOKENS,
+            400
+        );
     }
 
     #[test]
@@ -605,7 +611,8 @@ mod overview_descriptions {
 
         // Use ctx_read to verify file is readable, then check overview behavior
         let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content =
+            lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Session-level"));
     }
 
@@ -621,7 +628,8 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content =
+            lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Utility functions"));
     }
 
@@ -637,13 +645,14 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content =
+            lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("REST API"));
     }
 
     #[test]
     fn scenario_overview_source_has_extract_call() {
-        let src = include_str!("../../src/tools/ctx_overview.rs");
+        let src = include_str!("../../crates/lean-ctx-server/src/tools/ctx_overview.rs");
         assert!(
             src.contains("extract_module_doc"),
             "ctx_overview must call extract_module_doc"
@@ -717,14 +726,14 @@ mod integration {
         let mut cache = SessionCache::new();
 
         // Read 1: full content
-        let r1 = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r1 = lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(r1.contains("stable_function"));
 
         // Read 2: still returns content (marks as delivered)
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Read 3: now cache hit with proof
-        let r3 = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r3 = lean_ctx_server::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             r3.contains("unchanged") || r3.contains("cached"),
             "third read should be a cache hit: {r3}"

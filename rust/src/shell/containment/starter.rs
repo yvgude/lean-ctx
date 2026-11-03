@@ -60,16 +60,16 @@ pub(super) struct Options {
     pub(super) program: OsString,
     pub(super) args: Vec<OsString>,
     /// Tests only: `false` builds the wrong topology on purpose.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(super) engine_in_own_group: bool,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn engine_in_own_group(options: &Options) -> bool {
     options.engine_in_own_group
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-support")))]
 fn engine_in_own_group(_: &Options) -> bool {
     true
 }
@@ -90,7 +90,7 @@ pub(super) fn main_requested() -> Option<i32> {
         control_fd: None,
         program: program.into_os_string(),
         args: std::env::args_os().skip(1).collect(),
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         engine_in_own_group: true,
     }))
 }
@@ -126,7 +126,7 @@ pub(super) fn parse(mut args: impl Iterator<Item = OsString>) -> Option<Options>
         control_fd,
         program: args.next()?,
         args: args.collect(),
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         engine_in_own_group: true,
     })
 }
@@ -207,11 +207,11 @@ pub(super) fn run(options: &Options) -> i32 {
     let (mut engine, backstop) = match super::gate::start_behind_guard(&mut command) {
         Ok(started) => started,
         Err(Refusal::NotStarted(error)) => {
-            report(&format!("the Engine could not be started: {error}"));
+            report(&format!("the instance could not be started: {error}"));
             return EXIT_CONTAINMENT;
         }
         Err(Refusal::NotLeader) => {
-            report("the Engine's process group could not be verified; no group was signalled");
+            report("the instance's process group could not be verified; no group was signalled");
             return EXIT_CONTAINMENT;
         }
         Err(Refusal::NoGuard(error)) => {
@@ -235,15 +235,15 @@ pub(super) fn run(options: &Options) -> i32 {
     match end {
         GroupEnd::Empty => {}
         GroupEnd::Unconfirmed => {
-            report("the Engine's group was signalled; its end could not be observed");
+            report("the instance's group was signalled; its end could not be observed");
         }
         GroupEnd::Survivors | GroupEnd::Refused => {
-            report("the Engine's group could not be ended");
+            report("the instance's group could not be ended");
             return EXIT_CONTAINMENT;
         }
     }
     let Some(status) = status else {
-        report("the Engine could not be reaped");
+        report("the instance could not be reaped");
         return EXIT_CONTAINMENT;
     };
     mirror(status)

@@ -8,7 +8,7 @@
 //! on distances.
 
 /// Classic Wagner-Fischer edit distance with O(min) memory.
-pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
+pub fn levenshtein(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
     if a.is_empty() {
@@ -34,7 +34,7 @@ pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
 /// short names, roughly a third of the length for longer ones), or `None`
 /// when nothing is near enough to suggest with confidence. Ties resolve to
 /// the first candidate in iteration order.
-pub(crate) fn closest<'a, I>(input: &str, candidates: I) -> Option<&'a str>
+pub fn closest<'a, I>(input: &str, candidates: I) -> Option<&'a str>
 where
     I: IntoIterator<Item = &'a str>,
 {

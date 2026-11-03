@@ -1,24 +1,23 @@
 pub(crate) mod agent_wrapper;
+pub mod command_text;
 pub mod compress;
 #[cfg(unix)]
-pub(crate) mod containment;
-pub(crate) mod exec;
-pub(crate) mod exit_status;
+pub mod containment;
+pub mod exec;
+pub mod exit_status;
 mod interactive;
 pub mod output_policy;
 mod pipeline;
-pub(crate) mod platform;
-pub(crate) mod process_tree;
+pub mod platform;
+pub mod process_tree;
 mod redact;
-pub(crate) mod reentry;
-pub(crate) mod tee_policy;
+pub mod reentry;
+pub mod tee_policy;
 
 pub use compress::compress_if_beneficial_pub;
-pub(crate) use exec::shell_timeout_with_override;
-pub(crate) use exec::{STDERR_LABEL, combine_streams};
-pub(crate) use exec::{
-    ShellDispatchObservation, execute_prepared, prepare_exec, prepare_exec_argv,
-};
+pub use exec::shell_timeout_with_override;
+pub use exec::{STDERR_LABEL, combine_streams};
+pub use exec::{ShellDispatchObservation, execute_prepared, prepare_exec, prepare_exec_argv};
 pub use exec::{exec, exec_argv};
 pub use interactive::interactive;
 pub use output_policy::{OutputPolicy, classify as classify_output};

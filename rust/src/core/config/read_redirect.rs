@@ -94,7 +94,7 @@ pub(crate) fn host_has_read_before_write_guard() -> bool {
 /// actually exports to hook children (verified 3.7.36: `CURSOR_VERSION`,
 /// `CURSOR_PROJECT_DIR`, `CURSOR_TRANSCRIPT_PATH`, `CURSOR_EXTENSION_HOST_ROLE`)
 /// plus `CURSOR_AGENT`/`CURSOR_TRACE_ID` for agent shells and older builds.
-pub(crate) fn hook_host_is_cursor() -> bool {
+pub fn hook_host_is_cursor() -> bool {
     [
         "CURSOR_VERSION",
         "CURSOR_PROJECT_DIR",

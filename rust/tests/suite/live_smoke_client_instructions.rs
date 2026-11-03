@@ -13,7 +13,6 @@
 //! instructions in `server_handler::initialize`, lazy tool visibility).
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -179,9 +178,9 @@ fn assert_lazy_core_surface(tools: &[String], client: &str) {
     // The lazy core is client-aware for editing (#1008): clients with a
     // reliable native editor don't get ctx_patch, everyone else does. Mirror
     // the production rule instead of hardcoding per-client expectations here.
-    let quirks = lean_ctx::server::tool_visibility::ClientQuirks::resolve(
+    let quirks = lean_ctx_server::server::tool_visibility::ClientQuirks::resolve(
         client,
-        lean_ctx::server::tool_visibility::CandidateSet::LazyCore,
+        lean_ctx_server::server::tool_visibility::CandidateSet::LazyCore,
     );
     let expected_names: &[&str] = lean_ctx::tool_defs::CORE_TOOL_NAMES;
     for expected in expected_names {
@@ -409,9 +408,8 @@ fn first_session_heals_rules_and_skill() {
 /// instead of three opaque handshake failures.
 #[test]
 fn anchor_prefix_matches_lib_constant() {
-    let src =
-        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/instructions.rs"))
-            .expect("read instructions.rs");
+    let src = std::fs::read_to_string(crate::engine_dir().join("src/instructions.rs"))
+        .expect("read instructions.rs");
     assert!(
         src.contains(ANCHOR_PREFIX),
         "SKELETON_ANCHOR in instructions.rs no longer starts with the prefix this smoke asserts on — update both together"

@@ -59,6 +59,14 @@ may_depend_on = ["lean-ctx-patterns"]
 # import_resolver, syntax_validate, chunk grammar map. Grammars behind the
 # crate's `tree-sitter`/`grammar-*` features; engine features forward.
 
+[[crate]]
+name = "lean-ctx-doc"
+path = "crates/lean-ctx-doc"
+may_depend_on = []
+# New (not extracted): the doc model of docs in Hive (C0 2.2). The engine's
+# adapter is lean-ctx-hive's docs.rs (replica events in, signed writes out).
+facade = []
+
 # ---------------------------------------------------------------- scheduled
 # Order is the planned extraction order. L0 = leaf crates, L1 = foundation,
 # L2 = needs an inversion first (frozen so the knot does not grow).
@@ -96,5 +104,34 @@ crate = "(inversion first)"
 level = "L2"
 modules = [
   "core::config",
-  "core::hive",
 ]
+
+# ---------------------------------------------------------------- no_inbound
+# Modules that will sit above the engine: the engine's own modules must not
+# import them. Exceptions, while an extraction is under way, are frozen in
+# the baseline under `inbound:<module>`; the list may only shrink.
+
+# The hook installers and handlers move above the engine. The engine reads
+# what it needs from core (core::{hook_mode, host_state, claude_md,
+# claude_host, governor_hosts}); server/, tools/, engine/ and
+# agent_tools_cmd move above too and keep their imports.
+[[no_inbound]]
+module = "hooks"
+from = [
+  "core::*", "compound_lexer", "config_io", "daemon", "daemon_autostart",
+  "daemon_client", "dropin", "gitlab_bootstrap", "heatmap", "instructions",
+  "ipc", "kits", "lsp", "marked_block", "mcp_stdio", "proxy_autostart",
+  "report", "rewrite_registry", "rules_inject", "shell", "shell_hook",
+  "telemetry_transport", "terminal_ui", "test_env", "tool_defs",
+]
+
+[[no_inbound]]
+module = "hook_handlers"
+from = [
+  "core::*", "compound_lexer", "config_io", "daemon", "daemon_autostart",
+  "daemon_client", "dropin", "gitlab_bootstrap", "heatmap", "instructions",
+  "ipc", "kits", "lsp", "marked_block", "mcp_stdio", "proxy_autostart",
+  "report", "rewrite_registry", "rules_inject", "shell", "shell_hook",
+  "telemetry_transport", "terminal_ui", "test_env", "tool_defs",
+]
+

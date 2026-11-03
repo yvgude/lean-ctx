@@ -1,0 +1,5 @@
+# my settings
+terse_agent = "full"
+
+[cloud]
+contribute_enabled = true

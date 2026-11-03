@@ -1,10 +1,9 @@
-use std::path::PathBuf;
-
 use serde_json::Value;
 
 #[test]
 fn mcp_manifest_is_up_to_date() {
-    let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    lean_ctx_server::server::registry::register_tool_catalog();
+    let rust_dir = crate::engine_dir().to_path_buf();
     let repo_root = rust_dir.parent().unwrap_or(&rust_dir);
     let path = repo_root.join("website/generated/mcp-tools.json");
 
@@ -15,7 +14,7 @@ fn mcp_manifest_is_up_to_date() {
             // (We keep the skip for minimal checkouts that exclude `website/` entirely.)
             assert!(
                 !repo_root.join("website").exists(),
-                "missing manifest at {}: {e}\nRun:\n  cargo run --example gen_mcp_manifest --features dev-tools\n",
+                "missing manifest at {}: {e}\nRun:\n  cargo run -p lean-ctx-server --example gen_mcp_manifest --features dev-tools\n",
                 path.display()
             );
             eprintln!(
@@ -32,7 +31,7 @@ fn mcp_manifest_is_up_to_date() {
     assert_eq!(
         on_disk,
         expected,
-        "manifest drift at {}.\nRegenerate via:\n  cargo run --example gen_mcp_manifest --features dev-tools\n",
+        "manifest drift at {}.\nRegenerate via:\n  cargo run -p lean-ctx-server --example gen_mcp_manifest --features dev-tools\n",
         path.display()
     );
 }

@@ -22,7 +22,7 @@ const SHARED_SCHEMA_VERSION: u32 = 1;
 const MAX_FACTS_PER_PROJECT: usize = 500;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SharedFact {
+pub struct SharedFact {
     pub id: String,
     pub from_agent: String,
     pub category: String,
@@ -46,7 +46,7 @@ impl AgentRegistry {
     /// Share `facts` with the other agents of `project_root`. Every fact is
     /// admitted first; one withheld fact refuses the whole share and nothing
     /// is written.
-    pub(crate) fn share_knowledge(
+    pub fn share_knowledge(
         &mut self,
         project_root: &str,
         from: &str,
@@ -59,7 +59,7 @@ impl AgentRegistry {
     /// Adopt one legacy fact (`lean-ctx migrate legacy-context`) under the
     /// stable id `id`: a rerun after an interrupted adoption finds the copy
     /// and writes nothing twice.
-    pub(crate) fn adopt_shared_fact(
+    pub fn adopt_shared_fact(
         &mut self,
         project_root: &str,
         id: &str,
@@ -115,7 +115,7 @@ impl AgentRegistry {
     /// The facts of `project_root` that `agent_id` has not received yet, each
     /// re-authorized for this reader now; a withheld fact is delivered as the
     /// content-free gateway notice.
-    pub(crate) fn receive_shared_knowledge(
+    pub fn receive_shared_knowledge(
         &mut self,
         project_root: &str,
         agent_id: &str,

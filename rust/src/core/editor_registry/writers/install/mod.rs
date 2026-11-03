@@ -29,7 +29,7 @@ mod zed;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use amp::*;
 #[allow(clippy::wildcard_imports)]
-pub(crate) use claude::*;
+pub use claude::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use cline_cli::*;
 #[allow(clippy::wildcard_imports)]
@@ -37,7 +37,7 @@ pub(crate) use codewhale::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use codex::*;
 #[allow(clippy::wildcard_imports)]
-pub(crate) use commandcode::*;
+pub use commandcode::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use copilot::*;
 #[allow(clippy::wildcard_imports)]

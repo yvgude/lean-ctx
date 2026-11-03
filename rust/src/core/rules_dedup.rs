@@ -29,7 +29,7 @@ use crate::core::rules_channel::{COMPRESSION_BLOCK_END, COMPRESSION_BLOCK_START}
 
 /// One planned dedup action.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Action {
+pub enum Action {
     /// Delete a wholly lean-ctx-owned duplicate rules file.
     DeleteFile { path: PathBuf, reason: String },
     /// Strip lean-ctx-marked blocks from a shared file (keeps user content).
@@ -190,7 +190,7 @@ fn has_strippable_region(content: &str) -> bool {
 /// every line outside the lean-ctx markers (backup at `<file>.bak`). Returns a
 /// result line when something changed. Shared by `setup`/`init` writers and
 /// `rules dedup`, so no path ever deletes user text.
-pub(crate) fn retire_rules_file(path: &Path) -> Option<String> {
+pub fn retire_rules_file(path: &Path) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     let action = if is_whole_lean_ctx_file(&content) {
         Action::DeleteFile {
@@ -277,7 +277,7 @@ fn global_duplicate_candidates(home: &Path) -> Vec<PathBuf> {
 }
 
 /// Plans the dedup for `project` (walking parents up to, excluding, `home`).
-pub(crate) fn plan(home: &Path, project: &Path) -> Vec<Action> {
+pub fn plan(home: &Path, project: &Path) -> Vec<Action> {
     let mut actions = Vec::new();
     let canonical_cursor_mdc = home.join(".cursor/rules/lean-ctx.mdc");
 
@@ -365,7 +365,7 @@ pub(crate) fn plan(home: &Path, project: &Path) -> Vec<Action> {
 }
 
 /// Executes one action. Returns a human-readable result line.
-pub(crate) fn apply(action: &Action) -> String {
+pub fn apply(action: &Action) -> String {
     match action {
         Action::DeleteFile { path, .. } => match std::fs::remove_file(path) {
             Ok(()) => format!("deleted   {}", path.display()),

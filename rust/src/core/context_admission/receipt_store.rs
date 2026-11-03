@@ -26,18 +26,18 @@ use lean_ctx_protocol::context_gateway::{
 use lean_ctx_protocol::{MAX_EGRESS_ATTEMPTS, Sha256Digest};
 use serde::{Deserialize, Serialize};
 
-pub(crate) mod capacity;
-pub(crate) mod frame;
-pub(crate) mod keyed;
-pub(crate) mod observed;
-pub(crate) mod references;
-pub(crate) mod retention;
-pub(crate) mod roots;
-pub(crate) mod trace;
-pub(crate) mod view;
+pub mod capacity;
+pub mod frame;
+pub mod keyed;
+pub mod observed;
+pub mod references;
+pub mod retention;
+pub mod roots;
+pub mod trace;
+pub mod view;
 
 /// Receipts kept in a project's index.
-pub(crate) const LATEST_CAPACITY: usize = 64;
+pub const LATEST_CAPACITY: usize = 64;
 /// Receipts a task's index holds. A task that reaches it is reported as
 /// incomplete from then on, never as fully known.
 pub(crate) const TASK_CAPACITY: usize = 256;
@@ -77,7 +77,7 @@ fn gateway_dir() -> Option<PathBuf> {
 /// operator's view (`lean-ctx doctor`). `None` without a data directory.
 /// `megabytes` is the ceiling (`0` = none); `Err`: the store cannot be
 /// measured completely, so nothing is said about it.
-pub(crate) fn store_usage(megabytes: u64) -> Option<Result<capacity::Usage, String>> {
+pub fn store_usage(megabytes: u64) -> Option<Result<capacity::Usage, String>> {
     gateway_dir().map(|dir| capacity::usage_in(&dir, megabytes))
 }
 
@@ -254,23 +254,23 @@ struct EgressDecisionPointerV1 {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct StoredEgressAdmission {
-    pub(crate) digest: Sha256Digest,
-    pub(crate) admission: EgressAdmissionReceiptV1,
+pub struct StoredEgressAdmission {
+    pub digest: Sha256Digest,
+    pub admission: EgressAdmissionReceiptV1,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct StoredEgressObservation {
+pub struct StoredEgressObservation {
     pub(crate) digest: Sha256Digest,
-    pub(crate) observation: EgressTransportObservationV1,
+    pub observation: EgressTransportObservationV1,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct EgressLifecycleView {
+pub struct EgressLifecycleView {
     /// `None` means a proxy egress decision was stored but its lifecycle link
     /// was not; the legacy V1 `Delivered` outcome is not transport evidence.
-    pub(crate) admission: Option<StoredEgressAdmission>,
-    pub(crate) observations: Vec<StoredEgressObservation>,
+    pub admission: Option<StoredEgressAdmission>,
+    pub observations: Vec<StoredEgressObservation>,
 }
 
 /// Stored evidence bytes: compact JSON in struct declaration order. Not the
@@ -406,14 +406,14 @@ pub(crate) fn persist_in(
 
 /// A receipt loaded back from the store, verified against its digest.
 #[derive(Debug, Clone)]
-pub(crate) struct StoredReceipt {
-    pub(crate) digest: Sha256Digest,
-    pub(crate) receipt: ContextDecisionReceiptV1,
+pub struct StoredReceipt {
+    pub digest: Sha256Digest,
+    pub receipt: ContextDecisionReceiptV1,
 }
 
 /// Why a stored receipt could not be used.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum LoadError {
+pub enum LoadError {
     Missing,
     Unreadable,
     /// The bytes no longer match the digest they are filed under.
@@ -796,10 +796,7 @@ pub(crate) fn load_egress_for_decision_in(
 /// The newest `limit` receipts indexed under one project root, newest first,
 /// each verified: its canonical key and the spelling given ([`roots`]). The
 /// receipts of the whole repository: `roots::latest_of_repository`.
-pub(crate) fn latest(
-    project_root: &str,
-    limit: usize,
-) -> Vec<(String, Result<StoredReceipt, LoadError>)> {
+pub fn latest(project_root: &str, limit: usize) -> Vec<(String, Result<StoredReceipt, LoadError>)> {
     let Some(dir) = gateway_dir() else {
         return Vec::new();
     };
@@ -816,11 +813,11 @@ pub(crate) fn latest_in(
 
 /// A task's receipts and whether they are all of them.
 #[derive(Debug, Clone)]
-pub(crate) struct TaskReceipts {
+pub struct TaskReceipts {
     /// Oldest first, each verified; a receipt naming another task is tampered.
-    pub(crate) entries: Vec<(String, Result<StoredReceipt, LoadError>)>,
+    pub entries: Vec<(String, Result<StoredReceipt, LoadError>)>,
     /// False when the index is damaged or full: deliveries may be missing.
-    pub(crate) index_complete: bool,
+    pub index_complete: bool,
 }
 
 impl TaskReceipts {
@@ -882,7 +879,7 @@ pub(crate) fn for_task_in(dir: &Path, scope: &str, task_id: &str) -> TaskReceipt
 }
 
 /// A stored receipt by its digest, verified.
-pub(crate) fn load(hex: &str) -> Result<StoredReceipt, LoadError> {
+pub fn load(hex: &str) -> Result<StoredReceipt, LoadError> {
     let dir = gateway_dir().ok_or(LoadError::Missing)?;
     if !is_digest_hex(hex) {
         return Err(LoadError::Unreadable);
@@ -925,7 +922,7 @@ fn index_output(dir: &Path, output: &Sha256Digest, receipt: &Sha256Digest) {
 }
 
 /// The SHA-256 digest a receipt's `final_context` holds for `bytes`.
-pub(crate) fn output_digest(bytes: &[u8]) -> Sha256Digest {
+pub fn output_digest(bytes: &[u8]) -> Sha256Digest {
     use sha2::{Digest, Sha256};
     let hex = crate::core::agent_identity::hex_encode(&Sha256::digest(bytes));
     Sha256Digest::new(format!("sha256:{hex}")).expect("SHA-256 digest is canonical")
@@ -935,7 +932,7 @@ pub(crate) fn output_digest(bytes: &[u8]) -> Sha256Digest {
 /// verified. A receipt listed under an output it does not name is tampered.
 /// Receipts stored before the output index existed are found through the
 /// recent receipts of `project_root`.
-pub(crate) fn by_output(
+pub fn by_output(
     project_root: &str,
     output: &Sha256Digest,
 ) -> Vec<(String, Result<StoredReceipt, LoadError>)> {
@@ -982,7 +979,7 @@ pub(crate) fn by_output_in(
 
 /// The typed reason of a delivery that was not released because its receipt
 /// could not be stored while the store is mandatory.
-pub(crate) const NOT_PERSISTED_CODE: &str = "receipt.not_persisted";
+pub const NOT_PERSISTED_CODE: &str = "receipt.not_persisted";
 
 /// The ONE "receipt store is mandatory" predicate for MCP, CLI and proxy,
 /// decided under the policy snapshot the caller already holds: protection is
@@ -1004,15 +1001,15 @@ pub(crate) fn mandatory_under(
 /// the capture. The snapshot is the one taken at the call's entry — the same
 /// rules the release point of the call used — never a later read.
 #[derive(Debug, Clone)]
-pub(crate) struct Duty {
-    pub(crate) mandatory: bool,
+pub struct Duty {
+    pub mandatory: bool,
     snapshot: super::capture::CallSnapshot,
 }
 
 impl Duty {
     /// Take the call's snapshot now and decide the duty under it: the entry
     /// of a call. Call inside the request scope.
-    pub(crate) fn at_entry() -> Self {
+    pub fn at_entry() -> Self {
         Self::under(super::capture::CallSnapshot::take())
     }
 
@@ -1020,7 +1017,7 @@ impl Duty {
     /// capture carries. A capture without one (not opened with
     /// `AdmissionCapture::for_call`) is decided under the rules configured
     /// now; call inside the request scope then.
-    pub(crate) fn of(capture: &super::capture::AdmissionCapture) -> Self {
+    pub fn of(capture: &super::capture::AdmissionCapture) -> Self {
         capture
             .snapshot()
             .cloned()
@@ -1035,7 +1032,7 @@ impl Duty {
     }
 
     /// The policy snapshot this duty was decided under.
-    pub(crate) fn snapshot(&self) -> &super::capture::CallSnapshot {
+    pub fn snapshot(&self) -> &super::capture::CallSnapshot {
         &self.snapshot
     }
 }
@@ -1044,7 +1041,7 @@ impl Duty {
 /// owe no receipt under protection. Being content-free is this positive,
 /// typed fact — never the mere absence of a recorded source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ContentFree {
+pub enum ContentFree {
     /// The result has no bytes (for the CLI: nothing but the final newline).
     NoBytes,
     /// The result is one typed refusal notice the gateway itself emits:
@@ -1070,19 +1067,19 @@ impl ContentFree {
 }
 
 /// Who a delivery's receipt is recorded for.
-pub(crate) struct ReceiptSubject<'a> {
-    pub(crate) tool: &'a str,
-    pub(crate) agent_id: Option<&'a str>,
+pub struct ReceiptSubject<'a> {
+    pub tool: &'a str,
+    pub agent_id: Option<&'a str>,
     /// Content-free reference of a shown presenter capability, if any.
-    pub(crate) presenter_ref: Option<&'a str>,
-    pub(crate) project_root: &'a str,
+    pub presenter_ref: Option<&'a str>,
+    pub project_root: &'a str,
     /// Transport and channel of the delivery, for its trace sidecar.
-    pub(crate) delivery: &'a trace::Delivery,
+    pub delivery: &'a trace::Delivery,
 }
 
 /// What became of one delivery's receipt.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ReceiptRecord {
+pub enum ReceiptRecord {
     /// No protection, and the call admitted no source: nothing to receipt.
     NotOwed,
     /// Under protection, and the result is in the content-free set.
@@ -1101,7 +1098,7 @@ pub(crate) enum ReceiptRecord {
 
 impl ReceiptRecord {
     /// Whether a security event entered the audit trail for this delivery.
-    pub(crate) fn security(&self) -> bool {
+    pub fn security(&self) -> bool {
         match self {
             Self::NotOwed | Self::ContentFree(_) => false,
             Self::Stored { security, .. } | Self::Missing { security } => *security,
@@ -1111,7 +1108,7 @@ impl ReceiptRecord {
     /// The handle of the prepared delivery, to be confirmed by whoever
     /// hands its bytes over. `None`: nothing was sealed (no protection, no
     /// receipt), so there is nothing to observe.
-    pub(crate) fn into_prepared(self) -> Option<observed::Prepared> {
+    pub fn into_prepared(self) -> Option<observed::Prepared> {
         match self {
             Self::Stored { prepared, .. } => prepared,
             Self::NotOwed | Self::ContentFree(_) | Self::Missing { .. } => None,
@@ -1119,7 +1116,7 @@ impl ReceiptRecord {
     }
 
     /// One content-free line for the log: what the receipt duty came to.
-    pub(crate) fn summary(&self) -> String {
+    pub fn summary(&self) -> String {
         match self {
             Self::NotOwed => "not owed".to_owned(),
             Self::ContentFree(reason) => format!("not owed, content-free result ({reason:?})"),
@@ -1130,14 +1127,14 @@ impl ReceiptRecord {
 
     /// The fail-closed rule: where the store is mandatory, a delivery whose
     /// owed receipt is missing must not leave.
-    pub(crate) fn withholds(&self, mandatory: bool) -> bool {
+    pub fn withholds(&self, mandatory: bool) -> bool {
         mandatory && matches!(self, Self::Missing { .. })
     }
 }
 
 /// The content-free notice that stands in for a delivery withheld by
 /// [`ReceiptRecord::withholds`].
-pub(crate) fn not_persisted_notice() -> String {
+pub fn not_persisted_notice() -> String {
     super::carrier::Withheld::new(&[NOT_PERSISTED_CODE]).notice()
 }
 
@@ -1247,7 +1244,7 @@ pub(super) fn seal(
 ///   in ONE signed audit entry — every mandatory receipt, not only those
 ///   with a security action. A sidecar or an anchor that cannot be written
 ///   counts like a receipt that cannot be stored, and the receipt that was
-///   already stored is marked as a failed preparation ([`seal`]).
+///   already stored is marked as a failed preparation (`seal`).
 ///
 /// A stored receipt, its sidecar and its anchor say PREPARED: they exist
 /// before a byte leaves and prove no hand-over. The observation is a second
@@ -1255,7 +1252,7 @@ pub(super) fn seal(
 ///
 /// Without protection nothing of that applies: a receipt for admitted
 /// sources, anchored when a security action was recorded, as before.
-pub(crate) fn record_delivery(
+pub fn record_delivery(
     capture: &super::capture::AdmissionCapture,
     subject: &ReceiptSubject<'_>,
     delivered: &super::capture::Delivered<'_>,
@@ -1346,21 +1343,21 @@ pub(crate) fn record_delivery(
 
 /// The `gateway_receipt:<digest>` entries of the signed audit trail, read
 /// once, with the result of verifying the trail's hash chain.
-pub(crate) struct AuditAnchors {
+pub struct AuditAnchors {
     /// The trail file exists and is readable.
-    pub(crate) trail_present: bool,
+    pub trail_present: bool,
     /// The trail could not be read at this moment (an append held its lock
     /// past the reader's bound, or the file is unreadable): nothing about
     /// anchors or the chain was CHECKED. Not an absent trail and not a broken
     /// chain — readers must say "not checked", never "not found" or "invalid".
-    pub(crate) trail_unavailable: bool,
+    pub trail_unavailable: bool,
     /// Every hash link of the trail verifies.
-    pub(crate) chain_valid: bool,
+    pub chain_valid: bool,
     /// Entries the trail holds, as far as the chain check counted them.
-    pub(crate) entries_total: usize,
+    pub entries_total: usize,
     /// The hash chain verifies from the first entry through this one
     /// (1-based); equal to `entries_total` when the whole chain verifies.
-    pub(crate) verified_through: usize,
+    pub verified_through: usize,
     /// Receipt digest (hex) → its anchor.
     entries: std::collections::HashMap<String, Anchor>,
 }
@@ -1369,7 +1366,7 @@ pub(crate) struct AuditAnchors {
 /// over the entry hash; that the hash covers the entry's fields is what the
 /// chain check establishes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SignatureState {
+pub enum SignatureState {
     /// Verified with the public key of this machine's audit identity.
     Verified,
     /// A signature is there, but it cannot be checked here: the reason.
@@ -1382,20 +1379,20 @@ pub(crate) enum SignatureState {
 
 /// One `gateway_receipt:` entry of the audit trail.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Anchor {
-    pub(crate) entry_hash: String,
+pub struct Anchor {
+    pub entry_hash: String,
     /// 1-based position of the entry in the trail.
-    pub(crate) position: usize,
+    pub position: usize,
     /// The hash chain verifies up to and including this entry.
-    pub(crate) chain_verified: bool,
-    pub(crate) signature: SignatureState,
+    pub chain_verified: bool,
+    pub signature: SignatureState,
     /// SHA-256 (hex) of the trace sidecar's stored bytes, when the entry
     /// anchors a pair.
-    pub(crate) trace: Option<String>,
+    pub trace: Option<String>,
 }
 
 impl AuditAnchors {
-    pub(crate) fn load() -> Self {
+    pub fn load() -> Self {
         match crate::core::audit_trail::default_trail_path() {
             Some(path) => Self::load_at(&path),
             None => Self {
@@ -1480,7 +1477,7 @@ impl AuditAnchors {
 
     /// The anchor of the receipt stored under `hex`. `None`: no entry of the
     /// trail names it.
-    pub(crate) fn of(&self, hex: &str) -> Option<&Anchor> {
+    pub fn of(&self, hex: &str) -> Option<&Anchor> {
         self.entries.get(hex)
     }
 }

@@ -14,7 +14,7 @@ Current product identity:
 - **Product:** LeanCTX
 - **Category:** Context Gateway for AI Systems
 - **Promise:** Control what your AI can see.
-- **Components:** LeanCTX Engine and LeanCTX SDK
+- **Components:** LeanCTX | OSS and LeanCTX SDK
 - **Primary story:** Select → Control → Learn → Prove
 
 Learn means local task and knowledge continuity under configured access and
@@ -50,7 +50,7 @@ outcome quality.
     "name": "LeanCTX",
     "category": "Context Gateway for AI Systems",
     "promise": "Control what your AI can see.",
-    "components": ["LeanCTX Engine", "LeanCTX SDK"],
+    "components": ["LeanCTX | OSS", "LeanCTX SDK"],
     "primary_story": ["Select", "Control", "Learn", "Prove"]
   },
   "primary_entrypoints": [
@@ -71,7 +71,7 @@ outcome quality.
   "required_text": {
     "README.md": ["Get started", "Real-world scenarios"],
     ".github/workflows/release.yml": ["desc \"Local engine for the LeanCTX Context Gateway for AI Systems\""],
-    "aur/lean-ctx/.SRCINFO": ["pkgdesc = LeanCTX Engine — open-source Context Gateway for AI Systems. Context selection, supported controls, and evidence through local integration paths."]
+    "aur/lean-ctx/.SRCINFO": ["pkgdesc = LeanCTX | OSS — open-source Context Gateway for AI Systems. Context selection, supported controls, and evidence through local integration paths."]
   },
   "forbidden_text": {
     "README.md": [

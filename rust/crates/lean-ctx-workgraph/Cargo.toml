@@ -4,7 +4,7 @@ name = "lean-ctx-workgraph"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "Bounded multi-agent work graph, budget cascade and outcome evaluation model for the LeanCTX Engine."
+description = "Bounded multi-agent work graph, budget cascade and outcome evaluation model for LeanCTX | OSS."
 repository = "https://github.com/yvgude/lean-ctx"
 homepage = "https://leanctx.com"
 readme = "README.md"
@@ -14,7 +14,7 @@ publish = true
 
 [dependencies]
 blake3 = "1.8"
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.4.0" }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
 sha2 = "0.11"

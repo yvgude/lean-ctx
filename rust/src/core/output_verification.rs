@@ -82,7 +82,7 @@ impl VerificationConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) enum WarningKind {
+pub enum WarningKind {
     MissingPath,
     MangledIdentifier,
     LineNumberDrift,
@@ -101,21 +101,21 @@ impl std::fmt::Display for WarningKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct VerificationWarning {
+pub struct VerificationWarning {
     pub kind: WarningKind,
     pub detail: String,
     pub severity: WarningSeverity,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) enum WarningSeverity {
+pub enum WarningSeverity {
     Low,
     Medium,
     High,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct VerificationResult {
+pub struct VerificationResult {
     pub pass: bool,
     pub warnings: Vec<VerificationWarning>,
     pub info_loss_score: f64,
@@ -134,7 +134,7 @@ impl VerificationResult {
         }
     }
 
-    pub(crate) fn format_compact(&self) -> String {
+    pub fn format_compact(&self) -> String {
         if self.warnings.is_empty() {
             return "PASS".to_string();
         }
@@ -155,7 +155,7 @@ impl VerificationResult {
     }
 }
 
-pub(crate) fn verify_output(
+pub fn verify_output(
     source: &str,
     compressed: &str,
     config: &VerificationConfig,
@@ -230,7 +230,7 @@ pub(crate) fn verify_output(
 ///
 /// This exercises path and identifier preservation with a known-good compact
 /// representation and records the result in the same counters as live output.
-pub(crate) fn run_self_check() -> VerificationResult {
+pub fn run_self_check() -> VerificationResult {
     const SOURCE: &str =
         r#"fn lean_ctx_verification_probe() { include_str!("src/core/output_verification.rs"); }"#;
     const COMPRESSED: &str = "fn lean_ctx_verification_probe() src/core/output_verification.rs";
@@ -454,7 +454,7 @@ fn record_result(result: &VerificationResult) {
     }
 }
 
-pub(crate) fn stats_snapshot() -> VerificationSnapshot {
+pub fn stats_snapshot() -> VerificationSnapshot {
     let s = global_stats();
     let total = s.total_count.load(Ordering::Relaxed);
     let pass = s.pass_count.load(Ordering::Relaxed);
@@ -488,7 +488,7 @@ pub(crate) fn stats_snapshot() -> VerificationSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct VerificationSnapshot {
+pub struct VerificationSnapshot {
     pub total: u64,
     pub pass: u64,
     pub warn_runs: u64,
@@ -500,7 +500,7 @@ pub(crate) struct VerificationSnapshot {
 }
 
 impl VerificationSnapshot {
-    pub(crate) fn format_compact(&self) -> String {
+    pub fn format_compact(&self) -> String {
         format!(
             "Verification: {}/{} pass ({:.0}%), warn_runs={}, warn_items={}, loss(avg)={:.1}%",
             self.pass,

@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    crate::engine_dir()
         .parent()
         .expect("rust crate has repository parent")
         .to_path_buf()

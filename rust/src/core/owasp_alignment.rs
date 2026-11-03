@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct OwaspMapping {
+pub struct OwaspMapping {
     pub owasp_id: &'static str,
     pub owasp_title: &'static str,
     pub risk_description: &'static str,
@@ -13,19 +13,19 @@ pub(crate) struct OwaspMapping {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct Mitigation {
+pub struct Mitigation {
     pub feature: &'static str,
     pub module: &'static str,
     pub description: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq)]
-pub(crate) enum Coverage {
+pub enum Coverage {
     Full,
     Partial,
 }
 
-pub(crate) fn alignment() -> Vec<OwaspMapping> {
+pub fn alignment() -> Vec<OwaspMapping> {
     vec![
         OwaspMapping {
             owasp_id: "OWASP-AGENT-01",
@@ -311,7 +311,7 @@ pub(crate) fn alignment() -> Vec<OwaspMapping> {
 }
 
 /// Returns a compact summary suitable for CLI output.
-pub(crate) fn summary() -> String {
+pub fn summary() -> String {
     let mappings = alignment();
     let mut out = String::from("OWASP Top 10 for Agentic Applications — lean-ctx Alignment\n");
     out.push_str(&"=".repeat(60));

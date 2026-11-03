@@ -51,7 +51,7 @@ pub fn generate_report() -> DashboardReport {
     let schema = super::schema_wiring::schema_savings();
     let evidence = super::evidence_wiring::dispatch_summary();
     let adaptive = super::adaptive_bridge::adaptive_summary();
-    let search = crate::tools::search_kernel::search_summary();
+    let search = crate::core::search_kernel::search_summary();
     let response = super::response_evidence::response_summary();
     let dispatches = evidence.tool_dispatches + evidence.proxy_dispatches;
     let health_status = if !kernel_enabled {

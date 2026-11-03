@@ -87,7 +87,7 @@ pub(super) fn current_verified(root: PathBuf) -> VerifiedResult {
     if Instant::now() >= deadline {
         return Err(DEADLINE_EXCEEDED.into());
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let result = result.map(|mut verified| {
         ANSWER_HOOK.with(|slot| {
             if let Some(hook) = slot.borrow_mut().as_mut() {
@@ -107,10 +107,10 @@ pub(super) fn current_verified(root: PathBuf) -> VerifiedResult {
     result
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 type AnswerHook = Box<dyn FnMut(&mut Option<org::Lifetime>)>;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Tests only: the lifetime of each verified answer this thread receives,
     /// as the verifier would have stated it, set before the receiving side
@@ -123,7 +123,7 @@ thread_local! {
 /// Shapes the lifetime of every answer [`current_verified`] hands out on this
 /// thread until the guard drops. Tests only. One hook per thread: arming
 /// while one is armed panics instead of replacing it.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[must_use]
 pub(super) fn answer_hook_for_test(
     hook: impl FnMut(&mut Option<org::Lifetime>) + 'static,
@@ -141,10 +141,10 @@ pub(super) fn answer_hook_for_test(
 
 /// Clears the hook of the thread that armed it; neither `Send` nor `Sync`, so
 /// it is dropped on that very thread.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) struct AnswerHookGuard(std::marker::PhantomData<std::rc::Rc<()>>);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for AnswerHookGuard {
     fn drop(&mut self) {
         ANSWER_HOOK.with(|slot| slot.borrow_mut().take());
@@ -185,7 +185,7 @@ struct Snapshot {
     /// The installed Hive filter set, as one captured text.
     hive_filters: Option<String>,
     /// The Hive effective policy (2.x): floor, requirement and the vault
-    /// whose entry applies to this project ([`crate::core::hive::effective_floor`]).
+    /// whose entry applies to this project ([`crate::core::policy::hive_floor`]).
     hive_policy: HivePolicy,
     /// The required-organization marker. Part of the fingerprint: a marker
     /// change is a new snapshot, so no compiled policy outlives it.
@@ -254,7 +254,7 @@ impl Snapshot {
         field(&mut hash, trust.as_deref().map(str::as_bytes));
         // The Hive filter set is written atomically as one file; a changed
         // set is a new snapshot, in every process that reads it.
-        let filters_path = crate::core::hive::policy::filter_set_path();
+        let filters_path = crate::core::policy::hive_filters::filter_set_path();
         field(
             &mut hash,
             filters_path
@@ -328,7 +328,7 @@ impl Snapshot {
                 // installed, from this same snapshot (HIVE-RT-D5). A lifted
                 // requirement (no floor) requires nothing.
                 if verified.floor.is_some() {
-                    crate::core::hive::policy::required_packs_installed(
+                    crate::core::policy::hive_filters::required_packs_installed(
                         text,
                         self.hive_filters.as_deref(),
                     )?;
@@ -371,7 +371,7 @@ impl Snapshot {
         };
         // The compiled policy carries the signed end of its floor, so that a
         // policy kept beyond this refresh ends with it.
-        let hive = crate::core::hive::policy::filter_rules(self.hive_filters.as_deref());
+        let hive = crate::core::policy::hive_filters::filter_rules(self.hive_filters.as_deref());
         if hive.dropped > 0 {
             tracing::warn!(
                 dropped = hive.dropped,
@@ -425,7 +425,7 @@ impl HivePolicy {
         read: fn(&Path, bool) -> Result<Option<String>, String>,
         hash: &mut blake3::Hasher,
     ) -> Result<Self, String> {
-        use crate::core::hive::effective_floor::{FLOOR_FILE, REQUIRED_FILE, floor_dir, vault_for};
+        use crate::core::policy::hive_floor::{FLOOR_FILE, REQUIRED_FILE, floor_dir, vault_for};
         let Some(dir) = floor_dir() else {
             return Ok(Self::default());
         };
@@ -451,7 +451,7 @@ impl HivePolicy {
     }
 
     fn resolve(&self) -> Result<Option<super::ResolvedPolicy>, String> {
-        crate::core::hive::effective_floor::resolve(
+        crate::core::policy::hive_floor::resolve(
             self.floor.as_deref(),
             self.required.as_deref(),
             self.vault.as_deref(),
@@ -462,7 +462,7 @@ impl HivePolicy {
 /// The launcher and admission worker use exactly the same bounded snapshot.
 /// A deliberate authority update requires a new protected launch; changing
 /// files within the old session never silently grants the new authority.
-pub(crate) fn protected_policy_digest(project: &Path) -> Result<String, String> {
+pub fn protected_policy_digest(project: &Path) -> Result<String, String> {
     let root = canonical_project_root(project)?;
     let snapshot = Snapshot::capture_for(&root, Some(&root))?;
     // The launch digest is the authority as captured: a marker this very
@@ -531,7 +531,7 @@ fn protected_config_paths(root: &Path) -> Result<Vec<PathBuf>, String> {
 
 /// The launcher's kernel write boundary covers the same file authorities as
 /// the bounded admission snapshot, including absent optional inputs.
-pub(crate) fn protected_authority_paths(root: &Path) -> Result<Vec<PathBuf>, String> {
+pub fn protected_authority_paths(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut paths = protected_config_paths(root)?;
     paths.push(root.join(PROJECT_PACK_PATH));
     paths.push(org::store::selected_source()?.0);

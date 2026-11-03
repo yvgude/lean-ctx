@@ -41,6 +41,7 @@ fn collect_names(value: &Value, out: &mut std::collections::BTreeSet<String>) {
 
 #[test]
 fn mcp_entrypoint_tools_are_advertised() {
+    lean_ctx_server::server::registry::register_tool_catalog();
     let manifest = lean_ctx::core::mcp_manifest::manifest_value();
     let mut names = std::collections::BTreeSet::new();
     collect_names(&manifest, &mut names);
@@ -70,7 +71,7 @@ fn mcp_entrypoint_tools_are_advertised() {
             names.contains(tool),
             "entrypoint tool '{tool}' is not advertised in the manifest.\n\
              Register it in the tool registry and regenerate:\n  \
-             cargo run --example gen_mcp_manifest --features dev-tools"
+             cargo run -p lean-ctx-server --example gen_mcp_manifest --features dev-tools"
         );
     }
 }

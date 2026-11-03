@@ -52,7 +52,7 @@ fn migrate_shadow_mode_default() {
 
 /// Public entry point for the shadow_mode migration, callable from
 /// `cmd_dev_install` and other lifecycle commands.
-pub(crate) fn migrate_shadow_mode_default_public() {
+pub fn migrate_shadow_mode_default_public() {
     migrate_shadow_mode_default();
 }
 
@@ -128,7 +128,7 @@ pub(super) fn post_update_rewire(skip_rules: bool, quiet: bool, setup: &dyn Setu
 
 /// The setup refresh an update runs after replacing the binary. Setup sits
 /// above the engine, so the updater's caller supplies it.
-pub(crate) trait SetupRefresh {
+pub trait SetupRefresh {
     /// Re-run setup in refresh-only mode: MCP configs, shell hooks and, unless
     /// `skip_rules`, rules for the recorded or already-connected tools.
     fn refresh(&self, proxy_active: bool, skip_rules: bool) -> Result<(), String>;

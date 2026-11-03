@@ -16,7 +16,7 @@ const FIELD: char = '\u{1f}'; // ASCII unit separator for safe log parsing
 
 /// One recorded snapshot in the shadow history.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Checkpoint {
+pub struct Checkpoint {
     pub sha: String,
     /// Committer date, ISO-8601.
     pub time: String,
@@ -57,7 +57,7 @@ pub(crate) fn init(project: &Path) -> Result<(), String> {
 
 /// Snapshot the current working tree. Returns the new checkpoint, or — when the
 /// tree is unchanged since the last snapshot — the existing HEAD checkpoint.
-pub(crate) fn snapshot(project: &Path, message: &str) -> Result<Checkpoint, String> {
+pub fn snapshot(project: &Path, message: &str) -> Result<Checkpoint, String> {
     init(project)?;
     let git_dir = shadow_git_dir(project)?;
     let env = base_env(&git_dir, project);
@@ -101,7 +101,7 @@ pub(crate) fn snapshot(project: &Path, message: &str) -> Result<Checkpoint, Stri
 }
 
 /// Most recent checkpoints, newest first.
-pub(crate) fn log(project: &Path, limit: usize) -> Result<Vec<Checkpoint>, String> {
+pub fn log(project: &Path, limit: usize) -> Result<Vec<Checkpoint>, String> {
     let git_dir = shadow_git_dir(project)?;
     if !git_dir.join("HEAD").exists() {
         return Ok(Vec::new());
@@ -134,7 +134,7 @@ pub(crate) fn log(project: &Path, limit: usize) -> Result<Vec<Checkpoint>, Strin
 
 /// Unified diff. Defaults to "working tree vs last checkpoint" when `from`/`to`
 /// are omitted.
-pub(crate) fn diff(project: &Path, from: Option<&str>, to: Option<&str>) -> Result<String, String> {
+pub fn diff(project: &Path, from: Option<&str>, to: Option<&str>) -> Result<String, String> {
     let git_dir = shadow_git_dir(project)?;
     if !git_dir.join("HEAD").exists() {
         return Err("no checkpoints yet — run snapshot first".to_string());
@@ -155,7 +155,7 @@ pub(crate) fn diff(project: &Path, from: Option<&str>, to: Option<&str>) -> Resu
 
 /// Restore tracked files from a checkpoint into the working tree. With `path`
 /// scoped to a file/dir; otherwise the whole tree (tracked files only).
-pub(crate) fn restore(project: &Path, git_ref: &str, path: Option<&str>) -> Result<String, String> {
+pub fn restore(project: &Path, git_ref: &str, path: Option<&str>) -> Result<String, String> {
     let git_dir = shadow_git_dir(project)?;
     if !git_dir.join("HEAD").exists() {
         return Err("no checkpoints yet — nothing to restore".to_string());
@@ -174,7 +174,7 @@ pub(crate) fn restore(project: &Path, git_ref: &str, path: Option<&str>) -> Resu
 
 // ── internals ──────────────────────────────────────────────────────────────
 
-fn git(
+pub fn git(
     args: &[&str],
     cwd: &Path,
     timeout: Duration,

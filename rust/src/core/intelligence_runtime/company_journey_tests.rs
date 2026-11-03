@@ -16,10 +16,10 @@ use std::time::{Duration, Instant};
 use ed25519_dalek::SigningKey;
 use serde_json::json;
 
-use super::sign_document;
 use crate::core::intelligence_runtime::org_policy_verifier::{
     Accepted, Snapshot, VerifierCallError, verify as ask_verifier,
 };
+use crate::core::intelligence_runtime::sign_document;
 use crate::core::intelligence_runtime::{install, manifest, sha256};
 use crate::core::policy::org;
 
@@ -30,10 +30,10 @@ const AMPLE: Duration = Duration::from_secs(30);
 
 /// One isolated endpoint with the bundle's Runtime installed and configured,
 /// the organization key pinned and the signed policy in place.
-pub(crate) struct Endpoint {
-    pub(crate) bundle: PathBuf,
-    pub(crate) facts: serde_json::Value,
-    pub(crate) policy_path: PathBuf,
+pub struct Endpoint {
+    pub bundle: PathBuf,
+    pub facts: serde_json::Value,
+    pub policy_path: PathBuf,
     trust_path: PathBuf,
     marker_path: PathBuf,
     lease_path: PathBuf,
@@ -123,7 +123,7 @@ fn inherited_selections_are_set_aside_and_put_back_exactly() {
     );
 }
 
-pub(crate) fn bundle_file(bundle: &Path, name: &str) -> Vec<u8> {
+pub fn bundle_file(bundle: &Path, name: &str) -> Vec<u8> {
     std::fs::read(bundle.join(name))
         .unwrap_or_else(|error| panic!("fixture bundle member {name}: {error}"))
 }
@@ -132,7 +132,7 @@ fn text(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap()
 }
 
-pub(crate) fn instant(timestamp: &str) -> chrono::DateTime<chrono::Utc> {
+pub fn instant(timestamp: &str) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::parse_from_rfc3339(timestamp)
         .unwrap()
         .with_timezone(&chrono::Utc)
@@ -180,7 +180,7 @@ fn archive(bundle: &Path, commit: &str) -> (Vec<u8>, Vec<u8>) {
 
 impl Endpoint {
     /// `marker` names the bundle's marker this endpoint starts with, if any.
-    pub(crate) fn new(marker: Option<&str>) -> Self {
+    pub fn new(marker: Option<&str>) -> Self {
         let bundle = PathBuf::from(std::env::var_os(BUNDLE_ENV).unwrap_or_else(|| {
             panic!("{BUNDLE_ENV} must name the TEST fixture bundle for this journey")
         }));
@@ -207,11 +207,11 @@ impl Endpoint {
         let verified =
             manifest::verify(&archive, &manifest, &signature, &selected, &anchor_key).unwrap();
         assert!(verified.receipt.staging_only);
-        let root_directory = super::super::private_root();
+        let root_directory = crate::core::intelligence_runtime::private_root_for_test();
         let root = root_directory.path().canonicalize().unwrap();
         install::install(&root, "none", &verified, &archive, &manifest, &signature).unwrap();
 
-        let license = super::super::private_root();
+        let license = crate::core::intelligence_runtime::private_root_for_test();
         let license_directory = license.path().canonicalize().unwrap();
         let lease_path = license_directory.join("lease.json");
         std::fs::write(&lease_path, bundle_file(&bundle, "lease.json")).unwrap();

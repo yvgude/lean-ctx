@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::config::RulesConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum LintSeverity {
+pub enum LintSeverity {
     Error,
     Warning,
     Info,
@@ -20,7 +20,7 @@ impl std::fmt::Display for LintSeverity {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct LintWarning {
+pub struct LintWarning {
     pub severity: LintSeverity,
     pub code: String,
     pub message: String,
@@ -43,6 +43,7 @@ const KNOWN_TOOLS: &[&str] = &[
     "ctx_callgraph",
     "ctx_gain",
     "ctx_provider",
+    "ctx_doc",
     "ctx_pack",
     "ctx_graph",
     "ctx_multi_repo",

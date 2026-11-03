@@ -333,7 +333,7 @@ fn still_derived(root: &Path, entry: &SemanticCacheEntry, remaining: &mut usize)
     let (Some(path), Some(root)) = (path.to_str(), root.to_str()) else {
         return false;
     };
-    let read = crate::tools::admitted_sources::read(path, root, SOURCE_TOOL, remaining);
+    let read = crate::core::admitted_sources::read(path, root, SOURCE_TOOL, remaining);
     read.storable().is_some_and(|current| {
         let terms = compute_tf(current);
         terms.len() == entry.tfidf_vector.len()

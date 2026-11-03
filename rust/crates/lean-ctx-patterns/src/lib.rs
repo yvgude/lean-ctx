@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Deterministic shell-output compression patterns for the LeanCTX Engine.
+//! Deterministic shell-output compression patterns for LeanCTX | OSS.
 //!
 //! Every pattern is a pure text transform: command line plus output in,
 //! compressed output (or `None`) out. Engine policy (protected commands,

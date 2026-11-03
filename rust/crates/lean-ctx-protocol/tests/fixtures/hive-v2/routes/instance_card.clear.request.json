@@ -1,7 +1,7 @@
 {
   "consent_channel": "tty_only",
-  "engine_version": "3.12.0",
+  "instance_version": "3.12.0",
   "key_id": "47983724220c8521",
   "presence_key": null,
-  "signature": "0f4d0612a17214e875dd37397e5b3a19b6e593d0b6241241ae261ab138e961fde377544e407139c9c47e286674dc727ec7b2dcea90bcd7f21972fabe3cca610a"
+  "signature": "c869df41f42e11897bd9a609ff8d1a565738168d27ed553eff273bf7eef0352e0fb2bed1a137e031802a288d13e6a4048fbc90f95c54057e21164c9c96a6730c"
 }

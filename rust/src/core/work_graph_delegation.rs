@@ -14,14 +14,14 @@ use crate::core::context_capsule::{ContextCapsuleV1, SignedContextCapsuleV1};
 use crate::core::work_graph::WorkNode;
 
 mod delivery_issuer;
-pub(crate) use delivery_issuer::DeliveryIssuerConfig;
+pub use delivery_issuer::DeliveryIssuerConfig;
 
 const MAX_START_WINDOW_MS: u64 = 30 * 60 * 1_000;
 /// Default lease window of a host-started node.
-pub(crate) const DEFAULT_START_WINDOW_MS: u64 = 300_000;
+pub const DEFAULT_START_WINDOW_MS: u64 = 300_000;
 
 /// Validate before acquiring a claim or provisioning delivery authority.
-pub(crate) fn start_window_ms(timeout_ms: u64) -> Result<u64, String> {
+pub fn start_window_ms(timeout_ms: u64) -> Result<u64, String> {
     if timeout_ms == 0 || timeout_ms > MAX_START_WINDOW_MS {
         return Err(format!(
             "timeout_ms must be between 1 and {MAX_START_WINDOW_MS}"
@@ -31,7 +31,7 @@ pub(crate) fn start_window_ms(timeout_ms: u64) -> Result<u64, String> {
 }
 
 /// Node exclusivity across processes, but never across unrelated project stores.
-pub(crate) fn node_lease_resource(
+pub fn node_lease_resource(
     project_root: &str,
     graph_id: &str,
     node_id: &str,
@@ -47,7 +47,7 @@ pub(crate) fn node_lease_resource(
 /// Project-bound lease of one node path claim (`path:<project-hash>/<rel>` as
 /// stored by delegate, or a plain `path:<rel>`). It is the resource a
 /// `ctx_agent` lease of the same file names.
-pub(crate) fn path_lease_resource(project_root: &str, claim: &str) -> Result<String, String> {
+pub fn path_lease_resource(project_root: &str, claim: &str) -> Result<String, String> {
     let claimed = claim
         .strip_prefix("path:")
         .ok_or_else(|| "path claim must use path: scheme".to_string())?;
@@ -69,7 +69,7 @@ pub(crate) fn path_lease_resource(project_root: &str, claim: &str) -> Result<Str
 
 /// One execution incarnation, shared by delivery certificates and receipts.
 /// Length-delimited serialization prevents graph/node separator collisions.
-pub(crate) fn execution_key(
+pub fn execution_key(
     project_root: &Path,
     graph_id: &str,
     node_id: &str,
@@ -102,13 +102,13 @@ pub(crate) fn execution_key_for_scope(
 }
 
 /// Delivery task identity of one attempt within an execution incarnation.
-pub(crate) fn attempt_task_id(execution_key: &str, attempt: u8) -> String {
+pub fn attempt_task_id(execution_key: &str, attempt: u8) -> String {
     format!("{execution_key}:attempt-{attempt}")
 }
 
 /// The claimed node a host is about to launch, with its authority lineage.
 #[derive(Clone, Debug)]
-pub(crate) struct StartPlan {
+pub struct StartPlan {
     pub graph_id: String,
     pub node: WorkNode,
     pub root_agent_id: String,
@@ -118,7 +118,7 @@ pub(crate) struct StartPlan {
 }
 
 impl StartPlan {
-    pub(crate) fn validate(&self) -> Result<&str, String> {
+    pub fn validate(&self) -> Result<&str, String> {
         if self.graph_id.is_empty() || self.graph_id.len() > 128 {
             return Err("invalid graph_id".into());
         }
@@ -142,7 +142,7 @@ impl StartPlan {
     }
 
     /// Verify the handed-over capsule: root signature, node lineage and budget.
-    pub(crate) fn verify_capsule(
+    pub fn verify_capsule(
         &self,
         signed: &SignedContextCapsuleV1,
         root_key: &VerifyingKey,
@@ -188,15 +188,15 @@ pub struct ChildDeliveryProfileV1 {
 
 /// Fail-closed child value: an explicit empty object disables delegated
 /// delivery, whereas an absent variable would let a child inherit the parent's.
-pub(crate) const NO_CHILD_DELIVERY: &str = "{}";
-pub(crate) const CHILD_DELIVERY_ENV: &str = "LEAN_CTX_DELIVERY_PROFILE";
+pub const NO_CHILD_DELIVERY: &str = "{}";
+pub const CHILD_DELIVERY_ENV: &str = "LEAN_CTX_DELIVERY_PROFILE";
 /// The parent's issuer configuration must never reach a child.
-pub(crate) const ISSUER_ENV: &str = "LEAN_CTX_DELIVERY_ISSUER_PROFILE";
+pub const ISSUER_ENV: &str = "LEAN_CTX_DELIVERY_ISSUER_PROFILE";
 
 impl ChildDeliveryProfileV1 {
     /// Serialized value for the child's `LEAN_CTX_DELIVERY_PROFILE`, or `None`
     /// when the profile no longer binds this task, project and child key.
-    pub(crate) fn launch_value(&self, task_id: &str, working_dir: &Path) -> Option<String> {
+    pub fn launch_value(&self, task_id: &str, working_dir: &Path) -> Option<String> {
         if self.task_id != task_id
             || self.expires_at <= chrono::Utc::now()
             || self.profile.schema_version != 1
@@ -238,5 +238,7 @@ impl ChildDeliveryProfileV1 {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 #[cfg(test)]
 pub(crate) mod tests;

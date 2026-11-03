@@ -4,7 +4,7 @@ mod tests {
         adaptive_bridge, ctx_read_dedup, evidence_wiring, health, health_api, kernel_config,
         response_evidence, startup,
     };
-    use crate::tools::search_hook;
+    use crate::core::search_hook;
 
     fn isolated() -> std::sync::MutexGuard<'static, ()> {
         let guard = kernel_config::KERNEL_TEST_LOCK
@@ -21,7 +21,7 @@ mod tests {
         crate::core::context_kernel::list_tools_opt::reset();
         evidence_wiring::reset();
         adaptive_bridge::reset();
-        crate::tools::search_kernel::reset();
+        crate::core::search_kernel::reset();
         search_hook::reset();
         response_evidence::reset();
         crate::core::context_kernel::usage_normalizer::reset_usage();

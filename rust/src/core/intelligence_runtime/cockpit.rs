@@ -51,21 +51,21 @@ const STABLE: Duration = Duration::from_mins(1);
 const MAX_PORT_LINE: u64 = 256;
 
 /// What the dashboard knows about itself when it asks for the Cockpit.
-pub(crate) struct CockpitLaunch {
+pub struct CockpitLaunch {
     /// The port of the Engine dashboard on 127.0.0.1.
-    pub(crate) engine_port: u16,
+    pub engine_port: u16,
     /// The dashboard bearer token the Cockpit uses to call the Engine.
-    pub(crate) engine_token: String,
-    pub(crate) project_root: PathBuf,
+    pub engine_token: String,
+    pub project_root: PathBuf,
 }
 
 /// Where the running Cockpit listens, and the token the dashboard's proxy
 /// presents to it.
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) struct CockpitEndpoint {
-    pub(crate) port: u16,
+pub struct CockpitEndpoint {
+    pub port: u16,
     /// 32 random bytes, lowercase hex.
-    pub(crate) cockpit_token: String,
+    pub cockpit_token: String,
 }
 
 impl std::fmt::Debug for CockpitEndpoint {
@@ -80,7 +80,7 @@ impl std::fmt::Debug for CockpitEndpoint {
 
 /// Why no Cockpit is available; the dashboard shows the matching fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CockpitUnavailable {
+pub enum CockpitUnavailable {
     /// No Cockpit is installed and activated in this host's Cockpit store.
     NotInstalled,
     /// The activation or the installed package did not authenticate.
@@ -96,7 +96,7 @@ pub(crate) enum CockpitUnavailable {
 }
 
 impl CockpitUnavailable {
-    pub(crate) const fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::NotInstalled => "not_installed",
             Self::VerificationFailed => "verification_failed",
@@ -107,7 +107,7 @@ impl CockpitUnavailable {
     }
 
     /// One line for a user who opens the Cockpit while it cannot be served.
-    pub(crate) const fn message(self) -> &'static str {
+    pub const fn message(self) -> &'static str {
         match self {
             Self::NotInstalled => {
                 "The Cockpit is not installed. Install it with: lean-ctx cockpit install"
@@ -232,7 +232,7 @@ pub(crate) fn install_from(path: &Path, downgrade: bool) -> Result<serde_json::V
 /// The `--from` form of `lean-ctx cockpit install` (`args` follow
 /// `install`); `false` when the arguments do not name one, so the caller
 /// installs from the channel. Exits non-zero on failure.
-pub(crate) fn install_from_cli(args: &[String]) -> bool {
+pub fn install_from_cli(args: &[String]) -> bool {
     if args.is_empty() {
         return false;
     }
@@ -436,7 +436,7 @@ fn activate_installation(
 /// Install-on-demand for `lean-ctx cockpit`: the same path as
 /// `setup runtime sync-configured --kind cockpit`. The caller has the
 /// user's request to install; this downloads from the bundled channel.
-pub(crate) fn install_cockpit() -> std::result::Result<serde_json::Value, CockpitUnavailable> {
+pub fn install_cockpit() -> std::result::Result<serde_json::Value, CockpitUnavailable> {
     install_configured(None).map_err(|error| match error {
         InstallError::Manifest
         | InstallError::Signature
@@ -452,7 +452,7 @@ pub(crate) fn install_cockpit() -> std::result::Result<serde_json::Value, Cockpi
 /// decides it (shipped bundle imported first, then authenticated), without
 /// starting one and without network. Lets a command fall back to its
 /// terminal report before it opens a browser on the install page.
-pub(crate) fn availability() -> std::result::Result<(), CockpitUnavailable> {
+pub fn availability() -> std::result::Result<(), CockpitUnavailable> {
     import_bundled();
     match authenticated() {
         Ok(_) => Ok(()),
@@ -472,7 +472,7 @@ fn installs_opted_out() -> bool {
 
 /// `availability`, but a missing Cockpit of an official build is installed
 /// first: the person asked to open it, and the Cockpit ships with LeanCTX.
-pub(crate) fn available_or_installed() -> std::result::Result<(), CockpitUnavailable> {
+pub fn available_or_installed() -> std::result::Result<(), CockpitUnavailable> {
     match availability() {
         Err(CockpitUnavailable::NotInstalled) if !installs_opted_out() => {
             eprintln!(
@@ -543,7 +543,7 @@ pub(crate) fn install_if_missing(retry_now: bool) -> bool {
 
 /// `install_if_missing` on its own thread: an MCP or daemon start never waits
 /// for the download.
-pub(crate) fn install_if_missing_in_background() {
+pub fn install_if_missing_in_background() {
     let _ = std::thread::Builder::new()
         .name("cockpit-install".into())
         .spawn(|| {
@@ -769,7 +769,7 @@ fn launch_key(launch: &CockpitLaunch) -> [u8; 32] {
 
 /// The running Cockpit of this process, started when none runs. Holds the
 /// supervisor lock across a start, so concurrent callers share one start.
-pub(crate) fn cockpit_endpoint(
+pub fn cockpit_endpoint(
     launch: &CockpitLaunch,
 ) -> std::result::Result<CockpitEndpoint, CockpitUnavailable> {
     let key = launch_key(launch);
@@ -831,7 +831,7 @@ fn fail(state: &mut State, reason: CockpitUnavailable, now: Instant) {
 
 /// Stop this process's Cockpit, if any; the next request starts the
 /// currently activated package without waiting for a backoff.
-pub(crate) fn retire() {
+pub fn retire() {
     let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
     state.running = None;
     state.failures = 0;

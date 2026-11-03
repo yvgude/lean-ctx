@@ -22,7 +22,7 @@
       "snooze": false
     },
     {
-      "value": "engine_revoked_events",
+      "value": "instance_revoked_events",
       "severity": "warn",
       "snooze": true
     },

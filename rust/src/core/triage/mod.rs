@@ -7,7 +7,7 @@ pub mod distillation;
 #[cfg(test)]
 mod distillation_tests;
 pub mod fusion;
-pub(crate) mod markdown;
+pub mod markdown;
 pub mod model_loader;
 pub mod profile;
 pub mod rules;

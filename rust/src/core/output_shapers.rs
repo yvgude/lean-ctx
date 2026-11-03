@@ -27,6 +27,6 @@ pub fn register_output_shapers(shapers: OutputShapers) {
 }
 
 /// The registered output shapers, if any.
-pub(crate) fn output_shapers() -> Option<&'static OutputShapers> {
+pub fn output_shapers() -> Option<&'static OutputShapers> {
     SHAPERS.get()
 }

@@ -92,7 +92,7 @@
       "status": "proven",
       "tests": [
         "lib:core::context_admission::tests::case_10_secret_is_absent_from_the_delivered_context",
-        "lib:proxy::host_journey_tests::claude_code_turn_reaches_the_model_without_the_credential"
+        "lib:host_journey_tests::claude_code_turn_reaches_the_model_without_the_credential"
       ]
     },
     {
@@ -261,7 +261,7 @@
       "status": "proven",
       "tests": [
         "lib:core::context_admission::store_tests::case_29_recovered_text_is_readmitted_under_the_current_policy",
-        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only"
+        "lib:tools::store_admission_tests::case_30_archives_store_and_return_admitted_text_only"
       ]
     },
     {
@@ -297,7 +297,7 @@
       "title": "ctx_expand cannot bypass",
       "status": "proven",
       "tests": [
-        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only"
+        "lib:tools::store_admission_tests::case_30_archives_store_and_return_admitted_text_only"
       ]
     },
     {
@@ -315,8 +315,8 @@
       "status": "proven",
       "tests": [
         "lib:core::context_admission::store_tests::case_31_tee_store_holds_and_returns_admitted_text_only",
-        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only",
-        "lib:proxy::ccr_robustness_tests::tee_store_that_links_to_another_store_is_refused"
+        "lib:tools::store_admission_tests::case_30_archives_store_and_return_admitted_text_only",
+        "lib:ccr_robustness_tests::tee_store_that_links_to_another_store_is_refused"
       ]
     },
     {
@@ -367,7 +367,7 @@
       "title": "disallowed model/provider is blocked",
       "status": "proven",
       "tests": [
-        "lib:proxy::outbound_model_policy::tests::the_outgoing_model_must_satisfy_the_policy_file"
+        "lib:outbound_model_policy::tests::the_outgoing_model_must_satisfy_the_policy_file"
       ]
     },
     {
@@ -573,7 +573,7 @@
       "id": "ctx_expand",
       "status": "proven",
       "tests": [
-        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only"
+        "lib:tools::store_admission_tests::case_30_archives_store_and_return_admitted_text_only"
       ]
     },
     {
@@ -587,14 +587,14 @@
       "id": "archive",
       "status": "proven",
       "tests": [
-        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only"
+        "lib:tools::store_admission_tests::case_30_archives_store_and_return_admitted_text_only"
       ]
     },
     {
       "id": "CCR",
       "status": "proven",
       "tests": [
-        "lib:proxy::ccr_robustness_tests::tee_store_that_links_to_another_store_is_refused",
+        "lib:ccr_robustness_tests::tee_store_that_links_to_another_store_is_refused",
         "lib:core::context_admission::store_tests::case_31_tee_store_holds_and_returns_admitted_text_only"
       ]
     },
@@ -672,7 +672,7 @@
       "id": "cross-agent handoff",
       "status": "proven",
       "tests": [
-        "lib:core::context_admission::store_tests::case_33_handoffs_persist_admitted_text_and_skip_restricted_files"
+        "lib:tools::store_admission_tests::case_33_handoffs_persist_admitted_text_and_skip_restricted_files"
       ]
     },
     {
@@ -686,7 +686,7 @@
       "id": "proxy in-band expansion",
       "status": "proven",
       "tests": [
-        "lib:proxy::ccr_robustness_tests::tee_store_that_links_to_another_store_is_refused"
+        "lib:ccr_robustness_tests::tee_store_that_links_to_another_store_is_refused"
       ]
     },
     {
@@ -694,7 +694,7 @@
       "status": "proven",
       "tests": [
         "lib:core::context_admission::egress_tests::case_41_every_request_shape_leaves_masked",
-        "lib:proxy::host_journey_tests::codex_subscription_turn_reaches_the_model_without_the_credential"
+        "lib:host_journey_tests::codex_subscription_turn_reaches_the_model_without_the_credential"
       ]
     },
     {
@@ -702,7 +702,7 @@
       "status": "proven",
       "tests": [
         "lib:core::context_admission::egress_tests::case_41_every_request_shape_leaves_masked",
-        "lib:proxy::host_journey_tests::claude_code_turn_reaches_the_model_without_the_credential"
+        "lib:host_journey_tests::claude_code_turn_reaches_the_model_without_the_credential"
       ]
     },
     {
@@ -716,8 +716,8 @@
       "id": "WebSocket path",
       "status": "proven",
       "tests": [
-        "lib:proxy::openai_responses_ws::tests::websocket_turn_reaches_the_upstream_without_the_credential",
-        "lib:proxy::chatgpt::tests::codex_responses_ws_requests_trigger_http_fallback"
+        "lib:openai_responses_ws::tests::websocket_turn_reaches_the_upstream_without_the_credential",
+        "lib:chatgpt::tests::codex_responses_ws_requests_trigger_http_fallback"
       ]
     }
   ]

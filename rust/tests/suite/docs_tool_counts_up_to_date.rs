@@ -1,11 +1,9 @@
-use std::path::PathBuf;
-
 #[test]
 fn public_docs_do_not_duplicate_mutable_tool_counts() {
-    let expected_granular = lean_ctx::server::registry::tool_count();
+    let expected_granular = lean_ctx_server::server::registry::tool_count();
     let expected_unified = lean_ctx::tool_defs::unified_tool_defs().len();
 
-    let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let rust_dir = crate::engine_dir().to_path_buf();
     let repo_root = rust_dir.parent().unwrap_or(&rust_dir);
 
     // Mutable inventory belongs to runtime discovery and generated metadata,

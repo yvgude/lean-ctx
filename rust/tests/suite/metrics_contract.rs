@@ -10,7 +10,7 @@
 //! and treat removals/renames as breaking (additive entries are fine).
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 struct MetricSpec {
@@ -21,7 +21,7 @@ struct MetricSpec {
 }
 
 fn contract_path() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/reference/metrics-contract.json")
+    crate::engine_dir().join("../docs/reference/metrics-contract.json")
 }
 
 /// Parse the Prometheus text format into name → (type, sorted label keys).

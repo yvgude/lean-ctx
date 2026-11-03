@@ -16,12 +16,12 @@ const LEGACY_CONFIG_DIR: &str = ".leanctx";
 /// snapshot captured at `init` time for inspection/linting, never an override that
 /// `sync` would distribute (#548).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct RulesConfig {
+pub struct RulesConfig {
     pub rules: RulesSection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct RulesSection {
+pub struct RulesSection {
     #[serde(default = "default_version")]
     pub version: String,
     #[serde(default)]
@@ -31,13 +31,13 @@ pub(crate) struct RulesSection {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct CoreRules {
+pub struct CoreRules {
     #[serde(default)]
     pub content: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct AgentRules {
+pub struct AgentRules {
     #[serde(default)]
     pub extra: String,
 }
@@ -65,7 +65,7 @@ impl RulesConfig {
         new_path
     }
 
-    pub(crate) fn load(project_root: &Path) -> Result<Self, String> {
+    pub fn load(project_root: &Path) -> Result<Self, String> {
         let path = Self::config_path(project_root);
         if !path.exists() {
             return Err(format!(

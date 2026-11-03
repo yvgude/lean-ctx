@@ -61,7 +61,7 @@ General and Polls retain their existing purpose and descriptions.
 
 **Release title convention (G9)**
 
-Use `vX.Y.Z — LeanCTX Engine: <actual change>` with a verified change from that
+Use `vX.Y.Z — LeanCTX | OSS: <actual change>` with a verified change from that
 release. In release prose, use “MCP gateway” for that component. Keep historical
 release bodies intact; no release is created by this copy refresh.
 
@@ -81,7 +81,7 @@ LeanCTX — Context Gateway for AI Systems
 
 **Directory description (L3, L5, L7)**
 
-LeanCTX Engine is an open-source MCP server and CLI for the Context Gateway for
+LeanCTX | OSS is an open-source MCP server and CLI for the Context Gateway for
 AI Systems. Select task-relevant context, apply supported controls, retain local
 knowledge and inspect observable evidence. Your host keeps its agent loop and model.
 

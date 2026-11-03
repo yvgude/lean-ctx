@@ -1,5 +1,5 @@
 pkgbase = lean-ctx
-	pkgdesc = LeanCTX Engine — open-source Context Gateway for AI Systems. Context selection, supported controls, and evidence through local integration paths.
+	pkgdesc = LeanCTX | OSS — open-source Context Gateway for AI Systems. Context selection, supported controls, and evidence through local integration paths.
 	pkgver = 3.10.5
 	pkgrel = 1
 	url = https://leanctx.com

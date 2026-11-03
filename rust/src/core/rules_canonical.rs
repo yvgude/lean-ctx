@@ -123,7 +123,7 @@ Never skip: validation, security, error handling.\n\
 pub const RULES_VERSION: usize = 13;
 
 /// Product identity for the on-demand guide; injected profiles keep their budget.
-pub const GATEWAY_IDENTITY: &str = "LeanCTX (lean-ctx) — Context Gateway for AI Systems.";
+pub const GATEWAY_IDENTITY: &str = "LeanCTX (lean-ctx) — Context Gateway for AI agents.";
 
 /// Banner placed at the top of dedicated rule files (non-shadow only).
 ///
@@ -505,7 +505,7 @@ pub fn render(
 ///
 /// The dedicated hook context uses this seam to exercise every rendered
 /// solution variant in its cross-language boundary drift test.
-pub(crate) fn render_with_solution(
+pub fn render_with_solution(
     shadow: bool,
     wrapper: Wrapper,
     level: CompressionLevel,

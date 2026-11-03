@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.leanctx.com/hive-v2/schemas/receipts.schema.json",
-  "title": "Engine receipts v2 (Release C, K2 review M3)",
-  "description": "POST /v1/receipts from the C line: closed engine receipt documents (invocation + observation) without any path, reference or unsalted digest of content. Input and output are HMAC-SHA256 values under an engine-local key Hive never receives; source references are reduced to a count; failure recovery references are dropped. The batch is signed by the instance key like metrics hours. v1 receipt documents (leanctx.engine-receipt/v1, free-form) are refused.",
+  "title": "Instance receipts v2 (Release C, K2 review M3)",
+  "description": "POST /v1/receipts from the C line: closed instance receipt documents (invocation + observation) without any path, reference or unsalted digest of content. Input and output are HMAC-SHA256 values under an instance-local key Hive never receives; source references are reduced to a count; failure recovery references are dropped. The batch is signed by the instance key like metrics hours. v1 receipt documents (leanctx.instance-receipt/v1, free-form) are refused.",
   "$defs": {
     "time": {
       "type": "string",
@@ -11,7 +11,7 @@
     "hmac": {
       "type": "string",
       "pattern": "^hmac-sha256:[0-9a-f]{64}$",
-      "description": "HMAC-SHA256 with the engine-local receipt key (per instance, never uploaded): opaque to Hive, re-verifiable by the engine"
+      "description": "HMAC-SHA256 with the instance-local receipt key (per instance, never uploaded): opaque to Hive, re-verifiable by the instance"
     },
     "receipt_id": {
       "type": "string",
@@ -20,7 +20,7 @@
     "invocation_id": {
       "type": "string",
       "pattern": "^[0-9a-f]{32,64}$",
-      "description": "opaque id the engine derives by hashing; never a path or name"
+      "description": "opaque id the instance derives by hashing; never a path or name"
     },
     "semver": {
       "type": "string",
@@ -72,7 +72,7 @@
       "required": [
         "schema_version",
         "invocation_id",
-        "engine",
+        "instance",
         "operation",
         "input_hmac",
         "source_count",
@@ -85,18 +85,18 @@
         "invocation_id": {
           "$ref": "#/$defs/invocation_id"
         },
-        "engine": {
+        "instance": {
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "engine_id",
-            "engine_version"
+            "instance_id",
+            "instance_version"
           ],
           "properties": {
-            "engine_id": {
+            "instance_id": {
               "const": "lean-ctx-local"
             },
-            "engine_version": {
+            "instance_version": {
               "$ref": "#/$defs/semver"
             }
           }
@@ -249,7 +249,7 @@
       ],
       "properties": {
         "schema": {
-          "const": "leanctx.engine-receipt/v2"
+          "const": "leanctx.instance-receipt/v2"
         },
         "invocation": {
           "$ref": "#/$defs/invocation"
@@ -275,7 +275,7 @@
           "$ref": "#/$defs/receipt_id"
         },
         "kind": {
-          "const": "engine"
+          "const": "instance"
         },
         "vault_id": {
           "$ref": "common.schema.json#/$defs/hex32"

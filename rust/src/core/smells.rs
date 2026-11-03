@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::core::property_graph::GraphSource;
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct SmellFinding {
+pub struct SmellFinding {
     pub rule: &'static str,
     pub severity: Severity,
     pub file_path: String,
@@ -22,20 +22,20 @@ pub(crate) struct SmellFinding {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Severity {
+pub enum Severity {
     Info,
     Warning,
     Error,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct SmellSummary {
+pub struct SmellSummary {
     pub rule: &'static str,
     pub description: &'static str,
     pub findings: usize,
 }
 
-pub(crate) struct SmellConfig {
+pub struct SmellConfig {
     pub long_function_lines: usize,
     pub long_file_lines: usize,
     pub god_file_symbols: usize,
@@ -53,7 +53,7 @@ impl Default for SmellConfig {
     }
 }
 
-pub(crate) static RULES: &[(&str, &str)] = &[
+pub static RULES: &[(&str, &str)] = &[
     ("dead_code", "Symbols defined but never referenced"),
     ("long_function", "Functions exceeding line threshold"),
     ("long_file", "Files exceeding line threshold"),
@@ -77,10 +77,7 @@ pub(crate) static RULES: &[(&str, &str)] = &[
 /// are served: a finding that names other files (`duplicate_definitions`)
 /// then names and counts only those served now. The row of a finding — its
 /// own file and symbol — is checked by the caller.
-pub(crate) fn scan_all<S: GraphSource + ?Sized>(
-    source: &S,
-    cfg: &SmellConfig,
-) -> Vec<SmellFinding> {
+pub fn scan_all<S: GraphSource + ?Sized>(source: &S, cfg: &SmellConfig) -> Vec<SmellFinding> {
     let mut all = Vec::new();
     for &(rule, _) in RULES {
         all.extend(scan_rule(source, rule, cfg));
@@ -88,7 +85,7 @@ pub(crate) fn scan_all<S: GraphSource + ?Sized>(
     all
 }
 
-pub(crate) fn scan_rule<S: GraphSource + ?Sized>(
+pub fn scan_rule<S: GraphSource + ?Sized>(
     source: &S,
     rule: &str,
     cfg: &SmellConfig,
@@ -113,7 +110,7 @@ pub(crate) fn scan_rule<S: GraphSource + ?Sized>(
     }
 }
 
-pub(crate) fn summarize(findings: &[SmellFinding]) -> Vec<SmellSummary> {
+pub fn summarize(findings: &[SmellFinding]) -> Vec<SmellSummary> {
     RULES
         .iter()
         .map(|&(rule, desc)| SmellSummary {

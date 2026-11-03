@@ -2,7 +2,7 @@
 
 > **Status: local Engine implementation matrix.** LeanCTX is the **Context Gateway for AI Systems**.
 > **Control what your AI can see.** This reference describes supported local
-> LeanCTX Engine integration behavior; it is not a general release or
+> LeanCTX | OSS integration behavior; it is not a general release or
 > performance guarantee. See [current positioning](../POSITIONING_CANONICAL.md).
 
 This document records the **current local wiring** implemented by `setup` and

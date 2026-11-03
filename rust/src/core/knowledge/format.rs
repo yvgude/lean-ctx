@@ -2,6 +2,34 @@ use super::ranking::{confidence_stars, sort_fact_for_output};
 use super::types::{ConsolidatedInsight, KnowledgeFact, ProjectKnowledge};
 use crate::core::memory_policy::MemoryPolicy;
 
+/// Whether the fact `category`/`key` of the knowledge store of `store_root`
+/// may be delivered with `value` to the running request, and the one place a
+/// fact's sources enter the call's capture (`archive::bindings::serve`):
+///
+/// - a fact bound to sources at its write is re-authorized for the request's
+///   project; `false` means it must be left out of the reply. Served, it
+///   publishes its files;
+/// - a fact without a binding marks the capture incomplete and is delivered
+///   as before — the reply that carries it has no known lineage.
+///
+/// Without protection every fact is delivered and nothing is published.
+/// `store_root` is the project root as the store's writer named it.
+pub fn fact_served(store_root: &str, category: &str, key: &str, value: &str) -> bool {
+    use crate::core::archive::bindings::{self, Item};
+    let reader = crate::core::admitted_sources::request_root();
+    let item = Item::KnowledgeFact {
+        project: store_root,
+        category,
+        key,
+    };
+    bindings::serve(
+        &item,
+        value,
+        Some(reader.as_str()).filter(|root| !root.is_empty()),
+    )
+    .is_ok()
+}
+
 /// Result of a delta-aware AAAK generation.
 pub struct AaakDelta {
     pub content: String,
@@ -14,7 +42,7 @@ impl KnowledgeFact {
     /// The context package this fact was merged from (`name@version`, as the
     /// package loader tags it), or `None` for every other origin — the
     /// other importers tag with a word or a `kind:` prefix.
-    pub(crate) fn package_origin(&self) -> Option<&str> {
+    pub fn package_origin(&self) -> Option<&str> {
         let origin = self.imported_from.as_deref()?;
         let (name, version) = origin.rsplit_once('@')?;
         let identifier = |part: &str| {
@@ -28,10 +56,10 @@ impl KnowledgeFact {
 
     /// The import tag of a fact pulled from a Hive repo (other members'
     /// knowledge), `None` for every other fact.
-    pub(crate) fn hive_origin(&self) -> Option<&str> {
-        self.imported_from.as_deref().filter(|origin| {
-            crate::core::hive::knowledge::learn::import_tag_source(origin).is_some()
-        })
+    pub fn hive_origin(&self) -> Option<&str> {
+        self.imported_from
+            .as_deref()
+            .filter(|origin| super::import_tag::import_tag_source(origin).is_some())
     }
 
     /// `value` — this fact's value as a renderer prepared it — as it enters
@@ -45,8 +73,8 @@ impl KnowledgeFact {
     /// foreign content (X5). Its value is stored in the Hive wrapper
     /// (`sync_into_knowledge`), so every renderer delivers it fenced; a
     /// value stored before that is wrapped here.
-    pub(crate) fn as_delivered(&self, value: String) -> String {
-        use crate::core::hive::untrusted::{UntrustedKind, is_wrapped, wrap};
+    pub fn as_delivered(&self, value: String) -> String {
+        use crate::core::untrusted::{UntrustedKind, is_wrapped, wrap};
         if is_wrapped(&value) {
             return value;
         }
@@ -98,7 +126,7 @@ impl ProjectKnowledge {
 
     /// The delivery rule of every renderer in this file: whether a fact of
     /// this store may enter model-visible output now. It is the one function
-    /// `tools::ctx_knowledge::fact_served` — a fact bound to sources at its
+    /// `fact_served` — a fact bound to sources at its
     /// write is re-authorized and left out when a source no longer admits; a
     /// fact without a binding is delivered as before and marks the call's
     /// capture incomplete. Without protection nothing is asked (one policy
@@ -107,10 +135,9 @@ impl ProjectKnowledge {
     /// A fact is bound under the project root its writer's request named.
     /// That is this store's root; a request that names the project by another
     /// spelling is asked as well, so a binding is never missed by its key.
-    pub(crate) fn delivery_filter(&self) -> impl Fn(&KnowledgeFact) -> bool + '_ {
-        use crate::tools::ctx_knowledge::fact_served;
+    pub fn delivery_filter(&self) -> impl Fn(&KnowledgeFact) -> bool + '_ {
         let protected = crate::core::context_admission::stored::source_authority_required();
-        let request = Some(crate::tools::admitted_sources::request_root())
+        let request = Some(crate::core::admitted_sources::request_root())
             .filter(|root| protected && !root.is_empty() && *root != self.project_root);
         move |fact| {
             !protected
@@ -462,13 +489,13 @@ impl ProjectKnowledge {
         // X4 (M5): the session's first Hive context may be this briefing.
         let hive_facts = top_facts
             .iter()
-            .filter(|f| crate::core::hive::metrics::hive_use::is_hive_fact(f))
+            .filter(|f| super::import_tag::is_hive_fact(f))
             .count();
         if hive_facts > 0 {
             let session = crate::core::session::caller::with_for_project(&self.project_root, |s| {
                 (s.id.clone(), s.started_at)
             });
-            crate::core::hive::metrics::hive_use::record_delivery(
+            super::hooks::record_delivery(
                 &self.project_root,
                 session.as_ref().map(|(id, at)| (id.as_str(), *at)),
                 hive_facts,

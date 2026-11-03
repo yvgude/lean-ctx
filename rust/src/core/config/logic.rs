@@ -88,11 +88,11 @@ impl Config {
     /// Returns the user-configured hook mode override, or `None` for auto-detect.
     /// Env var `LEAN_CTX_HOOK_MODE` takes priority over config.
     #[must_use]
-    pub fn hook_mode_override(&self) -> Option<crate::hooks::HookMode> {
+    pub fn hook_mode_override(&self) -> Option<crate::core::hook_mode::HookMode> {
         let raw = std::env::var("LEAN_CTX_HOOK_MODE")
             .ok()
             .or_else(|| self.hook_mode.clone())?;
-        crate::hooks::HookMode::from_str_loose(raw.trim())
+        crate::core::hook_mode::HookMode::from_str_loose(raw.trim())
     }
 
     /// Returns the effective permission-inheritance mode, preferring the

@@ -25,7 +25,7 @@ PRODUCT = {
     "name": "LeanCTX",
     "category": "Context Gateway for AI Systems",
     "promise": "Control what your AI can see.",
-    "components": ["LeanCTX Engine", "LeanCTX SDK"],
+    "components": ["LeanCTX | OSS", "LeanCTX SDK"],
     "primary_story": ["Select", "Control", "Prove"],
 }
 PRIMARY = [
@@ -132,7 +132,7 @@ def write_fixture(root: Path) -> None:
             lines.extend(
                 [
                     "",
-                    "LeanCTX Engine and LeanCTX SDK.",
+                    "LeanCTX | OSS and LeanCTX SDK.",
                     "",
                     "Select → Control → Prove.",
                 ]
@@ -331,7 +331,7 @@ class NarrativeGovernanceTests(unittest.TestCase):
             )
             failures = GOVERNANCE.check_repository(root)
             self.assertTrue(any("PKGBUILD" in item and "Context Engineering Layer" in item for item in failures), failures)
-            package.write_text('pkgdesc="LeanCTX Engine — Context Gateway for AI Systems"\nexit 99\n', encoding="utf-8")
+            package.write_text('pkgdesc="LeanCTX | OSS — Context Gateway for AI Systems"\nexit 99\n', encoding="utf-8")
             self.assertEqual(GOVERNANCE.check_repository(root), [])
             for value in ['$description', '"$(print-category)"', '"${description}"', '"`print-category`"']:
                 package.write_text('pkgdesc=' + value + '\n', encoding="utf-8")

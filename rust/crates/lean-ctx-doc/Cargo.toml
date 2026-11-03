@@ -1,0 +1,28 @@
+[package]
+name = "lean-ctx-doc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+license = "Apache-2.0"
+description = "The documentation model of lean-ctx: pages, sections, notes and code anchors, replicated through LeanCTX | Hive."
+repository = "https://github.com/yvgude/lean-ctx"
+
+# A leaf crate: it never depends on `lean-ctx`. The engine implements the
+# store and event traits in a thin adapter (see rust/CRATE_MAP.md).
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.11"
+
+[lints.rust]
+unreachable_pub = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+assert_is_empty = "allow"
+doc_markdown = "allow"
+cast_possible_truncation = "allow"

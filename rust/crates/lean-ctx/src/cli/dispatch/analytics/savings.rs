@@ -1,0 +1,455 @@
+// SPDX-License-Identifier: Apache-2.0
+//! `lean-ctx savings` — the verified savings ledger: verify/rechain/export,
+//! Ed25519-signed batches, team push/roll-up, ROI report and the summary box.
+
+use lean_ctx::core;
+
+pub(in crate::cli::dispatch) fn cmd_savings(rest: &[String]) {
+    let action = rest.first().map_or("", String::as_str);
+    match action {
+        "verify" => {
+            let v = core::savings_ledger::verify();
+            if v.valid {
+                println!(
+                    "Savings ledger: OK — {} event(s), SHA-256 chain intact.",
+                    v.total
+                );
+            } else {
+                println!(
+                    "Savings ledger: TAMPERED — chain broke at entry {} (of {} verified).",
+                    v.first_invalid_at.unwrap_or(0),
+                    v.total
+                );
+                println!(
+                    "  If you did not edit the ledger, repair the chain with: lean-ctx savings rechain"
+                );
+                std::process::exit(1);
+            }
+        }
+        "rechain" => cmd_savings_rechain(),
+        "export" => {
+            let events = core::savings_ledger::all_events();
+            match serde_json::to_string_pretty(&events) {
+                Ok(json) => println!("{json}"),
+                Err(e) => {
+                    eprintln!("Export failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        "sign" => cmd_savings_sign(&rest[1..]),
+        "verify-batch" => cmd_savings_verify_batch(rest.get(1).map(String::as_str)),
+        "roi" => cmd_savings_roi(&rest[1..]),
+        "summary" => print!("{}", format_savings_summary()),
+        "" | "--period" | "--format" | "-h" | "--help" => crate::cli::cmd_savings_report(rest),
+        _ => {
+            eprintln!(
+                "Usage: lean-ctx savings [summary|verify|rechain|export|sign|verify-batch|roi]"
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `lean-ctx savings rechain` — re-hashes the ledger under the v2 (float-free) scheme to
+/// repair a chain broken by the legacy `{:.6}` round-trip bug. Event content is preserved;
+/// only the chain links are recomputed. A break that survives re-chaining is real tampering.
+fn cmd_savings_rechain() {
+    match core::savings_ledger::rechain() {
+        Ok(0) => println!("Savings ledger is empty — nothing to re-chain."),
+        Ok(n) => {
+            let v = core::savings_ledger::verify();
+            if v.valid {
+                println!(
+                    "Savings ledger re-chained: {n} event(s) migrated to the v2 (float-free) hash. SHA-256 chain intact."
+                );
+            } else {
+                println!(
+                    "Re-chained {n} event(s), but the chain still breaks at entry {} — this indicates real tampering, not the float bug.",
+                    v.first_invalid_at.unwrap_or(0)
+                );
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            eprintln!("Re-chain failed: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `lean-ctx savings roi [--json]` — the privacy-preserving ROI/metering surface
+/// derived from the signed savings batch (EPIC 12.20). Read-only: it never
+/// mutates the ledger.
+fn cmd_savings_roi(args: &[String]) {
+    let agent_id = savings_agent_id();
+    let report = core::savings_ledger::roi_report(&agent_id);
+
+    if args.iter().any(|a| a == "--json") {
+        match serde_json::to_string_pretty(&report) {
+            Ok(json) => println!("{json}"),
+            Err(e) => {
+                eprintln!("ROI report serialization failed: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    println!("{}", report.headline());
+    println!();
+    println!("  Period:        {}", report.period);
+    println!("  Events:        {}", report.total_events);
+    println!(
+        "  Saved tokens:  {} gross / {} net",
+        report.saved_tokens, report.net_saved_tokens
+    );
+    if report.turns > 0 {
+        println!(
+            "  After inject.: {} net  (−{} tax = {} tok/turn × {} turns)",
+            report.net_after_overhead_tokens,
+            report.injected_overhead_total_tokens,
+            report.injected_overhead_tokens_per_turn,
+            report.turns,
+        );
+    }
+    println!("  Saved USD:     ${:.4}", report.saved_usd);
+    println!(
+        "  Avg / event:   {:.1} tok, ${:.6}",
+        report.avg_saved_tokens_per_event, report.avg_saved_usd_per_event
+    );
+    println!(
+        "  Chain:         {}",
+        if report.chain_valid {
+            "valid (SHA-256 intact)"
+        } else {
+            "BROKEN — run `lean-ctx savings rechain`"
+        }
+    );
+    println!(
+        "  Signature:     {}",
+        if report.signed {
+            "present (Ed25519)"
+        } else {
+            "unsigned (machine identity unavailable)"
+        }
+    );
+    if !report.top_tools.is_empty() {
+        println!("  Top tools:");
+        for (tool, tokens) in report.top_tools.iter().take(5) {
+            println!("    {tool}: {tokens} tok");
+        }
+    }
+}
+
+/// Resolves the signing identity (same precedence as the ledger's own attribution).
+/// `pub(super)`: billing meters usage under the same identity.
+pub(super) fn savings_agent_id() -> String {
+    core::agent_identity::current_agent_id().to_string()
+}
+
+/// `lean-ctx savings sign [--out FILE]` — builds + Ed25519-signs a portable savings batch and
+/// writes the JSON artifact (offline-verifiable with `savings verify-batch`).
+fn cmd_savings_sign(args: &[String]) {
+    use core::savings_ledger::{SignedSavingsBatchV1, signed_batch};
+
+    let out_override = args.iter().find_map(|a| {
+        a.strip_prefix("--out=")
+            .map(std::path::PathBuf::from)
+            .or_else(|| (a == "--out").then_some(std::path::PathBuf::new()))
+    });
+    // Support `--out FILE` (space-separated) too.
+    let out_override = match out_override {
+        Some(p) if p.as_os_str().is_empty() => args
+            .iter()
+            .skip_while(|a| a.as_str() != "--out")
+            .nth(1)
+            .map(std::path::PathBuf::from),
+        other => other,
+    };
+
+    let agent_id = savings_agent_id();
+    let mut batch = SignedSavingsBatchV1::build_all(&agent_id);
+    if batch.totals.total_events == 0 {
+        eprintln!(
+            "Savings ledger is empty — nothing to sign yet. It fills as lean-ctx compresses your reads."
+        );
+        std::process::exit(1);
+    }
+    if let Err(e) = batch.sign(&agent_id) {
+        eprintln!("Signing failed: {e}");
+        std::process::exit(1);
+    }
+
+    let out = match out_override {
+        Some(p) => Ok(p),
+        None => signed_batch::default_artifact_path(),
+    };
+    let path = out.and_then(|p| signed_batch::write_artifact(&batch, &p));
+    match path {
+        Ok(p) => {
+            use core::wrapped::format_tokens;
+            let pk = batch.signer_public_key.as_deref().unwrap_or("");
+            println!("Signed savings batch written to {}", p.display());
+            println!(
+                "  Net saved:  {} tokens (~${:.2}) over {} event(s)",
+                format_tokens(batch.totals.net_saved_tokens),
+                batch.totals.saved_usd,
+                batch.totals.total_events
+            );
+            println!("  Chain head: {}", batch.last_entry_hash);
+            println!(
+                "  Chain:      {}",
+                if batch.chain_valid {
+                    "intact (SHA-256)"
+                } else {
+                    "BROKEN — run `lean-ctx savings verify`"
+                }
+            );
+            println!("  Signer key: {pk}");
+            println!(
+                "\nVerify anywhere (no ledger needed):  lean-ctx savings verify-batch {}",
+                p.display()
+            );
+        }
+        Err(e) => {
+            eprintln!("Could not write artifact: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `lean-ctx savings verify-batch FILE` — verifies an exported batch's Ed25519 signature
+/// offline (integrity + origin), without needing the original ledger.
+fn cmd_savings_verify_batch(file: Option<&str>) {
+    use core::savings_ledger::signed_batch;
+
+    let Some(file) = file else {
+        eprintln!("Usage: lean-ctx savings verify-batch <file.json>");
+        std::process::exit(1);
+    };
+    let batch = match signed_batch::load_artifact(std::path::Path::new(file)) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("Cannot read artifact: {e}");
+            std::process::exit(1);
+        }
+    };
+    let res = batch.verify();
+    if res.signature_valid {
+        use core::wrapped::format_tokens;
+        println!("Signed savings batch: VALID");
+        println!(
+            "  Signed by:  {}",
+            res.signer_public_key.as_deref().unwrap_or("?")
+        );
+        println!("  Agent:      {}", batch.agent_id);
+        println!("  Created:    {}", batch.created_at);
+        println!("  lean-ctx:   {}", batch.lean_ctx_version);
+        println!(
+            "  Net saved:  {} tokens (~${:.2}) over {} event(s)",
+            format_tokens(batch.totals.net_saved_tokens),
+            batch.totals.saved_usd,
+            batch.totals.total_events
+        );
+        println!("  Chain head: {}", batch.last_entry_hash);
+        if let Some(tally) = &batch.security {
+            for phrase in core::value::format::security_phrases(&tally.counts) {
+                println!("  Security:   {phrase} (signed, audit trail)");
+            }
+        }
+        if !batch.chain_valid {
+            println!("  NOTE: the ledger chain was already broken when this batch was signed.");
+        }
+    } else {
+        println!(
+            "Signed savings batch: INVALID — {}",
+            res.error.as_deref().unwrap_or("signature check failed")
+        );
+        std::process::exit(1);
+    }
+}
+
+#[allow(clippy::many_single_char_names)] // ANSI formatting locals: s,v,t,m,w
+fn format_savings_summary() -> String {
+    use core::wrapped::format_tokens;
+    let s = core::savings_ledger::summary();
+    if s.total_events == 0 {
+        return "Savings ledger is empty — it fills as lean-ctx compresses your reads.\n"
+            .to_string();
+    }
+    let v = core::savings_ledger::verify();
+    let energy_tokens = if s.bounce_events > 0 {
+        s.net_saved_tokens()
+    } else {
+        s.saved_tokens
+    };
+
+    let t = core::theme::load_theme(&core::config::Config::load().theme);
+    let rst = core::theme::rst();
+    let bold = core::theme::bold();
+    let dim = core::theme::dim();
+    let sc = t.success.fg();
+    let m = t.muted.fg();
+    let w = 56;
+    let ss = t.box_side_square();
+    let sl = |content: &str| -> String {
+        let padded = core::theme::pad_right(content, w);
+        format!("  {ss}{padded}{ss}")
+    };
+
+    let integrity_badge = if v.valid {
+        format!("{sc}✓ SHA-256 chain intact{rst}")
+    } else {
+        format!(
+            "{}✗ BROKEN — run `lean-ctx savings verify`{rst}",
+            t.danger.fg()
+        )
+    };
+
+    let mut out = Vec::new();
+    out.push(String::new());
+    out.push(format!(
+        "  {}",
+        t.box_top_labeled(w, "SIGNED SAVINGS LEDGER")
+    ));
+    out.push(sl(&format!(
+        "  {bold}Events{rst}      {m}{}{rst}",
+        s.total_events
+    )));
+    // Integrity status on its own line — the "BROKEN" badge is too long to share
+    // the Events row without overflowing the box border.
+    out.push(sl(&format!("  {integrity_badge}")));
+    if s.bounce_events > 0 {
+        out.push(sl(&format!(
+            "  {bold}Saved{rst}       {sc}{}{rst}  {dim}(gross){rst}",
+            format_tokens(s.saved_tokens)
+        )));
+        out.push(sl(&format!(
+            "  {bold}Bounce{rst}      {m}{}{rst}  {dim}({} re-reads){rst}",
+            format_tokens(s.bounce_tokens),
+            s.bounce_events
+        )));
+        out.push(sl(&format!(
+            "  {bold}Net saved{rst}   {sc}{bold}{}{rst}",
+            format_tokens(s.net_saved_tokens())
+        )));
+        out.push(sl(&format!(
+            "  {bold}USD{rst}         {sc}{bold}${:.2}{rst}  {dim}(net of bounce){rst}",
+            s.saved_usd
+        )));
+    } else {
+        out.push(sl(&format!(
+            "  {bold}Saved{rst}       {sc}{bold}{}{rst}",
+            format_tokens(s.saved_tokens)
+        )));
+        out.push(sl(&format!(
+            "  {bold}USD{rst}         {sc}{bold}${:.2}{rst}",
+            s.saved_usd
+        )));
+    }
+    // Honest net-of-injection (#361, #685): subtract lean-ctx's own fixed per-turn
+    // context tax (overhead × observed proxy turns) from the bounce-adjusted net.
+    // Only shown when the proxy actually saw turns — we never guess unseen turns.
+    {
+        let per_turn = core::context_overhead::ContextOverhead::cached().total_tokens() as u64;
+        let turns = core::context_overhead::observed_turns();
+        if turns > 0 {
+            let (inj_total, inj_net) =
+                core::context_overhead::net_of_injection(s.net_saved_tokens(), per_turn, turns);
+            let net_str = if inj_net < 0 {
+                format!("-{}", format_tokens(inj_net.unsigned_abs()))
+            } else {
+                format_tokens(inj_net.unsigned_abs())
+            };
+            out.push(sl(&format!(
+                "  {bold}After inj.{rst}  {sc}{bold}{net_str}{rst}  {dim}(−{} tax · {} turns){rst}",
+                format_tokens(inj_total),
+                turns
+            )));
+        }
+    }
+    {
+        let energy = core::energy::format_for_tokens(energy_tokens);
+        let charges = core::energy::phone_charges_hint(energy_tokens)
+            .map(|h| format!("  ({h})"))
+            .unwrap_or_default();
+        out.push(sl(&format!(
+            "  {bold}Energy{rst}      {sc}{energy}{rst}{dim}{charges}{rst}"
+        )));
+    }
+    out.push(format!("  {}", t.box_bottom_square(w)));
+
+    // Bounce rate warning (#1193): alert when >5% of reads result in bounces.
+    if s.total_events > 10 && s.bounce_events > 0 {
+        let bounce_rate = s.bounce_events as f64 / s.total_events as f64 * 100.0;
+        if bounce_rate > 5.0 {
+            let wc = t.danger.fg();
+            out.push(String::new());
+            out.push(format!(
+                "  {wc}⚠ Bounce rate {bounce_rate:.1}% — compression may be too aggressive.{rst}",
+            ));
+            out.push(format!(
+                "  {wc}  Consider mode=full for frequently-bounced file types.{rst}",
+            ));
+        }
+    }
+    if !s.by_model.is_empty() {
+        out.push(String::new());
+        out.push(format!("  {}", t.box_top_labeled(w, "BY MODEL")));
+        for (model, tok, usd) in s.by_model.iter().take(5) {
+            out.push(sl(&format!(
+                "  {m}{model:<22}{rst} {:>10} tok  {sc}${usd:.2}{rst}",
+                format_tokens(*tok)
+            )));
+        }
+        out.push(format!("  {}", t.box_bottom_square(w)));
+    }
+
+    // Mechanism attribution (enterprise#19): only rendered once a second
+    // mechanism exists — a pure-compression ledger keeps its familiar output.
+    if s.by_mechanism.len() >= 2 {
+        out.push(String::new());
+        out.push(format!("  {}", t.box_top_labeled(w, "BY MECHANISM")));
+        for (mechanism, tok, usd) in &s.by_mechanism {
+            out.push(sl(&format!(
+                "  {m}{mechanism:<22}{rst} {:>10} tok  {sc}${usd:.2}{rst}",
+                format_tokens(*tok)
+            )));
+        }
+        out.push(format!("  {}", t.box_bottom_square(w)));
+    }
+
+    // G8 Token-Stream Attribution (#1191)
+    if !s.by_stream.is_empty() {
+        out.push(String::new());
+        out.push(format!("  {}", t.box_top_labeled(w, "BY TOKEN STREAM")));
+        for (stream, tok, usd) in &s.by_stream {
+            let label = match stream.as_str() {
+                "first_inject" => "First inject (cache_write)",
+                "re_read" => "Re-read (cache_read)",
+                other => other,
+            };
+            out.push(sl(&format!(
+                "  {m}{label:<30}{rst} {:>10} tok  {sc}${usd:.4}{rst}",
+                format_tokens(*tok)
+            )));
+        }
+        out.push(format!("  {}", t.box_bottom_square(w)));
+    }
+    if s.by_day.len() >= 2 {
+        out.push(String::new());
+        out.push(format!("  {}", t.box_top_labeled(w, "RECENT DAYS")));
+        let recent: Vec<_> = s.by_day.iter().rev().take(7).collect();
+        for (day, tok, usd, _baseline) in recent.into_iter().rev() {
+            out.push(sl(&format!(
+                "  {m}{day}{rst}  {:>10} tok  {sc}${usd:.2}{rst}",
+                format_tokens(*tok)
+            )));
+        }
+        out.push(format!("  {}", t.box_bottom_square(w)));
+    }
+
+    out.push(String::new());
+    out.join("\n")
+}

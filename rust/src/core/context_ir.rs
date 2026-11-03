@@ -191,7 +191,7 @@ impl ContextIrV1 {
 
     /// Report persistence failure to lifecycle owners instead of acknowledging
     /// an artifact merely because a best-effort save was attempted.
-    pub(crate) fn try_save(&self) -> anyhow::Result<()> {
+    pub fn try_save(&self) -> anyhow::Result<()> {
         let dir = crate::core::paths::cache_dir().map_err(anyhow::Error::msg)?;
         let json = serde_json::to_string_pretty(self)?;
         let json = crate::core::redaction::redact_text(&json);

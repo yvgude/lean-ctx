@@ -154,7 +154,7 @@ impl Projection {
 
 /// One execution and its exact source binding, captured on the same provider
 /// instance. The public provider snapshot remains its existing wire projection.
-pub(crate) struct BoundResult {
+pub struct BoundResult {
     pub result: ProviderResult,
     provider: String,
     resource: String,
@@ -178,7 +178,7 @@ pub(crate) fn digest(value: &impl Serialize) -> Option<String> {
 }
 
 impl BoundResult {
-    pub(crate) fn execute(
+    pub fn execute(
         provider: &dyn super::provider_trait::ContextProvider,
         action: &str,
         params: &ProviderParams,
@@ -201,14 +201,14 @@ impl BoundResult {
         })
     }
 
-    pub(crate) fn chunks(
+    pub fn chunks(
         &self,
         projection: &ProviderResult,
     ) -> Vec<crate::core::content_chunk::ContentChunk> {
         self.chunks_with_projection(projection, Projection::Raw)
     }
 
-    pub(crate) fn chunks_with_projection(
+    pub fn chunks_with_projection(
         &self,
         projection: &ProviderResult,
         kind: Projection,

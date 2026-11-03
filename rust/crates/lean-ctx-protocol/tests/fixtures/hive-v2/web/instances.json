@@ -14,7 +14,7 @@
             "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
             "name": "Ada"
           },
-          "engine_version": "3.12.0",
+          "instance_version": "3.12.0",
           "os": "macos",
           "enrolled_at": "2026-10-20T07:00:00Z",
           "last_seen_at": "2026-10-26T06:58:00Z",
@@ -34,7 +34,7 @@
             "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
             "name": "Ada"
           },
-          "engine_version": "3.12.0",
+          "instance_version": "3.12.0",
           "os": "macos",
           "enrolled_at": "2026-10-20T07:00:00Z",
           "last_seen_at": "2026-10-23T18:10:00Z",
@@ -51,7 +51,7 @@
             "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
             "name": "Ada"
           },
-          "engine_version": "3.12.0",
+          "instance_version": "3.12.0",
           "os": "macos",
           "enrolled_at": "2026-10-20T07:00:00Z",
           "last_seen_at": "2026-10-21T12:00:00Z",

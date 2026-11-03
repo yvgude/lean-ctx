@@ -17,13 +17,13 @@ const STORE_SCHEMA_VERSION: u16 = 1;
 const MAX_STORE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_GRAPHS: usize = 32;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static FAIL_NEXT_SAVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-#[cfg(test)]
-pub(crate) fn with_save_failure<T>(action: impl FnOnce() -> T) -> T {
+#[cfg(any(test, feature = "test-support"))]
+pub fn with_save_failure<T>(action: impl FnOnce() -> T) -> T {
     struct Reset;
     impl Drop for Reset {
         fn drop(&mut self) {
@@ -63,7 +63,7 @@ impl WorkGraphStore {
 
     /// Derive child delivery authority only from this validated durable snapshot.
     /// Certificate fields select a node but never supply its expected identity.
-    pub(crate) fn child_delivery_authority(
+    pub fn child_delivery_authority(
         &self,
         certificate: &crate::core::a2a::task::delivery_delegation::DeliveryDelegationV1,
         policy: &crate::core::a2a::task::TaskAuthorityConfigV1,
@@ -278,7 +278,7 @@ impl WorkGraphStore {
         let mut store = load_at(&path, project_root)?;
         let result = mutate(&mut store)?;
         store.validate()?;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if FAIL_NEXT_SAVE.replace(false) {
             return Err("injected work graph persistence failure".into());
         }

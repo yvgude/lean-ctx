@@ -1,6 +1,6 @@
-# LeanCTX Engine
+# LeanCTX | OSS
 
-**LeanCTX is the Context Gateway for AI Systems.**
+**LeanCTX is the Context Gateway for AI agents.**
 **Control what your AI can see.**
 
 The open-source Engine brings context selection, supported access and content
@@ -57,7 +57,7 @@ cargo fmt --check
 ## Integration boundaries
 
 - **Attach:** use the installed CLI, MCP server, hooks or supported local proxy.
-- **Embed:** use the standalone LeanCTX SDK's released lifecycle and Agent Tools
+- **Embed:** use the standalone LeanCTX | SDK's released lifecycle and Agent Tools
   contracts. Preview operations and older in-tree experiments keep their own limits.
 - **Commercial deployments:** Enterprise and SDK/OEM have separate scope and
   licensing; consult the applicable release and agreement.

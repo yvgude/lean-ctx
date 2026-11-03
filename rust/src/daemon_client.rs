@@ -11,7 +11,7 @@ static DELIVERY_RUNTIME: OnceLock<Result<Runtime, String>> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(not(unix), allow(dead_code))] // the daemon route is cfg(unix) in read_cmd
-pub(crate) enum DaemonToolCallOutcome {
+pub enum DaemonToolCallOutcome {
     Unavailable,
     Completed { text: String, is_error: bool },
     Uncertain { message: String },
@@ -418,7 +418,7 @@ async fn daemon_tool_call_observed(
 }
 
 #[cfg_attr(not(unix), allow(dead_code))] // the daemon route is cfg(unix) in read_cmd
-pub(crate) fn try_daemon_tool_call_blocking_observed(
+pub fn try_daemon_tool_call_blocking_observed(
     name: &str,
     arguments: Option<serde_json::Value>,
 ) -> DaemonToolCallOutcome {

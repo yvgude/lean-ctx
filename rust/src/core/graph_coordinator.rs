@@ -19,7 +19,7 @@ use crate::core::graph_provider::{self, OpenGraphProvider};
 /// field-compatible with the legacy `graph_index` coordinator so the front-end
 /// polling contract is unchanged.
 #[derive(serde::Serialize)]
-pub(crate) struct GraphBuildProgress {
+pub struct GraphBuildProgress {
     pub status: &'static str,
     pub files_total: usize,
     pub files_done: usize,
@@ -45,9 +45,7 @@ impl GraphBuildProgress {
 /// Fast path: a populated PropertyGraph (or, during the #696 transition, the
 /// legacy JSON index) is returned immediately. Otherwise the shared background
 /// indexer is (idempotently) started and `Err(progress)` is returned.
-pub(crate) fn get_or_start_build(
-    project_root: &str,
-) -> Result<OpenGraphProvider, GraphBuildProgress> {
+pub fn get_or_start_build(project_root: &str) -> Result<OpenGraphProvider, GraphBuildProgress> {
     if let Some(open) = graph_provider::open_best_effort(project_root) {
         return Ok(open);
     }

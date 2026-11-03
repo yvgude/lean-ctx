@@ -17,8 +17,8 @@ pub mod provenance;
 pub mod provider_trait;
 pub mod registry;
 pub mod scaffold;
-pub(crate) mod selected_gitlab;
-pub(crate) mod snapshot_projection;
+pub mod selected_gitlab;
+pub mod snapshot_projection;
 
 pub use provider_trait::{ContextPacket, ContextProvider, ProviderParams};
 pub use registry::{ProviderRegistry, global_registry};
@@ -88,7 +88,7 @@ impl ProviderResult {
     }
 
     /// The list line of [`Self::format_compact`] for `count` listed items.
-    pub(crate) fn compact_header(&self, count: usize) -> String {
+    pub fn compact_header(&self, count: usize) -> String {
         format!(
             "{} {} ({}{}):\n",
             self.provider,
@@ -102,7 +102,7 @@ impl ProviderResult {
 impl ProviderItem {
     /// The lines of one item in [`ProviderResult::format_compact`]: all it
     /// shows of the item, so it can be admitted as that item's source.
-    pub(crate) fn format_compact(&self) -> String {
+    pub fn format_compact(&self) -> String {
         let state = self.state.as_deref().unwrap_or("");
         let labels = if self.labels.is_empty() {
             String::new()

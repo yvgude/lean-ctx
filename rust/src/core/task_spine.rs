@@ -28,7 +28,7 @@ static SESSION_LINEAGES: OnceLock<SessionLineages> = OnceLock::new();
 
 /// Logical identities supplied by an admitting host, never by tool arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct AdmittedTaskIdentity {
+pub struct AdmittedTaskIdentity {
     pub(crate) project_id: ProjectId,
     pub(crate) tenant_id: TenantId,
 }
@@ -177,7 +177,7 @@ impl TaskSpine {
     }
 
     /// Only an explicitly bound lifecycle may supply canonical execution identity.
-    pub(crate) fn scoped_current() -> Option<TaskEnvelopeV1> {
+    pub fn scoped_current() -> Option<TaskEnvelopeV1> {
         SCOPED.try_with(Clone::clone).ok().flatten()
     }
 
@@ -196,15 +196,12 @@ impl TaskSpine {
     }
 
     /// Callers must capture the owning async scope before spawning a blocking job.
-    pub(crate) fn sync_scope<T>(
-        envelope: Option<TaskEnvelopeV1>,
-        operation: impl FnOnce() -> T,
-    ) -> T {
+    pub fn sync_scope<T>(envelope: Option<TaskEnvelopeV1>, operation: impl FnOnce() -> T) -> T {
         SCOPED.sync_scope(envelope, operation)
     }
 
     /// Preserve the owner of a detached read/telemetry worker, including no owner.
-    pub(crate) fn spawn_thread<T: Send + 'static>(
+    pub fn spawn_thread<T: Send + 'static>(
         operation: impl FnOnce() -> T + Send + 'static,
     ) -> std::thread::JoinHandle<T> {
         let envelope = Self::current();

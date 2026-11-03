@@ -7,7 +7,7 @@ macro_rules! static_regex {
     }};
 }
 
-pub(crate) fn redaction_enabled_for_active_role() -> bool {
+pub fn redaction_enabled_for_active_role() -> bool {
     let role = crate::core::roles::active_role();
     if role.role.name == "admin" {
         role.io.redact_outputs
@@ -22,7 +22,7 @@ pub(crate) fn redaction_enabled_for_active_role() -> bool {
 /// secrets out of files, not out of the model context, and an already
 /// redacted `[REDACTED:…]` marker never matches again, so nested passes over
 /// one output do not double count.
-pub(crate) fn redact_text_if_enabled(input: &str) -> String {
+pub fn redact_text_if_enabled(input: &str) -> String {
     if !redaction_enabled_for_active_role() {
         return input.to_string();
     }
@@ -30,7 +30,7 @@ pub(crate) fn redact_text_if_enabled(input: &str) -> String {
     let hits = found.len();
     // Engine metrics K21: fingerprints only, and only while sharing is on.
     if hits > 0 {
-        crate::core::hive::metrics_v2::secrets::note(&found);
+        crate::core::hive_signals::note_secrets(&found);
     }
     crate::core::security_events::note(
         crate::core::security_events::SecurityKind::SecretRedacted,
@@ -486,7 +486,7 @@ fn redaction_rules() -> Vec<Rule> {
     ]
 }
 
-pub(crate) fn redact_text(input: &str) -> String {
+pub fn redact_text(input: &str) -> String {
     redact_text_with_excludes(input, &[])
 }
 
@@ -507,7 +507,7 @@ thread_local! {
 /// the gateway still see the original text with the real key in it and
 /// decide as always. A `key` that is not 64 lowercase hex digits exempts
 /// nothing.
-pub(crate) fn with_verified_signer_key<T>(key: &str, release: impl FnOnce() -> T) -> T {
+pub fn with_verified_signer_key<T>(key: &str, release: impl FnOnce() -> T) -> T {
     let well_formed = key.len() == 64
         && key
             .bytes()
@@ -537,7 +537,7 @@ fn is_verified_signer_key(before: &str, value: &str) -> bool {
 /// `[secret_detection].exclude_patterns` — a match covered by any exclude
 /// regex is kept verbatim, so known-safe naming conventions can be carved out
 /// without disabling secret detection wholesale.
-pub(crate) fn redact_text_with_excludes(input: &str, excludes: &[regex::Regex]) -> String {
+pub fn redact_text_with_excludes(input: &str, excludes: &[regex::Regex]) -> String {
     redact_counting(input, excludes).0
 }
 
@@ -738,7 +738,7 @@ fn excluded(excludes: &[regex::Regex], value: &str) -> bool {
 /// `Config::load_arc` returns the *same* `Arc` when the underlying config
 /// content hash is unchanged, so a real config edit is exactly what
 /// invalidates this cache too — no separate change-detection needed.
-pub(crate) fn config_exclude_patterns() -> std::sync::Arc<Vec<regex::Regex>> {
+pub fn config_exclude_patterns() -> std::sync::Arc<Vec<regex::Regex>> {
     type Cache = Option<(
         std::sync::Arc<crate::core::config::Config>,
         std::sync::Arc<Vec<regex::Regex>>,
@@ -778,10 +778,7 @@ pub(crate) fn config_exclude_patterns() -> std::sync::Arc<Vec<regex::Regex>> {
 /// the pack's `[redaction]` entries, precompiled by
 /// [`crate::core::policy::runtime`].
 #[must_use]
-pub(crate) fn redact_with_patterns(
-    input: &str,
-    patterns: &[(String, regex::Regex)],
-) -> (String, usize) {
+pub fn redact_with_patterns(input: &str, patterns: &[(String, regex::Regex)]) -> (String, usize) {
     let mut out = input.to_string();
     let mut hits = 0usize;
     for (label, re) in patterns {

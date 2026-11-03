@@ -16,14 +16,14 @@ pub(crate) struct Target {
     scoped: bool,
 }
 
-pub(crate) fn request_project() -> Option<PathBuf> {
+pub fn request_project() -> Option<PathBuf> {
     runtime::REQUEST_PROJECT
         .try_with(|slot| slot.borrow().clone())
         .ok()
         .flatten()
 }
 
-pub(crate) fn project() -> Option<PathBuf> {
+pub fn project() -> Option<PathBuf> {
     request_project().or_else(|| std::env::current_dir().ok())
 }
 
@@ -273,7 +273,7 @@ pub(crate) fn open_append(path: &Path) -> std::io::Result<std::fs::File> {
 
 /// Bound borrowed inputs before allocating a diagnostic record. All fields
 /// remain intact for a second, current-policy inspection inside the writer.
-pub(crate) fn fields(text: &[(&str, &str)], args: Option<&Map<String, Value>>) -> Option<Value> {
+pub fn fields(text: &[(&str, &str)], args: Option<&Map<String, Value>>) -> Option<Value> {
     let mut inspector = Inspector {
         policy: None,
         bytes: 0,
@@ -289,7 +289,7 @@ pub(crate) fn fields(text: &[(&str, &str)], args: Option<&Map<String, Value>>) -
     Some(Value::Object(result))
 }
 
-pub(crate) fn inspect(value: &Value, policy: Option<&runtime::ActivePolicy>) -> Option<Value> {
+pub fn inspect(value: &Value, policy: Option<&runtime::ActivePolicy>) -> Option<Value> {
     Inspector {
         policy,
         bytes: 0,

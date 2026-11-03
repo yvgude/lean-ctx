@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Deterministic text compressors for the LeanCTX Engine.
+//! Deterministic text compressors for LeanCTX | OSS.
 //!
 //! Every compressor is a pure text transform: file content (plus an optional
 //! extension hint) goes in, a shorter rendering (or `None`) comes out. Output is

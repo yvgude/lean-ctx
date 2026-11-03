@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    crate::engine_dir()
+        .to_path_buf()
         .parent()
         .expect("repo root")
         .to_path_buf()

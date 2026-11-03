@@ -55,7 +55,7 @@ fn read_mode_counts_are_exact() {
     if !in_repo_checkout() {
         return;
     }
-    let actual = crate::tools::ctx_read::mode::MODE_FAMILIES.len() as u32;
+    let actual = crate::core::read_mode::MODE_FAMILIES.len() as u32;
     let found = claims(r"(\d+)(\+)? (?:file )?read modes");
     assert!(
         !found.is_empty(),
@@ -122,10 +122,9 @@ fn withdrawn_benchmark_figures_stay_out_of_readme() {
 
 #[test]
 fn every_mode_family_parses() {
-    for mode in crate::tools::ctx_read::mode::MODE_FAMILIES {
+    for mode in crate::core::read_mode::MODE_FAMILIES {
         assert!(
-            mode.parse::<crate::tools::ctx_read::mode::ReadMode>()
-                .is_ok(),
+            mode.parse::<crate::core::read_mode::ReadMode>().is_ok(),
             "{mode} does not parse"
         );
     }

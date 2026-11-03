@@ -190,8 +190,9 @@ class Mcp {
     const idB = await reg(mB, 'codex', 'dev');
     ok('agent A registers on engine one, agent B on engine two', !!idA && !!idB);
 
-    // 1. An agent of engine one proposes a task; the next sync opens it at once.
-    const q = e1.run(['hive', 'tasks', 'propose', '--title', `Check the retry budget ${RUN}`, '--acceptance', 'Name the constant and its value']);
+    // 1. An agent of engine one proposes a task for the `dev` role; the next
+    // sync opens it at once. Agent B is a `dev`, so its claim must pass.
+    const q = e1.run(['hive', 'tasks', 'propose', '--title', `Check the retry budget ${RUN}`, '--acceptance', 'Name the constant and its value', '--role', 'dev']);
     const s = e1.run(['hive', 'sync']);
     const n = Number(/Created task #(\d+), open now/.exec(s.out)?.[1] ?? NaN);
     ok('a proposed task is open at once', q.code === 0 && Number.isInteger(n), `${q.out}\n${s.out}`);
@@ -199,7 +200,7 @@ class Mcp {
     ok('task.event: agent B on engine two hears the task is open', !opened.startsWith('NOT FOUND'), opened.slice(0, 500));
 
     // 2. Agent B claims it under engine two's opt-in and submits a result.
-    const opt = await owner.req('PUT', `/api/v1/me/engines/${e2.instance}/optin`, { vaults: [repoId], daily_budget: { tasks: 3 }, active: true });
+    const opt = await owner.req('PUT', `/api/v1/me/instances/${e2.instance}/optin`, { vaults: [repoId], daily_budget: { tasks: 3 }, active: true });
     ok('the owner opts engine two in for the repo', opt.status === 200, JSON.stringify(opt.body));
     const claim = e2.run(['hive', 'tasks', 'claim', String(n), '--agent', idB, '--minutes', '10']);
     ok('agent B claims the task', claim.code === 0 && /Claimed task/.test(claim.out), claim.out);
@@ -208,6 +209,7 @@ class Mcp {
     ok('agent B submits: the task waits for a check', sub.code === 0 && /another agent checks it/.test(sub.out), sub.out);
     const web = await owner.req('GET', `/api/v1/orgs/${owner.slug}/vaults/${repo}/tasks/${n}`);
     ok('the web shows the task submitted', web.body?.status === 'submitted', JSON.stringify(web.body).slice(0, 400));
+    ok('the task keeps its role', JSON.stringify(web.body ?? {}).includes('"role":"dev"'), JSON.stringify(web.body).slice(0, 400));
     const toCheck = await readUntil(mA, idA, `Hive task #${n} has a result to check`);
     ok('task.event: agent A on engine one is asked to check the result', !toCheck.startsWith('NOT FOUND'), toCheck.slice(0, 500));
 
@@ -226,6 +228,20 @@ class Mcp {
     ok('agent A accepts: the task is done', !done.startsWith('NOT FOUND'), done.slice(0, 500));
     const after = await owner.req('GET', `/api/v1/orgs/${owner.slug}/vaults/${repo}/tasks/${n}`);
     ok('the web shows the task done', after.body?.status === 'done', JSON.stringify(after.body).slice(0, 400));
+
+    // 5. The MCP path: a second `dev` task, claimed through ctx_tasks with
+    // the local agent id; Hive sees the agent's worker on the bus.
+    e1.run(['hive', 'tasks', 'propose', '--title', `Check the backoff cap ${RUN}`, '--acceptance', 'Name the cap', '--role', 'dev']);
+    const s5 = e1.run(['hive', 'sync']);
+    const n2 = Number(/Created task #(\d+), open now/.exec(s5.out)?.[1] ?? NaN);
+    ok('a second dev task is open', Number.isInteger(n2), s5.out);
+    await readUntil(mB, idB, `Hive task #${n2} is open`);
+    const mcpClaim = await mB.tool('ctx_tasks', { action: 'claim', number: n2 });
+    ok('agent B queues a ctx_tasks claim', /Queued/.test(mcpClaim.text), mcpClaim.text);
+    const granted = await answerOf(mB, new RegExp(`Claimed Hive task #${n2}`));
+    ok('Hive grants the ctx_tasks claim of a role task', !granted.startsWith('NOT FOUND'), granted.slice(0, 500));
+    const claimed = await owner.req('GET', `/api/v1/orgs/${owner.slug}/vaults/${repo}/tasks/${n2}`);
+    ok('the web shows the second task claimed', claimed.body?.status === 'claimed', JSON.stringify(claimed.body).slice(0, 400));
   } finally {
     mA.close(); mB.close();
     relays.forEach(r => r.kill());

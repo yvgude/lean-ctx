@@ -41,7 +41,7 @@ const AGENT_COPY_DIR_NAMES: &[&str] = &[".worktrees", ".codex-worktrees", ".clau
 /// leaf, while normal file reads transparently follow it (#1003). Canonicalizing
 /// only the already-jailed root preserves the rule that nested links are never
 /// followed and strips Windows' verbatim prefix for `ignore` compatibility.
-pub(crate) fn explicit_walk_root(root: &std::path::Path) -> std::path::PathBuf {
+pub fn explicit_walk_root(root: &std::path::Path) -> std::path::PathBuf {
     #[cfg(windows)]
     {
         crate::core::pathutil::canonicalize_raw(root).unwrap_or_else(|_| root.to_path_buf())
@@ -125,7 +125,7 @@ pub(crate) fn is_agent_worktree_dir(entry: &ignore::DirEntry) -> bool {
 /// Note that [`keep_entry`] still prunes `.claude` / `.cursor` and the other
 /// agent-copy directories regardless of this setting: those hold scratch and
 /// worktree copies, and excluding them is a separate, deliberate rule.
-pub(crate) const SKIP_HIDDEN_IN_CONTENT_WALK: bool = false;
+pub const SKIP_HIDDEN_IN_CONTENT_WALK: bool = false;
 
 /// Returns `true` when `entry` is a *linked git worktree checked out inside
 /// its own repository*, whatever the directory is called: its `.git` is a file
@@ -176,7 +176,7 @@ pub(crate) fn is_linked_git_worktree(entry: &ignore::DirEntry) -> bool {
 /// Predicate for `ignore::WalkBuilder::filter_entry`: prunes vendor
 /// directories, stale agent worktree copies (named or linked), and cloud
 /// placeholders.
-pub(crate) fn keep_entry(entry: &ignore::DirEntry) -> bool {
+pub fn keep_entry(entry: &ignore::DirEntry) -> bool {
     !is_vcs_metadata(entry)
         && !is_vendor_dir(entry)
         && !is_agent_worktree_dir(entry)

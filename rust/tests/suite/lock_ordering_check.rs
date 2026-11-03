@@ -29,9 +29,7 @@ fn check_file(path: &Path, results: &mut Vec<(String, String)>) {
         return;
     };
 
-    let rel = path
-        .strip_prefix(env!("CARGO_MANIFEST_DIR"))
-        .unwrap_or(path);
+    let rel = path.strip_prefix(crate::engine_dir()).unwrap_or(path);
 
     // Test-only serialization locks (e.g. `static TEST_LOCK: Mutex<()>`) live inside
     // inline `#[cfg(test)] mod tests { ... }` blocks and are not part of the
@@ -47,7 +45,12 @@ fn check_file(path: &Path, results: &mut Vec<(String, String)>) {
     for (i, line) in content.lines().enumerate() {
         let trimmed = line.trim();
 
-        if !in_test && trimmed.contains("#[cfg(test)]") {
+        // `test-support` is the engine feature that exposes test helpers to the
+        // composition root's unit tests: such an item exists only in test builds.
+        if !in_test
+            && (trimmed.contains("#[cfg(test)]")
+                || trimmed.contains("#[cfg(any(test, feature = \"test-support\"))]"))
+        {
             armed = true;
         }
 
@@ -107,7 +110,7 @@ fn extract_lock_name(line: &str) -> String {
 }
 
 fn load_lock_ordering_doc() -> String {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest = crate::engine_dir();
     let doc_path = manifest.join("LOCK_ORDERING.md");
     std::fs::read_to_string(&doc_path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {e}", doc_path.display()))
@@ -115,8 +118,12 @@ fn load_lock_ordering_doc() -> String {
 
 #[test]
 fn all_static_locks_documented() {
-    let src_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let locks = collect_lock_files_from_source(&src_dir);
+    // The engine library and the composition root (crates/lean-ctx) share one
+    // lock-ordering document.
+    let mut locks = collect_lock_files_from_source(&crate::engine_dir().join("src"));
+    locks.extend(collect_lock_files_from_source(
+        &crate::engine_dir().join("crates/lean-ctx/src"),
+    ));
     let doc = load_lock_ordering_doc();
 
     let doc_referenced: HashSet<&str> = doc

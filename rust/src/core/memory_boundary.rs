@@ -36,14 +36,14 @@ impl Default for BoundaryPolicy {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CrossProjectEventType {
+pub enum CrossProjectEventType {
     Search,
     Import,
     Recall,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct CrossProjectAuditEvent {
+pub struct CrossProjectAuditEvent {
     pub timestamp: String,
     pub event_type: CrossProjectEventType,
     pub source_project_hash: String,
@@ -55,7 +55,7 @@ pub(crate) struct CrossProjectAuditEvent {
     pub policy_reason: String,
 }
 
-pub(crate) fn check_boundary(
+pub fn check_boundary(
     source_hash: &str,
     target_hash: &str,
     policy: &BoundaryPolicy,
@@ -81,7 +81,7 @@ pub(crate) fn is_same_project_identity(hash_a: &str, hash_b: &str) -> bool {
 /// The hash-chained compliance trail is separate (core::audit_trail) and not rotated here.
 const MAX_AUDIT_LINES: usize = 2000;
 
-pub(crate) fn record_audit_event(event: &CrossProjectAuditEvent) {
+pub fn record_audit_event(event: &CrossProjectAuditEvent) {
     let dir = match lean_ctx_data_dir() {
         Ok(d) => d.join("audit"),
         Err(e) => {
@@ -121,7 +121,7 @@ pub(crate) fn record_audit_event(event: &CrossProjectAuditEvent) {
 }
 
 #[cfg(feature = "http-server")]
-pub(crate) fn load_audit_events(limit: usize) -> Vec<CrossProjectAuditEvent> {
+pub fn load_audit_events(limit: usize) -> Vec<CrossProjectAuditEvent> {
     let path = match lean_ctx_data_dir() {
         Ok(d) => d.join("audit").join("cross-project.jsonl"),
         Err(_) => return Vec::new(),

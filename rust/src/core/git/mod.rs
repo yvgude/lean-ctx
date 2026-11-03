@@ -10,9 +10,9 @@
 //! disables interactive credential prompts (so a private/auth-required remote
 //! fails fast instead of hanging), and enforces a wall-clock timeout.
 
-pub(crate) mod clone;
-pub(crate) mod repo_url;
-pub(crate) mod shadow;
+pub mod clone;
+pub mod repo_url;
+pub mod shadow;
 
 use std::io::Read;
 use std::path::Path;
@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 
 /// Result of a single `git` invocation.
 #[derive(Debug, Clone)]
-pub(crate) struct GitOutput {
+pub struct GitOutput {
     pub stdout: String,
     pub stderr: String,
     pub success: bool,
@@ -29,7 +29,7 @@ pub(crate) struct GitOutput {
 
 impl GitOutput {
     /// Stdout if the command succeeded, else an error carrying trimmed stderr.
-    pub(crate) fn ok_stdout(self) -> Result<String, String> {
+    pub fn ok_stdout(self) -> Result<String, String> {
         if self.success {
             Ok(self.stdout)
         } else {
@@ -44,7 +44,7 @@ impl GitOutput {
 }
 
 /// `true` if a `git` binary is callable.
-pub(crate) fn git_available() -> bool {
+pub fn git_available() -> bool {
     Command::new("git")
         .arg("--version")
         .stdin(Stdio::null())
@@ -60,7 +60,7 @@ pub(crate) fn git_available() -> bool {
 /// prompts are disabled so an auth-required remote errors immediately rather
 /// than blocking. stdout/stderr are drained on dedicated threads to avoid
 /// pipe-buffer deadlock on chatty commands (e.g. `clone` progress).
-pub(crate) fn run_git(
+pub fn run_git(
     args: &[&str],
     cwd: &Path,
     timeout: Duration,

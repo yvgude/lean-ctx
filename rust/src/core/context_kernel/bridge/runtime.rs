@@ -23,7 +23,7 @@ use crate::core::outcome::contracts::TaskClass;
 
 /// No mutable plan view escapes this task-bound snapshot.
 #[derive(Debug)]
-pub(crate) struct PreparedKernelContext {
+pub struct PreparedKernelContext {
     query: String,
     project_root: String,
     budget: usize,
@@ -34,8 +34,8 @@ pub(crate) struct PreparedKernelContext {
 
 impl PreparedKernelContext {
     // Compatibility constructor is now used only by internal test fixtures.
-    #[cfg(test)]
-    pub(crate) fn plan(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn plan(
         task_id: TaskId,
         query: String,
         project_root: String,
@@ -55,7 +55,7 @@ impl PreparedKernelContext {
     }
 
     /// Plan from the admitted task envelope's validated creation time.
-    pub(crate) fn plan_for_envelope(
+    pub fn plan_for_envelope(
         envelope: TaskEnvelopeV1,
         query: String,
         project_root: String,
@@ -116,7 +116,7 @@ impl PreparedKernelContext {
         })
     }
 
-    pub(crate) fn decision(&self) -> &TaskAutopilotDecision {
+    pub fn decision(&self) -> &TaskAutopilotDecision {
         &self.decision
     }
 
@@ -146,7 +146,7 @@ impl PreparedKernelContext {
 
 /// Legacy callers remain supported; a failed admitted plan suppresses replanning.
 #[derive(Debug, Clone, Default)]
-pub(crate) enum KernelPlanningHandoff {
+pub enum KernelPlanningHandoff {
     #[default]
     Legacy,
     Suppressed,
@@ -154,16 +154,16 @@ pub(crate) enum KernelPlanningHandoff {
 }
 
 tokio::task_local! {
-    pub(crate) static KERNEL_PLANNING_HANDOFF: KernelPlanningHandoff;
+    pub static KERNEL_PLANNING_HANDOFF: KernelPlanningHandoff;
 }
 
-pub(crate) fn current_handoff() -> KernelPlanningHandoff {
+pub fn current_handoff() -> KernelPlanningHandoff {
     KERNEL_PLANNING_HANDOFF
         .try_with(Clone::clone)
         .unwrap_or_default()
 }
 
-pub(crate) fn planned_project_root() -> Option<String> {
+pub fn planned_project_root() -> Option<String> {
     match current_handoff() {
         KernelPlanningHandoff::Prepared(prepared) => Some(prepared.project_root.clone()),
         _ => None,
@@ -171,7 +171,7 @@ pub(crate) fn planned_project_root() -> Option<String> {
 }
 
 /// Compose caches include the exact planning decision, not just task text/root.
-pub(crate) fn compose_cache_task(query: &str) -> String {
+pub fn compose_cache_task(query: &str) -> String {
     let identity = match current_handoff() {
         KernelPlanningHandoff::Legacy => None,
         KernelPlanningHandoff::Suppressed => Some("suppressed".to_owned()),

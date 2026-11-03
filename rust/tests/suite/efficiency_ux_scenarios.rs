@@ -68,7 +68,7 @@ mod read_cache_hits {
         let path = file.to_str().unwrap();
 
         // First read: stores in cache
-        let out1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out1 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -79,7 +79,7 @@ mod read_cache_hits {
         assert_ne!(out1.resolved_mode, "error");
 
         // Second read: should be a cache hit (mtime unchanged → fast path)
-        let out2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out2 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -101,7 +101,7 @@ mod read_cache_hits {
         std::fs::write(&file, "fn v1() {}\n").unwrap();
         let path = file.to_str().unwrap();
 
-        lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -113,7 +113,7 @@ mod read_cache_hits {
         std::thread::sleep(std::time::Duration::from_millis(1100));
         std::fs::write(&file, "fn v2() { updated(); }\n").unwrap();
 
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -155,7 +155,7 @@ mod zstd_bypass {
         let path = file.to_str().unwrap();
 
         // First read with full mode to populate cache
-        lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -164,7 +164,7 @@ mod zstd_bypass {
         );
 
         // First map read — processes and caches compressed output
-        let out1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out1 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "map",
@@ -176,7 +176,7 @@ mod zstd_bypass {
         // Second map read — served from the compressed cache. Since #1909 an
         // unchanged variant collapses to the same `[unchanged]` stub as a
         // `full` re-read (no conversation context in this process).
-        let out2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out2 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "map",
@@ -194,7 +194,7 @@ mod zstd_bypass {
             "{}",
             out2.content
         );
-        let out3 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out3 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "map",
@@ -252,7 +252,7 @@ mod error_data {
     #[test]
     fn scenario_nonexistent_file_returns_error_mode() {
         let mut cache = SessionCache::new();
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             "/nonexistent/path/does_not_exist.rs",
             "full",
@@ -265,7 +265,7 @@ mod error_data {
 
     #[test]
     fn scenario_search_nonexistent_dir_returns_error() {
-        let result = lean_ctx::tools::ctx_search::handle(
+        let result = lean_ctx_server::tools::ctx_search::handle(
             "pattern",
             "/nonexistent_dir_xyz",
             None,
@@ -284,7 +284,8 @@ mod error_data {
 
     #[test]
     fn scenario_tree_nonexistent_dir_returns_error() {
-        let (result, _) = lean_ctx::tools::ctx_tree::handle("/nonexistent_xyz", 3, false, true);
+        let (result, _) =
+            lean_ctx_server::tools::ctx_tree::handle("/nonexistent_xyz", 3, false, true);
         assert!(
             result.starts_with("ERROR:"),
             "Expected ERROR prefix, got: {result}"
@@ -297,7 +298,8 @@ mod error_data {
         let file = dir.path().join("file.txt");
         std::fs::write(&file, "data").unwrap();
 
-        let (result, _) = lean_ctx::tools::ctx_tree::handle(file.to_str().unwrap(), 3, false, true);
+        let (result, _) =
+            lean_ctx_server::tools::ctx_tree::handle(file.to_str().unwrap(), 3, false, true);
         assert!(
             result.starts_with("ERROR:"),
             "Expected ERROR prefix, got: {result}"
@@ -320,7 +322,7 @@ mod diff_guard {
         std::fs::write(&file, "fn brand_new() {}\n").unwrap();
         let path = file.to_str().unwrap();
 
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "diff",
@@ -349,7 +351,7 @@ mod diff_guard {
         let path = file.to_str().unwrap();
 
         // Read full first
-        lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -362,7 +364,7 @@ mod diff_guard {
         std::fs::write(&file, "fn version_two() { changed(); }\n").unwrap();
 
         // Now diff should work
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "diff",
@@ -392,7 +394,7 @@ mod search_early_abort {
             std::fs::write(&file, format!("fn search_target_{i}() {{}}\n")).unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_search::handle(
+        let result = lean_ctx_server::tools::ctx_search::handle(
             "search_target",
             dir.path().to_str().unwrap(),
             None,
@@ -422,7 +424,7 @@ mod search_early_abort {
             std::fs::write(&file, format!("fn unique_pattern_{i}() {{}}\n")).unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_search::handle(
+        let result = lean_ctx_server::tools::ctx_search::handle(
             "unique_pattern",
             dir.path().to_str().unwrap(),
             None,
@@ -476,7 +478,7 @@ mod cold_read_hints {
         ).unwrap();
         let path = file.to_str().unwrap();
 
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -502,7 +504,8 @@ mod tree_ux {
         let file = dir.path().join("test.txt");
         std::fs::write(&file, "content").unwrap();
 
-        let (result, _) = lean_ctx::tools::ctx_tree::handle(file.to_str().unwrap(), 3, false, true);
+        let (result, _) =
+            lean_ctx_server::tools::ctx_tree::handle(file.to_str().unwrap(), 3, false, true);
         assert!(result.contains("is a file, not a directory"));
         assert!(result.contains("Use path="));
     }
@@ -512,7 +515,7 @@ mod tree_ux {
         let dir = tempfile::tempdir().unwrap();
 
         let (result, _) =
-            lean_ctx::tools::ctx_tree::handle(dir.path().to_str().unwrap(), 3, false, true);
+            lean_ctx_server::tools::ctx_tree::handle(dir.path().to_str().unwrap(), 3, false, true);
         assert!(
             result.contains("empty directory"),
             "Expected 'empty directory' message, got: {result}"
@@ -793,7 +796,7 @@ mod integration_workflow {
         let path = file.to_str().unwrap();
 
         // 1. Agent reads file for the first time
-        let out1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out1 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -804,7 +807,7 @@ mod integration_workflow {
         assert_ne!(out1.resolved_mode, "error");
 
         // 2. Agent reads same file again (cache hit, no disk I/O)
-        let out2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out2 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -818,7 +821,7 @@ mod integration_workflow {
         std::fs::write(&file, "fn edited_version() { new_logic(); }\n").unwrap();
 
         // 4. Agent reads again — detects change
-        let out3 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out3 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -846,7 +849,7 @@ mod integration_workflow {
             writeln!(f, "pub fn helper_{i}() {{}}").unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_search::handle(
+        let result = lean_ctx_server::tools::ctx_search::handle(
             "handler_",
             dir.path().to_str().unwrap(),
             Some("*.rs"),
@@ -877,7 +880,7 @@ mod integration_workflow {
         std::fs::write(tests.join("integration.rs"), "#[test] fn it_works() {}").unwrap();
 
         let (result, _) =
-            lean_ctx::tools::ctx_tree::handle(dir.path().to_str().unwrap(), 3, false, true);
+            lean_ctx_server::tools::ctx_tree::handle(dir.path().to_str().unwrap(), 3, false, true);
         assert!(result.contains("src"));
         assert!(result.contains("tests"));
         assert!(!result.starts_with("ERROR:"));
@@ -900,7 +903,7 @@ mod integration_workflow {
         let path = file.to_str().unwrap();
 
         // 1. Read with full mode
-        let full = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let full = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -910,7 +913,7 @@ mod integration_workflow {
         assert!(full.content.contains("Config"));
 
         // 2. Read with signatures mode (should use compressed cache on 2nd call)
-        let sig1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let sig1 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "signatures",
@@ -919,7 +922,7 @@ mod integration_workflow {
         );
         assert!(!sig1.content.is_empty(), "`sig1.content` is empty");
 
-        let sig2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let sig2 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "signatures",
@@ -935,7 +938,7 @@ mod integration_workflow {
             "{}",
             sig2.content
         );
-        let sig3 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let sig3 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "signatures",
@@ -945,7 +948,7 @@ mod integration_workflow {
         assert_eq!(sig2.content, sig3.content);
 
         // 3. Read with map mode
-        let map1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let map1 = lean_ctx_server::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
             path,
             "map",

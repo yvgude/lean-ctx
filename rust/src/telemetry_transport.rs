@@ -50,9 +50,14 @@ pub fn submit_product_feedback(payload: &serde_json::Value) -> Result<String, St
 
 /// Cargo exports `CARGO_PKG_NAME` to `cargo test` / `cargo run` processes and
 /// every child they spawn, so integration tests driving the binary carry it too.
+/// Those run from the Engine package or from the `lean-ctx` binary package.
 fn launched_by_cargo() -> bool {
-    std::env::var("CARGO_PKG_NAME").is_ok_and(|name| name == env!("CARGO_PKG_NAME"))
+    std::env::var("CARGO_PKG_NAME")
+        .is_ok_and(|name| name == env!("CARGO_PKG_NAME") || name == BINARY_PACKAGE)
 }
+
+/// The package that builds the `lean-ctx` binary on top of this library.
+const BINARY_PACKAGE: &str = "lean-ctx";
 
 /// Unit tests and cargo-launched binaries may only talk to a loopback
 /// endpoint; otherwise test fixtures would pollute production data.

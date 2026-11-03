@@ -314,13 +314,13 @@ pub(crate) fn store_derived(
     store_carried(knowledge, carried, fields, dry_run, store)
 }
 
-/// [`store_derived`] with the carry already prepared by the caller, for a
+/// `store_derived` with the carry already prepared by the caller, for a
 /// fact whose origin's binding is not in the register (`bindings::carry_from`:
 /// a fact restored from a handoff ledger). `carried` must be the carry of
 /// exactly `fields` for the fact item of this store's root. The rules are
-/// those of [`store_derived`]: `Err` stores nothing, `Ok(None)` stores the
+/// those of `store_derived`: `Err` stores nothing, `Ok(None)` stores the
 /// fact originless, `Ok(Some(_))` stores it and then writes its binding.
-pub(crate) fn store_carried(
+pub fn store_carried(
     knowledge: &mut ProjectKnowledge,
     carried: Result<Option<bindings::Carried>, crate::core::context_admission::carrier::Withheld>,
     [category, key, text]: [&str; 3],
@@ -394,8 +394,10 @@ pub fn consolidate_latest(
     budgets: ConsolidationBudgets,
 ) -> Result<ConsolidationOutcome, String> {
     let opts = ConsolidateOptions::scheduled(budgets);
-    let report =
-        crate::tools::ctx_knowledge::consolidate_project_knowledge_with(project_root, &opts)?;
+    let report = crate::core::knowledge_consolidate::consolidate_project_knowledge_with(
+        project_root,
+        &opts,
+    )?;
 
     Ok(ConsolidationOutcome {
         promoted: (report.imported_decisions + report.imported_findings) as u32,

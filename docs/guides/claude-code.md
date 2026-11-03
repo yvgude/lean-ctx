@@ -9,13 +9,69 @@ Complete guide to setting up and optimally using lean-ctx with Claude Code (Anth
 
 ## Overview
 
-| Property | Value |
-|----------|-------|
-| Integration mode | **Hybrid** (MCP reads + shell hooks) |
-| Config file | `~/.claude.json` |
-| Instructions | `<!-- lean-ctx -->` block in `~/.claude/CLAUDE.md` |
-| Skill file | `~/.claude/skills/lean-ctx/SKILL.md` (loads on demand) |
-| Setup command | `lean-ctx init --agent claude` |
+| Property | Governor setup (default) | Standard setup (`--mode hybrid`) |
+|----------|--------------------------|----------------------------------|
+| Tools the model sees | Claude Code's native tools only | Native tools + lean-ctx `ctx_*` MCP tools |
+| Hooks in `~/.claude/settings.json` | `hook govern` (PostToolUse, 5 s), `hook rewrite-enforce` (PreToolUse) | `hook rewrite`, `hook redirect`, `hook observe` … |
+| MCP entry in `~/.claude.json` | none | `lean-ctx` |
+| Instructions | 2-line governor block in `~/.claude/CLAUDE.md` | `<!-- lean-ctx -->` block + on-demand skill |
+| Setup command | `lean-ctx init --agent claude` | `lean-ctx init --agent claude --mode hybrid` |
+
+### Governor setup (default)
+
+New Claude Code installs use the **governor setup**: Claude Code keeps its native
+Read/Bash/Grep/Glob, and lean-ctx works on their results through one PostToolUse hook
+(`lean-ctx hook govern`). Measured on Claude Code it costs less per request than the
+standard setup, whose tool schemas and rules ride every request (~5.8k tokens of fixed
+prefix against ~86). The rules it applies to the newest tool result only:
+
+| Rule | What it does | Default after setup |
+|------|--------------|---------------------|
+| R1.read | An identical re-read of an unchanged file becomes `[unchanged …]` | `on` |
+| R1.bash | An identical re-run of a viewer command (`cat`, `ls`, `git status` …) with no edit in between | `on` |
+| R2 | Lossless repeat collapse of large Bash output | `on` |
+| R4 | Template collapse of large Bash output; the full output goes to the archive | `on` |
+| R3 | Output already in context (measured only) | `shadow` |
+
+The modes live in the lean-ctx config and apply without environment variables:
+
+```toml
+[governor]
+r1_read = "on"
+r1_bash = "on"
+r2 = "on"
+r3 = "shadow"
+r4 = "on"
+```
+
+`LEAN_CTX_GOVERNOR_R1_READ`, `…_R1_BASH`, `…_R2`, `…_R3`, `…_R4` override a key, and
+`LEAN_CTX_GOVERNOR=shadow|off` caps every rule. `hook rewrite-enforce` keeps the security
+checks only (shell allowlist, secret-path deny); it never grants a permission.
+
+**The `ctx_*` MCP tools** stay available with the standard setup:
+
+```bash
+lean-ctx init --agent claude --mode hybrid    # or --mode replace / --mode mcp
+lean-ctx init --agent claude --mode governor  # back to the governor setup
+```
+
+An explicit `--mode` is recorded in `[governor] pinned` (for example
+`claude = "hybrid"`), and no later setup or update changes it. A global `hook_mode` in the
+config (written by `lean-ctx harden`) counts as such a choice too. A governor setup chosen
+before it became the default gets the rule modes above on its next update, where
+`[governor]` does not set them yet (after a backup of `config.toml`).
+
+The LeanCTX Claude Code plugin (`lean-ctx claude-mod`) stays installed with the governor
+setup: without a lean-ctx MCP server it adds nothing the model sees. With `governor-mcp`
+setup does not install it, because it would front-load lean-ctx tool schemas again.
+
+**Existing installs** move to the governor setup on the next `lean-ctx update`, `setup`
+or `init --agent claude` unless they are pinned. Before it changes anything, lean-ctx
+copies `~/.claude/settings.json`, `~/.claude.json`, `~/.claude/CLAUDE.md` and its own
+`config.toml` next to the originals (`*.pre-governor-<version>.bak`) and prints what
+changed. Text outside the lean-ctx markers is never touched. The switch runs once per
+version; an interrupted one is finished on the next run. With `[setup] manage_hooks = false`
+an update does not switch; `setup` and `init` still do.
 
 > **Since 3.8:** there is no `~/.claude/rules/lean-ctx.md` anymore. Claude Code loads every
 > rules file unconditionally at session start, which duplicated instructions in each
@@ -26,12 +82,17 @@ Complete guide to setting up and optimally using lean-ctx with Claude Code (Anth
 ## Quick Setup
 
 ```bash
-# One command — configures MCP, rules, shell hook, and skill
+# One command — the governor setup (hooks + 2-line rules block, no MCP server)
 lean-ctx init --agent claude
+
+# Or the standard setup with the ctx_* MCP tools, rules, shell hook and skill
+lean-ctx init --agent claude --mode hybrid
 
 # Verify
 lean-ctx doctor
 ```
+
+The manual steps below describe the standard setup.
 
 That's it. lean-ctx auto-detects Claude Code by checking for the `claude` binary in `$PATH` or the existence of `~/.claude.json` / `~/.claude/`.
 

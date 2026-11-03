@@ -245,7 +245,7 @@ fn a_flagged_object_is_recorded_once_but_every_receipt_carries_it() {
 
 #[test]
 fn many_matching_lines_are_one_flagged_object() {
-    let policy = AdmissionPolicy::builtin(
+    let policy = AdmissionPolicy::builtin_for_tests(
         ContextGatewayConfig::default(),
         SecretDetectionConfig::default(),
     );
@@ -274,7 +274,7 @@ fn many_matching_lines_are_one_flagged_object() {
 
 #[test]
 fn case_56_redaction_counts_leave_the_model_context_on_out_of_band_hosts() {
-    let policy = AdmissionPolicy::builtin(
+    let policy = AdmissionPolicy::builtin_for_tests(
         ContextGatewayConfig::default(),
         SecretDetectionConfig::default(),
     );

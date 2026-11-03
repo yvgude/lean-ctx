@@ -1470,7 +1470,7 @@
       "additionalProperties": false,
       "properties": {
         "field": {
-          "$comment": "Union of the mutable fields of §3.7 and C0 2.2 (page, section, note); the per-type check needs the folded node (server/engine).",
+          "$comment": "Union of the mutable fields of §3.7 and C0 2.2 (page, section, note); the per-type check needs the folded node (server/instance).",
           "enum": [
             "evidence",
             "applies_to",
@@ -1755,7 +1755,7 @@
       }
     },
     "code_anchor": {
-      "description": "CodeAnchorV1 (lead addition 24.10.): ref file:<path> or sym:<path>::<symbol>; digest = sha256 hex of the anchored content (file bytes, or the symbol's source span); commit = the git commit the digest was taken at; verified_at = when an engine last re-anchored it",
+      "description": "CodeAnchorV1 (lead addition 24.10.): ref file:<path> or sym:<path>::<symbol>; digest = sha256 hex of the anchored content (file bytes, or the symbol's source span); commit = the git commit the digest was taken at; verified_at = when an instance last re-anchored it",
       "type": "object",
       "required": [
         "ref",

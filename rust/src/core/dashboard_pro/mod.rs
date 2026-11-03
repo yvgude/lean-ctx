@@ -11,19 +11,19 @@
 //! knowledge snapshots) lives under `<data>/dashboard-pro/<partition>/`,
 //! private (0600) and written atomically.
 
-pub(crate) mod bridge;
-pub(crate) mod collect;
-pub(crate) mod effects;
+pub mod bridge;
+pub mod collect;
+pub mod effects;
 pub(crate) mod export;
 pub(crate) mod guard;
-pub(crate) mod host_usage;
-pub(crate) mod ledger;
-pub(crate) mod request;
+pub mod host_usage;
+pub mod ledger;
+pub mod request;
 pub(crate) mod security_fields;
 pub(crate) mod snapshots;
 pub(crate) mod state;
 pub(crate) mod watch;
-pub(crate) mod wire;
+pub mod wire;
 
 #[cfg(test)]
 mod tests;
@@ -48,8 +48,8 @@ const STATE_FILE_LIMIT: u64 = 4 << 20;
 
 /// An answer the cockpit shows: HTTP status and a plain message.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ProError {
-    pub(crate) status: u16,
+pub struct ProError {
+    pub status: u16,
     pub(crate) message: String,
 }
 
@@ -84,7 +84,7 @@ pub(crate) type ProResult<T> = Result<T, ProError>;
 
 /// The bound project and its private Pro partition.
 #[derive(Debug, Clone)]
-pub(crate) struct ProjectScope {
+pub struct ProjectScope {
     /// The root as the dashboard binds it; the knowledge store is keyed by it.
     pub(crate) root: String,
     /// The canonical root, for jail checks.
@@ -110,7 +110,7 @@ pub(crate) struct ProjectScope {
 impl ProjectScope {
     /// Every project on this device, for an "All projects" request of an op
     /// that reads device-wide stores ([`request::Op::device_wide`]).
-    pub(crate) fn device(projects: &[String]) -> ProResult<Self> {
+    pub fn device(projects: &[String]) -> ProResult<Self> {
         let data = crate::core::data_dir::lean_ctx_data_dir().map_err(ProError::internal)?;
         let state = crate::core::paths::state_dir().map_err(ProError::internal)?;
         Ok(Self::device_with_dirs(
@@ -158,7 +158,7 @@ impl ProjectScope {
     }
 
     /// The dashboard's bound project with the engine's own directories.
-    pub(crate) fn bind(root: &str) -> ProResult<Self> {
+    pub fn bind(root: &str) -> ProResult<Self> {
         let data = crate::core::data_dir::lean_ctx_data_dir().map_err(ProError::internal)?;
         let state = crate::core::paths::state_dir().map_err(ProError::internal)?;
         let mut scope = Self::with_dirs(root, data, state, dirs::home_dir())?;
@@ -377,6 +377,6 @@ pub(crate) fn plain_text(value: &str, limit: usize) -> bool {
     value.chars().count() <= limit && !value.chars().any(char::is_control)
 }
 
-pub(crate) fn error_body(error: &ProError) -> Value {
+pub fn error_body(error: &ProError) -> Value {
     json!({ "error": error.message })
 }

@@ -5,7 +5,7 @@ use std::path::Path;
 /// mention like "(see the `<!-- lean-ctx -->` block below)" matched the old
 /// substring search first, so block surgery deleted everything between the
 /// mention and the real end marker — silent user-content loss.
-pub(crate) fn marker_line_span(content: &str, marker: &str) -> Option<(usize, usize)> {
+pub fn marker_line_span(content: &str, marker: &str) -> Option<(usize, usize)> {
     let mut offset = 0;
     for line in content.split_inclusive('\n') {
         if line.trim() == marker {

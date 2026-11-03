@@ -6,7 +6,7 @@ use super::super::{WriteAction, WriteOptions, WriteResult};
 use crate::core::editor_registry::types::EditorTarget;
 
 /// Instructions block for Command Code MCP hosts (shadow-mode rules).
-pub(crate) const COMMANDCODE_MCP_INSTRUCTIONS: &str = "\
+pub const COMMANDCODE_MCP_INSTRUCTIONS: &str = "\
 lean-ctx shadow mode: native file/search/shell calls auto-route to ctx_* — no tool-mapping needed.\n\
 Exclusive tools (no native trigger): ctx_compose (search + read + symbols), \
 ctx_search(action=symbol) (exact symbol), ctx_search(action=semantic) (by meaning), \

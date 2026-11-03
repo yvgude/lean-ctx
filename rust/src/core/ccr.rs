@@ -29,13 +29,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Opening delimiter of an in-band retrieval marker: `<lc_expand:HASH>` (#493).
-pub(crate) const EXPAND_OPEN: &str = "<lc_expand:";
+pub const EXPAND_OPEN: &str = "<lc_expand:";
 /// Closing delimiter of an in-band retrieval marker.
-pub(crate) const EXPAND_CLOSE: char = '>';
+pub const EXPAND_CLOSE: char = '>';
 
 /// Originals smaller than this are not worth a tee file + handle; the caller
 /// keeps its plain stub. Matches the spirit of the prune length thresholds.
-pub(crate) const MIN_TEE_BYTES: usize = 512;
+pub const MIN_TEE_BYTES: usize = 512;
 
 /// Throttle the O(dir) TTL cleanup so the prune hot path does at most one
 /// directory scan per this interval.
@@ -84,8 +84,25 @@ fn maybe_cleanup(tee_dir: &Path) {
 /// path). Returns `None` for protected originless data, invalid/oversized input
 /// or persistence failure. Re-persisting identical content keeps the same path;
 /// callers must preserve useful fresh output when no recovery handle is available.
-pub(crate) fn persist(content: &str) -> Option<String> {
+pub fn persist(content: &str) -> Option<String> {
     persist_with(content, "proxy")
+}
+
+/// Like [`persist`], but a content-addressed copy that is already on disk is
+/// named as it is: no rewrite, no new relevance registration. A copy the TTL
+/// cleanup removed is written again (self-healing). Under protection nothing
+/// originless is named, existing or not.
+pub fn persist_once(content: &str) -> Option<String> {
+    if content.len() < MIN_TEE_BYTES
+        || crate::core::context_admission::stored::source_authority_required()
+    {
+        return None;
+    }
+    let path = tee_path(content, "proxy")?;
+    if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.file_type().is_file()) {
+        return Some(path.to_string_lossy().to_string());
+    }
+    persist(content)
 }
 
 /// Persist a dropped conversation message under a compact `conv_` handle.
@@ -94,7 +111,7 @@ pub(crate) fn persist(content: &str) -> Option<String> {
 /// no minimum-size gate. The returned basename is sufficient for `ctx_expand` and
 /// avoids putting machine-specific absolute paths into provider prompts.
 #[cfg_attr(not(test), allow(dead_code))] // conversation tee handle for ctx_expand recovery
-pub(crate) fn persist_conversation(content: &str) -> Option<String> {
+pub fn persist_conversation(content: &str) -> Option<String> {
     let path = persist_with_min(content, "conv", 1)?;
     Path::new(&path)
         .file_name()
@@ -108,7 +125,7 @@ pub(crate) fn persist_conversation(content: &str) -> Option<String> {
 /// `ctx_expand`, never reconstructed from the (lossy) text. Shares the
 /// content-address and best-effort write contract of [`persist`], so the embedded
 /// handle stays deterministic (cache-safe).
-pub(crate) fn persist_json(content: &str) -> Option<String> {
+pub fn persist_json(content: &str) -> Option<String> {
     persist_with(content, "json")
 }
 
@@ -117,7 +134,7 @@ pub(crate) fn persist_json(content: &str) -> Option<String> {
 /// lossy column-drop stage so a dropped column is always recoverable out-of-band
 /// via [`resolve_tee`] / `ctx_expand`, never reconstructed from the (lossy) text.
 /// Shares the content-address and best-effort write contract of [`persist`].
-pub(crate) fn persist_tabular(content: &str) -> Option<String> {
+pub fn persist_tabular(content: &str) -> Option<String> {
     persist_with(content, "tbl")
 }
 
@@ -126,7 +143,7 @@ pub(crate) fn persist_tabular(content: &str) -> Option<String> {
 /// stage so a dropped column is always recoverable out-of-band via [`resolve_tee`]
 /// / `ctx_expand`, never reconstructed from the (lossy) text. Shares the
 /// content-address and best-effort write contract of [`persist`].
-pub(crate) fn persist_yaml(content: &str) -> Option<String> {
+pub fn persist_yaml(content: &str) -> Option<String> {
     persist_with(content, "yaml")
 }
 
@@ -135,7 +152,7 @@ pub(crate) fn persist_yaml(content: &str) -> Option<String> {
 /// is the compressed form; the full HTML is recoverable via [`resolve_tee`] /
 /// `ctx_expand`. Shares the content-address and best-effort write contract of
 /// [`persist`].
-pub(crate) fn persist_html(content: &str) -> Option<String> {
+pub fn persist_html(content: &str) -> Option<String> {
     persist_with(content, "html")
 }
 
@@ -145,7 +162,7 @@ pub(crate) fn persist_html(content: &str) -> Option<String> {
 /// machine-specific path out of the provider prompt, so the shortened tool
 /// list is the same bytes on every machine and turn.
 #[cfg(feature = "http-server")]
-pub(crate) fn persist_tool_definition(content: &str) -> Option<String> {
+pub fn persist_tool_definition(content: &str) -> Option<String> {
     let path = persist_with_min(content, "tool", 1)?;
     Path::new(&path)
         .file_name()
@@ -235,7 +252,7 @@ fn is_shell_tee_name(name: &str) -> bool {
 
 /// Why a canonical tee handle could not be resolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TeeResolveError {
+pub enum TeeResolveError {
     Malformed,
     Missing,
     Refused(&'static str),
@@ -243,7 +260,7 @@ pub(crate) enum TeeResolveError {
 
 /// Resolve a retrieval ID through the same canonical store path used by
 /// `ctx_expand`, while distinguishing malformed IDs and policy refusals.
-pub(crate) fn resolve_tee_checked(id: &str) -> Result<PathBuf, TeeResolveError> {
+pub fn resolve_tee_checked(id: &str) -> Result<PathBuf, TeeResolveError> {
     let name = Path::new(id)
         .file_name()
         .and_then(|n| n.to_str())
@@ -317,7 +334,7 @@ pub(crate) fn resolve_tee_checked(id: &str) -> Result<PathBuf, TeeResolveError> 
 }
 
 /// Back-compatible resolver used by `ctx_expand`.
-pub(crate) fn resolve_tee(id: &str) -> Option<PathBuf> {
+pub fn resolve_tee(id: &str) -> Option<PathBuf> {
     resolve_tee_checked(id).ok()
 }
 
@@ -327,7 +344,7 @@ pub(crate) fn resolve_tee(id: &str) -> Option<PathBuf> {
 /// echo the marker verbatim and the proxy can recover the original via
 /// [`resolve_tee`] on the next turn. Pure (no I/O, no config) so it is trivially
 /// testable; returns `None` for a handle that is not a canonical tee path.
-pub(crate) fn inband_marker(handle: &str) -> Option<String> {
+pub fn inband_marker(handle: &str) -> Option<String> {
     let name = Path::new(handle).file_name().and_then(|n| n.to_str())?;
     let hash = name.strip_prefix("proxy_")?.strip_suffix(".log")?;
     (hash.len() == 16 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
@@ -341,7 +358,7 @@ pub(crate) fn inband_marker(handle: &str) -> Option<String> {
 ///
 /// Reads the (process-cached) config; the surrounding stub path already does
 /// per-message tee I/O via [`persist`], so this adds no new I/O class.
-pub(crate) fn inband_locator(handle: &str) -> Option<String> {
+pub fn inband_locator(handle: &str) -> Option<String> {
     crate::core::config::Config::load()
         .proxy
         .ccr_inband_enabled()
@@ -352,16 +369,16 @@ pub(crate) fn inband_locator(handle: &str) -> Option<String> {
 /// Read a tee file that [`resolve_tee`] returned. One read path for every
 /// caller: bounded, no-follow and bound to the checked file, re-checked
 /// against the current policy and re-admitted by the context gateway.
-pub(crate) fn read_tee_file(path: &Path) -> Option<String> {
+pub fn read_tee_file(path: &Path) -> Option<String> {
     read_checked_tee(path)
 }
 
 /// Resolve and read a tee handle in one step.
-pub(crate) fn read_tee(id: &str) -> Option<String> {
+pub fn read_tee(id: &str) -> Option<String> {
     read_tee_file(&resolve_tee(id)?)
 }
 
-pub(crate) use storage::{
+pub use storage::{
     read as read_checked_tee, read_detailed as read_tee_detailed, write as write_tee,
 };
 
@@ -370,7 +387,7 @@ mod storage;
 /// Length of a LiteLLM gateway retrieval hash (#702): LiteLLM's headroom
 /// guardrail scans compressed text with `hash=([a-f0-9]{24})`
 /// (BerriAI/litellm#31681), so the marker must carry exactly 24 lowercase hex.
-pub(crate) const LITELLM_HASH_LEN: usize = 24;
+pub const LITELLM_HASH_LEN: usize = 24;
 
 /// The 24-hex gateway retrieval hash for `content` (#702): the first 24 chars
 /// of the full blake3 hex. A strict extension of the 16-hex tee name
@@ -378,7 +395,7 @@ pub(crate) const LITELLM_HASH_LEN: usize = 24;
 /// so `hash[..16]` resolves the tee file while the extra 8 chars keep the
 /// marker collision-resistant on the gateway side. Pure — the marker embedding
 /// it stays byte-stable per content (#498).
-pub(crate) fn litellm_hash(content: &str) -> String {
+pub fn litellm_hash(content: &str) -> String {
     blake3::hash(content.as_bytes()).to_hex()[..LITELLM_HASH_LEN].to_string()
 }
 
@@ -388,7 +405,7 @@ pub(crate) fn litellm_hash(content: &str) -> String {
 /// rejected, never coerced) so only a string the guardrail could actually have
 /// captured resolves; the first 16 chars are the `proxy_` tee content-address.
 #[cfg(feature = "http-server")]
-pub(crate) fn retrieve_litellm(hash: &str) -> Option<String> {
+pub fn retrieve_litellm(hash: &str) -> Option<String> {
     if hash.len() != LITELLM_HASH_LEN
         || !hash
             .bytes()
@@ -399,13 +416,20 @@ pub(crate) fn retrieve_litellm(hash: &str) -> Option<String> {
     read_tee(&hash[..TEE_HASH_LEN])
 }
 
+#[cfg(any(test, feature = "test-support"))]
+/// Inputs shared by the CCR tests here and in the proxy.
+pub mod test_support {
+    /// `seed` repeated past the tee threshold.
+    pub fn big(seed: &str) -> String {
+        format!("{seed}\n").repeat(40)
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
 
-    pub(crate) fn big(seed: &str) -> String {
-        format!("{seed}\n").repeat(40)
-    }
+    pub(crate) use super::test_support::big;
 
     fn write_gateway_mode(mode: &str) {
         let config = crate::core::paths::config_dir_read_only().expect("config directory");

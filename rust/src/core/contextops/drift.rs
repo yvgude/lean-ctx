@@ -3,7 +3,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum DriftStatus {
+pub enum DriftStatus {
     InSync,
     Drifted,
     Missing,
@@ -26,7 +26,7 @@ impl std::fmt::Display for DriftStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct DriftReport {
+pub struct DriftReport {
     pub target: String,
     pub path: String,
     pub status: DriftStatus,

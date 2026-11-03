@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tree-sitter based code-structure layer for the LeanCTX Engine.
+//! Tree-sitter based code-structure layer for LeanCTX | OSS.
 //!
 //! Signature extraction (tree-sitter primary, regex fallback), deep AST
 //! queries (imports, calls, type definitions and uses), import-to-file

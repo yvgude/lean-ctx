@@ -39,7 +39,7 @@ pub(crate) fn sign_snapshot(
 /// recomputed id no longer matches `snapshot_id`), or an invalid signature.
 /// Returns `Err` only for malformed signature material (bad hex / wrong length /
 /// unsupported algorithm).
-pub(crate) fn verify_snapshot(snapshot: &ContextSnapshotV1) -> Result<bool, String> {
+pub fn verify_snapshot(snapshot: &ContextSnapshotV1) -> Result<bool, String> {
     let Some(ref sig) = snapshot.signature else {
         return Ok(false);
     };

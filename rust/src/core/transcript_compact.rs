@@ -12,7 +12,7 @@ const MAX_TOOL_OUTPUT_CHARS: usize = 500;
 const MIN_COMPRESS_CHARS: usize = 200;
 
 #[derive(Debug, Default)]
-pub(crate) struct CompactionStats {
+pub struct CompactionStats {
     pub lines_processed: usize,
     pub lines_compacted: usize,
     pub original_bytes: usize,
@@ -44,7 +44,7 @@ impl std::fmt::Display for CompactionStats {
 
 /// Compact a single JSONL transcript file in-place.
 /// Returns stats about what was compacted.
-pub(crate) fn compact_file(path: &Path) -> Result<CompactionStats, String> {
+pub fn compact_file(path: &Path) -> Result<CompactionStats, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("read: {e}"))?;
     let mut stats = CompactionStats {
         original_bytes: content.len(),
@@ -83,7 +83,7 @@ pub(crate) fn compact_file(path: &Path) -> Result<CompactionStats, String> {
 }
 
 /// Compact all JSONL files in a directory.
-pub(crate) fn compact_directory(dir: &Path) -> Result<CompactionStats, String> {
+pub fn compact_directory(dir: &Path) -> Result<CompactionStats, String> {
     if !dir.is_dir() {
         return Err(format!("not a directory: {}", dir.display()));
     }
@@ -183,7 +183,7 @@ fn has_tool_markers(s: &str) -> bool {
     s.contains("tool_result") || s.contains("ctx_") || s.contains("```") || s.len() > 2000
 }
 
-pub(crate) fn summarize_content(text: &str) -> String {
+pub fn summarize_content(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let total_lines = lines.len();
     let char_count = text.len();

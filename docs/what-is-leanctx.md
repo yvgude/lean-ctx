@@ -27,7 +27,7 @@ source or archive when more detail is needed.
 ```text
 Your sources and tools
         ↓
-LeanCTX Engine — select, control and record context
+LeanCTX | OSS — select, control and record context
         ↓
 Your AI application or agent
         ↓
@@ -46,7 +46,7 @@ an application that reads or sends data through another path.
 
 | Use | Component and boundary |
 |---|---|
-| **Developers** improving existing AI tools | Community LeanCTX Engine: Apache-2.0, local CLI/MCP, supported hooks and proxy paths. Start with [Codex, Claude Code or Cursor](guides/README.md). |
+| **Developers** improving existing AI tools | LeanCTX \| OSS: Apache-2.0, local CLI/MCP, supported hooks and proxy paths. Start with [Codex, Claude Code or Cursor](guides/README.md). |
 | **Organizations** applying shared controls | Enterprise: licensed identity, organization policy, evidence and deployment capabilities within the supported release and agreement. [Enterprise overview](https://leanctx.com/enterprise/). |
 | **Product builders** embedding context infrastructure | LeanCTX SDK: supported language-native interfaces to the Engine; stable lifecycle and Agent Tools plus separate Python `leanctx_sdk.preview` operations. [SDK contract](https://github.com/Thinkery-AG/leanctx-sdk). Production/OEM use requires a signed written commercial agreement under the SDK license. |
 

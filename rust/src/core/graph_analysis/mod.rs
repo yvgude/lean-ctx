@@ -10,10 +10,10 @@ mod cycles;
 mod god_nodes;
 mod surprising;
 
-pub(crate) use centrality::{BridgeCentrality, compute_bridge_centrality, compute_bridge_nodes};
-pub(crate) use cycles::{ImportCycle, find_import_cycles};
-pub(crate) use god_nodes::{GodNode, compute_god_nodes};
-pub(crate) use surprising::{SurprisingConnection, find_surprising_connections};
+pub use centrality::{BridgeCentrality, compute_bridge_centrality, compute_bridge_nodes};
+pub use cycles::{ImportCycle, find_import_cycles};
+pub use god_nodes::{GodNode, compute_god_nodes};
+pub use surprising::{SurprisingConnection, find_surprising_connections};
 
 use crate::core::graph_provider::EdgeInfo;
 
@@ -22,13 +22,13 @@ use crate::core::graph_provider::EdgeInfo;
 pub(crate) const DEP_EDGE_KINDS: [&str; 2] = ["import", "reexport"];
 
 /// True when an edge kind is a genuine directed dependency.
-pub(crate) fn is_dependency_kind(kind: &str) -> bool {
+pub fn is_dependency_kind(kind: &str) -> bool {
     DEP_EDGE_KINDS.contains(&kind)
 }
 
 /// Directed dependency edges as `(from, to)` pairs, with self-loops removed.
 /// Borrows from `edges` to avoid allocating new strings.
-pub(crate) fn dependency_edges(edges: &[EdgeInfo]) -> Vec<(&str, &str)> {
+pub fn dependency_edges(edges: &[EdgeInfo]) -> Vec<(&str, &str)> {
     edges
         .iter()
         .filter(|e| is_dependency_kind(&e.kind))
@@ -44,7 +44,7 @@ pub(crate) fn dependency_edges(edges: &[EdgeInfo]) -> Vec<(&str, &str)> {
 /// are weaker and scale with their observed `weight` (e.g. how often two files
 /// changed together). The dashboard styles edges by this score so heuristic
 /// links read as faint/dashed while real dependencies stay solid (#273).
-pub(crate) fn edge_confidence(kind: &str, weight: f64) -> f64 {
+pub fn edge_confidence(kind: &str, weight: f64) -> f64 {
     match kind {
         "import" => 1.0,
         "reexport" => 0.95,

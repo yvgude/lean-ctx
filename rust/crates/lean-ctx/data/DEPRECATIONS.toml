@@ -1,0 +1,197 @@
+# LeanCTX deprecation register (CONTRACTS.md § Deprecation policy, GL #394).
+#
+# Every deprecated surface is announced here at least 2 minor releases before
+# removal. This file is compiled into the binary: `lean-ctx doctor` warns about
+# every entry that ships in the installed build, and the release that executes
+# a removal must list it in the CHANGELOG "Deprecations" section.
+#
+# Entry schema:
+#
+#   [[deprecation]]
+#   id = "cli-foo"                   # stable identifier, never reused
+#   surface = "cli"                  # cli | mcp-tool | http-endpoint | config | contract
+#   subject = "lean-ctx foo"         # the deprecated surface, verbatim
+#   announced_in = "3.8.0"           # release that announced the deprecation
+#   earliest_removal = "3.10.0"      # >= 2 minor releases after announced_in
+#   replacement = "lean-ctx bar"     # what to use instead ("" if none)
+#   note = "optional free-text detail"
+
+[[deprecation]]
+id = "cli-autopilot-policy"
+surface = "cli"
+subject = "lean-ctx autopilot policy [status|promote|monitor|rollback]"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "Learned read-strategy policies are retired; read strategy is chosen locally. The command reports `retired` and has no effect."
+
+[[deprecation]]
+id = "cli-autopilot-evidence-learn"
+surface = "cli"
+subject = "lean-ctx autopilot evidence --learn"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx autopilot evidence"
+note = "The flag no longer asks a runtime for a recommendation; the output reports runtime.status = retired."
+
+[[deprecation]]
+id = "config-intelligence-runtime-context-policy-apply"
+surface = "config"
+subject = "intelligence_runtime.context_policy_apply"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "Accepted so existing configs keep loading; it has no effect."
+
+[[deprecation]]
+id = "cli-setup-no-auto-approve"
+surface = "cli"
+subject = "lean-ctx setup --no-auto-approve"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "The flag never changed what setup writes. It is accepted, warns on stderr and has no effect."
+
+[[deprecation]]
+id = "cli-serve-a2a-signing-key-argv"
+surface = "cli"
+subject = "lean-ctx serve --a2a-signing-key <key>"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx serve --a2a-signing-key-file <path> (or LEAN_CTX_A2A_SIGNING_KEY / LEAN_CTX_A2A_SIGNING_KEY_FILE)"
+note = "The key on the command line is visible in the process list. The flag still works and warns on stderr."
+
+[[deprecation]]
+id = "cli-serve-auth-token-argv"
+surface = "cli"
+subject = "lean-ctx serve --auth-token <token>"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx serve --auth-token-file <path> (or LEAN_CTX_HTTP_TOKEN / LEAN_CTX_HTTP_TOKEN_FILE)"
+note = "The token on the command line is visible in the process list. The flag still works and warns on stderr."
+
+[[deprecation]]
+id = "cli-cockpit-auth-token-argv"
+surface = "cli"
+subject = "lean-ctx cockpit --auth-token=<token> (alias --token=)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx cockpit --auth-token-file <path> (or LEAN_CTX_HTTP_TOKEN / LEAN_CTX_HTTP_TOKEN_FILE)"
+note = "The token on the command line is visible in the process list. The flag still works and warns on stderr."
+
+[[deprecation]]
+id = "mcp-ctx-agent-poll-events-aliases"
+surface = "mcp-tool"
+subject = "ctx_agent action=poll_events with to_agent, category, message, privacy or ttl_hours"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "ctx_agent action=poll_events with workspace_id, channel_id, since_id, kinds, limit"
+note = "The borrowed parameters stay accepted as aliases; the named ones win when both are given."
+
+[[deprecation]]
+id = "config-auto-mode-learning"
+surface = "config"
+subject = "auto_mode_learning (env LEAN_CTX_AUTO_MODE_LEARNING)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "The learned auto-mode signals (mode predictor, mode bandit, adaptive mode policy) are retired; `auto` is always the deterministic capability-guard and size/task cascade. The key and the env var are accepted and have no effect."
+
+[[deprecation]]
+id = "config-env-stochastic"
+surface = "config"
+subject = "env LEAN_CTX_STOCHASTIC"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "It enabled Thompson sampling in the threshold and mode bandits, which are retired; decisions are always deterministic. The env var is ignored."
+
+[[deprecation]]
+id = "mcp-ctx-knowledge-cognition-loop"
+surface = "mcp-tool"
+subject = "ctx_knowledge action=cognition_loop"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "ctx_knowledge action=consolidate"
+note = "The cognition loop is retired; scheduled consolidation already runs the memory lifecycle. The action answers that it was retired and has no effect."
+
+[[deprecation]]
+id = "config-autonomy-cognition-loop"
+surface = "config"
+subject = "autonomy.cognition_loop_enabled, autonomy.cognition_loop_interval_secs, autonomy.cognition_loop_max_steps, autonomy.cognition_synthesis_min_cluster (and LEAN_CTX_COGNITION_LOOP_ENABLED, LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS, LEAN_CTX_COGNITION_LOOP_MAX_STEPS, LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER, LEAN_CTX_COGNITION_IDLE_SECS)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "The background cognition loop and its idle replay are retired. The keys and variables are accepted so existing configs keep loading; they have no effect."
+
+[[deprecation]]
+id = "config-memory-compaction"
+surface = "config"
+subject = "memory.compaction (enabled, min_cluster, similarity, max_confidence, max_confirmations; LEAN_CTX_COMPACTION_*)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "Cluster compaction ran only in the retired cognition loop. The section is accepted without validation so existing configs keep loading; it has no effect."
+
+[[deprecation]]
+id = "config-llm"
+surface = "config"
+subject = "[llm] (enabled, backend, model, base_url, timeout_secs)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "Query expansion and observation synthesis, the only consumers of the optional LLM layer, are retired; LeanCTX calls no model itself. The section is accepted so existing configs keep loading; it has no effect."
+
+[[deprecation]]
+id = "cli-learning-export-import"
+surface = "cli"
+subject = "lean-ctx learning export|import"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx learning status"
+note = "The bundles carried the retired LITM placement calibration. Both commands are accepted, say on stderr that they were retired and have no effect."
+
+[[deprecation]]
+id = "env-leanctx-kernel-mode"
+surface = "config"
+subject = "LEANCTX_KERNEL_MODE (environment variable)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "LEAN_CTX_KERNEL_MODE"
+note = "Still read and warns once per process; LEAN_CTX_KERNEL_MODE wins when both are set."
+
+[[deprecation]]
+id = "mcp-ctx-session-episodes-procedures"
+surface = "mcp-tool"
+subject = "ctx_session action=episodes|procedures (every value: record, search, file, outcome, detect, suggest)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "ctx_knowledge action=recall|search"
+note = "The episode and procedure memory is retired (owner decision 2026-11-01): procedures were never selected into a kernel plan and episodes, tool/file run logs, never reached the delivered context. The actions answer that they were retired and have no effect; no episode is recorded at shutdown or on task completion any more. Files under memory/episodes and memory/procedures stay on disk untouched."
+
+[[deprecation]]
+id = "mcp-ctx-knowledge-restore-store-procedures"
+surface = "mcp-tool"
+subject = "ctx_knowledge action=restore store=procedures (and lean-ctx knowledge restore --store procedures)"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "ctx_knowledge action=restore store=facts|history|patterns"
+note = "The procedure store is retired with the procedure memory. The store value answers that it was retired and restores nothing; archived procedure files stay on disk untouched."
+
+[[deprecation]]
+id = "http-dashboard-episodes-procedures"
+surface = "http-endpoint"
+subject = "GET /api/episodes, GET /api/procedures, POST /api/episodes/annotate"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "GET /api/knowledge, GET /api/gotchas"
+note = "Retired with the episode and procedure memory: the routes answer {\"retired\": true, \"message\": …} and read or write no store."
+
+[[deprecation]]
+id = "config-memory-episodic-procedural"
+surface = "config"
+subject = "memory.episodic (max_episodes, max_actions_per_episode, summary_max_chars), memory.procedural (min_repetitions, min_sequence_len, max_procedures, max_window_size); LEAN_CTX_EPISODIC_*, LEAN_CTX_PROCEDURAL_*"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "The episode and procedure memory is retired. The sections are accepted without validation so existing configs keep loading, and are no longer scaled by max_disk_mb; they and the environment variables have no effect."

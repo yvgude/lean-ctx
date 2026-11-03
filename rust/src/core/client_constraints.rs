@@ -1,5 +1,5 @@
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ClientConstraints {
+pub struct ClientConstraints {
     pub id: &'static str,
     pub display_name: &'static str,
     /// Max chars accepted by MCP `instructions` field, if documented.
@@ -12,7 +12,7 @@ pub(crate) struct ClientConstraints {
 }
 
 // Keep this aligned with `docs/integrations/client-constraints-matrix-v1.md`.
-pub(crate) const ALL_CLIENTS: &[ClientConstraints] = &[
+pub const ALL_CLIENTS: &[ClientConstraints] = &[
     ClientConstraints {
         id: "cursor",
         display_name: "Cursor",
@@ -191,7 +191,7 @@ pub(crate) const ALL_CLIENTS: &[ClientConstraints] = &[
     },
 ];
 
-pub(crate) fn by_client_id(id: &str) -> Option<&'static ClientConstraints> {
+pub fn by_client_id(id: &str) -> Option<&'static ClientConstraints> {
     let id = id.trim();
     ALL_CLIENTS.iter().find(|c| c.id == id)
 }

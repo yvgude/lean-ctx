@@ -11,7 +11,7 @@ use crate::core::session_summary;
 /// Export the current session as a context package (JSON file).
 ///
 /// Returns the path where the package was written.
-pub(crate) fn save_package(
+pub fn save_package(
     session: &SessionState,
     project_root: &str,
     agent_id: Option<&str>,

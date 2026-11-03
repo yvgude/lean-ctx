@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct DeliveryIssuerConfig {
+pub struct DeliveryIssuerConfig {
     pub(super) schema_version: u32,
     pub(super) project_root: std::path::PathBuf,
     pub(super) authority_file: std::path::PathBuf,
@@ -28,7 +28,7 @@ pub(crate) struct DeliveryIssuerConfig {
 }
 
 impl DeliveryIssuerConfig {
-    pub(crate) fn from_environment() -> Result<Option<Self>, String> {
+    pub fn from_environment() -> Result<Option<Self>, String> {
         match std::env::var("LEAN_CTX_DELIVERY_ISSUER_PROFILE") {
             Ok(raw) => {
                 if raw.len() > 16_384 {
@@ -43,11 +43,11 @@ impl DeliveryIssuerConfig {
         }
     }
 
-    pub(crate) fn host_agent(&self) -> &str {
+    pub fn host_agent(&self) -> &str {
         &self.host_agent
     }
 
-    pub(crate) fn issue(
+    pub fn issue(
         &self,
         plan: &StartPlan,
         attempt: u8,

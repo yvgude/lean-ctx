@@ -142,7 +142,7 @@ pub(super) fn enqueue(key: Key, detect: &SemanticDetector, text: &str) {
 }
 
 /// Whether a full check is waiting.
-pub(crate) fn pending() -> bool {
+pub fn pending() -> bool {
     with_state(|state| !state.queue.is_empty())
 }
 
@@ -157,7 +157,7 @@ enum Stopped {
 /// every call to the runtime; the idle hook passes "no tool call in flight",
 /// so a live read is never kept waiting by more than one bounded call. One
 /// drain at a time per process. Returns the verdicts reached.
-pub(crate) fn drain(max_jobs: usize, keep_going: impl Fn() -> bool) -> usize {
+pub fn drain(max_jobs: usize, keep_going: impl Fn() -> bool) -> usize {
     static DRAINING: AtomicBool = AtomicBool::new(false);
     struct Release;
     impl Drop for Release {

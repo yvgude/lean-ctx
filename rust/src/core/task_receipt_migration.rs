@@ -17,7 +17,7 @@ const RECORD_NAME: &str = "leanctx-v4-task-receipt-migration.json";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct LegacyArtifactDigestV1 {
+pub struct LegacyArtifactDigestV1 {
     pub name: String,
     pub sha256: String,
     pub bytes: u64,
@@ -25,7 +25,7 @@ pub(crate) struct LegacyArtifactDigestV1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct TaskReceiptMigrationRecordV1 {
+pub struct TaskReceiptMigrationRecordV1 {
     pub schema_version: u32,
     pub task_id: String,
     pub receipt_id: String,
@@ -38,7 +38,7 @@ pub(crate) struct TaskReceiptMigrationRecordV1 {
     pub sources_retained_for_rollback: bool,
 }
 
-pub(crate) fn rollback_legacy_task_receipt(source_dir: &Path) -> Result<(), String> {
+pub fn rollback_legacy_task_receipt(source_dir: &Path) -> Result<(), String> {
     reject_symlink(source_dir, "source directory")?;
     let _lock = lock_task_receipt_migration(source_dir)?;
     let record_path = source_dir.join(RECORD_NAME);
@@ -89,13 +89,13 @@ pub(crate) fn rollback_legacy_task_receipt(source_dir: &Path) -> Result<(), Stri
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TaskReceiptMigrationResult {
+pub struct TaskReceiptMigrationResult {
     pub record_path: PathBuf,
     pub already_migrated: bool,
     pub record: TaskReceiptMigrationRecordV1,
 }
 
-pub(crate) fn migrate_legacy_task_receipt(
+pub fn migrate_legacy_task_receipt(
     source_dir: &Path,
 ) -> Result<TaskReceiptMigrationResult, String> {
     let _lock = lock_task_receipt_migration(source_dir)?;
@@ -126,7 +126,7 @@ pub(crate) fn migrate_legacy_task_receipt(
     })
 }
 
-pub(crate) fn assess_legacy_task_receipt(
+pub fn assess_legacy_task_receipt(
     source_dir: &Path,
 ) -> Result<TaskReceiptMigrationRecordV1, String> {
     reject_symlink(source_dir, "source directory")?;

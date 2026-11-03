@@ -182,7 +182,7 @@ pub fn is_rewritable_command(cmd: &str) -> bool {
 
 /// Strip leading `KEY=value` env-var assignments from a command string.
 /// e.g. `PYTHONPATH=src FOO=bar python x.py` → `python x.py`
-pub(crate) fn strip_env_prefix(cmd: &str) -> &str {
+pub fn strip_env_prefix(cmd: &str) -> &str {
     let mut rest = cmd;
     loop {
         let trimmed = rest.trim_start();

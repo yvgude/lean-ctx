@@ -128,21 +128,8 @@ struct Package {
     key: [u8; 32],
 }
 
-// Exercise the same explicit private-directory prerequisite as the CLI.
-#[cfg_attr(
-    not(any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))),
-    allow(dead_code)
-)]
-fn private_root() -> tempfile::TempDir {
-    let mut builder = tempfile::Builder::new();
-    builder.prefix("runtime-install-test-");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        builder.permissions(std::fs::Permissions::from_mode(0o700));
-    }
-    builder.tempdir().unwrap()
-}
+#[allow(unused_imports)]
+use super::private_root_for_test as private_root;
 
 fn package(version: &str, rollback: &str, extra: bool) -> Package {
     package_with_entitlement(version, rollback, extra, &json!(false))

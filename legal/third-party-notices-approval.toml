@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "22938c1bafeab558ce8db4b830a233f7a32e2554e1a4549c83cb8908fcd59f15"
+approved_content_sha256 = "fdf3c5f98521928cda39ba844278809b5fe841670d7e87790261b95e5c0dc95e"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.1 after the Hive C0 2.1/2.2 engine sync; notice content unchanged (599 third-party Cargo packages, Cargo graph 612, same SBOM components), only the Cargo.lock and SBOM input digests change because curve25519-dalek is no longer a direct dependency. Owner okay in the 3.12.1 integration lead session on 2026-11-02 (answer \"Freigeben\" to the notices question naming old d32e30dc and new pending c10143a0)."
-approved_at = "2026-11-02"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.1 after the engine crate description changed to \"Context Gateway for AI agents\" in the SBOM; same 558 components and licenses. Owner okay in the 3.12.1 integration lead session on 2026-11-03 (answer \"Freigeben\" to the notices question naming old 7a645381 and new pending 024d83e8)."
+approved_at = "2026-11-03"

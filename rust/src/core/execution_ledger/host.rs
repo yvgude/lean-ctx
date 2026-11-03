@@ -12,7 +12,7 @@ mod outcome_transport;
 mod source_recheck;
 mod source_replay;
 mod task_scope;
-pub(crate) use checkpoint::HostCheckpointRequest;
+pub use checkpoint::HostCheckpointRequest;
 
 /// G08: the Context Gateway's admission of the narrative of a document that
 /// another component produced and the Engine is about to write out — foreign
@@ -21,7 +21,7 @@ pub(crate) use checkpoint::HostCheckpointRequest;
 /// Only where protection is active; without it nothing changes. `Err` is
 /// content-free. Its one caller (`engine runtime invoke`) exists on Unix.
 #[cfg(unix)]
-pub(crate) fn admit_foreign_document_narrative(
+pub fn admit_foreign_document_narrative(
     document: &str,
     value: &serde_json::Value,
     tool: &'static str,
@@ -29,10 +29,10 @@ pub(crate) fn admit_foreign_document_narrative(
     checkpoint_transfer::admit_foreign_document_narrative(document, value, tool)
 }
 use checkpoint_resume::CheckpointResumeTarget;
-pub(crate) use checkpoint_resume::HostCheckpointResumeRequest;
+pub use checkpoint_resume::HostCheckpointResumeRequest;
 use checkpoint_transfer::CheckpointImportAdmission;
-pub(crate) use checkpoint_transfer::{HostCheckpointImportRequest, HostCheckpointPackageRequest};
-pub(crate) use outcome::HostOutcomeRequest;
+pub use checkpoint_transfer::{HostCheckpointImportRequest, HostCheckpointPackageRequest};
+pub use outcome::HostOutcomeRequest;
 
 use std::{
     fs::File,
@@ -123,7 +123,7 @@ pub(super) struct SignerAdmission {
 }
 
 impl SignerAdmission {
-    pub(super) fn snapshot(&self) -> ReceiptSignerAdmissionV1 {
+    pub(crate) fn snapshot(&self) -> ReceiptSignerAdmissionV1 {
         ReceiptSignerAdmissionV1 {
             key_id: self.key_id.clone(),
             public_key_digest: self.public_key_digest.clone(),
@@ -139,7 +139,7 @@ impl SignerAdmission {
 /// The signing key, admission snapshot, and ledger store never leave this
 /// authority.  In particular, this type intentionally does not implement
 /// `Debug`.
-pub(crate) struct HostReceiptAuthority {
+pub struct HostReceiptAuthority {
     signing_key: SigningKey,
     signer_admission: ReceiptSignerAdmissionV1,
     ledger: ExecutionLedgerStore,
@@ -156,7 +156,7 @@ pub(crate) struct HostReceiptAuthority {
 }
 
 /// One admitted task attempt retaining its task lock through publication.
-pub(crate) struct HostReceiptAttempt {
+pub struct HostReceiptAttempt {
     task: TaskEnvelopeV1,
     plan: ExecutionPlanV1,
     context_decision: Option<DecisionRecordV1>,
@@ -165,20 +165,20 @@ pub(crate) struct HostReceiptAttempt {
 }
 
 impl HostReceiptAttempt {
-    pub(crate) fn context_decision(&self) -> Option<&DecisionRecordV1> {
+    pub fn context_decision(&self) -> Option<&DecisionRecordV1> {
         self.context_decision.as_ref()
     }
 }
 
 impl HostReceiptAuthority {
     /// Load the strict, bounded host settings document from an existing reader.
-    pub(crate) fn from_reader(input: &mut dyn Read) -> Result<Self, &'static str> {
+    pub fn from_reader(input: &mut dyn Read) -> Result<Self, &'static str> {
         Self::from_reader_scoped(input, None)
     }
 
     /// Constrain an operator-selected ledger to the caller's trusted state root.
     /// Uses the existing descriptor-pinned ledger store; no second store authority.
-    pub(crate) fn from_reader_scoped(
+    pub fn from_reader_scoped(
         input: &mut dyn Read,
         ledger_root: Option<&Path>,
     ) -> Result<Self, &'static str> {
@@ -218,7 +218,7 @@ impl HostReceiptAuthority {
     }
 
     /// Revalidate the trusted signer against the host's current UTC clock.
-    pub(crate) fn validate_current(&self) -> Result<(), &'static str> {
+    pub fn validate_current(&self) -> Result<(), &'static str> {
         if !valid_key_id(&self.signer_admission.key_id) {
             return Err("invalid_host_configuration");
         }
@@ -226,7 +226,7 @@ impl HostReceiptAuthority {
     }
 
     /// Require the independent operator grant before starting a source-bound attempt.
-    pub(crate) fn require_context_decision_signing(&self) -> Result<(), &'static str> {
+    pub fn require_context_decision_signing(&self) -> Result<(), &'static str> {
         self.validate_current()?;
         if !self.allow_context_decision_signing {
             return Err("host_context_decision_not_authorized");
@@ -235,7 +235,7 @@ impl HostReceiptAuthority {
     }
 
     /// Admit one task, persist intent, and retain its exclusive task lock.
-    pub(crate) fn begin(
+    pub fn begin(
         &self,
         task: &TaskEnvelopeV1,
         plan: &ExecutionPlanV1,
@@ -244,7 +244,7 @@ impl HostReceiptAuthority {
     }
 
     /// Capture the actual immutable planning handoff before Engine execution.
-    pub(crate) fn begin_with_context(
+    pub fn begin_with_context(
         &self,
         task: &TaskEnvelopeV1,
         plan: &ExecutionPlanV1,
@@ -298,7 +298,7 @@ impl HostReceiptAuthority {
     }
 
     /// Verify and publish the exact delivered view as one canonical receipt.
-    pub(crate) fn publish(
+    pub fn publish(
         &self,
         attempt: &HostReceiptAttempt,
         invocation: &EngineInvocationV1,
@@ -584,7 +584,7 @@ fn read_bounded(
     Ok(bytes)
 }
 
-pub(crate) fn parse_key(value: &str) -> Result<SigningKey, &'static str> {
+pub fn parse_key(value: &str) -> Result<SigningKey, &'static str> {
     if value.len() != 64
         || !value
             .bytes()
@@ -605,7 +605,7 @@ fn now() -> Result<UtcTimestamp, &'static str> {
         .map_err(|_| "host_clock_unavailable")
 }
 
-pub(crate) fn digest(bytes: &[u8]) -> Result<Sha256Digest, &'static str> {
+pub fn digest(bytes: &[u8]) -> Result<Sha256Digest, &'static str> {
     Sha256Digest::new(format!(
         "sha256:{}",
         crate::core::agent_identity::hex_encode(&Sha256::digest(bytes))

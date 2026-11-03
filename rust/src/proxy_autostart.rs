@@ -10,17 +10,41 @@ const PLIST_LABEL: &str = "com.leanctx.proxy";
 #[cfg(target_os = "linux")]
 const SYSTEMD_SERVICE: &str = "lean-ctx-proxy";
 
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
+/// PID the proxy on this instance's configured port reports in `/health`,
+/// on every platform. Used by the lifecycle commands to stop the proxy this
+/// instance owns — never by process name (#2176). The caller still gates the
+/// PID by command line and process identity before signalling it.
+pub(crate) fn recorded_proxy_pid() -> Option<u32> {
+    health_proxy_pid(crate::core::proxy_endpoint::default_port())
+}
+
+/// PID a lean-ctx proxy on `port` reports in `/health`. Only an answer that
+/// identifies itself as the lean-ctx proxy counts (#2176 review #5); the PID
+/// is still only a candidate — `ipc::process` gates it by command line,
+/// executable and user (the caller's uid / token SID) before any signal.
+#[must_use]
+pub fn health_proxy_pid(port: u16) -> Option<u32> {
+    let response = ureq::get(&format!("http://127.0.0.1:{port}/health"))
+        .config()
+        .timeout_global(Some(std::time::Duration::from_millis(500)))
+        .build()
+        .call()
+        .ok()?;
+    let body = response.into_body().read_to_string().ok()?;
+    proxy_pid_from_health(&body)
+}
+
 fn proxy_pid_from_health(body: &str) -> Option<u32> {
     let health: serde_json::Value = serde_json::from_str(body).ok()?;
-    if health.get("status").and_then(serde_json::Value::as_str) != Some("ok") {
+    if health.get("status").and_then(serde_json::Value::as_str) != Some("ok")
+        || !health_identifies_lean_ctx_proxy(body)
+    {
         return None;
     }
     let pid = u32::try_from(health.get("pid")?.as_u64()?).ok()?;
     (pid > 0).then_some(pid)
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn health_identifies_lean_ctx_proxy(body: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()
@@ -28,26 +52,25 @@ fn health_identifies_lean_ctx_proxy(body: &str) -> bool {
         .is_some_and(|service| service == "lean-ctx-proxy")
 }
 
+/// The lean-ctx proxy of this user listening on `port`, gated like every
+/// other lifecycle target: `/health` names it, and the PID passes the
+/// command-line, executable, user and identity checks.
+#[must_use]
+pub fn proxy_on_port(port: u16) -> Option<crate::ipc::process::ServiceProcess> {
+    use crate::ipc::process::{RecordedPid, ServiceKind, ServiceSweep, find_service_processes};
+    let pid = health_proxy_pid(port)?;
+    find_service_processes(
+        &[RecordedPid::bare(pid)],
+        ServiceSweep::Only(ServiceKind::Proxy),
+    )
+    .into_iter()
+    .next()
+}
+
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn port_is_open(port: u16) -> bool {
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
     TcpStream::connect_timeout(&addr, Duration::from_millis(150)).is_ok()
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn proxy_pid_on_port(port: u16) -> Option<u32> {
-    let health_url = format!("http://127.0.0.1:{port}/health");
-    let response = ureq::get(&health_url)
-        .config()
-        .timeout_global(Some(Duration::from_millis(500)))
-        .build()
-        .call()
-        .ok()?;
-    let body = response.into_body().read_to_string().ok()?;
-    let pid = proxy_pid_from_health(&body)?;
-    (health_identifies_lean_ctx_proxy(&body)
-        || crate::ipc::process::find_pids_by_name("lean-ctx").contains(&pid))
-    .then_some(pid)
 }
 
 /// Stop a proxy already owning `port` before a managed service is started.
@@ -62,7 +85,10 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
         return true;
     }
 
-    let Some(pid) = proxy_pid_on_port(port) else {
+    // #2176 review: the `/health` PID is signalled only while it is this
+    // user's lean-ctx proxy (command line, executable, identity); never this
+    // process or its ancestors. Anything else fails closed.
+    let Some(proxy) = proxy_on_port(port) else {
         if !quiet {
             eprintln!(
                 "  Refusing managed proxy startup: port {port} is occupied by an unidentified service."
@@ -70,17 +96,12 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
         }
         return false;
     };
-    if pid == std::process::id() {
-        if !quiet {
-            eprintln!("  Refusing to stop the current process while handing off port {port}.");
-        }
-        return false;
-    }
+    let pid = proxy.pid;
 
-    let _ = crate::ipc::process::terminate_gracefully(pid);
+    proxy.signal(crate::ipc::process::StopSignal::Terminate);
     let graceful_deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < graceful_deadline {
-        if !crate::ipc::process::is_alive(pid) && !port_is_open(port) {
+        if !proxy.is_running() && !port_is_open(port) {
             if !quiet {
                 eprintln!(
                     "  Handed port {port} from standalone proxy PID {pid} to managed service."
@@ -91,8 +112,8 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
         std::thread::sleep(Duration::from_millis(50));
     }
 
-    if crate::ipc::process::is_alive(pid) {
-        let _ = crate::ipc::process::force_kill(pid);
+    if proxy.is_running() {
+        proxy.signal(crate::ipc::process::StopSignal::Kill);
     }
     let force_deadline = Instant::now() + Duration::from_secs(1);
     while Instant::now() < force_deadline {
@@ -118,7 +139,7 @@ pub fn install(port: u16, quiet: bool) -> bool {
     install_with_binary(&binary, port, quiet)
 }
 
-pub(crate) fn install_with_binary(binary: &str, port: u16, quiet: bool) -> bool {
+pub fn install_with_binary(binary: &str, port: u16, quiet: bool) -> bool {
     if binary.is_empty() {
         if !quiet {
             tracing::error!("Cannot find lean-ctx binary for autostart");
@@ -522,14 +543,24 @@ mod tests {
     #[test]
     fn health_pid_parser_accepts_only_well_formed_health() {
         assert_eq!(
-            proxy_pid_from_health(r#"{"status":"ok","pid":4242}"#),
+            proxy_pid_from_health(r#"{"status":"ok","service":"lean-ctx-proxy","pid":4242}"#),
             Some(4242)
         );
+        // #2176 review #5: an answer that does not identify the lean-ctx
+        // proxy names no candidate.
+        assert_eq!(proxy_pid_from_health(r#"{"status":"ok","pid":4242}"#), None);
         assert_eq!(
-            proxy_pid_from_health(r#"{"status":"busy","pid":4242}"#),
+            proxy_pid_from_health(r#"{"status":"ok","service":"other","pid":4242}"#),
             None
         );
-        assert_eq!(proxy_pid_from_health(r#"{"status":"ok","pid":0}"#), None);
+        assert_eq!(
+            proxy_pid_from_health(r#"{"status":"busy","service":"lean-ctx-proxy","pid":4242}"#),
+            None
+        );
+        assert_eq!(
+            proxy_pid_from_health(r#"{"status":"ok","service":"lean-ctx-proxy","pid":0}"#),
+            None
+        );
         assert_eq!(proxy_pid_from_health(r#"{"status":"ok"}"#), None);
         assert_eq!(proxy_pid_from_health("not json"), None);
         assert!(health_identifies_lean_ctx_proxy(
@@ -579,9 +610,12 @@ mod tests {
         }
     }
 
+    /// #2176 review: a listener that claims to be the lean-ctx proxy in
+    /// `/health` but is not a lean-ctx `proxy start` process (here the test
+    /// binary) is never signalled; the hand-off fails closed.
     #[test]
     #[cfg(unix)]
-    fn managed_handoff_stops_identified_proxy_and_releases_port() {
+    fn managed_handoff_never_signals_an_unverified_health_pid() {
         let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = reservation.local_addr().unwrap().port();
         drop(reservation);
@@ -603,17 +637,16 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
         assert!(port_is_open(port), "test proxy did not bind port {port}");
-        assert!(release_proxy_port(port, true));
-        let status = child.0.wait().unwrap();
+        assert!(!release_proxy_port(port, true));
         assert!(
-            !status.success(),
-            "handoff must terminate the standalone proxy"
+            child.0.try_wait().unwrap().is_none(),
+            "an unverified /health PID must never be signalled"
         );
-        assert!(!port_is_open(port), "handoff must release port {port}");
+        assert!(port_is_open(port));
     }
 
     #[test]
-    #[ignore = "helper process for managed_handoff_stops_identified_proxy_and_releases_port"]
+    #[ignore = "helper process for managed_handoff_never_signals_an_unverified_health_pid"]
     #[cfg(unix)]
     fn managed_handoff_test_child() {
         let port: u16 = std::env::var("LEAN_CTX_HANDOFF_TEST_PORT")

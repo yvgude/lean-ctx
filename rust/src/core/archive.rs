@@ -5,13 +5,13 @@ use std::path::PathBuf;
 use super::data_dir::lean_ctx_data_dir;
 
 pub mod authority;
-pub(crate) mod bindings;
-pub(crate) mod delivered;
-pub(crate) mod presented;
-mod recovery;
-mod register;
+pub mod bindings;
+pub mod delivered;
+pub mod presented;
+pub mod recovery;
+pub mod register;
 
-pub(crate) use recovery::{
+pub use recovery::{
     RecoveryId, RecoveryRefusal, recovery_lineage, retrieve_recovery_checked,
     store_recovery_with_lineage,
 };
@@ -87,7 +87,7 @@ fn in_current_partition(entry: &ArchiveEntry) -> bool {
 /// Archives without a source binding that were stored before archives named
 /// their project: served to no project (AP05-G4). Read for the explicit
 /// `lean-ctx migrate legacy-context` adoption only.
-pub(crate) fn legacy_unscoped_entries() -> Vec<ArchiveEntry> {
+pub fn legacy_unscoped_entries() -> Vec<ArchiveEntry> {
     list_entries_raw(None)
         .into_iter()
         .filter(|entry| {
@@ -102,7 +102,7 @@ pub(crate) fn legacy_unscoped_entries() -> Vec<ArchiveEntry> {
 /// An archive whose partition no longer matches the current partition of
 /// the root it recorded: that project's identity (remote, package name)
 /// changed since. Served to no project until adopted.
-pub(crate) fn is_drifted(entry: &ArchiveEntry) -> bool {
+pub fn is_drifted(entry: &ArchiveEntry) -> bool {
     match (&entry.project_root, entry.projects.first()) {
         (Some(root), Some(partition)) => super::project_hash::hash_project_root(root) != *partition,
         _ => false,
@@ -120,10 +120,7 @@ pub(crate) fn unbound_entry(id: &str) -> Option<ArchiveEntry> {
 /// the admission of a normal archive write there and gets that project's
 /// own id. The legacy entry is left as it is. `Ok` names the new id; `Err`
 /// is the content-free refusal.
-pub(crate) fn adopt_legacy_entry(
-    id: &str,
-    project_root: &std::path::Path,
-) -> Result<String, String> {
+pub fn adopt_legacy_entry(id: &str, project_root: &std::path::Path) -> Result<String, String> {
     let entry = unbound_entry(id)
         .filter(|entry| entry.projects.is_empty() || is_drifted(entry))
         .ok_or("not a legacy archive")?;
@@ -244,13 +241,14 @@ pub fn should_archive(content: &str) -> bool {
     is_enabled() && content.len() >= threshold_chars()
 }
 
-#[cfg(not(test))]
-pub(crate) const MAX_ARCHIVE_SIZE: usize = 10 * 1024 * 1024; // 10 MB
+#[cfg(not(any(test, feature = "test-support")))]
+pub const MAX_ARCHIVE_SIZE: usize = 10 * 1024 * 1024; // 10 MB
 /// Same truncation path at a size lib tests can push through the full shell
 /// pipeline: 10 MB of output held the global test env lock for ~50 s. Stays
 /// above the ~290 KB that the large-but-untruncated shell tests produce.
-#[cfg(test)]
-pub(crate) const MAX_ARCHIVE_SIZE: usize = 1024 * 1024;
+/// Also for the unit tests above the Engine (`test-support`).
+#[cfg(any(test, feature = "test-support"))]
+pub const MAX_ARCHIVE_SIZE: usize = 1024 * 1024;
 const BACKGROUND_RETENTION_HOURS: i64 = 1;
 
 pub fn store(tool: &str, command: &str, content: &str, session_id: Option<&str>) -> Option<String> {
@@ -274,7 +272,7 @@ pub fn store_with_result(
     store_with_authority(tool, command, content, session_id, None)
 }
 
-pub(crate) fn store_with_authority(
+pub fn store_with_authority(
     tool: &str,
     command: &str,
     content: &str,
@@ -543,7 +541,7 @@ fn new_entry(
 }
 
 /// The tool whose output archive `id` holds (engine metrics K10).
-pub(crate) fn tool_of(id: &str) -> Option<String> {
+pub fn tool_of(id: &str) -> Option<String> {
     read_entry(id).map(|entry| entry.tool)
 }
 
@@ -561,7 +559,7 @@ fn write_metadata(entry: &ArchiveEntry) -> Option<()> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ArchiveResolveError {
+pub enum ArchiveResolveError {
     Malformed,
     Missing,
     Refused(&'static str),
@@ -570,7 +568,7 @@ pub(crate) enum ArchiveResolveError {
 /// Resolve a canonical archive ID under the current policy: untrusted handles
 /// never supply path components, the read never leaves the store, and
 /// source-bound archives are re-admitted against their source.
-pub(crate) fn retrieve_checked(id: &str) -> Result<String, ArchiveResolveError> {
+pub fn retrieve_checked(id: &str) -> Result<String, ArchiveResolveError> {
     super::policy::runtime::with_source_view(|| {
         retrieve_admitted_budgeted(id, &mut crate::core::limits::max_read_bytes())
     })
@@ -590,7 +588,7 @@ fn retrieve_admitted(id: &str) -> Option<String> {
 /// Check the content-address contract used when the archive ID was minted:
 /// a public archive is addressed by its content, a source-bound one by its
 /// authority and content.
-pub(crate) fn content_matches_id(id: &str, content: &str) -> bool {
+pub fn content_matches_id(id: &str, content: &str) -> bool {
     match read_entry(id).and_then(|entry| entry.authority) {
         Some(origin) => origin.id(content).as_deref() == Some(id),
         None => match read_entry(id).and_then(|entry| entry.projects.first().cloned()) {
@@ -678,7 +676,7 @@ fn retrieve_admitted_budgeted(
 
 /// Format a range of lines from content with `{:>6}|` line-number gutter.
 /// Shared by `retrieve_with_range` (archive) and `expand_reference` (ref store).
-pub(crate) fn format_range(content: &str, start: usize, end: usize) -> String {
+pub fn format_range(content: &str, start: usize, end: usize) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let start = start.saturating_sub(1).min(lines.len());
     let end = end.min(lines.len());
@@ -696,7 +694,7 @@ pub(crate) fn format_range(content: &str, start: usize, end: usize) -> String {
 /// Search content for lines matching `pattern` (case-insensitive) and return
 /// gutter-prefixed matches. `label` appears in the result message (e.g. "archive
 /// a1966..." or "reference ref_18bb..."). Shared by archive and ref store paths.
-pub(crate) fn format_search(content: &str, pattern: &str, label: &str) -> String {
+pub fn format_search(content: &str, pattern: &str, label: &str) -> String {
     let pattern_lower = pattern.to_lowercase();
     let matches: Vec<String> = content
         .lines()
@@ -719,7 +717,7 @@ pub(crate) fn format_search(content: &str, pattern: &str, label: &str) -> String
 /// Describe JSON structure: navigate `path` (dot/slash separated) into parsed
 /// content, then format with `describe_json`. `label` appears in error messages.
 /// Shared by archive and ref store paths.
-pub(crate) fn format_json_keys(content: &str, path: Option<&str>, label: &str) -> Option<String> {
+pub fn format_json_keys(content: &str, path: Option<&str>, label: &str) -> Option<String> {
     let root: serde_json::Value = serde_json::from_str(content.trim()).ok()?;
     let mut cur = &root;
     let mut walked = String::from("$");

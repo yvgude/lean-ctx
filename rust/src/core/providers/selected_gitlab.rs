@@ -8,14 +8,14 @@ use std::sync::OnceLock;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Selection {
+pub struct Selection {
     pub host: String,
     pub project: u64,
     pub namespace: String,
 }
 
 impl Selection {
-    pub(crate) fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         let url = reqwest::Url::parse(&format!("https://{}", self.host))
             .map_err(|_| "invalid selected GitLab host")?;
         if self.host.is_empty()
@@ -48,7 +48,7 @@ impl Selection {
         Ok(())
     }
 
-    pub(crate) fn check_project(&self, project: Option<&str>) -> Result<(), String> {
+    pub fn check_project(&self, project: Option<&str>) -> Result<(), String> {
         if project.is_some_and(|p| p != self.project.to_string() && p != self.namespace) {
             return Err("request does not match the selected GitLab project".into());
         }
@@ -85,7 +85,7 @@ struct Selected {
 static SELECTED: OnceLock<Selected> = OnceLock::new();
 
 #[cfg(any(unix, windows))]
-pub(crate) fn install(source: Selection, token: String) -> Result<(), String> {
+pub fn install(source: Selection, token: String) -> Result<(), String> {
     source.validate()?;
     if token.is_empty()
         || token.len() > 16 * 1024
@@ -123,7 +123,7 @@ pub(crate) fn reuse_binding(config: &GitLabConfig) -> Option<String> {
     }))
 }
 
-pub(crate) fn check_project(project: Option<&str>) -> Result<(), String> {
+pub fn check_project(project: Option<&str>) -> Result<(), String> {
     SELECTED
         .get()
         .map_or(Ok(()), |selected| selected.source.check_project(project))

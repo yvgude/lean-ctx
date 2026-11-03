@@ -11,7 +11,7 @@ LeanCTX is the **Context Gateway for AI Systems**; see the
 
 ### Engine (always compiled)
 
-LeanCTX Engine implements local context selection, supported controls, and evidence.
+LeanCTX | OSS implements local context selection, supported controls, and evidence.
 Local operations can run without a model call. Enabled providers, model/proxy
 routes, updates, and opted-in telemetry have separate network paths.
 

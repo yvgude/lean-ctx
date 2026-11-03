@@ -1,0 +1,9 @@
+{
+  "method": "DELETE",
+  "path": "/v1/workers/wkr_vk4oelpv5lzjmev44hun",
+  "request": null,
+  "response": {
+    "body": null,
+    "status": 204
+  }
+}

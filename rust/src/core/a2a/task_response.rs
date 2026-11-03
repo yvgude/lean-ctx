@@ -25,7 +25,7 @@ pub struct InvalidTaskResponse;
 /// Request-scoped signer admitted by the receiver's configured task policy.
 /// Loading never creates a key; an immutable policy snapshot governs the request.
 #[cfg(feature = "http-server")]
-pub(crate) struct AdmittedStatusSigner<'a> {
+pub struct AdmittedStatusSigner<'a> {
     request: &'a TaskControlDescriptorV1,
     peer: &'a TaskPeerTrustV1,
     key: SigningKey,
@@ -33,7 +33,7 @@ pub(crate) struct AdmittedStatusSigner<'a> {
 
 #[cfg(feature = "http-server")]
 impl<'a> AdmittedStatusSigner<'a> {
-    pub(crate) fn existing(
+    pub fn existing(
         request: &'a TaskControlDescriptorV1,
         policy: &'a TaskAuthorityConfigV1,
         expected: &TaskAuthorityExpectationV1<'_>,
@@ -58,7 +58,7 @@ impl<'a> AdmittedStatusSigner<'a> {
         Ok(Self { request, peer, key })
     }
 
-    pub(crate) fn sign(
+    pub fn sign(
         &self,
         status: TaskStatusV1,
         now: DateTime<Utc>,

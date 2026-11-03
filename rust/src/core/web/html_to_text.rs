@@ -150,7 +150,7 @@ fn extract_title(html: &str) -> Option<String> {
 
 // ── Tokenizer ─────────────────────────────────────────────────────────────
 
-enum Token<'a> {
+pub enum Token<'a> {
     Open {
         name: String,
         attrs: &'a str,
@@ -162,7 +162,7 @@ enum Token<'a> {
     Text(&'a str),
 }
 
-fn tokenize(html: &str) -> Vec<Token<'_>> {
+pub fn tokenize(html: &str) -> Vec<Token<'_>> {
     let bytes = html.as_bytes();
     let n = bytes.len();
     let mut tokens = Vec::new();

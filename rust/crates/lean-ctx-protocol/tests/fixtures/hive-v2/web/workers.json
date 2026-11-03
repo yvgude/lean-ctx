@@ -21,7 +21,7 @@
             "ctx_shell"
           ],
           "card_visibility": "workspace",
-          "engine": {
+          "instance": {
             "id": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
             "label": "yves-mac"
           },

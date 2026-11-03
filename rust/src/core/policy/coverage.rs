@@ -232,7 +232,7 @@ pub fn assess(policy: &ResolvedPolicy) -> Vec<CoverageCheck> {
             control: "CGB-5.4",
             title: "tool surface scoped",
             status: CheckStatus::Inconclusive,
-            detail: "pack neither allows nor denies tools — engine defaults apply".to_string(),
+            detail: "pack neither allows nor denies tools — instance defaults apply".to_string(),
         },
     });
 

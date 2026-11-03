@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum AgentRole {
+pub enum AgentRole {
     Coder,
     Reviewer,
     Planner,
@@ -15,7 +15,7 @@ pub(crate) enum AgentRole {
 }
 
 impl AgentRole {
-    pub(crate) fn from_str_loose(s: &str) -> Self {
+    pub fn from_str_loose(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "review" | "reviewer" | "code_review" => Self::Reviewer,
             "plan" | "planner" | "architect" => Self::Planner,
@@ -29,7 +29,7 @@ impl AgentRole {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ContextDepthConfig {
+pub struct ContextDepthConfig {
     pub max_files_full: usize,
     pub max_files_signatures: usize,
     pub preferred_mode: &'static str,
@@ -37,7 +37,7 @@ pub(crate) struct ContextDepthConfig {
 }
 
 impl ContextDepthConfig {
-    pub(crate) fn for_role(role: AgentRole) -> Self {
+    pub fn for_role(role: AgentRole) -> Self {
         match role {
             AgentRole::Coder => Self {
                 max_files_full: 5,

@@ -62,7 +62,7 @@ pub(super) fn admit_fresh_text(reference: &str, text: String) -> Result<String> 
 /// about to write out: FOREIGN content without a table — every string is a
 /// source — admitted bound under `tool` (unchanged, or refused whole).
 #[cfg(unix)]
-pub(super) fn admit_foreign_document_narrative(
+pub(crate) fn admit_foreign_document_narrative(
     document: &str,
     value: &serde_json::Value,
     tool: &'static str,
@@ -93,7 +93,7 @@ const MAX_STAGED_BYTES: usize = MAX_PACKAGE_BYTES + 8 * 1024;
 /// Export request: one already exported local checkpoint artifact.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct HostCheckpointPackageRequest {
+pub struct HostCheckpointPackageRequest {
     schema_version: u32,
     artifact_digest: Sha256Digest,
     #[serde(default)]
@@ -103,7 +103,7 @@ pub(crate) struct HostCheckpointPackageRequest {
 /// Import request: the operator-transferred package and its expected digest.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct HostCheckpointImportRequest {
+pub struct HostCheckpointImportRequest {
     schema_version: u32,
     package_digest: Sha256Digest,
     package: CheckpointTransferPackageV1,
@@ -300,7 +300,7 @@ fn parse_verifying_key(value: &str) -> Result<VerifyingKey> {
 impl HostReceiptAuthority {
     /// Package one exported local checkpoint with the complete evidence its
     /// verifier requires, proven through this host's current lineage.
-    pub(crate) fn package_checkpoint(
+    pub fn package_checkpoint(
         &self,
         request: &HostCheckpointPackageRequest,
     ) -> Result<serde_json::Value> {
@@ -577,7 +577,7 @@ impl HostReceiptAuthority {
 
     /// Admit one transferred checkpoint against an independently pinned source
     /// and an operator-selected receiving scope.
-    pub(crate) fn import_checkpoint(
+    pub fn import_checkpoint(
         &self,
         request: &HostCheckpointImportRequest,
     ) -> Result<serde_json::Value> {

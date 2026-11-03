@@ -4,7 +4,7 @@
 //!
 //! An incomplete index is indistinguishable from an empty result — `ctx_compose`
 //! just says "no match" — so every stage that can drop a file is replayed here
-//! with the indexer's own rules ([`CorpusRules`], the same walk, the same
+//! with the indexer's own rules (`CorpusRules`, the same walk, the same
 //! size/binary/minified checks) in the order the indexer applies them. The
 //! first stage that rejects the file is the answer.
 
@@ -23,7 +23,7 @@ use crate::core::ingestion::IngestKind;
 /// indexer's stages.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "reason", rename_all = "snake_case")]
-pub(crate) enum Exclusion {
+pub enum Exclusion {
     NotFound,
     NotAFile,
     OutsideRoot,
@@ -151,7 +151,7 @@ impl Exclusion {
 /// What the persisted BM25 index holds for an eligible file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
-pub(crate) enum IndexState {
+pub enum IndexState {
     /// No BM25 index has been built (or it could not be loaded).
     NoIndex,
     /// Eligible but absent from the index — built before the file existed, or
@@ -162,7 +162,7 @@ pub(crate) enum IndexState {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct FileCoverage {
+pub struct FileCoverage {
     /// Path relative to the project root (as the index keys it), or the input
     /// when it could not be resolved.
     pub path: String,
@@ -191,7 +191,7 @@ impl FileCoverage {
 /// in that order, since index paths are root-relative) and explain its corpus
 /// membership.
 #[must_use]
-pub(crate) fn explain(root: &Path, input: &str) -> FileCoverage {
+pub fn explain(root: &Path, input: &str) -> FileCoverage {
     let candidate = Path::new(input);
     let abs = if candidate.is_absolute() {
         candidate.to_path_buf()
@@ -428,7 +428,7 @@ fn index_state(root: &Path, rel: &str, target: &Path) -> IndexState {
 /// Human-readable verdict (CLI `index why` and `ctx_index action=why`): the
 /// verdict first, then the remedy. Deterministic for a given file state.
 #[must_use]
-pub(crate) fn render(cov: &FileCoverage) -> String {
+pub fn render(cov: &FileCoverage) -> String {
     use std::fmt::Write as _;
 
     let mut out = String::new();

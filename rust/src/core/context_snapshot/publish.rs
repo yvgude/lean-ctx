@@ -24,7 +24,7 @@ use super::types::ContextSnapshotV1;
 pub(crate) const SHARED_SUFFIX: &str = "ctxsnapshot.json";
 
 /// Where / how to publish.
-pub(crate) struct PublishOptions {
+pub struct PublishOptions {
     /// Project the snapshot belongs to (selects the publish directory default).
     pub project_root: String,
     /// Explicit output path; defaults to `./<shortid>.ctxsnapshot.json`.
@@ -33,7 +33,7 @@ pub(crate) struct PublishOptions {
 
 /// Result of publishing a snapshot to a shareable file.
 #[derive(Debug)]
-pub(crate) struct PublishOutcome {
+pub struct PublishOutcome {
     pub path: PathBuf,
     /// Publisher identity (ed25519 public key hex) the file is signed with.
     pub public_key: String,
@@ -43,7 +43,7 @@ pub(crate) struct PublishOutcome {
 
 /// Result of importing a shared snapshot file into the local timeline.
 #[derive(Debug)]
-pub(crate) struct ImportOutcome {
+pub struct ImportOutcome {
     pub snapshot_id: String,
     /// The snapshot carried a signature.
     pub signed: bool,
@@ -59,7 +59,7 @@ pub(crate) struct ImportOutcome {
 ///
 /// Always ships signed — provenance is the entire point of sharing — but never
 /// mutates the locally stored snapshot: it signs a clone and writes that out.
-pub(crate) fn publish(
+pub fn publish(
     snapshot: &ContextSnapshotV1,
     opts: &PublishOptions,
 ) -> Result<PublishOutcome, String> {
@@ -100,7 +100,7 @@ pub(crate) fn publish(
 /// Integrity is mandatory (the body must hash to its id); a present-but-invalid
 /// signature is fatal. An unsigned-but-intact snapshot imports with a warning
 /// (`signed == false`). Re-importing an id already in the timeline is a no-op.
-pub(crate) fn import(file: &Path, project_root: &str) -> Result<ImportOutcome, String> {
+pub fn import(file: &Path, project_root: &str) -> Result<ImportOutcome, String> {
     let content =
         std::fs::read_to_string(file).map_err(|e| format!("read {}: {e}", file.display()))?;
     let snap: ContextSnapshotV1 =

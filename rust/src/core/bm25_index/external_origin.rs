@@ -32,7 +32,7 @@
 //!   bytes the extraction read. The path decision is the rooted reader's
 //!   (`io_boundary::jail_and_check_path`: path jail and the role's
 //!   secret-path rule), the open is its no-follow rooted open
-//!   (`tools::ctx_read::open_rooted_source`), and a file whose bytes changed
+//!   (`core::rooted_read::open_rooted_source`), and a file whose bytes changed
 //!   makes every chunk of it stale.
 //!
 //! The content of a chunk is admitted again by the gate under its own
@@ -173,7 +173,7 @@ impl DocumentOrigin {
             .unwrap_or_else(|| root.to_path_buf());
         REQUEST_PROJECT.sync_scope(std::cell::RefCell::new(Some(authority)), || {
             crate::core::io_boundary::jail_and_check_path(tool, &path, root).ok()?;
-            let file = crate::tools::ctx_read::open_rooted_source(&path, root).ok()?;
+            let file = crate::core::rooted_read::open_rooted_source(&path, root).ok()?;
             let mut bytes = Vec::new();
             file.take(MAX_DOCUMENT_BYTES + 1)
                 .read_to_end(&mut bytes)
@@ -259,7 +259,7 @@ mod tests {
         let delivered = "Quartzheron summary: settle returns the reconciliation constant";
         let scope = std::cell::RefCell::new(Some(root.clone()));
         let recorded = REQUEST_PROJECT.sync_scope(scope, || {
-            let admitted = crate::tools::ctx_read::read_file_for_tool_rooted(
+            let admitted = crate::core::rooted_read::read_file_for_tool_rooted(
                 source_text,
                 root_text,
                 "ctx_read",

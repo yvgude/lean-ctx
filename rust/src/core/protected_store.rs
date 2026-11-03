@@ -17,7 +17,7 @@ const MAX_PROFILE_BYTES: usize = 128 * 1024;
 /// MCP server, pinned by the launcher into the server's environment. Read from
 /// the process environment only — a tool call must never be able to select,
 /// weaken or drop them.
-pub(crate) const CHILD_PROFILE_ENV: &str = "LEAN_CTX_PROTECTED_CHILD_PROFILE";
+pub const CHILD_PROFILE_ENV: &str = "LEAN_CTX_PROTECTED_CHILD_PROFILE";
 
 /// Model-directed processes cannot read or modify runtime state. Only build
 /// work and its coordination directory are exceptions; new stores and rotated
@@ -26,7 +26,7 @@ const STORE_WORK_MEMBERS: &[&str] = &["build-cache", "resources"];
 
 /// Resolve through the existing taxonomy before pinning it in the child env.
 /// Do not create directories, migrate providers or read credential contents.
-pub(crate) fn bind_authority(
+pub fn bind_authority(
     project: &Path,
     home: &Path,
     env: &mut BTreeMap<String, String>,
@@ -130,7 +130,7 @@ pub(crate) fn bind_authority(
 /// Dashboard credentials are operator authority, not provider credentials.
 /// Include dormant layouts so switching or migrating a layout cannot expose an
 /// old token. Resolve paths only; never read, rotate or migrate the credential.
-pub(crate) fn operator_credentials(home: &Path) -> Result<Vec<PathBuf>, String> {
+pub fn operator_credentials(home: &Path) -> Result<Vec<PathBuf>, String> {
     use crate::core::{data_dir, paths};
     let mut directories = vec![
         paths::state_dir_read_only()?,
@@ -149,7 +149,7 @@ pub(crate) fn operator_credentials(home: &Path) -> Result<Vec<PathBuf>, String> 
         .collect())
 }
 
-pub(crate) fn credential_read_paths(paths: &[PathBuf]) -> Result<BTreeSet<String>, String> {
+pub fn credential_read_paths(paths: &[PathBuf]) -> Result<BTreeSet<String>, String> {
     let mut guard = Guard::default();
     for path in paths {
         guard.protect(path, true)?;
@@ -160,7 +160,7 @@ pub(crate) fn credential_read_paths(paths: &[PathBuf]) -> Result<BTreeSet<String
 /// Compile the whole-MCP control-file profile from `(path, deny_read)` entries,
 /// protected in the given order. Every entry denies writes; `deny_read` also
 /// denies reads (credentials and session homes).
-pub(crate) fn control_profile<P: AsRef<Path>>(
+pub fn control_profile<P: AsRef<Path>>(
     entries: impl IntoIterator<Item = (P, bool)>,
 ) -> Result<String, String> {
     let mut guard = Guard::default();
@@ -378,7 +378,7 @@ fn store_roots(home: &Path) -> Result<Vec<PathBuf>, String> {
 ///
 /// Compiled before the launch, so a session never starts carrying rules the
 /// kernel would reject.
-pub(crate) fn child_profile(home: &Path) -> Result<String, String> {
+pub fn child_profile(home: &Path) -> Result<String, String> {
     let profile = store_guard(home)?.render()?;
     validate(&profile)?;
     Ok(profile)
@@ -393,7 +393,7 @@ fn store_guard(home: &Path) -> Result<Guard, String> {
 /// The same boundary for model-directed in-process file tools. Reject ancestor
 /// directories too: a recursive search must not enumerate a store through an
 /// otherwise allowed parent. Internal persistence does not use this interface.
-pub(crate) fn enforce_protected_store_path(candidate: &Path) -> Result<(), String> {
+pub fn enforce_protected_store_path(candidate: &Path) -> Result<(), String> {
     let Some((_, guard)) = pinned_child_boundary()? else {
         return Ok(());
     };
@@ -451,7 +451,7 @@ fn deny_store(guard: &mut Guard, roots: &[PathBuf]) -> Result<(), String> {
 /// Fails closed: a process carrying the protected launch authority but no usable
 /// rules runs nothing at all. The rules are never taken from a caller — only
 /// from the environment the launcher pinned.
-pub(crate) fn protected_child_prefix() -> Result<Option<Vec<String>>, String> {
+pub fn protected_child_prefix() -> Result<Option<Vec<String>>, String> {
     let Some(profile) = pinned_child_profile()? else {
         return Ok(None);
     };
@@ -535,8 +535,8 @@ fn pinned_child_boundary() -> Result<Option<(String, Guard)>, String> {
 /// hold `data_dir::test_env_lock` and point the live data dir at `store_root`.
 /// The returned guard unpins on drop, so a failing assertion cannot leave the
 /// rest of the suite running as a protected session.
-#[cfg(test)]
-pub(crate) fn pin_synthetic_session(store_root: &Path) -> Result<SyntheticSession, String> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn pin_synthetic_session(store_root: &Path) -> Result<SyntheticSession, String> {
     if crate::core::data_dir::resolve_data_dir()? != store_root {
         return Err("synthetic store is not the isolated live data directory".into());
     }
@@ -548,18 +548,18 @@ pub(crate) fn pin_synthetic_session(store_root: &Path) -> Result<SyntheticSessio
     Ok(SyntheticSession)
 }
 
-#[cfg(test)]
-pub(crate) struct SyntheticSession;
+#[cfg(any(test, feature = "test-support"))]
+pub struct SyntheticSession;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for SyntheticSession {
     fn drop(&mut self) {
         unpin_synthetic_session();
     }
 }
 
-#[cfg(test)]
-pub(crate) fn unpin_synthetic_session() {
+#[cfg(any(test, feature = "test-support"))]
+pub fn unpin_synthetic_session() {
     for key in [
         REQUIRED_POLICY_ROOT_ENV,
         REQUIRED_POLICY_DIGEST_ENV,
@@ -570,7 +570,7 @@ pub(crate) fn unpin_synthetic_session() {
 }
 
 /// Compile the actual profile before launching Codex. No unsandboxed fallback.
-pub(crate) fn validate(profile: &str) -> Result<(), String> {
+pub fn validate(profile: &str) -> Result<(), String> {
     let status = Command::new(SANDBOX_EXEC)
         .args(["-p", profile, "/usr/bin/true"])
         .env_clear()

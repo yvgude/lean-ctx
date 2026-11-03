@@ -7,9 +7,10 @@
 
 use std::path::{Path, PathBuf};
 
-pub(crate) mod context_plan;
-pub(crate) mod planning;
-pub(crate) mod source_execution;
+pub mod context_plan;
+pub mod planning;
+pub mod receipt_sink;
+pub mod source_execution;
 
 #[cfg(test)]
 use lean_ctx_protocol::EngineInterfaceV1;
@@ -30,23 +31,23 @@ use crate::core::ocla::adapters::native_context::{
 use crate::core::ocla::invocation::{CapabilityInput, CapabilityInvocation, PolicyConstraints};
 
 const ENGINE_ID: &str = "lean-ctx-local";
-pub(crate) const CAPABILITY_ID: &str = "capability://leanctx/context-optimization";
-pub(crate) const CAPABILITY_VERSION: &str = "1.0.0";
+pub const CAPABILITY_ID: &str = "capability://leanctx/context-optimization";
+pub const CAPABILITY_VERSION: &str = "1.0.0";
 const RECEIPT_DIRECTORY: &str = "engine-interface/v1/receipts";
 const OUTPUT_DIRECTORY: &str = "engine-interface/v1/outputs";
 const RECOVERY_DIRECTORY: &str = "engine-interface/v1/recovery";
-pub(crate) const ENGINE_TRANSPORT_VERSION: u32 = 1;
-pub(crate) const ENGINE_INTERFACE_VERSION: &str = "1.0.0";
-pub(crate) const ENGINE_TRANSPORT_POLICY_REF: &str = "policy:engine-transport-v1:admitted";
+pub const ENGINE_TRANSPORT_VERSION: u32 = 1;
+pub const ENGINE_INTERFACE_VERSION: &str = "1.0.0";
+pub const ENGINE_TRANSPORT_POLICY_REF: &str = "policy:engine-transport-v1:admitted";
 const INPUT_REF_PREFIX: &str = "input:ctx-read-snapshot-sha256:";
 const SOURCE_REF_PREFIX: &str = "source:canonical-path-sha256:";
 const MAX_TRANSPORT_VIEW_BYTES: usize = 1024 * 1024;
-pub(crate) const MAX_TRANSPORT_BUDGET_TOKENS: u64 = MAX_TRANSPORT_VIEW_BYTES as u64;
+pub const MAX_TRANSPORT_BUDGET_TOKENS: u64 = MAX_TRANSPORT_VIEW_BYTES as u64;
 
 use super::engine_artifact as artifact_store;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum EngineTransportError {
+pub enum EngineTransportError {
     InvalidRequest,
     UnsupportedMode,
     UnsafeRoot,
@@ -63,7 +64,7 @@ pub(crate) enum EngineTransportError {
 }
 
 impl EngineTransportError {
-    pub(crate) const fn code(self) -> &'static str {
+    pub const fn code(self) -> &'static str {
         match self {
             Self::InvalidRequest => "invalid_request",
             Self::UnsupportedMode => "unsupported_mode",
@@ -83,28 +84,28 @@ impl EngineTransportError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EngineTransportRecoveryDescriptor {
-    pub(crate) recovery_ref: ProtocolReference,
-    pub(crate) source_ref: ProtocolReference,
-    pub(crate) source_digest: Sha256Digest,
+pub struct EngineTransportRecoveryDescriptor {
+    pub recovery_ref: ProtocolReference,
+    pub source_ref: ProtocolReference,
+    pub source_digest: Sha256Digest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EngineTransportView {
-    pub(crate) text: String,
-    pub(crate) output_ref: Option<ProtocolReference>,
-    pub(crate) output_digest: Option<Sha256Digest>,
+pub struct EngineTransportView {
+    pub text: String,
+    pub output_ref: Option<ProtocolReference>,
+    pub output_digest: Option<Sha256Digest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EngineTransportResult {
-    pub(crate) view: EngineTransportView,
-    pub(crate) invocation: Option<EngineInvocationV1>,
-    pub(crate) observation: Option<EngineObservationV1>,
-    pub(crate) recovery: EngineTransportRecoveryDescriptor,
+pub struct EngineTransportResult {
+    pub view: EngineTransportView,
+    pub invocation: Option<EngineInvocationV1>,
+    pub observation: Option<EngineObservationV1>,
+    pub recovery: EngineTransportRecoveryDescriptor,
 }
 
-pub(crate) fn persist_engine_artifact_content(
+pub fn persist_engine_artifact_content(
     directory: &str,
     digest: &str,
     extension: &str,
@@ -255,7 +256,7 @@ struct CtxReadInvocationIdentityV1<'a> {
 }
 
 /// One strictly local implementation of the published Engine records.
-pub(crate) struct NativeContextEngine {
+pub struct NativeContextEngine {
     adapter: NativeContextAdapter,
 }
 
@@ -376,7 +377,7 @@ struct EngineRecoveryArtifactV1 {
 }
 
 impl NativeContextEngine {
-    pub(crate) fn with_root(root: impl AsRef<Path>) -> Result<Self, String> {
+    pub fn with_root(root: impl AsRef<Path>) -> Result<Self, String> {
         let root = crate::core::pathutil::canonicalize_secure(root.as_ref())
             .map_err(|_| "ctx_read Engine root cannot be bound securely".to_owned())?;
         Ok(Self {
@@ -437,7 +438,7 @@ impl NativeContextEngine {
         )
     }
 
-    pub(crate) fn execute_ctx_read_rooted_snapshot(
+    pub fn execute_ctx_read_rooted_snapshot(
         &self,
         rooted_path: &str,
         raw_input: &str,
@@ -452,7 +453,7 @@ impl NativeContextEngine {
         )
     }
 
-    pub(crate) fn execute_ctx_read_rooted_snapshot_with_plan(
+    pub fn execute_ctx_read_rooted_snapshot_with_plan(
         &self,
         rooted_path: &str,
         raw_input: &str,
@@ -545,7 +546,7 @@ impl NativeContextEngine {
         self.execute_materialized(request, &input)
     }
 
-    pub(crate) fn execute_ctx_read_rejection(
+    pub fn execute_ctx_read_rejection(
         &self,
         path: &str,
         policy_admission: EnginePolicyAdmissionV1,
@@ -677,8 +678,9 @@ impl NativeContextEngine {
                 ));
             }
         };
-        // Queued for Hive only when receipt uploads are on (a marker check).
-        crate::core::hive::receipts::note_engine_receipt(
+        // The registered sink queues it for Hive only when receipt uploads
+        // are on (a marker check).
+        receipt_sink::note_receipt(
             self.adapter.root(),
             receipt_link.receipt_id.as_str(),
             &invocation,
@@ -695,14 +697,14 @@ impl NativeContextEngine {
 }
 
 /// Execute the standalone, versioned local Engine transport operation.
-pub(crate) fn execute_transport_context_view(
+pub fn execute_transport_context_view(
     root: &Path,
     path: &str,
 ) -> Result<EngineTransportResult, EngineTransportError> {
     execute_transport_context_view_with_budget(root, path, None)
 }
 
-pub(crate) fn execute_transport_context_view_with_budget(
+pub fn execute_transport_context_view_with_budget(
     root: &Path,
     path: &str,
     budget_tokens: Option<u64>,
@@ -710,7 +712,7 @@ pub(crate) fn execute_transport_context_view_with_budget(
     execute_transport_context_view_bound(root, path, budget_tokens, None)
 }
 
-pub(crate) fn execute_transport_context_view_with_plan(
+pub fn execute_transport_context_view_with_plan(
     root: &Path,
     path: &str,
     task: &lean_ctx_protocol::TaskEnvelopeV1,
@@ -784,7 +786,7 @@ fn execute_transport_context_view_bound(
 }
 
 /// Read only the content-addressed output bound by the verified terminal receipt.
-pub(crate) fn verified_output_view(
+pub fn verified_output_view(
     invocation: &EngineInvocationV1,
     observation: &EngineObservationV1,
 ) -> Result<EngineTransportView, EngineTransportError> {
@@ -837,7 +839,7 @@ pub(crate) fn verified_output_view(
 }
 
 /// Re-read the exact source snapshot named by a prior Engine input reference.
-pub(crate) fn recover_transport_source(
+pub fn recover_transport_source(
     root: &Path,
     path: &str,
     recovery_ref: &ProtocolReference,
@@ -880,7 +882,7 @@ pub(crate) fn recover_transport_source(
     })
 }
 
-pub(crate) fn bind_transport_root(root: &Path) -> Result<PathBuf, EngineTransportError> {
+pub fn bind_transport_root(root: &Path) -> Result<PathBuf, EngineTransportError> {
     if root.as_os_str().is_empty() || crate::core::pathutil::is_broad_or_unsafe_root(root) {
         return Err(EngineTransportError::UnsafeRoot);
     }
@@ -923,7 +925,7 @@ fn read_transport_source(
     if !jailed.starts_with(root) {
         return Err(EngineTransportError::SourceOutsideRoot);
     }
-    let rooted = crate::tools::ctx_read::read_file_lossy_rooted(
+    let rooted = crate::core::rooted_read::read_file_lossy_rooted(
         &jailed.to_string_lossy(),
         &root.to_string_lossy(),
     )

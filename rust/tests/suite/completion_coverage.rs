@@ -1,6 +1,6 @@
 //! Integration tests for the shell completion engine.
 
-use lean_ctx::cli::completions::spec::COMMAND_TREE;
+use lean_ctx_cli::cli::completions::spec::COMMAND_TREE;
 
 #[test]
 fn top_level_has_shell_and_config() {

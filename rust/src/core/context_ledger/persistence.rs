@@ -8,7 +8,7 @@ use super::{ContextLedger, LedgerEntry};
 use crate::core::context_field::ContextState;
 
 impl ContextLedger {
-    pub(crate) fn read_entry(&self, path: &str) -> Option<LedgerEntry> {
+    pub fn read_entry(&self, path: &str) -> Option<LedgerEntry> {
         let path = crate::core::pathutil::normalize_tool_path(path);
         self.entries
             .iter()
@@ -18,7 +18,7 @@ impl ContextLedger {
 
     /// Complete persistence before acknowledging a read. No async state lock
     /// may be held while this operation waits for the existing OS ledger lock.
-    pub(crate) async fn persist_read(entry: Option<LedgerEntry>) -> Result<(), String> {
+    pub async fn persist_read(entry: Option<LedgerEntry>) -> Result<(), String> {
         let entry = entry.ok_or("completed read has no ledger entry")?;
         tokio::task::spawn_blocking(move || {
             let path = super::helpers::ledger_path("default")?;

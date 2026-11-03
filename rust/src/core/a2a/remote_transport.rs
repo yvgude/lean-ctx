@@ -190,8 +190,8 @@ fn fixed_peer_client() -> reqwest::Client {
 }
 
 impl RemoteTransport {
-    #[cfg(all(test, feature = "http-server"))]
-    pub(crate) fn with_test_tls_root(mut self, certificate: reqwest::Certificate) -> Self {
+    #[cfg(any(all(test, feature = "http-server"), feature = "test-support"))]
+    pub fn with_test_tls_root(mut self, certificate: reqwest::Certificate) -> Self {
         self.client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .add_root_certificate(certificate)

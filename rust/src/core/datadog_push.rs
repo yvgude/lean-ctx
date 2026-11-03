@@ -68,7 +68,7 @@ fn intake_url() -> String {
 /// Spawn the background push loop if (and only if) the operator opted in.
 /// Called from long-running entry points (dashboard server). Returns whether
 /// the loop was started.
-pub(crate) fn spawn_if_enabled() -> bool {
+pub fn spawn_if_enabled() -> bool {
     if !enabled() {
         return false;
     }

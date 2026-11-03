@@ -1,7 +1,7 @@
 {
   "hour": "2026-10-26T16:00:00Z",
-  "engine": "inst_7e2a4c6e8a0c2e4a6c8e0a2c4e6a8c0e",
-  "engine_label": "Engine 2C9E",
+  "instance": "inst_7e2a4c6e8a0c2e4a6c8e0a2c4e6a8c0e",
+  "instance_label": "Instance 2C9E",
   "person": "p_7c3e1a9b5d2f8e04",
   "person_label": "Person 7C3E",
   "vault": "3f9a1c7e5b2d4a6f8e0c1b3d5f7a9c2e",
@@ -46,6 +46,6 @@
     "spend.cached_tokens": 0,
     "spend.usd_micros": 0,
     "knowledge.facts_current": 0,
-    "engines.active": 1
+    "instances.active": 1
   }
 }

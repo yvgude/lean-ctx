@@ -1,7 +1,7 @@
 # lean-ctx-compress
 
 Deterministic text compressors for the
-[LeanCTX Engine](https://github.com/yvgude/lean-ctx).
+[LeanCTX | OSS](https://github.com/yvgude/lean-ctx).
 
 The crate holds the generic content compressors: comment and boilerplate
 stripping, Markdown compaction, lossless JSON/JSONL whitespace compaction,

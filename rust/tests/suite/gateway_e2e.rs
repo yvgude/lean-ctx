@@ -193,7 +193,7 @@ fn node_available() -> bool {
 fn fixture_transport() -> ResolvedTransport {
     let fixture = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/mcp_stdio_echo.mjs"
+        "/../../tests/fixtures/mcp_stdio_echo.mjs"
     );
     ResolvedTransport::Stdio {
         command: "node".into(),

@@ -13,7 +13,8 @@ use std::ffi::OsStr;
 
 /// Runs one exact test in a fresh process so its cached scope policy cannot be
 /// inherited from the parent suite. Returns false only inside that child.
-pub(crate) fn run_with_conversation_scope(test_name: &str, enabled: bool) -> bool {
+#[cfg(any(test, feature = "test-support"))]
+pub fn run_with_conversation_scope(test_name: &str, enabled: bool) -> bool {
     run_in_own_process(
         test_name,
         &[(
@@ -26,13 +27,13 @@ pub(crate) fn run_with_conversation_scope(test_name: &str, enabled: bool) -> boo
 /// Runs one exact test alone in a fresh process, for tests that change
 /// process-wide state other tests read without a lock (the policy override,
 /// for one). Returns false only inside that child.
-pub(crate) fn run_in_own_process(test_name: &str, env: &[(&str, &str)]) -> bool {
+pub fn run_in_own_process(test_name: &str, env: &[(&str, &str)]) -> bool {
     run_in_own_process_at(test_name, env, None)
 }
 
 /// Runs an exact test with an optional child working directory, without changing
 /// the parent suite's process-wide cwd or requiring a writable source checkout.
-pub(crate) fn run_in_own_process_at(
+pub fn run_in_own_process_at(
     test_name: &str,
     env: &[(&str, &str)],
     directory: Option<&std::path::Path>,
@@ -63,18 +64,18 @@ pub(crate) fn run_in_own_process_at(
 
 // The environment mutation helpers sit next to the lock they assert, in
 // `lean-ctx-fs` (enabled here by its `test-support` feature).
-pub(crate) use lean_ctx_fs::env_lock::{remove_var, set_var};
+pub use lean_ctx_fs::env_lock::{remove_var, set_var};
 
 /// Sets `key` until dropped, then restores its previous value — also when
 /// the test panics. Declare it after the `test_env_lock()` guard so it is
 /// dropped while the lock is still held.
-pub(crate) struct VarGuard {
+pub struct VarGuard {
     key: std::ffi::OsString,
     previous: Option<std::ffi::OsString>,
 }
 
 impl VarGuard {
-    pub(crate) fn set<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) -> Self {
+    pub fn set<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) -> Self {
         let previous = std::env::var_os(&key);
         set_var(&key, value);
         Self {
@@ -96,7 +97,7 @@ impl Drop for VarGuard {
 /// Sets `key` until dropped, then restores its previous value, holding
 /// `test_env_lock()` itself for its whole lifetime (unlike [`VarGuard`],
 /// which relies on a lock the caller already holds).
-pub(crate) struct EnvVarGuard {
+pub struct EnvVarGuard {
     key: &'static str,
     previous: Option<std::ffi::OsString>,
     // Held from before the snapshot until after the restore below: the
@@ -105,7 +106,7 @@ pub(crate) struct EnvVarGuard {
 }
 
 impl EnvVarGuard {
-    pub(crate) fn set(key: &'static str, value: &str) -> Self {
+    pub fn set(key: &'static str, value: &str) -> Self {
         let lock = crate::core::data_dir::test_env_lock();
         let previous = std::env::var_os(key);
         set_var(key, value);
@@ -134,13 +135,13 @@ impl Drop for EnvVarGuard {
 /// for the working directory outside a request). A private mutex serialized
 /// only the tests that shared it: a `policy.unverifiable` admission read the
 /// invalid pack another test had entered (25.10.).
-pub(crate) struct CurrentDirGuard {
+pub struct CurrentDirGuard {
     previous: std::path::PathBuf,
     _lock: crate::core::data_dir::TestEnvGuard,
 }
 
 impl CurrentDirGuard {
-    pub(crate) fn enter(directory: &std::path::Path) -> Self {
+    pub fn enter(directory: &std::path::Path) -> Self {
         let lock = crate::core::data_dir::test_env_lock();
         let previous = std::env::current_dir().expect("read the current directory");
         std::env::set_current_dir(directory).expect("enter the test directory");

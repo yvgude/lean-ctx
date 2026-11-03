@@ -19,7 +19,7 @@
 //! and never rotated by the Engine: written to a private temporary file in
 //! the same directory and published with a hard link, which never replaces
 //! a key another process published first. A key file that is not exactly 32
-//! bytes is unusable ([`KEY_UNUSABLE`]) and is never replaced — that would
+//! bytes is unusable (`KEY_UNUSABLE`) and is never replaced — that would
 //! orphan every reference made under it; the operator decides. On Unix the
 //! file must be 0600: a wider mode is narrowed when the key is loaded, and a
 //! key whose mode cannot be narrowed is unusable. On Windows the file
@@ -64,10 +64,21 @@ impl KeyedRefs {
 }
 
 /// The keyed reference of the sealed principal `principal`; `Err` with
-/// [`KEY_UNUSABLE`] when the installation's receipt key is not available.
+/// `KEY_UNUSABLE` when the installation's receipt key is not available.
 #[cfg(any(test, feature = "http-server"))]
-pub(crate) fn principal_ref(principal: &str) -> Result<String, &'static str> {
+pub fn principal_ref(principal: &str) -> Result<String, &'static str> {
     keyed(b"leanctx.receipt.principal-ref.v1", &[principal.as_bytes()])
+}
+
+/// The MAC of one record of the proxy's register of provider-sealed items
+/// (#2177): its key and its exact stored bytes, under this installation's
+/// receipt key, so a record is only as forgeable as a receipt.
+#[cfg(any(test, feature = "http-server"))]
+pub fn sealed_record_ref(key: &str, body: &str) -> Result<String, &'static str> {
+    keyed(
+        b"leanctx.proxy.sealed-record.v1",
+        &[key.as_bytes(), body.as_bytes()],
+    )
 }
 
 /// The MAC binding a human's egress grant (`lean-ctx gateway allow-once`)
@@ -80,7 +91,7 @@ pub(crate) fn grant_ref(parts: &[&[u8]]) -> Result<String, &'static str> {
 /// every header as `(name, value)`. Header order and name case do not
 /// matter; a repeated header counts with each of its values.
 #[cfg(any(test, feature = "http-server"))]
-pub(crate) fn request_head_ref<'a>(
+pub fn request_head_ref<'a>(
     method: &str,
     url: &str,
     headers: impl IntoIterator<Item = (&'a str, &'a [u8])>,
@@ -114,16 +125,16 @@ fn keyed(domain: &[u8], parts: &[&[u8]]) -> Result<String, &'static str> {
 /// receipt names each object by `HMAC-SHA256` under the installation's
 /// receipt key instead of the plain SHA-256 a version 1 receipt names, which
 /// confirmed a guess of the text. Same key and same object, same digest.
-pub(crate) struct ObjectKey {
+pub struct ObjectKey {
     key: [u8; 32],
 }
 
 const OBJECT_DOMAIN: &[u8] = b"leanctx.receipt.object.v2";
 const KEY_ID_DOMAIN: &[u8] = b"leanctx.receipt.key-id.v2";
 
-/// The installation's object key; `Err` with [`KEY_UNUSABLE`] (or the store
+/// The installation's object key; `Err` with `KEY_UNUSABLE` (or the store
 /// code) when the receipt key is not available — no key, no v2 receipt.
-pub(crate) fn object_key() -> Result<ObjectKey, &'static str> {
+pub fn object_key() -> Result<ObjectKey, &'static str> {
     key().map(|key| ObjectKey { key })
 }
 
@@ -139,7 +150,7 @@ impl ObjectKey {
     }
 
     /// The keyed form of the plain object digest `plain` (`sha256:<hex>`).
-    pub(crate) fn object(
+    pub fn object(
         &self,
         plain: &lean_ctx_protocol::Sha256Digest,
     ) -> lean_ctx_protocol::Sha256Digest {
@@ -198,7 +209,7 @@ fn key() -> Result<[u8; 32], &'static str> {
 
 /// For `lean-ctx doctor`: `Err` when a receipt key file exists that is not a
 /// usable key. Reads only; an absent key is created on first use.
-pub(crate) fn key_status() -> Result<(), &'static str> {
+pub fn key_status() -> Result<(), &'static str> {
     let Some(dir) = super::gateway_dir() else {
         return Ok(());
     };

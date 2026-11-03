@@ -21,8 +21,8 @@
   ],
   "rules": {
     "author": "the authoring instance always gets its own events",
-    "member": "engine of the owning workspace: every event",
-    "outside": "engine outside the owning workspace: nothing (403 public_read_web_only for public vaults, 404 otherwise)",
+    "member": "instance of the owning workspace: every event",
+    "outside": "instance outside the owning workspace: nothing (403 public_read_web_only for public vaults, 404 otherwise)",
     "source": "SPEC-CONTRACT-SERVER §3.14.4, RESOLUTIONS R108, R109"
   }
 }

@@ -30,12 +30,12 @@ fn go_import_re() -> &'static Regex {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DepInfo {
+pub struct DepInfo {
     pub imports: Vec<String>,
     pub exports: Vec<String>,
 }
 
-pub(crate) fn extract_deps(content: &str, ext: &str) -> DepInfo {
+pub fn extract_deps(content: &str, ext: &str) -> DepInfo {
     let lang = crate::core::language_capabilities::language_for_ext(ext);
     match lang {
         Some(

@@ -27,7 +27,7 @@ use super::addon_manifest::AddonManifest;
 
 /// What `register` did, so the caller can tell the user precisely.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Wired {
+pub enum Wired {
     /// The addon declares no `[mcp]` table.
     NothingToWire,
     /// A new gateway entry was added.
@@ -54,7 +54,7 @@ pub(crate) enum Wired {
 ///
 /// Everything else — transport, command, args, url, pin, integration — is the
 /// author's to change between versions, and is taken from the new manifest.
-pub(crate) fn register(manifest: &AddonManifest) -> Result<Wired, String> {
+pub fn register(manifest: &AddonManifest) -> Result<Wired, String> {
     let Some(wiring) = manifest.mcp.as_ref() else {
         return Ok(Wired::NothingToWire);
     };
@@ -91,7 +91,7 @@ pub(crate) fn register(manifest: &AddonManifest) -> Result<Wired, String> {
 /// Removal is by name and unconditional: leaving a gateway entry behind after
 /// `addon remove` would keep spawning a process for an addon the user believes
 /// is gone.
-pub(crate) fn unregister(name: &str) -> Result<bool, String> {
+pub fn unregister(name: &str) -> Result<bool, String> {
     let mut cfg = Config::load();
     let Some(removed) = cfg.gateway.servers.iter().find(|s| s.name == name).cloned() else {
         return Ok(false);
@@ -110,7 +110,7 @@ pub(crate) fn unregister(name: &str) -> Result<bool, String> {
 
 /// Whether the gateway itself is on. An addon can be wired while the gateway
 /// is off; the CLI says so rather than letting the user think it is running.
-pub(crate) fn gateway_enabled() -> bool {
+pub fn gateway_enabled() -> bool {
     Config::load().gateway.enabled
 }
 

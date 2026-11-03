@@ -96,7 +96,7 @@ pub const SERVER_MEMBERS: &[&str] = &[
     "sharing.personal_workspace",
     // Also honoured by the engine's metrics upload (it sends and buffers
     // nothing when off); Hive refuses the upload whatever the engine does.
-    "sharing.share_engine_metrics",
+    "sharing.share_instance_metrics",
     "sharing.task_claim_min_role",
 ];
 
@@ -792,7 +792,7 @@ impl EffectivePolicyBundleV1 {
                 || is_lower_hex(&source.scope, 32);
             if !matches!(
                 source.level.as_str(),
-                "org" | "workspace" | "vault" | "engine"
+                "org" | "workspace" | "vault" | "instance"
             ) || !scope_ok
                 || source.version == 0
             {

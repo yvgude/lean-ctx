@@ -165,7 +165,7 @@ pub const CORE_TOOL_NAMES: &[&str] = &[
     // so the default surface must advertise it — but only where it earns its
     // tokens. Clients with a reliable native str-replace editor (Cursor, Zed,
     // Windsurf, …) skip it via the lazy-core client quirk in
-    // `server::tool_visibility::ClientQuirks`; Claude Code, SDK harnesses and
+    // `core::tool_visibility::ClientQuirks`; Claude Code, SDK harnesses and
     // unknown/headless clients get it.
     "ctx_patch",
     "ctx_call",
@@ -186,7 +186,7 @@ pub fn lazy_tool_defs() -> Vec<Tool> {
 pub fn discover_tools(query: &str) -> String {
     // Derived from the registry (single source of truth) so discovery results
     // never drift from the advertised tool schemas (#141).
-    let all = crate::server::registry::build_registry().tool_defs();
+    let all = crate::core::tool_catalog::tool_defs();
     let query_lower = query.to_lowercase();
     let matches: Vec<(String, String)> = all
         .iter()

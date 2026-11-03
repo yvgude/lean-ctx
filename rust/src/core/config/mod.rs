@@ -7,6 +7,8 @@ mod defaults;
 mod defaults_allowlist;
 mod enterprise;
 mod enums;
+pub mod governor;
+pub mod hive;
 mod intelligence;
 mod loader;
 mod logic;
@@ -16,7 +18,7 @@ mod model;
 pub mod provenance;
 mod proxy;
 mod read_dedup;
-pub(crate) mod read_redirect;
+pub mod read_redirect;
 pub mod renamed;
 mod render;
 mod response_shaping;
@@ -61,10 +63,11 @@ pub use enums::{
 };
 pub use intelligence::IntelligenceRuntimeConfig;
 pub use loader::ConfigLoadFailure;
-pub(crate) use loader::global_string_list;
+pub use loader::global_string_list;
 pub use loader::last_config_parse_error;
 pub use loader::local_sensitive_overrides;
 pub(crate) use loader::strip_sensitive_overrides;
+pub use loader::{ConfigMigrationPause, config_migration_pause_status};
 pub use memory::{
     CompressionAnnotation, MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter,
 };
@@ -86,11 +89,13 @@ pub use shell_approval::ShellApproval;
 pub use value_display::{StatuslineStyle, ValueDisplayConfig, ValueDisplayMode};
 
 #[cfg(test)]
+mod migration_journal_tests;
+#[cfg(test)]
 mod solution_tests;
 #[cfg(test)]
 mod telemetry_migration_tests;
-#[cfg(test)]
-pub(crate) mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

@@ -27,7 +27,7 @@ pub(super) const MAX_CHECKPOINT_RECEIPTS: usize = 64;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct HostCheckpointRequest {
+pub struct HostCheckpointRequest {
     pub schema_version: u32,
     pub checkpoint_json: String,
     pub receipt_digests: Vec<Sha256Digest>,
@@ -36,7 +36,7 @@ pub(crate) struct HostCheckpointRequest {
 impl HostReceiptAuthority {
     /// Read the just-published receipt through the existing verified lineage owner.
     /// This is not a historical lookup or a caller-supplied artifact-path API.
-    pub(crate) fn published_receipt_json(
+    pub fn published_receipt_json(
         &self,
         publication: &crate::core::execution_ledger::PublishedCanonicalReceipt,
     ) -> Result<String> {
@@ -58,10 +58,7 @@ impl HostReceiptAuthority {
         })
     }
 
-    pub(crate) fn export_checkpoint(
-        &self,
-        request: &HostCheckpointRequest,
-    ) -> Result<serde_json::Value> {
+    pub fn export_checkpoint(&self, request: &HostCheckpointRequest) -> Result<serde_json::Value> {
         self.validate_current().map_err(anyhow::Error::msg)?;
         ensure!(
             self.allow_checkpoint_signing,

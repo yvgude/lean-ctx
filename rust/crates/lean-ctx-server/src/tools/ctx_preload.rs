@@ -1,0 +1,692 @@
+// SPDX-License-Identifier: Apache-2.0
+use crate::tools::CrpMode;
+use crate::tools::admitted_sources::SourceRead;
+use lean_ctx::core::cache::SessionCache;
+use lean_ctx::core::graph_provider::{self, GraphProvider};
+use lean_ctx::core::protocol;
+use lean_ctx::core::task_relevance::{RelevanceScore, compute_relevance, parse_task_hints};
+use lean_ctx::core::tokens::count_tokens;
+
+/// Tool identity the sources are read for (path jail, role rules, audit).
+const TOOL: &str = "ctx_preload";
+const MAX_PRELOAD_FILES: usize = 8;
+const MAX_CRITICAL_LINES: usize = 15;
+const SIGNATURES_BUDGET: usize = 10;
+const TOTAL_TOKEN_BUDGET: usize = 4000;
+
+/// Returns the rendered preload plus whether it actually carries context
+/// (#1134). Callers must not re-derive that from the body: the guidance
+/// strings below are prose and drift, and a preloaded file may quote them.
+pub fn handle(
+    cache: &mut SessionCache,
+    task: &str,
+    path: Option<&str>,
+    _crp_mode: CrpMode,
+) -> (String, bool) {
+    if task.trim().is_empty() {
+        return (
+            "ERROR: ctx_preload requires a task description".to_string(),
+            false,
+        );
+    }
+
+    let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
+    let jail_root = std::path::Path::new(&project_root);
+
+    let Some(open) = graph_provider::open_or_build(&project_root) else {
+        return (
+            format!(
+                "[task: {task}]\nNo graph available. Use ctx_compose(task=…) for a ranked project map."
+            ),
+            false,
+        );
+    };
+    let gp = &open.provider;
+
+    let session_intent =
+        lean_ctx::core::session::caller::with(|s| s.active_structured_intent.clone()).flatten();
+
+    let (task_files, task_keywords) = parse_task_hints(task);
+    let mut relevance = if let Some(ref intent) = session_intent {
+        lean_ctx::core::task_relevance::compute_relevance_from_intent(gp, intent)
+    } else {
+        compute_relevance(gp, &task_files, &task_keywords)
+    };
+    // Git working-set boost (#497): uncommitted + recently-churned files rank up.
+    lean_ctx::core::git_signals::apply_boost(&mut relevance, &project_root);
+    // Active build errors outrank everything (#499).
+    lean_ctx::core::diagnostics_store::apply_boost(&mut relevance);
+    // Editor focus (#500): the file the developer is looking at ranks up.
+    lean_ctx::core::editor_signal::apply_boost(&mut relevance);
+
+    let mut scored: Vec<_> = relevance
+        .iter()
+        .filter(|r| r.score >= 0.1)
+        .take(MAX_PRELOAD_FILES + 10)
+        .collect();
+
+    apply_heat_ranking(&mut scored, gp, &project_root);
+
+    let pop = lean_ctx::core::pop_pruning::decide_for_candidates(task, &project_root, &scored);
+    let candidates =
+        lean_ctx::core::pop_pruning::filter_candidates_by_pop(&project_root, &scored, &pop);
+
+    if candidates.is_empty() {
+        return (
+            format!(
+                "[task: {task}]\nNo directly relevant files found. Use ctx_compose(task=…) for a ranked project map."
+            ),
+            false,
+        );
+    }
+
+    // #1131: when the top score is below the minimum relevance threshold, the
+    // task likely does not match the current project state (stale persisted
+    // session, wrong worktree, etc.). Report the preload as unusable so
+    // autonomy does not inject it as AUTO CONTEXT.
+    const MIN_USEFUL_SCORE: f64 = 0.25;
+    let max_score = candidates.iter().map(|c| c.score).fold(0.0_f64, f64::max);
+    if max_score < MIN_USEFUL_SCORE {
+        return (
+            format!(
+                "[task: {task}]\nNo sufficiently relevant files (max score {max_score:.1} < {MIN_USEFUL_SCORE}). Use ctx_compose(task=…) for a ranked project map."
+            ),
+            false,
+        );
+    }
+
+    // Boltzmann allocation: p(file_i) = exp(score_i / T) / Z
+    // Temperature T is derived from task specificity:
+    //   - Many keywords / specific file mentions → low T → concentrate budget
+    //   - Few keywords / broad task → high T → spread budget evenly
+    let task_specificity =
+        (task_files.len() as f64 * 0.3 + task_keywords.len() as f64 * 0.1).clamp(0.0, 1.0);
+    let temperature = 0.8 - task_specificity * 0.6; // range [0.2, 0.8]
+    let temperature = temperature.max(0.1);
+
+    let allocations = boltzmann_allocate(&candidates, TOTAL_TOKEN_BUDGET, temperature);
+
+    // Every candidate is acquired ONCE, through the common rooted admitted
+    // reader (G01). The briefing, the critical lines, the signatures and the
+    // session cache below all derive from these admitted acquisitions; no
+    // second, raw read of a candidate exists.
+    let mut remaining =
+        lean_ctx::core::limits::max_read_bytes().saturating_mul(MAX_PRELOAD_FILES + 10);
+    let acquired: std::collections::HashMap<&str, Acquired> = candidates
+        .iter()
+        .filter_map(|c| {
+            acquire(&c.path, &project_root, jail_root, &mut remaining)
+                .map(|acquired| (c.path.as_str(), acquired))
+        })
+        .collect();
+
+    let file_context: Vec<(String, usize)> = candidates
+        .iter()
+        .filter_map(|c| {
+            acquired
+                .get(c.path.as_str())
+                .and_then(|acquired| acquired.read.text())
+                .map(|text| (c.path.clone(), text.lines().count()))
+        })
+        .collect();
+    let briefing = lean_ctx::core::task_briefing::build_briefing(task, &file_context);
+    let briefing_block = lean_ctx::core::task_briefing::format_briefing(&briefing);
+
+    let multi_intents = lean_ctx::core::intent_engine::detect_multi_intent(task);
+    let primary = &multi_intents[0];
+    let complexity = lean_ctx::core::intent_engine::classify_complexity(task, primary);
+
+    let mut output = Vec::new();
+    output.push(briefing_block);
+
+    let complexity_label = complexity.instruction_suffix().lines().next().unwrap_or("");
+    if multi_intents.len() > 1 {
+        output.push(format!(
+            "[task: {task}] | {} | {} sub-intents",
+            complexity_label,
+            multi_intents.len()
+        ));
+        for (i, sub) in multi_intents.iter().enumerate() {
+            output.push(format!(
+                "  {}. {} ({:.0}%)",
+                i + 1,
+                sub.task_type.as_str(),
+                sub.confidence * 100.0
+            ));
+        }
+    } else {
+        output.push(format!("[task: {task}] | {complexity_label}"));
+    }
+
+    for r in lean_ctx::core::prospective_memory::reminders_for_task(&project_root, task) {
+        output.push(r);
+    }
+
+    if !pop.excluded_modules.is_empty() {
+        output.push("POP:".to_string());
+        for ex in &pop.excluded_modules {
+            output.push(format!(
+                "  - exclude {}/ ({} candidates) — {}",
+                ex.module, ex.candidate_files, ex.reason
+            ));
+        }
+    }
+
+    let mut total_estimated_saved = 0usize;
+    let mut critical_count = 0usize;
+    let git_signals = lean_ctx::core::git_signals::collect(&project_root);
+
+    for (rel, token_budget) in candidates.iter().zip(allocations.iter()) {
+        if *token_budget < 20 {
+            continue;
+        }
+        critical_count += 1;
+        if critical_count > MAX_PRELOAD_FILES {
+            break;
+        }
+
+        let Some(source) = acquired.get(rel.path.as_str()) else {
+            continue;
+        };
+        let jailed_s = source.path.as_str();
+        let short = protocol::shorten_path(jailed_s);
+
+        // The session cache is a derived store: it receives the admitted
+        // text of a source whose ORIGINAL may be kept, and nothing else.
+        seed_cache(cache, source);
+
+        let content = match &source.read {
+            SourceRead::Admitted(read) => read.content.as_str(),
+            SourceRead::Withheld(reason) => {
+                output.push(format!(
+                    "\n{}",
+                    crate::tools::admitted_sources::withheld_line(&short, reason)
+                ));
+                continue;
+            }
+            SourceRead::Unavailable(_) => continue,
+        };
+
+        let file_ref = cache.get_file_ref(jailed_s);
+        let line_count = content.lines().count();
+        let file_tokens = count_tokens(content);
+
+        let mode = budget_to_mode(*token_budget, file_tokens);
+
+        let critical_lines = extract_critical_lines(content, &task_keywords, MAX_CRITICAL_LINES);
+        let sigs = extract_key_signatures(content, SIGNATURES_BUDGET);
+        let imports = extract_imports(content);
+
+        // Surface the git signal so the agent knows WHY a file ranked up (#497).
+        let git_marker = {
+            let recency = git_signals.recency_for(&rel.path, &project_root);
+            if recency >= 1.0 {
+                " ● uncommitted"
+            } else if recency > 0.5 {
+                " ● recent-commit"
+            } else {
+                ""
+            }
+        };
+        // Active diagnostics marker (#499): tell the agent which file is broken.
+        let diag_marker = {
+            let diags = lean_ctx::core::diagnostics_store::details_for(&rel.path);
+            diags
+                .iter()
+                .find(|(_, sev, _)| *sev == lean_ctx::core::diagnostics_store::Severity::Error)
+                .map(|(line, _, _)| match line {
+                    Some(l) => format!(" ✖ error L{l}"),
+                    None => " ✖ error".to_string(),
+                })
+                .unwrap_or_default()
+        };
+
+        output.push(format!(
+            "\nCRITICAL: {file_ref}={short} {line_count}L score={:.1} budget={token_budget}tok mode={mode}{git_marker}{diag_marker}",
+            rel.score
+        ));
+
+        if !critical_lines.is_empty() {
+            for (line_no, line) in &critical_lines {
+                output.push(format!("  :{line_no} {line}"));
+            }
+        }
+
+        if !imports.is_empty() {
+            output.push(format!("  imports: {}", imports.join(", ")));
+        }
+
+        if !sigs.is_empty() {
+            for sig in &sigs {
+                output.push(format!("  {sig}"));
+            }
+        }
+
+        total_estimated_saved += file_tokens;
+    }
+
+    let context_files: Vec<_> = relevance
+        .iter()
+        .filter(|r| r.score >= 0.1 && r.score < 0.3)
+        .take(10)
+        .collect();
+
+    if !context_files.is_empty() {
+        output.push("\nRELATED:".to_string());
+        for rel in &context_files {
+            let short = protocol::shorten_path(&rel.path);
+            output.push(format!(
+                "  {} mode={} score={:.1}",
+                short, rel.recommended_mode, rel.score
+            ));
+        }
+    }
+
+    let all_edges = gp.edges();
+    let graph_edges: Vec<_> = all_edges
+        .iter()
+        .filter(|e| {
+            candidates
+                .iter()
+                .any(|c| c.path == e.from || c.path == e.to)
+        })
+        .take(10)
+        .collect();
+
+    if !graph_edges.is_empty() {
+        output.push("\nGRAPH:".to_string());
+        for edge in &graph_edges {
+            let from_short = protocol::shorten_path(&edge.from);
+            let to_short = protocol::shorten_path(&edge.to);
+            output.push(format!("  {from_short} -> {to_short}"));
+        }
+    }
+
+    let preload_result = output.join("\n");
+    let preload_tokens = count_tokens(&preload_result);
+    let savings = protocol::format_savings(total_estimated_saved, preload_tokens);
+
+    let body = format!("{preload_result}\n{savings}");
+    (body, true)
+}
+
+/// One preload candidate as it was acquired: the jailed path it is cached and
+/// rendered under, and the outcome of the admitted read.
+struct Acquired {
+    path: String,
+    read: SourceRead,
+}
+
+/// Acquire one candidate under the project root. `None`: the path is outside
+/// the jail, is a secret-like path the role may only read with a warning, or
+/// is a cloud placeholder that an automatic preload must not hydrate (#363).
+fn acquire(
+    candidate: &str,
+    project_root: &str,
+    jail_root: &std::path::Path,
+    remaining: &mut usize,
+) -> Option<Acquired> {
+    let (jailed, warning) = lean_ctx::core::io_boundary::jail_and_check_path(
+        TOOL,
+        std::path::Path::new(candidate),
+        jail_root,
+    )
+    .ok()?;
+    if warning.is_some() || lean_ctx::core::cloud_files::is_cloud_placeholder(&jailed) {
+        return None;
+    }
+    let path = jailed.to_string_lossy().into_owned();
+    let read = crate::tools::admitted_sources::read(&path, project_root, TOOL, remaining);
+    Some(Acquired { path, read })
+}
+
+/// Seed the session cache from one acquisition. Only the admitted text of a
+/// source whose original is storable (complete, not restricted) enters it. A
+/// source that is withheld, restricted or incompletely decoded is not cached,
+/// and a copy an earlier call cached for the same path is dropped — the
+/// cache must not keep serving what the current policy no longer lets in.
+fn seed_cache(cache: &mut SessionCache, source: &Acquired) {
+    match (&source.read, source.read.storable()) {
+        (_, Some(text)) => {
+            let _ = cache.store(&source.path, text);
+        }
+        (SourceRead::Admitted(_) | SourceRead::Withheld(_), None) => {
+            let _ = cache.invalidate(&source.path);
+        }
+        (SourceRead::Unavailable(_), None) => {}
+    }
+}
+
+/// Boltzmann distribution for token budget allocation across files.
+/// p(file_i) = exp(score_i / T) / Z, then budget_i = total * p(file_i)
+fn boltzmann_allocate(
+    candidates: &[&lean_ctx::core::task_relevance::RelevanceScore],
+    total_budget: usize,
+    temperature: f64,
+) -> Vec<usize> {
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let t = temperature.max(0.01);
+
+    // Compute exp(score / T) for each candidate, using log-sum-exp for numerical stability
+    let log_weights: Vec<f64> = candidates.iter().map(|c| c.score / t).collect();
+    let max_log = log_weights
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let exp_weights: Vec<f64> = log_weights.iter().map(|&lw| (lw - max_log).exp()).collect();
+    let z: f64 = exp_weights.iter().sum();
+
+    if z <= 0.0 {
+        return vec![total_budget / candidates.len().max(1); candidates.len()];
+    }
+
+    let mut allocations: Vec<usize> = exp_weights
+        .iter()
+        .map(|&w| ((w / z) * total_budget as f64).round() as usize)
+        .collect();
+
+    // Ensure total doesn't exceed budget
+    let sum: usize = allocations.iter().sum();
+    if sum > total_budget {
+        let overflow = sum - total_budget;
+        if let Some(last) = allocations.last_mut() {
+            *last = last.saturating_sub(overflow);
+        }
+    }
+
+    allocations
+}
+
+/// Map a token budget to a recommended compression mode.
+fn budget_to_mode(budget: usize, file_tokens: usize) -> &'static str {
+    let ratio = budget as f64 / file_tokens.max(1) as f64;
+    if ratio >= 0.8 {
+        "full"
+    } else if ratio >= 0.4 {
+        "signatures"
+    } else if ratio >= 0.15 {
+        "map"
+    } else {
+        "reference"
+    }
+}
+
+fn extract_critical_lines(content: &str, keywords: &[String], max: usize) -> Vec<(usize, String)> {
+    let kw_lower: Vec<String> = keywords.iter().map(|k| k.to_lowercase()).collect();
+
+    let mut hits: Vec<(usize, String, usize)> = content
+        .lines()
+        .enumerate()
+        .filter_map(|(i, line)| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let line_lower = trimmed.to_lowercase();
+            let hit_count = kw_lower
+                .iter()
+                .filter(|kw| line_lower.contains(kw.as_str()))
+                .count();
+
+            let is_error = trimmed.contains("Error")
+                || trimmed.contains("Err(")
+                || trimmed.contains("panic!")
+                || trimmed.contains("unwrap()")
+                || trimmed.starts_with("return Err");
+
+            if hit_count > 0 || is_error {
+                let priority = hit_count + if is_error { 2 } else { 0 };
+                Some((i + 1, trimmed.to_string(), priority))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    hits.sort_by_key(|x| std::cmp::Reverse(x.2));
+    hits.truncate(max);
+    hits.iter().map(|(n, l, _)| (*n, l.clone())).collect()
+}
+
+fn extract_key_signatures(content: &str, max: usize) -> Vec<String> {
+    let sig_starters = [
+        "pub fn ",
+        "pub async fn ",
+        "pub struct ",
+        "pub enum ",
+        "pub trait ",
+        "pub type ",
+        "pub const ",
+    ];
+
+    content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            sig_starters.iter().any(|s| trimmed.starts_with(s))
+        })
+        .take(max)
+        .map(|line| {
+            let trimmed = line.trim();
+            if trimmed.len() > 120 {
+                format!("{}...", &trimmed[..trimmed.floor_char_boundary(117)])
+            } else {
+                trimmed.to_string()
+            }
+        })
+        .collect()
+}
+
+fn extract_imports(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter(|line| {
+            let t = line.trim();
+            t.starts_with("use ") || t.starts_with("import ") || t.starts_with("from ")
+        })
+        .take(8)
+        .map(|line| {
+            let t = line.trim();
+            if let Some(rest) = t.strip_prefix("use ") {
+                rest.trim_end_matches(';').to_string()
+            } else {
+                t.to_string()
+            }
+        })
+        .collect()
+}
+
+fn apply_heat_ranking(candidates: &mut [&RelevanceScore], gp: &GraphProvider, root: &str) {
+    if gp.file_count() == 0 {
+        return;
+    }
+
+    let all_edges = gp.edges();
+    let mut connection_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    for edge in &all_edges {
+        *connection_counts.entry(edge.from.clone()).or_default() += 1;
+        *connection_counts.entry(edge.to.clone()).or_default() += 1;
+    }
+
+    let mut max_tokens = 1usize;
+    for path in gp.file_paths() {
+        if let Some(entry) = gp.get_file_entry(&path) {
+            max_tokens = max_tokens.max(entry.token_count);
+        }
+    }
+    let max_tokens = max_tokens as f64;
+    let max_conn = connection_counts.values().max().copied().unwrap_or(1) as f64;
+
+    candidates.sort_by(|a, b| {
+        let heat_a = compute_heat(&a.path, root, gp, &connection_counts, max_tokens, max_conn);
+        let heat_b = compute_heat(&b.path, root, gp, &connection_counts, max_tokens, max_conn);
+        let combined_a = a.score * 0.6 + heat_a * 0.4;
+        let combined_b = b.score * 0.6 + heat_b * 0.4;
+        combined_b
+            .partial_cmp(&combined_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+}
+
+fn compute_heat(
+    path: &str,
+    root: &str,
+    gp: &GraphProvider,
+    connections: &std::collections::HashMap<String, usize>,
+    max_tokens: f64,
+    max_conn: f64,
+) -> f64 {
+    let rel = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .trim_start_matches('/');
+
+    if let Some(entry) = gp.get_file_entry(rel) {
+        let conn = connections.get(rel).copied().unwrap_or(0);
+        let token_norm = entry.token_count as f64 / max_tokens;
+        let conn_norm = conn as f64 / max_conn;
+        token_norm * 0.4 + conn_norm * 0.6
+    } else {
+        0.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #1134: the "did this preload carry anything" answer travels with the
+    /// body. The guidance text is prose that has drifted before, so autonomy
+    /// must not have to recognise it.
+    #[test]
+    fn guidance_only_preloads_report_themselves_as_unusable() {
+        let mut cache = SessionCache::new();
+        let (body, usable) = handle(&mut cache, "   ", None, CrpMode::Off);
+        assert!(!usable, "an empty task carries no context: {body}");
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_string_lossy().to_string();
+        let (body, usable) = handle(&mut cache, "unrelated task", Some(&root), CrpMode::Off);
+        assert!(
+            !usable,
+            "a preload with no candidate files carries no context: {body}"
+        );
+    }
+
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+
+    fn project_file(root: &std::path::Path, name: &str, content: &str) {
+        std::fs::write(root.join(name), content).unwrap();
+    }
+
+    /// G01: the old preload read each candidate with `fs::read_to_string` and
+    /// stored those raw bytes in the session cache — a key `ctx_read` masks
+    /// was served from the cache afterwards, and a restricted source was
+    /// kept. The cache now receives the admitted text of a storable original
+    /// only.
+    #[test]
+    fn the_session_cache_is_seeded_with_admitted_storable_sources_only() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        project_file(project.path(), "clean.rs", "pub fn clean() {}\n");
+        project_file(
+            project.path(),
+            "keyed.rs",
+            &format!("pub fn connect() {{\n    let aws_key = \"{AWS_KEY}\";\n}}\n"),
+        );
+        project_file(
+            project.path(),
+            "marked.rs",
+            "// TOP SECRET\npub fn plan() {}\n",
+        );
+        let mut cache = SessionCache::new();
+        let mut remaining = lean_ctx::core::limits::max_read_bytes().saturating_mul(4);
+
+        // Control: a clean source is cached byte-identically, as before.
+        let clean = acquire("clean.rs", &root, project.path(), &mut remaining).unwrap();
+        seed_cache(&mut cache, &clean);
+        assert_eq!(
+            cache.get_full_content(&clean.path).as_deref(),
+            Some("pub fn clean() {}\n")
+        );
+
+        let keyed = acquire("keyed.rs", &root, project.path(), &mut remaining).unwrap();
+        seed_cache(&mut cache, &keyed);
+        let cached = cache
+            .get_full_content(&keyed.path)
+            .expect("the masked source is cached");
+        assert!(!cached.contains(AWS_KEY), "the cache holds a raw key");
+        assert!(cached.contains("pub fn connect"), "{cached}");
+
+        // A restricted original is delivered to its reader, never retained;
+        // a copy cached before is dropped.
+        let marked = acquire("marked.rs", &root, project.path(), &mut remaining).unwrap();
+        let _ = cache.store(&marked.path, "// TOP SECRET\npub fn plan() {}\n");
+        seed_cache(&mut cache, &marked);
+        assert!(marked.read.text().is_some_and(|text| text.contains("plan")));
+        assert!(cache.get_full_content(&marked.path).is_none());
+    }
+
+    #[test]
+    fn a_withheld_candidate_is_not_cached_and_loses_its_earlier_copy() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let policy = lean_ctx::core::policy::load(
+            "name = \"ctx-preload-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = lean_ctx::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let source = "CONFIDENTIAL\npub fn hidden_marker() {}\n";
+        project_file(project.path(), "plan.rs", source);
+        let mut cache = SessionCache::new();
+        let mut remaining = lean_ctx::core::limits::max_read_bytes();
+
+        let plan = acquire("plan.rs", &root, project.path(), &mut remaining).unwrap();
+        let _ = cache.store(&plan.path, source);
+        seed_cache(&mut cache, &plan);
+        let reason = plan.read.withheld().expect("blocked by the policy");
+        assert!(!reason.contains("hidden_marker"), "{reason}");
+        assert!(cache.get_full_content(&plan.path).is_none());
+    }
+
+    #[test]
+    fn extract_critical_lines_finds_keywords() {
+        let content = "fn main() {\n    let token = validate();\n    return Err(e);\n}\n";
+        let result = extract_critical_lines(content, &["validate".to_string()], 5);
+        assert!(!result.is_empty(), "`result` is empty");
+        assert!(result.iter().any(|(_, l)| l.contains("validate")));
+    }
+
+    #[test]
+    fn extract_critical_lines_prioritizes_errors() {
+        let content = "fn main() {\n    let x = 1;\n    return Err(\"bad\");\n    let token = validate();\n}\n";
+        let result = extract_critical_lines(content, &["validate".to_string()], 5);
+        assert!(result.len() >= 2);
+        assert!(result[0].1.contains("Err"), "errors should be first");
+    }
+
+    #[test]
+    fn extract_key_signatures_finds_pub() {
+        let content = "use std::io;\nfn private() {}\npub fn public_one() {}\npub struct Foo {}\n";
+        let sigs = extract_key_signatures(content, 10);
+        assert_eq!(sigs.len(), 2);
+        assert!(sigs[0].contains("pub fn public_one"));
+        assert!(sigs[1].contains("pub struct Foo"));
+    }
+
+    #[test]
+    fn extract_imports_works() {
+        let content = "use std::io;\nuse crate::core::cache;\nfn main() {}\n";
+        let imports = extract_imports(content);
+        assert_eq!(imports.len(), 2);
+        assert!(imports[0].contains("std::io"));
+    }
+}

@@ -52,8 +52,8 @@ STAGE_EVIDENCE = {
     },
     "upgrade": {
         "evidence_class": "rust-unit-test",
-        "harness_command": "cargo test --manifest-path rust/Cargo.toml --lib doctor::migrate::tests::contract_outcome_reports_frozen_set -- --exact",
-        "path": "rust/src/doctor/migrate.rs",
+        "harness_command": "cargo test --manifest-path rust/Cargo.toml -p lean-ctx --lib doctor::migrate::tests::contract_outcome_reports_frozen_set -- --exact",
+        "path": "rust/crates/lean-ctx/src/doctor/migrate.rs",
         "selector": "fn contract_outcome_reports_frozen_set()",
     },
     "rollback": {

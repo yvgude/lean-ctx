@@ -84,7 +84,7 @@ impl BM25Index {
     /// chunk the caller may not read adds no posting, document count, name
     /// or snippet. Carried with their postings and origins.
     #[must_use]
-    pub(crate) fn with_served_external_from(mut self, stored: &Self, root: &Path) -> Self {
+    pub fn with_served_external_from(mut self, stored: &Self, root: &Path) -> Self {
         if stored.provider_origins.is_empty() {
             return self;
         }

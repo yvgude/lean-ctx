@@ -1,34 +1,69 @@
-experimental = ["setup-scripts"]
+# SPDX-License-Identifier: Apache-2.0
+# cargo-nextest configuration (workspace root: rust/).
+#
+# Agents: cargo nextest run -p lean-ctx-engine --lib --locked
+# CI:     cargo nextest run --profile ci ...
+#
+# Why nextest for the lib suites: nearly every engine test takes a process-global
+# test lock (test_env_lock / isolated_data_dir, #[serial], TestPolicyOverride),
+# so libtest threads queue behind each other (engine lib: ~708 s wall, < 1 core).
+# nextest runs one process per test, so those in-process locks only serialize
+# within a test (engine lib: ~150 s). The integration binaries are a different
+# trade-off (see .github/workflows/ci.yml, #1206).
+experimental = ["wrapper-scripts"]
 
 [profile.default]
+# Leave headroom on shared build hosts; override with --test-threads.
 test-threads = -4
-# Some integration tests share global state (fixed /tmp paths, shared server
-# state) and are flaky under high parallelism — they pass in isolation. Retry
-# them up to twice so a transient race doesn't fail the whole run. This masks,
-# not fixes, the underlying non-hermeticity (tracked separately).
-retries = 2
+# Flakes must surface, not be masked. Known flakes get retries in [profile.ci].
+retries = 0
+# Report a test after 60 s, kill it after 5 periods (300 s). The slowest
+# engine test today is core::cache::tests::concurrent_cache_hits_are_lossless
+# (130-175 s at 16 threads: 16k durable event appends); it alone sets the
+# suite's wall time.
+slow-timeout = { period = "60s", terminate-after = 5 }
+leak-timeout = "500ms"
+fail-fast = false
 
-# Integration-test binaries that each use a FIXED temp path (e.g.
-# temp_dir()/lean_ctx_bazsi_test, …/lean_ctx_workflow_test) and remove_dir_all +
-# recreate it in setup. Their #[serial] marker only serializes within one process
-# — but nextest runs each test in its own process, so tests in the same binary
-# race on that shared path. Pinning them to a max-threads=1 group serializes them
-# for real, fixing the race at the source (retries below stays as a net for
-# load-induced flakiness like the in-memory http_server tests).
-[test-groups]
-serial-state = { max-threads = 1 }
+[scripts.wrapper.data-dir]
+command = { command-line = ".config/nextest-data-dir.sh", relative-to = "workspace-root" }
 
-[[profile.default.overrides]]
-filter = 'binary(bazsi_reported_scenarios) | binary(workflow_done_scenarios) | test(/^http_server::tests::/)'
-test-group = 'serial-state'
-
-[scripts.setup.tmpdir]
-command = ['bash', '.config/nextest-tmpdir.sh']
-
-# Apply config isolation to every test: pointing LEAN_CTX_DATA_DIR at an empty
-# dir is harmless for non-jail tests (it just isolates them from the host config
-# and keeps the real ~/.lean-ctx clean) and covers all jail-dependent tests
-# (core::pathjail, core::workspace_config, …) without enumerating them.
+# One empty LEAN_CTX_DATA_DIR per test process (see nextest-data-dir.sh).
 [[profile.default.scripts]]
 filter = 'all()'
-setup = 'tmpdir'
+run-wrapper = 'data-dir'
+
+# Tests that share state outside the per-test data dir (fixed ports, fixed
+# paths, cross-test ordering) go into a max-threads = 1 group here:
+#   [test-groups]
+#   serial-external = { max-threads = 1 }
+#   [[profile.default.overrides]]
+#   filter = 'test(/^suite::name::/)'
+#   test-group = 'serial-external'
+# The lean-ctx-server integration binaries below keep `#[serial]` tests on one
+# fixed temp directory; one process per test would race on it.
+[test-groups]
+serial-external = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(lean-ctx-server) & (binary(workflow_done_scenarios) | binary(bazsi_reported_scenarios))'
+test-group = 'serial-external'
+
+[profile.ci]
+retries = 0
+fail-fast = false
+slow-timeout = { period = "60s", terminate-after = 6 }
+
+[profile.ci.junit]
+path = "junit.xml"
+
+[[profile.ci.scripts]]
+filter = 'all()'
+run-wrapper = 'data-dir'
+
+# Known flakes get one retry in CI only; a retry that passes is reported as
+# FLAKY, never hidden. solution_integration flaked with the old shared data
+# dir (counts from other processes); it has not recurred with the per-test dir.
+[[profile.ci.overrides]]
+filter = 'test(/^suite::solution_integration::/)'
+retries = 1

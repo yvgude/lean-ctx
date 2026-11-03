@@ -463,7 +463,29 @@ const inProject = (cwd: string, root: string) => {
   const [c, r] = [normPath(cwd), normPath(root)]
   return c === r || c.startsWith(`${r}/`)
 }
-const newest = (snaps: ValueSnap[]) => [...snaps].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))[0]
+const newest = <S extends { updatedAt?: string }>(snaps: S[]) =>
+  [...snaps].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))[0]
+
+/**
+ * The session this Claude Code shows. Nearest ancestor first: the session whose
+ * server recorded it as `host_pid`. `host_pid` alone decides the conversation,
+ * as for the status line, so a Claude Code started outside the project (in
+ * $HOME) still shows the session its agent bound to a project (#2181). Among
+ * several sessions of one host, the one for the working directory's project
+ * wins, then the newest.
+ */
+export function pickSession<S extends { hostPid?: number; projectRoot: string; updatedAt?: string }>(
+  snaps: readonly S[],
+  hosts: readonly number[],
+  cwd: string,
+): S | undefined {
+  for (const host of hosts) {
+    const mine = snaps.filter(s => s.hostPid === host)
+    const snap = newest(mine.filter(s => inProject(cwd, s.projectRoot))) ?? newest(mine)
+    if (snap) return snap
+  }
+  return undefined
+}
 
 const countersOf = (s: ValueSnap | undefined) => ({
   sessionId: s?.sessionId,
@@ -580,17 +602,12 @@ async function refresh($: EngineInterface) {
     for (const e of entries) {
       try {
         const s = parseSnap(await $.fs.read(`${sessions}/${e.name}`))
-        if (s && inProject(where.cwd, s.projectRoot)) snaps.push(s)
+        if (s) snaps.push(s)
       } catch {
         // a snapshot mid-write or gone: skip it this round
       }
     }
-    // Nearest ancestor first: the session whose server recorded it as `host_pid`.
-    let snap: ValueSnap | undefined
-    for (const host of where.hosts) {
-      snap = newest(snaps.filter(s => s.hostPid === host))
-      if (snap) break
-    }
+    const snap = pickSession(snaps, where.hosts, where.cwd)
     if (!snap) {
       chain = undefined // a reconnect starts a new server: look again next time
       return
@@ -848,7 +865,9 @@ async function cockpitStart($: EngineInterface): Promise<void> {
   $.clock.every(REFRESH_MS, () => void refresh($).catch(() => {}))
   if (!panelEnabled) return
   // Fire-and-forget, and never an unhandled rejection: a surface that draws
-  // no panes (or none yet) simply leaves the sidebar closed.
+  // no panes (or none yet) simply leaves the sidebar closed. No `closeOnEscape`:
+  // that also closes on Escape at an idle, empty prompt, and a pane the person
+  // closed reopens unasked only from 144 columns, so the sidebar went missing.
   $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS }).catch(() => {})
   startProofClock($)
 }

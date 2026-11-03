@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// the join below blocks forever, wedging the caller *despite* the timeout
 /// having fired (GH #720: an orphaned `rg` kept a Cursor shell session dead
 /// for hours).
-pub(crate) struct LimitedProcessOutput {
+pub struct LimitedProcessOutput {
     pub output: Output,
     pub completeness: crate::core::context_admission::OutputCompleteness,
 }
@@ -32,7 +32,7 @@ pub(crate) fn wait_with_limits(
     wait_with_limits_captured(child, max_bytes, timeout, kill_group).output
 }
 
-pub(crate) fn wait_with_limits_captured(
+pub fn wait_with_limits_captured(
     mut child: Child,
     max_bytes: usize,
     timeout: std::time::Duration,
@@ -363,14 +363,15 @@ fn kill_child(child: &mut Child, own_group: Option<i32>) -> bool {
             .stderr(std::process::Stdio::null())
             .spawn()
         {
-            Ok(mut tree_kill) => match reap_within(&mut tree_kill, TREE_KILL_BUDGET) {
-                Some(status) => status.success(),
-                None => {
+            Ok(mut tree_kill) => {
+                if let Some(status) = reap_within(&mut tree_kill, TREE_KILL_BUDGET) {
+                    status.success()
+                } else {
                     let _ = tree_kill.kill();
                     let _ = reap_within(&mut tree_kill, TREE_KILL_BUDGET);
                     false
                 }
-            },
+            }
             Err(_) => false,
         }
     };
@@ -381,7 +382,7 @@ fn kill_child(child: &mut Child, own_group: Option<i32>) -> bool {
 }
 
 /// Reap a child that has exited or was just killed, within `budget`.
-pub(crate) fn reap_within(
+pub fn reap_within(
     child: &mut Child,
     budget: std::time::Duration,
 ) -> Option<std::process::ExitStatus> {

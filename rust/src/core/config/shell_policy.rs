@@ -53,11 +53,11 @@ enum Source {
     Pinned(Option<PathBuf>),
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 static TEST_PIN: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 fn source() -> Source {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     {
         if let Some(home) = TEST_PIN
             .lock()
@@ -80,9 +80,9 @@ fn source() -> Source {
 /// Test-only: resolve the policy as a release build does, with `home`
 /// standing in for the passwd/profile home. Hold the test env lock while the
 /// guard lives; dropping it restores the ambient resolution.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[must_use]
-pub(crate) fn pin_for_test(home: &Path) -> PinGuard {
+pub fn pin_for_test(home: &Path) -> PinGuard {
     assert!(
         crate::core::data_dir::holds_test_env_lock(),
         "pin_for_test requires test_env_lock()"
@@ -94,10 +94,10 @@ pub(crate) fn pin_for_test(home: &Path) -> PinGuard {
 }
 
 /// Restores the ambient policy source when dropped.
-#[cfg(test)]
-pub(crate) struct PinGuard(());
+#[cfg(any(test, feature = "test-support"))]
+pub struct PinGuard(());
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for PinGuard {
     fn drop(&mut self) {
         *TEST_PIN

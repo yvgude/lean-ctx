@@ -61,7 +61,7 @@ pub struct JournalRow {
 
 /// A change before it is numbered.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Change {
+pub struct Change {
     pub op: &'static str,
     pub category: String,
     pub key: String,
@@ -87,7 +87,7 @@ fn tracked(fact: &KnowledgeFact) -> Vec<serde_json::Value> {
 }
 
 /// The changes from `before` to `after`, in identity order.
-pub(crate) fn diff(before: &[KnowledgeFact], after: &[KnowledgeFact]) -> Vec<Change> {
+pub fn diff(before: &[KnowledgeFact], after: &[KnowledgeFact]) -> Vec<Change> {
     use std::collections::BTreeMap;
     let index = |facts: &[KnowledgeFact]| -> BTreeMap<(String, String, String), usize> {
         facts

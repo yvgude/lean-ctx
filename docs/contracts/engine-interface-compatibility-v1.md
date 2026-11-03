@@ -13,7 +13,7 @@
 
 ## 1. Scope and decision
 
-LeanCTX Engine is deterministic local context infrastructure. It executes
+LeanCTX | OSS is deterministic local context infrastructure. It executes
 source access, search, shaping, cache, recovery, integrity, and safety
 mechanisms. It does not decide an agent's task, scheduling, retries,
 permissions, business policy, or user experience.

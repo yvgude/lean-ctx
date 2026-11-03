@@ -6,7 +6,7 @@ mod tests {
         adaptive_bridge, ctx_read_dedup, dedup_wiring, envelope_wiring, evidence_wiring, health,
         kernel_config, list_tools_opt, startup,
     };
-    use crate::tools::search_kernel;
+    use crate::core::search_kernel;
 
     fn isolated() -> MutexGuard<'static, ()> {
         let guard = kernel_config::KERNEL_TEST_LOCK

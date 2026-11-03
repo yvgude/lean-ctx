@@ -18,7 +18,7 @@ use lean_ctx::core::rule_artifacts::{ARTIFACT_PATHS, SKILL_COPY_PATH, artifacts}
 use lean_ctx::core::rules_canonical::{RULES_VERSION, RulesFile};
 
 fn repo_root() -> PathBuf {
-    let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let rust_dir = crate::engine_dir().to_path_buf();
     rust_dir.parent().unwrap_or(&rust_dir).to_path_buf()
 }
 

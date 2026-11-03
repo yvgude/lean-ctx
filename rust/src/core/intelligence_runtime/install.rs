@@ -144,7 +144,7 @@ impl Store {
         })
     }
 
-    fn load(&self, expected: Option<&str>) -> Result<Selection> {
+    pub(crate) fn load(&self, expected: Option<&str>) -> Result<Selection> {
         let path = self.root.join(STATE);
         let state = match std::fs::symlink_metadata(&path) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Selection {

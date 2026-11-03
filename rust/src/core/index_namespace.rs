@@ -16,7 +16,7 @@ use md5::{Digest, Md5};
 /// Releases before 3.11.5 named the directory by the namespace alone, so such
 /// projects shared one index. Those directories are not reused: each project
 /// rebuilds its index once in its own partition.
-pub(crate) fn vectors_dir(project_root: &Path) -> PathBuf {
+pub fn vectors_dir(project_root: &Path) -> PathBuf {
     let partition = partition_hash(project_root);
     let legacy = legacy_vectors_hash(project_root);
 
@@ -35,7 +35,7 @@ pub(crate) fn vectors_dir(project_root: &Path) -> PathBuf {
 /// The project-portable namespace (repository identity, optionally the
 /// branch). It names a hosted index bundle so a restore on another device
 /// finds its project; it never names a local directory.
-pub(crate) fn namespace_hash(project_root: &Path) -> String {
+pub fn namespace_hash(project_root: &Path) -> String {
     let seed = namespace_seed(project_root);
     let mut hasher = Md5::new();
     hasher.update(seed.as_bytes());

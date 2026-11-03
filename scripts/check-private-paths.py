@@ -47,7 +47,12 @@ COMMUNITY_POLICY_PACKS = {"baseline", "strict-redaction", "open-source"}
 # (the licensed runtime, ee/intelligence). The engine keeps only the facts it
 # sends, the signed report format and its verification (core/compliance_evidence).
 PAID_PUBLIC_PREFIXES = ("rust/data/compliance/", "rust/src/core/compliance_report/")
-PAID_PUBLIC_FILES = {"rust/src/core/compliance.rs", "rust/src/cli/compliance_cmd.rs"}
+PAID_PUBLIC_FILES = {
+    "rust/src/core/compliance.rs",
+    "rust/src/cli/compliance_cmd.rs",
+    # The CLI moved to the composition root (crates/lean-ctx).
+    "rust/crates/lean-ctx/src/cli/compliance_cmd.rs",
+}
 # Control ids of the framework mappings (EU AI Act, ISO 42001, SOC 2).
 PAID_COMPLIANCE_CONTROLS = re.compile(r"\b(?:AIA-[0-9]|ISO-A\.[0-9]|SOC2-C{1,2}[0-9])")
 # Files that name the terms in order to forbid them.

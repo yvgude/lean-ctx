@@ -23,7 +23,7 @@ pub enum VariantDelivery {
 
 pub(crate) const DEFAULT_FULL_DEGRADATION_THRESHOLD: u32 = 2;
 
-pub(crate) fn full_degradation_threshold() -> u32 {
+pub fn full_degradation_threshold() -> u32 {
     std::env::var("LCTX_FULL_DEGRADATION_THRESHOLD")
         .ok()
         .and_then(|value| value.trim().parse().ok())

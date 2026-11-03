@@ -37,7 +37,7 @@ pub(crate) fn execution_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
     }
 }
 
-pub(crate) fn execution_provider_status() -> String {
+pub fn execution_provider_status() -> String {
     let policy = provider_policy_name();
     let compiled = compiled_gpu_provider_names();
     let compiled = if compiled.is_empty() {
@@ -53,7 +53,7 @@ pub(crate) fn execution_provider_status() -> String {
 /// GPU readiness for `lean-ctx embeddings status`: whether the CUDA provider
 /// and its CUDA/cuDNN libraries load (CUDA builds), or a hint when a GPU
 /// runtime is selected but this binary is CPU-only.
-pub(crate) fn gpu_runtime_status() -> Option<String> {
+pub fn gpu_runtime_status() -> Option<String> {
     #[cfg(feature = "ort-cuda")]
     {
         Some(match probe_cuda_runtime() {

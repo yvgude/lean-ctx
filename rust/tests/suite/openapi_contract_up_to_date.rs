@@ -3,7 +3,6 @@
 //! removing a public route must touch both, or this fails (EPIC 12.1).
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 
 /// Parse `(METHOD, /path)` pairs from the first markdown table under the
 /// `## Endpoints` heading. Skips the header/separator rows and the `/*`
@@ -47,7 +46,7 @@ fn documented_pairs(doc: &str) -> BTreeSet<(String, String)> {
 
 #[test]
 fn openapi_endpoints_match_contract_doc() {
-    let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let rust_dir = crate::engine_dir().to_path_buf();
     let repo_root = rust_dir.parent().unwrap_or(&rust_dir);
     let doc_path = repo_root.join("docs/contracts/http-mcp-contract-v1.md");
 

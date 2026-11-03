@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+# Agent hook handlers and installers of LeanCTX on top of LeanCTX | OSS. Split upward out of the Engine: it depends on the Engine library
+# (package lean-ctx-engine, lib `lean_ctx`); crates above it depend on it.
+# Published in lockstep with the Engine.
+[package]
+name = "lean-ctx-hooks"
+version = "3.12.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "Agent hook handlers and installers of LeanCTX on top of LeanCTX | OSS."
+repository = "https://github.com/yvgude/lean-ctx"
+homepage = "https://leanctx.com"
+readme = "../../README.md"
+keywords = ["lean-ctx", "llm", "mcp", "context"]
+categories = ["development-tools"]
+
+[lib]
+name = "lean_ctx_hooks"
+path = "src/lib.rs"
+
+[features]
+# Code-health notices need the engine's tree-sitter analysis.
+default = ["tree-sitter"]
+tree-sitter = ["lean-ctx-engine/tree-sitter"]
+no-jail = ["lean-ctx-engine/no-jail"]
+
+[dependencies]
+lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
+regex = "1.12"
+tracing = "0.1"
+dirs = "6.0"
+chrono = { version = "0.4", features = ["serde"] }
+toml_edit = "0.25"
+similar = "3.1"
+sha2 = "0.11"
+tempfile = "3.27"
+blake3 = "1.8"
+
+[dev-dependencies]
+# The Engine's test helpers for this crate's unit tests (see core::test_mode).
+lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false, features = ["test-support"] }
+
+
+[lints]
+workspace = true

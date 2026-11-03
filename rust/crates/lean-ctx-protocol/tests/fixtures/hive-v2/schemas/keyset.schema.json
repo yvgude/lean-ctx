@@ -103,7 +103,7 @@
       }
     },
     "keyset_v1": {
-      "description": "the C0 1.x key set, served unchanged to engines that send Hive-Protocol 1.x (byte copy of contracts/hive-v1/fixtures/keyset.response.json)",
+      "description": "the C0 1.x key set, served unchanged to instances that send Hive-Protocol 1.x (byte copy of contracts/hive-v1/fixtures/keyset.response.json)",
       "type": "object",
       "required": [
         "schema",
@@ -144,7 +144,7 @@
       }
     },
     "lease_envelope": {
-      "description": "lease envelope for 2.x engines: unchanged v1 envelope, kid = the key_id of the key set v3 key with purpose policy; signature = standard base64 Ed25519 over \"leanctx.hive.lease.v1\\n\" ‖ canonical_json(lease); lease.policy_signer_keys only in answers to Hive-Protocol below 2.1, always [] (the released 3.12.1 engine requires it, until MIN_ENGINE >= the C0 2.1 release)",
+      "description": "lease envelope for 2.x instances: unchanged v1 envelope, kid = the key_id of the key set v3 key with purpose policy; signature = standard base64 Ed25519 over \"leanctx.hive.lease.v1\\n\" ‖ canonical_json(lease); the lease has no policy_signer_keys",
       "type": "object",
       "required": [
         "schema",

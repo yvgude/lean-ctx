@@ -79,7 +79,7 @@ fn log_records_are_parsed() {
     assert_eq!(commits[1].body, "");
 }
 
-fn git(dir: &Path, args: &[&str]) {
+pub(crate) fn git(dir: &Path, args: &[&str]) {
     let status = std::process::Command::new("git")
         .arg("-C")
         .arg(dir)

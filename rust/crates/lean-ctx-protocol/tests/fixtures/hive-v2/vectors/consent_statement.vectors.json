@@ -15,7 +15,7 @@
   ],
   "rules": {
     "domain": "leanctx.hive.consent.v1\n",
-    "engine_accepts": "signature verifies, consent_id and subject_digest equal the local request, user_id = account.user_id of the enrolment, answered_at < expires_at",
+    "instance_accepts": "signature verifies, consent_id and subject_digest equal the local request, user_id = account.user_id of the enrolment, answered_at < expires_at",
     "signer": "Hive key of purpose consent (signing.vectors.json hive_consent)"
   }
 }

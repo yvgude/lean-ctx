@@ -8,7 +8,7 @@ pub(crate) struct ArtifactRegistry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ArtifactSpec {
+pub struct ArtifactSpec {
     pub name: String,
     pub path: String,
     pub description: String,
@@ -28,12 +28,12 @@ pub struct ResolvedArtifact {
 }
 
 #[derive(Debug, Default, Serialize)]
-pub(crate) struct ResolvedArtifacts {
+pub struct ResolvedArtifacts {
     pub artifacts: Vec<ResolvedArtifact>,
     pub warnings: Vec<String>,
 }
 
-pub(crate) fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
+pub fn load_resolved(project_root: &Path) -> ResolvedArtifacts {
     let mut out = ResolvedArtifacts::default();
     // Must go through the same canonicalizer as the jail below, otherwise the
     // two sides disagree on Windows (verbatim prefix, 8.3 short names, case)

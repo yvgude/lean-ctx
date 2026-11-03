@@ -5,7 +5,7 @@ use std::path::PathBuf;
 const MAX_DIARY_ENTRIES: usize = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct AgentDiary {
+pub struct AgentDiary {
     pub agent_id: String,
     pub agent_type: String,
     pub project_root: String,
@@ -15,7 +15,7 @@ pub(crate) struct AgentDiary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct DiaryEntry {
+pub struct DiaryEntry {
     pub entry_type: DiaryEntryType,
     pub content: String,
     pub context: Option<String>,
@@ -23,7 +23,7 @@ pub(crate) struct DiaryEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) enum DiaryEntryType {
+pub enum DiaryEntryType {
     Discovery,
     Decision,
     Blocker,
@@ -44,12 +44,7 @@ impl AgentDiary {
         }
     }
 
-    pub(crate) fn add_entry(
-        &mut self,
-        entry_type: DiaryEntryType,
-        content: &str,
-        context: Option<&str>,
-    ) {
+    pub fn add_entry(&mut self, entry_type: DiaryEntryType, content: &str, context: Option<&str>) {
         self.entries.push(DiaryEntry {
             entry_type,
             content: content.to_string(),
@@ -63,7 +58,7 @@ impl AgentDiary {
         self.updated_at = Utc::now();
     }
 
-    pub(crate) fn format_summary(&self) -> String {
+    pub fn format_summary(&self) -> String {
         if self.entries.is_empty() {
             return format!("Diary [{}]: empty", self.agent_id);
         }
@@ -94,7 +89,7 @@ impl AgentDiary {
 
     /// Persist into this diary's project partition. An agent id used in two
     /// projects keeps one diary per project.
-    pub(crate) fn save(&self) -> Result<(), String> {
+    pub fn save(&self) -> Result<(), String> {
         let dir = partition_dir(&self.project_root)?;
         // Same reasoning as #1619: name the path and the operation, or a
         // sandbox denial reads as an unattributable "Operation not permitted".
@@ -111,7 +106,7 @@ impl AgentDiary {
     /// directory) or one left in an older partition after the project's
     /// identity (remote, package name) changed is served to the project it
     /// records, and the next save moves it into the current partition.
-    pub(crate) fn load_for_project(agent_id: &str, project_root: &str) -> Option<Self> {
+    pub fn load_for_project(agent_id: &str, project_root: &str) -> Option<Self> {
         let file = format!("{}.json", sanitize_filename(agent_id));
         search_dirs(project_root)
             .iter()
@@ -121,13 +116,13 @@ impl AgentDiary {
             })
     }
 
-    pub(crate) fn load_or_create(agent_id: &str, agent_type: &str, project_root: &str) -> Self {
+    pub fn load_or_create(agent_id: &str, agent_type: &str, project_root: &str) -> Self {
         Self::load_for_project(agent_id, project_root)
             .unwrap_or_else(|| Self::new(agent_id, agent_type, project_root))
     }
 
     /// `(agent_id, entries, updated_at)` of every diary kept in `project_root`.
-    pub(crate) fn list_for_project(project_root: &str) -> Vec<(String, usize, DateTime<Utc>)> {
+    pub fn list_for_project(project_root: &str) -> Vec<(String, usize, DateTime<Utc>)> {
         Self::load_all_for_project(project_root)
             .into_iter()
             .map(|diary| (diary.agent_id, diary.entries.len(), diary.updated_at))

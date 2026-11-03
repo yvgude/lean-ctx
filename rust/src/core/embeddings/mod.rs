@@ -65,7 +65,7 @@ struct OnnxSession {
 
 /// Abstraction over different tokenizer backends.
 /// Built only by the ORT loader: empty without `embeddings`.
-enum TokenizerKind {
+pub enum TokenizerKind {
     #[cfg(feature = "embeddings")]
     WordPiece(WordPieceTokenizer),
     #[cfg(feature = "embeddings")]
@@ -89,6 +89,16 @@ enum GraphInputs {
         input_ids: String,
         offsets: String,
     },
+}
+
+/// Inputs per embedding mini-batch unless LEAN_CTX_EMBEDDING_BATCH_SIZE sets
+/// it: larger on an active GPU provider.
+fn default_embedding_batch_size() -> usize {
+    #[cfg(feature = "embeddings")]
+    if crate::core::ort_execution_providers::gpu_active() {
+        return 256;
+    }
+    64
 }
 
 /// Classify the graph topology from its input names (pure, unit-testable).
@@ -399,13 +409,7 @@ impl EmbeddingEngine {
             .ok()
             .and_then(|v| v.parse().ok())
             .filter(|&v| v >= 1)
-            .unwrap_or_else(|| {
-                #[cfg(feature = "embeddings")]
-                if crate::core::ort_execution_providers::gpu_active() {
-                    return 256;
-                }
-                64
-            });
+            .unwrap_or_else(default_embedding_batch_size);
         // Approximate tokenizer tensors plus transformer activations per input.
         // Saturating arithmetic keeps hostile custom-model dimensions harmless.
         let estimated_bytes_per_text = self
@@ -766,7 +770,7 @@ fn load_tokenizer(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<Toke
 }
 
 /// Tokenize text using whatever tokenizer backend is loaded.
-fn tokenize(tokenizer: &TokenizerKind, text: &str, max_len: usize) -> TokenizedInput {
+pub fn tokenize(tokenizer: &TokenizerKind, text: &str, max_len: usize) -> TokenizedInput {
     #[cfg(not(feature = "embeddings"))]
     let _ = (text, max_len);
     match *tokenizer {

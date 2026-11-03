@@ -7,7 +7,7 @@
 //! 1. **Universal markers** `<lc_safe>…</lc_safe>`: any compressor wraps its
 //!    work in [`compress_preserving`]; the content between the markers passes
 //!    through verbatim and the markers themselves are stripped from the output.
-//! 2. **`protect` token list** (`ctx_read` convenience): [`line_is_protected`]
+//! 2. **`protect` token list** (`ctx_read` convenience): `line_is_protected`
 //!    lets the line-based lossy filters (entropy / information-bottleneck)
 //!    force-keep every line that contains one of the given tokens.
 //!
@@ -23,7 +23,7 @@ pub(crate) const SAFE_CLOSE: &str = "</lc_safe>";
 /// Cheap pre-check: does the input contain at least one protect marker? Lets
 /// hot paths skip the span-splitting machinery entirely when nothing is marked.
 #[must_use]
-pub(crate) fn has_markers(s: &str) -> bool {
+pub fn has_markers(s: &str) -> bool {
     s.contains(SAFE_OPEN)
 }
 
@@ -36,7 +36,7 @@ pub(crate) fn has_markers(s: &str) -> bool {
 /// user tried to protect). When there are no markers the input is handed to `f`
 /// unchanged, so existing callers keep their exact byte output.
 #[must_use]
-pub(crate) fn compress_preserving<F: Fn(&str) -> String>(input: &str, f: F) -> String {
+pub fn compress_preserving<F: Fn(&str) -> String>(input: &str, f: F) -> String {
     if !has_markers(input) {
         return f(input);
     }
@@ -73,7 +73,7 @@ pub(crate) fn line_is_protected(line: &str, needles: &[String]) -> bool {
 /// set operation, so `["a","b"]` and `["b","a","a"]` must map to the same key
 /// (#498). Tokens are canonicalised (non-empty, sorted, deduped) before hashing.
 #[must_use]
-pub(crate) fn protect_fragment(needles: &[String]) -> String {
+pub fn protect_fragment(needles: &[String]) -> String {
     let mut canon: Vec<&str> = needles
         .iter()
         .map(String::as_str)

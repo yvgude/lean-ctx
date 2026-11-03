@@ -4,7 +4,7 @@
   "patch": [
     {
       "op": "replace",
-      "path": "/rows/0/key/engine/owner/ref",
+      "path": "/rows/0/key/instance/owner/ref",
       "value": "0b6f3c1e-4a2d-4e8f-9b1c-2d3e4f5a6b7c"
     }
   ],

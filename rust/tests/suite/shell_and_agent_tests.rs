@@ -10,6 +10,33 @@ fn lean_ctx_bin() -> String {
     env!("CARGO_BIN_EXE_lean-ctx").to_string()
 }
 
+/// A hermetic environment for `init` in `home`: lean-ctx's config, data,
+/// state and cache dirs and `CODEX_HOME` live inside it, so a config another
+/// test wrote (e.g. a `[governor] pinned` choice in a shared
+/// `LEAN_CTX_CONFIG_DIR`) cannot change which setup a host gets.
+fn hermetic_env(home: &std::path::Path) -> Vec<(String, String)> {
+    let at = |rel: &str| home.join(rel).to_string_lossy().into_owned();
+    let mut env = vec![
+        ("HOME".to_string(), home.to_string_lossy().into_owned()),
+        ("LEAN_CTX_CONFIG_DIR".to_string(), at(".lc/config")),
+        ("LEAN_CTX_DATA_DIR".to_string(), at(".lc/data")),
+        ("LEAN_CTX_STATE_DIR".to_string(), at(".lc/state")),
+        ("LEAN_CTX_CACHE_DIR".to_string(), at(".lc/cache")),
+        ("CODEX_HOME".to_string(), at(".codex")),
+    ];
+    if cfg!(windows) {
+        env.push((
+            "USERPROFILE".to_string(),
+            home.to_string_lossy().into_owned(),
+        ));
+    }
+    env
+}
+
+fn env_refs(env: &[(String, String)]) -> Vec<(&str, &str)> {
+    env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
+}
+
 fn run_with_env(
     args: &[&str],
     env_vars: &[(&str, &str)],
@@ -608,17 +635,36 @@ fn agent_init_codex_installs_compatible_hooks_and_instructions() {
     let codex_dir = home.join(".codex");
     std::fs::create_dir_all(&codex_dir).unwrap();
 
-    let home_str = home.to_string_lossy().to_string();
-    #[cfg(not(windows))]
-    let envs = vec![("HOME", home_str.as_str())];
-    #[cfg(windows)]
-    let envs = vec![
-        ("HOME", home_str.as_str()),
-        ("USERPROFILE", home_str.as_str()),
-    ];
+    let owned_env = hermetic_env(home);
+    let envs = env_refs(&owned_env);
 
+    // Without `--mode` a new Codex install gets the governor: enforcement
+    // hook, no MCP server, one rules channel (AGENTS.md, no LEAN-CTX.md).
+    let gov_tmp = tempfile::tempdir().expect("create tempdir");
+    let gov_codex = gov_tmp.path().join(".codex");
+    std::fs::create_dir_all(&gov_codex).unwrap();
+    let owned_gov_env = hermetic_env(gov_tmp.path());
+    let gov_envs = env_refs(&owned_gov_env);
     let (_stdout, stderr, code) =
-        run_with_env(&["init", "--agent", "codex", "--global"], &envs, None);
+        run_with_env(&["init", "--agent", "codex", "--global"], &gov_envs, None);
+    assert_eq!(code, 0, "codex governor init should succeed: {stderr}");
+    assert!(gov_codex.join("AGENTS.md").exists(), "governor rules block");
+    assert!(
+        !gov_codex.join("LEAN-CTX.md").exists(),
+        "the governor keeps one rules channel"
+    );
+    let gov_hooks = std::fs::read_to_string(gov_codex.join("hooks.json")).unwrap();
+    assert!(gov_hooks.contains("hook codex-enforce"), "{gov_hooks}");
+    let gov_config = std::fs::read_to_string(gov_codex.join("config.toml")).unwrap_or_default();
+    assert!(!gov_config.contains("mcp_servers.lean-ctx"), "{gov_config}");
+    assert!(gov_config.contains("hooks = true"), "{gov_config}");
+
+    // The standard setup (`--mode hybrid`).
+    let (_stdout, stderr, code) = run_with_env(
+        &["init", "--agent", "codex", "--global", "--mode", "hybrid"],
+        &envs,
+        None,
+    );
     assert_eq!(code, 0, "codex init should succeed: {stderr}");
 
     assert!(
@@ -700,17 +746,16 @@ fn agent_init_codex_migrates_legacy_lean_ctx_hook_but_keeps_other_hooks() {
     )
     .unwrap();
 
-    let home_str = home.to_string_lossy().to_string();
-    #[cfg(not(windows))]
-    let envs = vec![("HOME", home_str.as_str())];
-    #[cfg(windows)]
-    let envs = vec![
-        ("HOME", home_str.as_str()),
-        ("USERPROFILE", home_str.as_str()),
-    ];
+    let owned_env = hermetic_env(home);
+    let envs = env_refs(&owned_env);
 
-    let (_stdout, stderr, code) =
-        run_with_env(&["init", "--agent", "codex", "--global"], &envs, None);
+    // The standard (hybrid) setup's migration of the legacy hook; without
+    // `--mode` an existing Codex setup now switches to the governor.
+    let (_stdout, stderr, code) = run_with_env(
+        &["init", "--agent", "codex", "--global", "--mode", "hybrid"],
+        &envs,
+        None,
+    );
     assert_eq!(code, 0, "codex init should succeed: {stderr}");
 
     assert!(
@@ -755,14 +800,8 @@ fn agent_init_gemini_installs_antigravity_cli_plugin_hooks() {
     // `~/.gemini/settings.json` — so the plugin (not just MCP) must be written.
     let tmpdir = tempfile::tempdir().expect("create tempdir");
     let home = tmpdir.path();
-    let home_str = home.to_string_lossy().to_string();
-    #[cfg(not(windows))]
-    let envs = vec![("HOME", home_str.as_str())];
-    #[cfg(windows)]
-    let envs = vec![
-        ("HOME", home_str.as_str()),
-        ("USERPROFILE", home_str.as_str()),
-    ];
+    let owned_env = hermetic_env(home);
+    let envs = env_refs(&owned_env);
 
     let (_stdout, stderr, code) =
         run_with_env(&["init", "--agent", "gemini", "--global"], &envs, None);
@@ -913,7 +952,7 @@ fn codex_pretooluse_disabled_exits_cleanly() {
 
 #[test]
 fn generated_script_handles_windows_path() {
-    let script = lean_ctx::hooks::generate_rewrite_script("/c/Users/Jaina/bin/lean-ctx.exe");
+    let script = lean_ctx_hooks::hooks::generate_rewrite_script("/c/Users/Jaina/bin/lean-ctx.exe");
     assert!(
         script.contains("LEAN_CTX_BIN=\"/c/Users/Jaina/bin/lean-ctx.exe\""),
         "Windows bash path should be properly quoted in script"
@@ -922,7 +961,8 @@ fn generated_script_handles_windows_path() {
 
 #[test]
 fn generated_script_handles_path_with_spaces() {
-    let script = lean_ctx::hooks::generate_rewrite_script("/c/Program Files/lean-ctx/lean-ctx.exe");
+    let script =
+        lean_ctx_hooks::hooks::generate_rewrite_script("/c/Program Files/lean-ctx/lean-ctx.exe");
     assert!(
         script.contains("LEAN_CTX_BIN=\"/c/Program Files/lean-ctx/lean-ctx.exe\""),
         "path with spaces should be quoted"
@@ -932,7 +972,7 @@ fn generated_script_handles_path_with_spaces() {
 #[test]
 fn generated_compact_script_handles_windows_path() {
     let script =
-        lean_ctx::hooks::generate_compact_rewrite_script("/c/Users/Jaina/bin/lean-ctx.exe");
+        lean_ctx_hooks::hooks::generate_compact_rewrite_script("/c/Users/Jaina/bin/lean-ctx.exe");
     assert!(
         script.contains("LEAN_CTX_BIN=\"/c/Users/Jaina/bin/lean-ctx.exe\""),
         "compact script should handle Windows path"
@@ -941,7 +981,7 @@ fn generated_compact_script_handles_windows_path() {
 
 #[test]
 fn generated_script_skips_own_binary() {
-    let script = lean_ctx::hooks::generate_rewrite_script("lean-ctx");
+    let script = lean_ctx_hooks::hooks::generate_rewrite_script("lean-ctx");
     assert!(
         script.contains("lean-ctx ") || script.contains("$LEAN_CTX_BIN "),
         "script should reference lean-ctx for self-skip check"
@@ -954,7 +994,7 @@ fn bash_script_with_windows_binary_path_produces_valid_json() {
         return; // bash not available on Windows CI
     }
     let script =
-        lean_ctx::hooks::generate_compact_rewrite_script("/c/Users/Jaina/bin/lean-ctx.exe");
+        lean_ctx_hooks::hooks::generate_compact_rewrite_script("/c/Users/Jaina/bin/lean-ctx.exe");
     let script_path =
         std::env::temp_dir().join(format!("lean_ctx_winpath_test_{}.sh", std::process::id()));
     std::fs::write(&script_path, &script).expect("write script");
@@ -1037,7 +1077,7 @@ fn bash_hook_contains_pipe_guard() {
 
 #[test]
 fn generated_bash_hook_has_tty_check() {
-    let script = lean_ctx::hooks::generate_rewrite_script("lean-ctx");
+    let script = lean_ctx_hooks::hooks::generate_rewrite_script("lean-ctx");
     // The rewrite hook is for Claude Code / Gemini, not the shell alias.
     // The shell alias pipe guard is in cli.rs.
     assert!(

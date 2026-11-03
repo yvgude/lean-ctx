@@ -211,3 +211,27 @@ mod tests {
         drop(s2);
     }
 }
+
+/// The HTTP server (crates/lean-ctx) serves the daemon over this listener;
+/// the impl lives beside the type (orphan rule).
+#[cfg(feature = "http-server")]
+impl axum::serve::Listener for NamedPipeListener {
+    type Io = tokio::net::windows::named_pipe::NamedPipeServer;
+    type Addr = String;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            match self.accept_pipe().await {
+                Ok(pipe) => return (pipe, self.name().to_string()),
+                Err(e) => {
+                    tracing::error!("named pipe accept error: {e}");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<Self::Addr> {
+        Ok(self.name().to_string())
+    }
+}

@@ -1,6 +1,6 @@
 # LeanCTX — Context Gateway for AI Systems
 
-LeanCTX Engine selects context, applies supported access and content controls, and records observable context operations; compression is one capability within that path.
+LeanCTX | OSS selects context, applies supported access and content controls, and records observable context operations; compression is one capability within that path.
 
 ## Shared Context Gateway delivery skill
 
@@ -141,6 +141,38 @@ before it is written, and the check is part of the handover:
 - Another language only where the component does not need Rust and an ADR
   shows the benefit (the plan's §10 gates); signed, crypto and policy logic is
   never implemented twice.
+
+### Fast edit loop by crate
+
+Check only the package you edit; add `--all-targets` when tests changed.
+Per-area commands and timings: `rust/CRATE_MAP.md` ("Edit loop by area").
+
+- **Composition root** (`rust/crates/lean-ctx`, package `lean-ctx`, lib
+  `lean_ctx_cli`: cli, dashboard, doctor, http_server, setup, proxy_setup,
+  uninstall, status, token_report): `cargo check --locked -p lean-ctx` ≈ 2 s,
+  `cargo fast` ≈ 4 s (were 20 s and 28 s).
+- **Proxy** (`rust/crates/lean-ctx-proxy`, package and lib `lean-ctx-proxy` /
+  `lean_ctx_proxy`): `cargo check --locked -p lean-ctx-proxy` ≈ 3 s,
+  `cargo fast` ≈ 6 s (were 17 s and 27 s).
+- **Engine** (`rust/src`, package `lean-ctx-engine`, lib `lean_ctx`):
+  `cargo check --locked -p lean-ctx-engine` ≈ 19 s, `cargo fast` ≈ 28 s.
+  Leaf crates below it give no edit-time gain.
+- **MCP server + tools** (`rust/crates/lean-ctx-server`, lib `lean_ctx_server`):
+  `cargo check --locked -p lean-ctx-server`.
+- **Agent hooks** (`rust/crates/lean-ctx-hooks`): `cargo check --locked -p lean-ctx-hooks`.
+- Put new CLI, UI, setup and report code in `crates/lean-ctx`. It imports the
+  engine as `lean_ctx::…`; engine items it needs must be `pub`. Engine test
+  helpers use `#[cfg(any(test, feature = "test-support"))]`, enabled only as a
+  dev-dependency. New files need the SPDX header and a `PUBLISH_MANIFEST.toml`
+  `new_paths` entry.
+- Tests: use cargo-nextest for the engine suite
+  (`cargo nextest run -p lean-ctx-engine --lib --locked`, ~2.5 min instead of
+  ~12 min with libtest) and filter by module while iterating
+  (`… --lib --locked core::knowledge`). Composition root:
+  `cargo nextest run -p lean-ctx --lib --locked` (~20 s),
+  `cargo test -p lean-ctx --test main -- --quiet` (~25 s).
+- `scripts/check-crate-boundaries.py` (Python ≥ 3.11) fails on engine →
+  upper-crate edges. Handovers say "crate: X" or "monolith: reason".
 
 Published artifacts and release rehearsals keep the production `--release`
 profile. Do not use `cargo clean` in the normal edit/build loop. Use one shared

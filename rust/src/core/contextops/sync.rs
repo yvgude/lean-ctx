@@ -3,7 +3,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SyncReport {
+pub struct SyncReport {
     pub synced: Vec<String>,
     pub skipped: Vec<String>,
     pub errors: Vec<String>,

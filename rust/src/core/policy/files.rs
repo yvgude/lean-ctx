@@ -4,7 +4,7 @@
 use std::io::Read;
 use std::path::Path;
 
-pub(crate) const MAX_BYTES: u64 = 1024 * 1024;
+pub const MAX_BYTES: u64 = 1024 * 1024;
 
 /// The one larger input: the organization policy artifact. A signed
 /// version-two artifact carries a pack of up to 1 MiB JSON-escaped, so its
@@ -21,7 +21,7 @@ pub(crate) fn read(path: &Path, required: bool) -> Result<Option<String>, String
 
 /// A path-based write boundary cannot protect a pre-existing hardlink alias.
 /// Protected sessions therefore admit only single-link policy/trust files.
-pub(crate) fn read_protected(path: &Path, required: bool) -> Result<Option<String>, String> {
+pub fn read_protected(path: &Path, required: bool) -> Result<Option<String>, String> {
     read_with_link_check(path, required, true, MAX_BYTES)
 }
 

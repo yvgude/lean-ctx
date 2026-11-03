@@ -1,4 +1,4 @@
-use std::io::{self, IsTerminal, Read, Write};
+use std::io::{self, Read, Write};
 use std::process::{Command, Stdio};
 
 use crate::core::config;
@@ -73,7 +73,7 @@ pub(super) fn exec_buffered(
 
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     // #720: buffered path serves agents and pipes; interactive TTY stays intact.
-    let isolate = !io::stdin().is_terminal();
+    let isolate = !crate::core::host_env::stdin_is_terminal();
     if isolate {
         // #806: piped stdin lets callers legitimately pipe data.
         cmd.stdin(Stdio::piped());

@@ -16,7 +16,7 @@ impl std::fmt::Debug for GitLabConfig {
 }
 
 impl GitLabConfig {
-    pub(crate) fn from_session() -> Result<Self, String> {
+    pub fn from_session() -> Result<Self, String> {
         super::selected_gitlab::config().map_or_else(Self::from_env, Ok)
     }
 
@@ -45,8 +45,12 @@ impl GitLabConfig {
 
     pub fn api_url(&self, endpoint: &str) -> String {
         // Loopback API fixtures speak plain HTTP; production is HTTPS only.
-        #[cfg(test)]
-        if let Some(fixture) = self.host.strip_prefix("http://127.0.0.1:") {
+        // Also in the unit-test harnesses above the Engine (`test-support`),
+        // never in the `lean-ctx` binary.
+        #[cfg(any(test, feature = "test-support"))]
+        if crate::core::data_dir::sandboxed()
+            && let Some(fixture) = self.host.strip_prefix("http://127.0.0.1:")
+        {
             return format!("http://127.0.0.1:{fixture}/api/v4{endpoint}");
         }
         format!("https://{}/api/v4{}", self.host, endpoint)

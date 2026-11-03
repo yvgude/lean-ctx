@@ -68,7 +68,7 @@ impl FailureKind {
     }
 }
 
-const RULES: &[(FailureKind, &[&str])] = &[
+pub const RULES: &[(FailureKind, &[&str])] = &[
     (
         FailureKind::PolicyBlocked,
         &[

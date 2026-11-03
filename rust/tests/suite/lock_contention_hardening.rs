@@ -68,7 +68,7 @@ async fn bounded_write_under_contention_returns_none_not_panic() {
 
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write(&lock, "contention_test")
+        move || lean_ctx_server::server::bounded_lock::write(&lock, "contention_test")
     })
     .await
     .unwrap();
@@ -87,7 +87,7 @@ async fn bounded_read_under_write_contention_returns_none() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::read(&lock, "read_contention_test")
+        move || lean_ctx_server::server::bounded_lock::read(&lock, "read_contention_test")
     })
     .await
     .unwrap();
@@ -111,7 +111,8 @@ async fn parallel_bounded_reads_all_succeed() {
     for i in 0..8 {
         let lock = lock.clone();
         handles.push(tokio::task::spawn_blocking(move || {
-            let guard = lean_ctx::server::bounded_lock::read(&lock, &format!("parallel_read:{i}"));
+            let guard =
+                lean_ctx_server::server::bounded_lock::read(&lock, &format!("parallel_read:{i}"));
             guard.map(|g| g.len())
         }));
     }
@@ -135,7 +136,9 @@ async fn writer_blocks_readers_but_they_recover() {
     let lock_w = lock.clone();
     let (writer_ready_tx, writer_ready_rx) = tokio::sync::oneshot::channel();
     let writer = tokio::task::spawn_blocking(move || {
-        if let Some(mut guard) = lean_ctx::server::bounded_lock::write(&lock_w, "blocking_writer") {
+        if let Some(mut guard) =
+            lean_ctx_server::server::bounded_lock::write(&lock_w, "blocking_writer")
+        {
             *guard = 42;
             let _ = writer_ready_tx.send(());
             std::thread::sleep(Duration::from_secs(1));
@@ -149,7 +152,7 @@ async fn writer_blocks_readers_but_they_recover() {
     for i in 0..4 {
         let lock_r = lock.clone();
         readers.push(tokio::task::spawn_blocking(move || {
-            lean_ctx::server::bounded_lock::read(&lock_r, &format!("waiting_reader:{i}"))
+            lean_ctx_server::server::bounded_lock::read(&lock_r, &format!("waiting_reader:{i}"))
                 .map(|g| *g)
         }));
     }
@@ -473,7 +476,7 @@ async fn bounded_lock_respects_adaptive_timeout_in_degraded() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write(&lock, "degraded_test")
+        move || lean_ctx_server::server::bounded_lock::write(&lock, "degraded_test")
     })
     .await
     .unwrap();

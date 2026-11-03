@@ -5,10 +5,16 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::core::config::AutonomyConfig;
 
-#[cfg(test)]
-const SEARCH_REPEAT_IDLE_RESET: Duration = Duration::from_millis(500);
-#[cfg(not(test))]
-const SEARCH_REPEAT_IDLE_RESET: Duration = Duration::from_mins(5);
+/// How long a search key stays idle before its repeat count resets: five
+/// minutes, half a second in the unit-test harnesses (here, and above the
+/// Engine with `test-support`; never in the `lean-ctx` binary).
+fn search_repeat_idle_reset() -> Duration {
+    #[cfg(any(test, feature = "test-support"))]
+    if crate::core::data_dir::sandboxed() {
+        return Duration::from_millis(500);
+    }
+    Duration::from_mins(5)
+}
 
 /// Per-key stats for progressive search hints (`ctx_search` / `ctx_semantic_search`).
 #[derive(Debug, Clone)]
@@ -73,7 +79,7 @@ impl AutonomyState {
             call_count: 0,
             last_call: now,
         });
-        if hist.last_call.elapsed() >= SEARCH_REPEAT_IDLE_RESET {
+        if hist.last_call.elapsed() >= search_repeat_idle_reset() {
             hist.call_count = 0;
         }
         hist.call_count = hist.call_count.saturating_add(1);

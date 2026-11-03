@@ -43,15 +43,15 @@ pub enum HiveErrorCode {
     ScreeningRequired,
     /// 429 with `retry_after_s`.
     RateLimited,
-    /// 426 with `min_engine` (also in the `Hive-Min-Engine` header).
+    /// 426 with `min_instance` (also in the `Hive-Min-Instance` header).
     UpgradeRequired,
     /// 401 with `revocation` (C0 2.0 E12, §3.17.3): a workspace admin
     /// revoked this instance; every engine route answers it until a new
     /// connect. Never retried.
     InstanceRevoked,
     /// Release B quotas (Hive API §8.1): `resource`, `limit`, `used`,
-    /// `reset_at`. Counted resources (`registered_engines`,
-    /// `private_vaults`) answer 409 (`registered_engines` in Personal adds
+    /// `reset_at`. Counted resources (`registered_instances`,
+    /// `private_vaults`) answer 409 (`registered_instances` in Personal adds
     /// `cooldown_days`, `reset_at` = when a cooling-down slot frees);
     /// monthly ones (`transfer_bytes`, `bus_messages`) answer 429 with
     /// `retry_after_s` and `Retry-After` until `reset_at`. Never overage:
@@ -105,7 +105,7 @@ pub struct HiveErrorDetailV1 {
     /// `instance_limit`: seats in use; `quota_exceeded`: what is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub used: Option<u64>,
-    /// `quota_exceeded`: the quota (`registered_engines`, `private_vaults`,
+    /// `quota_exceeded`: the quota (`registered_instances`, `private_vaults`,
     /// `transfer_bytes`, `bus_messages`, or one a newer Hive adds).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource: Option<String>,
@@ -113,7 +113,7 @@ pub struct HiveErrorDetailV1 {
     /// by itself).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reset_at: Option<String>,
-    /// `quota_exceeded` `registered_engines`: the Personal slot cool-down.
+    /// `quota_exceeded` `registered_instances`: the Personal slot cool-down.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cooldown_days: Option<u32>,
     /// `policy_denied`: the dotted member path that refused.
@@ -133,7 +133,7 @@ pub struct HiveErrorDetailV1 {
     pub actual: Option<u64>,
     /// `upgrade_required`: lowest engine version accepted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_engine: Option<String>,
+    pub min_instance: Option<String>,
     /// `upload_disabled`: which upload the organization switched off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<HiveUploadKind>,
@@ -196,7 +196,7 @@ impl HiveErrorDetailV1 {
             action: None,
             expected: None,
             actual: None,
-            min_engine: None,
+            min_instance: None,
             kind: None,
             reason: None,
             field: None,
@@ -275,7 +275,7 @@ mod tests {
         assert_eq!(denied.error.level.as_deref(), Some("org"));
         assert_eq!(denied.error.action.as_deref(), Some("trust_boundary"));
         let slot: HiveErrorBody = serde_json::from_str(
-            r#"{"error":{"code":"quota_exceeded","message":"x","resource":"registered_engines","limit":3,"used":3,"reset_at":"2026-11-02T08:00:00Z","cooldown_days":7}}"#,
+            r#"{"error":{"code":"quota_exceeded","message":"x","resource":"registered_instances","limit":3,"used":3,"reset_at":"2026-11-02T08:00:00Z","cooldown_days":7}}"#,
         )
         .unwrap();
         assert_eq!(slot.error.cooldown_days, Some(7));

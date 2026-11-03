@@ -62,7 +62,7 @@ pub(super) async fn authorized_client(
 /// can print it and open a browser. The call returns after the browser has
 /// been redirected back with a code and the code has been exchanged, or after
 /// `timeout`.
-pub(crate) async fn authorize(
+pub async fn authorize(
     url: &str,
     scopes: &[String],
     timeout: Duration,
@@ -107,12 +107,12 @@ pub(crate) async fn authorize(
 }
 
 /// Whether credentials are stored for `url`.
-pub(crate) fn has_credentials(url: &str) -> Result<bool, String> {
+pub fn has_credentials(url: &str) -> Result<bool, String> {
     Ok(load(url)?.is_some_and(|stored| stored.token_response.is_some()))
 }
 
 /// Delete the stored credentials for `url`. Returns whether any were there.
-pub(crate) fn forget(url: &str) -> Result<bool, String> {
+pub fn forget(url: &str) -> Result<bool, String> {
     let path = credential_path(url)?;
     match std::fs::remove_file(&path) {
         Ok(()) => Ok(true),
@@ -122,7 +122,7 @@ pub(crate) fn forget(url: &str) -> Result<bool, String> {
 }
 
 /// Where the encryption key lives, for the CLI to tell the user.
-pub(crate) fn key_location() -> String {
+pub fn key_location() -> String {
     match keychain::NAME {
         Some(name) if keychain::load_or_create().is_ok() => name.to_string(),
         _ => store_dir().map_or_else(
@@ -277,7 +277,7 @@ fn credential_path(url: &str) -> Result<PathBuf, String> {
     Ok(store_dir()?.join(format!("{}.bin", &id[..24])))
 }
 
-fn load(url: &str) -> Result<Option<StoredCredentials>, String> {
+pub fn load(url: &str) -> Result<Option<StoredCredentials>, String> {
     let path = credential_path(url)?;
     let blob = match std::fs::read(&path) {
         Ok(blob) => blob,

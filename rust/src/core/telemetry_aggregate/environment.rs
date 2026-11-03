@@ -177,9 +177,9 @@ pub(super) fn root_is_overlay(mountinfo: &str) -> bool {
 pub(super) fn setup_profile() -> SetupProfileMetrics {
     let integration_mode = match crate::core::config::Config::load().hook_mode_override() {
         None => IntegrationMode::Default,
-        Some(crate::hooks::HookMode::Mcp) => IntegrationMode::Mcp,
-        Some(crate::hooks::HookMode::Hybrid) => IntegrationMode::Hybrid,
-        Some(crate::hooks::HookMode::Replace) => IntegrationMode::Replace,
+        Some(crate::core::hook_mode::HookMode::Mcp) => IntegrationMode::Mcp,
+        Some(crate::core::hook_mode::HookMode::Hybrid) => IntegrationMode::Hybrid,
+        Some(crate::core::hook_mode::HookMode::Replace) => IntegrationMode::Replace,
     };
     SetupProfileMetrics {
         integration_mode,
@@ -191,7 +191,7 @@ pub(super) fn setup_profile() -> SetupProfileMetrics {
 fn embeddings_state() -> EmbeddingsState {
     if crate::core::embeddings::EmbeddingEngine::is_available() {
         EmbeddingsState::Installed
-    } else if crate::tools::ctx_knowledge::embeddings_auto_download_allowed() {
+    } else if crate::core::embedding_access::embeddings_auto_download_allowed() {
         EmbeddingsState::NotInstalled
     } else {
         EmbeddingsState::Disabled

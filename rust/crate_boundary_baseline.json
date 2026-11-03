@@ -14,8 +14,8 @@
     "core::file_lock",
     "core::firewall",
     "core::hasher",
-    "core::hive",
     "core::home",
+    "core::hook_mode",
     "core::hybrid_search",
     "core::layout_pin",
     "core::mcp_catalog",
@@ -30,7 +30,6 @@
     "core::solution_tracker",
     "core::telemetry_consent",
     "core::workspace_trust",
-    "hooks",
     "rules_inject",
     "test_env"
   ],
@@ -40,51 +39,6 @@
   ],
   "core::grammar_usage": [
     "core::paths"
-  ],
-  "core::hive": [
-    "core::a2a",
-    "core::agent_lease",
-    "core::agents",
-    "core::archive",
-    "core::atomic_fs",
-    "core::audit_trail",
-    "core::config",
-    "core::context_admission",
-    "core::context_overhead",
-    "core::crypto_provider",
-    "core::dashboard_pro",
-    "core::data_dir",
-    "core::file_lock",
-    "core::gain",
-    "core::graph_index",
-    "core::host_coverage",
-    "core::http_client",
-    "core::import",
-    "core::input_filters",
-    "core::intelligence_runtime",
-    "core::knowledge",
-    "core::knowledge_relations",
-    "core::memory_policy",
-    "core::metering",
-    "core::pathjail",
-    "core::paths",
-    "core::pathutil",
-    "core::policy",
-    "core::project_hash",
-    "core::redaction",
-    "core::savings_ledger",
-    "core::secret_detection",
-    "core::secure_fs",
-    "core::security_events",
-    "core::sensitivity",
-    "core::session",
-    "core::stats",
-    "core::tokens",
-    "hooks",
-    "ipc",
-    "server",
-    "test_env",
-    "tools"
   ],
   "core::paths": [
     "core::data_dir",
@@ -105,5 +59,7 @@
   ],
   "core::signatures": [
     "core::grammar_usage"
-  ]
+  ],
+  "inbound:hook_handlers": [],
+  "inbound:hooks": []
 }

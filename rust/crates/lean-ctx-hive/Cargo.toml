@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: Apache-2.0
+# The LeanCTX | Hive connector: enrollment, bus, knowledge sync, tasks and policy on top of LeanCTX | OSS. Split upward out of the Engine: it depends on the Engine library
+# (package lean-ctx-engine, lib `lean_ctx`); crates above it depend on it.
+# Published in lockstep with the Engine.
+[package]
+name = "lean-ctx-hive"
+version = "3.12.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "The LeanCTX | Hive connector: enrollment, bus, knowledge sync, tasks and policy on top of LeanCTX | OSS."
+repository = "https://github.com/yvgude/lean-ctx"
+homepage = "https://leanctx.com"
+readme = "../../README.md"
+keywords = ["lean-ctx", "llm", "mcp", "context"]
+categories = ["development-tools"]
+
+[lib]
+name = "lean_ctx_hive"
+path = "src/lib.rs"
+
+[features]
+default = []
+http-server = ["lean-ctx-engine/http-server", "dep:tokio-tungstenite", "dep:rustls"]
+# Test helpers for crates above (the X5 guard support), dev-dependency only.
+test-support = ["lean-ctx-engine/test-support"]
+
+[dependencies]
+lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
+lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.1.0" }
+http = "1.4"
+tokio = { version = "1.52", features = [
+  "rt",
+  "rt-multi-thread",
+  "macros",
+  "io-std",
+  "io-util",
+  "net",
+  "sync",
+  "time",
+  "signal",
+  "process",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
+regex = "1.12"
+tracing = "0.1"
+futures = "0.3"
+dirs = "6.0"
+chrono = { version = "0.4", features = ["serde"] }
+toml = "1.1"
+rusqlite = { version = "0.39", features = ["bundled"] }
+ureq = { version = "3.3", features = ["platform-verifier"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = [
+  "connect",
+  "rustls-tls-webpki-roots",
+], optional = true }
+rustls = { version = "0.23.45", optional = true }
+base64 = "0.22"
+hex = "0.4"
+hmac = "0.13"
+sha2 = "0.11"
+hkdf = "0.13"
+chacha20poly1305 = "0.10"
+unicode-normalization = "0.1"
+ed25519-dalek = { version = "2.2", features = ["rand_core"] }
+zeroize = "1"
+getrandom = "0.4"
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3.27"
+libc = "0.2"
+blake3 = "1.8"
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8", "std"] }
+zstd = "0.14.3"
+fs2 = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "vendored"] }
+
+[dev-dependencies]
+# The Engine's test helpers for this crate's unit tests (see core::test_mode),
+# and its tree-sitter symbol anchors, which the capture tests resolve.
+lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false, features = ["test-support", "tree-sitter"] }
+jsonschema = { version = "0.46", default-features = false }
+
+[lints]
+workspace = true

@@ -206,7 +206,7 @@ fn format_display_includes_all_categories() {
 fn default_window_all_ides() {
     // If a detected model file exists on the system, default_window_for_client
     // returns that model's window for all clients regardless of the client name.
-    if lean_ctx::hook_handlers::load_detected_model().is_some() {
+    if lean_ctx_hooks::hook_handlers::load_detected_model().is_some() {
         let w = default_window_for_client("cursor");
         assert!(
             (128_000..=2_000_000).contains(&w),
@@ -231,7 +231,7 @@ fn default_window_all_ides() {
 
 #[test]
 fn introspect_anthropic_large_request() {
-    use lean_ctx::proxy::introspect::{Provider, analyze_request};
+    use lean_ctx_proxy::introspect::{Provider, analyze_request};
 
     let system = "a]".repeat(10_000);
     let user_text = "b".repeat(20_000);
@@ -283,7 +283,7 @@ fn introspect_anthropic_large_request() {
 
 #[test]
 fn introspect_openai_with_tool_results() {
-    use lean_ctx::proxy::introspect::{Provider, analyze_request};
+    use lean_ctx_proxy::introspect::{Provider, analyze_request};
 
     let body = serde_json::json!({
         "model": "gpt-4o",
@@ -308,7 +308,7 @@ fn introspect_openai_with_tool_results() {
 
 #[test]
 fn introspect_gemini_with_function_response() {
-    use lean_ctx::proxy::introspect::{Provider, analyze_request};
+    use lean_ctx_proxy::introspect::{Provider, analyze_request};
 
     let body = serde_json::json!({
         "systemInstruction": {
@@ -353,7 +353,7 @@ fn introspect_gemini_with_function_response() {
 
 #[test]
 fn introspect_state_concurrent_recording() {
-    use lean_ctx::proxy::introspect::{IntrospectState, Provider, analyze_request};
+    use lean_ctx_proxy::introspect::{IntrospectState, Provider, analyze_request};
     use std::sync::Arc;
 
     let state = Arc::new(IntrospectState::default());

@@ -3,5 +3,5 @@ mod process;
 mod timeout;
 
 pub use execution::*;
-pub(crate) use process::*;
-pub(crate) use timeout::*;
+pub use process::*;
+pub use timeout::*;

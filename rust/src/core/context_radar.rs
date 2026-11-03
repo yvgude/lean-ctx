@@ -404,7 +404,7 @@ fn fmt_num(n: usize) -> String {
 
 /// Default context window size based on client name.
 pub fn default_window_for_client(client: &str) -> usize {
-    if let Some((_model, window)) = crate::hook_handlers::load_detected_model() {
+    if let Some((_model, window)) = crate::core::host_state::load_detected_model() {
         return window;
     }
     client_default_window(client)
@@ -509,7 +509,7 @@ mod tests {
         // If a detected model file exists on the system, default_window_for_client
         // returns that model's window for all clients. Skip client-specific asserts
         // in that case and only verify the function returns a reasonable value.
-        if crate::hook_handlers::load_detected_model().is_some() {
+        if crate::core::host_state::load_detected_model().is_some() {
             let w = default_window_for_client("cursor");
             assert!(
                 (128_000..=2_000_000).contains(&w),

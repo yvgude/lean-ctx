@@ -8,7 +8,7 @@
 /// every hook writer and accepted verbatim by `doctor`'s staleness check —
 /// scoped to hook/agent artifacts only, never to launchd/systemd units
 /// (which do not expand shell variables).
-pub(crate) fn hook_binary_override() -> Option<String> {
+pub fn hook_binary_override() -> Option<String> {
     std::env::var("LEAN_CTX_HOOK_BINARY")
         .ok()
         .or_else(|| crate::core::config::Config::load().hook_binary.clone())
@@ -17,7 +17,7 @@ pub(crate) fn hook_binary_override() -> Option<String> {
 }
 
 /// Identify our hook executable without treating arbitrary user wrappers as owned.
-pub(crate) fn is_lean_ctx_hook_binary(binary: &str) -> bool {
+pub fn is_lean_ctx_hook_binary(binary: &str) -> bool {
     let binary = binary.trim().trim_matches(['\'', '"']);
     let name = binary.rsplit(['/', '\\']).next().unwrap_or(binary);
     matches!(
@@ -27,7 +27,29 @@ pub(crate) fn is_lean_ctx_hook_binary(binary: &str) -> bool {
         .is_some_and(|configured| configured.trim_matches(['\'', '"']) == binary)
 }
 
-pub(crate) fn resolve_portable_binary() -> String {
+/// True when `command` is `<our hook binary> hook <operation>`: the binary is
+/// ours ([`is_lean_ctx_hook_binary`]) and carries no shell metacharacters, so
+/// a user wrapper is never mistaken for a LeanCTX hook.
+pub fn is_lean_ctx_hook_command(command: &str, operation: &str) -> bool {
+    let Some((binary, action)) = command.trim().rsplit_once(" hook ") else {
+        return false;
+    };
+    let binary = binary.trim();
+    let quoted = binary.len() >= 2
+        && ((binary.starts_with('"') && binary.ends_with('"'))
+            || (binary.starts_with('\'') && binary.ends_with('\'')));
+    let binary_body = if quoted {
+        &binary[1..binary.len() - 1]
+    } else {
+        binary
+    };
+    action == operation
+        && !binary_body.contains(['\'', '"', '`'])
+        && (quoted || !binary_body.chars().any(char::is_whitespace))
+        && is_lean_ctx_hook_binary(binary)
+}
+
+pub fn resolve_portable_binary() -> String {
     let current = std::env::current_exe()
         .ok()
         .map(|p| p.to_string_lossy().into_owned());
@@ -53,7 +75,7 @@ const LAUNCHER_NAMES: &[&str] = if cfg!(windows) {
 };
 
 /// The directories on `PATH`, in lookup order.
-pub(crate) fn path_dirs() -> Vec<std::path::PathBuf> {
+pub fn path_dirs() -> Vec<std::path::PathBuf> {
     std::env::var_os("PATH")
         .map(|p| {
             std::env::split_paths(&p)
@@ -64,7 +86,7 @@ pub(crate) fn path_dirs() -> Vec<std::path::PathBuf> {
 }
 
 /// True when `dir` is one of `path_dirs`, directly or through a symlink.
-pub(crate) fn dir_on_path(dir: &std::path::Path, path_dirs: &[std::path::PathBuf]) -> bool {
+pub fn dir_on_path(dir: &std::path::Path, path_dirs: &[std::path::PathBuf]) -> bool {
     let canonical = std::fs::canonicalize(dir).ok();
     path_dirs
         .iter()
@@ -73,7 +95,7 @@ pub(crate) fn dir_on_path(dir: &std::path::Path, path_dirs: &[std::path::PathBuf
 
 /// Every `lean-ctx` launcher on `PATH`, in lookup order: the entry a shell
 /// runs for `lean-ctx`, followed by the ones it shadows.
-pub(crate) fn launchers_on_path(path_dirs: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+pub fn launchers_on_path(path_dirs: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
     path_dirs
         .iter()
         .filter_map(|d| {
@@ -95,7 +117,7 @@ pub(crate) fn launchers_on_path(path_dirs: &[std::path::PathBuf]) -> Vec<std::pa
 /// shim naming it, a mise/asdf shim owning its install tree — is embedded
 /// instead, so artifacts follow updates. An unrelated build on `PATH` must
 /// never replace an explicitly selected Pro/custom installation.
-pub(crate) fn stable_shell_binary(binary: &str) -> String {
+pub fn stable_shell_binary(binary: &str) -> String {
     stable_shell_binary_in(binary, &path_dirs())
 }
 
@@ -107,7 +129,7 @@ pub(crate) fn stable_shell_binary(binary: &str) -> String {
 /// removes, which left every configured MCP server pointing at a deleted
 /// binary. A stable launcher is used only when its target identity is verified
 /// (see [`stable_shell_binary`]); otherwise the exact binary is kept.
-pub(crate) fn resolve_agent_binary() -> String {
+pub fn resolve_agent_binary() -> String {
     stable_shell_binary(&resolve_portable_binary())
 }
 
@@ -198,7 +220,7 @@ fn is_cargo_profile_dir(dir: &std::path::Path) -> bool {
 /// generated artifacts). It reads the disk, so it says "no" for a path that
 /// does not exist; callers keep their name-based check next to it. A wrong
 /// "yes" needs cargo's own bookkeeping files next to an installed binary.
-pub(crate) fn in_cargo_output_dir(path: &std::path::Path) -> bool {
+pub fn in_cargo_output_dir(path: &std::path::Path) -> bool {
     let Some(dir) = path.parent() else {
         return false;
     };

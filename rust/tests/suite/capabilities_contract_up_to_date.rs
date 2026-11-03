@@ -3,14 +3,12 @@
 //! `server_capabilities::TOP_LEVEL_KEYS`. Keeps the doc honest as the payload
 //! evolves (EPIC 12.1).
 
-use std::path::PathBuf;
-
 const START: &str = "<!-- capabilities-top-level-keys -->";
 const END: &str = "<!-- /capabilities-top-level-keys -->";
 
 #[test]
 fn capabilities_doc_keys_match_code() {
-    let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let rust_dir = crate::engine_dir().to_path_buf();
     let repo_root = rust_dir.parent().unwrap_or(&rust_dir);
     let doc = repo_root.join("docs/contracts/capabilities-contract-v1.md");
 

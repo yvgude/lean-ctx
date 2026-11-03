@@ -22,20 +22,20 @@ const MAX_BYTES: usize = 4 * 1024 * 1024;
 /// The enum is an internal version dispatch only. It is serialized as the
 /// selected checkpoint object itself, never as an externally tagged enum.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum CanonicalCheckpoint {
+pub enum CanonicalCheckpoint {
     V2(ContextCheckpointV2),
     V3(ContextCheckpointV3),
 }
 
 impl CanonicalCheckpoint {
-    pub(crate) fn as_v2(&self) -> Option<&ContextCheckpointV2> {
+    pub fn as_v2(&self) -> Option<&ContextCheckpointV2> {
         match self {
             Self::V2(checkpoint) => Some(checkpoint),
             Self::V3(_) => None,
         }
     }
 
-    pub(crate) fn as_v3(&self) -> Option<&ContextCheckpointV3> {
+    pub fn as_v3(&self) -> Option<&ContextCheckpointV3> {
         match self {
             Self::V2(_) => None,
             Self::V3(checkpoint) => Some(checkpoint),
@@ -216,11 +216,11 @@ fn unicode_live_state_to_v1(
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct CanonicalSession {
+pub struct CanonicalSession {
     /// Exact committed primary bytes observed by this reader; not a wire field.
     #[serde(skip)]
     pub(crate) storage_digest: Option<Sha256Digest>,
-    pub(crate) checkpoint: CanonicalCheckpoint,
+    pub checkpoint: CanonicalCheckpoint,
     source_artifact_digest: Sha256Digest,
     local_device: ContextCheckpointDeviceIdV1,
     project_root: String,
@@ -414,7 +414,7 @@ impl CanonicalSession {
 
 impl SessionState {
     /// Export only a validated committed checkpoint, never a pending view or legacy projection.
-    pub(crate) fn canonical_checkpoint_for_export(
+    pub fn canonical_checkpoint_for_export(
         id: &str,
     ) -> Result<(CanonicalCheckpoint, String), String> {
         const NO_CHECKPOINT: &str =
@@ -430,7 +430,7 @@ impl SessionState {
         // finding out would change its identity. A finding bound to a source
         // that no longer admits therefore refuses the export.
         let every_finding_served =
-            crate::tools::admitted_sources::as_agent_acquisition(&root, || {
+            crate::core::admitted_sources::as_agent_acquisition(&root, || {
                 session
                     .findings
                     .iter()

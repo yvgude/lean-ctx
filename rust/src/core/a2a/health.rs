@@ -37,7 +37,7 @@ fn delivery_outcomes() -> std::sync::MutexGuard<'static, DeliveryOutcomes> {
 /// Records the outcome of one reserved capsule delivery: a success resets the
 /// consecutive-failure count, a failure (negative or lost acknowledgement)
 /// increments it.
-pub(crate) fn record_delivery(succeeded: bool) {
+pub fn record_delivery(succeeded: bool) {
     delivery_outcomes().record(succeeded, Utc::now());
 }
 
@@ -74,7 +74,7 @@ pub enum TransportReadiness {
 }
 
 /// Returns the process-local transport used by A2A health checks.
-pub(crate) fn local_transport() -> &'static LocalSignedCapsuleTransport {
+pub fn local_transport() -> &'static LocalSignedCapsuleTransport {
     LOCAL_TRANSPORT.get_or_init(LocalSignedCapsuleTransport::default)
 }
 

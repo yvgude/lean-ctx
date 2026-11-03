@@ -138,7 +138,7 @@ mod cache_delivery_flags {
 
 mod compaction_sync_scenarios {
     use super::*;
-    use lean_ctx::server::compaction_sync::{LAST_COMPACTION_TS, sync_if_compacted};
+    use lean_ctx_server::server::compaction_sync::{LAST_COMPACTION_TS, sync_if_compacted};
     use serial_test::serial;
     use std::io::Write;
     use std::sync::atomic::Ordering;
@@ -299,7 +299,7 @@ mod compaction_sync_scenarios {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod cache_policy {
-    use lean_ctx::server::compaction_sync::effective_cache_policy;
+    use lean_ctx_server::server::compaction_sync::effective_cache_policy;
 
     #[test]
     fn default_policy_is_aggressive() {
@@ -320,7 +320,7 @@ mod cache_policy {
 
 mod ctx_read_stub_behavior {
     use super::*;
-    use lean_ctx::tools::ctx_read::handle_with_task_resolved;
+    use lean_ctx_server::tools::ctx_read::handle_with_task_resolved;
     use std::io::Write;
     use tempfile::NamedTempFile;
 

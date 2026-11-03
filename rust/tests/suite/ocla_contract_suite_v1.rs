@@ -18,10 +18,10 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::fmt::Debug;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn fixture_path(directory: &str, name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    crate::engine_dir()
         .join("../tests/ocla_contract_suite/v1")
         .join(directory)
         .join(name)
@@ -33,7 +33,7 @@ fn fixture_body(directory: &str, name: &str) -> String {
 }
 
 fn conformance_fixture_path(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+    crate::engine_dir()
         .join("../tests/ocla_contract_suite/v1/conformance")
         .join(name)
 }
@@ -195,7 +195,7 @@ fn public_contract_schemas_match_fixture_expectations() {
         ("capability-manifest", "capability-manifest-v1.schema.json"),
         ("knowledge-object", "knowledge-object-v1.schema.json"),
     ];
-    let contract_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/contracts");
+    let contract_root = crate::engine_dir().join("../docs/contracts");
     for (directory, schema_name) in contracts {
         let schema: Value = serde_json::from_str(
             &fs::read_to_string(contract_root.join(schema_name))
@@ -311,7 +311,7 @@ fn evidence_ref_schema_and_rust_validation_stay_in_parity() {
             false,
         ),
     ];
-    let contract_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/contracts");
+    let contract_root = crate::engine_dir().join("../docs/contracts");
     for (directory, schema_name, evidence_field) in contracts {
         let schema: Value = serde_json::from_str(
             &fs::read_to_string(contract_root.join(schema_name))
@@ -364,7 +364,7 @@ fn evidence_ref_schema_and_rust_validation_stay_in_parity() {
 
 #[test]
 fn ocla_capability_schema_is_exact_canonical_mirror() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/contracts");
+    let root = crate::engine_dir().join("../docs/contracts");
     let canonical = fs::read(root.join("capability-manifest-v1.schema.json"))
         .expect("read canonical capability schema");
     let ocla = fs::read(root.join("ocla/ocla-capability-manifest-v1.schema.json"))
@@ -374,7 +374,7 @@ fn ocla_capability_schema_is_exact_canonical_mirror() {
 
 #[test]
 fn capability_schema_covers_all_phase4_wire_kinds() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/contracts");
+    let root = crate::engine_dir().join("../docs/contracts");
     let schema: Value = serde_json::from_slice(
         &fs::read(root.join("capability-manifest-v1.schema.json"))
             .expect("read canonical capability schema"),

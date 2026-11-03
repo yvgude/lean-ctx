@@ -9,7 +9,7 @@ mod cross_source;
 mod edge;
 pub mod file_catalog;
 mod meta;
-mod node;
+pub mod node;
 mod path_id;
 mod queries;
 mod schema;
@@ -104,6 +104,57 @@ pub const GRAPH_ENGINE_VERSION: u32 = 8;
 /// non-empty graph of another generation is rebuilt by this gate.
 pub fn engine_outdated(project_root: &str) -> bool {
     load_meta(project_root).is_none_or(|m| m.engine_version != GRAPH_ENGINE_VERSION)
+}
+
+/// How long a status read waits for a graph another process holds locked.
+const STORED_COUNTS_BUSY: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// Row counts of a persisted graph, read for status reporting only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StoredCounts {
+    /// Rows of the file catalog: the files the graph index holds.
+    pub files: u64,
+    /// Rows of the node table.
+    pub nodes: u64,
+}
+
+/// What `project_root`'s persisted graph holds, without serving anything
+/// from it (#2179). Status readers (`doctor`, `index status`) used to
+/// rebuild the whole index through the serving surface just to count its
+/// files — a source check per catalogued file — and to open the store
+/// through [`CodeGraph::open`], which migrates and creates schema. This
+/// opens the existing `graph.db` only (never creates it), reads no schema
+/// it would change (`query_only`), and waits at most `STORED_COUNTS_BUSY`
+/// for a lock another process holds: `None` when there is no graph, its
+/// schema is not this engine's, or it stays busy.
+pub fn stored_counts(project_root: &str) -> Option<StoredCounts> {
+    let db_path = graph_dir(project_root).join("graph.db");
+    if !db_path.is_file() {
+        return None;
+    }
+    stored_counts_at(&db_path, STORED_COUNTS_BUSY)
+}
+
+fn stored_counts_at(db_path: &Path, busy: std::time::Duration) -> Option<StoredCounts> {
+    use rusqlite::OpenFlags;
+    let conn = Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    conn.busy_timeout(busy).ok()?;
+    conn.execute_batch("PRAGMA query_only = ON;").ok()?;
+    let count = |table: &str| {
+        conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .ok()
+        .and_then(|n| u64::try_from(n).ok())
+    };
+    Some(StoredCounts {
+        files: count("file_catalog")?,
+        nodes: count("nodes")?,
+    })
 }
 
 /// Whether an open error is a transient SQLite lock (BUSY/LOCKED) that a brief
@@ -971,5 +1022,100 @@ mod tests {
             engine_outdated(root),
             "a graph of a newer engine must not be read by this one"
         );
+    }
+
+    fn catalog_entry(path: &str) -> FileCatalogEntry {
+        FileCatalogEntry {
+            path: path.to_string(),
+            hash: format!("hash-{path}"),
+            language: "rs".to_string(),
+            line_count: 1,
+            token_count: 1,
+            exports: Vec::new(),
+            summary: String::new(),
+        }
+    }
+
+    /// #2179: a status read counts what the store holds, never creates a
+    /// graph that is not there.
+    #[test]
+    fn stored_counts_reads_rows_and_never_creates_a_graph() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let proj = tempfile::tempdir().unwrap();
+        let root = proj.path().to_str().unwrap();
+
+        assert_eq!(stored_counts(root), None);
+        assert!(
+            !graph_dir(root).join("graph.db").exists(),
+            "a status read must not create graph.db"
+        );
+
+        let g = CodeGraph::open(root).unwrap();
+        g.upsert_file_catalog(&catalog_entry("src/a.rs")).unwrap();
+        g.upsert_file_catalog(&catalog_entry("src/b.rs")).unwrap();
+        g.upsert_node(&Node::file("src/a.rs")).unwrap();
+        drop(g);
+
+        assert_eq!(
+            stored_counts(root),
+            Some(StoredCounts { files: 2, nodes: 1 })
+        );
+    }
+
+    /// #2179: a graph another process holds locked is answered within the
+    /// busy bound instead of waited out.
+    #[test]
+    fn stored_counts_gives_up_on_a_held_graph_within_its_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            schema::initialize(&conn).unwrap();
+        }
+        assert_eq!(
+            stored_counts_at(&db, STORED_COUNTS_BUSY),
+            Some(StoredCounts { files: 0, nodes: 0 })
+        );
+
+        let holder = Connection::open(&db).unwrap();
+        holder
+            .execute_batch(
+                "PRAGMA locking_mode = EXCLUSIVE;
+                 BEGIN EXCLUSIVE;
+                 INSERT INTO paths(path) VALUES ('held');",
+            )
+            .unwrap();
+
+        let started = std::time::Instant::now();
+        let busy = std::time::Duration::from_millis(100);
+        assert_eq!(stored_counts_at(&db, busy), None, "a held graph is busy");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "waited {:?} on a held graph",
+            started.elapsed()
+        );
+        holder.execute_batch("ROLLBACK;").unwrap();
+    }
+
+    /// #2179: reading a graph of an older schema reports nothing and leaves
+    /// it as it is; `CodeGraph::open` would drop its tables.
+    #[test]
+    fn stored_counts_leaves_a_legacy_schema_untouched() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.db");
+        {
+            let conn = Connection::open(&db).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE nodes (id INTEGER PRIMARY KEY, file_path TEXT);
+                 INSERT INTO nodes(file_path) VALUES ('src/a.rs');",
+            )
+            .unwrap();
+        }
+        assert_eq!(stored_counts_at(&db, STORED_COUNTS_BUSY), None);
+        let conn = Connection::open(&db).unwrap();
+        let kept: i64 = conn
+            .query_row("SELECT count(*) FROM nodes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(kept, 1, "the legacy table must survive a status read");
     }
 }

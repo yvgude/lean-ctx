@@ -4,8 +4,8 @@
 //! (`~/.codex/sessions/**/rollout-*.jsonl`) recorded about their own model
 //! use. Only token counts, model ids, times and the session folder are
 //! parsed; message content is skipped by the deserializer and never kept.
-//! Bounded: files touched in the last 30 days, at most [`MAX_FILES`] files and
-//! the last [`MAX_FILE_BYTES`] of each; only sessions in the bound project.
+//! Bounded: files touched in the last 30 days, at most `MAX_FILES` files and
+//! the last `MAX_FILE_BYTES` of each; only sessions in the bound project.
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
@@ -368,9 +368,9 @@ pub(crate) fn collect_assigned(
 
 /// Per model, what the session files under `roots` recorded from the
 /// minute of `from` up to the minute of `to` (both included), from files
-/// touched in the last [`WINDOW_DAYS`]. A session under a deeper root of
+/// touched in the last `WINDOW_DAYS`. A session under a deeper root of
 /// `others` (another project nested inside) belongs to that one only.
-pub(crate) fn usage_between(
+pub fn usage_between(
     home: &Path,
     roots: &[String],
     others: &[String],

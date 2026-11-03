@@ -13,7 +13,7 @@
       "plan": "team",
       "seats": 10,
       "members": 6,
-      "engines_connected": 4
+      "instances_connected": 4
     }
   },
   "errors": [

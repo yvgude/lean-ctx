@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-pub(crate) fn looks_like_markdown(lines: &[&str]) -> bool {
+pub fn looks_like_markdown(lines: &[&str]) -> bool {
     let sample = lines.iter().take(120);
     let mut headings = 0u32;
     let mut codeish = 0u32;
@@ -24,7 +24,7 @@ pub(crate) fn looks_like_markdown(lines: &[&str]) -> bool {
     headings >= 3 && headings > codeish
 }
 
-pub(crate) fn keep_indices(lines: &[&str], keywords: &[String]) -> HashSet<usize> {
+pub fn keep_indices(lines: &[&str], keywords: &[String]) -> HashSet<usize> {
     let mut keep = HashSet::new();
     let mut in_fence = false;
     let mut lead = Lead::Waiting;
@@ -74,7 +74,7 @@ pub(crate) fn keep_indices(lines: &[&str], keywords: &[String]) -> HashSet<usize
     keep
 }
 
-pub(crate) fn is_heading_only_collapse(lines: &[&str], keep: &HashSet<usize>) -> bool {
+pub fn is_heading_only_collapse(lines: &[&str], keep: &HashSet<usize>) -> bool {
     !keep.is_empty()
         && keep.iter().all(|&i| {
             lines

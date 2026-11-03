@@ -21,7 +21,7 @@
   ],
   "rules": {
     "domain": "leanctx.hive.control.v1\n",
-    "receiver": "engines ignore a Control whose signature fails and count it sig_invalid",
+    "receiver": "instances ignore a Control whose signature fails and count it sig_invalid",
     "signer": "Hive key of purpose control (signing.vectors.json hive_control)",
     "signing_input": "domain ‖ canonical_json(Control without signature)"
   }

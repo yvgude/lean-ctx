@@ -126,7 +126,7 @@ impl Default for TaskAuthorityConfigV1 {
 
 impl TaskAuthorityConfigV1 {
     /// Load and fully validate the same bounded policy used by the receiver.
-    pub(crate) fn from_file(path: &Path) -> Result<Self, String> {
+    pub fn from_file(path: &Path) -> Result<Self, String> {
         Self::from_json(&policy_file::read_bounded(path)?)
     }
 

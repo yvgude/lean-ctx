@@ -158,7 +158,7 @@ impl DecisionLoop {
     }
 }
 
-pub(crate) fn protocol_profile(profile: &TaskProfileLocal) -> TaskProfileV1 {
+pub fn protocol_profile(profile: &TaskProfileLocal) -> TaskProfileV1 {
     TaskProfileV1 {
         primary_intent: profile.intent.clone(),
         task_class: profile.task_class.clone(),

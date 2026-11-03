@@ -4,10 +4,6 @@
 //!
 //! `GET /v1/policy/bundle` (`If-None-Match`) → [`PolicyBundleV1`] or 304.
 //!
-//! Hive-Protocol 2.1 has no TOML org policy: the bundle carries filter
-//! packs only. The `org_policy`, `unpin` and `policy_version` fields a Hive
-//! may still send are not part of [`PolicyBundleV1`] and are ignored.
-//!
 //! Filter packs carry their statement as base64 bytes, signed by a Hive
 //! key under [`FILTER_PACK_SIGNATURE_DOMAIN`].
 
@@ -244,26 +240,5 @@ impl PolicyBundleV1 {
             }
         }
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The org-policy fields a Hive may still send (`org_policy`, `unpin`,
-    /// `policy_version`) are ignored, whatever they hold.
-    #[test]
-    fn org_policy_fields_hive_still_sends_are_ignored() {
-        let sent: PolicyBundleV1 = serde_json::from_value(serde_json::json!({
-            "schema": POLICY_BUNDLE_SCHEMA, "policy_version": 3,
-            "org_policy": "not an envelope", "unpin": null, "filter_packs": [],
-        }))
-        .unwrap();
-        assert!(sent.validate().is_ok());
-        assert_eq!(
-            serde_json::to_value(&sent).unwrap(),
-            serde_json::json!({"schema": POLICY_BUNDLE_SCHEMA, "filter_packs": []})
-        );
     }
 }

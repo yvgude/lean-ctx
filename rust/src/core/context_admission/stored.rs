@@ -18,7 +18,7 @@
 //!
 //! Two weaker cases are explicit, never implied:
 //!
-//! - [`Lineage::CallerSupplied`]: a value an agent or user typed (a bus
+//! - `Lineage::CallerSupplied`: a value an agent or user typed (a bus
 //!   message, a manually recorded note). No source exists to re-authorize; the
 //!   copy is governed by content rules and by the project authority of its
 //!   writer. That is *not* a source-bound guarantee.
@@ -45,7 +45,7 @@ const MAX_SOURCES: usize = crate::core::archive::authority::MAX_SOURCES;
 /// One source a stored copy was derived from: the identity the rooted reader
 /// resolved, what it delivered, and how it was classified then.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SourceRef {
+pub struct SourceRef {
     /// Path as it was handed to the rooted reader (inside the bound project).
     path: String,
     /// Tool identity the read was authorized for (path jail, role rules).
@@ -116,10 +116,11 @@ impl SourceRef {
         root: &str,
         tool: &str,
         remaining: &mut usize,
-    ) -> Result<crate::tools::ctx_read::AdmittedRootedRead, Withheld> {
-        let read =
-            crate::tools::ctx_read::read_file_for_tool_rooted_admitted(path, root, tool, remaining)
-                .map_err(|_| Withheld::source_unavailable())?;
+    ) -> Result<crate::core::rooted_read::AdmittedRootedRead, Withheld> {
+        let read = crate::core::rooted_read::read_file_for_tool_rooted_admitted(
+            path, root, tool, remaining,
+        )
+        .map_err(|_| Withheld::source_unavailable())?;
         if !read.storable || !read.complete {
             return Err(Withheld::new(&[RESTRICTED_CODE]));
         }
@@ -175,7 +176,7 @@ impl Lineage {
 
 /// What a derived store keeps next to an admitted copy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StoredBinding {
+pub struct StoredBinding {
     version: u8,
     /// Who produced the copy (`agent:<id>`, `handoff`, `hook:<tool>`).
     origin: String,
@@ -248,7 +249,7 @@ impl StoredBinding {
 /// result delivering the item has an ordinary file lineage
 /// (`archive::delivered`). The one function for every store.
 ///
-/// Call it only after [`serve_stored`] returned `Ok` for this `binding`: that
+/// Call it only after `serve_stored` returned `Ok` for this `binding`: that
 /// is the stricter check (project authority, every source re-read, no
 /// classification raise, content rules). An item it refuses is not served
 /// and publishes nothing. What is published is then re-checked like any
@@ -262,7 +263,7 @@ impl StoredBinding {
 ///   and a result that contains it stays unknown. No source is ever inferred.
 ///
 /// Without a capture, or without protection in any layer, nothing happens.
-pub(crate) fn publish_served(binding: Option<&StoredBinding>) {
+pub fn publish_served(binding: Option<&StoredBinding>) {
     use crate::core::archive::authority::{self, ArchiveAuthority};
     if authority::current_capture().is_none() || !source_authority_required() {
         return;
@@ -315,7 +316,7 @@ fn policy_digest(policy: &AdmissionPolicy) -> String {
 /// authority to be written or served. Otherwise (Community, developer mode)
 /// originless copies keep the behaviour of the tee store.
 #[must_use]
-pub(crate) fn source_authority_required() -> bool {
+pub fn source_authority_required() -> bool {
     protected(&current_policy())
 }
 
@@ -444,5 +445,6 @@ fn admit_stored_text(text: &str, policy: &AdmissionPolicy) -> Result<String, Wit
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-pub(crate) mod lineage_support;
+#[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(not(test), allow(unused_imports))]
+pub mod lineage_support;

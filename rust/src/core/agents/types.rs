@@ -6,7 +6,7 @@ use crate::core::a2a::message::{MessagePriority, PrivacyLevel};
 use crate::ipc::process::ProcessIdentity;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct AgentRegistry {
+pub struct AgentRegistry {
     pub agents: Vec<AgentEntry>,
     pub scratchpad: Vec<ScratchpadEntry>,
     #[serde(default)]
@@ -17,7 +17,7 @@ pub(crate) struct AgentRegistry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) struct LogicalSessionPresence {
+pub struct LogicalSessionPresence {
     pub source: String,
     pub workspace: String,
     pub session_id: String,
@@ -26,7 +26,7 @@ pub(crate) struct LogicalSessionPresence {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct AgentEntry {
+pub struct AgentEntry {
     pub agent_id: String,
     pub agent_type: String,
     pub role: Option<String>,
@@ -63,7 +63,7 @@ pub(crate) struct AgentEntry {
 
 /// The host behind an MCP transport, from the `initialize` handshake.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct TransportClient {
+pub struct TransportClient {
     /// Identified host (`claude-code`, `codex`, `vscode`, …; `unknown` until
     /// the handshake arrives or when the name is not recognised).
     pub host: String,
@@ -88,7 +88,7 @@ impl TransportClient {
     }
 
     /// The transport for this process: its recorded MCP handshake, if any.
-    pub(crate) fn current() -> Self {
+    pub fn current() -> Self {
         crate::core::client_capabilities::handshake().map_or_else(Self::pending, |handshake| Self {
             host: handshake.host,
             name: Some(handshake.name),
@@ -103,7 +103,7 @@ impl TransportClient {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum RoleSource {
+pub enum RoleSource {
     /// Stated by the agent (`ctx_agent register`) or `LEAN_CTX_ROLE`.
     Declared,
     /// Filled in by LeanCTX: placeholder, client-name heuristic or default.
@@ -111,7 +111,7 @@ pub(crate) enum RoleSource {
 }
 
 impl RoleSource {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             RoleSource::Declared => "declared",
             RoleSource::Assumed => "assumed",
@@ -121,7 +121,7 @@ impl RoleSource {
 
 /// The session role stated through the environment (`LEAN_CTX_ROLE`, then
 /// `LEAN_CTX_AGENT_ROLE`). Anything else an MCP session gets is assumed.
-pub(crate) fn declared_session_role() -> Option<String> {
+pub fn declared_session_role() -> Option<String> {
     std::env::var("LEAN_CTX_ROLE")
         .or_else(|_| std::env::var("LEAN_CTX_AGENT_ROLE"))
         .ok()
@@ -130,7 +130,7 @@ pub(crate) fn declared_session_role() -> Option<String> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub(crate) enum AgentStatus {
+pub enum AgentStatus {
     Active,
     Idle,
     Finished,
@@ -173,7 +173,7 @@ pub struct ScratchpadEntry {
 /// on-disk shape of [`ScratchpadEntry`] is unchanged: `metadata` already is a
 /// string map, and an entry written before bindings existed simply has no
 /// such key (the legacy rule of `context_admission::stored` applies to it).
-pub(crate) const BINDING_METADATA_KEY: &str = "lean_ctx.binding";
+pub const BINDING_METADATA_KEY: &str = "lean_ctx.binding";
 
 /// Metadata keys under which a post made with an idempotency key carries that
 /// key and the digest of the request it was first posted with (AP07-G9). Like
@@ -206,7 +206,19 @@ pub(crate) fn request_id_conflict() -> String {
     "request_id was already used with a different request (idempotency conflict)".to_string()
 }
 
+/// Idempotency-key prefix of bus entries another machine's worker delivered
+/// through Hive (the relay writes them with it).
+pub const HIVE_INBOUND_KEY_PREFIX: &str = "hive:";
+
 impl ScratchpadEntry {
+    /// True for an entry another machine's worker delivered through Hive: it
+    /// is shown fenced as foreign data and never published again.
+    pub fn is_hive_inbound(&self) -> bool {
+        self.metadata
+            .get(REQUEST_ID_METADATA_KEY)
+            .is_some_and(|key| key.starts_with(HIVE_INBOUND_KEY_PREFIX))
+    }
+
     /// Admit `message` for the bus and return the text to store with its
     /// binding. A bus message is typed by an agent: its lineage is
     /// "caller-supplied, no source" — governed by content rules and the
@@ -243,7 +255,7 @@ impl ScratchpadEntry {
     /// every message the bus writes today — "unknown". A withheld message
     /// publishes nothing: the notice is fixed text.
     #[must_use]
-    pub(crate) fn served_message(&self, reader_project: Option<&str>) -> String {
+    pub fn served_message(&self, reader_project: Option<&str>) -> String {
         use crate::core::context_admission::stored;
         let binding: Option<stored::StoredBinding> = self
             .metadata
@@ -258,8 +270,8 @@ impl ScratchpadEntry {
         };
         // X5: a message another instance delivered through Hive is data,
         // its sender and kind included (they came with it, M6).
-        if crate::core::hive::bus::relay::is_inbound(self) {
-            use crate::core::hive::untrusted::{UntrustedKind, wrap};
+        if self.is_hive_inbound() {
+            use crate::core::untrusted::{UntrustedKind, wrap};
             return wrap(
                 UntrustedKind::BusMessage,
                 "hive bus",

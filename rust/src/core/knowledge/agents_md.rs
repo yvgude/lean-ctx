@@ -105,11 +105,11 @@ pub fn render_with_hive(knowledge: &ProjectKnowledge, include_hive: bool) -> Str
             })
             .filter_map(|fact| {
                 let origin = fact.hive_origin()?;
-                let text = crate::core::hive::untrusted::body_of(&fact.value)
+                let text = crate::core::untrusted::body_of(&fact.value)
                     .unwrap_or_else(|| fact.value.clone());
                 let text = one_line(&text);
                 // `hive-repo:@ns/name@r4` → `@ns/name r4`.
-                let source = crate::core::hive::knowledge::learn::import_tag_source(origin)
+                let source = super::import_tag::import_tag_source(origin)
                     .and_then(|rest| rest.rsplit_once("@r"))
                     .map_or_else(
                         || origin.to_string(),
