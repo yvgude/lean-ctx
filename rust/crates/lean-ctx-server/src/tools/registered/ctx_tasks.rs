@@ -133,6 +133,7 @@ impl McpTool for CtxTasksTool {
         };
         // What Hive answered to this caller's queued changes comes first.
         let caller = cache::caller(agent.as_deref().unwrap_or(&session_id));
+        let earlier = lean_ctx_hive::background::earlier(&caller);
         let owned_root = root.to_path_buf();
         let answer = match action.as_str() {
             "list" => {
@@ -292,8 +293,7 @@ impl McpTool for CtxTasksTool {
                 ));
             }
         };
-        Ok(ToolOutput::simple(lean_ctx_hive::background::with_answers(
-            &caller,
+        Ok(ToolOutput::simple(earlier.present(
             answer.unwrap_or_else(|error| format!("Hive tasks: {error}")),
         )))
     }

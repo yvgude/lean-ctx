@@ -448,18 +448,42 @@ jobs:
         # parallelism (the serial `--test-threads=1` was an env-race legacy of
         # v3.3.5, fixed at the source) and 64 proptest cases. Serial, it held
         # every macOS release build for about 90 minutes.
+        # ci.yml already ran this suite on the tagged commit. A test that fails
+        # here is run once more on its own: a failure that repeats stays red,
+        # one that passes alone is named as a flake in the job summary.
         env:
           PROPTEST_CASES: 64
           CARGO_PROFILE_TEST_DEBUG: line-tables-only
         run: |
           umask 077
-          if [[ "${{ matrix.jemalloc }}" == "true" ]]; then
-            JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
-              CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
-              cargo test --lib --target x86_64-pc-windows-gnu --all-features --locked
-          else
-            cargo test --lib --all-features --locked
+          lib_tests() {
+            if [[ "${{ matrix.jemalloc }}" == "true" ]]; then
+              JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
+                CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
+                cargo test --lib --target x86_64-pc-windows-gnu --all-features --locked "$@"
+            else
+              cargo test --lib --all-features --locked "$@"
+            fi
+          }
+          log="${RUNNER_TEMP}/lib-tests.log"
+          if lib_tests 2>&1 | tee "$log"; [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+            exit 0
           fi
+          # libtest lists the failed tests, indented, after a bare "failures:".
+          # (No mapfile: the macOS runners' bash is 3.2.)
+          failed=()
+          while IFS= read -r name; do failed+=("$name"); done < <(
+            awk '/^failures:$/{f=1; next} f && /^    [^ ]/{print $1; next} f{f=0}' "$log" | sort -u)
+          if [[ ${#failed[@]} -eq 0 || ${#failed[@]} -gt 5 ]]; then
+            echo "::error::${#failed[@]} failed tests could not be retried one by one"
+            exit 1
+          fi
+          lib_tests -- --exact "${failed[@]}"
+          {
+            echo "### Flaky lib tests (passed when run again alone)"
+            printf -- '- `%s`\n' "${failed[@]}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          printf '::warning::flaky lib test passed on retry: %s\n' "${failed[@]}"
 
       - name: Setup Zig
         if: matrix.zig == true

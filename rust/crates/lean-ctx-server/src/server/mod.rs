@@ -137,6 +137,9 @@ mod tests {
 
     #[test]
     fn home_dir_detected_as_broad_root() {
+        // HOME is read here and again inside the check: another test may move
+        // it in between (macOS release prebuild, 3.12.1).
+        let _env = lean_ctx::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             assert!(is_broad_or_unsafe_root(&home));
         }
@@ -224,6 +227,9 @@ mod tests {
 
     #[test]
     fn is_broad_or_unsafe_root_rejects_home() {
+        // HOME is read here and again inside the check: another test may move
+        // it in between (macOS release prebuild, 3.12.1).
+        let _env = lean_ctx::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             assert!(is_broad_or_unsafe_root(&home));
         }
@@ -264,6 +270,9 @@ mod tests {
 
     #[test]
     fn is_broad_or_unsafe_root_allows_home_subdirs() {
+        // HOME is read here and again inside the check: another test may move
+        // it in between (macOS release prebuild, 3.12.1).
+        let _env = lean_ctx::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             let subdir = home.join("projects").join("my-app");
             assert!(!is_broad_or_unsafe_root(&subdir));

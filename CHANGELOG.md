@@ -277,11 +277,11 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   file under the LeanCTX state directory that the stub names, so the model can `cat` it back.
   The cut advances in steps of 16 messages, so the prompt cache is rewritten once per step,
   not every turn; your own prompts send the same shortened history, so they read the cache
-  instead of writing it again. Off by default:
-  measured on Claude Code with Haiku 5.5 it cut cost to x0.67 against native, but solved 9 of
-  12 long tasks against 12 of 12, because the model did not read back facts from elided early
-  outputs. Turn it on with `[proxy] long_session_elide = true` or
-  `LEAN_CTX_PROXY_LONG_SESSION_ELIDE=on`.
+  instead of writing it again. Measured on
+  Claude Code with Haiku 5.5 over long tasks: cost x0.69 against native with 12 of 12 solved
+  (native 11 of 12) in the control run; an earlier run solved 9 of 12 against 12 of 12, when
+  the model answered without reading back an elided early output. On by default;
+  `[proxy] long_session_elide = false` or `LEAN_CTX_PROXY_LONG_SESSION_ELIDE=off` turns it off.
 - **`lean-ctx hive docs import --markdown <file|dir>…` turns docs into Hive pages.** One
   page per markdown file, one section per heading, each anchored to its file; running it
   again revises only the sections that changed. `--dry-run` shows what would be written.
@@ -850,6 +850,10 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   both are set. Earliest removal 3.15.0 (`rust/data/DEPRECATIONS.toml`).
 
 ### Fixed
+
+- **A flaky lib test no longer blocks a release build.** The release workflow runs a test that
+  failed once more on its own; a failure that repeats still fails the build, and one that
+  passes alone is named in the job summary.
 
 - **A Hive lease renews after the keyset v3 rotation.** An instance verified a renewed lease
   only against the key set it enrolled with, so a lease signed with the v3 policy key failed

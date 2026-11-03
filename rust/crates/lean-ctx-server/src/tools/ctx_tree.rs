@@ -339,6 +339,9 @@ mod tests {
 
     #[test]
     fn tree_refuses_home_directory_root() {
+        // HOME is read here and again inside the check: another test may move
+        // it in between (macOS release prebuild, 3.12.1).
+        let _env = lean_ctx::core::data_dir::test_env_lock();
         // #356 class: never walk the whole home dir (macOS TCC prompts).
         let home = dirs::home_dir().expect("home dir in test env");
         let (output, tokens) = handle(home.to_string_lossy().as_ref(), 2, false, true);
