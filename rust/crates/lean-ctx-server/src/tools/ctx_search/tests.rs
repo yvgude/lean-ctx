@@ -811,6 +811,9 @@ fn invalid_exclude_pattern_is_ignored_not_fatal() {
 
 #[test]
 fn search_refuses_home_directory_root() {
+    // HOME is read here and again inside the check: another test may move
+    // it in between (macOS release prebuild, 3.12.1).
+    let _env = lean_ctx::core::data_dir::test_env_lock();
     let _no_policy = no_policy();
     // #356 class: the MCP server often runs with cwd == $HOME; a defaulted
     // `path` must never walk the whole home dir (macOS TCC prompts).

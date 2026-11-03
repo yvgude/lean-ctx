@@ -345,6 +345,9 @@ pub fn handle(
     filename: Option<&str>,
     request_id: Option<&str>,
 ) -> String {
+    let earlier = current_agent_id.filter(|_| action != "read").map(|agent| {
+        lean_ctx_hive::background::earlier(&lean_ctx_hive::bus::leases::caller(agent))
+    });
     let answer = handle_action(
         action,
         agent_type,
@@ -364,12 +367,9 @@ pub fn handle(
         filename,
         request_id,
     );
-    match current_agent_id {
-        Some(agent) if action != "read" => lean_ctx_hive::background::with_answers(
-            &lean_ctx_hive::bus::leases::caller(agent),
-            answer,
-        ),
-        _ => answer,
+    match earlier {
+        Some(earlier) => earlier.present(answer),
+        None => answer,
     }
 }
 

@@ -851,6 +851,10 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Fixed
 
+- **A flaky lib test no longer blocks a release build.** The release workflow runs a test that
+  failed once more on its own; a failure that repeats still fails the build, and one that
+  passes alone is named in the job summary.
+
 - **A Hive lease renews after the keyset v3 rotation.** An instance verified a renewed lease
   only against the key set it enrolled with, so a lease signed with the v3 policy key failed
   and the instance fell into its grace period a day after enrolling. A failed renewal also

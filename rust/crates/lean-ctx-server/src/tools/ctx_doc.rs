@@ -41,8 +41,9 @@ edit slug find replace | note slug content | confirm slug (re-pin after checking
 
 /// Runs one call for the checkout at `root`.
 pub fn handle(root: &str, args: &Args<'_>) -> String {
+    let earlier = lean_ctx_hive::background::earlier("ctx_doc");
     match run(root, args) {
-        Ok(out) => lean_ctx_hive::background::with_answers("ctx_doc", out),
+        Ok(out) => earlier.present(out),
         Err(e) => format!("ctx_doc: {e}"),
     }
 }

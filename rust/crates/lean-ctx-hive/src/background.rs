@@ -9,7 +9,7 @@
 //! same caller (a lease release after its acquire, an update after a
 //! claim) always goes out after the earlier one. What Hive answered is kept
 //! per caller and put in front of that caller's next answer of the same
-//! tool ([`with_answers`]); nothing is presented as confirmed before Hive
+//! tool ([`earlier`]); nothing is presented as confirmed before Hive
 //! confirmed it.
 //!
 //! The queue lives in this process: requests of a process that ends before
@@ -119,19 +119,59 @@ pub fn take(caller: &str) -> Vec<String> {
 
 /// `text` with the answers waiting for `caller` in front of it.
 pub fn with_answers(caller: &str, text: String) -> String {
-    let answers = take(caller);
-    if answers.is_empty() {
-        return text;
+    earlier(caller).present(text)
+}
+
+/// The answers waiting for `caller` as a call starts, taken before the call
+/// queues anything: an answer to this call's own request, however fast Hive
+/// answers it, always comes with the next call (CI #2183). Dropped without
+/// [`Earlier::present`] (a call that failed early), they wait again.
+pub fn earlier(caller: &str) -> Earlier {
+    Earlier {
+        caller: caller.to_string(),
+        answers: take(caller),
     }
-    let mut out = String::from("Hive answered your earlier requests:\n");
-    for answer in answers {
-        out.push_str("- ");
-        out.push_str(&answer);
+}
+
+/// See [`earlier`].
+pub struct Earlier {
+    caller: String,
+    answers: Vec<String>,
+}
+
+impl Earlier {
+    /// `text` with these answers in front of it.
+    pub fn present(mut self, text: String) -> String {
+        let answers = std::mem::take(&mut self.answers);
+        if answers.is_empty() {
+            return text;
+        }
+        let mut out = String::from("Hive answered your earlier requests:\n");
+        for answer in answers {
+            out.push_str("- ");
+            out.push_str(&answer);
+            out.push('\n');
+        }
         out.push('\n');
+        out.push_str(&text);
+        out
     }
-    out.push('\n');
-    out.push_str(&text);
-    out
+}
+
+impl Drop for Earlier {
+    fn drop(&mut self) {
+        if self.answers.is_empty() {
+            return;
+        }
+        let answers = std::mem::take(&mut self.answers);
+        with_queue(|q| {
+            let waiting = q
+                .answers
+                .entry(std::mem::take(&mut self.caller))
+                .or_default();
+            waiting.splice(0..0, answers);
+        });
+    }
 }
 
 /// Wait until every queued request has run (tests and CLI commands that
@@ -179,6 +219,30 @@ mod tests {
             "Hive answered your earlier requests:\n- answer 0\n- answer 1\n- answer 2\n\nnow"
         );
         assert_eq!(with_answers(caller, "again".into()), "again", "shown once");
+    }
+
+    #[test]
+    fn an_answer_during_the_call_comes_with_the_next_one() {
+        let caller = "test:during_the_call";
+        let call = earlier(caller);
+        // Hive answers before the call returns (a refused connection).
+        submit(caller, || Some("fast".into()));
+        assert!(wait_idle(Duration::from_secs(10)));
+        assert_eq!(call.present("first".into()), "first");
+        let next = earlier(caller).present("second".into());
+        assert!(
+            next.contains("- fast") && next.ends_with("second"),
+            "{next}"
+        );
+
+        // A call that fails early keeps what it took for the one after it.
+        submit(caller, || Some("kept".into()));
+        assert!(wait_idle(Duration::from_secs(10)));
+        drop(earlier(caller));
+        submit(caller, || Some("later".into()));
+        assert!(wait_idle(Duration::from_secs(10)));
+        let shown = with_answers(caller, "third".into());
+        assert!(shown.find("- kept") < shown.find("- later"), "{shown}");
     }
 
     #[test]
