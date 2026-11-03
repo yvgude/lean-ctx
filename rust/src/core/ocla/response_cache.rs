@@ -22,7 +22,7 @@ pub enum CachePolicy {
 
 static GLOBAL_RESPONSE_CACHE: OnceLock<ResponseCache> = OnceLock::new();
 
-pub(crate) fn global_response_cache() -> &'static ResponseCache {
+pub fn global_response_cache() -> &'static ResponseCache {
     GLOBAL_RESPONSE_CACHE.get_or_init(ResponseCache::default)
 }
 

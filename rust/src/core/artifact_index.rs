@@ -19,7 +19,7 @@ fn document_origin<'a>(idx: &'a BM25Index, rel: &str) -> Option<&'a DocumentOrig
     }
 }
 
-pub(crate) fn index_file_path(project_root: &Path) -> PathBuf {
+pub fn index_file_path(project_root: &Path) -> PathBuf {
     let code_idx = BM25Index::index_file_path(project_root);
     let dir = code_idx.parent().unwrap_or_else(|| Path::new("."));
     dir.join("bm25_artifacts_index.json")
@@ -54,7 +54,7 @@ pub(crate) fn save(project_root: &Path, idx: &BM25Index) -> std::io::Result<()> 
     Ok(())
 }
 
-pub(crate) fn load_or_build(project_root: &Path) -> (BM25Index, Vec<String>) {
+pub fn load_or_build(project_root: &Path) -> (BM25Index, Vec<String>) {
     let (files_now, mut warnings) = list_artifact_files(project_root);
     if files_now.is_empty() {
         // No artifact is declared or present now: nothing derived from
@@ -80,7 +80,7 @@ pub(crate) fn load_or_build(project_root: &Path) -> (BM25Index, Vec<String>) {
     (built.rooted_at(project_root), warnings)
 }
 
-pub(crate) fn rebuild_from_scratch(project_root: &Path) -> (BM25Index, Vec<String>) {
+pub fn rebuild_from_scratch(project_root: &Path) -> (BM25Index, Vec<String>) {
     let (files_now, mut warnings) = list_artifact_files(project_root);
     let idx = build_full(project_root, &files_now, &mut warnings);
     let _ = save(project_root, &idx);

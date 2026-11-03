@@ -4,7 +4,7 @@
   "patch": [
     {
       "op": "add",
-      "path": "/rows/0/key/engine/owner/email",
+      "path": "/rows/0/key/instance/owner/email",
       "value": "ada@example.com"
     }
   ],

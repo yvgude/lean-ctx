@@ -8,7 +8,7 @@ use crate::core::repomap::graph::{RepoGraph, SymbolDef};
 
 /// A symbol with its computed importance score.
 #[derive(Debug, Clone)]
-pub(crate) struct RankedSymbol {
+pub struct RankedSymbol {
     pub def: SymbolDef,
     pub score: f64,
 }
@@ -19,7 +19,7 @@ pub(crate) struct RankedSymbol {
 /// - `focus_files`: user-specified files to emphasize
 ///
 /// Returns symbols sorted by descending score.
-pub(crate) fn rank_symbols(
+pub fn rank_symbols(
     graph: &RepoGraph,
     session_files: &[String],
     focus_files: &[String],

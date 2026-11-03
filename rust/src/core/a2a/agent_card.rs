@@ -188,12 +188,12 @@ pub fn build_agent_card(project_root: &str, auth_required: bool) -> serde_json::
 /// collaboration substrate (ctx_agent, ctx_handoff, …), deprecated aliases,
 /// and tools compiled out by a feature flag stay off every card.
 pub fn advertised_tools(names: &[&str]) -> Vec<String> {
-    let registry = crate::server::registry::build_registry();
+    let registered = crate::core::tool_catalog::registered_tool_names();
     names
         .iter()
         .filter(|name| {
-            registry.contains(name)
-                && crate::server::dynamic_tools::is_publicly_advertised_tool(name)
+            registered.iter().any(|r| r == *name)
+                && crate::core::dynamic_tools::is_publicly_advertised_tool(name)
         })
         .map(|name| (*name).to_string())
         .collect()
@@ -255,27 +255,4 @@ mod tests {
 
     // #1913: every advertised tool is one `tools/list` publishes, and the card
     // no longer claims the local-only coordination substrate.
-    #[test]
-    fn card_tools_are_published_mcp_tools() {
-        let published: Vec<String> = crate::server::registry::build_registry()
-            .tool_defs()
-            .into_iter()
-            .map(|tool| tool.name.to_string())
-            .collect();
-        let card = build_agent_card("p", false);
-        let tools = card["capabilities"]["tools"].as_array().expect("tools");
-        assert!(tools.len() >= 6, "core tools missing: {tools:?}");
-        for tool in tools {
-            let name = tool.as_str().expect("tool name");
-            assert!(
-                published.iter().any(|p| p == name),
-                "{name} is not published"
-            );
-        }
-        for hidden in ["ctx_agent", "ctx_handoff", "ctx_task", "ctx_share"] {
-            assert!(!tools.iter().any(|t| t == hidden), "{hidden} advertised");
-        }
-        let skills = card["skills"].as_array().expect("skills");
-        assert!(!skills.iter().any(|s| s["id"] == "multi-agent-coordination"));
-    }
 }

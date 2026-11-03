@@ -691,7 +691,7 @@
       "minLength": 3
     },
     "task_verify_request": {
-      "description": "E48 POST /v1/vaults/{pid}/tasks/{number}/verify (right tasks.work, Idempotency-Key like the other task writes): another agent's verdict on a submitted result. worker_id is the verifying agent and never the result's (403 self_verify; another worker of the same engine may); only a submitted task takes it (409 not_submitted). accept → done, reject → open (claimable, the result kept as history, the reason recorded as a verification update).",
+      "description": "E48 POST /v1/vaults/{pid}/tasks/{number}/verify (right tasks.work, Idempotency-Key like the other task writes): another agent's verdict on a submitted result. worker_id is the verifying agent and never the result's (403 self_verify; another worker of the same instance may); only a submitted task takes it (409 not_submitted). accept → done, reject → open (claimable, the result kept as history, the reason recorded as a verification update).",
       "type": "object",
       "required": [
         "schema",

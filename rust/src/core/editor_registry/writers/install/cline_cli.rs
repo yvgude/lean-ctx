@@ -22,7 +22,7 @@ pub(crate) fn write_cline_cli_config(
             "type": "stdio",
             "command": binary,
             "args": [],
-            "env": crate::hooks::mcp_server_env_json()
+            "env": crate::core::hook_mode::mcp_server_env_json()
         }
     });
 

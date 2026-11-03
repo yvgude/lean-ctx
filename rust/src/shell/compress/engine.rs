@@ -54,14 +54,14 @@ pub(in crate::shell) fn compress_and_measure_for(
 
 /// Compress one stream, but never lossily for a command that actually FAILED.
 ///
-/// A non-zero exit keeps the output verbatim (size-capped via [`truncate_verbatim`]
+/// A non-zero exit keeps the output verbatim (size-capped via `truncate_verbatim`
 /// with safety-needle-preserving head/tail truncation) so the real error always
 /// reaches the model and the agent never has to re-run the command without
 /// lean-ctx (#809 / #810). This generalizes the build-tool-error guard inside
-/// [`compress_if_beneficial`] to ANY non-zero exit. Empty output and explicit
+/// `compress_if_beneficial` to ANY non-zero exit. Empty output and explicit
 /// `<lc_safe>` spans keep the normal pipeline (the latter so its markers are
 /// stripped correctly); a succeeding command still compresses as before.
-pub(crate) fn compress_for_outcome(command: &str, output: &str, exit_code: i32) -> String {
+pub fn compress_for_outcome(command: &str, output: &str, exit_code: i32) -> String {
     compress_for_outcome_for(command, output, exit_code, COUNTING_FAMILY)
 }
 
@@ -327,11 +327,7 @@ pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
     compress_if_beneficial_for(command, output, COUNTING_FAMILY)
 }
 
-pub(crate) fn compress_if_beneficial_for(
-    command: &str,
-    output: &str,
-    family: TokenizerFamily,
-) -> String {
+pub fn compress_if_beneficial_for(command: &str, output: &str, family: TokenizerFamily) -> String {
     compress_if_beneficial_with_exit(command, output, -1, family)
 }
 
@@ -438,7 +434,7 @@ fn compress_if_beneficial_with_exit(
         BuildOutputKind::WarningsOnly | BuildOutputKind::NotBuildTool => {}
     }
 
-    if !is_search_output(command) && crate::tools::ctx_shell::contains_auth_flow(output) {
+    if !is_search_output(command) && crate::shell::command_text::contains_auth_flow(output) {
         return output.to_string();
     }
 
@@ -1248,7 +1244,7 @@ pub(crate) fn compress_if_beneficial_pub_for(
 /// build/test output but supplied no recognizable command — the engine's
 /// command-gated verbatim guards cannot fire, yet compiler errors, panics and
 /// test summaries must still reach the model intact for a bug-fix task.
-pub(crate) fn preserve_verbatim_pub_for(output: &str, family: TokenizerFamily) -> String {
+pub fn preserve_verbatim_pub_for(output: &str, family: TokenizerFamily) -> String {
     truncate_verbatim(output, count_tokens_for(output, family), family)
 }
 

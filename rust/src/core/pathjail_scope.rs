@@ -228,7 +228,7 @@ fn write_root(root: &str) -> Option<PathBuf> {
 }
 
 /// Runs one tool call with its project and host-declared roots writable.
-pub(crate) fn with_request_write_roots<T>(roots: &[String], operation: impl FnOnce() -> T) -> T {
+pub fn with_request_write_roots<T>(roots: &[String], operation: impl FnOnce() -> T) -> T {
     let roots = roots.iter().filter_map(|root| write_root(root)).collect();
     REQUEST_WRITE_ROOTS.sync_scope(roots, operation)
 }
@@ -397,7 +397,7 @@ fn default_notice_text() -> String {
 /// user chose a scope or turned the jail off: an explicit choice is kept.
 pub fn maybe_show_default_notice() {
     use std::io::IsTerminal;
-    if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal())
+    if !(std::io::stderr().is_terminal() && crate::core::host_env::stdin_is_terminal())
         || PathJailScope::explicit().is_some()
         || crate::core::config::Config::load().path_jail == Some(false)
     {

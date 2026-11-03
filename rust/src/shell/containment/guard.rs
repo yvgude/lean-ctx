@@ -106,8 +106,11 @@ fn reap_pin(pin: libc::pid_t) {
 }
 
 /// The command that starts a guard for `expected`.
-#[cfg(not(test))]
 fn guard_command(expected: libc::pid_t) -> std::io::Result<Command> {
+    #[cfg(any(test, feature = "test-support"))]
+    if super::harness_helper() {
+        return harness_guard_command(expected);
+    }
     let mut command = Command::new(std::env::current_exe()?);
     command.args([super::GUARD_MODE, "--group", &expected.to_string()]);
     Ok(command)
@@ -115,8 +118,8 @@ fn guard_command(expected: libc::pid_t) -> std::io::Result<Command> {
 
 /// In the unit tests the running binary is the test harness; its helper test
 /// runs the same guard function.
-#[cfg(test)]
-fn guard_command(expected: libc::pid_t) -> std::io::Result<Command> {
+#[cfg(any(test, feature = "test-support"))]
+fn harness_guard_command(expected: libc::pid_t) -> std::io::Result<Command> {
     let mut command = Command::new(std::env::current_exe()?);
     command
         .args([
@@ -132,7 +135,7 @@ fn guard_command(expected: libc::pid_t) -> std::io::Result<Command> {
 
 /// What a guard reported when its owner let go of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GuardOutcome {
+pub enum GuardOutcome {
     /// The group has no live member left.
     Ended,
     /// The group was signalled; whether it is empty could not be observed.
@@ -143,7 +146,7 @@ pub(crate) enum GuardOutcome {
 
 /// The owner's handle on a guard: the guard ends its group when this handle
 /// goes away — by [`CallGuard::finish`], by a drop, or by the owner's death.
-pub(crate) struct CallGuard {
+pub struct CallGuard {
     guard: Child,
     hold: Option<std::io::PipeWriter>,
 }
@@ -185,7 +188,7 @@ impl CallGuard {
     }
 
     /// Lets go: the guard ends what is left of the group, and is reaped.
-    pub(crate) fn finish(mut self) -> GuardOutcome {
+    pub fn finish(mut self) -> GuardOutcome {
         drop(self.hold.take());
         let outcome = if let Some(status) =
             crate::shell::exec::reap_within(&mut self.guard, END_BUDGET + REAP_BUDGET)
@@ -202,7 +205,7 @@ impl CallGuard {
         };
         // Test seam: the guard has done its real work; only the reported
         // outcome is replaced, for the calling thread.
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(forced) = FORCED_OUTCOME.with(std::cell::Cell::get) {
             return forced;
         }
@@ -224,7 +227,7 @@ impl Drop for CallGuard {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static FORCED_OUTCOME: std::cell::Cell<Option<GuardOutcome>> =
         const { std::cell::Cell::new(None) };
@@ -232,8 +235,8 @@ thread_local! {
 
 /// Tests only: every `finish` on this thread reports `outcome` until it is
 /// reset with `None`.
-#[cfg(test)]
-pub(crate) fn force_outcome_for_test(outcome: Option<GuardOutcome>) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn force_outcome_for_test(outcome: Option<GuardOutcome>) {
     FORCED_OUTCOME.with(|forced| forced.set(outcome));
 }
 

@@ -56,7 +56,7 @@ fn note_renewed(agent_id: &str) {
 
 /// Whether `agent_id`'s registration had expired and was renewed since the
 /// last call (each renewal is reported once).
-pub(crate) fn take_renewed(agent_id: &str) -> bool {
+pub fn take_renewed(agent_id: &str) -> bool {
     RENEWED
         .lock()
         .is_ok_and(|mut renewed| renewed.remove(agent_id))
@@ -184,7 +184,7 @@ fn is_recoverable_legacy_finished(agent: &AgentEntry) -> bool {
 }
 
 impl AgentRegistry {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             agents: Vec::new(),
             scratchpad: Vec::new(),
@@ -194,7 +194,7 @@ impl AgentRegistry {
         }
     }
 
-    pub(crate) fn register(
+    pub fn register(
         &mut self,
         agent_type: &str,
         role: Option<&str>,
@@ -235,7 +235,7 @@ impl AgentRegistry {
     /// `parent_id`, which this process holds: a subagent shares its parent's
     /// MCP connection, and under the parent's id its reads consumed the
     /// messages directed to the parent (WEB-2 read the lead's, 25.10.).
-    pub(crate) fn register_child(
+    pub fn register_child(
         &mut self,
         agent_type: &str,
         role: &str,
@@ -294,7 +294,7 @@ impl AgentRegistry {
 
     /// Whether `agent_id` is a live presence this very process registered
     /// (its own or a child): only those may be named as `agent_id` on a call.
-    pub(crate) fn held_by_this_process(&self, agent_id: &str) -> bool {
+    pub fn held_by_this_process(&self, agent_id: &str) -> bool {
         let pid = std::process::id();
         let identity = crate::ipc::process::identity(pid);
         self.agents.iter().any(|a| {
@@ -307,7 +307,7 @@ impl AgentRegistry {
     }
 
     /// The declared role of `agent_id`, if it has one.
-    pub(crate) fn declared_role(&self, agent_id: &str) -> Option<String> {
+    pub fn declared_role(&self, agent_id: &str) -> Option<String> {
         self.agents
             .iter()
             .find(|a| a.agent_id == agent_id && a.role_source == Some(RoleSource::Declared))
@@ -316,7 +316,7 @@ impl AgentRegistry {
 
     /// Registers (or refreshes) the presence of this process's own MCP
     /// connection, attributed to its host and with the role's provenance.
-    pub(crate) fn register_transport(
+    pub fn register_transport(
         &mut self,
         role: &str,
         role_source: RoleSource,
@@ -455,7 +455,7 @@ impl AgentRegistry {
     }
 
     /// Atomically registers this MCP process in the shared on-disk registry.
-    pub(crate) fn register_mcp_process(
+    pub fn register_mcp_process(
         project_root: &str,
         durable_identity_id: Option<&str>,
     ) -> Result<String, String> {
@@ -471,7 +471,7 @@ impl AgentRegistry {
     /// `initialize` (#1766), so the presence retry does not fall back to the
     /// `context-engine` placeholder. The host comes from this process's
     /// recorded MCP handshake.
-    pub(crate) fn register_mcp_process_as(
+    pub fn register_mcp_process_as(
         project_root: &str,
         role: &str,
         role_source: RoleSource,
@@ -494,7 +494,7 @@ impl AgentRegistry {
     /// Attributes this process's live transport presences to the host from
     /// its MCP handshake. Covers sessions whose `initialize` registers no
     /// project-scoped presence (no resolvable root).
-    pub(crate) fn record_transport_client_persistent(
+    pub fn record_transport_client_persistent(
         transport: &TransportClient,
     ) -> Result<usize, String> {
         mutate_persistent(|registry| registry.record_transport_client(transport))
@@ -519,7 +519,7 @@ impl AgentRegistry {
     /// Whether `agent_id` is still a listed presence owned by this process.
     /// Read-only: used by the MCP server to notice a presence that another
     /// process retired (for example an older binary's lease expiry) or pruned.
-    pub(crate) fn transport_presence_is_live(agent_id: &str) -> bool {
+    pub fn transport_presence_is_live(agent_id: &str) -> bool {
         Self::load().is_some_and(|registry| {
             registry.agents.iter().any(|agent| {
                 agent.agent_id == agent_id
@@ -534,7 +534,7 @@ impl AgentRegistry {
     /// one that registered it. Every MCP connection registers one, the stdio
     /// server a host starts as well as the daemon's sessions. Read-only; the
     /// deny hook uses it to tell "no daemon" from "no MCP server at all".
-    pub(crate) fn any_live_mcp_transport() -> bool {
+    pub fn any_live_mcp_transport() -> bool {
         let Some(registry) = Self::load() else {
             return false;
         };
@@ -550,7 +550,7 @@ impl AgentRegistry {
     /// the transport itself, so a presence that only lost its worker lease is
     /// revived rather than rejected (an older binary in another process still
     /// finishes quiet transports).
-    pub(crate) fn heartbeat_persistent(agent_id: &str) -> Result<(), String> {
+    pub fn heartbeat_persistent(agent_id: &str) -> Result<(), String> {
         mutate_persistent(|registry| registry.update_transport_heartbeat(agent_id))?
     }
 
@@ -588,29 +588,29 @@ impl AgentRegistry {
     /// register`), sent on every tool call of its session: renews its worker
     /// lease, and revives it when the lease had already run out. `Ok(true)`
     /// when it was revived; [`take_renewed`] then says so once.
-    pub(crate) fn renew_worker(&mut self, agent_id: &str) -> Result<bool, String> {
+    pub fn renew_worker(&mut self, agent_id: &str) -> Result<bool, String> {
         let revived = self.revive_lease_expired(agent_id);
         self.update_heartbeat(agent_id)?;
         if revived {
             note_renewed(agent_id);
-            crate::core::hive::bus::presence::request_announce();
+            request_announce();
         }
         Ok(revived)
     }
 
     /// [`Self::renew_worker`] under the registry lock.
-    pub(crate) fn renew_worker_persistent(agent_id: &str) -> Result<bool, String> {
+    pub fn renew_worker_persistent(agent_id: &str) -> Result<bool, String> {
         mutate_persistent(|registry| registry.renew_worker(agent_id))?
     }
 
     /// Atomically marks a registered MCP process as finished.
-    pub(crate) fn finish_persistent(agent_id: &str) -> Result<(), String> {
+    pub fn finish_persistent(agent_id: &str) -> Result<(), String> {
         mutate_persistent(|registry| {
             registry.set_status(agent_id, AgentStatus::Finished, Some("connection closed"))
         })?
     }
 
-    pub(crate) fn update_heartbeat(&mut self, agent_id: &str) -> Result<(), String> {
+    pub fn update_heartbeat(&mut self, agent_id: &str) -> Result<(), String> {
         let index = self
             .agents
             .iter()
@@ -650,7 +650,7 @@ impl AgentRegistry {
         Ok(())
     }
 
-    pub(crate) fn set_status(
+    pub fn set_status(
         &mut self,
         agent_id: &str,
         status: AgentStatus,
@@ -719,7 +719,7 @@ impl AgentRegistry {
         removed
     }
 
-    pub(crate) fn cleanup_stale_logical_sessions(&mut self, max_age_seconds: u64) {
+    pub fn cleanup_stale_logical_sessions(&mut self, max_age_seconds: u64) {
         let seconds = i64::try_from(max_age_seconds).unwrap_or(i64::MAX);
         let cutoff = Utc::now() - chrono::Duration::seconds(seconds);
         self.logical_sessions
@@ -727,7 +727,7 @@ impl AgentRegistry {
         self.updated_at = Utc::now();
     }
 
-    pub(crate) fn record_logical_session_presence(
+    pub fn record_logical_session_presence(
         event: &str,
         source: &str,
         workspace: &str,
@@ -768,7 +768,7 @@ impl AgentRegistry {
     /// Gate operations for an explicitly bound presence. Legacy unbound
     /// entries retain their prior behavior until a migration enables a
     /// mandatory-binding mode.
-    pub(crate) fn require_active_for_presence(
+    pub fn require_active_for_presence(
         &self,
         agent_id: &str,
         operation: &str,
@@ -789,7 +789,7 @@ impl AgentRegistry {
         })
     }
 
-    pub(crate) fn list_active(&self, project_root: Option<&str>) -> Vec<&AgentEntry> {
+    pub fn list_active(&self, project_root: Option<&str>) -> Vec<&AgentEntry> {
         let compatibility_identities = ProcessIdentityIndex::load();
         self.agents
             .iter()
@@ -812,7 +812,7 @@ impl AgentRegistry {
             .collect()
     }
 
-    pub(crate) fn list_all(&self) -> &[AgentEntry] {
+    pub fn list_all(&self) -> &[AgentEntry] {
         &self.agents
     }
 
@@ -850,7 +850,7 @@ impl AgentRegistry {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn post_message_scoped(
+    pub fn post_message_scoped(
         &mut self,
         project_root: Option<&str>,
         from_agent: &str,
@@ -881,7 +881,7 @@ impl AgentRegistry {
     /// refused. A key lives as long as its message — the scratchpad's entry
     /// cap and TTL bound both — and an expired message frees its key.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn post_message_keyed(
+    pub fn post_message_keyed(
         &mut self,
         project_root: Option<&str>,
         from_agent: &str,
@@ -995,7 +995,7 @@ impl AgentRegistry {
     /// are marked read. Returns them and how many stay unread for the next
     /// read: a host that cuts a long answer used to lose the rest, already
     /// marked read (WEB saw 14 of 55, 25.10.).
-    pub(crate) fn read_unread_page(
+    pub fn read_unread_page(
         &mut self,
         agent_id: &str,
         project_root: &str,
@@ -1041,9 +1041,9 @@ impl AgentRegistry {
 
     /// Block until `agent_id` has a message waiting in `project_root`
     /// (`true`) or `timeout` passed (`false`). Looks at the registry only when
-    /// its file changed (polled every [`WAIT_POLL`]); `on_poll` runs about every
+    /// its file changed (polled every `WAIT_POLL`); `on_poll` runs about every
     /// 30 s meanwhile (the caller keeps the agent's lease alive there).
-    pub(crate) fn wait_for_unread(
+    pub fn wait_for_unread(
         agent_id: &str,
         project_root: &str,
         timeout: std::time::Duration,
@@ -1120,7 +1120,7 @@ impl AgentRegistry {
             .collect())
     }
 
-    pub(crate) fn cleanup_stale(&mut self, max_age_hours: u64) {
+    pub fn cleanup_stale(&mut self, max_age_hours: u64) {
         let now = Utc::now();
         let cutoff = now - chrono::Duration::hours(max_age_hours as i64);
         let worker_cutoff = now - chrono::Duration::seconds(active_worker_lease_seconds());
@@ -1225,8 +1225,8 @@ impl AgentRegistry {
         self.updated_at = Utc::now();
     }
 
-    #[cfg(test)]
-    pub(crate) fn save(&self) -> Result<(), String> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn save(&self) -> Result<(), String> {
         let dir = agents_dir()?;
         create_agents_dir(&dir)?;
 
@@ -1241,13 +1241,13 @@ impl AgentRegistry {
         save_registry_file(&path, self)
     }
 
-    pub(crate) fn load() -> Option<Self> {
+    pub fn load() -> Option<Self> {
         let dir = agents_dir().ok()?;
         let path = dir.join("registry.json");
         load_registry_file(&path).ok().flatten()
     }
 
-    pub(crate) fn load_or_create() -> Self {
+    pub fn load_or_create() -> Self {
         Self::load().unwrap_or_default()
     }
 
@@ -1260,7 +1260,7 @@ impl AgentRegistry {
     /// registration vanishing from the dashboard. Holding the lock across
     /// the re-read closes that window: the read inside always sees the
     /// latest on-disk state.
-    pub(crate) fn mutate_locked<T>(f: impl FnOnce(&mut Self) -> T) -> Result<(Self, T), String> {
+    pub fn mutate_locked<T>(f: impl FnOnce(&mut Self) -> T) -> Result<(Self, T), String> {
         let dir = agents_dir()?;
         create_agents_dir(&dir)?;
 
@@ -1278,6 +1278,22 @@ impl AgentRegistry {
 impl Default for AgentRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// "Announce this machine's agents now", from the Hive connector when it is
+/// linked in (`core::hive::register_hooks`): a revived worker is on the bus
+/// again before its next claim. Bookkeeping only; without it nothing waits.
+static ANNOUNCE: std::sync::OnceLock<fn()> = std::sync::OnceLock::new();
+
+/// Register the announce request; the first registration wins.
+pub fn register_announce(request: fn()) {
+    let _ = ANNOUNCE.set(request);
+}
+
+fn request_announce() {
+    if let Some(request) = ANNOUNCE.get() {
+        request();
     }
 }
 

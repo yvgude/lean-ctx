@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bus control frames (`hold`, `veto`, `stop`, `resume`) from the fake Hive
-//! through the relay into the admission state, across a reconnect and a
-//! disconnect, in a throwaway home.
+//! The bus relay against the fake Hive, and the controls it keeps
+//! (`state_v2.json`) as tool admission and `hive status` see them, across
+//! a lapsed lease and a disconnect, in a throwaway home.
 #![cfg(feature = "http-server")]
 
-use crate::support::fake_hive::FakeHive;
-use lean_ctx::core::hive::HiveStore;
-use lean_ctx::core::hive::bus::control;
-use lean_ctx_protocol::hive::bus::ControlAction;
+use crate::support::fake_hive::{FakeHive, FakeOptions};
+use lean_ctx_hive::HiveStore;
+use lean_ctx_hive::bus::control;
+use lean_ctx_hive::bus::v2::ControlAction;
 use serde_json::json;
 use std::path::Path;
 use std::process::{Child, Command, Output};
@@ -93,14 +93,39 @@ fn wait_for(what: &str, condition: impl Fn() -> bool) {
 }
 
 fn mode(store: &HiveStore, agent: Option<&str>) -> Option<ControlAction> {
-    control::admission(store, agent).map(|refusal| refusal.entry.action)
+    control::admission(store, agent).map(|refusal| refusal.action)
+}
+
+/// A 2.x Hive: the relay connects once the instance card answered.
+fn hive_2x() -> FakeHive {
+    FakeHive::start_with(FakeOptions {
+        instance_card: true,
+        ..FakeOptions::default()
+    })
+}
+
+/// The C0 hold fixture as a bus control `action` with `id`, as the relay
+/// keeps it after its signature verified.
+fn bus_control(action: &str, id: &str, created_at: u64) -> serde_json::Value {
+    let path = format!(
+        "{}/../lean-ctx-protocol/tests/fixtures/hive-v2/bus/control.hold.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let mut control: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    control["target"] = json!("bus");
+    control["action"] = json!(action);
+    control["id"] = json!(id);
+    control["created_at"] = json!(created_at);
+    control.as_object_mut().unwrap().remove("worker_id");
+    control
 }
 
 /// `hive.bus = "off"` reaches a running relay without a restart: it closes
 /// its socket, and comes back once the bus is on again.
 #[test]
 fn switching_the_bus_off_stops_a_running_relay_without_a_restart() {
-    let fake = FakeHive::start();
+    let fake = hive_2x();
     let machine = Machine::new();
     let connect = machine.run(&["connect", "--url", &fake.url, "--no-browser"]);
     assert!(connect.status.success(), "{connect:?}");
@@ -129,9 +154,31 @@ fn switching_the_bus_off_stops_a_running_relay_without_a_restart() {
     relay.wait().ok();
 }
 
+/// Without an answered instance card the relay never opens a socket: it
+/// asks for the card again and waits (a Hive that does not speak 2.x).
 #[test]
-fn control_frames_gate_agents_survive_replay_and_end_with_the_enrollment() {
+fn without_an_instance_card_the_relay_waits_and_opens_no_socket() {
     let fake = FakeHive::start();
+    let machine = Machine::new();
+    let connect = machine.run(&["connect", "--url", &fake.url, "--no-browser"]);
+    assert!(connect.status.success(), "{connect:?}");
+    let relay = machine.run(&["bus", "relay", "--for", "3"]);
+    assert!(relay.status.success(), "{relay:?}");
+    assert_eq!(fake.bus_sessions(), 0, "no bus socket");
+    assert!(
+        fake.requests()
+            .iter()
+            .any(|r| r.method == "PATCH" && r.path.ends_with("/card")),
+        "the relay asked for the instance card"
+    );
+}
+
+/// The controls the relay keeps gate Hive traffic and reach `hive status`;
+/// a lapsed lease voids them and they come back with a valid one (plan C
+/// rule 2); disconnected, they no longer gate.
+#[test]
+fn kept_controls_gate_and_show_until_the_lease_lapses_or_the_machine_disconnects() {
+    let fake = hive_2x();
     let machine = Machine::new();
     let connect = machine.run(&[
         "connect",
@@ -145,62 +192,23 @@ fn control_frames_gate_agents_survive_replay_and_end_with_the_enrollment() {
     let store = machine.store();
     assert!(mode(&store, Some("claude-a")).is_none());
 
-    let mut relay = machine.relay("30");
-    wait_for("the relay to connect", || !fake.bus_connected().is_empty());
-    let control = |seq: u64, target: Option<&str>, action: &str, target_ref: Option<&str>| {
-        let mut frame = json!({
-            "control_id": format!("ctl_{seq}"), "action": action,
-            "reason": "Owner review of the contract.", "issued_by": "admin@acme", "seq": seq,
-        });
-        if let Some(target) = target {
-            frame["target_agent"] = json!(target);
-        }
-        if let Some(target_ref) = target_ref {
-            frame["target_ref"] = json!(target_ref);
-        }
-        fake.send_control(frame);
-    };
-
-    control(1, None, "hold", None);
-    wait_for("hold on every agent", || {
-        mode(&store, Some("claude-b")) == Some(ControlAction::Hold)
-    });
-    assert_eq!(
-        mode(&store, None),
-        Some(ControlAction::Hold),
-        "unknown callers too"
-    );
-
-    control(2, Some("claude-a"), "veto", Some("lease_7"));
-    control(3, Some("claude-a"), "stop", None);
-    wait_for("stop on claude-a", || {
-        mode(&store, Some("claude-a")) == Some(ControlAction::Stop)
-    });
-    assert!(control::vetoed(&store, Some("claude-a"), "lease_7").is_some());
-    assert!(control::vetoed(&store, Some("claude-b"), "lease_7").is_none());
-
-    control(4, None, "resume", None);
-    wait_for("resume of every agent", || {
-        mode(&store, Some("claude-b")).is_none()
-    });
+    let state = home(&machine).join("data/hive/bus/state_v2.json");
+    std::fs::create_dir_all(state.parent().unwrap()).unwrap();
+    let kept = json!({"controls": {
+        "ctl_1": bus_control("hold", "ctl_1", 1_792_800_000_000),
+        "ctl_2": bus_control("stop", "ctl_2", 1_792_800_001_000),
+    }});
+    std::fs::write(&state, serde_json::to_vec(&kept).unwrap()).unwrap();
     assert_eq!(
         mode(&store, Some("claude-a")),
         Some(ControlAction::Stop),
-        "an agent's own stop outlives a resume of *"
+        "a stop wins over a hold"
     );
-    relay.kill().ok();
-    relay.wait().ok();
-
-    // Reconnect: the fake replays all four frames; none is newer, nothing changes.
-    let replay = machine.run(&["bus", "relay", "--for", "3"]);
-    assert!(replay.status.success(), "{replay:?}");
-    assert!(
-        mode(&store, Some("claude-b")).is_none(),
-        "the old hold stays resumed"
+    assert_eq!(
+        mode(&store, None),
+        Some(ControlAction::Stop),
+        "unknown callers too"
     );
-    assert_eq!(mode(&store, Some("claude-a")), Some(ControlAction::Stop));
-    let active = control::active(&store);
-    assert_eq!(active.len(), 2, "{active:?}");
     let status = status_json(&machine);
     assert_eq!(
         status["bus_controls"].as_array().unwrap().len(),
@@ -209,16 +217,8 @@ fn control_frames_gate_agents_survive_replay_and_end_with_the_enrollment() {
     );
     assert!(status.get("bus_controls_inactive").is_none(), "{status}");
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let file = home(&machine).join("data/hive/bus/control.json");
-        let mode = std::fs::metadata(file).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600);
-    }
-
     // A lapsed lease (service clock 30 days ahead) voids them, and they come
-    // back with a valid lease (plan C rule 2).
+    // back with a valid lease.
     let lease_path = home(&machine).join("config/hive/lease.json");
     let original = std::fs::read(&lease_path).unwrap();
     let mut lapsed: serde_json::Value = serde_json::from_slice(&original).unwrap();
@@ -238,10 +238,9 @@ fn control_frames_gate_agents_survive_replay_and_end_with_the_enrollment() {
     std::fs::write(&lease_path, &original).unwrap();
     assert_eq!(mode(&store, Some("claude-a")), Some(ControlAction::Stop));
 
-    // Disconnected (local data kept): controls of that enrollment no longer gate.
+    // Disconnected (local data kept): the kept controls no longer gate.
     let output = machine.run(&["disconnect", "--keep-local"]);
     assert!(output.status.success(), "{output:?}");
-    assert!(home(&machine).join("data/hive/bus/control.json").exists());
     assert!(control::admission(&store, Some("claude-a")).is_none());
-    assert!(control::active(&store).is_empty());
+    assert!(control::status_at(&store, chrono::Utc::now()).0.is_empty());
 }

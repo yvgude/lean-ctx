@@ -38,7 +38,7 @@ pub(crate) fn is_proxy_egress(receipt: &ContextDecisionReceiptV1) -> bool {
 /// word and a sentence. A V1 outcome is recorded at preparation and is never
 /// shown as a proven delivery; this is the separate, observed state. A
 /// receipt whose preparation failed is named as that, never as a delivery.
-pub(crate) fn observed_finding(stored: &StoredReceipt) -> (&'static str, String) {
+pub fn observed_finding(stored: &StoredReceipt) -> (&'static str, String) {
     let found = observed::load(&stored.digest);
     let proxy = is_proxy_egress(&stored.receipt);
     let state = match &found {
@@ -101,7 +101,7 @@ pub(crate) fn observed_finding(stored: &StoredReceipt) -> (&'static str, String)
 /// PREPARED. The observation is a LOCAL, UNSIGNED record: it names the
 /// signed audit entry of its receipt, and that link is checked here, but no
 /// signature covers the observation itself.
-pub(crate) fn observation_evidence(
+pub fn observation_evidence(
     stored: &StoredReceipt,
     anchors: Option<&AuditAnchors>,
 ) -> (&'static str, &'static str) {
@@ -145,7 +145,7 @@ pub(crate) fn observation_evidence(
 /// V1 outcome next to it was recorded at preparation, and — per receipt —
 /// what is signed (receipt and sidecar, prepared) and what is not (the
 /// observation).
-pub(crate) fn observed_json(stored: &StoredReceipt, anchors: &AuditAnchors) -> serde_json::Value {
+pub fn observed_json(stored: &StoredReceipt, anchors: &AuditAnchors) -> serde_json::Value {
     let (state, detail) = observed_finding(stored);
     let (evidence, evidence_detail) = observation_evidence(stored, Some(anchors));
     serde_json::json!({
@@ -164,7 +164,7 @@ pub(crate) fn observed_json(stored: &StoredReceipt, anchors: &AuditAnchors) -> s
 /// record. Never silent: a sidecar that is owed and missing, names another
 /// receipt, or no longer matches the digest its audit anchor carries is a
 /// finding of its own.
-pub(crate) fn trace_finding(
+pub fn trace_finding(
     stored: &StoredReceipt,
     anchors: Option<&AuditAnchors>,
 ) -> (&'static str, Option<String>, Option<Box<TraceSidecarV1>>) {
@@ -198,7 +198,7 @@ pub(crate) fn trace_finding(
 /// recorded transport observation). Derived from the records the other views
 /// read, never stored on its own. `None` when the receipt's route is unknown
 /// (no sidecar and not an egress receipt) or its evidence is inconsistent.
-pub(crate) fn lineage(stored: &StoredReceipt) -> Option<ContextDecisionLineageV1> {
+pub fn lineage(stored: &StoredReceipt) -> Option<ContextDecisionLineageV1> {
     let receipt = &stored.receipt;
     let route = match trace::load(&stored.digest) {
         StoredTrace::Bound { sidecar, .. } => match sidecar.transport {
@@ -252,7 +252,7 @@ pub(crate) fn lineage(stored: &StoredReceipt) -> Option<ContextDecisionLineageV1
 /// `checked` only when every candidate names a re-check; a candidate without
 /// one is `unsupported`; no recorded candidate is `not_recorded` — an open
 /// question for the verifier, never an implied permission.
-pub(crate) fn source_rights(lineage: Option<&ContextDecisionLineageV1>) -> &'static str {
+pub fn source_rights(lineage: Option<&ContextDecisionLineageV1>) -> &'static str {
     let candidates = lineage.map_or(&[][..], |lineage| lineage.candidates.as_slice());
     if candidates.is_empty() {
         "not_recorded"
@@ -269,7 +269,7 @@ pub(crate) fn source_rights(lineage: Option<&ContextDecisionLineageV1>) -> &'sta
 /// One attempt of the proxy's upstream request, as observed. What the proxy
 /// observes: the request was sent upstream and a response status came back.
 /// Never a delivery to a model.
-pub(crate) fn transport_observation_line(observation: &EgressTransportObservationV1) -> String {
+pub fn transport_observation_line(observation: &EgressTransportObservationV1) -> String {
     let detail = observation.http_status.map_or_else(
         || {
             observation
@@ -296,7 +296,7 @@ pub(crate) fn transport_observation_line(observation: &EgressTransportObservatio
 /// The egress lifecycle of a proxy receipt, one line per finding or attempt,
 /// in the words every view shows. Empty for a receipt that is not a proxy
 /// egress receipt.
-pub(crate) fn egress_lines(stored: &StoredReceipt) -> Vec<String> {
+pub fn egress_lines(stored: &StoredReceipt) -> Vec<String> {
     if !is_proxy_egress(&stored.receipt) {
         return Vec::new();
     }
@@ -327,7 +327,7 @@ pub(crate) fn egress_lines(stored: &StoredReceipt) -> Vec<String> {
 /// what kind of evidence it is, the sidecar's state and released references,
 /// and the egress lifecycle of a proxy receipt. A subset of what `lean-ctx
 /// inspect --json` shows for the same receipt, in the same words.
-pub(crate) fn summary_json(
+pub fn summary_json(
     hex: &str,
     loaded: &Result<StoredReceipt, LoadError>,
     anchors: &AuditAnchors,

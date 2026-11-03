@@ -16,7 +16,7 @@
 //! The detectors are deterministic, pure functions of the content — no sampling,
 //! no I/O — so they never break the determinism contract (#498) and are trivially
 //! testable. Two strengths are provided:
-//!   - [`screen`]: high-confidence signatures (prompt-injection phrases, embedded
+//!   - `screen`: high-confidence signatures (prompt-injection phrases, embedded
 //!     role markers, smuggled zero-width/control characters). Applied to ALL
 //!     external provider data during [`crate::core::consolidation::consolidate`].
 //!   - [`screen_strict`]: the above plus softer heuristics (command/exfiltration
@@ -104,8 +104,8 @@ pub(crate) fn screen(content: &str) -> Option<String> {
     None
 }
 
-/// Strict screen (#8): [`screen`] plus softer heuristics, for untrusted sources.
-pub(crate) fn screen_strict(content: &str) -> Option<String> {
+/// Strict screen (#8): `screen` plus softer heuristics, for untrusted sources.
+pub fn screen_strict(content: &str) -> Option<String> {
     if let Some(reason) = screen(content) {
         return Some(reason);
     }

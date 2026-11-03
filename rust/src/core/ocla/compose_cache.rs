@@ -82,7 +82,7 @@ impl ComposeSectionCache {
 
 /// A legacy Community cache is reusable only while the bounded source corpus
 /// and secret-path visibility are unchanged, including after policy removal.
-pub(crate) fn source_revision(path: &str) -> Option<String> {
+pub fn source_revision(path: &str) -> Option<String> {
     if crate::core::policy::runtime::is_active() {
         return None;
     }
@@ -156,7 +156,7 @@ fn source_digests(root: &str, paths: &[PathBuf]) -> Option<Vec<String>> {
     let mut digests = paths
         .iter()
         .map(|path| {
-            crate::tools::ctx_read::read_file_for_tool_rooted(
+            crate::core::rooted_read::read_file_for_tool_rooted(
                 &path.to_string_lossy(),
                 root,
                 "ctx_compose",

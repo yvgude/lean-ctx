@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 /// process and cached, so all subsystems (heatmap, savings ledger, audit)
 /// attribute traces to the same identity.
 #[must_use]
-pub(crate) fn current_agent_id() -> &'static str {
+pub fn current_agent_id() -> &'static str {
     static CACHE: OnceLock<String> = OnceLock::new();
     CACHE.get_or_init(|| {
         std::env::var("LEAN_CTX_AGENT_ID")
@@ -62,7 +62,7 @@ pub(crate) fn ledger_agent_id() -> String {
 /// per `initialize` by single-client (personal) servers; a later initialize
 /// with a different identity marks the attribution ambiguous instead of
 /// silently re-labelling another client's events.
-pub(crate) fn set_session_attribution(client_name: &str, bus_agent_id: Option<&str>) {
+pub fn set_session_attribution(client_name: &str, bus_agent_id: Option<&str>) {
     let Some(value) = session_attribution_value(client_name, bus_agent_id) else {
         return;
     };
@@ -139,7 +139,7 @@ fn host_from_env(env: impl Fn(&str) -> Option<String>) -> Option<&'static str> {
 ///
 /// Resolved once per process, so the id is stable for the process lifetime.
 #[must_use]
-pub(crate) fn delivery_agent_id() -> &'static str {
+pub fn delivery_agent_id() -> &'static str {
     static CACHE: OnceLock<String> = OnceLock::new();
     CACHE.get_or_init(|| {
         resolve_delivery_agent_id(|key| std::env::var(key).ok(), std::process::id())
@@ -169,7 +169,7 @@ fn resolve_delivery_agent_id(env: impl Fn(&str) -> Option<String>, pid: u32) -> 
     format!("local-{pid}")
 }
 
-pub(crate) fn get_or_create_keypair(agent_id: &str) -> Result<SigningKey, String> {
+pub fn get_or_create_keypair(agent_id: &str) -> Result<SigningKey, String> {
     let path = key_path(agent_id)?;
     if path.exists() {
         load_key(&path)
@@ -189,7 +189,7 @@ pub(crate) fn get_stored_signing_key(agent_id: &str) -> Result<SigningKey, Strin
 }
 
 /// Resolve an existing trust key without creating identity state.
-pub(crate) fn get_stored_public_key(agent_id: &str) -> Result<VerifyingKey, String> {
+pub fn get_stored_public_key(agent_id: &str) -> Result<VerifyingKey, String> {
     let bytes = read_key_file(&pub_key_path(agent_id)?, "trusted public key")?;
     let bytes: [u8; 32] = bytes
         .try_into()
@@ -211,15 +211,11 @@ pub(crate) fn sign_bytes(agent_id: &str, data: &[u8]) -> Result<Vec<u8>, String>
 /// [`get_or_create_keypair`] when the public key must be embedded in the
 /// payload *before* the signature is computed over it.
 #[must_use]
-pub(crate) fn sign_bytes_with(key: &SigningKey, data: &[u8]) -> Vec<u8> {
+pub fn sign_bytes_with(key: &SigningKey, data: &[u8]) -> Vec<u8> {
     key.sign(data).to_bytes().to_vec()
 }
 
-pub(crate) fn verify_signature(
-    public_key_bytes: &[u8],
-    data: &[u8],
-    signature_bytes: &[u8],
-) -> bool {
+pub fn verify_signature(public_key_bytes: &[u8], data: &[u8], signature_bytes: &[u8]) -> bool {
     let pk_bytes: [u8; 32] = match public_key_bytes.try_into() {
         Ok(b) => b,
         Err(_) => return false,
@@ -235,7 +231,7 @@ pub(crate) fn verify_signature(
     verifying_key.verify(data, &signature).is_ok()
 }
 
-pub(crate) fn hex_encode(bytes: &[u8]) -> String {
+pub fn hex_encode(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut s, b| {
         let _ = write!(s, "{b:02x}");
@@ -244,7 +240,7 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
 }
 
 /// Reject malformed external signature material without slicing inside UTF-8.
-pub(crate) fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
+pub fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
     if !s.len().is_multiple_of(2) {
         return Err("odd-length hex string".to_string());
     }

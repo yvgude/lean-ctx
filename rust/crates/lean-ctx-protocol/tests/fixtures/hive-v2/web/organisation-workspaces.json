@@ -13,7 +13,7 @@
           "plan": "team",
           "seats": 10,
           "members": 6,
-          "engines_connected": 4
+          "instances_connected": 4
         },
         {
           "slug": "acme-labs",
@@ -21,7 +21,7 @@
           "plan": "team",
           "seats": 5,
           "members": 3,
-          "engines_connected": 1
+          "instances_connected": 1
         }
       ],
       "next_cursor": null

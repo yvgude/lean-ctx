@@ -15,8 +15,8 @@
 //! the global `[context_gateway]` section, which project-local configuration
 //! cannot weaken.
 
-pub(crate) mod capture;
-pub(crate) mod carrier;
+pub mod capture;
+pub mod carrier;
 mod clean;
 pub(crate) mod cross_line;
 mod detectors;
@@ -24,11 +24,11 @@ pub mod egress;
 pub mod hud;
 mod notes;
 pub mod provider;
-pub(crate) mod receipt_store;
+pub mod receipt_store;
 pub mod recovery;
 pub(crate) mod semantic;
-pub(crate) mod semantic_deferred;
-pub(crate) mod stored;
+pub mod semantic_deferred;
+pub mod stored;
 pub mod stores;
 pub mod withheld;
 
@@ -666,7 +666,7 @@ pub fn admit(text: &str, path: Option<&Path>, policy: &AdmissionPolicy) -> Admis
 /// Capture facts from a shell process. The flags describe raw byte streams,
 /// before decoding or rendering; marker text is never used to infer completeness.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct OutputCompleteness {
+pub struct OutputCompleteness {
     pub truncated: bool,
     pub timed_out: bool,
     pub reader_incomplete: bool,
@@ -677,7 +677,7 @@ pub(crate) struct OutputCompleteness {
 }
 
 impl OutputCompleteness {
-    pub(crate) const fn complete() -> Self {
+    pub const fn complete() -> Self {
         Self {
             truncated: false,
             timed_out: false,
@@ -687,7 +687,7 @@ impl OutputCompleteness {
         }
     }
 
-    pub(crate) fn is_complete(self) -> bool {
+    pub fn is_complete(self) -> bool {
         !(self.truncated
             || self.timed_out
             || self.reader_incomplete
@@ -719,17 +719,17 @@ impl OutputCompleteness {
 /// Result of inspecting tool output. A missing text means delivery is denied;
 /// rendered then contains only the stable, content-free gateway notice.
 #[derive(Debug, Clone)]
-pub(crate) struct ToolOutputAdmission {
+pub struct ToolOutputAdmission {
     pub text: Option<String>,
     pub notice: Option<String>,
 }
 
 impl ToolOutputAdmission {
-    pub(crate) fn withheld(&self) -> bool {
+    pub fn withheld(&self) -> bool {
         self.text.is_none()
     }
 
-    pub(crate) fn rendered(&self) -> String {
+    pub fn rendered(&self) -> String {
         match (&self.text, &self.notice) {
             (Some(text), Some(notice)) if text.is_empty() => notice.clone(),
             (Some(text), Some(notice)) => format!("{notice}\n{text}"),
@@ -740,10 +740,7 @@ impl ToolOutputAdmission {
     }
 }
 
-pub(crate) fn admit_tool_output(
-    text: &str,
-    completeness: OutputCompleteness,
-) -> ToolOutputAdmission {
+pub fn admit_tool_output(text: &str, completeness: OutputCompleteness) -> ToolOutputAdmission {
     // Check active project policy against the original bytes before Gateway
     // redaction can hide a phrase that policy must block.
     let project_original = crate::core::policy::content::protect_active(text);
@@ -927,9 +924,9 @@ fn mark_capture_incomplete(
 /// Source text admitted for delivery, with the original classification's
 /// persistence decision preserved for downstream caches and indexes.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SourceAdmission {
-    pub(crate) text: String,
-    pub(crate) storable: bool,
+pub struct SourceAdmission {
+    pub text: String,
+    pub storable: bool,
     /// Classification assigned by the original Gateway inspection.
     pub(crate) classification: ClassificationV1,
 }
@@ -960,7 +957,7 @@ pub(crate) fn admit_source_with_storage(
 }
 
 /// Admit an in-memory source without assigning it a synthetic filesystem path.
-pub(crate) fn admit_context_source(text: &str) -> Result<SourceAdmission, std::io::Error> {
+pub fn admit_context_source(text: &str) -> Result<SourceAdmission, std::io::Error> {
     admit_source_inner(text, None, false, OutputCompleteness::complete(), None)
 }
 
@@ -1257,8 +1254,8 @@ pub fn admit_media(path: &str, bytes: u64) -> Result<Option<String>, std::io::Er
 }
 
 /// Forget every memoized clean admission (measurements of cold reads).
-#[cfg(test)]
-pub(crate) fn clear_clean_memo() {
+#[cfg(any(test, feature = "test-support"))]
+pub fn clear_clean_memo() {
     clean::clear();
 }
 

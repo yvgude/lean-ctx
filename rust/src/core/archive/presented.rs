@@ -12,7 +12,7 @@
 //! that closes a materialization, after the delivery policy has passed) it
 //! records the presentation here. A binding holds only while a presentation
 //! of exactly that binding exists that was admitted under the CURRENT policy
-//! identity and is at most [`VALIDITY_SECONDS`] old — a caller that
+//! identity and is at most `VALIDITY_SECONDS` old — a caller that
 //! materializes its plan each turn always passes; one that stopped
 //! presenting the source does not.
 //!
@@ -111,7 +111,7 @@ pub(crate) fn verified_principal() -> String {
 /// place only: [`Self::expose`], for the response that hands a freshly issued
 /// capability to its caller.
 #[derive(Clone)]
-pub(crate) struct PresenterCapability(Zeroizing<[u8; 32]>);
+pub struct PresenterCapability(Zeroizing<[u8; 32]>);
 
 impl std::fmt::Debug for PresenterCapability {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -137,7 +137,7 @@ impl PresenterCapability {
     /// The capability a host presented, from its wire form. Form only: an
     /// unknown capability parses and then matches no presenter entry.
     #[must_use]
-    pub(crate) fn parse(text: &str) -> Option<Self> {
+    pub fn parse(text: &str) -> Option<Self> {
         let digits = text.strip_prefix(CAPABILITY_PREFIX)?.as_bytes();
         if digits.len() != 64 {
             return None;
@@ -151,7 +151,7 @@ impl PresenterCapability {
 
     /// The wire form. Only for the response that issues the capability.
     #[must_use]
-    pub(crate) fn expose(&self) -> Zeroizing<String> {
+    pub fn expose(&self) -> Zeroizing<String> {
         const DIGITS: &[u8; 16] = b"0123456789abcdef";
         let mut text = Zeroizing::new(String::with_capacity(CAPABILITY_PREFIX.len() + 64));
         text.push_str(CAPABILITY_PREFIX);
@@ -183,7 +183,7 @@ impl PresenterCapability {
     /// of a verifier, not of the capability. Naming it reveals no secret and
     /// proves nothing by itself.
     #[must_use]
-    pub(crate) fn reference(&self) -> String {
+    pub fn reference(&self) -> String {
         format!("{REFERENCE_PREFIX}{}", &self.id()[..32])
     }
 
@@ -225,7 +225,7 @@ tokio::task_local! {
 
 /// Run `operation` as the request of a host that showed `capability`
 /// (`None`: it showed none — the process capability presents).
-pub(crate) fn with_presenter<T>(
+pub fn with_presenter<T>(
     capability: Option<PresenterCapability>,
     operation: impl FnOnce() -> T,
 ) -> T {
@@ -233,7 +233,7 @@ pub(crate) fn with_presenter<T>(
 }
 
 /// [`with_presenter`] around a future: the whole request task.
-pub(crate) async fn presenter_scope<F: std::future::Future>(
+pub async fn presenter_scope<F: std::future::Future>(
     capability: Option<PresenterCapability>,
     request: F,
 ) -> F::Output {
@@ -245,7 +245,7 @@ pub(crate) async fn presenter_scope<F: std::future::Future>(
 /// and a handler that ran without it would be served as this process's own
 /// presenter. The value goes back into [`with_presenter`] and nowhere else.
 #[must_use]
-pub(crate) fn request_presenter() -> Option<PresenterCapability> {
+pub fn request_presenter() -> Option<PresenterCapability> {
     REQUEST_PRESENTER.try_with(Clone::clone).ok().flatten()
 }
 
@@ -272,7 +272,7 @@ pub(crate) fn current_presenter_reference() -> Option<String> {
 /// something that is not such a capability: decision receipts name a
 /// presenter only then, and never the process capability.
 #[must_use]
-pub(crate) fn shown_presenter_reference() -> Option<String> {
+pub fn shown_presenter_reference() -> Option<String> {
     let shown = REQUEST_PRESENTER.try_with(Clone::clone).ok().flatten()?;
     let id = shown.id();
     (!is_process_session(&id) && lifetime_end(&id, now()).is_some()).then(|| shown.reference())
@@ -300,7 +300,7 @@ const PRESENTERS: Register = Register {
 /// reads nor writes nor removes `archives/presented`; what an older binary
 /// left there lapses by that binary's own ten-minute rule and is dead data
 /// afterwards.
-pub(crate) const REGISTER_DIRECTORY: &str = "presented-v2";
+pub const REGISTER_DIRECTORY: &str = "presented-v2";
 
 const REGISTER: Register = Register {
     name: REGISTER_DIRECTORY,
@@ -320,18 +320,18 @@ fn lifetime_end(id: &str, now: i64) -> Option<i64> {
 }
 
 /// A freshly issued capability with the end of its lifetime.
-pub(crate) struct IssuedCapability {
-    pub(crate) capability: PresenterCapability,
+pub struct IssuedCapability {
+    pub capability: PresenterCapability,
     /// Register clock, seconds.
     pub(crate) expires_at: i64,
 }
 
 /// Mint a capability that lives `ttl_seconds` (1 to
-/// [`MAX_CAPABILITY_TTL_SECONDS`]) and put its presenter on record. `None`:
+/// `MAX_CAPABILITY_TTL_SECONDS`) and put its presenter on record. `None`:
 /// no randomness, a lifetime out of range, or the record could not be
 /// written — then no capability exists.
 #[must_use]
-pub(crate) fn issue(ttl_seconds: u32) -> Option<IssuedCapability> {
+pub fn issue(ttl_seconds: u32) -> Option<IssuedCapability> {
     let ttl = i64::from(ttl_seconds);
     if !(1..=MAX_CAPABILITY_TTL_SECONDS).contains(&ttl) {
         return None;
@@ -355,7 +355,7 @@ pub(crate) fn issue(ttl_seconds: u32) -> Option<IssuedCapability> {
 /// End of the lifetime of an ISSUED capability that may still present, or
 /// `None` (unknown, expired, revoked, or not an issued capability).
 #[must_use]
-pub(crate) fn issued_lifetime_end(capability: &PresenterCapability) -> Option<i64> {
+pub fn issued_lifetime_end(capability: &PresenterCapability) -> Option<i64> {
     let id = capability.id();
     if is_process_session(&id) {
         return None;
@@ -366,7 +366,7 @@ pub(crate) fn issued_lifetime_end(capability: &PresenterCapability) -> Option<i6
 /// Revoke an issued capability: from now on it presents nothing and reuses
 /// nothing. `false`: no such presenter on record (nothing to revoke), or the
 /// record could not be written.
-pub(crate) fn revoke(capability: &PresenterCapability) -> bool {
+pub fn revoke(capability: &PresenterCapability) -> bool {
     let now = now();
     PRESENTERS.update::<PresenterRecord>(&capability.id(), now, |known| {
         known.map(|record| PresenterRecord {
@@ -379,13 +379,13 @@ pub(crate) fn revoke(capability: &PresenterCapability) -> bool {
 /// The capability in a host's capability file, or `None`. On every platform
 /// the path must name a regular file and not a symlink (checked on the path
 /// itself, and again on the opened file), at most
-/// [`MAX_CAPABILITY_FILE_BYTES`] long. On Unix the open itself refuses a
+/// `MAX_CAPABILITY_FILE_BYTES` long. On Unix the open itself refuses a
 /// symlink (`O_NOFOLLOW`) and the file must be owned by this user and closed
 /// to group and others. On Windows ownership and access rights are NOT
 /// checked, and the two checks of the path are not atomic. Nothing about a
 /// refused file is reported.
 #[must_use]
-pub(crate) fn read_capability_file(path: &Path) -> Option<PresenterCapability> {
+pub fn read_capability_file(path: &Path) -> Option<PresenterCapability> {
     use std::io::Read as _;
 
     if !std::fs::symlink_metadata(path).ok()?.file_type().is_file() {
@@ -423,7 +423,7 @@ pub(crate) fn read_capability_file(path: &Path) -> Option<PresenterCapability> {
 /// set of the register, not a field here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PresentedBinding {
+pub struct PresentedBinding {
     /// Canonical project root the plan ran for.
     project: String,
     /// Caller principal ([`verified_principal`]).
@@ -524,7 +524,7 @@ fn canonical_project(project: &Path) -> Option<String> {
 impl PresentedBinding {
     /// The binding of a source the plan has admitted in this very step, with
     /// the caller, role and policy identity that hold now.
-    pub(crate) fn admitted_now(
+    pub fn admitted_now(
         project: &Path,
         object_ref: &str,
         source_id: &str,
@@ -688,37 +688,37 @@ impl PresentedBinding {
 /// never passed here (E3). `false`: not recorded — no usable presenter, the
 /// source already has its full set of live issued presenters, a bound, the
 /// lock, the file system.
-pub(crate) fn record_presentation(binding: &PresentedBinding) -> bool {
+pub fn record_presentation(binding: &PresentedBinding) -> bool {
     record_presentation_at(binding, now())
 }
 
 /// "Now" of the validity check and of a recorded presentation: the
 /// register's clock. Tests can move it ahead with [`TestClock`].
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-support")))]
 fn now() -> i64 {
     register::now()
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn now() -> i64 {
     register::now().saturating_add(TEST_CLOCK_AHEAD.load(std::sync::atomic::Ordering::SeqCst))
 }
 
 /// Seconds the presentation clock runs ahead of the system clock in tests.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 static TEST_CLOCK_AHEAD: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
 /// Moves the presentation clock ahead until the guard drops. The offset is
 /// process-wide: hold `core::data_dir::isolated_data_dir()` (which serializes
 /// every test that has a register) for as long as a guard lives.
-#[cfg(test)]
-pub(crate) struct TestClock;
+#[cfg(any(test, feature = "test-support"))]
+pub struct TestClock;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl TestClock {
     /// One second past the validity of every presentation recorded so far.
     #[must_use]
-    pub(crate) fn past_validity() -> Self {
+    pub fn past_validity() -> Self {
         TEST_CLOCK_AHEAD.fetch_add(VALIDITY_SECONDS + 1, std::sync::atomic::Ordering::SeqCst);
         Self
     }
@@ -726,7 +726,7 @@ impl TestClock {
     /// One second past the longest lifetime of every capability issued so
     /// far.
     #[must_use]
-    pub(crate) fn past_capability_lifetime() -> Self {
+    pub fn past_capability_lifetime() -> Self {
         TEST_CLOCK_AHEAD.fetch_add(
             MAX_CAPABILITY_TTL_SECONDS + 1,
             std::sync::atomic::Ordering::SeqCst,
@@ -735,7 +735,7 @@ impl TestClock {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for TestClock {
     fn drop(&mut self) {
         TEST_CLOCK_AHEAD.store(0, std::sync::atomic::Ordering::SeqCst);

@@ -608,7 +608,7 @@ const CASE_INSENSITIVE_PATHS: bool = cfg!(any(target_os = "macos", windows));
 /// Lease resource of one project-relative path (`src/core`, no `.`/`..`).
 /// Nested paths of one project overlap; paths of different projects never do.
 /// The Work Graph and `ctx_agent` both name their path leases through here.
-pub(crate) fn project_path_resource(
+pub fn project_path_resource(
     project_root: &str,
     relative: &str,
 ) -> Result<String, AgentLeaseError> {
@@ -652,7 +652,7 @@ pub(crate) fn project_path_resource(
 /// separators normalized). Both spellings of one file name the same resource.
 /// Like a Work Graph path claim, the path may not traverse a symlink or
 /// leave the project, and the project root itself cannot be leased.
-pub(crate) fn project_path_target_resource(
+pub fn project_path_target_resource(
     project_root: &str,
     target: &str,
 ) -> Result<String, AgentLeaseError> {
@@ -710,7 +710,7 @@ fn strip_root<'a>(target: &'a str, root: &str) -> Option<&'a str> {
 }
 
 /// Lease resource of a symbol name within one project.
-pub(crate) fn project_symbol_resource(project_root: &str, symbol: &str) -> String {
+pub fn project_symbol_resource(project_root: &str, symbol: &str) -> String {
     let scope = crate::core::project_hash::hash_project_root(project_root);
     format!(
         "project-symbolref:{}",

@@ -191,7 +191,7 @@ pub(crate) const COMMAND_SAFETY_TABLE: &[CommandSafety] = &[
 ];
 
 /// Renders the full safety table as a human-readable report.
-pub(crate) fn format_safety_table() -> String {
+pub fn format_safety_table() -> String {
     let mut out = String::new();
     out.push_str("Command Compression Safety Levels\n");
     out.push_str(&"=".repeat(72));

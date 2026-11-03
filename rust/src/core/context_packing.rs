@@ -21,7 +21,7 @@ use std::collections::HashSet;
 /// A candidate for inclusion: the set of weighted terms it covers and the
 /// budget cost of including it (e.g. its token count).
 #[derive(Debug, Clone)]
-pub(crate) struct CoverageItem {
+pub struct CoverageItem {
     /// Distinct terms this item covers. Weights come from `term_weight`.
     pub terms: HashSet<String>,
     /// Budget consumed if this item is selected (must be ≥ 1).
@@ -37,11 +37,7 @@ pub(crate) struct CoverageItem {
 /// Guarantees: with unit costs this is the standard greedy max-coverage with a
 /// `1 − 1/e` approximation ratio. With costs it uses marginal-gain-per-cost,
 /// the cost-effective greedy heuristic.
-pub(crate) fn greedy_max_coverage<F>(
-    items: &[CoverageItem],
-    budget: usize,
-    term_weight: F,
-) -> Vec<usize>
+pub fn greedy_max_coverage<F>(items: &[CoverageItem], budget: usize, term_weight: F) -> Vec<usize>
 where
     F: Fn(&str) -> f64,
 {

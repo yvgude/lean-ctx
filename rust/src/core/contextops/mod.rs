@@ -4,19 +4,19 @@ pub(crate) mod lint;
 pub(crate) mod sync;
 
 pub(crate) use config::RulesConfig;
-pub(crate) use drift::{DriftReport, DriftStatus};
-pub(crate) use lint::{LintSeverity, LintWarning};
+pub use drift::{DriftReport, DriftStatus};
+pub use lint::{LintSeverity, LintWarning};
 pub(crate) use sync::SyncReport;
 
 use std::path::Path;
 
-pub(crate) struct ContextOps {
+pub struct ContextOps {
     pub home: std::path::PathBuf,
     pub project_root: std::path::PathBuf,
 }
 
 impl ContextOps {
-    pub(crate) fn new(home: &Path, project_root: &Path) -> Self {
+    pub fn new(home: &Path, project_root: &Path) -> Self {
         Self {
             home: home.to_path_buf(),
             project_root: project_root.to_path_buf(),
@@ -28,37 +28,37 @@ impl ContextOps {
     /// Infallible: drift is computed against `rules_canonical` (always present in
     /// the binary), **not** against `.lean-ctx/rules.toml`, so `rules diff` needs
     /// no prior `rules init` and can never fail on a missing config (#548).
-    pub(crate) fn detect_drift(&self) -> Vec<DriftReport> {
+    pub fn detect_drift(&self) -> Vec<DriftReport> {
         drift::detect_drift(&self.home)
     }
 
-    pub(crate) fn sync_all(&self) -> SyncReport {
+    pub fn sync_all(&self) -> SyncReport {
         sync::sync_all(&self.home)
     }
 
-    pub(crate) fn sync_agent(&self, agent: &str) -> SyncReport {
+    pub fn sync_agent(&self, agent: &str) -> SyncReport {
         sync::sync_agent(&self.home, agent)
     }
 
-    pub(crate) fn lint(&self) -> Result<Vec<LintWarning>, String> {
+    pub fn lint(&self) -> Result<Vec<LintWarning>, String> {
         let config = RulesConfig::load(&self.project_root)?;
         Ok(lint::lint(&config, &self.home))
     }
 
-    pub(crate) fn status(&self) -> Vec<crate::rules_inject::RulesTargetStatus> {
+    pub fn status(&self) -> Vec<crate::rules_inject::RulesTargetStatus> {
         crate::rules_inject::collect_rules_status(&self.home)
     }
 
-    pub(crate) fn init(&self) -> Result<RulesConfig, String> {
+    pub fn init(&self) -> Result<RulesConfig, String> {
         RulesConfig::init_from_existing(&self.project_root, &self.home)
     }
 
-    pub(crate) fn has_config(&self) -> bool {
+    pub fn has_config(&self) -> bool {
         RulesConfig::config_path(&self.project_root).exists()
     }
 }
 
-pub(crate) fn format_status(statuses: &[crate::rules_inject::RulesTargetStatus]) -> String {
+pub fn format_status(statuses: &[crate::rules_inject::RulesTargetStatus]) -> String {
     let mut lines = Vec::new();
     lines.push("Agent Rules Status:".to_string());
     lines.push(String::new());
@@ -78,7 +78,7 @@ pub(crate) fn format_status(statuses: &[crate::rules_inject::RulesTargetStatus])
     lines.join("\n")
 }
 
-pub(crate) fn format_drift(reports: &[DriftReport]) -> String {
+pub fn format_drift(reports: &[DriftReport]) -> String {
     let mut lines = Vec::new();
     lines.push("Drift Report:".to_string());
     lines.push(String::new());
@@ -102,7 +102,7 @@ pub(crate) fn format_drift(reports: &[DriftReport]) -> String {
     lines.join("\n")
 }
 
-pub(crate) fn format_lint(warnings: &[LintWarning]) -> String {
+pub fn format_lint(warnings: &[LintWarning]) -> String {
     if warnings.is_empty() {
         return "No lint issues found.".to_string();
     }
@@ -128,7 +128,7 @@ pub(crate) fn format_lint(warnings: &[LintWarning]) -> String {
     lines.join("\n")
 }
 
-pub(crate) fn format_sync(report: &SyncReport) -> String {
+pub fn format_sync(report: &SyncReport) -> String {
     let mut lines = Vec::new();
     lines.push("Sync Report:".to_string());
     lines.push(String::new());

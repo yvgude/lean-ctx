@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.leanctx.com/hive-v2/schemas/policy.schema.json",
   "title": "Unified Control policies (Release B, BAUPLAN v1.1 §7)",
-  "description": "Policy documents per hierarchy level (org -> workspace -> vault -> engine), their effective merge and the signed per-engine bundle. Every member has `x-merge` (its merge rule = tightening direction: union = deny wins, intersection = allowed values every level allows, groups = every allowlist must match, min = stricter limit, true_wins/false_wins, rank = later enum value is stricter, equal = levels must agree else non_mergeable) and `x-enforcement`: `engine` = enforced by the engine's gateway policy pack field `x-engine`, `server` = enforced by Hive itself at the point `x-server` names (403 policy_denied {member, level}), whatever the engine does, `advisory` = distributed and shown, not enforced yet. Enforcement covers access through LeanCTX only.",
+  "description": "Policy documents per hierarchy level (org -> workspace -> vault -> instance), their effective merge and the signed per-instance bundle. Every member has `x-merge` (its merge rule = tightening direction: union = deny wins, intersection = allowed values every level allows, groups = every allowlist must match, min = stricter limit, true_wins/false_wins, rank = later enum value is stricter, equal = levels must agree else non_mergeable) and `x-enforcement`: `instance` = enforced by the instance's gateway policy pack field `x-instance`, `server` = enforced by Hive itself at the point `x-server` names (403 policy_denied {member, level}), whatever the instance does, `advisory` = distributed and shown, not enforced yet. Enforcement covers access through LeanCTX only.",
   "$defs": {
     "level": {
       "enum": [
         "org",
         "workspace",
         "vault",
-        "engine"
+        "instance"
       ],
       "description": "hierarchy level, outermost first; lower levels can only tighten"
     },
@@ -124,22 +124,22 @@
           "description": "Block agent writes and actions that carry detected secrets or PII.",
           "type": "boolean",
           "x-merge": "true_wins",
-          "x-enforcement": "engine",
-          "x-engine": "egress.block_secrets"
+          "x-enforcement": "instance",
+          "x-instance": "egress.block_secrets"
         },
         "pii": {
           "description": "PII detector action on inbound content; redact = anonymise.",
           "$ref": "#/$defs/action",
           "x-merge": "rank",
-          "x-enforcement": "engine",
-          "x-engine": "filters.pii"
+          "x-enforcement": "instance",
+          "x-instance": "filters.pii"
         },
         "classification": {
           "description": "Data-classification banner gate (confidential/secret markings).",
           "$ref": "#/$defs/action",
           "x-merge": "rank",
-          "x-enforcement": "engine",
-          "x-engine": "filters.classification"
+          "x-enforcement": "instance",
+          "x-instance": "filters.classification"
         },
         "blocked_labels": {
           "description": "Classification labels that gate content.",
@@ -150,8 +150,8 @@
             "$ref": "#/$defs/name"
           },
           "x-merge": "union",
-          "x-enforcement": "engine",
-          "x-engine": "filters.blocked_labels"
+          "x-enforcement": "instance",
+          "x-instance": "filters.blocked_labels"
         },
         "allowed_models": {
           "description": "Model allowlists (glob-lite, '*' wildcard): a model is allowed when it matches a pattern of every group; an empty group allows no model.",
@@ -168,8 +168,8 @@
             }
           },
           "x-merge": "groups",
-          "x-enforcement": "engine",
-          "x-engine": "routing.model_ceiling_groups"
+          "x-enforcement": "instance",
+          "x-instance": "routing.model_ceiling_groups"
         },
         "external_model_excluded_classes": {
           "description": "Data classes that are never sent to an external (remote) model.",
@@ -210,22 +210,22 @@
           "description": "Block agent writes and actions that carry detected secrets or PII.",
           "type": "boolean",
           "x-merge": "true_wins",
-          "x-enforcement": "engine",
-          "x-engine": "egress.block_secrets"
+          "x-enforcement": "instance",
+          "x-instance": "egress.block_secrets"
         },
         "pii": {
           "description": "PII detector action on inbound content; redact = anonymise.",
           "$ref": "#/$defs/action",
           "x-merge": "rank",
-          "x-enforcement": "engine",
-          "x-engine": "filters.pii"
+          "x-enforcement": "instance",
+          "x-instance": "filters.pii"
         },
         "classification": {
           "description": "Data-classification banner gate (confidential/secret markings).",
           "$ref": "#/$defs/action",
           "x-merge": "rank",
-          "x-enforcement": "engine",
-          "x-engine": "filters.classification"
+          "x-enforcement": "instance",
+          "x-instance": "filters.classification"
         },
         "blocked_labels": {
           "description": "Classification labels that gate content.",
@@ -236,8 +236,8 @@
             "$ref": "#/$defs/name"
           },
           "x-merge": "union",
-          "x-enforcement": "engine",
-          "x-engine": "filters.blocked_labels"
+          "x-enforcement": "instance",
+          "x-instance": "filters.blocked_labels"
         },
         "allowed_models": {
           "description": "Model allowlists (glob-lite, '*' wildcard): a model is allowed when it matches a pattern of every group; an empty group allows no model.",
@@ -254,8 +254,8 @@
             }
           },
           "x-merge": "groups",
-          "x-enforcement": "engine",
-          "x-engine": "routing.model_ceiling_groups"
+          "x-enforcement": "instance",
+          "x-instance": "routing.model_ceiling_groups"
         },
         "external_model_excluded_classes": {
           "description": "Data classes that are never sent to an external (remote) model.",
@@ -286,22 +286,22 @@
           "minimum": 1,
           "maximum": 10000000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "context.max_context_tokens"
+          "x-enforcement": "instance",
+          "x-instance": "context.max_context_tokens"
         },
         "injection_filter": {
           "description": "Filter level of the prompt-injection detector on inbound content.",
           "$ref": "#/$defs/action",
           "x-merge": "rank",
-          "x-enforcement": "engine",
-          "x-engine": "filters.injection"
+          "x-enforcement": "instance",
+          "x-instance": "filters.injection"
         },
         "read_mode": {
           "description": "Default read mode; levels that set it must agree.",
           "$ref": "#/$defs/read_mode",
           "x-merge": "equal",
-          "x-enforcement": "engine",
-          "x-engine": "context.default_read_mode"
+          "x-enforcement": "instance",
+          "x-instance": "context.default_read_mode"
         },
         "ranking_profile": {
           "description": "Ranking profile name; levels that set it must agree.",
@@ -318,8 +318,8 @@
             "$ref": "#/$defs/name"
           },
           "x-merge": "intersection",
-          "x-enforcement": "engine",
-          "x-engine": "context.allow_tools"
+          "x-enforcement": "instance",
+          "x-instance": "context.allow_tools"
         },
         "denied_tools": {
           "description": "Tool denylist.",
@@ -330,8 +330,8 @@
             "$ref": "#/$defs/name"
           },
           "x-merge": "union",
-          "x-enforcement": "engine",
-          "x-engine": "context.deny_tools"
+          "x-enforcement": "instance",
+          "x-instance": "context.deny_tools"
         },
         "allowed_sources": {
           "description": "Context source kinds that may be used (e.g. files, shell, web, knowledge, provider:github).",
@@ -350,26 +350,26 @@
           "minimum": 0,
           "maximum": 10000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "egress.max_writes_per_min"
+          "x-enforcement": "instance",
+          "x-instance": "egress.max_writes_per_min"
         },
         "max_cost_cents_per_person_per_day": {
-          "description": "Measured model spend per person per UTC day, in US cents (engine: /100 USD).",
+          "description": "Measured model spend per person per UTC day, in US cents (instance: /100 USD).",
           "type": "integer",
           "minimum": 0,
           "maximum": 100000000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "budgets.max_cost_usd_per_person_per_day"
+          "x-enforcement": "instance",
+          "x-instance": "budgets.max_cost_usd_per_person_per_day"
         },
         "max_cost_cents_per_project_per_month": {
-          "description": "Measured model spend per project per UTC month, in US cents (engine: /100 USD).",
+          "description": "Measured model spend per project per UTC month, in US cents (instance: /100 USD).",
           "type": "integer",
           "minimum": 0,
           "maximum": 100000000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "budgets.max_cost_usd_per_project_per_month"
+          "x-enforcement": "instance",
+          "x-instance": "budgets.max_cost_usd_per_project_per_month"
         },
         "max_requests_per_minute_per_person": {
           "description": "Accepted gateway requests per person per minute.",
@@ -377,8 +377,8 @@
           "minimum": 1,
           "maximum": 1000000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "budgets.max_requests_per_minute_per_person"
+          "x-enforcement": "instance",
+          "x-instance": "budgets.max_requests_per_minute_per_person"
         },
         "auto_extraction": {
           "description": "Agents may extract knowledge automatically (extraction rule).",
@@ -412,22 +412,22 @@
           "minimum": 1,
           "maximum": 10000000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "context.max_context_tokens"
+          "x-enforcement": "instance",
+          "x-instance": "context.max_context_tokens"
         },
         "injection_filter": {
           "description": "Filter level of the prompt-injection detector on inbound content.",
           "$ref": "#/$defs/action",
           "x-merge": "rank",
-          "x-enforcement": "engine",
-          "x-engine": "filters.injection"
+          "x-enforcement": "instance",
+          "x-instance": "filters.injection"
         },
         "read_mode": {
           "description": "Default read mode; levels that set it must agree.",
           "$ref": "#/$defs/read_mode",
           "x-merge": "equal",
-          "x-enforcement": "engine",
-          "x-engine": "context.default_read_mode"
+          "x-enforcement": "instance",
+          "x-instance": "context.default_read_mode"
         },
         "ranking_profile": {
           "description": "Ranking profile name; levels that set it must agree.",
@@ -444,8 +444,8 @@
             "$ref": "#/$defs/name"
           },
           "x-merge": "intersection",
-          "x-enforcement": "engine",
-          "x-engine": "context.allow_tools"
+          "x-enforcement": "instance",
+          "x-instance": "context.allow_tools"
         },
         "denied_tools": {
           "description": "Tool denylist.",
@@ -456,8 +456,8 @@
             "$ref": "#/$defs/name"
           },
           "x-merge": "union",
-          "x-enforcement": "engine",
-          "x-engine": "context.deny_tools"
+          "x-enforcement": "instance",
+          "x-instance": "context.deny_tools"
         },
         "allowed_sources": {
           "description": "Context source kinds that may be used (e.g. files, shell, web, knowledge, provider:github).",
@@ -476,26 +476,26 @@
           "minimum": 0,
           "maximum": 10000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "egress.max_writes_per_min"
+          "x-enforcement": "instance",
+          "x-instance": "egress.max_writes_per_min"
         },
         "max_cost_cents_per_person_per_day": {
-          "description": "Measured model spend per person per UTC day, in US cents (engine: /100 USD).",
+          "description": "Measured model spend per person per UTC day, in US cents (instance: /100 USD).",
           "type": "integer",
           "minimum": 0,
           "maximum": 100000000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "budgets.max_cost_usd_per_person_per_day"
+          "x-enforcement": "instance",
+          "x-instance": "budgets.max_cost_usd_per_person_per_day"
         },
         "max_cost_cents_per_project_per_month": {
-          "description": "Measured model spend per project per UTC month, in US cents (engine: /100 USD).",
+          "description": "Measured model spend per project per UTC month, in US cents (instance: /100 USD).",
           "type": "integer",
           "minimum": 0,
           "maximum": 100000000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "budgets.max_cost_usd_per_project_per_month"
+          "x-enforcement": "instance",
+          "x-instance": "budgets.max_cost_usd_per_project_per_month"
         },
         "max_requests_per_minute_per_person": {
           "description": "Accepted gateway requests per person per minute.",
@@ -503,8 +503,8 @@
           "minimum": 1,
           "maximum": 1000000,
           "x-merge": "min",
-          "x-enforcement": "engine",
-          "x-engine": "budgets.max_requests_per_minute_per_person"
+          "x-enforcement": "instance",
+          "x-instance": "budgets.max_requests_per_minute_per_person"
         },
         "auto_extraction": {
           "description": "Agents may extract knowledge automatically (extraction rule).",
@@ -533,7 +533,7 @@
       "additionalProperties": false,
       "properties": {
         "allowed_vaults": {
-          "description": "Vault ids an engine may use.",
+          "description": "Vault ids an instance may use.",
           "type": "array",
           "maxItems": 64,
           "uniqueItems": true,
@@ -542,7 +542,7 @@
           },
           "x-merge": "intersection",
           "x-enforcement": "server",
-          "x-server": "every engine route that names a vault (resolve, match, reads, pushes, tasks, bus, metrics): a vault outside the list is refused, a new vault too"
+          "x-server": "every instance route that names a vault (resolve, match, reads, pushes, tasks, bus, metrics): a vault outside the list is refused, a new vault too"
         },
         "cross_team_sharing": {
           "description": "Results may be shared with other team workspaces.",
@@ -556,7 +556,7 @@
           "$ref": "#/$defs/claim_role",
           "x-merge": "rank",
           "x-enforcement": "server",
-          "x-server": "task claim and claim renew by an engine whose owner's role is lower are refused"
+          "x-server": "task claim and claim renew by an instance whose owner's role is lower are refused"
         },
         "consent_required_for": {
           "description": "Actions that need a person's consent outside the agent context.",
@@ -568,21 +568,21 @@
           },
           "x-merge": "union",
           "x-enforcement": "server",
-          "x-server": "trust_boundary: an engine linking a project to an existing vault is refused (a person links it); the other actions stay advisory"
+          "x-server": "trust_boundary: an instance linking a project to an existing vault is refused (a person links it); the other actions stay advisory"
         },
         "personal_workspace": {
           "description": "Whether the team's project knowledge may go to a person's own Personal workspace.",
           "$ref": "#/$defs/personal_workspace_mode",
           "x-merge": "rank",
           "x-enforcement": "server",
-          "x-server": "forbid: a vault of the team is never moved to a personal workspace (W11), and an engine enrolled in a team never reaches a personal vault; engines from the C line on also refuse to give a project they worked on in the team a vault in a personal workspace (older engines: advisory)"
+          "x-server": "forbid: a vault of the team is never moved to a personal workspace (W11), and an instance enrolled in a team never reaches a personal vault; instances from the C line on also refuse to give a project they worked on in the team a vault in a personal workspace (older instances: advisory)"
         },
-        "share_engine_metrics": {
-          "description": "Share engine metrics (hourly aggregated counters, never content) with Hive Insights; absent = the plan default.",
+        "share_instance_metrics": {
+          "description": "Share instance metrics (hourly aggregated counters, never content) with Hive Insights; absent = the plan default.",
           "type": "boolean",
           "x-merge": "false_wins",
           "x-enforcement": "server",
-          "x-server": "POST /v1/metrics/hours: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
+          "x-server": "POST /v1/metrics/hours: an instance whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
         }
       }
     },
@@ -591,7 +591,7 @@
       "additionalProperties": false,
       "properties": {
         "allowed_vaults": {
-          "description": "Vault ids an engine may use.",
+          "description": "Vault ids an instance may use.",
           "type": "array",
           "maxItems": 256,
           "uniqueItems": true,
@@ -600,7 +600,7 @@
           },
           "x-merge": "intersection",
           "x-enforcement": "server",
-          "x-server": "every engine route that names a vault (resolve, match, reads, pushes, tasks, bus, metrics): a vault outside the list is refused, a new vault too"
+          "x-server": "every instance route that names a vault (resolve, match, reads, pushes, tasks, bus, metrics): a vault outside the list is refused, a new vault too"
         },
         "cross_team_sharing": {
           "description": "Results may be shared with other team workspaces.",
@@ -614,7 +614,7 @@
           "$ref": "#/$defs/claim_role",
           "x-merge": "rank",
           "x-enforcement": "server",
-          "x-server": "task claim and claim renew by an engine whose owner's role is lower are refused"
+          "x-server": "task claim and claim renew by an instance whose owner's role is lower are refused"
         },
         "consent_required_for": {
           "description": "Actions that need a person's consent outside the agent context.",
@@ -626,21 +626,21 @@
           },
           "x-merge": "union",
           "x-enforcement": "server",
-          "x-server": "trust_boundary: an engine linking a project to an existing vault is refused (a person links it); the other actions stay advisory"
+          "x-server": "trust_boundary: an instance linking a project to an existing vault is refused (a person links it); the other actions stay advisory"
         },
         "personal_workspace": {
           "description": "Whether the team's project knowledge may go to a person's own Personal workspace.",
           "$ref": "#/$defs/personal_workspace_mode",
           "x-merge": "rank",
           "x-enforcement": "server",
-          "x-server": "forbid: a vault of the team is never moved to a personal workspace (W11), and an engine enrolled in a team never reaches a personal vault; engines from the C line on also refuse to give a project they worked on in the team a vault in a personal workspace (older engines: advisory)"
+          "x-server": "forbid: a vault of the team is never moved to a personal workspace (W11), and an instance enrolled in a team never reaches a personal vault; instances from the C line on also refuse to give a project they worked on in the team a vault in a personal workspace (older instances: advisory)"
         },
-        "share_engine_metrics": {
-          "description": "Share engine metrics (hourly aggregated counters, never content) with Hive Insights; absent = the plan default.",
+        "share_instance_metrics": {
+          "description": "Share instance metrics (hourly aggregated counters, never content) with Hive Insights; absent = the plan default.",
           "type": "boolean",
           "x-merge": "false_wins",
           "x-enforcement": "server",
-          "x-server": "POST /v1/metrics/hours: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
+          "x-server": "POST /v1/metrics/hours: an instance whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices refused; absent at every level = the plan default (Team, Enterprise on; Personal and a workspace without a plan off until the person confirms once, 403 sharing_not_confirmed)"
         }
       }
     },
@@ -692,7 +692,7 @@
       }
     },
     "source": {
-      "description": "a document that went into the bundle: org/workspace scope = org_id (an organisation's org-level document: orgn_ + its id), vault = vault id, engine = instance_id",
+      "description": "a document that went into the bundle: org/workspace scope = org_id (an organisation's org-level document: orgn_ + its id), vault = vault id, instance = instance_id",
       "type": "object",
       "required": [
         "level",
@@ -719,7 +719,7 @@
       }
     },
     "bundle": {
-      "description": "signed effective policy of one engine (purpose key `policy` of key set v3): Ed25519 over \"leanctx.hive.effective-policy.v1\\n\" || canonical_json(bundle without signature), signature lowercase hex. `version` grows strictly per engine; an engine refuses a lower version or the same version with another digest (downgrade), a bundle for another org_id/instance_id, and treats it as expired after not_after (sensitive actions fail closed, the last valid rules keep restricting local work).",
+      "description": "signed effective policy of one instance (purpose key `policy` of key set v3): Ed25519 over \"leanctx.hive.effective-policy.v1\\n\" || canonical_json(bundle without signature), signature lowercase hex. `version` grows strictly per instance; an instance refuses a lower version or the same version with another digest (downgrade), a bundle for another org_id/instance_id, and treats it as expired after not_after (sensitive actions fail closed, the last valid rules keep restricting local work).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -772,12 +772,12 @@
           "properties": {
             "effective": {
               "$ref": "#/$defs/effective",
-              "description": "org ∧ workspace ∧ engine: applies to every vault without an entry in `vaults`"
+              "description": "org ∧ workspace ∧ instance: applies to every vault without an entry in `vaults`"
             },
             "vaults": {
               "type": "array",
               "maxItems": 32,
-              "description": "per vault with a vault-level document: org ∧ workspace ∧ vault ∧ engine, ascending by vault_id",
+              "description": "per vault with a vault-level document: org ∧ workspace ∧ vault ∧ instance, ascending by vault_id",
               "items": {
                 "type": "object",
                 "required": [
@@ -799,7 +799,7 @@
         },
         "digest": {
           "$ref": "#/$defs/digest",
-          "description": "digest of `policy`; the engine acks it"
+          "description": "digest of `policy`; the instance acks it"
         },
         "key_id": {
           "$ref": "common.schema.json#/$defs/key_id"
@@ -810,7 +810,7 @@
       }
     },
     "bundle_response": {
-      "description": "GET /v1/policy/bundle for Hive-Protocol 2.x: the schema, the filter packs and `effective_policy` (null only when this server has no lease signing key); answers below 2.1 also carry policy_version 0, org_policy null and unpin null",
+      "description": "GET /v1/policy/bundle for Hive-Protocol 2.x: the schema, the filter packs and `effective_policy` (null only when this server has no lease signing key); no TOML org policy members",
       "type": "object",
       "required": [
         "schema",
@@ -820,18 +820,6 @@
       "properties": {
         "schema": {
           "const": "leanctx.hive.policy-bundle/v1"
-        },
-        "policy_version": {
-          "description": "only in answers to Hive-Protocol below 2.1, always 0: the released 3.12.1 engine (C0 2.0) requires it (until MIN_ENGINE >= the C0 2.1 release); the TOML org policy is retired",
-          "const": 0
-        },
-        "org_policy": {
-          "description": "only in answers to Hive-Protocol below 2.1, always null (until MIN_ENGINE >= the C0 2.1 release)",
-          "type": "null"
-        },
-        "unpin": {
-          "description": "only in answers to Hive-Protocol below 2.1, always null (until MIN_ENGINE >= the C0 2.1 release)",
-          "type": "null"
         },
         "filter_packs": {
           "type": "array",
@@ -850,7 +838,7 @@
       }
     },
     "ack_request": {
-      "description": "POST /v1/policy/ack: the engine applied this bundle; `unenforced` lists the members this engine cannot enforce (`x-enforcement: engine`); server-enforced members are never listed. With `refused`: the engine received this bundle (`version`, `digest` as received) but refused it and keeps applying the bundle `refused.applied_version` (null: it holds no valid bundle); `unenforced` is then absent",
+      "description": "POST /v1/policy/ack: the instance applied this bundle; `unenforced` lists the members this instance cannot enforce (`x-enforcement: instance`); server-enforced members are never listed. With `refused`: the instance received this bundle (`version`, `digest` as received) but refused it and keeps applying the bundle `refused.applied_version` (null: it holds no valid bundle); `unenforced` is then absent",
       "type": "object",
       "required": [
         "version",
@@ -904,7 +892,7 @@
           "$ref": "#/$defs/refusal_reason"
         },
         "detail": {
-          "description": "the engine's diagnostic line, no content",
+          "description": "the instance's diagnostic line, no content",
           "type": "string",
           "minLength": 1,
           "maxLength": 300,
@@ -955,7 +943,7 @@
       }
     },
     "refusal_reason": {
-      "description": "why an engine refused a received bundle: invalid_bundle (does not parse or validate), wrong_target (issued for another org or engine), key_unavailable (no verified key set v3 or no valid policy key for key_id), signature_invalid, digest_mismatch (digest is not the policy's), downgrade (older version, or the same version with another digest), expired (not_after already passed), install_failed (verified but could not be stored)",
+      "description": "why an instance refused a received bundle: invalid_bundle (does not parse or validate), wrong_target (issued for another org or instance), key_unavailable (no verified key set v3 or no valid policy key for key_id), signature_invalid, digest_mismatch (digest is not the policy's), downgrade (older version, or the same version with another digest), expired (not_after already passed), install_failed (verified but could not be stored)",
       "enum": [
         "invalid_bundle",
         "wrong_target",
@@ -993,7 +981,7 @@
             "acked",
             "outdated"
           ],
-          "description": "outdated: a newer bundle was issued to this engine since"
+          "description": "outdated: a newer bundle was issued to this instance since"
         },
         "acked_at": {
           "$ref": "#/$defs/time"

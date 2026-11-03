@@ -65,7 +65,7 @@ pub fn role_capabilities(role_name: &str) -> HashSet<Capability> {
     let mut caps = granted_capabilities(role_name);
     // The Hive release switch (3.12.1): off, no role holds or advertises
     // the Hive capability, as the Hive tools are withheld.
-    if !crate::core::hive::available_locally() {
+    if !crate::core::hive_gate::available_locally() {
         caps.remove(&Capability::HiveNet);
     }
     caps
@@ -135,7 +135,7 @@ fn capabilities_from_role(role_name: &str) -> HashSet<Capability> {
     }
     // Hive tasks reach the organization's linked Hive only; the
     // connection, its lease and the opt-in decide what goes out (C0 1.9 §4).
-    if crate::core::hive::available_locally() && has_tool("ctx_tasks") {
+    if crate::core::hive_gate::available_locally() && has_tool("ctx_tasks") {
         caps.insert(Capability::AgentManage);
         caps.insert(Capability::HiveNet);
     }
@@ -215,7 +215,7 @@ mod tests {
     /// With the Hive release switch off, no role holds the Hive capability.
     #[test]
     fn no_role_holds_hive_net_while_hive_is_withheld() {
-        if crate::core::hive::available_locally() {
+        if crate::core::hive_gate::available_locally() {
             return;
         }
         for role in ["admin", "coder", "unknown_role", "reviewer", "minimal"] {
@@ -231,7 +231,7 @@ mod tests {
     fn tasks_work_for_the_default_role_only_where_allowed() {
         if crate::test_env::run_in_own_process(
             "core::capabilities::tests::tasks_work_for_the_default_role_only_where_allowed",
-            &[(crate::core::hive::PREVIEW_ENV, "1")],
+            &[(crate::core::hive_gate::PREVIEW_ENV, "1")],
         ) {
             return;
         }

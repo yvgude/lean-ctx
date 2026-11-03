@@ -46,7 +46,7 @@ fn language(path: &str) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn enabled_for(path: &str) -> bool {
+pub fn enabled_for(path: &str) -> bool {
     let config = crate::core::config::Config::load_global().intelligence_runtime;
     language(path).is_some()
         && config.enabled
@@ -57,7 +57,7 @@ pub(crate) fn enabled_for(path: &str) -> bool {
 /// Never opens a path. The caller supplies the same safe source snapshot used
 /// by the read, before compression, and rechecks source/output authority later.
 /// The note is not a security verdict and must not be stored in source caches.
-pub(crate) fn note(path: &str, source: &str) -> Option<String> {
+pub fn note(path: &str, source: &str) -> Option<String> {
     let language = language(path)?;
     let config = crate::core::config::Config::load_global().intelligence_runtime;
     if !config.enabled || !config.accept_proprietary || !super::bootstrap::permits_config(&config) {
@@ -68,28 +68,28 @@ pub(crate) fn note(path: &str, source: &str) -> Option<String> {
         || source.contains('\0')
     {
         return Some(
-            "LeanCTX Hive code hints: not analyzed (source exceeds the supported text bounds)."
+            "LeanCTX | Hive code hints: not analyzed (source exceeds the supported text bounds)."
                 .into(),
         );
     }
     Some(match invoke(&config, language, source) {
         Ok(hints) => render(&hints),
         Err(_) => {
-            "LeanCTX Hive code hints unavailable; existing read protections are unchanged.".into()
+            "LeanCTX | Hive code hints unavailable; existing read protections are unchanged.".into()
         }
     })
 }
 
 fn render(hints: &Hints) -> String {
     if !hints.supported {
-        return "LeanCTX Hive code hints: no checks available for this language.".into();
+        return "LeanCTX | Hive code hints: no checks available for this language.".into();
     }
     if hints.findings.is_empty() {
-        return "LeanCTX Hive code hints: no matching patterns in inspected source (limited static checks)."
+        return "LeanCTX | Hive code hints: no matching patterns in inspected source (limited static checks)."
             .into();
     }
     let mut text =
-        String::from("LeanCTX Hive code hints (limited static checks; review required):");
+        String::from("LeanCTX | Hive code hints (limited static checks; review required):");
     for finding in &hints.findings {
         let message = match finding.rule_id {
             Rule::TlsVerificationDisabled => {

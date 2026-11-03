@@ -23,13 +23,13 @@
           "declarations": ["pub mod auto_routing;"]
         },
         {
-          "path": "rust/src/proxy/mod.rs",
+          "path": "rust/crates/lean-ctx-proxy/src/lib.rs",
           "declarations": ["pub mod auto_routing;"]
         }
       ],
       "root_reexports": [
         {
-          "path": "rust/src/proxy/auto_routing.rs",
+          "path": "rust/crates/lean-ctx-proxy/src/auto_routing.rs",
           "statements": [
             "pub use lean_ctx_protocol::auto_routing::{ AutoRoutingConfig, AutoRoutingEvidence, AutoRoutingRequest, RoutingDecision, RoutingMode, RoutingReceipt, SchedulerGate, };"
           ]
@@ -52,7 +52,7 @@
           ]
         },
         {
-          "path": "rust/src/proxy/auto_routing.rs",
+          "path": "rust/crates/lean-ctx-proxy/src/auto_routing.rs",
           "statements": [
             "pub use lean_ctx_protocol::auto_routing::{ AutoRoutingConfig, AutoRoutingEvidence, AutoRoutingRequest, RoutingDecision, RoutingMode, RoutingReceipt, SchedulerGate, };"
           ]
@@ -139,13 +139,13 @@
           "declarations": ["pub mod rollout;"]
         },
         {
-          "path": "rust/src/proxy/mod.rs",
+          "path": "rust/crates/lean-ctx-proxy/src/lib.rs",
           "declarations": ["pub mod rollout;"]
         }
       ],
       "root_reexports": [
         {
-          "path": "rust/src/proxy/rollout.rs",
+          "path": "rust/crates/lean-ctx-proxy/src/rollout.rs",
           "statements": [
             "pub use lean_ctx_protocol::rollout::{ RolloutAssignment, RolloutCohort, RolloutConfig, assign_rollout, };"
           ]
@@ -159,7 +159,7 @@
       ],
       "approved_consumers": [
         {
-          "path": "rust/src/proxy/rollout.rs",
+          "path": "rust/crates/lean-ctx-proxy/src/rollout.rs",
           "statements": [
             "pub use lean_ctx_protocol::rollout::{ RolloutAssignment, RolloutCohort, RolloutConfig, assign_rollout, };"
           ]

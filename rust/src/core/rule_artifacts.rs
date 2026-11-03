@@ -46,27 +46,27 @@ pub const SKILL_COPY_PATH: &str = "skills/lean-ctx/SKILL.md";
 pub const CLAUDE_MOD_COPIES: &[(&str, &str)] = &[
     (
         "integrations/claude-code-mod/hooks/register.ts",
-        crate::hooks::agents::claude_mod::REGISTER_TS,
+        crate::core::claude_host::REGISTER_TS,
     ),
     (
         "integrations/claude-code-mod/hooks/hooks.json",
-        crate::hooks::agents::claude_mod::HOOKS_JSON,
+        crate::core::claude_host::HOOKS_JSON,
     ),
     (
         "integrations/claude-code-mod/.claude-plugin/plugin.json",
-        crate::hooks::agents::claude_mod::PLUGIN_JSON,
+        crate::core::claude_host::PLUGIN_JSON,
     ),
     (
         "integrations/claude-code-mod/hooks/cockpit.tsx",
-        crate::hooks::agents::claude_mod::COCKPIT_TSX,
+        crate::core::claude_host::COCKPIT_TSX,
     ),
     (
         "integrations/claude-code-mod/hooks/render.tsx",
-        crate::hooks::agents::claude_mod::RENDER_TSX,
+        crate::core::claude_host::RENDER_TSX,
     ),
     (
         "integrations/claude-code-mod/types/index.d.ts",
-        crate::hooks::agents::claude_mod::TYPES_DTS,
+        crate::core::claude_host::TYPES_DTS,
     ),
 ];
 

@@ -11,7 +11,7 @@ use crate::core::knowledge::ProjectKnowledge;
 /// A distilled pattern mined from a project's memory, before the gate decides
 /// whether it is durable enough to become a rule.
 #[derive(Debug, Clone)]
-pub(crate) struct SkillCandidate {
+pub struct SkillCandidate {
     /// Normalized, prefix-free slug (e.g. `stop-before-build`).
     pub slug: String,
     /// One-line human title (becomes the rule `description`).
@@ -35,7 +35,7 @@ pub(crate) struct SkillCandidate {
 /// here. The sources are those the knowledge store bound each fact to, asked
 /// when the rule is written (`provenance::prepare`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Derivation {
+pub struct Derivation {
     /// Project root as the knowledge store names it (the key of its facts).
     pub store: String,
     /// `(category, key, value)` of every fact merged into the candidate.
@@ -86,7 +86,7 @@ fn knowledge_category_is_skillable(cat: &str) -> bool {
 
 /// Mine candidates from the project's knowledge facts and agent diaries,
 /// merged by slug (recurrence summed, strongest body + confidence kept).
-pub(crate) fn mine_candidates(project_root: &str) -> Vec<SkillCandidate> {
+pub fn mine_candidates(project_root: &str) -> Vec<SkillCandidate> {
     let mut by_slug: HashMap<String, SkillCandidate> = HashMap::new();
 
     // Source 1 — curated knowledge facts (already deduped by the knowledge layer).

@@ -55,7 +55,7 @@ pub(crate) fn strip_for_analysis(command: &str, quoted_only: bool, comments: boo
 /// The delimiters of the heredoc operators in `line`, in source order (only
 /// quoted ones with `quoted_only`). A `<<` inside quotes, `${…}` or arithmetic
 /// is no operator; a `<<<` here-string has no body.
-pub(crate) fn heredoc_delims(line: &str, quoted_only: bool) -> Vec<String> {
+pub fn heredoc_delims(line: &str, quoted_only: bool) -> Vec<String> {
     if !line.contains("<<") {
         return Vec::new();
     }
@@ -70,7 +70,7 @@ pub(crate) fn heredoc_delims(line: &str, quoted_only: bool) -> Vec<String> {
 /// Parse a heredoc delimiter token starting at `start`, returning its bare name
 /// (quotes/escapes removed), whether any part was quoted, and the index just
 /// past the token. `None` when no delimiter is present.
-pub(crate) fn read_heredoc_delim(bytes: &[u8], start: usize) -> Option<(String, bool, usize)> {
+pub fn read_heredoc_delim(bytes: &[u8], start: usize) -> Option<(String, bool, usize)> {
     let len = bytes.len();
     let mut i = start;
     let mut name: Vec<u8> = Vec::new();

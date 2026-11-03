@@ -1,0 +1,82 @@
+// SPDX-License-Identifier: Apache-2.0
+mod amp;
+mod antigravity;
+mod claude;
+mod claude_delegation;
+pub mod claude_governor;
+pub mod claude_mod;
+mod claude_statusline;
+mod cline;
+mod codebuddy;
+pub(crate) mod codebuddy_governor;
+mod codex;
+pub(crate) mod codex_governor;
+mod copilot;
+pub(crate) mod copilot_governor;
+mod crush;
+mod cursor;
+pub(crate) mod cursor_governor;
+mod gemini;
+pub(crate) mod gemini_governor;
+pub mod governor_hosts;
+mod grok;
+pub mod hermes;
+mod jetbrains;
+mod kiro;
+mod openclaw;
+mod opencode;
+mod pi;
+mod qoder;
+mod shared;
+mod vibe;
+mod windsurf;
+
+pub(super) use amp::install_amp_hook;
+pub use antigravity::{
+    antigravity_cli_config_dir, antigravity_cli_plugin_dir, uninstall_antigravity_cli_plugin,
+};
+pub(super) use antigravity::{install_antigravity_cli_hook, install_antigravity_hook};
+pub use claude::{CLAUDE_MD_BLOCK_START, sync_claude_global_rules_block};
+pub(super) use claude::{
+    install_claude_hook_config, install_claude_hook_scripts, install_claude_hook_with_mode,
+    install_claude_permissions_allow_mcp, install_claude_permissions_deny_replace,
+    install_claude_project_hooks,
+};
+pub use claude_statusline::{
+    install_claude_statusline, is_lean_ctx_statusline, remove_lean_ctx_statusline,
+};
+pub(super) use cline::install_cline_rules;
+pub use codebuddy::CODEBUDDY_MD_BLOCK_START;
+pub(super) use codebuddy::{
+    install_codebuddy_hook_config, install_codebuddy_hook_scripts,
+    install_codebuddy_hook_with_mode, install_codebuddy_permissions_deny_replace,
+    install_codebuddy_project_hooks,
+};
+pub use codex::install_codex_hook;
+pub(super) use codex::install_codex_runtime_hook;
+pub(super) use copilot::{install_copilot_hook, install_copilot_runtime_hook};
+pub(super) use crush::install_crush_hook_with_mode;
+pub use cursor::install_cursor_hook;
+pub(super) use cursor::{
+    install_cursor_deny_hook, install_cursor_hook_config, install_cursor_hook_scripts,
+    install_cursor_hook_with_mode,
+};
+pub use gemini::unregister_gemini_context_filename;
+pub(super) use gemini::{
+    install_gemini_deny_hook, install_gemini_hook, install_gemini_hook_config,
+    install_gemini_hook_scripts,
+};
+pub(super) use grok::install_grok_mcp;
+pub(super) use hermes::install_hermes_hook_with_mode;
+pub(super) use jetbrains::install_jetbrains_hook;
+pub(super) use kiro::install_kiro_hook;
+pub(super) use openclaw::install_openclaw_hook;
+pub(super) use opencode::install_opencode_hook_with_mode;
+pub(crate) use opencode::release_opencode_native_tool_gates;
+pub use opencode::unregister_opencode_instructions;
+pub(super) use pi::install_pi_hook_with_mode;
+pub(super) use qoder::{install_qoder_hook_with_mode, install_qoder_runtime_hook_with_mode};
+pub(super) use vibe::install_vibe_hook;
+pub(super) use windsurf::{
+    install_windsurf_hooks, install_windsurf_hooks_replace, install_windsurf_rules,
+};

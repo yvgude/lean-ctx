@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://contracts.leanctx.com/hive-v2/schemas/link.schema.json",
   "title": ".lean-ctx-hive.json link file",
-  "description": "v2 carries the vault address <ws>/<vault>[@<server>]; engines keep reading v1 ({repo: {ns, name}}) as a hosted address ns/name",
+  "description": "v2 carries the vault address <ws>/<vault>[@<server>]; instances keep reading v1 ({repo: {ns, name}}) as a hosted address ns/name",
   "oneOf": [
     {
       "type": "object",

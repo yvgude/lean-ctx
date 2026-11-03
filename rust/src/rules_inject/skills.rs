@@ -94,6 +94,13 @@ fn is_skill_agent_detected(agent_key: &str, home: &std::path::Path) -> bool {
     }
 }
 
+/// The governor setup drops the skill listing (it rides every request's
+/// system prompt); refreshes must not bring it back.
+fn governor_owns(agent_key: &str, home: &std::path::Path) -> bool {
+    (agent_key == "claude" && crate::core::claude_host::is_governor_installed(home))
+        || crate::core::governor_hosts::is_installed(agent_key, home)
+}
+
 /// Install SKILL.md for a specific agent. Returns the installed path.
 pub fn install_skill_for_agent(home: &std::path::Path, agent_key: &str) -> Result<PathBuf, String> {
     // GH #1526: `rules_injection = off` opts out of every lean-ctx-authored
@@ -104,6 +111,11 @@ pub fn install_skill_for_agent(home: &std::path::Path, agent_key: &str) -> Resul
     {
         return Err(format!(
             "rules_injection=off — skill install skipped for '{agent_key}'"
+        ));
+    }
+    if governor_owns(agent_key, home) {
+        return Err(format!(
+            "governor setup — no skill listing for '{agent_key}'"
         ));
     }
     let targets = build_skill_targets(home);
@@ -168,7 +180,10 @@ pub fn install_skills_where(
     let mut results = Vec::new();
 
     for target in &targets {
-        if !allows(target.agent_key) || !is_skill_agent_detected(target.agent_key, home) {
+        if !allows(target.agent_key)
+            || !is_skill_agent_detected(target.agent_key, home)
+            || governor_owns(target.agent_key, home)
+        {
             continue;
         }
 

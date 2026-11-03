@@ -4,9 +4,9 @@
 //! Also reads the A2A peer table and signing key file; the errors name no
 //! file kind, the caller says which file it was.
 
-pub(crate) const MAX_BYTES: u64 = 1024 * 1024;
+pub const MAX_BYTES: u64 = 1024 * 1024;
 
-pub(crate) fn read_bounded(path: &std::path::Path) -> Result<String, String> {
+pub fn read_bounded(path: &std::path::Path) -> Result<String, String> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]

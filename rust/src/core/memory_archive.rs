@@ -410,7 +410,7 @@ fn archive_items_inner<T: Serialize>(
 /// The installation-wide facts archives of releases before 3.11.5, as
 /// `(path, envelope)`. They are served to no project; only the explicit
 /// `lean-ctx migrate legacy-context` adoption reads them.
-pub(crate) fn legacy_facts_archives() -> Vec<(PathBuf, serde_json::Value)> {
+pub fn legacy_facts_archives() -> Vec<(PathBuf, serde_json::Value)> {
     let Ok(base) = crate::core::data_dir::lean_ctx_data_dir().map(|d| d.join("memory/archive"))
     else {
         return Vec::new();
@@ -435,7 +435,7 @@ pub(crate) fn legacy_facts_archives() -> Vec<(PathBuf, serde_json::Value)> {
 /// Facts archives left in a partition that is no longer the current one of
 /// the root they recorded: that project's identity (remote, package name)
 /// changed since. Served to no project until adopted.
-pub(crate) fn orphaned_facts_archives() -> Vec<(PathBuf, serde_json::Value)> {
+pub fn orphaned_facts_archives() -> Vec<(PathBuf, serde_json::Value)> {
     let Ok(base) =
         crate::core::data_dir::lean_ctx_data_dir().map(|d| d.join("memory/archive/facts"))
     else {
@@ -496,7 +496,7 @@ pub(crate) fn drifted_facts_archives(project_root: &Path) -> Vec<(PathBuf, serde
 /// one flag per fact: `true` adopted, `false` withheld. A fact the partition
 /// already holds is not archived again, so a rerun after an interrupted
 /// adoption (copied, not yet journaled) leaves exactly one copy.
-pub(crate) fn adopt_legacy_facts(
+pub fn adopt_legacy_facts(
     project_root: &Path,
     facts: &[serde_json::Value],
 ) -> Result<Vec<bool>, String> {
@@ -627,7 +627,7 @@ pub fn restore_items<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, String>
     restore_items_inner(path, None)
 }
 
-pub(crate) fn restore_knowledge_items<T: DeserializeOwned>(
+pub fn restore_knowledge_items<T: DeserializeOwned>(
     path: &Path,
     admission: &crate::core::knowledge::protection::KnowledgeAdmission,
 ) -> Result<Vec<T>, String> {

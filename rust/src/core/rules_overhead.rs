@@ -15,7 +15,7 @@ use crate::core::tokens::count_tokens;
 
 /// One rules file a client auto-loads into context.
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct RulesFileCost {
+pub struct RulesFileCost {
     pub path: String,
     /// Tokens of the whole file (what the client actually injects).
     pub file_tokens: usize,
@@ -108,7 +108,7 @@ fn scan_claude_rules_dir(out: &mut Vec<RulesFileCost>, dir: &Path) {
 /// Collects every rules file that an agent auto-loads for work in `project`:
 /// global per-client files, the project root, and the parent chain up to
 /// `home` (Cursor merges parent `.cursor/rules/` and AGENTS.md in monorepos).
-pub(crate) fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileCost> {
+pub fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileCost> {
     let mut out = Vec::new();
 
     // Global, per-client. Claude honours `$CLAUDE_CONFIG_DIR` and auto-loads
@@ -191,7 +191,7 @@ fn claude_md_imports_agents_md(dir: &Path) -> bool {
 /// One host whose session receives lean-ctx *rules* (the tool mapping)
 /// through more than one channel (A3: exactly one channel per host).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub(crate) struct DuplicateChannel {
+pub struct DuplicateChannel {
     /// Client key as in [`RulesFileCost::clients`] (`claude`, `cursor`, …).
     pub client: String,
     /// Auto-loaded files carrying a lean-ctx rules block: (path, lean-ctx tokens).
@@ -204,13 +204,13 @@ pub(crate) struct DuplicateChannel {
 impl DuplicateChannel {
     /// Channels this host pays for every session.
     #[must_use]
-    pub(crate) fn channel_count(&self) -> usize {
+    pub fn channel_count(&self) -> usize {
         self.files.len() + usize::from(self.instruction_tokens > 0)
     }
 
     /// Tokens billed beyond the cheapest single channel.
     #[must_use]
-    pub(crate) fn excess_tokens(&self) -> usize {
+    pub fn excess_tokens(&self) -> usize {
         let mut costs: Vec<usize> = self.files.iter().map(|(_, t)| *t).collect();
         if self.instruction_tokens > 0 {
             costs.push(self.instruction_tokens);
@@ -240,7 +240,7 @@ fn mcp_client_name(client: &str) -> Option<&'static str> {
 /// when the host's canonical carrier holds the block,
 /// `rules_channel::client_autoloads_rules`). `instruction_tokens_for` prices
 /// the skeleton a client receives (doctor passes the live builder).
-pub(crate) fn duplicate_channels(
+pub fn duplicate_channels(
     home: &Path,
     files: &[RulesFileCost],
     instruction_tokens_for: &dyn Fn(&str) -> usize,
@@ -285,7 +285,7 @@ pub(crate) fn duplicate_channels(
 /// Pointer-only files (a thinned `AGENTS.md` / `.cursorrules` that merely
 /// cross-references the canonical source) are not counted: they exist precisely
 /// to avoid duplication and cost only a handful of tokens (#684).
-pub(crate) fn duplicate_clients(files: &[RulesFileCost]) -> Vec<(String, usize)> {
+pub fn duplicate_clients(files: &[RulesFileCost]) -> Vec<(String, usize)> {
     let mut counts: std::collections::BTreeMap<&'static str, usize> =
         std::collections::BTreeMap::new();
     for f in files {
@@ -475,8 +475,13 @@ more user stuff that is not ours
     /// those files to the claude client (fixed cost billed every session).
     #[test]
     fn collect_includes_project_claude_rules_dir() {
+        // claude_state_dir honours CLAUDE_CONFIG_DIR, which other tests (and a
+        // host such as Claude Code) set: hold the env lock and pin it to the
+        // default location under this test's home while scanning.
+        let _env = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
         let home = tmp.path();
+        let _claude_dir = crate::test_env::VarGuard::set("CLAUDE_CONFIG_DIR", home.join(".claude"));
         let project = home.join("projects/app");
         std::fs::create_dir_all(project.join(".claude/rules")).unwrap();
         std::fs::write(

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 const MAX_FILE_BYTES: u64 = 4 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Signal {
+pub enum Signal {
     Bounce,
     EditFailure,
     Expand,
@@ -139,7 +139,7 @@ fn record_as(dir: &Path, origin: &Origin, signal: Signal, process: &str) -> Resu
 
 /// Record `signal` for the task whose read caused it. An event that cannot
 /// be recorded marks the task's signals unknown instead of leaving them clean.
-pub(crate) fn record(origin: &Origin, signal: Signal) {
+pub fn record(origin: &Origin, signal: Signal) {
     let Some(dir) = gateway_dir() else {
         return;
     };
@@ -168,7 +168,7 @@ pub(crate) fn observe(origin: &Origin) {
 
 /// An event caused by a compressed read nobody can name: the current task's
 /// signals become unknown.
-pub(crate) fn record_unattributed() {
+pub fn record_unattributed() {
     if let Some(origin) = current_origin() {
         record(&origin, Signal::Unattributed);
     }

@@ -5,7 +5,7 @@ use super::registry::LocalRegistry;
 
 static APPLIED_PACKAGES: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
-pub(crate) fn auto_load_packages(project_root: &str) -> Vec<String> {
+pub fn auto_load_packages(project_root: &str) -> Vec<String> {
     let Ok(registry) = LocalRegistry::open() else {
         return Vec::new();
     };

@@ -98,7 +98,7 @@ pub(crate) fn write_opencode_fresh(
 /// default mode keeps native tools usable. Keeps permission entries the user
 /// set themselves (external_directory, rm *, allow, etc.).
 fn strip_shadow_denies_if_disabled(obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
-    if crate::hooks::replace_mode_chosen() {
+    if crate::core::hook_mode::replace_mode_chosen() {
         return false;
     }
     let Some(perms) = obj.get_mut("permission").and_then(|p| p.as_object_mut()) else {

@@ -4,8 +4,8 @@
 
 #[path = "context_plan/materialize.rs"]
 pub(crate) mod materialize_impl;
-pub(crate) mod presenter;
-pub(crate) mod sources;
+pub mod presenter;
+pub mod sources;
 
 #[cfg(test)]
 #[path = "context_plan/source_handoff_tests.rs"]
@@ -38,7 +38,7 @@ use crate::core::context_kernel::{
 /// of the request in scope (`core::archive::presented`, "Presenters"): this
 /// process, unless [`presenter::materialize_v2`] runs it under an issued
 /// capability. No field of `request` names or selects a presenter.
-pub(crate) fn materialize(
+pub fn materialize(
     root: &Path,
     request: &EngineContextSourceMaterializationRequestV1,
 ) -> Result<EngineContextSourceMaterializationResponseV1, &'static str> {
@@ -60,7 +60,7 @@ pub(crate) fn materialize_sources_with_decision(
 }
 
 /// Local operator authority only: no tenant authorization is inferred from task labels.
-pub(crate) fn plan(
+pub fn plan(
     root: &Path,
     request: EngineContextPlanRequestV1,
 ) -> Result<EngineContextPlanResponseV1, &'static str> {

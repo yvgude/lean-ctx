@@ -1,6 +1,6 @@
 # pi-lean-ctx
 
-> **Status: Research / experimental integration.** This extension connects Pi to the local LeanCTX Engine through CLI and MCP paths.
+> **Status: Research / experimental integration.** This extension connects Pi to the local LeanCTX instance through CLI and MCP paths.
 > It exposes selected local Runtime tools in Pi; it does not provide a generic agent
 > platform, hosted service, shared team context, or a performance guarantee.
 > Measure a comparable workload with a declared quality threshold before making a
@@ -9,7 +9,7 @@
 > **Context Gateway for AI Systems**. **Control what your AI can see.**
 
 [Pi Coding Agent](https://github.com/badlogic/pi-mono) extension that provides
-`ctx_`-prefixed tools backed by a local [LeanCTX Engine](https://leanctx.com).
+`ctx_`-prefixed tools backed by a local [LeanCTX](https://leanctx.com) instance.
 Select task-relevant views, apply supported controls, retain local context and
 inspect recorded operations. The selected integration determines coverage;
 Pi keeps control of its agent loop and model.

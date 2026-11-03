@@ -172,7 +172,7 @@ fn build_owasp() -> OwaspSection {
 }
 
 /// Retention posture: the pack's declared intent vs. the plan window. The
-/// engine verifies no plan of its own (accounts live in LeanCTX Hive), so
+/// engine verifies no plan of its own (accounts live in LeanCTX | Hive), so
 /// the plan window is reported as unverified. An unverified window cannot
 /// answer whether it covers the pack's intent, so `plan_covers_policy` stays
 /// unset instead of claiming `false` for every pack (F11); the local trail

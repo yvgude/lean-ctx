@@ -60,7 +60,7 @@ const MAX_RECORD_BYTES: usize = 4 * 1024;
 /// The step of a receipt's preparation that failed after it was stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum PreparationStep {
+pub enum PreparationStep {
     /// The stored receipt did not read back verified.
     Receipt,
     /// The trace sidecar could not be built or stored.
@@ -73,7 +73,7 @@ pub(crate) enum PreparationStep {
 /// state proves and does not prove.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
-pub(crate) enum Observed {
+pub enum Observed {
     HandedOver {
         channel: Channel,
         bytes: Sha256Digest,
@@ -152,7 +152,7 @@ fn record(receipt: &Sha256Digest, anchor_entry: Option<&str>, observed: Observed
 
 /// An observation as it is found in the store.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum StoredObservation {
+pub enum StoredObservation {
     /// Nothing was observed, or the observation could not be stored.
     Absent,
     /// A record is there but is not an observation of a known schema.
@@ -186,7 +186,7 @@ impl StoredObservation {
 }
 
 /// The observation filed under `receipt`.
-pub(crate) fn load(receipt: &Sha256Digest) -> StoredObservation {
+pub fn load(receipt: &Sha256Digest) -> StoredObservation {
     match super::gateway_dir() {
         Some(dir) => load_in(&dir, receipt),
         None => StoredObservation::Absent,
@@ -233,11 +233,11 @@ pub(super) fn preparation_failed(receipt: &Sha256Digest, step: PreparationStep) 
 
 /// The handle of ONE prepared delivery: the receipt that was sealed, the
 /// audit entry that anchors it, and the channel and bytes it was prepared
-/// for. Only [`super::seal`]'s caller makes one, and only through it is an
+/// for. Only `super::seal`'s caller makes one, and only through it is an
 /// observation of that receipt written — a handle never stands for another
 /// call's receipt, whatever bytes that call prepared.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Prepared {
+pub struct Prepared {
     receipt: Sha256Digest,
     anchor_entry: String,
     channel: Channel,
@@ -265,7 +265,7 @@ impl Prepared {
     /// receipt, and only when `returned` is exactly what the receipt was
     /// prepared for. `false`: nothing was recorded (other bytes, another
     /// channel, or the store refused).
-    pub(crate) fn returned_to_transport(&self, returned: &Sha256Digest) -> bool {
+    pub fn returned_to_transport(&self, returned: &Sha256Digest) -> bool {
         matches!(self.channel, Channel::McpTransport | Channel::SessionFrame)
             && self.bytes == *returned
             && record(
@@ -285,7 +285,7 @@ impl Prepared {
     /// apart: this handle is then held as ambiguous and confirms nothing,
     /// and the earlier one is dropped — both stay unconfirmed. A handle for
     /// another channel is dropped.
-    pub(crate) fn await_write(self) {
+    pub fn await_write(self) {
         let Some(stream) = stream_index(self.channel) else {
             return;
         };
@@ -341,7 +341,7 @@ fn stream_index(channel: Channel) -> Option<usize> {
 /// error and records nothing: the delivery stays unconfirmed. `exit_status`:
 /// the status the caller ends the process with right after this write, if
 /// it does.
-pub(crate) fn write_observed(
+pub fn write_observed(
     sink: &mut dyn Write,
     channel: Channel,
     bytes: &[u8],
@@ -360,7 +360,7 @@ pub(crate) fn write_observed(
 /// returned success — called by the command after that success, never
 /// before. What is observed is the success of that call; that the file is
 /// read or the clipboard pasted is not.
-pub(crate) fn handed_over(channel: Channel, bytes: &[u8], exit_status: Option<i32>) {
+pub fn handed_over(channel: Channel, bytes: &[u8], exit_status: Option<i32>) {
     let Some(stream) = stream_index(channel) else {
         return;
     };

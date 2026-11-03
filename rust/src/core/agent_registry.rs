@@ -19,14 +19,14 @@ use super::audit_trail::{self, AuditEntryData, AuditEventType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum AgentStatus {
+pub enum AgentStatus {
     Active,
     Suspended,
     Decommissioned,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct Attestation {
+pub struct Attestation {
     /// SHA-256 of the running binary at registration/heartbeat time.
     pub binary_sha256: String,
     /// SHA-256 of the active role file (empty when the role is built-in).
@@ -53,7 +53,7 @@ pub(crate) struct Attestation {
 /// the attestation and mirrored verbatim into the `AgentDriftDetected`
 /// audit entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct DriftMark {
+pub struct DriftMark {
     pub detected_at: String,
     /// The running binary changed.
     pub binary: bool,
@@ -71,7 +71,7 @@ pub(crate) struct DriftMark {
 /// append an `AgentDriftDetected` entry — otherwise a one-minute heartbeat
 /// would write one audit entry per minute forever.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HeartbeatOutcome {
+pub struct HeartbeatOutcome {
     pub drift: Option<DriftMark>,
     pub newly_observed: bool,
 }
@@ -100,7 +100,7 @@ impl HeartbeatOutcome {
 
 /// A completed, audited drift acknowledgement.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct DriftAcknowledgement {
+pub struct DriftAcknowledgement {
     pub agent_id: String,
     /// The evidence that was cleared — verbatim, as the operator saw it.
     pub evidence: String,
@@ -155,7 +155,7 @@ impl DriftPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct AgentRecord {
+pub struct AgentRecord {
     /// Stable identity (key of the registry).
     pub agent_id: String,
     /// Role name under `roles/*.toml` / built-ins.
@@ -179,7 +179,7 @@ pub(crate) struct AgentRecord {
 /// Outcome of an identity check on a call path (team server middleware,
 /// enforce mode).
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct IdentityCheck {
+pub struct IdentityCheck {
     pub agent_id: String,
     pub registered: bool,
     /// Active = may act. Suspended/decommissioned/unregistered = may not.
@@ -187,7 +187,7 @@ pub(crate) struct IdentityCheck {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<AgentStatus>,
     /// Unacknowledged attestation drift is recorded on the identity. Whether
-    /// it also flips `allowed` is the caller's [`DriftPolicy`] decision.
+    /// it also flips `allowed` is the caller's `DriftPolicy` decision.
     pub drifted: bool,
     pub detail: String,
 }
@@ -337,11 +337,11 @@ fn persist_registry(
 
 /// Read-only registry snapshot.
 #[cfg(test)]
-pub(crate) fn list() -> Vec<AgentRecord> {
+pub fn list() -> Vec<AgentRecord> {
     try_list().unwrap_or_default()
 }
 
-pub(crate) fn try_list() -> Result<Vec<AgentRecord>, String> {
+pub fn try_list() -> Result<Vec<AgentRecord>, String> {
     let path = registry_path()?;
     Ok(load_registry(&path)?.into_values().collect())
 }
@@ -356,7 +356,7 @@ pub(crate) fn list_active() -> Vec<AgentRecord> {
         .collect()
 }
 
-pub(crate) fn try_list_active() -> Result<Vec<AgentRecord>, String> {
+pub fn try_list_active() -> Result<Vec<AgentRecord>, String> {
     Ok(try_list()?
         .into_iter()
         .filter(|record| record.status == AgentStatus::Active)
@@ -368,7 +368,7 @@ pub(crate) fn get(agent_id: &str) -> Option<AgentRecord> {
     try_get(agent_id).ok().flatten()
 }
 
-pub(crate) fn try_get(agent_id: &str) -> Result<Option<AgentRecord>, String> {
+pub fn try_get(agent_id: &str) -> Result<Option<AgentRecord>, String> {
     let path = registry_path()?;
     Ok(load_registry(&path)?.remove(agent_id))
 }
@@ -636,7 +636,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// Register a new agent identity. The role must exist; the owner is
 /// mandatory (accountability). Creating an identity also provisions its
 /// Ed25519 keypair.
-pub(crate) fn register(agent_id: &str, role: &str, owner: &str) -> Result<AgentRecord, String> {
+pub fn register(agent_id: &str, role: &str, owner: &str) -> Result<AgentRecord, String> {
     if agent_id.trim().is_empty()
         || !agent_id
             .chars()
@@ -714,7 +714,7 @@ pub(crate) fn register(agent_id: &str, role: &str, owner: &str) -> Result<AgentR
 /// atomicity, so the guarantee is AT-LEAST-ONCE, never exactly-once: a crash
 /// between the fsynced append and the registry rename can duplicate an
 /// observation on the next beat. Losing one is what the ordering rules out.
-pub(crate) fn heartbeat(agent_id: &str) -> Result<HeartbeatOutcome, String> {
+pub fn heartbeat(agent_id: &str) -> Result<HeartbeatOutcome, String> {
     with_registry(|reg| {
         let record = reg
             .get_mut(agent_id)
@@ -778,7 +778,7 @@ pub(crate) fn heartbeat(agent_id: &str) -> Result<HeartbeatOutcome, String> {
     })
 }
 
-pub(crate) fn suspend(agent_id: &str, reason: &str) -> Result<(), String> {
+pub fn suspend(agent_id: &str, reason: &str) -> Result<(), String> {
     let role = transition(agent_id, AgentStatus::Suspended, Some(reason.to_string()))?;
     audit(
         AuditEventType::AgentSuspended,
@@ -795,7 +795,7 @@ pub(crate) fn suspend(agent_id: &str, reason: &str) -> Result<(), String> {
 /// operator never saw, and a beat landing between review and resume must not
 /// get acknowledged along the way. Drift is cleared exclusively by
 /// [`acknowledge_drift`], which names the evidence.
-pub(crate) fn resume(agent_id: &str) -> Result<(), String> {
+pub fn resume(agent_id: &str) -> Result<(), String> {
     let role = transition(agent_id, AgentStatus::Active, None)?;
     audit(AuditEventType::AgentResumed, agent_id, &role, None);
     Ok(())
@@ -819,7 +819,7 @@ pub(crate) fn resume(agent_id: &str) -> Result<(), String> {
 /// AT-LEAST-ONCE, not exactly-once. A crash after the audit fsync but before
 /// the registry rename may require the operator to retry the same evidence;
 /// it can never turn an unrecorded acknowledgement into a cleared mark.
-pub(crate) fn acknowledge_drift(
+pub fn acknowledge_drift(
     agent_id: &str,
     observed_evidence: &str,
 ) -> Result<DriftAcknowledgement, String> {
@@ -861,7 +861,7 @@ pub(crate) fn acknowledge_drift(
 
 /// Decommission closes the identity with a final audit entry; the record
 /// stays in the registry (auditability) but can never act again.
-pub(crate) fn decommission(agent_id: &str) -> Result<(), String> {
+pub fn decommission(agent_id: &str) -> Result<(), String> {
     let role = with_registry(|reg| {
         let record = reg
             .get_mut(agent_id)
@@ -897,7 +897,7 @@ fn transition(agent_id: &str, to: AgentStatus, reason: Option<String>) -> Result
 
 /// Owner offboarding (SCIM `active=false` hook, GL #399): suspend every
 /// active agent owned by `owner`. Returns the suspended agent ids.
-pub(crate) fn suspend_agents_for_owner(owner: &str, reason: &str) -> Result<Vec<String>, String> {
+pub fn suspend_agents_for_owner(owner: &str, reason: &str) -> Result<Vec<String>, String> {
     let suspended = with_registry(|reg| {
         let mut hit = Vec::new();
         for record in reg.values_mut() {
@@ -924,9 +924,9 @@ pub(crate) fn suspend_agents_for_owner(owner: &str, reason: &str) -> Result<Vec<
 /// AND active. Unregistered agents are reported (monitor mode logs,
 /// enforce mode rejects — the caller decides).
 ///
-/// Drift policy comes from the environment; see [`DriftPolicy`] for the
+/// Drift policy comes from the environment; see `DriftPolicy` for the
 /// documented compatibility default (drift is reported, never blocking).
-pub(crate) fn check(agent_id: &str) -> IdentityCheck {
+pub fn check(agent_id: &str) -> IdentityCheck {
     check_with_policy(agent_id, DriftPolicy::from_env())
 }
 
@@ -1007,7 +1007,7 @@ pub(crate) fn check_with_policy(agent_id: &str, policy: DriftPolicy) -> Identity
 
 /// SPIFFE-compatible workload identity:
 /// `spiffe://<trust_domain>/agent/<role>/<agent_id>`.
-pub(crate) fn spiffe_id(record: &AgentRecord, trust_domain: &str) -> String {
+pub fn spiffe_id(record: &AgentRecord, trust_domain: &str) -> String {
     format!(
         "spiffe://{}/agent/{}/{}",
         trust_domain.trim_matches('/'),

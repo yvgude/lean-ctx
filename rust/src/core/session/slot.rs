@@ -59,7 +59,7 @@ impl SessionSlot {
     }
 
     /// Record that this server's session for `project_root` is `session_id`.
-    pub(crate) fn remember_own(&self, project_root: &str, session_id: &str) {
+    pub fn remember_own(&self, project_root: &str, session_id: &str) {
         self.own
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -67,7 +67,7 @@ impl SessionSlot {
     }
 
     /// The session this server left `project_root` with, if any.
-    pub(crate) fn own_session_id(&self, project_root: &str) -> Option<String> {
+    pub fn own_session_id(&self, project_root: &str) -> Option<String> {
         self.own
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

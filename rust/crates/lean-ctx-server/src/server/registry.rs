@@ -1,0 +1,352 @@
+// SPDX-License-Identifier: Apache-2.0
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use rmcp::model::Tool;
+
+use super::tool_trait::McpTool;
+
+/// Central registry mapping tool names to their trait-based handlers.
+/// Every tool is trait-based and resolved here; the earlier
+/// match-cascade dispatch has been fully retired.
+///
+/// Handlers are stored behind `Arc` (not `Box`) so the dispatch layer can hand
+/// an owned, `'static` handle to `tokio::task::spawn_blocking`. That lets a
+/// blocking handler run on the dedicated blocking pool under a watchdog
+/// deadline instead of pinning a scarce core worker via `block_in_place`
+/// (#271 — a hung handler must never swallow the JSON-RPC response).
+pub struct ToolRegistry {
+    tools: HashMap<&'static str, Arc<dyn McpTool>>,
+}
+
+impl ToolRegistry {
+    pub fn new() -> Self {
+        Self {
+            tools: HashMap::new(),
+        }
+    }
+
+    pub fn register(&mut self, tool: Box<dyn McpTool>) {
+        let name = tool.name();
+        self.tools.insert(name, Arc::from(tool));
+    }
+
+    pub fn get(&self, name: &str) -> Option<&dyn McpTool> {
+        self.tools.get(name).map(|t| &**t)
+    }
+
+    /// Clone an owned, `'static` handle to a registered tool.
+    ///
+    /// Unlike [`get`](Self::get), the returned `Arc` can be moved into
+    /// `spawn_blocking`, so the dispatch layer can execute the (synchronous)
+    /// handler off the async core workers under a watchdog (#271).
+    pub fn get_arc(&self, name: &str) -> Option<Arc<dyn McpTool>> {
+        self.tools.get(name).cloned()
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.tools.contains_key(name)
+    }
+
+    /// The registry's own `'static` key for `name`, if it is a registered tool.
+    /// Telemetry counts per tool only under these keys, so a caller-supplied
+    /// string never reaches a counter.
+    pub fn static_name(&self, name: &str) -> Option<&'static str> {
+        self.tools.get_key_value(name).map(|(key, _)| *key)
+    }
+
+    /// Returns MCP Tool definitions in the official public surface.
+    ///
+    /// Deprecated aliases and local-only collaboration compatibility tools
+    /// remain callable through dispatch but are neither published nor counted
+    /// as official tools.
+    /// Applies MCP `ToolAnnotations` (readOnlyHint, destructiveHint) so clients
+    /// can make informed decisions about tool usage in restricted contexts.
+    pub fn tool_defs(&self) -> Vec<Tool> {
+        self.tool_defs_filtered(false)
+    }
+
+    /// Returns MCP Tool definitions for every registered tool, including
+    /// deprecated aliases and local-only compatibility substrate.
+    /// Used by callability and schema checks that cover the full registry.
+    pub fn registered_tool_defs(&self) -> Vec<Tool> {
+        self.tool_defs_filtered(true)
+    }
+
+    /// `include_non_public` is reserved for direct compatibility checks; all
+    /// discovery paths use the public surface by default.
+    fn tool_defs_filtered(&self, include_non_public: bool) -> Vec<Tool> {
+        let mut defs: Vec<Tool> = self
+            .tools
+            .values()
+            .filter(|t| {
+                include_non_public || super::dynamic_tools::is_publicly_advertised_tool(t.name())
+            })
+            .map(|t| t.tool_def())
+            .collect();
+        defs.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
+        lean_ctx::tool_defs::apply_tool_annotations(defs)
+    }
+
+    /// Returns tool definitions filtered by the dynamic tool state.
+    /// Only includes tools whose category is currently active.
+    pub fn active_tool_defs(&self) -> Vec<Tool> {
+        let Ok(state) = super::dynamic_tools::global().lock() else {
+            tracing::warn!("dynamic_tools mutex poisoned in active_tool_defs; returning all");
+            return self.tool_defs();
+        };
+        let mut defs: Vec<Tool> = self
+            .tools
+            .values()
+            .filter(|t| {
+                state.is_tool_active(t.name())
+                    && super::dynamic_tools::is_publicly_advertised_tool(t.name())
+            })
+            .map(|t| t.tool_def())
+            .collect();
+        defs.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
+        lean_ctx::tool_defs::apply_tool_annotations(defs)
+    }
+
+    /// Returns tool definitions filtered by a tool profile.
+    /// Only includes tools whose name is enabled by the given profile.
+    pub fn profile_tool_defs(
+        &self,
+        profile: &lean_ctx::core::tool_profiles::ToolProfile,
+    ) -> Vec<Tool> {
+        let mut defs: Vec<Tool> = self
+            .tools
+            .values()
+            .filter(|t| {
+                profile.is_tool_enabled(t.name())
+                    && super::dynamic_tools::is_publicly_advertised_tool(t.name())
+            })
+            .map(|t| t.tool_def())
+            .collect();
+        defs.sort_by(|a, b| a.name.as_ref().cmp(b.name.as_ref()));
+        lean_ctx::tool_defs::apply_tool_annotations(defs)
+    }
+
+    pub fn len(&self) -> usize {
+        self.tools.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tools.is_empty()
+    }
+
+    pub fn names(&self) -> Vec<&'static str> {
+        let mut names: Vec<_> = self.tools.keys().copied().collect();
+        names.sort_unstable();
+        names
+    }
+}
+
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Number of official MCP tools — the single source of truth for the
+/// "N MCP tools" count shown in `--help`, the README, and the feature catalog.
+/// Deprecated aliases remain callable for compatibility but are not counted.
+pub fn tool_count() -> usize {
+    build_registry().tool_defs().len()
+}
+
+/// Hand this registry's tool definitions to the engine's
+/// [`lean_ctx::core::tool_catalog`], which manifests, overhead measurement and
+/// discovery cards read. Idempotent; the CLI calls it at start-up and every
+/// MCP server construction calls it too.
+pub fn register_tool_catalog() {
+    lean_ctx::core::tool_catalog::register_tool_catalog(
+        lean_ctx::core::tool_catalog::ToolCatalog {
+            tool_defs: || build_registry().tool_defs(),
+            registered_tool_defs: || build_registry().registered_tool_defs(),
+        },
+    );
+}
+
+/// Register all trait-based tools. Called once during server startup.
+/// New tools are added here as their `McpTool` implementation lands.
+pub fn build_registry() -> ToolRegistry {
+    let mut registry = ToolRegistry::new();
+
+    use crate::tools::registered;
+    registry.register(Box::new(registered::ctx_tree::CtxTreeTool));
+    registry.register(Box::new(registered::ctx_discover::CtxDiscoverTool));
+    registry.register(Box::new(registered::ctx_heatmap::CtxHeatmapTool));
+    registry.register(Box::new(registered::ctx_verify::CtxVerifyTool));
+    registry.register(Box::new(registered::ctx_outline::CtxOutlineTool));
+    registry.register(Box::new(registered::ctx_cost::CtxCostTool));
+    registry.register(Box::new(registered::ctx_gain::CtxGainTool));
+    registry.register(Box::new(registered::ctx_expand::CtxExpandTool));
+    registry.register(Box::new(registered::ctx_call::CtxCallTool));
+    registry.register(Box::new(registered::ctx_callgraph::CtxCallgraphTool));
+    registry.register(Box::new(
+        registered::ctx_discover_tools::CtxDiscoverToolsTool,
+    ));
+    registry.register(Box::new(registered::ctx_tools::CtxToolsTool));
+    registry.register(Box::new(registered::ctx_provider::CtxProviderTool));
+    registry.register(Box::new(registered::ctx_doc::CtxDocTool));
+    registry.register(Box::new(registered::ctx_pack::CtxPackTool));
+    registry.register(Box::new(registered::ctx_index::CtxIndexTool));
+    registry.register(Box::new(registered::ctx_artifacts::CtxArtifactsTool));
+    registry.register(Box::new(
+        registered::ctx_compress_memory::CtxCompressMemoryTool,
+    ));
+    registry.register(Box::new(registered::ctx_read::CtxReadTool));
+    registry.register(Box::new(registered::ctx_multi_repo::CtxMultiRepoTool));
+    registry.register(Box::new(registered::ctx_delta::CtxDeltaTool));
+    registry.register(Box::new(registered::ctx_edit::CtxEditTool));
+    registry.register(Box::new(registered::ctx_patch::CtxPatchTool));
+    registry.register(Box::new(registered::ctx_glob::CtxGlobTool));
+    registry.register(Box::new(registered::ctx_shell::CtxShellTool));
+    registry.register(Box::new(registered::ctx_shape::CtxShapeTool));
+    registry.register(Box::new(registered::shell_alias::ShellAliasTool));
+    registry.register(Box::new(registered::ctx_search::CtxSearchTool));
+    registry.register(Box::new(registered::ctx_url_read::CtxUrlReadTool));
+    registry.register(Box::new(registered::ctx_git_read::CtxGitReadTool));
+    registry.register(Box::new(registered::ctx_checkpoint::CtxCheckpointTool));
+    registry.register(Box::new(registered::ctx_compose::CtxComposeTool));
+    registry.register(Box::new(registered::ctx_memory::CtxMemoryTool));
+    registry.register(Box::new(registered::ctx_execute::CtxExecuteTool));
+
+    // Utility tools (migrated from dispatch/utility_tools.rs)
+    registry.register(Box::new(registered::ctx_compress::CtxCompressTool));
+    registry.register(Box::new(registered::ctx_metrics::CtxMetricsTool));
+    registry.register(Box::new(registered::ctx_radar::CtxRadarTool));
+    registry.register(Box::new(registered::ctx_dedup::CtxDedupTool));
+    registry.register(Box::new(registered::ctx_context::CtxContextTool));
+    registry.register(Box::new(registered::ctx_graph::CtxGraphTool));
+    registry.register(Box::new(registered::ctx_proof::CtxProofTool));
+    registry.register(Box::new(registered::ctx_preload::CtxPreloadTool));
+    registry.register(Box::new(registered::ctx_prefetch::CtxPrefetchTool));
+    registry.register(Box::new(registered::ctx_feedback::CtxFeedbackTool));
+    registry.register(Box::new(registered::ctx_control::CtxControlTool));
+
+    // Session tools (migrated from legacy dispatch)
+    registry.register(Box::new(registered::ctx_session::CtxSessionTool));
+    registry.register(Box::new(registered::ctx_knowledge::CtxKnowledgeTool));
+    registry.register(Box::new(registered::ctx_agent::CtxAgentTool));
+    registry.register(Box::new(registered::ctx_share::CtxShareTool));
+    registry.register(Box::new(
+        registered::ctx_transcript_compact::CtxTranscriptCompactTool,
+    ));
+    registry.register(Box::new(registered::ctx_package::CtxPackageTool));
+    registry.register(Box::new(registered::ctx_handoff::CtxHandoffTool));
+    registry.register(Box::new(registered::ctx_work_graph::CtxWorkGraphTool));
+    registry.register(Box::new(registered::ctx_tasks::CtxTasksTool));
+    registry.register(Box::new(registered::ctx_load_tools::CtxLoadToolsTool));
+
+    // #509: deprecated aliases — hidden from tools/list but stay registered so
+    // direct calls and ctx_call keep working for one release cycle.
+
+    registry
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_arc_returns_owned_handle_for_known_tool() {
+        let registry = build_registry();
+        let arc = registry.get_arc("ctx_tree");
+        assert!(arc.is_some(), "ctx_tree must be registered");
+        assert_eq!(arc.unwrap().name(), "ctx_tree");
+    }
+
+    #[test]
+    fn work_graph_is_registered_and_publicly_advertised() {
+        let registry = build_registry();
+        assert!(registry.contains("ctx_work_graph"));
+        let tools = registry.tool_defs();
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "ctx_work_graph")
+            .expect("work graph must be advertised");
+        assert_eq!(
+            tool.input_schema.get("additionalProperties"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        let actions = tool.input_schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum");
+        assert!(actions.iter().any(|action| action == "start"));
+        assert!(!actions.iter().any(|action| action == "execute"));
+        assert!(
+            tool.input_schema["properties"]
+                .get("execution_fence")
+                .is_some()
+        );
+        assert!(tool.input_schema["properties"].get("connector").is_none());
+    }
+
+    /// Hive metrics K2: the wire's closed tool table stays in step with the
+    /// registry (moved here from `core::hive::metrics_v2::tests`).
+    #[test]
+    fn every_registered_tool_is_a_known_wire_tool() {
+        use lean_ctx_protocol::hive::metrics_v2::KNOWN_TOOLS;
+        let missing: Vec<&str> = build_registry()
+            .names()
+            .into_iter()
+            .filter(|name| !KNOWN_TOOLS.contains(name))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "add these registered tools to metrics_v2::KNOWN_TOOLS: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn get_arc_is_none_for_unknown_tool() {
+        let registry = build_registry();
+        assert!(registry.get_arc("ctx_does_not_exist_xyz").is_none());
+    }
+
+    #[test]
+    fn get_and_get_arc_agree_for_core_tool() {
+        let registry = build_registry();
+        assert_eq!(
+            registry.get("ctx_read").is_some(),
+            registry.get_arc("ctx_read").is_some(),
+            "get and get_arc must agree on tool presence"
+        );
+    }
+
+    #[test]
+    fn local_collaboration_tools_are_hidden_but_remain_directly_callable() {
+        let registry = build_registry();
+        let public_defs = registry.tool_defs();
+        let public_names: Vec<_> = public_defs.iter().map(|tool| tool.name.as_ref()).collect();
+        let power_defs =
+            registry.profile_tool_defs(&lean_ctx::core::tool_profiles::ToolProfile::Power);
+        let power_names: Vec<_> = power_defs.iter().map(|tool| tool.name.as_ref()).collect();
+        let registered_defs = registry.registered_tool_defs();
+        let registered_names: Vec<_> = registered_defs
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect();
+
+        for name in crate::server::dynamic_tools::LOCAL_COLLABORATION_COMPATIBILITY_TOOLS {
+            assert!(
+                !public_names.contains(name),
+                "{name} must stay out of the public tool surface"
+            );
+            assert!(
+                !power_names.contains(name),
+                "{name} must stay out of an explicit Power advertisement"
+            );
+            assert!(
+                registered_names.contains(name),
+                "{name} must remain in the direct compatibility registry"
+            );
+            assert!(
+                registry.get(name).is_some(),
+                "{name} must remain directly callable"
+            );
+        }
+    }
+}

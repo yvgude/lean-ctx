@@ -75,7 +75,7 @@ pub(crate) fn is_newer(latest: &str, current: &str) -> bool {
 /// and write the result to the lean-ctx data dir (`latest-version.json`).
 /// Non-blocking, fire-and-forget. Skips if cache is fresh (<24h).
 /// Respects `update_check_disabled` config and `LEAN_CTX_NO_UPDATE_CHECK` env var.
-pub(crate) fn check_background() {
+pub fn check_background() {
     let cfg = super::config::Config::load();
     if cfg.update_check_disabled_effective() {
         return;
@@ -97,7 +97,7 @@ pub(crate) fn check_background() {
 
 /// Returns a formatted yellow update banner if a newer version is available.
 /// Reads only the local cache file — zero network calls, zero delay.
-pub(crate) fn get_update_banner() -> Option<String> {
+pub fn get_update_banner() -> Option<String> {
     let cache = read_cache()?;
     if is_newer(&cache.latest, CURRENT_VERSION) {
         Some(format!(
@@ -111,7 +111,7 @@ pub(crate) fn get_update_banner() -> Option<String> {
 
 /// Returns version info as JSON for the dashboard /api/version endpoint.
 /// Includes the cache age so the UI can be honest about staleness (#563).
-pub(crate) fn version_info_json() -> String {
+pub fn version_info_json() -> String {
     let cache = read_cache();
     let (latest, update_available, age_secs) = match cache {
         Some(c) => {
@@ -134,7 +134,7 @@ static NOTIFIED_THIS_SESSION: AtomicBool = AtomicBool::new(false);
 
 /// Returns a one-line update notification if available, exactly once per session.
 /// Safe to call from any tool — returns None after first notification.
-pub(crate) fn session_update_hint() -> Option<String> {
+pub fn session_update_hint() -> Option<String> {
     if NOTIFIED_THIS_SESSION.swap(true, Ordering::Relaxed) {
         return None;
     }

@@ -4,7 +4,7 @@ pub mod mining;
 mod model;
 mod persist;
 mod reflector;
-mod runtime;
+pub mod runtime;
 
 pub use detect::{
     DetectedError, detect_error_pattern, is_correlatable_command, normalize_error_signature,

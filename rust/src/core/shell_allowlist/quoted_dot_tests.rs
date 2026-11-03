@@ -5,7 +5,7 @@
 
 use super::{Allowlist, allow, check_all_segments};
 
-fn list() -> Allowlist {
+pub(crate) fn list() -> Allowlist {
     allow(&["echo", "printf", "jq"])
 }
 

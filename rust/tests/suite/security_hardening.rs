@@ -7,15 +7,15 @@
 /// `call_tool/` and `team/mod.rs` delegates to `team/request_pipeline.rs`.
 fn server_dispatch_src() -> String {
     [
-        include_str!("../../src/server/mod.rs"),
-        include_str!("../../src/server/call_tool.rs"),
-        include_str!("../../src/server/call_tool/pipeline.rs"),
-        include_str!("../../src/server/call_tool/guarded.rs"),
-        include_str!("../../src/server/call_tool/outcome.rs"),
-        include_str!("../../src/server/call_tool/policy.rs"),
-        include_str!("../../src/server/server_handler.rs"),
-        include_str!("../../src/server/post_process.rs"),
-        include_str!("../../src/server/post_dispatch.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/mod.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool/pipeline.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool/guarded.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool/outcome.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/call_tool/policy.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/server_handler.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/post_process.rs"),
+        include_str!("../../crates/lean-ctx-server/src/server/post_dispatch.rs"),
     ]
     .join("\n")
 }
@@ -25,7 +25,7 @@ fn server_dispatch_src() -> String {
 // ---------------------------------------------------------------------------
 #[test]
 fn dashboard_api_auth_never_bypassed_for_loopback() {
-    let src = include_str!("../../src/dashboard/mod.rs");
+    let src = include_str!("../../crates/lean-ctx/src/dashboard/mod.rs");
     assert!(
         !src.contains("if requires_auth && !has_header_auth && !is_loopback"),
         "C1: API auth must NOT be bypassed for loopback — only HTML token injection is allowed"
@@ -38,7 +38,7 @@ fn dashboard_api_auth_never_bypassed_for_loopback() {
 
 #[test]
 fn dashboard_check_auth_uses_constant_time_eq() {
-    let src = include_str!("../../src/dashboard/mod.rs");
+    let src = include_str!("../../crates/lean-ctx/src/dashboard/mod.rs");
     assert!(
         src.contains("constant_time_eq(token.trim().as_bytes(), expected_token.as_bytes())"),
         "C1: check_auth must use constant_time_eq, not plain =="
@@ -49,12 +49,12 @@ fn dashboard_check_auth_uses_constant_time_eq() {
 fn dashboard_probe_sends_bearer_token() {
     // The probe lives in dashboard/launch.rs since 3.12; `dashboard_responding`
     // hands it the saved token.
-    let src = include_str!("../../src/dashboard/mod.rs");
+    let src = include_str!("../../crates/lean-ctx/src/dashboard/mod.rs");
     assert!(
         src.contains("launch::probe(host, port, load_saved_token().as_deref())"),
         "C1: dashboard_responding must probe with the saved token"
     );
-    let probe = include_str!("../../src/dashboard/launch.rs");
+    let probe = include_str!("../../crates/lean-ctx/src/dashboard/launch.rs");
     assert!(
         probe.contains("Authorization: Bearer {t}"),
         "C1: dashboard_responding probe must send saved Bearer token"
@@ -63,7 +63,7 @@ fn dashboard_probe_sends_bearer_token() {
 
 #[test]
 fn dashboard_metrics_requires_auth() {
-    let src = include_str!("../../src/dashboard/mod.rs");
+    let src = include_str!("../../crates/lean-ctx/src/dashboard/mod.rs");
     assert!(
         src.contains(r#"path == "/metrics""#),
         "C1: /metrics must be in the requires_auth path"
@@ -141,7 +141,7 @@ fn update_shell_cwd_calls_jail_path() {
 /// project root and write there. Pin that the guard is fed the resolved value.
 #[test]
 fn shell_write_guard_is_given_the_resolved_cwd_not_the_raw_argument() {
-    let src = include_str!("../../src/tools/registered/ctx_shell.rs");
+    let src = include_str!("../../crates/lean-ctx-server/src/tools/registered/ctx_shell.rs");
 
     let call = src
         .find("validate_command_in_cwd(")
@@ -175,7 +175,7 @@ fn shell_write_guard_is_given_the_resolved_cwd_not_the_raw_argument() {
 /// allows — the pre-#1811 behaviour, reintroduced one layer up.
 #[test]
 fn shell_alias_does_not_repeat_the_write_guard() {
-    let src = include_str!("../../src/tools/registered/shell_alias.rs");
+    let src = include_str!("../../crates/lean-ctx-server/src/tools/registered/shell_alias.rs");
     assert!(
         !src.contains("validate_command_in_cwd(")
             && !src.contains("validate_command_with_write_allow_paths("),
@@ -188,7 +188,7 @@ fn shell_alias_does_not_repeat_the_write_guard() {
 // ---------------------------------------------------------------------------
 #[test]
 fn resolve_path_includes_secret_check() {
-    let src = include_str!("../../src/tools/server_paths.rs");
+    let src = include_str!("../../crates/lean-ctx-server/src/tools/server_paths.rs");
 
     let resolve_fn = src.find("fn resolve_path(").expect("resolve_path missing");
     let resolve_body = &src[resolve_fn..];
@@ -248,7 +248,7 @@ fn pipeline_archive_uses_redacted_output() {
 // ---------------------------------------------------------------------------
 #[test]
 fn ctx_search_has_pattern_length_limit() {
-    let src = include_str!("../../src/tools/ctx_search/implementation.rs");
+    let src = include_str!("../../crates/lean-ctx-server/src/tools/ctx_search/implementation.rs");
 
     assert!(
         src.contains("MAX_PATTERN_LEN"),
@@ -303,7 +303,7 @@ fn uds_socket_sets_permissions() {
 // ---------------------------------------------------------------------------
 #[test]
 fn http_server_sanitizes_error_responses() {
-    let src = include_str!("../../src/http_server/mod.rs");
+    let src = include_str!("../../crates/lean-ctx/src/http_server/mod.rs");
 
     let v1_fn = src.find("v1_tool_call").expect("v1_tool_call missing");
     let v1_body = &src[v1_fn..v1_fn + 600];
@@ -318,7 +318,7 @@ fn http_server_sanitizes_error_responses() {
 // ---------------------------------------------------------------------------
 #[test]
 fn csp_nonce_covers_all_inline_scripts() {
-    let src = include_str!("../../src/dashboard/mod.rs");
+    let src = include_str!("../../crates/lean-ctx/src/dashboard/mod.rs");
     assert!(
         src.contains("add_nonce_to_inline_scripts"),
         "dashboard must use add_nonce_to_inline_scripts for all inline scripts"
@@ -334,7 +334,7 @@ fn csp_nonce_covers_all_inline_scripts() {
 fn add_nonce_skips_external_scripts() {
     let html = r#"<script src="foo.js"></script><script>inline()</script><script type="module">boot()</script>"#;
     let nonce = ["abc", "123"].concat();
-    let result = lean_ctx::dashboard::add_nonce_to_inline_scripts(html, &nonce);
+    let result = lean_ctx_cli::dashboard::add_nonce_to_inline_scripts(html, &nonce);
     assert!(
         result.contains(r#"<script src="foo.js">"#),
         "external script must NOT get nonce: {result}"
@@ -365,7 +365,9 @@ fn raw_shell_skips_all_postprocessing() {
     // `minimal` parameter (which the default config set to true, silently
     // killing the safety net) to the explicit env escape hatch.
     assert!(
-        src.contains("let archive_hint = if crate::core::config::Config::minimal_escape_hatch() {"),
+        src.contains(
+            "let archive_hint = if lean_ctx::core::config::Config::minimal_escape_hatch() {"
+        ),
         "archive_hint bypass must be gated on the LEAN_CTX_MINIMAL escape hatch only (not raw shell, not config minimal_overhead)"
     );
     assert!(

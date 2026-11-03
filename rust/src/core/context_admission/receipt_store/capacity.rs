@@ -17,8 +17,8 @@
 //! nothing is locked while it is held.
 //!
 //! **The ceiling** is `LEAN_CTX_GATEWAY_STORE_MAX_MB` (`0` = none), else the
-//! value the configuration gives ([`note_configured_ceiling`]: 10 % of the
-//! `max_disk_mb` budget, else [`DEFAULT_STORE_MB`]). The configuration is
+//! value the configuration gives (`note_configured_ceiling`: 10 % of the
+//! `max_disk_mb` budget, else `DEFAULT_STORE_MB`). The configuration is
 //! not read here: a store write happens deep inside calls that may hold
 //! locks the configuration loader needs. The value is noted where a call
 //! takes its policy snapshot.
@@ -26,12 +26,12 @@
 //! **What fits.** After every admitted write
 //! `booked bytes + held reservations ≤ ceiling`:
 //! - A lifecycle is ENTERED with its first record — a Decision Receipt, an
-//!   egress admission ([`Kind::Entry`]). It needs room for the record and
+//!   egress admission (`Kind::Entry`). It needs room for the record and
 //!   for [`LIFECYCLE_RESERVE`], which is then held as a reservation for the
 //!   records that follow (sidecar, observation, pointers, index entries).
-//! - Every other write ([`Kind::FollowUp`]) takes its growth from the
+//! - Every other write (`Kind::FollowUp`) takes its growth from the
 //!   reservations still held; what they do not cover must fit under the
-//!   ceiling itself. A reservation is held for [`RESERVATION_SECONDS`] — a
+//!   ceiling itself. A reservation is held for `RESERVATION_SECONDS` — a
 //!   lifecycle has no end the store could observe — and the pool is shared:
 //!   a late record can use room another delivery reserved, and is then held
 //!   to the ceiling like any late write.
@@ -54,10 +54,10 @@
 //!
 //! **The ledger is a cache, the files are the truth.** Every maintenance
 //! pass counts the files and rebuilds the ledger from that count
-//! ([`rebuild`]). A missing, damaged or stale ledger is never counted on the
+//! (`rebuild`). A missing, damaged or stale ledger is never counted on the
 //! write path — a store of 100 000 files would hold the lock for seconds —
 //! it is used as it is, cannot prove the store full, and the next pass
-//! rebuilds it. A store whose lock cannot be taken within [`LOCK_WAIT`] is
+//! rebuilds it. A store whose lock cannot be taken within `LOCK_WAIT` is
 //! written to all the same and marked stale: maintenance holds the lock only
 //! for short bookings, and a receipt is never refused for a lock.
 
@@ -73,7 +73,7 @@ pub(crate) const DEFAULT_STORE_MB: u64 = 1024;
 /// Room reserved at entry for the records a lifecycle writes afterwards: one
 /// trace sidecar (≤ 256 KiB), one observation, the egress records and index
 /// entries.
-pub(crate) const LIFECYCLE_RESERVE: u64 = 512 * 1024;
+pub const LIFECYCLE_RESERVE: u64 = 512 * 1024;
 /// How long an entry's reservation is held.
 pub(crate) const RESERVATION_SECONDS: u64 = 30;
 
@@ -164,14 +164,14 @@ impl Ledger {
 
 /// What the store holds and what it may hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Usage {
-    pub(crate) bytes: u64,
-    pub(crate) objects: u64,
+pub struct Usage {
+    pub bytes: u64,
+    pub objects: u64,
     /// Room held for lifecycles that entered within the last
     /// [`RESERVATION_SECONDS`].
     pub(crate) reserved: u64,
     /// `None`: no ceiling applies.
-    pub(crate) limit_bytes: Option<u64>,
+    pub limit_bytes: Option<u64>,
 }
 
 fn full_message(usage: &Usage) -> String {

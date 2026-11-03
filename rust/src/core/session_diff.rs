@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::core::session::SessionState;
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct SessionDiff {
+pub struct SessionDiff {
     pub session_a: String,
     pub session_b: String,
     pub files: FilesDiff,
@@ -20,7 +20,7 @@ pub(crate) struct SessionDiff {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct FilesDiff {
+pub struct FilesDiff {
     pub added: Vec<String>,
     pub removed: Vec<String>,
     pub changed_mode: Vec<FileModeChange>,
@@ -28,14 +28,14 @@ pub(crate) struct FilesDiff {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct FileModeChange {
+pub struct FileModeChange {
     pub path: String,
     pub mode_a: String,
     pub mode_b: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct CountDiff {
+pub struct CountDiff {
     pub count_a: usize,
     pub count_b: usize,
     pub added: Vec<String>,
@@ -43,7 +43,7 @@ pub(crate) struct CountDiff {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct StatsDiff {
+pub struct StatsDiff {
     pub tool_calls_a: u32,
     pub tool_calls_b: u32,
     pub tokens_saved_a: u64,
@@ -55,12 +55,12 @@ pub(crate) struct StatsDiff {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct ModesDiff {
+pub struct ModesDiff {
     pub modes_a: HashMap<String, usize>,
     pub modes_b: HashMap<String, usize>,
 }
 
-pub(crate) fn diff_sessions(a: &SessionState, b: &SessionState) -> SessionDiff {
+pub fn diff_sessions(a: &SessionState, b: &SessionState) -> SessionDiff {
     SessionDiff {
         session_a: a.id.clone(),
         session_b: b.id.clone(),
@@ -182,7 +182,7 @@ fn diff_modes(a: &SessionState, b: &SessionState) -> ModesDiff {
 }
 
 impl SessionDiff {
-    pub(crate) fn format_summary(&self) -> String {
+    pub fn format_summary(&self) -> String {
         let mut lines = Vec::new();
         lines.push(format!(
             "Session Diff: {} vs {}",
@@ -243,7 +243,7 @@ impl SessionDiff {
         lines.join("\n")
     }
 
-    pub(crate) fn format_json(&self) -> String {
+    pub fn format_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".into())
     }
 }

@@ -13,7 +13,7 @@ use super::repo_url::RepoRef;
 use super::run_git;
 
 /// Default wall-clock timeout for a clone/fetch.
-pub(crate) const DEFAULT_CLONE_TIMEOUT_SECS: u64 = 90;
+pub const DEFAULT_CLONE_TIMEOUT_SECS: u64 = 90;
 /// How long a cached clone is reused before a refresh fetch.
 const CACHE_TTL: Duration = Duration::from_hours(1);
 /// Stamp file written after a successful fetch; its mtime drives freshness.
@@ -24,7 +24,7 @@ const STAMP: &str = ".lean-ctx-fetched";
 /// Reuses the cached checkout while it is younger than the cache TTL; otherwise
 /// refreshes (or performs) a shallow fetch of the requested ref (default: the
 /// remote's `HEAD`).
-pub(crate) fn ensure_repo(repo: &RepoRef, timeout: Duration) -> Result<PathBuf, String> {
+pub fn ensure_repo(repo: &RepoRef, timeout: Duration) -> Result<PathBuf, String> {
     guard_clone_url(&repo.clone_url)?;
 
     let dir = repo_cache_dir(repo)?;

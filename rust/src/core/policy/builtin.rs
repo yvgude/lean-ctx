@@ -1,9 +1,9 @@
 //! Curated built-in policy packs (GL #489), embedded at compile time.
 //!
-//! The Community engine ships the deterministic floor only: `baseline`,
+//! LeanCTX | OSS ships the deterministic floor only: `baseline`,
 //! `strict-redaction` and `open-source`. Domain packs (health, finance, legal,
 //! company-specific) and compliance-framework packs are commercial and are
-//! delivered by LeanCTX Hive / Enterprise, never from this source tree
+//! delivered by LeanCTX | Hive / Enterprise, never from this source tree
 //! (`scripts/check-private-paths.py` enforces the list).
 
 use std::sync::OnceLock;
@@ -44,8 +44,8 @@ pub fn paid_tier(name: &str) -> Option<&'static str> {
 pub fn unknown_pack_hint(name: &str) -> String {
     match paid_tier(name) {
         Some(tier) => format!(
-            "'{name}': this pack is part of LeanCTX {tier} and no longer ships with the \
-             Community engine (docs/guides/policy-packs.md)"
+            "'{name}': this pack is part of LeanCTX | {tier} and no longer ships with \
+             LeanCTX | OSS (docs/guides/policy-packs.md)"
         ),
         None => format!("no pack named '{name}' (built-ins: {})", names().join(", ")),
     }
@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(names(), vec!["baseline", "strict-redaction", "open-source"]);
         for (pack, tier) in PAID_PACKS {
             assert!(get(pack).is_none(), "'{pack}' must not be bundled");
-            assert!(unknown_pack_hint(pack).contains(&format!("LeanCTX {tier}")));
+            assert!(unknown_pack_hint(pack).contains(&format!("LeanCTX | {tier}")));
         }
         assert!(unknown_pack_hint("no-such-pack").contains("built-ins: baseline"));
     }

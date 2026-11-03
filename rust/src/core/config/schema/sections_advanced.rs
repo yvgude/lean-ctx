@@ -154,6 +154,24 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     proxy.insert(
+        "cache_ttl_loop".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(cfg.proxy.cache_ttl_loop_enabled()),
+            "Agent-loop cache lifetime for Anthropic. While a request ends in tool results, the conversation's cache markers are written for 5 minutes instead of 1 hour (1.25x instead of 2x the input price); the person's last prompt keeps a 1 h marker of its own, so a long pause loses at most this turn's tool steps. System and tool markers keep their lifetime; headless clients (User-Agent entrypoint sdk-…, e.g. claude -p) get 5 minutes from the first request. Measured -17.9 % cost on Claude Code -p (Haiku 5.5). Default true",
+            "LEAN_CTX_PROXY_CACHE_TTL_LOOP",
+        ),
+    );
+    proxy.insert(
+        "long_session_elide".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(true),
+            "Long-session elision for Anthropic. Once a conversation's messages pass 180 000 characters, tool output older than the live window (at least the last 8 messages) and longer than 2 000 characters is replaced by a one-line stub; the full text is archived in a private, content-addressed file under the lean-ctx state directory that the stub names (readable with cat). The window advances in steps of 16 messages, so the cached prefix is rewritten once per step, not every turn. It applies to every turn of such a session, prompt turns included, so they send the same prefix as the tool turn before. Measured cost x0.74 on long Claude Code sessions (Haiku 5.5), same tasks solved. Default true",
+            "LEAN_CTX_PROXY_LONG_SESSION_ELIDE",
+        ),
+    );
+    proxy.insert(
         "cache_aligner".into(),
         key_with_env(
             "bool",
@@ -640,6 +658,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
                 keys: setup_keys,
             },
         );
+    sections.insert("governor".into(), super::governor_section());
 
     // #1605: these defaults are derived from `cfg.llm`, never written out by
     // hand. The literal copies that used to live here had drifted from

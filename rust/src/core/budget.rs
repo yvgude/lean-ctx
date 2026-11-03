@@ -41,18 +41,24 @@ pub(crate) enum BudgetAction {
 /// it instead of discarding it with the rest of the tail (#1660).
 ///
 /// K25: a cut without such a line archives the full `text` under `tool` and
-/// names it with [`crate::core::recovery::original_pointer`], so no truncation
+/// names it with `crate::core::recovery::original_pointer`, so no truncation
 /// leaves the caller without a way back. When the archive refuses the text
 /// (archive off, or protection without source authority) the notice stays as
 /// it was.
-pub(crate) fn enforce_turn_budget(
+pub fn enforce_turn_budget(
     text: &str,
     verbatim: bool,
     recovery: Option<&str>,
     tool: &str,
 ) -> String {
-    let cfg = crate::core::config::Config::load();
-    let limit = if verbatim {
+    let cfg = crate::core::config::Config::load_arc();
+    // #2172: `ctx_expand` hands back an archived original — the explicit way
+    // to the original bytes — so it takes the verbatim budget, and a cut never
+    // archives its reply again: that minted a fresh pointer to a copy of a
+    // slice of the archive, and following it cut and re-archived once more.
+    // The archive it read is still there; the notice says how to narrow it.
+    let expand = tool == "ctx_expand";
+    let limit = if verbatim || expand {
         cfg.turn_fresh_limit_verbatim_effective()
     } else {
         cfg.turn_fresh_limit_effective()
@@ -60,12 +66,17 @@ pub(crate) fn enforce_turn_budget(
     if limit == 0 {
         return text.to_string();
     }
-    let pointer =
-        if recovery.is_none_or(|line| line.trim().is_empty()) && count_tokens(text) > limit {
-            crate::core::recovery::archive_original(tool, tool, text)
-        } else {
-            None
-        };
+    let no_recovery = recovery.is_none_or(|line| line.trim().is_empty());
+    let recovery = if expand && no_recovery {
+        Some(EXPAND_NARROW_LINE)
+    } else {
+        recovery
+    };
+    let pointer = if !expand && no_recovery && count_tokens(text) > limit {
+        crate::core::recovery::archive_original(tool, tool, text)
+    } else {
+        None
+    };
     let with_pointer;
     let (text, recovery) = match pointer.as_deref() {
         Some(line) => {
@@ -86,6 +97,11 @@ pub(crate) fn enforce_turn_budget(
     }
     budgeted
 }
+
+/// The recovery line of a cut `ctx_expand` reply: the archive it read is the
+/// way back, narrowed by the selectors that tool already takes (#2172).
+const EXPAND_NARROW_LINE: &str =
+    "[narrow the same ctx_expand id with start_line+end_line, head, tail or search]";
 
 /// `recovery`, when given, is a line that must survive the cut (GH #1660).
 ///
@@ -552,6 +568,34 @@ mod gh1660 {
         assert!(
             archived.starts_with(&text),
             "the whole original is archived"
+        );
+    }
+
+    /// #2172: a cut `ctx_expand` reply used to be archived again and named by
+    /// a new pointer, so following pointers only produced nested archives.
+    /// It is cut at the verbatim budget and points back at the same archive.
+    #[test]
+    fn a_cut_ctx_expand_reply_is_never_archived_again() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let _limit = crate::test_env::EnvVarGuard::set("LEAN_CTX_TURN_FRESH_LIMIT", "300");
+        let _verbatim =
+            crate::test_env::EnvVarGuard::set("LEAN_CTX_TURN_FRESH_LIMIT_VERBATIM", "600");
+        let text = long_body();
+        let out = enforce_turn_budget(&text, false, None, "ctx_expand");
+
+        assert!(
+            !out.contains("[Original available via ctx_expand id="),
+            "no nested archive: {out}"
+        );
+        assert!(
+            out.trim_end().ends_with(EXPAND_NARROW_LINE),
+            "names the way to narrow the same archive: {out}"
+        );
+        let tokens = count_tokens(&out);
+        assert!(
+            tokens > 300 && tokens <= 600,
+            "verbatim budget: {tokens} tokens"
         );
     }
 

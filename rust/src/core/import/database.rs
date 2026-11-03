@@ -88,7 +88,7 @@ struct Verified {
 
 impl Verified {
     fn open(path: &Path, root: &Path) -> Result<Self, SourceRefusal> {
-        let file = crate::tools::ctx_read::open_rooted_source(path, root)
+        let file = crate::core::rooted_read::open_rooted_source(path, root)
             .map_err(|_| SourceRefusal::Unreadable)?;
         let identity = file
             .metadata()

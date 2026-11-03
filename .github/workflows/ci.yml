@@ -139,7 +139,7 @@ jobs:
         working-directory: rust
         run: |
           set -euo pipefail
-          cargo package --locked --no-verify --list -p lean-ctx > "$RUNNER_TEMP/package-files.txt"
+          cargo package --locked --no-verify --list -p lean-ctx-engine > "$RUNNER_TEMP/package-files.txt"
           for asset in \
             assets/ocla/capability-manifests/leanctx/context-optimization-v1.json \
             assets/ocla/capability-manifests/leanctx/passthrough-v1.json \
@@ -880,14 +880,14 @@ jobs:
         run: cargo doc --no-deps --all-features
       - name: Check generated reference docs are current
         working-directory: rust
-        run: cargo run --example gen_docs --features dev-tools -- --check
+        run: cargo run -p lean-ctx-server --example gen_docs --features dev-tools -- --check
       - name: Check bundled registry snapshots are canonical
         working-directory: rust
         run: cargo run --example gen_registry --features dev-tools -- --check
       - name: Check v4 product capability classification and generated matrix
         working-directory: rust
         run: |
-          cargo test --test product_capability_classification
+          cargo test -p lean-ctx-server --test product_capability_classification
           cargo run --quiet --example gen_product_capability_matrix
           git diff --exit-code -- data/product-capabilities.toml ../docs/reference/generated/product-capabilities.md
 

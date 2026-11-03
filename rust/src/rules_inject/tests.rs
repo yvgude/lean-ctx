@@ -934,7 +934,7 @@ fn each_host_gets_exactly_one_rules_channel() {
         let home = tmp.path();
         with_temp_home(home, || {
             let before = crate::instructions::build_instructions_with_client(
-                crate::tools::CrpMode::Off,
+                crate::core::protocol::CrpMode::Off,
                 client,
             );
             assert!(
@@ -946,9 +946,9 @@ fn each_host_gets_exactly_one_rules_channel() {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             match target {
                 None => {
-                    crate::hooks::agents::sync_claude_global_rules_block(
+                    crate::core::claude_md::sync_claude_global_rules_block(
                         home,
-                        crate::hooks::recommend_hook_mode("claude"),
+                        crate::core::hook_mode::recommend_hook_mode("claude"),
                     )
                     .unwrap();
                 }
@@ -959,7 +959,7 @@ fn each_host_gets_exactly_one_rules_channel() {
             }
 
             let after = crate::instructions::build_instructions_with_client(
-                crate::tools::CrpMode::Off,
+                crate::core::protocol::CrpMode::Off,
                 client,
             );
             assert!(
@@ -997,10 +997,10 @@ fn claude_duplicate_rules_channels_are_detected_and_removed_keeping_user_text() 
     let project_rules = project.join(".claude/rules/lean-ctx.md");
 
     with_temp_home(home, || {
-        let mode = crate::hooks::recommend_hook_mode("claude");
+        let mode = crate::core::hook_mode::recommend_hook_mode("claude");
         std::fs::create_dir_all(home.join(".claude")).unwrap();
         std::fs::write(home.join(".claude/CLAUDE.md"), "# my notes\n").unwrap();
-        crate::hooks::agents::sync_claude_global_rules_block(home, mode).unwrap();
+        crate::core::claude_md::sync_claude_global_rules_block(home, mode).unwrap();
         // Stale copies an older install left behind, extended by a user.
         for (path, user) in [
             (&global_rules, "## My global precedence\nkeep global\n"),
@@ -1020,7 +1020,7 @@ fn claude_duplicate_rules_channels_are_detected_and_removed_keeping_user_text() 
         assert_eq!(claude.instruction_tokens, 0, "block present → anchor only");
 
         // Sync (setup/update) retires the global copy, dedup the project one.
-        crate::hooks::agents::sync_claude_global_rules_block(home, mode).unwrap();
+        crate::core::claude_md::sync_claude_global_rules_block(home, mode).unwrap();
         crate::core::rules_dedup::auto_apply(home, &project);
 
         let global = std::fs::read_to_string(&global_rules).unwrap();
@@ -1052,7 +1052,7 @@ fn dedicated_session_hook_is_the_single_rules_channel() {
     let (without, with) = with_temp_home(home, || {
         let build = || {
             crate::instructions::build_instructions_with_client(
-                crate::tools::CrpMode::Off,
+                crate::core::protocol::CrpMode::Off,
                 "claude-code",
             )
         };

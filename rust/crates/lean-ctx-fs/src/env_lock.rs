@@ -6,7 +6,7 @@
 //! thread is undefined behaviour. Every test that mutates the environment
 //! serializes through [`test_env_lock`], here and in the engine (which
 //! re-exports it as `core::data_dir::test_env_lock`), so there is exactly one
-//! lock per process. The mutation helpers [`set_var`] / [`remove_var`] exist
+//! lock per process. The mutation helpers `set_var` / `remove_var` exist
 //! only for tests (`cfg(test)` or the `test-support` feature).
 
 static TEST_ENV_MUTEX: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();

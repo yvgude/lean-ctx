@@ -26,7 +26,7 @@ pub(crate) fn enabled() -> bool {
 
 /// Marks `name` as running until the guard drops.
 #[must_use = "the phase ends when the guard drops"]
-pub(crate) fn enter(name: &'static str) -> PhaseGuard {
+pub fn enter(name: &'static str) -> PhaseGuard {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let started = Instant::now();
     if let Ok(mut running) = RUNNING.lock() {
@@ -40,14 +40,14 @@ pub(crate) fn enter(name: &'static str) -> PhaseGuard {
 
 /// Reports one slow step inside `phase` (one source of a scan, say) when
 /// phase timing is on. `detail` names the step; it goes to stderr only.
-pub(crate) fn note_slow(phase: &'static str, detail: &str, spent: Duration) {
+pub fn note_slow(phase: &'static str, detail: &str, spent: Duration) {
     if enabled() {
         eprintln!("[phase] {phase} slow step {spent:?}: {detail}");
     }
 }
 
 /// The most recently entered phase still running and how long it has run.
-pub(crate) fn current() -> Option<(&'static str, Duration)> {
+pub fn current() -> Option<(&'static str, Duration)> {
     RUNNING.lock().ok().and_then(|running| {
         running
             .last_key_value()
@@ -55,7 +55,7 @@ pub(crate) fn current() -> Option<(&'static str, Duration)> {
     })
 }
 
-pub(crate) struct PhaseGuard {
+pub struct PhaseGuard {
     id: u64,
     name: &'static str,
     started: Instant,

@@ -67,21 +67,21 @@
   "keyset_cases": [
     {
       "case": "valid",
-      "engine_1x": {
+      "instance_1x": {
         "result": "accept"
       },
-      "engine_3_12": {
+      "instance_3_12": {
         "result": "accept"
       },
       "patch": []
     },
     {
       "case": "bad_signature: keys changed after signing",
-      "engine_1x": {
+      "instance_1x": {
         "reason": "bad_signature",
         "result": "reject"
       },
-      "engine_3_12": {
+      "instance_3_12": {
         "reason": "bad_signature",
         "result": "reject"
       },
@@ -99,11 +99,11 @@
     {
       "case": "retired root only (new root signature removed)",
       "drop_new_root": true,
-      "engine_1x": {
+      "instance_1x": {
         "reason": "bad_signature",
         "result": "reject"
       },
-      "engine_3_12": {
+      "instance_3_12": {
         "reason": "retired_root_only",
         "result": "reject"
       },
@@ -111,11 +111,11 @@
     },
     {
       "case": "legacy signature tampered",
-      "engine_1x": {
+      "instance_1x": {
         "reason": "bad_signature",
         "result": "reject"
       },
-      "engine_3_12": {
+      "instance_3_12": {
         "result": "accept"
       },
       "patch": [
@@ -141,18 +141,6 @@
       "signing_input": "leanctx.hive.lease.v1\n{\"expires_at\":\"2026-10-21T12:00:00Z\",\"grace_until\":\"2026-10-27T12:00:00Z\",\"instance_id\":\"inst_01jb8z3k4m5n6p7q8r9s0t1v2w\",\"issued_at\":\"2026-10-20T12:00:00Z\",\"lease_id\":\"lse_01jb8z4a2b3c4d5e6f7g8h9j0k\",\"org_id\":\"org_acme\",\"org_settings\":{\"metrics_upload\":true,\"receipts_upload\":false},\"plan\":\"team\",\"rights\":[\"knowledge.read\",\"knowledge.draft\",\"knowledge.merge\",\"metrics.upload\",\"receipts.upload\",\"policy.pull\",\"bus.relay\",\"bus.control\",\"runtime\"],\"schema\":\"leanctx.hive.lease/v1\",\"seats_limit\":25,\"server_time\":\"2026-10-20T12:00:00Z\"}"
     },
     {
-      "case": "lease with the empty policy_signer_keys that an answer to Hive-Protocol 2.0 keeps",
-      "fixture": "routes/lease_envelope.for_2_0.response.json",
-      "kid": "552e43422b3589fa",
-      "outcome": {
-        "result": "accept"
-      },
-      "received_at": 1792800000000,
-      "sign_with": "hive_policy",
-      "signature": "wNm4gHp7OfBM2iqoGEG6m7T8ipl4qwx6Id068AON+Ku9AUIBGjAZn6DRWnfabXBq4mPGNMydD/790ihRKsEDDA==",
-      "signing_input": "leanctx.hive.lease.v1\n{\"expires_at\":\"2026-10-21T12:00:00Z\",\"grace_until\":\"2026-10-27T12:00:00Z\",\"instance_id\":\"inst_01jb8z3k4m5n6p7q8r9s0t1v2w\",\"issued_at\":\"2026-10-20T12:00:00Z\",\"lease_id\":\"lse_01jb8z4a2b3c4d5e6f7g8h9j0k\",\"org_id\":\"org_acme\",\"org_settings\":{\"metrics_upload\":true,\"receipts_upload\":false},\"plan\":\"team\",\"policy_signer_keys\":[],\"rights\":[\"knowledge.read\",\"knowledge.draft\",\"knowledge.merge\",\"metrics.upload\",\"receipts.upload\",\"policy.pull\",\"bus.relay\",\"bus.control\",\"runtime\"],\"schema\":\"leanctx.hive.lease/v1\",\"seats_limit\":25,\"server_time\":\"2026-10-20T12:00:00Z\"}"
-    },
-    {
       "case": "lease signed by a non-policy key (control)",
       "fixture": "routes/lease_envelope.for_2x.response.json",
       "kid": "fac2346807329f09",
@@ -167,7 +155,7 @@
     }
   ],
   "rules": {
-    "engine_3_12": "accept iff some signatures[] entry verifies with a root of HOSTED_ROOT_KEYS (root_new); a valid signature only from RETIRED_ROOT_KEYS (root_old) → reject retired_root_only",
+    "instance_3_12": "accept iff some signatures[] entry verifies with a root of HOSTED_ROOT_KEYS (root_new); a valid signature only from RETIRED_ROOT_KEYS (root_old) → reject retired_root_only",
     "key_use": "an object is accepted with key k for purpose p iff k is in keys, p ∈ k.purposes, created_at ≤ received_at and (revoked_at null or received_at < revoked_at)",
     "lease": "a lease envelope verifies with the v3 key whose key_id = kid, purpose policy, created_at ≤ received_at < revoked_at",
     "legacy": "signature = base64(Ed25519(root_old, \"leanctx.hive.keyset.v1\\n\" ‖ canonical_json(key set without signature))), the C0 1.x verification rule",

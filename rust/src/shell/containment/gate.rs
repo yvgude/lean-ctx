@@ -20,7 +20,7 @@ use std::thread::ScopedJoinHandle;
 use super::CallGuard;
 
 /// Why nothing was started.
-pub(crate) enum Refusal {
+pub enum Refusal {
     /// The process could not be created or its program not executed.
     NotStarted(std::io::Error),
     /// The new process does not lead a group of its own. Nothing ran.
@@ -35,7 +35,7 @@ pub(crate) enum Refusal {
 ///
 /// `command` is left with the gate's `pre_exec` step and must not be spawned
 /// a second time.
-pub(crate) fn start_behind_guard(command: &mut Command) -> Result<(Child, CallGuard), Refusal> {
+pub fn start_behind_guard(command: &mut Command) -> Result<(Child, CallGuard), Refusal> {
     let (gate, open) = std::io::pipe().map_err(Refusal::NotStarted)?;
     let (mut announced, announce) = std::io::pipe().map_err(Refusal::NotStarted)?;
     let (gate_fd, open_fd, announce_fd) =
@@ -65,7 +65,7 @@ pub(crate) fn start_behind_guard(command: &mut Command) -> Result<(Child, CallGu
             }));
         }
         let pid = libc::pid_t::from_ne_bytes(pid);
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         pause_before_guard(pid);
         // SAFETY: reads the group of our own child, which waits at the gate.
         let leads = unsafe { libc::getpgid(pid) } == pid;
@@ -103,13 +103,13 @@ fn finish(spawning: ScopedJoinHandle<'_, std::io::Result<Child>>) -> std::io::Re
 }
 
 /// The guard of the process that waits at the gate and leads its own group.
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-support")))]
 fn attach_guard(process: libc::pid_t) -> Result<CallGuard, String> {
     CallGuard::attach_to(process, process)
 }
 
 /// As above; a test can make the attach fail the two ways it can fail.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn attach_guard(process: libc::pid_t) -> Result<CallGuard, String> {
     let nowhere = super::tests::NO_SUCH_GROUP;
     match GUARD_FAULT.with(std::cell::Cell::get) {
@@ -120,9 +120,9 @@ fn attach_guard(process: libc::pid_t) -> Result<CallGuard, String> {
 }
 
 /// Tests only: how the next guards started on this thread fail.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum GuardFault {
+pub enum GuardFault {
     /// The guard cannot be put into the group at all.
     CannotJoin,
     /// The guard is in the group but was told to guard another one: it never
@@ -130,7 +130,7 @@ pub(crate) enum GuardFault {
     WrongGroup,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     static GUARD_FAULT: std::cell::Cell<Option<GuardFault>> = const { std::cell::Cell::new(None) };
     static LAST_GATED: std::cell::Cell<libc::pid_t> = const { std::cell::Cell::new(0) };
@@ -138,13 +138,13 @@ thread_local! {
 
 /// Tests only: every guard attached behind the gate on this thread fails as
 /// `fault` says, until it is reset with `None`.
-#[cfg(test)]
-pub(crate) fn set_guard_fault_for_test(fault: Option<GuardFault>) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn set_guard_fault_for_test(fault: Option<GuardFault>) {
     GUARD_FAULT.with(|current| current.set(fault));
 }
 
 /// Tests only: the process that last waited at a gate started on this thread.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn last_gated_for_test() -> libc::pid_t {
     LAST_GATED.with(std::cell::Cell::get)
 }
@@ -153,7 +153,7 @@ pub(crate) fn last_gated_for_test() -> libc::pid_t {
 /// starting process between "the new process exists" and "attach its guard"
 /// and says so on standard output, so that a test can end the starting
 /// process exactly there.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn pause_before_guard(process: libc::pid_t) {
     LAST_GATED.with(|last| last.set(process));
     if std::env::var_os(super::tests::PAUSE_ENV).is_some() {

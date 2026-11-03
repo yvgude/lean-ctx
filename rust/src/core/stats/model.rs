@@ -47,9 +47,9 @@ pub enum TrafficClass {
 
 /// Token totals for traffic that lean-ctx can compress.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct CompressionTotals {
-    pub(crate) input_tokens: u64,
-    pub(crate) output_tokens: u64,
+pub struct CompressionTotals {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
 }
 
 impl CompressionTotals {
@@ -101,7 +101,7 @@ impl StatsStore {
     }
 
     /// Computes effective compression from tagged command rows.
-    pub(crate) fn compression_totals(&self) -> CompressionTotals {
+    pub fn compression_totals(&self) -> CompressionTotals {
         self.commands
             .iter()
             .filter(|(command, _)| {
@@ -134,7 +134,7 @@ impl StatsStore {
 /// Classifies normalized stats keys, with an explicit passthrough default for
 /// control/listing tools so only read, shell, and search output drives the
 /// effective-compression denominator.
-pub(crate) fn classify_command(command: &str) -> TrafficClass {
+pub fn classify_command(command: &str) -> TrafficClass {
     match command {
         "cli_glob" | "cli_find" | "cli_deps" | "cli_ls" | "ctx_compose" | "ctx_glob"
         | "ctx_tree" => TrafficClass::Passthrough,

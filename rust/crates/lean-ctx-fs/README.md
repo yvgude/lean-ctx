@@ -1,7 +1,7 @@
 # lean-ctx-fs
 
 Filesystem and environment foundation for the
-[LeanCTX Engine](https://github.com/yvgude/lean-ctx).
+[LeanCTX | OSS](https://github.com/yvgude/lean-ctx).
 
 Policy-free building blocks: crash-atomic writes with a read-only-directory
 fallback, bounded advisory file locks, BLAKE3 hashing, JSONC parsing, home and

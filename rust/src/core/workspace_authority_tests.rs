@@ -220,46 +220,6 @@ fn repo_roots_and_indexes_follow_the_snapshot() {
     });
 }
 
-/// A server bound to a Workspace ignores the roots its client reports and
-/// keeps its session on the snapshot's roots; a detached root leaves the
-/// session on the next call.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_server_follows_the_snapshot_not_its_client() {
-    let _data = crate::core::data_dir::isolated_data_dir();
-    let (f, snapshot) = fixture(Access::ReadWrite);
-    let server =
-        crate::tools::LeanCtxServer::new_with_project_root(Some(&f.other.to_string_lossy()));
-    let bound = Authority::Workspace(Arc::clone(&snapshot));
-    scope(bound, async {
-        for save in server.bind_workspace_roots(&snapshot).await {
-            save.await.unwrap();
-        }
-        let uri = format!("file://{}", f.other.display());
-        assert!(server.adopt_client_roots(&[uri]).await.is_empty());
-    })
-    .await;
-    {
-        let session = server.session.read().await;
-        assert_eq!(
-            session.project_root.as_deref(),
-            Some(&*f.app.to_string_lossy())
-        );
-        assert_eq!(
-            session.extra_roots,
-            vec![f.lib.to_string_lossy().into_owned()]
-        );
-    }
-
-    let detached = Arc::new(remove_root(&f.file, &f.lib, 2).unwrap());
-    scope(Authority::Workspace(Arc::clone(&detached)), async {
-        for save in server.bind_workspace_roots(&detached).await {
-            save.await.unwrap();
-        }
-    })
-    .await;
-    assert!(server.session.read().await.extra_roots.is_empty());
-}
-
 /// lean-ctx's own directories hold every project's indexes, sessions and
 /// archives: under a Workspace they are neither readable through a tool path
 /// nor writable, and the Workspace file may not live there.

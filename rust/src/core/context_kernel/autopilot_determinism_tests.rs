@@ -71,7 +71,7 @@ fn fixture_providers() -> Vec<FixtureProvider> {
         .collect()
 }
 
-fn candidate(
+pub(crate) fn candidate(
     provider: &str,
     provider_index: usize,
     item_index: usize,

@@ -175,7 +175,7 @@ pub(super) fn name_semantic_models(
     Ok(Some(set))
 }
 
-pub(super) fn prepare(package: &VerifiedPackage, root: &Path) -> Result<(Prepared, Command)> {
+pub(crate) fn prepare(package: &VerifiedPackage, root: &Path) -> Result<(Prepared, Command)> {
     // New capability sets need explicit host support before executing any bytes.
     // Package compatibility is independent of retired model-routing behavior.
     validate_capabilities(package)?;

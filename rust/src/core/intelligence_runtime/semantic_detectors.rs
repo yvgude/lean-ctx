@@ -169,7 +169,7 @@ pub(crate) enum Offer {
 /// A runtime that does not declare the capability is never asked: the stage
 /// is attached only for a package whose authenticated description offers it.
 fn attached(runtime: &crate::core::config::IntelligenceRuntimeConfig) -> bool {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     if test_seam::invoke_override().is_some() {
         return true;
     }
@@ -298,7 +298,7 @@ pub(crate) fn inspect_bound(
         .and_then(|now| now.checked_add(ANSWER_DEADLINE_MS))
         .ok_or(NotInspected::Unavailable)?;
     let ask = |piece: &str| -> std::result::Result<(SemanticReport, CategorySet), NotInspected> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(stand_in) = test_seam::invoke_override() {
             let raw = stand_in(config, piece).map_err(|_| NotInspected::Unavailable)?;
             return validate_answer(&raw, piece, false).map_err(|_| NotInspected::Unavailable);
@@ -362,13 +362,13 @@ pub(crate) fn continuation_start(text: &str, resume: usize) -> usize {
 
 /// Test seam: stands in for the private runtime process, and shows which
 /// runtime settings an inspection was made with.
-#[cfg(test)]
-pub(crate) mod test_seam {
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_seam {
     use super::Result;
     use crate::core::config::IntelligenceRuntimeConfig;
     use std::cell::Cell;
 
-    pub(crate) type Invoke = fn(&IntelligenceRuntimeConfig, &str) -> Result<String>;
+    pub type Invoke = fn(&IntelligenceRuntimeConfig, &str) -> Result<String>;
 
     thread_local! {
         static INVOKE: Cell<Option<Invoke>> = const { Cell::new(None) };
@@ -379,7 +379,7 @@ pub(crate) mod test_seam {
     }
 
     /// Replace the runtime invocation on this thread until the guard drops.
-    pub(crate) fn stand_in(invoke: Invoke) -> impl Drop {
+    pub fn stand_in(invoke: Invoke) -> impl Drop {
         struct Reset;
         impl Drop for Reset {
             fn drop(&mut self) {
@@ -391,7 +391,7 @@ pub(crate) mod test_seam {
     }
 
     /// A valid runtime answer without findings for `text`.
-    pub(crate) fn clean_answer(text: &str) -> String {
+    pub fn clean_answer(text: &str) -> String {
         serde_json::json!({
             "schema_version": 1,
             "strategy": "semantic_v1",

@@ -14,7 +14,7 @@
           "kind": "replica_stale",
           "workspace": "acme",
           "vault": "payments",
-          "engine": {
+          "instance": {
             "id": "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
             "label": "ada-mbp"
           },
@@ -26,7 +26,7 @@
           "kind": "purge_unacked",
           "workspace": "acme",
           "vault": "payments",
-          "engine": {
+          "instance": {
             "id": "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
             "label": "ada-mbp"
           },

@@ -218,7 +218,7 @@ fn apply_delivery_policies(
         }
         let policy_budget = active.resolved.max_context_tokens.map(u64::from);
         let outcome = crate::core::policy::content::evaluate_text(&text, &active);
-        crate::server::policy_guard::audit_filter(
+        crate::core::policy::audit_filter::audit_filter(
             MATERIALIZATION_POLICY_NAME,
             &outcome.audit,
             outcome.blocked,

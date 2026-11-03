@@ -53,46 +53,10 @@ pub fn run_with_timeout(
     }
 }
 
-/// Spawn a long-lived background process (proxy, daemon) detached from the
-/// current process so it survives the parent's exit.
-///
-/// On Unix a child simply outlives its parent, so this is a plain spawn. On
-/// Windows the child inherits the parent's console and — crucially — its Job
-/// object. AI clients (OpenCode, Codex, Claude Code) run MCP servers inside
-/// kill-on-close Jobs; without detachment the auto-started proxy dies the
-/// moment the client recycles its MCP process, which users observe as
-/// "Cannot connect to API: The socket connection was closed unexpectedly"
-/// plus repeated proxy cold-starts (GL #545).
-///
-/// Strategy on Windows:
-///  1. `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB`
-///     — fully detached, escapes the parent's Job.
-///  2. If the Job denies breakaway, `CreateProcess` fails with
-///     `ERROR_ACCESS_DENIED`; retry without the breakaway flag (still
-///     console-detached, which covers non-Job parents).
-pub fn spawn_detached(cmd: &mut std::process::Command) -> std::io::Result<std::process::Child> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
-
-        let detached = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
-        match cmd
-            .creation_flags(detached | CREATE_BREAKAWAY_FROM_JOB)
-            .spawn()
-        {
-            Ok(child) => Ok(child),
-            Err(_) => cmd.creation_flags(detached).spawn(),
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        cmd.spawn()
-    }
-}
+/// Detached background spawn (daemon, proxy, background Cockpit): see
+/// [`crate::ipc::detached`] for the Windows job-object and handle rules
+/// (GL #545, #2176).
+pub use super::detached::{DetachedChild, DetachedStderr, spawn_detached};
 
 pub use lean_ctx_fs::process::is_alive;
 
@@ -137,6 +101,17 @@ pub fn identity(pid: u32) -> Option<ProcessIdentity> {
 /// and agent-bus registration refused every tool call.
 #[cfg(target_os = "freebsd")]
 fn freebsd_process_identity(pid: u32) -> Option<ProcessIdentity> {
+    let info = freebsd_kinfo(pid)?;
+    let pid = info.ki_pid;
+    let start_marker = u64::try_from(info.ki_start.tv_sec)
+        .ok()?
+        .checked_mul(1_000_000)?
+        .checked_add(u64::try_from(info.ki_start.tv_usec).ok()?)?;
+    freebsd_identity_with_path(pid, start_marker)
+}
+
+#[cfg(target_os = "freebsd")]
+fn freebsd_kinfo(pid: u32) -> Option<libc::kinfo_proc> {
     let pid = libc::c_int::try_from(pid).ok()?;
 
     let mut info = std::mem::MaybeUninit::<libc::kinfo_proc>::zeroed();
@@ -159,14 +134,11 @@ fn freebsd_process_identity(pid: u32) -> Option<ProcessIdentity> {
     }
     // SAFETY: sysctl filled the full structure (checked above).
     let info = unsafe { info.assume_init() };
-    if info.ki_pid != pid {
-        return None;
-    }
-    let start_marker = u64::try_from(info.ki_start.tv_sec)
-        .ok()?
-        .checked_mul(1_000_000)?
-        .checked_add(u64::try_from(info.ki_start.tv_usec).ok()?)?;
+    (info.ki_pid == pid).then_some(info)
+}
 
+#[cfg(target_os = "freebsd")]
+fn freebsd_identity_with_path(pid: libc::c_int, start_marker: u64) -> Option<ProcessIdentity> {
     let mut path = [0_u8; libc::PATH_MAX as usize];
     let mut path_len = path.len();
     let mib = [
@@ -205,6 +177,208 @@ fn freebsd_process_identity(pid: u32) -> Option<ProcessIdentity> {
 /// registration. This is intentionally stricter than `is_alive(pid)`.
 pub fn matches_identity(pid: u32, expected: &ProcessIdentity) -> bool {
     identity(pid).as_ref() == Some(expected)
+}
+
+/// The path a running lean-ctx image was installed under. An update or
+/// `dev-install` replaces the binary while services keep running the old
+/// image, and the OS then reports a different path for it: Linux
+/// `/proc/<pid>/exe` reads `…/lean-ctx (deleted)`, Windows reports the
+/// rename-aside sidecar `lean-ctx.old.exe` or its parked form
+/// `lean-ctx.old-<pid>-<nanos>.exe` (`core::updater::windows_sidecar`).
+/// Exactly those shapes map back to `lean-ctx`/`lean-ctx.exe`; every other
+/// path is returned unchanged.
+#[must_use]
+pub fn installed_executable_path(path: &str) -> String {
+    let path = path.strip_suffix(" (deleted)").unwrap_or(path);
+    let name_at = path.rfind(['/', '\\']).map_or(0, |i| i + 1);
+    let (dir, name) = path.split_at(name_at);
+    let lower = name.to_ascii_lowercase();
+    let sidecar = lower
+        .strip_prefix("lean-ctx.old")
+        .and_then(|rest| rest.strip_suffix(".exe"))
+        .is_some_and(is_parked_sidecar_suffix);
+    if sidecar {
+        format!("{dir}lean-ctx.exe")
+    } else {
+        path.to_string()
+    }
+}
+
+/// `""` (`lean-ctx.old.exe`) or `-<digits>-<digits>` (a parked sidecar).
+fn is_parked_sidecar_suffix(middle: &str) -> bool {
+    if middle.is_empty() {
+        return true;
+    }
+    let Some(rest) = middle.strip_prefix('-') else {
+        return false;
+    };
+    let mut parts = rest.split('-');
+    let digits =
+        |p: Option<&str>| p.is_some_and(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
+    digits(parts.next()) && digits(parts.next()) && parts.next().is_none()
+}
+
+/// Two identities name the same process: the same creation marker and the
+/// same installed executable, also when an update renamed the running image
+/// in between (see [`installed_executable_path`]). Pure.
+#[must_use]
+pub fn same_process(expected: &ProcessIdentity, live: &ProcessIdentity) -> bool {
+    if expected.start_marker != live.start_marker {
+        return false;
+    }
+    let a = installed_executable_path(&expected.executable);
+    let b = installed_executable_path(&live.executable);
+    a == b || (cfg!(windows) && a.eq_ignore_ascii_case(&b))
+}
+
+/// `pid` is still the process `expected` recorded ([`same_process`]).
+#[must_use]
+pub fn is_same_process(pid: u32, expected: &ProcessIdentity) -> bool {
+    identity(pid).is_some_and(|live| same_process(expected, &live))
+}
+
+/// True when `pid` runs as the same user as this process (effective uid on
+/// Unix, token user SID on Windows). A record or a `/health` answer can name
+/// any PID; a lifecycle command only ever acts on its own user's processes,
+/// also when it runs elevated. Unknown means `false` (fail closed).
+#[must_use]
+pub fn owned_by_current_user(pid: u32) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        let me = unsafe { libc::geteuid() };
+        macos_bsd_info(pid).is_some_and(|info| info.pbi_uid == me)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        let me = unsafe { libc::geteuid() };
+        std::fs::read_to_string(format!("/proc/{pid}/status"))
+            .ok()
+            .and_then(|status| {
+                let line = status.lines().find(|l| l.starts_with("Uid:"))?;
+                line.split_whitespace().nth(2)?.parse::<u32>().ok()
+            })
+            .is_some_and(|euid| euid == me)
+    }
+    #[cfg(target_os = "freebsd")]
+    {
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        let me = unsafe { libc::geteuid() };
+        freebsd_kinfo(pid).is_some_and(|info| info.ki_uid == me)
+    }
+    #[cfg(windows)]
+    {
+        windows_owned_by_current_user(pid)
+    }
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "freebsd",
+        windows
+    )))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+/// The signal [`signal_same_process`] delivers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StopSignal {
+    /// SIGTERM on Unix; Windows has no graceful signal for a detached
+    /// process, so this terminates as well (callers try HTTP shutdown first).
+    Terminate,
+    /// SIGKILL / `TerminateProcess`.
+    Kill,
+}
+
+/// Deliver `signal` to `pid` only while it is still the process `expected`
+/// describes. True when the signal was delivered.
+///
+/// The check and the signal are bound to one process object wherever the OS
+/// allows it, so a PID recycled in between is never hit:
+/// - Windows: one handle opened with query and terminate rights; the
+///   identity is read through that handle and `TerminateProcess` uses it.
+/// - Linux: a pidfd is opened first, the identity checked, then
+///   `pidfd_send_signal` targets the pidfd (kernel ≥ 5.3; older kernels fall
+///   back to the re-check + `kill` below).
+/// - macOS and other Unix: the identity is re-checked immediately before
+///   `kill`; the remaining window is microseconds.
+pub fn signal_same_process(pid: u32, expected: &ProcessIdentity, signal: StopSignal) -> bool {
+    if pid == 0 || pid == std::process::id() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        // Windows has one way to stop a detached process; see StopSignal.
+        let _ = signal;
+        windows_terminate_same_process(pid, expected)
+    }
+    #[cfg(unix)]
+    {
+        let sig = match signal {
+            StopSignal::Terminate => libc::SIGTERM,
+            StopSignal::Kill => libc::SIGKILL,
+        };
+        let Ok(raw_pid) = libc::pid_t::try_from(pid) else {
+            return false;
+        };
+        #[cfg(target_os = "linux")]
+        if let Some(delivered) = linux_pidfd_signal(raw_pid, expected, sig) {
+            return delivered;
+        }
+        // SAFETY: `kill` takes the PID and signal by value; no pointer is
+        // dereferenced and errors surface via the return value.
+        is_same_process(pid, expected) && unsafe { libc::kill(raw_pid, sig) } == 0
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (expected, signal);
+        false
+    }
+}
+
+/// `Some(delivered)` when pidfds are available, `None` to fall back.
+#[cfg(target_os = "linux")]
+fn linux_pidfd_signal(
+    pid: libc::pid_t,
+    expected: &ProcessIdentity,
+    sig: libc::c_int,
+) -> Option<bool> {
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+
+    // SAFETY: pidfd_open takes a PID and flags by value and returns a new fd
+    // or -1; no pointer is involved.
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+    if fd < 0 {
+        return match std::io::Error::last_os_error().raw_os_error() {
+            // The process is gone: nothing to signal.
+            Some(libc::ESRCH) => Some(false),
+            // ENOSYS (kernel < 5.3), EPERM under seccomp, …: fall back.
+            _ => None,
+        };
+    }
+    let fd = libc::c_int::try_from(fd).ok()?;
+    // SAFETY: `fd` was just returned by pidfd_open and is owned here only.
+    let pidfd = unsafe { OwnedFd::from_raw_fd(fd) };
+    // The pidfd pins the process that held `pid` when it was opened. If that
+    // process is the expected one now, the signal below reaches it and no
+    // successor; if it already exited, pidfd_send_signal fails with ESRCH.
+    if !is_same_process(u32::try_from(pid).ok()?, expected) {
+        return Some(false);
+    }
+    // SAFETY: valid pidfd, plain signal number, null siginfo, zero flags.
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_pidfd_send_signal,
+            pidfd.as_raw_fd(),
+            sig,
+            std::ptr::null::<libc::siginfo_t>(),
+            0,
+        )
+    };
+    Some(rc == 0)
 }
 
 #[cfg(target_os = "macos")]
@@ -255,7 +429,7 @@ unsafe extern "C" {
 }
 
 #[cfg(target_os = "macos")]
-fn macos_process_identity(pid: u32) -> Option<ProcessIdentity> {
+fn macos_bsd_info(pid: u32) -> Option<ProcBsdInfo> {
     let mut info = std::mem::MaybeUninit::<ProcBsdInfo>::zeroed();
     let size = i32::try_from(std::mem::size_of::<ProcBsdInfo>()).ok()?;
     // SAFETY: `info` points to a suitably sized writable C-compatible buffer.
@@ -272,7 +446,12 @@ fn macos_process_identity(pid: u32) -> Option<ProcessIdentity> {
         return None;
     }
     // SAFETY: `proc_pidinfo` returned the full structure size above.
-    let info = unsafe { info.assume_init() };
+    Some(unsafe { info.assume_init() })
+}
+
+#[cfg(target_os = "macos")]
+fn macos_process_identity(pid: u32) -> Option<ProcessIdentity> {
+    let info = macos_bsd_info(pid)?;
     let mut path = [0_u8; libc::PATH_MAX as usize];
     // SAFETY: `path` is a writable byte buffer of the length supplied.
     let path_len = unsafe {
@@ -312,19 +491,133 @@ fn linux_process_identity(pid: u32) -> Option<ProcessIdentity> {
     })
 }
 
+/// A process handle closed on drop.
+#[cfg(windows)]
+struct ProcessHandle(windows_sys::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl ProcessHandle {
+    fn open(pid: u32, access: u32) -> Option<Self> {
+        use windows_sys::Win32::System::Threading::OpenProcess;
+        // SAFETY: OpenProcess takes integers only; a null result is rejected.
+        let handle = unsafe { OpenProcess(access, 0, pid) };
+        (!handle.is_null()).then_some(Self(handle))
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ProcessHandle {
+    fn drop(&mut self) {
+        // SAFETY: the handle came from OpenProcess and is closed exactly once.
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(self.0) };
+    }
+}
+
 #[cfg(windows)]
 fn windows_process_identity(pid: u32) -> Option<ProcessIdentity> {
-    use std::os::windows::ffi::OsStringExt;
-    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME};
-    use windows_sys::Win32::System::Threading::{
-        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-    };
+    use windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
+    let handle = ProcessHandle::open(pid, PROCESS_QUERY_LIMITED_INFORMATION)?;
+    windows_identity_of(&handle)
+}
 
-    // SAFETY: the returned handle is checked and closed on every path below.
-    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
-    if handle.is_null() {
+/// `TerminateProcess` through the same handle the identity was verified on:
+/// the handle pins the process object, so a recycled PID cannot be hit.
+#[cfg(windows)]
+fn windows_terminate_same_process(pid: u32, expected: &ProcessIdentity) -> bool {
+    use windows_sys::Win32::System::Threading::{
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, TerminateProcess,
+    };
+    let Some(handle) =
+        ProcessHandle::open(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE)
+    else {
+        return false;
+    };
+    if !windows_identity_of(&handle).is_some_and(|live| same_process(expected, &live)) {
+        return false;
+    }
+    // SAFETY: valid handle opened with PROCESS_TERMINATE above.
+    unsafe { TerminateProcess(handle.0, 1) != 0 }
+}
+
+/// The user SID of `process`'s token, as bytes.
+#[cfg(windows)]
+pub(crate) fn windows_token_user_sid(
+    process: windows_sys::Win32::Foundation::HANDLE,
+) -> Option<Vec<u8>> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::Security::{
+        GetLengthSid, GetTokenInformation, IsValidSid, TOKEN_QUERY, TOKEN_USER, TokenUser,
+    };
+    use windows_sys::Win32::System::Threading::OpenProcessToken;
+
+    let mut token = std::ptr::null_mut();
+    // SAFETY: `token` is a writable handle slot; it is closed below.
+    if unsafe { OpenProcessToken(process, TOKEN_QUERY, &raw mut token) } == 0 {
         return None;
     }
+    let sid = (|| {
+        let mut needed = 0_u32;
+        // SAFETY: a zero-length query only writes the required size.
+        unsafe { GetTokenInformation(token, TokenUser, std::ptr::null_mut(), 0, &raw mut needed) };
+        if needed < u32::try_from(std::mem::size_of::<TOKEN_USER>()).ok()? || needed > 4096 {
+            return None;
+        }
+        let mut buf = vec![0_u64; (needed as usize).div_ceil(8)];
+        let buf_bytes = buf.len() * 8;
+        // SAFETY: `buf` is writable for at least `needed` bytes.
+        let ok = unsafe {
+            GetTokenInformation(
+                token,
+                TokenUser,
+                buf.as_mut_ptr().cast(),
+                needed,
+                &raw mut needed,
+            )
+        };
+        if ok == 0 {
+            return None;
+        }
+        // SAFETY: on success the aligned buffer starts with a TOKEN_USER.
+        let sid = unsafe { &*buf.as_ptr().cast::<TOKEN_USER>() }.User.Sid;
+        // SAFETY: the SID pointer comes from the successful query.
+        if sid.is_null() || unsafe { IsValidSid(sid) } == 0 {
+            return None;
+        }
+        // SAFETY: valid SID (checked above).
+        let len = unsafe { GetLengthSid(sid) } as usize;
+        let (start, base) = (sid as usize, buf.as_ptr() as usize);
+        if start < base || start + len > base + buf_bytes {
+            return None;
+        }
+        // SAFETY: the SID lies inside `buf` (bounds checked above).
+        Some(unsafe { std::slice::from_raw_parts(sid.cast::<u8>(), len) }.to_vec())
+    })();
+    // SAFETY: `token` came from OpenProcessToken and is still open.
+    unsafe { CloseHandle(token) };
+    sid
+}
+
+#[cfg(windows)]
+fn windows_owned_by_current_user(pid: u32) -> bool {
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    let Some(handle) = ProcessHandle::open(pid, PROCESS_QUERY_LIMITED_INFORMATION) else {
+        return false;
+    };
+    // SAFETY: GetCurrentProcess returns a pseudo handle that needs no close.
+    let mine = windows_token_user_sid(unsafe { GetCurrentProcess() });
+    let theirs = windows_token_user_sid(handle.0);
+    mine.is_some() && mine == theirs
+}
+
+#[cfg(windows)]
+fn windows_identity_of(handle: &ProcessHandle) -> Option<ProcessIdentity> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::Foundation::FILETIME;
+    use windows_sys::Win32::System::Threading::{GetProcessTimes, QueryFullProcessImageNameW};
+
+    let handle = handle.0;
     let mut created = FILETIME::default();
     let mut exited = FILETIME::default();
     let mut kernel = FILETIME::default();
@@ -344,8 +637,6 @@ fn windows_process_identity(pid: u32) -> Option<ProcessIdentity> {
     // SAFETY: `path` is a writable UTF-16 buffer and `path_len` describes it.
     let path_ok =
         unsafe { QueryFullProcessImageNameW(handle, 0, path.as_mut_ptr(), &raw mut path_len) != 0 };
-    // SAFETY: `handle` was returned by OpenProcess and has not been closed yet.
-    unsafe { CloseHandle(handle) };
     if !times_ok || !path_ok {
         return None;
     }
@@ -568,397 +859,8 @@ fn collect_pids(stdout: &[u8], protected: &std::collections::HashSet<u32>, out: 
     }
 }
 
-/// Returns PIDs that are safe to kill during `lean-ctx stop`: neither MCP stdio
-/// servers nor in-flight command runners.
-///
-/// MCP servers are child processes of the IDE and must not be killed — the IDE
-/// will immediately respawn them, causing a kill loop that requires a reboot.
-/// Command runners (`lean-ctx -c <cmd>`, `exec`, `--track`) are executing
-/// someone's command right now — another agent's `cargo test`, a commit hook.
-/// Killing one ends that work with SIGTERM/SIGKILL and holds nothing lean-ctx
-/// owns, so even a deliberate "stop everything" leaves them to finish (#1292).
-pub fn find_killable_pids(name: &str) -> Vec<u32> {
-    let mut protected = find_mcp_server_pids(name);
-    protected.extend(find_command_runner_pids(name));
-    killable_excluding_mcp(find_pids_by_name(name), &protected)
-}
-
-/// Pure set-difference: every PID in `all` that is not a protected PID (MCP
-/// server or command runner). Split out from [`find_killable_pids`] so the
-/// protection invariant — a protected process is never returned as killable
-/// (#1036, #1292) — is unit-testable without spawning real processes.
-fn killable_excluding_mcp(all: Vec<u32>, protected: &[u32]) -> Vec<u32> {
-    all.into_iter().filter(|p| !protected.contains(p)).collect()
-}
-
-/// `lean-ctx` processes that are running a user's command (#1292).
-#[cfg(unix)]
-fn find_command_runner_pids(name: &str) -> Vec<u32> {
-    find_pids_by_name(name)
-        .into_iter()
-        .filter(|&pid| {
-            std::process::Command::new("ps")
-                .args(["-o", "command=", "-p", &pid.to_string()])
-                .output()
-                .is_ok_and(|out| is_command_runner_cmdline(&String::from_utf8_lossy(&out.stdout)))
-        })
-        .collect()
-}
-
-/// Windows keeps the running `.exe` locked, so `dev-install` and `uninstall`
-/// must still be able to stop a runner there before replacing the binary.
-#[cfg(not(unix))]
-fn find_command_runner_pids(_name: &str) -> Vec<u32> {
-    Vec::new()
-}
-
-/// True when `command` is a `lean-ctx` invocation that runs a user command:
-/// `-c`/`exec` (the shell wrapper) or `-t`/`--track`.
-// Only the Unix runner lookup calls this; the unit test runs on every target,
-// so the function is not gated, only its dead-code lint off Unix.
-#[cfg_attr(not(unix), allow(dead_code))]
-fn is_command_runner_cmdline(command: &str) -> bool {
-    let mut words = command.split_whitespace();
-    let Some(argv0) = words.next() else {
-        return false;
-    };
-    if argv0 != "lean-ctx" && !argv0.ends_with("/lean-ctx") {
-        return false;
-    }
-    matches!(words.next(), Some("-c" | "exec" | "-t" | "--track"))
-}
-
-#[cfg(unix)]
-fn find_mcp_server_pids(name: &str) -> Vec<u32> {
-    find_pids_by_name(name)
-        .into_iter()
-        .filter(|&pid| is_mcp_stdio_process(pid))
-        .collect()
-}
-
-#[cfg(windows)]
-fn find_mcp_server_pids(name: &str) -> Vec<u32> {
-    find_pids_by_name(name)
-        .into_iter()
-        .filter(|&pid| is_mcp_stdio_process_win(pid))
-        .collect()
-}
-
-#[cfg(windows)]
-fn is_mcp_stdio_process_win(pid: u32) -> bool {
-    // On Windows, check if the parent process is an IDE (Cursor, VS Code).
-    // Uses `wmic` which is available on all supported Windows versions.
-    let Ok(output) = std::process::Command::new("wmic")
-        .args([
-            "process",
-            "where",
-            &format!("ProcessId={pid}"),
-            "get",
-            "ParentProcessId,CommandLine",
-            "/FORMAT:CSV",
-        ])
-        .output()
-    else {
-        return false;
-    };
-
-    let text = String::from_utf8_lossy(&output.stdout);
-    for line in text.lines() {
-        let parts: Vec<&str> = line.split(',').collect();
-        if parts.len() < 3 {
-            continue;
-        }
-        let cmd_line = parts[1].to_lowercase();
-        let ppid_str = parts.last().unwrap_or(&"").trim();
-
-        // Direct child of IDE
-        if cmd_line.contains("cursor") || cmd_line.contains("code.exe") {
-            return true;
-        }
-
-        // Check parent process name
-        if let Ok(ppid) = ppid_str.parse::<u32>() {
-            if let Ok(pp_out) = std::process::Command::new("wmic")
-                .args([
-                    "process",
-                    "where",
-                    &format!("ProcessId={ppid}"),
-                    "get",
-                    "Name",
-                    "/FORMAT:CSV",
-                ])
-                .output()
-            {
-                let pp_text = String::from_utf8_lossy(&pp_out.stdout).to_lowercase();
-                if pp_text.contains("cursor") || pp_text.contains("code.exe") {
-                    return true;
-                }
-            }
-        }
-
-        // MCP stdio server heuristic: lean-ctx.exe with no subcommand
-        if (cmd_line.ends_with("lean-ctx.exe") || cmd_line.ends_with("lean-ctx.exe\""))
-            && !cmd_line.contains("proxy")
-            && !cmd_line.contains("dashboard")
-            && !cmd_line.contains("daemon")
-            && !cmd_line.contains("stop")
-            && !cmd_line.contains("hook")
-        {
-            return true;
-        }
-    }
-    false
-}
-
-#[cfg(not(any(unix, windows)))]
-fn find_mcp_server_pids(_name: &str) -> Vec<u32> {
-    Vec::new()
-}
-
-#[cfg(unix)]
-fn is_mcp_stdio_process(pid: u32) -> bool {
-    if let Ok(output) = std::process::Command::new("ps")
-        .args(["-o", "ppid=,command=", "-p", &pid.to_string()])
-        .output()
-    {
-        let text = String::from_utf8_lossy(&output.stdout);
-        let t = text.trim();
-        if t.contains("Cursor") || t.contains("cursor") || t.contains("code") {
-            return true;
-        }
-        let parts: Vec<&str> = t.split_whitespace().collect();
-        if let Some(ppid_str) = parts.first()
-            && let Ok(ppid) = ppid_str.parse::<u32>()
-            && let Ok(pp_out) = std::process::Command::new("ps")
-                .args(["-o", "command=", "-p", &ppid.to_string()])
-                .output()
-        {
-            let pp_cmd = String::from_utf8_lossy(&pp_out.stdout);
-            if pp_cmd.contains("Cursor") || pp_cmd.contains("cursor") || pp_cmd.contains("code") {
-                return true;
-            }
-        }
-        let cmd_part = parts.get(1..).map(|p| p.join(" ")).unwrap_or_default();
-        // MCP stdio servers: bare `lean-ctx` with no subcommand (or just `mcp`)
-        if (cmd_part.ends_with("/lean-ctx") || cmd_part == "lean-ctx")
-            && !cmd_part.contains("proxy")
-            && !cmd_part.contains("dashboard")
-            && !cmd_part.contains("daemon")
-            && !cmd_part.contains("stop")
-            && !cmd_part.contains("hook")
-        {
-            return true;
-        }
-        // Hook observer/rewriter processes spawned by IDE
-        if cmd_part.contains("hook observe")
-            || cmd_part.contains("hook rewrite")
-            || cmd_part.contains("hook redirect")
-        {
-            return true;
-        }
-    }
-    false
-}
-
-/// Kill non-MCP processes matching `name` (SIGTERM then SIGKILL).
-/// Returns count of killed processes.
-pub fn kill_all_by_name(name: &str) -> usize {
-    let pids = find_killable_pids(name);
-    if pids.is_empty() {
-        return 0;
-    }
-
-    for &pid in &pids {
-        let _ = terminate_gracefully(pid);
-    }
-
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    let mut killed = 0;
-    for &pid in &pids {
-        if is_alive(pid) {
-            let _ = force_kill(pid);
-        }
-        killed += 1;
-    }
-
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    killed
-}
+mod services;
+pub use services::*;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `stop`/`uninstall` never reach another account's processes: root's
-    /// launchd (PID 1) is not a candidate for an ordinary user.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn name_lookup_is_scoped_to_this_user() {
-        // SAFETY: getuid has no preconditions and cannot fail.
-        if unsafe { libc::getuid() } == 0 {
-            return;
-        }
-        assert!(!find_pids_by_name("launchd").contains(&1));
-    }
-
-    #[test]
-    fn current_process_identity_is_stable_and_matches() {
-        let pid = std::process::id();
-        let identity = identity(pid).expect("supported platform exposes process identity");
-        assert!(
-            !identity.executable.is_empty(),
-            "`identity.executable` is empty"
-        );
-        assert!(matches_identity(pid, &identity));
-    }
-
-    #[test]
-    fn killable_pids_exclude_active_mcp_stdio_servers() {
-        assert_eq!(
-            killable_excluding_mcp(vec![11, 17, 23], &[11, 23]),
-            vec![17]
-        );
-    }
-
-    /// #1292: `lean-ctx stop` SIGKILLed other agents' in-flight commands
-    /// (`lean-ctx -c "cargo test"`, a commit hook) as "orphans". A command
-    /// runner is never killable; daemons, proxies and dashboards still are.
-    #[test]
-    fn in_flight_command_runners_are_never_killable() {
-        for runner in [
-            "lean-ctx -c cargo test --lib",
-            "/Users/me/.local/bin/lean-ctx -c git commit -m x",
-            "/usr/local/bin/lean-ctx exec make",
-            "lean-ctx --track npm test",
-            "lean-ctx -t pytest",
-        ] {
-            assert!(
-                is_command_runner_cmdline(runner),
-                "must be protected: {runner}"
-            );
-        }
-        for stoppable in [
-            "lean-ctx serve --_foreground-daemon",
-            "/Users/me/.local/bin/lean-ctx proxy start --port 4444",
-            "lean-ctx dashboard",
-            "lean-ctx",
-            "/usr/bin/grep -c lean-ctx",
-            "",
-        ] {
-            assert!(
-                !is_command_runner_cmdline(stoppable),
-                "must stay stoppable: {stoppable}"
-            );
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn run_with_timeout_returns_output_for_fast_command() {
-        let mut cmd = std::process::Command::new("echo");
-        cmd.arg("hello");
-        let out = run_with_timeout(cmd, std::time::Duration::from_secs(5))
-            .expect("fast command should complete");
-        assert!(out.status.success());
-        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hello");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn run_with_timeout_kills_slow_command() {
-        let mut cmd = std::process::Command::new("sleep");
-        cmd.arg("30");
-        let start = std::time::Instant::now();
-        let result = run_with_timeout(cmd, std::time::Duration::from_millis(300));
-        assert!(result.is_none(), "slow command must time out");
-        assert!(
-            start.elapsed() < std::time::Duration::from_secs(5),
-            "timeout must not wait for the full command"
-        );
-    }
-
-    #[test]
-    fn killable_excludes_mcp_pids() {
-        // #1036: the IDE-owned MCP stdio server PID must never be returned as
-        // killable, so `cmd_dev_install`'s force-kill cannot drop the editor's
-        // MCP connection.
-        let killable = killable_excluding_mcp(vec![1, 2, 3, 4], &[2, 4]);
-        assert_eq!(killable, vec![1, 3]);
-        assert!(!killable.contains(&2));
-        assert!(!killable.contains(&4));
-    }
-
-    #[test]
-    fn killable_with_no_mcp_returns_all() {
-        let all = vec![10, 20, 30];
-        assert_eq!(killable_excluding_mcp(all.clone(), &[]), all);
-    }
-
-    /// #714 follow-up: agent harnesses reparent intermediaries to PID 1, so
-    /// the ppid walk alone misses the outer wrapper — the shared foreground
-    /// process group must be protected too.
-    #[cfg(unix)]
-    #[test]
-    fn protected_pids_cover_own_process_group() {
-        // SAFETY: getpgrp() takes no arguments and cannot fail.
-        let pgid = unsafe { libc::getpgrp() };
-        // Bracket `protected_self_pids` with two group snapshots. A single
-        // snapshot is racy under `cargo test` parallelism: sibling tests spawn
-        // short-lived subprocesses (git/ps/pgrep) that transiently join this
-        // foreground process group, so a member seen once may already be gone
-        // when `protected_self_pids` runs — or appear only afterwards. Only PIDs
-        // present in BOTH snapshots were alive across the whole window and must
-        // therefore be covered by the protected set.
-        let members_before = process_group_pids(pgid);
-        let protected = protected_self_pids();
-        let members_after = process_group_pids(pgid);
-        for pid in members_before {
-            if !members_after.contains(&pid) {
-                continue; // transient foreign subprocess from a parallel test
-            }
-            assert!(
-                protected.contains(&pid),
-                "stable group member {pid} missing from protected set"
-            );
-        }
-    }
-
-    /// #714: `stop`/`dev-install` running *under* a lean-ctx shell wrapper
-    /// (`lean-ctx -c … → sh → lean-ctx dev-install`) must not SIGTERM its own
-    /// ancestor chain — that killed the pipeline mid-run (exit 143) before
-    /// autostart was re-enabled.
-    #[test]
-    fn protected_pids_cover_self_and_ancestors() {
-        let protected = protected_self_pids();
-        assert!(protected.contains(&std::process::id()));
-        #[cfg(unix)]
-        {
-            // The direct parent (cargo's test runner) must be protected too.
-            let out = std::process::Command::new("ps")
-                .args(["-o", "ppid=", "-p", &std::process::id().to_string()])
-                .output()
-                .expect("ps runs");
-            if let Ok(ppid) = String::from_utf8_lossy(&out.stdout).trim().parse::<u32>()
-                && ppid > 1
-            {
-                assert!(
-                    protected.contains(&ppid),
-                    "parent {ppid} missing from {protected:?}"
-                );
-            }
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn find_pids_never_reports_own_process_tree() {
-        // Regardless of what matches by name, the returned set must be
-        // disjoint from the protected self/ancestor set (#714).
-        let protected = protected_self_pids();
-        for pid in find_pids_by_name("lean-ctx") {
-            assert!(!protected.contains(&pid), "own tree pid {pid} reported");
-        }
-    }
-}
+mod tests;

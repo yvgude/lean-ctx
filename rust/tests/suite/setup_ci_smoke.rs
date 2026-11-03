@@ -2,8 +2,8 @@
 use std::process::Command;
 
 use lean_ctx::core::setup_report::SetupReport;
-use lean_ctx::status::StatusReport;
-use lean_ctx::token_report::TokenReport;
+use lean_ctx_cli::status::StatusReport;
+use lean_ctx_cli::token_report::TokenReport;
 
 fn run_json(bin: &str, args: &[&str], envs: &[(&str, &str)]) -> (i32, String) {
     let mut cmd = Command::new(bin);

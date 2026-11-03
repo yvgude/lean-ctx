@@ -493,7 +493,7 @@ thread_local! {
 
 /// Runs `f` with relative paths resolved against `cwd`, the directory the
 /// checked command runs in, instead of this process's own.
-pub(crate) fn with_run_cwd<T>(cwd: Option<std::path::PathBuf>, f: impl FnOnce() -> T) -> T {
+pub fn with_run_cwd<T>(cwd: Option<std::path::PathBuf>, f: impl FnOnce() -> T) -> T {
     let previous = RUN_CWD.with(|c| c.replace(cwd));
     let out = f();
     RUN_CWD.with(|c| *c.borrow_mut() = previous);

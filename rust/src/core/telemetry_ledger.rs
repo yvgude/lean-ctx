@@ -14,7 +14,7 @@ use super::telemetry_aggregate::lock_telemetry_file;
 const MAX_LEDGER_BYTES: u64 = 1_048_576;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct HeartbeatRecord {
+pub struct HeartbeatRecord {
     pub timestamp: String,
     pub installation_id: String,
     pub version: String,
@@ -82,7 +82,7 @@ pub(crate) fn append(record: &HeartbeatRecord) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn read_all() -> Vec<HeartbeatRecord> {
+pub fn read_all() -> Vec<HeartbeatRecord> {
     let Ok(path) = ledger_path() else {
         return Vec::new();
     };
@@ -102,7 +102,7 @@ pub(crate) fn latest_valid_version() -> Result<Option<String>, String> {
         .find_map(|record| (!record.version.is_empty()).then_some(record.version)))
 }
 
-pub(crate) fn purge_local() -> Result<(), String> {
+pub fn purge_local() -> Result<(), String> {
     let path = ledger_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create state dir: {e}"))?;

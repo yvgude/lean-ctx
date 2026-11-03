@@ -28,10 +28,10 @@ pub(crate) fn verify_integrity() -> bool {
 }
 
 pub(crate) fn is_official_origin() -> bool {
-    ORIGIN_REPO.contains("yvgude/lean-ctx") && ORIGIN_NAME == "lean-ctx"
+    ORIGIN_REPO.contains("yvgude/lean-ctx") && ORIGIN_NAME == "lean-ctx-engine"
 }
 
-pub(crate) struct IntegrityReport {
+pub struct IntegrityReport {
     pub seed_ok: bool,
     pub origin_ok: bool,
     pub repo: &'static str,
@@ -39,7 +39,7 @@ pub(crate) struct IntegrityReport {
     pub version: &'static str,
 }
 
-pub(crate) fn check() -> IntegrityReport {
+pub fn check() -> IntegrityReport {
     IntegrityReport {
         seed_ok: verify_integrity(),
         origin_ok: is_official_origin(),
@@ -49,7 +49,7 @@ pub(crate) fn check() -> IntegrityReport {
     }
 }
 
-pub(crate) fn origin_line() -> String {
+pub fn origin_line() -> String {
     let report = check();
     if report.seed_ok && report.origin_ok {
         format!("lean-ctx {} (official, {})", report.version, report.repo)

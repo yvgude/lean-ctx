@@ -17,6 +17,8 @@ use super::{
 pub const DELIVERY_DELEGATE: &str = "delivery/delegate";
 const DOMAIN: &[u8] = b"leanctx.delivery.delegation.v1\0";
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 #[cfg(test)]
 pub(crate) mod tests;
 

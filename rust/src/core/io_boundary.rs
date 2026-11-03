@@ -177,8 +177,8 @@ Role: {role_name}. To allow: switch role to 'admin' or set io.allow_secret_paths
     );
     events::emit_policy_violation(&role_name, tool, &msg);
     // K12: the secret-path rule refused (enforce) or would have (warn).
-    crate::core::hive::metrics_v2::signals::refused(
-        &crate::core::hive::metrics_v2::signals::secrets_rule(),
+    crate::core::hive_signals::refused(
+        &crate::core::hive_signals::secrets_rule(),
         matches!(mode, BoundaryMode::Enforce),
     );
 

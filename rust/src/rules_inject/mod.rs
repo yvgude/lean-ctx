@@ -22,7 +22,7 @@ mod targets;
 mod tests;
 mod write;
 
-pub(crate) use content::cursor_mdc_document;
+pub use content::cursor_mdc_document;
 pub use content::{
     GEMINI_DEDICATED_CONTEXT_FILENAME, gemini_dedicated_rules_path, opencode_dedicated_rules_path,
 };
@@ -36,7 +36,7 @@ pub use skills::{
 fn shared_surface_profile(
     cfg: &crate::core::config::Config,
 ) -> crate::core::tool_profiles::ToolProfile {
-    crate::server::tool_visibility::guidance_profile(cfg, "")
+    crate::core::tool_visibility::guidance_profile(cfg, "")
 }
 
 /// Forwarding functions — content is delegated to `core::rules_canonical`.
@@ -258,6 +258,11 @@ pub fn inject_rules_where(home: &std::path::Path, allows: &dyn Fn(&str) -> bool)
         if !is_tool_detected(target, home) {
             continue;
         }
+        if rules_agent_key(target.name)
+            .is_some_and(|key| crate::core::governor_hosts::is_installed(key, home))
+        {
+            continue;
+        }
         // GH #1435: skip rules injection when the tool's MCP server is not
         // configured — a rules file that mandates ctx_* tools for an agent
         // that can't reach them is a self-contradiction.
@@ -317,6 +322,10 @@ pub fn inject_rules_for_agent(home: &std::path::Path, agent_key: &str) -> Inject
         return InjectResult::default();
     }
 
+    // The governor setup owns the host's rules channel (its short block).
+    if crate::core::governor_hosts::is_installed(agent_key, home) {
+        return InjectResult::default();
+    }
     let targets = build_rules_targets(home, cfg.rules_injection_effective());
     let mut result = InjectResult::default();
 
@@ -367,8 +376,8 @@ fn is_claude_agent_key(agent_key: &str) -> bool {
 }
 
 fn sync_claude_pointer_block(home: &std::path::Path, result: &mut InjectResult) {
-    let mode = crate::hooks::recommend_hook_mode("claude");
-    match crate::hooks::agents::sync_claude_global_rules_block(home, mode) {
+    let mode = crate::core::hook_mode::recommend_hook_mode("claude");
+    match crate::core::claude_md::sync_claude_global_rules_block(home, mode) {
         Ok(true) => result.updated.push("Claude Code".to_string()),
         Ok(false) => result.already.push("Claude Code".to_string()),
         Err(error) => result.errors.push(format!("Claude Code: {error}")),

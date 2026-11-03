@@ -199,7 +199,7 @@ impl ObservationGate {
     /// the running request, if any.
     pub(crate) fn for_project(project: Option<&std::path::Path>) -> Self {
         use crate::core::bm25_index::source_gate::SourceGate;
-        let request = crate::tools::admitted_sources::request_root();
+        let request = crate::core::admitted_sources::request_root();
         // ONE gateway snapshot for the payload checks and the source reads
         // of this gate: the file gate decides under the same rules.
         let admission = admission_snapshot();

@@ -10,7 +10,7 @@ use crate::core::execution_lifecycle::{
     ToolSurface,
 };
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use crate::core::triage::TriageEngine;
 
 pub use crate::core::execution_lifecycle::TaskContext;
@@ -97,23 +97,23 @@ impl DecisionLoopRuntime {
         .flatten()
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_triage(triage: TriageEngine) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_triage(triage: TriageEngine) -> Self {
         Self {
             lifecycle: ExecutionLifecycle::with_triage(triage),
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn assessment_for(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn assessment_for(
         &self,
         task_id: &str,
     ) -> Option<crate::core::value_gate::ValueAssessment> {
         self.lifecycle.assessment_for(task_id)
     }
 
-    #[cfg(test)]
-    pub(crate) fn outcome_for(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn outcome_for(
         &self,
         task_id: &str,
     ) -> Option<crate::core::execution_lifecycle::LifecycleOutcome> {

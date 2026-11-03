@@ -115,7 +115,7 @@ impl Walk<'_> {
     fn record(&self, decision: &ContextDecisionV1, counts: AdmissionCounts) {
         if decision.disposition == ContextDispositionV1::Deny {
             // K12: a withheld object counts under the rules its reasons name.
-            crate::core::hive::metrics_v2::signals::admission_refused(
+            crate::core::hive_signals::admission_refused(
                 decision.reason_codes.iter().map(ReasonCodeV1::as_str),
             );
         }

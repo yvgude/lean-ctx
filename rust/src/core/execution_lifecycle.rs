@@ -151,7 +151,7 @@ pub struct HeatmapObservation {
 }
 
 /// Defer heatmap writes to stage 14 when called inside an async lifecycle run.
-pub(crate) fn record_heatmap_access(path: &str, original_tokens: usize, saved_tokens: usize) {
+pub fn record_heatmap_access(path: &str, original_tokens: usize, saved_tokens: usize) {
     let observation = HeatmapObservation {
         path: path.to_owned(),
         original_tokens,
@@ -175,7 +175,7 @@ pub(crate) fn record_heatmap_access(path: &str, original_tokens: usize, saved_to
     }
 }
 
-pub(crate) fn begin_sync_heatmap_capture() {
+pub fn begin_sync_heatmap_capture() {
     SYNC_DEFERRED_HEATMAP.with(|pending| *pending.borrow_mut() = Some(Vec::new()));
 }
 
@@ -365,7 +365,7 @@ struct SharedRun {
     #[cfg(test)]
     finalization_hook: Mutex<Option<FinalizationHook>>,
     autopilot: OnceLock<Arc<crate::core::context_kernel::bridge::runtime::PreparedKernelContext>>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     autopilot_planning_attempts: std::sync::atomic::AtomicUsize,
 }
 
@@ -406,7 +406,7 @@ impl Default for SharedRun {
             #[cfg(test)]
             finalization_hook: Mutex::new(None),
             autopilot: OnceLock::new(),
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             autopilot_planning_attempts: std::sync::atomic::AtomicUsize::new(0),
         }
     }
@@ -512,7 +512,7 @@ impl ExecutionLifecycle {
     }
 
     /// Preserve the sole lifecycle owner while accepting an explicit host identity.
-    pub(crate) async fn run_with_task_identity<D>(
+    pub async fn run_with_task_identity<D>(
         &self,
         request: ToolRequest,
         runtime: RuntimeContext,

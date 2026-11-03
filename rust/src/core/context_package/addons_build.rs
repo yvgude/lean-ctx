@@ -25,7 +25,7 @@ use super::{keys, signing, verify};
 /// Fails closed: the bytes are verified through the ordinary package verifier
 /// *before* they are written, so a builder bug produces an error here rather
 /// than a package that only fails on someone else's machine.
-pub(crate) fn write_addon_package(
+pub fn write_addon_package(
     out_path: &Path,
     name: &str,
     version: &str,

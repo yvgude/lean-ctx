@@ -14,7 +14,7 @@ mod engine_config;
 mod loading;
 pub mod types;
 
-pub(crate) use loading::*;
+pub use loading::*;
 pub use types::*;
 
 #[cfg(test)]

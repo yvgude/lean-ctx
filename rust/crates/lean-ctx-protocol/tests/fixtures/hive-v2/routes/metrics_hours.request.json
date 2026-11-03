@@ -348,11 +348,11 @@
       ]
     }
   ],
-  "engine": {
-    "engine_version": "3.12.0",
+  "instance": {
+    "instance_version": "3.12.0",
     "os": "macos"
   },
   "key_id": "47983724220c8521",
-  "schema": "leanctx.hive.engine-metrics/v2",
-  "signature": "63328f403af107bc2699d686d04cd03223337015df92b3f1530af16e1977fa4ed5426f91bb4262460033fa0d65a6a06633a0f07ee82fbbb317bf96b8151c800c"
+  "schema": "leanctx.hive.instance-metrics/v2",
+  "signature": "2be115aa4d9cc3c4a941525d202383fc16941a64455e7713c7ead25c191f36239b1f4bd1329c0f3eb153e954a9c643e8cedbfd096f1471dcb478063ce43e700c"
 }

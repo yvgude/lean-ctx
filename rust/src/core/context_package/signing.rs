@@ -5,7 +5,7 @@ use super::manifest::{PackageManifest, PackageSignature};
 
 /// What a valid signature vouches for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SignatureCoverage {
+pub enum SignatureCoverage {
     /// Every manifest field (kind, visibility, dependencies, scope,
     /// provenance, licence, compatibility, …) besides the signature.
     Manifest,
@@ -18,7 +18,7 @@ pub(crate) enum SignatureCoverage {
 /// Sign `manifest` twice with one key: `value` over name, version and package
 /// digest — what every existing verifier and registry checks — and
 /// `manifest_value` over the whole manifest without its signature.
-pub(crate) fn sign_package(
+pub fn sign_package(
     manifest: &mut PackageManifest,
     _content: &PackageContent,
     signing_key: &SigningKey,
@@ -47,7 +47,7 @@ pub(crate) fn sign_package(
 /// K02: what a package with signature `coverage` lacks — nothing when the
 /// signature covers the whole manifest. Local installs accept such a package
 /// and show this as a warning.
-pub(crate) fn signature_gap(coverage: Option<SignatureCoverage>) -> Option<&'static str> {
+pub fn signature_gap(coverage: Option<SignatureCoverage>) -> Option<&'static str> {
     match coverage {
         Some(SignatureCoverage::Manifest) => None,
         Some(SignatureCoverage::IdentityOnly) => Some(

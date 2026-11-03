@@ -11,7 +11,7 @@
 use crate::core::config::TeeMode;
 
 /// Decide whether to persist a recovery copy of shell output.
-pub(crate) fn should_tee(
+pub fn should_tee(
     mode: &TeeMode,
     exit_code: i32,
     blank_output: bool,
@@ -39,14 +39,14 @@ pub(crate) fn should_tee(
 /// True only when the inline representation does not contain the complete
 /// non-blank output. Wrappers such as `<error>…</error>` do not count as
 /// elision.
-pub(crate) fn output_was_elided(full_output: &str, inline_output: &str) -> bool {
+pub fn output_was_elided(full_output: &str, inline_output: &str) -> bool {
     let full_output = full_output.trim_end_matches(['\r', '\n']);
     !full_output.is_empty() && !inline_output.contains(full_output)
 }
 
 /// Percentage of tokens removed by compression, clamped to `0.0` when the
 /// original was empty. Shared so CLI and MCP report identical savings.
-pub(crate) fn savings_pct(original_tokens: usize, compressed_tokens: usize) -> f64 {
+pub fn savings_pct(original_tokens: usize, compressed_tokens: usize) -> f64 {
     if original_tokens == 0 {
         return 0.0;
     }

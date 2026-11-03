@@ -4,12 +4,12 @@
 use std::fmt;
 
 #[derive(Debug, Clone)]
-pub(crate) struct SystemInfo {
-    pub(crate) os: String,
-    pub(crate) arch: String,
-    pub(crate) cpu_brand: String,
-    pub(crate) cpu_cores: usize,
-    pub(crate) memory_gb: f64,
+pub struct SystemInfo {
+    pub os: String,
+    pub arch: String,
+    pub cpu_brand: String,
+    pub cpu_cores: usize,
+    pub memory_gb: f64,
 }
 
 impl fmt::Display for SystemInfo {
@@ -22,7 +22,7 @@ impl fmt::Display for SystemInfo {
     }
 }
 
-pub(crate) fn collect() -> SystemInfo {
+pub fn collect() -> SystemInfo {
     SystemInfo {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),

@@ -36,8 +36,8 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 mod setup;
-pub(crate) use setup::{SetupOutcome, setup_identity};
-#[cfg(test)]
+pub use setup::{SetupOutcome, setup_identity};
+#[cfg(any(test, feature = "test-support"))]
 use test_scope::{QueryReason, RunReason, Stage, capture_reason, query_reason};
 
 /// Common Name of the signing certificate (stable across builds).
@@ -47,7 +47,7 @@ pub(crate) const CODESIGN_IDENTIFIER: &str = "com.leanctx.cli";
 
 /// Which signing path [`sign_binary`] took.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SignKind {
+pub enum SignKind {
     /// Signed with the persistent identity — TCC grant survives updates.
     Stable,
     /// The stable path was not taken or did not succeed and the ad-hoc
@@ -112,7 +112,7 @@ impl SigningContext {
     }
 
     fn current() -> Self {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         if let Some(scoped) = test_scope::current() {
             return scoped;
         }
@@ -167,7 +167,7 @@ fn run_with_input(
     deadline: Instant,
 ) -> Result<Option<std::process::Output>, SigningStopped> {
     let stdin = piped_input(input).map_err(|_| {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         test_scope::note_run(RunReason::CaptureRejected);
         SigningStopped
     })?;
@@ -212,7 +212,7 @@ fn security_command(words: &[&str]) -> Option<String> {
     Some(line)
 }
 
-fn capture(
+pub fn capture(
     command: &mut Command,
     budget: Duration,
     deadline: Instant,
@@ -221,7 +221,7 @@ fn capture(
     let accept_by = deadline.min(now + budget);
     let left = accept_by.saturating_duration_since(now);
     if left.is_zero() {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         test_scope::note_run(RunReason::DeadlineElapsed);
         return Ok(None);
     }
@@ -232,13 +232,13 @@ fn capture(
         STDERR_LIMIT,
     )
     .map_err(|_| {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         test_scope::note_run(RunReason::CaptureRejected);
         SigningStopped
     })?;
     // One fresh instant decides acceptance; the test note reads the same one.
     let completed = Instant::now();
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     test_scope::note_run(capture_reason(
         captured.timed_out,
         captured.cancelled,
@@ -263,7 +263,7 @@ fn accepted(
 /// on the strength of this call. Carries no detail by design: neither
 /// arguments nor anything a tool printed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SigningStopped;
+pub struct SigningStopped;
 
 impl std::fmt::Display for SigningStopped {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -288,21 +288,21 @@ pub(crate) fn password_path() -> Option<PathBuf> {
 /// Is the persistent identity present AND trusted for code signing?
 /// Pure query — reads only the certificate, never prompts. Bounded: a
 /// `security` that does not answer in time counts as "not ready".
-pub(crate) fn is_ready() -> bool {
+pub fn is_ready() -> bool {
     let context = SigningContext::current();
     ready(&context, Instant::now() + context.budgets.query).unwrap_or(false)
 }
 
 fn ready(context: &SigningContext, deadline: Instant) -> Result<bool, SigningStopped> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let _phase = test_scope::phase(Stage::Query);
     let Some(keychain) = &context.keychain else {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         test_scope::note_query(QueryReason::KeychainAbsent, false);
         return Ok(false);
     };
     if !keychain.exists() {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         test_scope::note_query(QueryReason::KeychainAbsent, false);
         return Ok(false);
     }
@@ -324,7 +324,7 @@ fn ready(context: &SigningContext, deadline: Instant) -> Result<bool, SigningSto
     let has_cn = String::from_utf8_lossy(&out.stdout)
         .lines()
         .any(|line| line.contains(IDENTITY_CN) && !line.contains('('));
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     test_scope::note_query(
         query_reason(out.status.success(), out.stdout.is_empty(), has_cn),
         has_cn,
@@ -344,7 +344,7 @@ fn ready(context: &SigningContext, deadline: Instant) -> Result<bool, SigningSto
 /// `Err` when a tool's process could not be run and confirmed ended: then no
 /// further tool is started — not the fallback either — and the caller must
 /// stop instead of reading, sealing or installing `binary`.
-pub(crate) fn sign_binary(binary: &Path) -> Result<SignKind, SigningStopped> {
+pub fn sign_binary(binary: &Path) -> Result<SignKind, SigningStopped> {
     let context = SigningContext::current();
     let started = Instant::now();
     let budgets = context.budgets;
@@ -375,7 +375,7 @@ fn sign_with_identity(
         // fails below if the keychain is still locked. That its process is
         // over is not best effort. The password goes in on standard input
         // (`security -i`), never in the arguments.
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         let _phase = test_scope::phase(Stage::Unlock);
         run_with_input(
             Command::new(&context.security).arg("-i"),
@@ -384,7 +384,7 @@ fn sign_with_identity(
             deadline,
         )?;
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let _phase = test_scope::phase(Stage::Stable);
     Ok(run(
         Command::new(&context.codesign)
@@ -412,7 +412,7 @@ fn adhoc_sign(
     binary: &Path,
     deadline: Instant,
 ) -> Result<(), SigningStopped> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     let _phase = test_scope::phase(Stage::AdHoc);
     run(
         Command::new(&context.codesign)
@@ -428,8 +428,9 @@ fn adhoc_sign(
 /// when its guard goes, also when the test unwinds. Tests that sign — the
 /// updater's among them — thereby never start the real tools, never open the
 /// user's keychain and never read its password.
-#[cfg(test)]
-pub(crate) mod test_scope {
+#[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod test_scope {
     use super::{Budgets, OsString, SigningContext};
     use std::cell::{Cell, RefCell};
 
@@ -444,7 +445,7 @@ pub(crate) mod test_scope {
 
     /// Restores what was scoped before it, and that scope's notes; not
     /// `Send`: the scope is this thread's.
-    pub(crate) struct Scoped {
+    pub struct Scoped {
         previous: Option<SigningContext>,
         previous_notes: Notes,
         _this_thread: std::marker::PhantomData<*const ()>,
@@ -615,16 +616,19 @@ pub(crate) mod test_scope {
     /// leaves the file as it is and succeeds. This shows the caller's control
     /// flow around signing; it is no signature and proves none.
     #[cfg(unix)]
-    pub(crate) fn without_identity(directory: &std::path::Path) -> Scoped {
+    pub fn without_identity(directory: &std::path::Path) -> Scoped {
         let script = |name: &str, body: &str| {
             use std::os::unix::fs::PermissionsExt;
             let path = directory.join(name);
-            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n"))
+                .expect("write signing test helper");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+                .expect("make signing test helper executable");
         };
         script("security", "exit 0");
         script("codesign", "exit 0");
-        std::fs::write(directory.join("test.keychain-db"), b"").unwrap();
+        std::fs::write(directory.join("test.keychain-db"), b"")
+            .expect("create signing test keychain");
         install(owned(directory, None))
     }
 
@@ -632,12 +636,14 @@ pub(crate) mod test_scope {
     /// know no identity and whose `codesign` appends `+signed` to the file it
     /// is given and notes that file's path in `directory/signed-paths`.
     #[cfg(unix)]
-    pub(crate) fn marking(directory: &std::path::Path) -> Scoped {
+    pub fn marking(directory: &std::path::Path) -> Scoped {
         use std::os::unix::fs::PermissionsExt;
         let script = |name: &str, body: String| {
             let path = directory.join(name);
-            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n"))
+                .expect("write signing test helper");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+                .expect("make signing test helper executable");
         };
         script("security", "exit 0".into());
         script(
@@ -648,15 +654,17 @@ pub(crate) mod test_scope {
                 directory.join("signed-paths").display()
             ),
         );
-        std::fs::write(directory.join("test.keychain-db"), b"").unwrap();
+        std::fs::write(directory.join("test.keychain-db"), b"")
+            .expect("create signing test keychain");
         install(owned(directory, None))
     }
 
     /// For tests of what a caller does when signing stops: a keychain is
     /// there, the tools in `directory` are not, so the first step cannot be
     /// started and the capture reports an error.
-    pub(crate) fn unconfirmable(directory: &std::path::Path) -> Scoped {
-        std::fs::write(directory.join("test.keychain-db"), b"").unwrap();
+    pub fn unconfirmable(directory: &std::path::Path) -> Scoped {
+        std::fs::write(directory.join("test.keychain-db"), b"")
+            .expect("create signing test keychain");
         install(owned(directory, None))
     }
 }

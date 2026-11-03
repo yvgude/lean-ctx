@@ -23,7 +23,7 @@ const CHURN_MAX_COMMITS: &str = "200";
 static NO_GIT_ROOTS: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct GitSignals {
+pub struct GitSignals {
     /// Relative path -> 0..1. 1.0 = uncommitted change (active working set).
     pub recency: HashMap<String, f64>,
     /// Relative path -> 0..1, commit-count in window normalized to the max.
@@ -35,7 +35,7 @@ impl GitSignals {
         self.recency.is_empty() && self.churn.is_empty()
     }
 
-    pub(crate) fn recency_for(&self, path: &str, root: &str) -> f64 {
+    pub fn recency_for(&self, path: &str, root: &str) -> f64 {
         lookup(&self.recency, path, root)
     }
 
@@ -49,7 +49,7 @@ impl GitSignals {
     }
 }
 
-fn lookup(map: &HashMap<String, f64>, path: &str, root: &str) -> f64 {
+pub fn lookup(map: &HashMap<String, f64>, path: &str, root: &str) -> f64 {
     if let Some(v) = map.get(path) {
         return *v;
     }
@@ -87,7 +87,7 @@ fn remember_non_git(root: &str) {
 
 /// Collect git signals for a project root. Cheap on repeat calls (TTL cache),
 /// empty for non-git roots (probed once per process).
-pub(crate) fn collect(project_root: &str) -> GitSignals {
+pub fn collect(project_root: &str) -> GitSignals {
     if known_non_git(project_root) {
         return GitSignals::default();
     }
@@ -190,7 +190,7 @@ fn collect_churn_and_commit_recency(root: &str, signals: &mut GitSignals) {
 
 /// Apply the git boost to an already-computed relevance ranking and re-sort.
 /// Call sites own the project root; the ranking itself is root-agnostic.
-pub(crate) fn apply_boost(scores: &mut [crate::core::task_relevance::RelevanceScore], root: &str) {
+pub fn apply_boost(scores: &mut [crate::core::task_relevance::RelevanceScore], root: &str) {
     let signals = collect(root);
     if signals.is_empty() {
         return;

@@ -1,0 +1,206 @@
+// SPDX-License-Identifier: Apache-2.0
+mod search;
+
+use lean_ctx::core::multi_repo::{MultiRepoConfig, RepoRootConfig, global_manager};
+
+/// Handle `ctx_multi_repo` tool calls with action-based dispatch.
+pub fn handle(
+    action: &str,
+    path: Option<&str>,
+    alias: Option<&str>,
+    query: Option<&str>,
+    roots_filter: Option<&[String]>,
+    max_results: usize,
+    mode: Option<&str>,
+) -> (String, usize) {
+    match action {
+        "add_root" => handle_add_root(path, alias),
+        "remove_root" => handle_remove_root(path),
+        "list_roots" => handle_list_roots(),
+        "search" => search::handle_search(query, max_results, roots_filter, mode),
+        "status" => handle_status(),
+        "save_config" => handle_save_config(),
+        _ => (
+            format!(
+                "Unknown action: {action}. Valid: add_root, remove_root, list_roots, search, status, save_config"
+            ),
+            0,
+        ),
+    }
+}
+
+fn handle_add_root(path: Option<&str>, alias: Option<&str>) -> (String, usize) {
+    let Some(path) = path else {
+        return ("ERROR: path is required for add_root".to_string(), 0);
+    };
+
+    let manager = global_manager();
+    let Ok(mut mgr) = manager.lock() else {
+        return ("ERROR: failed to acquire multi-repo lock".to_string(), 0);
+    };
+
+    match mgr.add_root(path, alias) {
+        Ok(()) => {
+            let count = mgr.root_count();
+            (
+                format!(
+                    "Added root: {path} (alias: {}). Total roots: {count}",
+                    alias.unwrap_or("<auto>")
+                ),
+                0,
+            )
+        }
+        Err(e) => (format!("ERROR: {e}"), 0),
+    }
+}
+
+fn handle_remove_root(path: Option<&str>) -> (String, usize) {
+    let Some(path) = path else {
+        return ("ERROR: path is required for remove_root".to_string(), 0);
+    };
+
+    let manager = global_manager();
+    let Ok(mut mgr) = manager.lock() else {
+        return ("ERROR: failed to acquire multi-repo lock".to_string(), 0);
+    };
+
+    match mgr.remove_root(path) {
+        Ok(()) => {
+            let count = mgr.root_count();
+            (format!("Removed root: {path}. Remaining roots: {count}"), 0)
+        }
+        Err(e) => (format!("ERROR: {e}"), 0),
+    }
+}
+
+fn handle_list_roots() -> (String, usize) {
+    let manager = global_manager();
+    let Ok(mgr) = manager.lock() else {
+        return ("ERROR: failed to acquire multi-repo lock".to_string(), 0);
+    };
+
+    let roots = mgr.list_roots();
+    if roots.is_empty() {
+        return (
+            "No repo roots configured. Use add_root to add repositories.".to_string(),
+            0,
+        );
+    }
+
+    let mut out = String::with_capacity(roots.len() * 80);
+    out.push_str(&format!("Configured roots ({}):\n", roots.len()));
+    for root in &roots {
+        let idx_status = if root.has_index { "indexed" } else { "pending" };
+        out.push_str(&format!(
+            "  [{alias}] {path} ({idx_status})\n",
+            alias = root.alias,
+            path = root.path,
+        ));
+    }
+    (out, 0)
+}
+
+fn handle_status() -> (String, usize) {
+    let manager = global_manager();
+    let Ok(mgr) = manager.lock() else {
+        return ("ERROR: failed to acquire multi-repo lock".to_string(), 0);
+    };
+
+    let roots = mgr.list_roots();
+    let active = mgr.is_active();
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "Multi-repo status: {}\n",
+        if active { "ACTIVE" } else { "INACTIVE" }
+    ));
+    out.push_str(&format!("Roots: {}\n", roots.len()));
+    for root in &roots {
+        out.push_str(&format!(
+            "  [{alias}] {path}\n",
+            alias = root.alias,
+            path = root.path
+        ));
+    }
+    out.push_str(&format!(
+        "Config: {}\n",
+        lean_ctx::core::multi_repo::config_file_path().display()
+    ));
+    (out, 0)
+}
+
+fn handle_save_config() -> (String, usize) {
+    // `multi-repo.toml` is read by every later server; a Workspace-bound
+    // session must not persist roots for them (#2120).
+    if lean_ctx::core::workspace_authority::is_configured() {
+        return (
+            "ERROR: save_config is unavailable while this server is bound to a launcher \
+             Workspace; its roots are managed with `lean-ctx workspace`"
+                .to_string(),
+            0,
+        );
+    }
+    let manager = global_manager();
+    let Ok(mgr) = manager.lock() else {
+        return ("ERROR: failed to acquire multi-repo lock".to_string(), 0);
+    };
+
+    let roots = mgr.list_roots();
+    let config = MultiRepoConfig {
+        repos: roots
+            .iter()
+            .map(|r| RepoRootConfig {
+                path: r.path.clone(),
+                alias: Some(r.alias.clone()),
+            })
+            .collect(),
+        rrf_k: None,
+    };
+
+    match config.save() {
+        Ok(()) => (
+            format!(
+                "Config saved to {}",
+                lean_ctx::core::multi_repo::config_file_path().display()
+            ),
+            0,
+        ),
+        Err(e) => (format!("ERROR: {e}"), 0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn handle_unknown_action() {
+        let (output, _) = handle("invalid", None, None, None, None, 10, None);
+        assert!(output.contains("Unknown action"));
+    }
+
+    #[test]
+    fn handle_add_root_missing_path() {
+        let (output, _) = handle("add_root", None, None, None, None, 10, None);
+        assert!(output.contains("path is required"));
+    }
+
+    #[test]
+    fn handle_search_missing_query() {
+        // The search answers under the process environment and policy (a
+        // pinned protected session, an active pack): both held, in the
+        // order environment then policy, so no other test's state decides.
+        let _env = lean_ctx::core::data_dir::test_env_lock();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let (output, _) = handle("search", None, None, None, None, 10, None);
+        assert!(output.contains("query is required"), "{output}");
+    }
+
+    #[test]
+    fn handle_list_roots_empty() {
+        // This test depends on global state but should work on clean init
+        let (output, _) = handle_list_roots();
+        // Either shows roots or says none configured
+        assert!(!output.is_empty(), "`output` is empty");
+    }
+}

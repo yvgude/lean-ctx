@@ -31,7 +31,7 @@ const REDUNDANCY_COSINE: f64 = 0.92;
 
 /// Which signal drives segment scoring.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RankMode {
+pub enum RankMode {
     /// Query-free mean-cosine centrality. The default; never drops a segment for
     /// being "off-topic", so it is safe on system/user instructions.
     Centrality,

@@ -751,6 +751,11 @@ mod tests {
             .execute_batch("DROP TRIGGER reject_history;")
             .unwrap();
         let mut state = AdaptiveLearningState::default();
+        // Seed the full history in ONE committed transaction: under
+        // `synchronous = EXTRA` every autocommit insert is its own fsync, and
+        // 1,000 of them dominated this test (~50 s). The seeded rows are the
+        // same; the store under test still commits its own update below.
+        store.connection.execute_batch("BEGIN IMMEDIATE;").unwrap();
         for index in 0..MAX_HISTORY {
             let receipt = format!("prior-{index}");
             state.processed_receipts.insert(receipt.clone());
@@ -779,6 +784,7 @@ mod tests {
                 params![store.scope, state.export_json().unwrap()],
             )
             .unwrap();
+        store.connection.execute_batch("COMMIT;").unwrap();
         assert!(store.observe_protocol_outcome(&handoff, &admitted).unwrap());
         let (state, history) = store.inspect().unwrap();
         assert_eq!(state.processed_receipts.len(), MAX_HISTORY + 1);

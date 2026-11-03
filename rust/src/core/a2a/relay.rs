@@ -320,7 +320,7 @@ impl RelayRecordV1 {
     }
 
     #[cfg(feature = "http-server")]
-    pub(crate) fn origin_fingerprint(&self) -> Result<String, RelayError> {
+    pub fn origin_fingerprint(&self) -> Result<String, RelayError> {
         Ok(Self::payload_digest(&self.origin_bytes()?))
     }
 
@@ -497,16 +497,16 @@ fn decode_origin_key(raw: &str) -> Result<VerifyingKey, RelayError> {
     Ok(key)
 }
 
-#[cfg(test)]
-pub(crate) fn test_origin_key(label: &str) -> SigningKey {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_origin_key(label: &str) -> SigningKey {
     use sha2::Digest;
     // Deterministic fixture keys only; production must supply an actual seed.
     let seed: [u8; 32] = Sha256::digest(format!("test-only-relay-origin:{label}")).into();
     SigningKey::from_bytes(&seed)
 }
 
-#[cfg(test)]
-pub(crate) fn test_origin_public_key(label: &str) -> String {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_origin_public_key(label: &str) -> String {
     hex::encode(test_origin_key(label).verifying_key().to_bytes())
 }
 

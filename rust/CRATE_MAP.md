@@ -9,8 +9,12 @@ checked by `scripts/check-crate-boundaries.py`.
 ## Direction
 
 ```
-lean-ctx (engine: tools, cli, server, proxy, dashboard, http_server,
-          hook_handlers, doctor, setup = composition root)
+lean-ctx (crates/lean-ctx: the published binary package; the composition
+          root cli, dashboard, doctor, setup, … moves here)
+   │
+   ▼
+lean-ctx-engine (rust/: the engine library, lib name `lean_ctx`; tools,
+          server, proxy, hooks, core)
    │ depends on, through thin facades (engine paths stay stable)
    ▼
 L1  lean-ctx-fs          (foundation: paths, data dir, atomic fs, hashing)
@@ -18,7 +22,7 @@ L0  lean-ctx-patterns · lean-ctx-compress · lean-ctx-syntax ·
     lean-ctx-workgraph · lean-ctx-doc · lean-ctx-protocol · lean-ctx-ocla
 ```
 
-- **Crates never depend on `lean-ctx`.** Facts only the engine has (its
+- **Crates never depend on `lean-ctx-engine` or `lean-ctx`.** Facts only the engine has (its
   configuration, policy, stores) reach a crate through a trait that the crate
   defines and the engine implements (`PatternEnv` in lean-ctx-patterns).
 - **Between crates** only the edges listed as `may_depend_on` in
@@ -35,27 +39,91 @@ L0  lean-ctx-patterns · lean-ctx-compress · lean-ctx-syntax ·
 | `lean-ctx-fs` 0.1.0 | `core/{atomic_fs,error,file_lock,hasher,home,jsonc}.rs`, `ipc::process::is_alive`, the test env lock | one-line re-exports at the old `core::` paths; `data_dir`/`test_env` re-export the env lock (one lock per process) | Half of L1; see below |
 | `lean-ctx-syntax` 0.1.0 (→ patterns, dev only) | `core/{ast_walk,syntax_validate}.rs`, `core/{deep_queries,import_resolver,signatures_ts}/**`, signature extraction, chunk grammar map | `pub use` in `core/mod.rs`; `core/signatures.rs` keeps telemetry + `extract_file_map` | tree-sitter grammars only in this crate, behind its features |
 | `lean-ctx-patterns` 0.1.0 | `core/patterns`, `core/tokens.rs`, `core/json_crush.rs`, `core/safety_needles.rs`, `compressor::strip_ansi` | `core/patterns/mod.rs`: policy gate, `cd` unwrap, user filters, `EngineEnv` (curl passthrough URLs). Re-export shims for `core::{tokens, json_crush, safety_needles}` | Extraction #1 (B07 experiment, measured) |
+| `lean-ctx-doc` 0.1.0 | new (no engine module moved) | `core/hive/docs.rs`: replica events in, signed C0 2.2 doc writes out | Docs in Hive (lean-ctx-38) |
 
 ## Scheduled (outbound edges frozen)
 
 | Level | Target crate | Modules | Cut first |
 |---|---|---|---|
 | L0 | `lean-ctx-syntax` (rest) | chunks_ts, grammar_usage, signatures facade | chunks_ts needs bm25_index's chunk model; grammar_usage writes the engine cache |
-| L0 | `lean-ctx-doc` (new, lean-ctx-38) | pure doc model | trait injection for replica/events |
 | L1 | `lean-ctx-fs` (second half) | agent_identity, canonical, data_dir, paths, pathutil, project_hash | needs a test sandbox that does not rely on the engine's `cfg(test)` (GL #512) |
 | L2 | inversion first | config (in-degree 108), hive | config→cli/hive; hive via a replica crate on protocol + fs |
 
-The engine's composition root (tools, cli, server, proxy, dashboard,
-http_server, hook_handlers, doctor, setup, uninstall) stays in `lean-ctx`.
+The engine's composition root moves up, out of the engine (see "Upward
+split" below); it never moves down into a leaf crate.
 
-## Upward split (in progress)
+## Upward split
 
 The edit-time lever is the composition root, not the leaves: an edit in a leaf
-crate still re-checks the whole engine. Engine→upper edges into
-U = {cli, dashboard, doctor, http_server, uninstall, setup, proxy_setup,
-status, token_report} are cut (2026-11-01); core→proxy edges are cut except
-gain/bridge_status. Next: the engine package becomes `lean-ctx-engine` in
-place, `crates/lean-ctx` owns the binary, and U moves into it.
+crate still re-checks the whole engine.
+
+- `lean-ctx-engine` (rust/, lib `lean_ctx`): the engine library.
+- `lean-ctx` (crates/lean-ctx): the published binary package. Its lib target
+  `lean_ctx_cli` holds the composition root moved out of the engine: cli,
+  dashboard, doctor, http_server, setup, proxy_setup, uninstall, status,
+  token_report. It depends on the engine; the engine never depends on it
+  (`check-crate-boundaries.py` and the engine build enforce that).
+- Engine test helpers for its unit tests come from the additive engine
+  feature `test-support` (dev-dependency only). The data sandbox for those
+  tests is `core::data_dir::sandboxed()`; the binary never sandboxes.
+- `lean-ctx-proxy` (crates/lean-ctx-proxy, lib `lean_ctx_proxy`): the
+  model-API proxy (provider adapters, compression, accounting) above the
+  engine; the composition root depends on it, the engine reaches it only
+  through registrations (`register_shapers`). Its unit-test harness is listed
+  in `core::data_dir::UNIT_TEST_HARNESSES` (rule 5 of the boundary check).
+  Measured: an edit in the proxy checks in 2.9 s (was 17.0 s), `cargo fast`
+  5.9 s (was 26.7 s).
+- `lean-ctx-server` (crates/lean-ctx-server, lib `lean_ctx_server`): the MCP
+  server, its tools, the SDK facade (`engine`) and `agent_tools_cmd`, above
+  the engine. The composition root and lean-ctx-embed depend on it; the
+  proxy only in its tests. The engine reaches it only through
+  registrations (tool catalog, conformance renderer, shell runner, idle
+  clock). Its unit-test harness is in `UNIT_TEST_HARNESSES`.
+- `lean-ctx-hive` (crates/lean-ctx-hive, lib `lean_ctx_hive`): the
+  LeanCTX | Hive connector (enrollment, bus, knowledge sync, tasks, policy
+  pull), between the engine and the server. The server, the composition
+  root and lean-ctx-embed depend on it. The engine reaches it only through
+  hooks the connector registers (`lean_ctx_hive::register_hooks`, called by
+  every entry point); the policy floor's read side, the vault map, the
+  availability gate and the untrusted-content fence live in the engine. Its
+  unit-test harness is in `UNIT_TEST_HARNESSES`.
+- Moving: hooks/hook_handlers, above the engine.
+
+## Edit loop by area
+
+Measured on the build host after a one-function edit. Check only the package
+you edit; add `--all-targets` when tests changed. Run from `rust/`.
+
+| Area | Package | Check | `cargo check` | `cargo fast` |
+|---|---|---|---|---|
+| cli, dashboard, doctor, http_server, setup, proxy_setup, uninstall, status, token_report (`crates/lean-ctx`) | `lean-ctx` | `cargo check --locked -p lean-ctx` | ≈ 2 s (was 20 s) | ≈ 4 s (was 28 s) |
+| proxy (`crates/lean-ctx-proxy`) | `lean-ctx-proxy` | `cargo check --locked -p lean-ctx-proxy` | ≈ 3 s (was 17 s) | ≈ 6 s (was 27 s) |
+| server + tools (`crates/lean-ctx-server`) | `lean-ctx-server` | `cargo check --locked -p lean-ctx-server` | ≈ 5 s (was 22 s) | ≈ 9 s (was 32 s) |
+| Hive connector (`crates/lean-ctx-hive`) | `lean-ctx-hive` | `cargo check --locked -p lean-ctx-hive` | ≈ 1.5 s (was 17 s) | ≈ 8 s (was 25 s) |
+| engine: core, hooks (`src/`) | `lean-ctx-engine` | `cargo check --locked -p lean-ctx-engine` | ≈ 19 s | ≈ 28 s |
+| leaf crates (patterns, workgraph, compress, fs, syntax, protocol, ocla, …) | the crate | `cargo check --locked -p <crate>` | no gain: the engine above re-checks | no gain |
+
+- New CLI, UI, setup or report code goes into `crates/lean-ctx`, not into the
+  engine. It imports the engine as `lean_ctx::…`; engine items it needs must
+  be `pub`.
+- Engine test helpers for upper crates use
+  `#[cfg(any(test, feature = "test-support"))]`; upper crates enable
+  `test-support` only as a dev-dependency.
+- New files carry `// SPDX-License-Identifier: Apache-2.0` and a
+  `PUBLISH_MANIFEST.toml` `new_paths` entry.
+
+Tests (build host, where cargo-nextest is installed):
+
+- Engine, whole lib suite: `cargo nextest run -p lean-ctx-engine --lib --locked`
+  (~2.5 min; libtest needs ~12 min because its threads share the global test
+  locks, nextest runs one process per test). Filtered:
+  `cargo nextest run -p lean-ctx-engine --lib --locked core::knowledge`, or
+  `cargo test -p lean-ctx-engine --lib core::knowledge -- --quiet`.
+- Composition root: `cargo nextest run -p lean-ctx --lib --locked` (~20 s);
+  `cargo test -p lean-ctx --test main -- --quiet` (~25 s; plain cargo test is
+  faster for that one binary).
+- `rust/.config/nextest.toml` gives each test process its own data directory
+  (`nextest-data-dir.sh`); profile `ci` adds JUnit output.
 
 ## Rules for a handover
 

@@ -89,7 +89,7 @@ pub(super) fn measured_compression_rate(input: u64, output: u64) -> Option<f64> 
     (input > 0).then(|| input.saturating_sub(output) as f64 / input as f64 * 100.0)
 }
 
-pub(crate) fn normalize_command(command: &str) -> String {
+pub fn normalize_command(command: &str) -> String {
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
         return command.to_string();

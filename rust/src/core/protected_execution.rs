@@ -43,6 +43,28 @@ pub(crate) const EXEC_FD_FLAG: &str = "--protected-exec-fd";
 /// the selected-GitLab credential channel, which is read and closed earlier.
 pub(crate) const CHILD_EXEC_FD: i32 = 4;
 
+/// The shared shell executor the supervisor runs a brokered `ctx_shell`
+/// command with: `(command, cwd, extra_env, timeout_ms, cancel, idle_keyed,
+/// live)` → `(text, exit_code)`. It lives in the server layer above the
+/// engine (`server::execute`), which registers it; the CLI does so at start-up.
+pub type ShellRunner = fn(
+    &str,
+    &str,
+    &std::collections::HashMap<String, String>,
+    Option<u64>,
+    Option<&AtomicBool>,
+    bool,
+    Option<&Mutex<String>>,
+) -> (String, i32);
+
+static SHELL_RUNNER: OnceLock<ShellRunner> = OnceLock::new();
+
+/// Register the shell executor of brokered commands. The first registration
+/// wins. Without one, a brokered shell request fails; nothing runs.
+pub fn register_shell_runner(runner: ShellRunner) {
+    let _ = SHELL_RUNNER.set(runner);
+}
+
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 /// Every profile the launcher pins starts here; a narrowing request may not.
 const LAUNCH_PROFILE_HEADER: &str = "(version 1)\n(allow default)\n";
@@ -116,7 +138,7 @@ struct Envelope {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
-enum Event {
+pub enum Event {
     /// Progress snapshot of the captured output so far; advisory only.
     Live {
         text: String,
@@ -176,7 +198,7 @@ fn read_frame(stream: &mut UnixStream) -> io::Result<Option<Vec<u8>>> {
 /// from the rules the launcher pinned into the environment — never from a
 /// request, an `extra_env` entry or a writable file.
 #[derive(Clone)]
-pub(crate) struct LaunchProfile {
+pub struct LaunchProfile {
     /// Complete profile for a shell child.
     shell: String,
     /// The denial lines alone, for composing onto a narrower caller profile.
@@ -265,7 +287,7 @@ impl LaunchProfile {
         Ok(composed)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, all(feature = "test-support", target_os = "macos")))]
     fn synthetic(denials: &str) -> Self {
         Self {
             shell: format!("{LAUNCH_PROFILE_HEADER}{denials}"),
@@ -298,15 +320,16 @@ fn with_broker_profile<T>(profile: String, run: impl FnOnce() -> T) -> T {
     result
 }
 
-#[cfg(all(test, target_os = "macos"))]
-pub(crate) fn with_test_supervisor<T>(run: impl FnOnce() -> T) -> T {
+#[cfg(all(any(test, feature = "test-support"), target_os = "macos"))]
+#[allow(clippy::unwrap_used)]
+pub fn with_test_supervisor<T>(run: impl FnOnce() -> T) -> T {
     let prefix = crate::core::protected_store::protected_child_prefix()
         .unwrap()
         .unwrap();
     with_broker_profile(prefix[2].clone(), run)
 }
 
-pub(crate) enum Mode {
+pub enum Mode {
     /// Community session: the shared executor runs the child directly.
     Direct,
     /// Supervisor worker thread: apply this fixed profile at spawn. Legal only
@@ -321,7 +344,7 @@ pub(crate) enum Mode {
 /// Fails closed in one case that matters: a process carrying the protected
 /// launch authority with no usable channel runs nothing at all. It never
 /// degrades to an unsupervised child.
-pub(crate) fn launch_mode() -> Result<Mode, String> {
+pub fn launch_mode() -> Result<Mode, String> {
     if let Some(profile) = broker_profile() {
         return Ok(Mode::Sandboxed(profile));
     }
@@ -344,7 +367,7 @@ pub(crate) fn launch_mode() -> Result<Mode, String> {
 }
 
 /// Program and leading arguments for a broker-private child.
-pub(crate) fn sandbox_prefix(profile: &str) -> Vec<String> {
+pub fn sandbox_prefix(profile: &str) -> Vec<String> {
     vec![
         SANDBOX_EXEC.to_string(),
         "-p".to_string(),
@@ -358,7 +381,7 @@ pub(crate) fn sandbox_prefix(profile: &str) -> Vec<String> {
 
 static CLIENT: OnceLock<Arc<Client>> = OnceLock::new();
 
-pub(crate) struct Client {
+pub struct Client {
     writer: Mutex<UnixStream>,
     inflight: Mutex<std::collections::HashMap<u64, mpsc::SyncSender<Event>>>,
     next_id: AtomicU64,
@@ -523,7 +546,7 @@ impl Client {
     /// Run a shell command under the launcher's boundary and return exactly what
     /// the shared executor produced in the supervisor: its text and its real
     /// exit code, including the timeout and truncation notices.
-    pub(crate) fn shell(
+    pub fn shell(
         &self,
         command: &str,
         cwd: &str,
@@ -566,7 +589,7 @@ impl Client {
     }
 
     /// Level-zero snippets still require the immutable session boundary.
-    pub(crate) fn session_program(
+    pub fn session_program(
         &self,
         program: &str,
         args: &[&str],
@@ -690,7 +713,7 @@ struct Supervisor {
 /// Serve supervised execution for one protected MCP server until it
 /// disconnects. Returns when the channel ends; in-flight children are then
 /// cancelled and their process groups terminated.
-pub(crate) fn serve(stream: UnixStream, profile: LaunchProfile) -> Result<(), String> {
+pub fn serve(stream: UnixStream, profile: LaunchProfile) -> Result<(), String> {
     stream
         .set_write_timeout(Some(CHANNEL_WRITE_TIMEOUT))
         .map_err(|_| "cannot bound supervisor channel writes")?;
@@ -901,6 +924,12 @@ impl Supervisor {
         idle_keyed: bool,
         cancel: &Arc<AtomicBool>,
     ) -> Event {
+        // Fail closed: without the registered executor nothing is started.
+        let Some(runner) = SHELL_RUNNER.get().copied() else {
+            return Event::Failed {
+                message: "no shell executor is registered with the protected supervisor".into(),
+            };
+        };
         let extra: std::collections::HashMap<String, String> = env.into_iter().collect();
         let live = Arc::new(Mutex::new(String::new()));
         let (done, finished) = mpsc::sync_channel(1);
@@ -916,7 +945,7 @@ impl Supervisor {
         // from this supervisor, never from the request.
         let profile = self.profile.shell.clone();
         let (text, code) = with_broker_profile(profile, || {
-            crate::server::execute::execute_command_with_env_cancellable(
+            runner(
                 command,
                 cwd,
                 &extra,
@@ -1003,6 +1032,40 @@ impl Supervisor {
             self.emit(id, Event::Live { text: bounded });
         }
     }
+}
+
+/// Test support: supervisor and client in one process, over a real socket
+/// pair and real child processes — the topology the wrapper runs, minus the
+/// sandbox. Brokered shell commands run with the registered [`ShellRunner`]
+/// (the server layer's tests register theirs); without one they fail closed.
+#[cfg(all(any(test, feature = "test-support"), target_os = "macos"))]
+#[allow(clippy::unwrap_used)]
+pub fn supervised_for_test<T>(denials: &str, exercise: impl FnOnce(&Client) -> T) -> T {
+    let (supervisor_end, client_end) = UnixStream::pair().expect("socket pair");
+    let profile = LaunchProfile::synthetic(denials);
+    let server = std::thread::spawn(move || serve(supervisor_end, profile));
+    let reader = client_end.try_clone().expect("clone");
+    let closed = Arc::new(AtomicBool::new(false));
+    let client = Arc::new(Client {
+        writer: Mutex::new(client_end),
+        inflight: Mutex::new(std::collections::HashMap::new()),
+        next_id: AtomicU64::new(1),
+        closed: Arc::clone(&closed),
+    });
+    let pump = Arc::clone(&client);
+    let reader_thread = std::thread::spawn(move || pump.pump(reader));
+    let result = exercise(&client);
+    // Close both cloned socket handles, as process exit does in production.
+    client
+        .writer
+        .lock()
+        .unwrap()
+        .shutdown(std::net::Shutdown::Both)
+        .unwrap();
+    drop(client);
+    let _ = server.join();
+    let _ = reader_thread.join();
+    result
 }
 
 // ---------------------------------------------------------------------------
@@ -1165,129 +1228,11 @@ mod tests {
         }
     }
 
-    /// Supervisor and client in one process, over a real socket pair and real
-    /// child processes — the topology the wrapper runs, minus the sandbox.
+    /// Program requests need no shell executor; the shell-runner tests live
+    /// with the executor in the server layer.
     #[cfg(target_os = "macos")]
     fn supervised<T>(denials: &str, exercise: impl FnOnce(&Client) -> T) -> T {
-        let (supervisor_end, client_end) = pair();
-        let profile = LaunchProfile::synthetic(denials);
-        let server = std::thread::spawn(move || serve(supervisor_end, profile));
-        let reader = client_end.try_clone().expect("clone");
-        let closed = Arc::new(AtomicBool::new(false));
-        let client = Arc::new(Client {
-            writer: Mutex::new(client_end),
-            inflight: Mutex::new(std::collections::HashMap::new()),
-            next_id: AtomicU64::new(1),
-            closed: Arc::clone(&closed),
-        });
-        let pump = Arc::clone(&client);
-        let reader_thread = std::thread::spawn(move || pump.pump(reader));
-        let result = exercise(&client);
-        // Close both cloned socket handles, as process exit does in production.
-        client
-            .writer
-            .lock()
-            .unwrap()
-            .shutdown(std::net::Shutdown::Both)
-            .unwrap();
-        drop(client);
-        let _ = server.join();
-        let _ = reader_thread.join();
-        result
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn ordinary_work_succeeds_and_exit_codes_survive_the_channel() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::core::protected_store::unpin_synthetic_session();
-        let temp = tempfile::tempdir().expect("temp");
-        std::fs::write(temp.path().join("ordinary.txt"), "project-content").unwrap();
-        let cwd = temp.path().to_str().unwrap().to_string();
-        supervised("", |client| {
-            let (text, code) = client.shell(
-                "cat ordinary.txt",
-                &cwd,
-                &std::collections::HashMap::new(),
-                Some(30_000),
-                None,
-                false,
-                None,
-            );
-            assert_eq!(code, 0, "{text}");
-            assert!(text.contains("project-content"), "{text}");
-
-            let (_, failing) = client.shell(
-                "exit 17",
-                &cwd,
-                &std::collections::HashMap::new(),
-                Some(30_000),
-                None,
-                false,
-                None,
-            );
-            assert_eq!(failing, 17, "the child's real exit code must survive");
-        });
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn a_supervised_child_is_denied_the_store_but_keeps_its_project_work() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::core::protected_store::unpin_synthetic_session();
-        let temp = tempfile::tempdir().expect("temp");
-        let store = temp.path().join("store");
-        std::fs::create_dir_all(&store).unwrap();
-        let store = store.canonicalize().unwrap();
-        let secret = store.join("knowledge.json");
-        std::fs::write(&secret, "synthetic-provider-fact").unwrap();
-        let work = temp.path().join("project");
-        std::fs::create_dir_all(&work).unwrap();
-        std::fs::write(work.join("ordinary.txt"), "project-content").unwrap();
-        let denials = format!("(deny file-read* (subpath \"{}\"))\n", store.display());
-        let cwd = work.to_str().unwrap().to_string();
-        let secret_path = secret.to_str().unwrap().to_string();
-
-        supervised(&denials, |client| {
-            let (text, code) = client.shell(
-                "cat ordinary.txt",
-                &cwd,
-                &std::collections::HashMap::new(),
-                Some(30_000),
-                None,
-                false,
-                None,
-            );
-            assert_eq!(code, 0, "ordinary project work must still run: {text}");
-
-            let (denied, code) = client.shell(
-                &format!("cat {secret_path}"),
-                &cwd,
-                &std::collections::HashMap::new(),
-                Some(30_000),
-                None,
-                false,
-                None,
-            );
-            assert_ne!(code, 0, "the store must be denied: {denied}");
-            assert!(
-                !denied.contains("synthetic-provider-fact"),
-                "no store content may cross the channel"
-            );
-            let (_, stderr, code) = client
-                .session_program("/usr/bin/true", &[], &[], 10, None)
-                .unwrap();
-            assert_eq!(code, 0, "{stderr}");
-            let (text, stderr, code) = client
-                .session_program("/bin/cat", &[&secret_path], &[], 10, None)
-                .unwrap();
-            assert_ne!(code, 0, "{text} {stderr}");
-            assert!(!text.contains("synthetic-provider-fact"));
-        });
-        assert_eq!(
-            std::fs::read_to_string(&secret).unwrap(),
-            "synthetic-provider-fact"
-        );
+        supervised_for_test(denials, exercise)
     }
 
     #[cfg(target_os = "macos")]
@@ -1436,36 +1381,5 @@ mod tests {
         let event: Envelope = serde_json::from_slice(&frame).unwrap();
         assert_eq!(event.id, 17);
         assert!(matches!(event.event, Event::Failed { .. }));
-    }
-
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn cancellation_terminates_the_whole_process_group() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::core::protected_store::unpin_synthetic_session();
-        let cancel = AtomicBool::new(false);
-        supervised("", |client| {
-            std::thread::scope(|scope| {
-                scope.spawn(|| {
-                    std::thread::sleep(Duration::from_millis(400));
-                    cancel.store(true, Ordering::Release);
-                });
-                let started = Instant::now();
-                let (_, code) = client.shell(
-                    "sleep 120 & sleep 120",
-                    "/tmp",
-                    &std::collections::HashMap::new(),
-                    Some(120_000),
-                    Some(&cancel),
-                    false,
-                    None,
-                );
-                assert_eq!(code, 130, "a cancelled command reports cancellation");
-                assert!(
-                    started.elapsed() < Duration::from_secs(30),
-                    "cancellation must not wait for the command's own timeout"
-                );
-            });
-        });
     }
 }

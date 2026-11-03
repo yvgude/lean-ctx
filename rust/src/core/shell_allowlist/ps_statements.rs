@@ -232,7 +232,7 @@ pub(super) enum Found {
 /// POSIX shell every context is `Strict`: a single operand (`$t.Actions`,
 /// `($t)`, `@(cmd)`, `[Type]::Member()`) or nothing.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
+pub(crate) enum Mode {
     Strict,
     PowerShell,
 }

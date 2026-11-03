@@ -20,18 +20,18 @@ use crate::core::{
     execution_ledger::{PublishedCanonicalReceipt, host::HostReceiptAuthority},
 };
 
-pub(crate) struct SourceExecutionResult {
-    pub(crate) source_plan: EngineContextSourcePlanResponseV1,
-    pub(crate) execution_plan: ExecutionPlanV1,
-    pub(crate) invocation: EngineInvocationV1,
-    pub(crate) observation: EngineObservationV1,
-    pub(crate) view: EngineTransportView,
-    pub(crate) receipt: PublishedCanonicalReceipt,
+pub struct SourceExecutionResult {
+    pub source_plan: EngineContextSourcePlanResponseV1,
+    pub execution_plan: ExecutionPlanV1,
+    pub invocation: EngineInvocationV1,
+    pub observation: EngineObservationV1,
+    pub view: EngineTransportView,
+    pub receipt: PublishedCanonicalReceipt,
 }
 
 /// A caller declaration is not a scheduler recommendation or source authorization.
 /// The immutable kernel decision supplies the context binding in this process.
-pub(crate) fn execute(
+pub fn execute(
     root: &Path,
     task: &TaskEnvelopeV1,
     declared_plan: &ExecutionPlanV1,

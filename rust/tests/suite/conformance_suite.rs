@@ -8,6 +8,8 @@ use lean_ctx::core::conformance;
 
 #[test]
 fn conformance_scorecard_all_pass() {
+    lean_ctx_server::server::registry::register_tool_catalog();
+    lean_ctx_server::tools::ctx_read::register_conformance_renderer();
     let card = conformance::run();
     assert!(
         card.all_passed(),
@@ -19,6 +21,7 @@ fn conformance_scorecard_all_pass() {
 
 #[test]
 fn scorecard_covers_all_categories() {
+    lean_ctx_server::server::registry::register_tool_catalog();
     let card = conformance::run();
     let categories: std::collections::BTreeSet<&str> =
         card.checks.iter().map(|c| c.category.as_str()).collect();

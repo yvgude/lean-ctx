@@ -6,6 +6,9 @@ const DEFAULT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const DEGRADED_MULTIPLIER: u32 = 2;
 pub(crate) const MAX_RESPONSE_BODY_BYTES: u64 = 10 * 1024 * 1024;
 
+#[cfg(any(test, feature = "test-support"))]
+#[allow(clippy::unwrap_used)]
+pub mod redirect_support;
 #[cfg(test)]
 pub(crate) mod redirect_tests;
 

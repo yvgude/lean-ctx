@@ -1,3 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 [alias]
 fast = "build --locked --profile dev-fast --config build.incremental=true --timings"
+
+# Link the MSVC C runtime statically (#2178): a dynamic CRT makes lean-ctx.exe
+# import VCRUNTIME140.dll, which a clean Windows does not ship, and the engine
+# then exits before main with 0xC0000135 and no message. release.yml guards
+# this with scripts/check-windows-imports.py. A RUSTFLAGS environment variable
+# replaces these flags, so release builds must not set it for this target.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

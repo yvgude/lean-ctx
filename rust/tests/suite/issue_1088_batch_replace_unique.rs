@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::session::SessionState;
-use lean_ctx::server::tool_trait::{McpTool, ToolContext};
-use lean_ctx::tools::registered::ctx_patch::CtxPatchTool;
+use lean_ctx_server::server::tool_trait::{McpTool, ToolContext};
+use lean_ctx_server::tools::registered::ctx_patch::CtxPatchTool;
 use serde_json::json;
 use tokio::sync::RwLock;
 

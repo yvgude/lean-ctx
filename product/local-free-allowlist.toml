@@ -1,5 +1,5 @@
 # Local-free invariant v2 (docs/contracts/local-free-invariant-v2.md):
-# files outside rust/src/core/hive/ that still contain a gating symbol
+# files outside rust/crates/lean-ctx-hive/src/ that still contain a gating symbol
 # (entitlement, plan, licence or billing-capability checks) in their code.
 # scripts/check-local-free.py fails on any other file with a hit and on an entry
 # whose file no longer has one, so this list only shrinks. Owner: the Hive
@@ -9,12 +9,12 @@
 schema = "leanctx.local-free-allowlist/v1"
 
 [[file]]
-path = "rust/src/cli/dispatch/help.rs"
+path = "rust/crates/lean-ctx/src/cli/dispatch/help.rs"
 owner = "B"
 reason = "help text for `billing entitlements`; removed with the billing CLI"
 
 [[file]]
-path = "rust/src/cli/dispatch/mod.rs"
+path = "rust/crates/lean-ctx/src/cli/dispatch/mod.rs"
 owner = "B"
 reason = "passes ProductEntitlements into the execution lifecycle"
 
@@ -49,11 +49,6 @@ owner = "B"
 reason = "Runtime manifest validates `entitlement_required` (B4)"
 
 [[file]]
-path = "rust/src/core/intelligence_runtime/org_policy_verifier.rs"
-owner = "B"
-reason = "verifier availability honours the runtime package's own `entitlement_required` (licence configuration or Hive lease, B4); the runtime verifies the lease"
-
-[[file]]
 path = "rust/src/core/intelligence_runtime/semantic_detectors.rs"
 owner = "C"
 reason = "semantic detector entitlement refusal; detectors are delivered by Hive"
@@ -84,16 +79,16 @@ owner = "B"
 reason = "inline test asserts minimum_plan; covered by rust/tests/local_free_invariant.rs"
 
 [[file]]
-path = "rust/src/proxy/forward/mod.rs"
+path = "rust/crates/lean-ctx-proxy/src/forward/mod.rs"
 owner = "B"
 reason = "proxy passes ProductEntitlements into the lifecycle"
 
 [[file]]
-path = "rust/src/proxy/openai_responses_ws.rs"
+path = "rust/crates/lean-ctx-proxy/src/openai_responses_ws.rs"
 owner = "B"
 reason = "proxy passes ProductEntitlements into the lifecycle"
 
 [[file]]
-path = "rust/src/server/call_tool/guarded.rs"
+path = "rust/crates/lean-ctx-server/src/server/call_tool/guarded.rs"
 owner = "B"
 reason = "McpEntitlements gate on guarded tool calls"

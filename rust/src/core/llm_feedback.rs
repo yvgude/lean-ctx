@@ -24,7 +24,7 @@ pub struct LlmFeedbackEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct LlmFeedbackSummary {
+pub struct LlmFeedbackSummary {
     pub total_events: usize,
     pub avg_output_ratio: f64,
     pub avg_latency_ms: Option<f64>,
@@ -34,17 +34,17 @@ pub(crate) struct LlmFeedbackSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct ModelSummary {
+pub struct ModelSummary {
     pub events: usize,
     pub avg_output_ratio: f64,
     pub avg_latency_ms: Option<f64>,
     pub max_output_tokens: u64,
 }
 
-pub(crate) struct LlmFeedbackStore;
+pub struct LlmFeedbackStore;
 
 impl LlmFeedbackStore {
-    pub(crate) fn record(mut event: LlmFeedbackEvent) -> Result<(), String> {
+    pub fn record(mut event: LlmFeedbackEvent) -> Result<(), String> {
         if event.agent_id.trim().is_empty() {
             return Err("agent_id is required".to_string());
         }
@@ -78,7 +78,7 @@ impl LlmFeedbackStore {
         Ok(())
     }
 
-    pub(crate) fn status() -> LlmFeedbackStatus {
+    pub fn status() -> LlmFeedbackStatus {
         let path = feedback_path();
         let bytes = std::fs::metadata(&path).map_or(0, |m| m.len());
         LlmFeedbackStatus {
@@ -89,7 +89,7 @@ impl LlmFeedbackStore {
         }
     }
 
-    pub(crate) fn reset() -> Result<(), String> {
+    pub fn reset() -> Result<(), String> {
         let path = feedback_path();
         if path.exists() {
             std::fs::remove_file(&path).map_err(|e| format!("remove {}: {e}", path.display()))?;
@@ -97,7 +97,7 @@ impl LlmFeedbackStore {
         Ok(())
     }
 
-    pub(crate) fn recent(limit: usize) -> Vec<LlmFeedbackEvent> {
+    pub fn recent(limit: usize) -> Vec<LlmFeedbackEvent> {
         let path = feedback_path();
         let mut out: VecDeque<LlmFeedbackEvent> = VecDeque::with_capacity(limit.max(1));
         let Ok(f) = File::open(&path) else {
@@ -118,14 +118,14 @@ impl LlmFeedbackStore {
         out.into_iter().collect()
     }
 
-    pub(crate) fn summarize(limit: usize) -> LlmFeedbackSummary {
+    pub fn summarize(limit: usize) -> LlmFeedbackSummary {
         let events = Self::recent(limit);
         summarize_events(&events)
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct LlmFeedbackStatus {
+pub struct LlmFeedbackStatus {
     pub path: PathBuf,
     pub bytes: u64,
     pub max_events: usize,

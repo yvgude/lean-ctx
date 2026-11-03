@@ -2,7 +2,7 @@
 inclusion: always
 ---
 
-# LeanCTX — Context Gateway for AI Systems
+# LeanCTX — Context Gateway for AI agents
 
 The workspace has the `lean-ctx` MCP server installed. You MUST prefer lean-ctx tools over native equivalents for token efficiency and caching.
 

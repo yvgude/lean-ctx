@@ -13,7 +13,7 @@ use crate::core::tokens::count_tokens;
 
 /// Which production compressor a preview runs through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Pipeline {
+pub enum Pipeline {
     /// The `ctx_read` aggressive arm: strips comments/blank lines and losslessly
     /// compacts JSON/CSV. The file extension selects the language-specific rules.
     Read,
@@ -24,7 +24,7 @@ pub(crate) enum Pipeline {
 impl Pipeline {
     /// Stable label used in [`Preview::render`] (no spaces that would break a
     /// machine split on the header line).
-    pub(crate) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Pipeline::Read => "read/aggressive",
             Pipeline::Shell => "shell",
@@ -34,7 +34,7 @@ impl Pipeline {
 
 /// A computed preview: the original, the compressed form lean-ctx would emit, and
 /// the token/byte accounting for both.
-pub(crate) struct Preview {
+pub struct Preview {
     pub pipeline: Pipeline,
     pub original: String,
     pub compressed: String,
@@ -43,17 +43,17 @@ pub(crate) struct Preview {
 }
 
 impl Preview {
-    pub(crate) fn original_bytes(&self) -> usize {
+    pub fn original_bytes(&self) -> usize {
         self.original.len()
     }
 
-    pub(crate) fn compressed_bytes(&self) -> usize {
+    pub fn compressed_bytes(&self) -> usize {
         self.compressed.len()
     }
 
     /// Tokens removed. Saturating: a pipeline never inflates in practice, but the
     /// accounting stays honest (never negative) if a pathological input did.
-    pub(crate) fn saved_tokens(&self) -> usize {
+    pub fn saved_tokens(&self) -> usize {
         self.original_tokens.saturating_sub(self.compressed_tokens)
     }
 
@@ -67,18 +67,18 @@ impl Preview {
     }
 
     /// Percent of tokens saved, rounded to one decimal (derived from the ratio).
-    pub(crate) fn saved_pct(&self) -> f64 {
+    pub fn saved_pct(&self) -> f64 {
         ((1.0 - self.token_ratio()) * 1000.0).round() / 10.0
     }
 
     /// Line-level diff original→compressed via the shared differ.
-    pub(crate) fn diff(&self) -> String {
+    pub fn diff(&self) -> String {
         compressor::diff_content(&self.original, &self.compressed)
     }
 
     /// Human-readable report: an accounting header followed by the diff.
     /// Deterministic (no timestamps/counters) so the output is cache-stable (#498).
-    pub(crate) fn render(&self) -> String {
+    pub fn render(&self) -> String {
         let mut out = String::new();
         out.push_str("compress preview — pipeline: ");
         out.push_str(self.pipeline.label());
@@ -107,14 +107,14 @@ impl Preview {
 /// Preview the read/aggressive pipeline for `content`, with an optional file
 /// extension that drives language-specific comment stripping and the JSON/CSV
 /// crushers.
-pub(crate) fn preview_read(content: &str, ext: Option<&str>) -> Preview {
+pub fn preview_read(content: &str, ext: Option<&str>) -> Preview {
     let compressed = compressor::aggressive_compress(content, ext);
     finish(Pipeline::Read, content, compressed)
 }
 
 /// Preview the shell pipeline for `output` produced by `command` (the command
 /// steers build/test-aware verbatim preservation).
-pub(crate) fn preview_shell(command: &str, output: &str) -> Preview {
+pub fn preview_shell(command: &str, output: &str) -> Preview {
     let compressed = crate::shell::compress::engine::compress_if_beneficial_pub(command, output);
     finish(Pipeline::Shell, output, compressed)
 }
@@ -130,7 +130,7 @@ fn finish(pipeline: Pipeline, original: &str, compressed: String) -> Preview {
 }
 
 /// Lowercased extension (no leading dot) of `path`, for [`preview_read`].
-pub(crate) fn ext_of(path: &str) -> Option<String> {
+pub fn ext_of(path: &str) -> Option<String> {
     std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())

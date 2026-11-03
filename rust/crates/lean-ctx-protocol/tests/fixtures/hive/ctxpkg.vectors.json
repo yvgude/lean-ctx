@@ -5,7 +5,7 @@
       "fact": "hive.never-blocks"
     },
     {
-      "blob": "sha256:249d41466a4eb6c46c19c910f7b766cb266a5d7666b5ed9587bd317c1b467eed",
+      "blob": "sha256:8ae28e07684292f57e804fbfcf23130e68f2e2be1e7e679a1f7a3ed045514b97",
       "fact": "hive.screening-first"
     },
     {
@@ -15,7 +15,7 @@
   ],
   "commits": [
     {
-      "commit": "sha256:e79848a1065e8b2b3fb92e62e79736490d1d55f5ef81d061754030c8f9ede89b",
+      "commit": "sha256:c4d19c3e8f94ae21dfe57c6f76763841157521641bd8d3196649f438a32f5a55",
       "merged_proposals": [
         11
       ],
@@ -23,16 +23,16 @@
       "revision": 3
     },
     {
-      "commit": "sha256:668f83d2788fc35009a3349288cd2b93b632d6fe79d2477b60b272752d233a66",
+      "commit": "sha256:ab3dadb59af0ac813361757ff6ed15092f4e6fcd3dfa607d2746b44e7a5a77fb",
       "merged_proposals": [
         12,
         13
       ],
-      "parent": "sha256:e79848a1065e8b2b3fb92e62e79736490d1d55f5ef81d061754030c8f9ede89b",
+      "parent": "sha256:c4d19c3e8f94ae21dfe57c6f76763841157521641bd8d3196649f438a32f5a55",
       "revision": 4
     }
   ],
-  "document_tree": "sha256:fd4e10d20c8b3174f732b6a4964b765085733e7680cb7ddd6edc34174d7b9a62",
+  "document_tree": "sha256:83230eb43c07d26ee95dba350cbb898f5d28ae584b128b3db04e79549a9d12e2",
   "import_slugs": [
     {
       "heading": "## Retry budget (payments)",
@@ -54,6 +54,6 @@
   "note": "ids are sha256: + hex of canonical_json of the typed objects in hive::ctxpkg; the document is knowledge_revision.wiki.response",
   "page_tree": {
     "page": "hive.outbound",
-    "tree": "sha256:ac4aaa0262a3f98fd44a9b308c67a36621a0f4288035be88322e14a74dca8e7e"
+    "tree": "sha256:be9003af6f1af313a5c4cca613fa5e838716bec8a5050a0b1b3f3453c577a2d1"
   }
 }

@@ -116,7 +116,7 @@ fn with_store(f: impl FnOnce(&mut EditMeteringStore)) {
 
 /// A successful anchored patch: `ops` applied, `avoided_tokens` output tokens
 /// the model did not have to reproduce (already anchor-overhead-adjusted).
-pub(crate) fn record_anchored_success(ops: u64, avoided_tokens: u64) {
+pub fn record_anchored_success(ops: u64, avoided_tokens: u64) {
     with_store(|s| {
         s.anchored_calls = s.anchored_calls.saturating_add(1);
         s.anchored_ops = s.anchored_ops.saturating_add(ops);
@@ -127,12 +127,12 @@ pub(crate) fn record_anchored_success(ops: u64, avoided_tokens: u64) {
 }
 
 /// A stale-anchor `CONFLICT` response (one extra self-heal round-trip).
-pub(crate) fn record_anchored_conflict() {
+pub fn record_anchored_conflict() {
     with_store(|s| s.anchored_conflicts = s.anchored_conflicts.saturating_add(1));
 }
 
 /// A successful str_replace edit and the `old_string` tokens it paid.
-pub(crate) fn record_str_replace_success(old_string_tokens: u64) {
+pub fn record_str_replace_success(old_string_tokens: u64) {
     with_store(|s| {
         s.str_replace_calls = s.str_replace_calls.saturating_add(1);
         s.str_replace_old_string_tokens = s
@@ -142,12 +142,12 @@ pub(crate) fn record_str_replace_success(old_string_tokens: u64) {
 }
 
 /// An `old_string`-not-found miss (one blind retry round-trip).
-pub(crate) fn record_str_replace_miss() {
+pub fn record_str_replace_miss() {
     with_store(|s| s.str_replace_misses = s.str_replace_misses.saturating_add(1));
 }
 
 #[allow(dead_code)]
-pub(crate) fn record_loc_change(path: Option<&str>, added: u64, removed: u64) {
+pub fn record_loc_change(path: Option<&str>, added: u64, removed: u64) {
     with_store(|s| {
         s.loc_added = s.loc_added.saturating_add(added);
         s.loc_removed = s.loc_removed.saturating_add(removed);
@@ -159,7 +159,7 @@ pub(crate) fn record_loc_change(path: Option<&str>, added: u64, removed: u64) {
 }
 
 /// Snapshot for `ctx_metrics` and the dashboard `/api/stats` payload.
-pub(crate) fn metrics_snapshot() -> serde_json::Value {
+pub fn metrics_snapshot() -> serde_json::Value {
     let Ok(store) = global().lock() else {
         return serde_json::json!({});
     };

@@ -2,10 +2,16 @@
 # the separately governed Production SDK. `default-members` keeps ordinary
 # build/test/clippy commands scoped to the Engine and the crates split out of it
 # (lean-ctx-patterns, lean-ctx-compress, lean-ctx-workgraph, lean-ctx-fs,
-# lean-ctx-syntax), so their tests stay in every default run.
+# lean-ctx-syntax, lean-ctx-doc) and the `lean-ctx` binary package above it,
+# so their tests stay in every default run.
 [workspace]
 members = [
   ".",
+  "crates/lean-ctx",
+  "crates/lean-ctx-hooks",
+  "crates/lean-ctx-hive",
+  "crates/lean-ctx-server",
+  "crates/lean-ctx-proxy",
   "crates/lean-ctx-ocla",
   "crates/lean-ctx-patterns",
   "crates/lean-ctx-compress",
@@ -15,52 +21,34 @@ members = [
   "crates/lean-ctx-workgraph",
   "crates/leanctx-native-storage",
   "crates/lean-ctx-embed",
+  "crates/lean-ctx-doc",
 ]
-default-members = [".", "crates/lean-ctx-fs", "crates/lean-ctx-patterns", "crates/lean-ctx-compress", "crates/lean-ctx-syntax", "crates/lean-ctx-workgraph"]
+default-members = [".", "crates/lean-ctx", "crates/lean-ctx-hooks", "crates/lean-ctx-hive", "crates/lean-ctx-server", "crates/lean-ctx-proxy", "crates/lean-ctx-fs", "crates/lean-ctx-patterns", "crates/lean-ctx-compress", "crates/lean-ctx-syntax", "crates/lean-ctx-workgraph", "crates/lean-ctx-doc"]
 
+# The Engine library. The `lean-ctx` binary (and the published crate name users
+# install) lives in crates/lean-ctx, which depends on this package, so crates
+# split upward out of the Engine can sit between the two.
 [package]
-name = "lean-ctx"
-version = "3.12.0"
+name = "lean-ctx-engine"
+version = "3.12.1"
 edition = "2024"
 autobins = false
-description = "LeanCTX Engine: the open-source runtime for the Context Gateway for AI Systems. CLI, MCP server, and supported proxy integrations."
+description = "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI agents behind the lean-ctx CLI, MCP server and proxy integrations."
 license = "Apache-2.0"
 repository = "https://github.com/yvgude/lean-ctx"
 homepage = "https://leanctx.com"
 readme = "README.md"
 keywords = ["context-gateway", "mcp", "llm", "ai-agents", "context"]
-categories = ["command-line-utilities", "development-tools"]
+categories = ["development-tools"]
 exclude = ["examples/", "tests/", "crates/"]
-
-[package.metadata.binstall]
-bin-dir = "{ bin }{ binary-ext }"
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.gz"
-
-[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-fmt = "zip"
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.zip"
 
 [lib]
 name = "lean_ctx"
 path = "src/lib.rs"
 
-[[bin]]
-name = "lean-ctx"
-path = "src/main.rs"
-
-[[example]]
-name = "gen_mcp_manifest"
-path = "src/bin/gen_mcp_manifest.rs"
-required-features = ["dev-tools"]
-
 [[example]]
 name = "gen_tdd_schema"
 path = "src/bin/gen_tdd_schema.rs"
-required-features = ["dev-tools"]
-
-[[example]]
-name = "gen_docs"
-path = "src/bin/gen_docs.rs"
 required-features = ["dev-tools"]
 
 [[example]]
@@ -80,6 +68,12 @@ required-features = ["dev-tools"]
 
 [features]
 enterprise = []
+# Test helpers for the composition root's unit tests (crate lean_ctx_cli in
+# crates/lean-ctx, enabled there as a dev-dependency feature only): the test
+# env helpers, the isolated data dir, the policy test override and a few
+# fixtures. Behaviour-neutral for the binary: the data sandbox applies only to
+# the lean_ctx_cli unit-test harness (core::test_mode).
+test-support = ["lean-ctx-fs/test-support"]
 default = [
   "tree-sitter",
   "embeddings",
@@ -145,13 +139,14 @@ grammar-julia = ["tree-sitter", "lean-ctx-syntax/grammar-julia"]
 wasm = ["dep:wasmi"]
 
 [dependencies]
-lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "4.0.0" }
-lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.4.0" }
+lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "5.0.0" }
+lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.5.0" }
 lean-ctx-workgraph = { path = "crates/lean-ctx-workgraph", version = "0.1.0" }
 lean-ctx-patterns = { path = "crates/lean-ctx-patterns", version = "0.1.0" }
 lean-ctx-compress = { path = "crates/lean-ctx-compress", version = "0.1.0" }
 lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.1.0" }
 lean-ctx-syntax = { path = "crates/lean-ctx-syntax", version = "0.1.0" }
+lean-ctx-doc = { path = "crates/lean-ctx-doc", version = "0.1.0" }
 rmcp = { version = "2", features = [
   "server",
   "client",
@@ -301,13 +296,17 @@ semver = "1.0.28"
 dashmap = "6.2.1"
 async-trait = "0.1.91"
 
-[lints.rust]
+[lints]
+workspace = true
+
+# Lint policy of the Engine and the `lean-ctx` binary package (crates/lean-ctx).
+[workspace.lints.rust]
 unreachable_pub = "warn"
 # CI coverage (cargo-tarpaulin) injects `--cfg tarpaulin`; declare it to avoid
 # `-D unexpected_cfgs` failures when using `cfg_attr(tarpaulin, ...)`.
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tarpaulin)"] }
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 # Track unwrap reduction progress. Target: deny once count < 100.
 # Current: ~4480 violations. See #1383.
@@ -381,8 +380,11 @@ debug = "line-tables-only"
 # on every rebuild — cuts incremental link time on Linux.
 split-debuginfo = "unpacked"
 
-# Keep the root crate's debug/test unwind tables within Apple's compact-unwind
+# Keep the Engine's and the binary package's (which hosts the merged
+# integration suite) debug/test unwind tables within Apple's compact-unwind
 # limit without suppressing warnings or disabling debug/overflow checks.
+[profile.dev.package.lean-ctx-engine]
+opt-level = 1
 [profile.dev.package.lean-ctx]
 opt-level = 1
 
@@ -428,7 +430,7 @@ strip = false
 # Small code units let an incremental rebuild of the engine crate regenerate
 # only what changed: on 30.10. a one-line edit took a median 27 s instead of
 # 37 s (codegen 9 s instead of 19 s) with unchanged runtime.
-[profile.dev-fast.package.lean-ctx]
+[profile.dev-fast.package.lean-ctx-engine]
 codegen-units = 256
 
 [target.'cfg(windows)'.dependencies]
@@ -436,6 +438,8 @@ leanctx-native-storage = { path = "crates/leanctx-native-storage", version = "=0
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Globalization",
+  # GetConsoleMode: a stdin check that never blocks on a pipe (#2176 VM).
+  "Win32_System_Console",
   "Win32_System_Threading",
   "Win32_System_ProcessStatus",
   "Win32_System_SystemInformation",
@@ -448,6 +452,9 @@ windows-sys = { version = "0.61", features = [
   "Wdk_Foundation",
   "Wdk_Storage_FileSystem",
   "Wdk_System_SystemServices",
+  # NtQueryInformationProcess(ProcessCommandLineInformation): service
+  # selection reads command lines without wmic/PowerShell (#2176).
+  "Wdk_System_Threading",
   "Win32_System_IO",
 ] }
 # OS keychain: the entitlement cache (all three platforms) and the key that
@@ -493,11 +500,7 @@ harness = false
 name = "graph_export"
 harness = false
 
-[[bench]]
-name = "efficiency"
-harness = false
-
-# Protocol 0.4.0 is the in-tree migration release; keep workspace/root builds
+# Protocol 0.5.0 is the in-tree migration release; keep workspace/root builds
 # on these exact local bytes until that release is published to crates.io.
 # Remove this entry only after publication and registry-version verification.
 # rmcp 2.0.0 keeps completed response-send tasks in a JoinSet until shutdown,

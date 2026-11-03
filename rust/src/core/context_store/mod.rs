@@ -18,12 +18,12 @@
 
 use lean_ctx_protocol::{ProjectId, TenantId};
 
-pub(crate) mod lineage;
-pub(crate) mod task_signals;
+pub mod lineage;
+pub mod task_signals;
 
 /// The tenant/project scope a task belongs to, as one opaque key. Task-keyed
 /// state (receipt indexes, learning) is always looked up under this scope, so
 /// equal task ids in different projects never meet.
-pub(crate) fn task_scope(tenant: Option<&TenantId>, project: &ProjectId) -> String {
+pub fn task_scope(tenant: Option<&TenantId>, project: &ProjectId) -> String {
     serde_json::to_string(&(tenant, project)).expect("identifiers serialize")
 }

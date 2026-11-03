@@ -50,7 +50,7 @@ pub const RETIRED_KEYS: &[RetiredKey] = &[
     retired("context.diet_staleness_enabled", "never read"),
     retired(
         "cloud",
-        "the hosted account and its sync left the engine; accounts live in LeanCTX Hive",
+        "the hosted account and its sync left the engine; accounts live in LeanCTX | Hive",
     ),
     retired(
         "cognitive_mode",

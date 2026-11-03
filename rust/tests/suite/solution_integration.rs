@@ -355,7 +355,7 @@ fn native_edit_via_observe_hook_triggers_solution_capture() {
     });
 
     // Call the solution_capture hook directly
-    lean_ctx::hook_handlers::solution_capture::maybe_capture(&payload.to_string());
+    lean_ctx_hooks::hook_handlers::solution_capture::maybe_capture(&payload.to_string());
 
     // The tracker should have recorded at least 1 decision (stdlib) and LOC change
     let snap = solution_tracker::snapshot();
@@ -385,7 +385,7 @@ fn native_write_tool_records_loc_addition() {
     });
 
     // Verify maybe_capture processes Write payloads without panic.
-    lean_ctx::hook_handlers::solution_capture::maybe_capture(&payload.to_string());
+    lean_ctx_hooks::hook_handlers::solution_capture::maybe_capture(&payload.to_string());
 
     // Verify the solution_tracker LOC recording pipeline works end-to-end.
     let before = solution_tracker::snapshot().loc_added;
@@ -413,7 +413,7 @@ fn native_edit_ctx_tools_are_skipped_no_double_count() {
     });
 
     // ctx_edit should be skipped entirely — verify it does not panic
-    lean_ctx::hook_handlers::solution_capture::maybe_capture(&payload.to_string());
+    lean_ctx_hooks::hook_handlers::solution_capture::maybe_capture(&payload.to_string());
 
     // Also verify mcp__lean-ctx__ prefix is skipped
     let payload2 = json!({
@@ -425,5 +425,5 @@ fn native_edit_ctx_tools_are_skipped_no_double_count() {
         },
         "cwd": tmp_str
     });
-    lean_ctx::hook_handlers::solution_capture::maybe_capture(&payload2.to_string());
+    lean_ctx_hooks::hook_handlers::solution_capture::maybe_capture(&payload2.to_string());
 }

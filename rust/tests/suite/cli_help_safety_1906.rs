@@ -38,7 +38,7 @@ const NOT_SWEPT: &[&str] = &[
 
 /// Every name of every `"name" | "alias" =>` arm of the top-level dispatcher.
 fn dispatcher_names() -> Vec<String> {
-    let src = include_str!("../../src/cli/dispatch/mod.rs");
+    let src = include_str!("../../crates/lean-ctx/src/cli/dispatch/mod.rs");
     let start = src
         .find("        match args[1].as_str() {")
         .expect("dispatcher match");

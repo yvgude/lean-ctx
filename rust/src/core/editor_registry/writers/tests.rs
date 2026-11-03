@@ -580,33 +580,6 @@ approval_mode = \"approve\"
     );
 }
 
-/// Every auto-approved name must be a tool agents can actually see; the list
-/// carried nine removed/hidden tools (`ctx_symbol`, `ctx_workflow`, …) because
-/// nothing tied it to the registry. `ctx` is the unified meta-tool, which is
-/// not a registry entry.
-#[test]
-fn auto_approve_names_only_advertised_tools() {
-    let registered: std::collections::HashSet<String> = crate::tool_defs::granular_tool_defs()
-        .iter()
-        .map(|t| t.name.to_string())
-        .collect();
-    let stale: Vec<_> = auto_approve_tools()
-        .into_iter()
-        .filter(|n| *n != "ctx")
-        .filter(|n| {
-            !(registered.contains(*n)
-                && crate::server::dynamic_tools::is_publicly_advertised_tool(n))
-        })
-        .collect();
-    assert!(stale.is_empty(), "stale autoApprove entries: {stale:?}");
-    for core in ["ctx_read", "ctx_shell", "ctx_search", "ctx_cost"] {
-        assert!(
-            auto_approve_tools().contains(&core),
-            "{core} lost auto-approval"
-        );
-    }
-}
-
 #[test]
 fn qoder_mcp_config_preserves_probe_and_upserts_lean_ctx() {
     let dir = tempfile::tempdir().unwrap();

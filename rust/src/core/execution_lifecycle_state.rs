@@ -21,12 +21,12 @@ use crate::core::{
 };
 
 impl TaskContext {
-    #[cfg(test)]
-    pub(crate) fn autopilot_planning_attempts(&self) -> &std::sync::atomic::AtomicUsize {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn autopilot_planning_attempts(&self) -> &std::sync::atomic::AtomicUsize {
         &self.shared.autopilot_planning_attempts
     }
 
-    pub(crate) fn planning_query(&self) -> Option<&str> {
+    pub fn planning_query(&self) -> Option<&str> {
         self.planning_query.as_deref()
     }
 
@@ -40,7 +40,7 @@ impl TaskContext {
             .map(|prepared| prepared.decision())
     }
 
-    pub(crate) fn attach_autopilot(
+    pub fn attach_autopilot(
         &self,
         prepared: Arc<crate::core::context_kernel::bridge::runtime::PreparedKernelContext>,
     ) -> anyhow::Result<()> {
@@ -59,7 +59,7 @@ impl TaskContext {
             .map_err(|_| anyhow::anyhow!("autopilot decision already attached"))
     }
 
-    pub(crate) fn autopilot_task_class(&self) -> TaskClass {
+    pub fn autopilot_task_class(&self) -> TaskClass {
         task_class(&self.profile_intent)
     }
 

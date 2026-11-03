@@ -4,7 +4,7 @@
 //! units and never held in memory as a whole.
 //!
 //! The file is opened ONCE through the rooted admitted reader's path decision
-//! and no-follow open (`tools::ctx_read::open_rooted_unit_source`) and read
+//! and no-follow open (`core::rooted_read::open_rooted_unit_source`) and read
 //! from that descriptor in small pieces. The pieces are grouped into UNITS of
 //! complete records (lines), each at most [`unit_bytes`]; every unit passes
 //! the admission a whole file gets, on its original bytes, before anything of
@@ -43,7 +43,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 
 use super::{HistorySource, SourceRefusal};
 use crate::core::context_admission::cross_line;
-use crate::tools::ctx_read::RootedUnitSource;
+use crate::core::rooted_read::RootedUnitSource;
 
 /// Total cap for one transcript read in units.
 ///
@@ -177,7 +177,7 @@ pub(super) fn admit(
     let unit_cap = unit_bytes();
     // `gateway` is the ONE snapshot of this source: every unit and seam is
     // admitted under it, as its label and its built facts are.
-    let mut reader = crate::tools::ctx_read::open_rooted_unit_source(
+    let mut reader = crate::core::rooted_read::open_rooted_unit_source(
         &source.path.to_string_lossy(),
         &source.root.to_string_lossy(),
         "ctx_knowledge",

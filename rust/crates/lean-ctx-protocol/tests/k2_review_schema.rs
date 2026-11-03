@@ -249,7 +249,7 @@ fn an_unknown_member_anywhere_refuses_the_whole_batch() {
     let base = serde_json::to_value(maximal_request()).unwrap();
     let pointers = [
         "",
-        "/engine",
+        "/instance",
         "/buckets/0",
         "/buckets/0/slices/0",
         "/buckets/0/slices/0/tokens",

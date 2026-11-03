@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shipping assets must stay identical to their repository specifications.
 
-use std::{fs, path::Path};
+use std::fs;
 
 const MANIFESTS: &[&str] = &[
     "leanctx/context-optimization-v1.json",
@@ -13,7 +13,7 @@ const KITS: &[&str] = &["code-review/kit.toml"];
 
 #[test]
 fn packaged_manifests_match_the_canonical_contracts() {
-    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let crate_root = crate::engine_dir();
     for manifest in MANIFESTS {
         let packaged = crate_root
             .join("assets/ocla/capability-manifests")
@@ -31,7 +31,7 @@ fn packaged_manifests_match_the_canonical_contracts() {
 
 #[test]
 fn packaged_kits_match_the_canonical_contracts() {
-    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let crate_root = crate::engine_dir();
     for kit in KITS {
         let packaged = crate_root.join("assets/kits").join(kit);
         let canonical = crate_root.join("../kits").join(kit);

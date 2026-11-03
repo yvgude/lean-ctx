@@ -8,14 +8,14 @@ mod carry_over;
 mod chunking;
 pub use chunking::*;
 mod coordinator;
-pub(crate) mod coverage;
+pub mod coverage;
 mod evict;
 pub(crate) mod external_origin;
 pub use coordinator::{SearchIndexBuildProgress, get_or_start_build};
 mod provider_origin;
 pub use provider_origin::ChunkOrigins;
 mod served_ranking;
-pub(crate) mod source_gate;
+pub mod source_gate;
 #[cfg(test)]
 mod tests;
 mod walk;
@@ -394,8 +394,8 @@ impl BM25Index {
     }
 
     /// Builds an index from explicit chunks (unit tests; avoids filesystem walking).
-    #[cfg(test)]
-    pub(crate) fn from_chunks_for_test(chunks: Vec<CodeChunk>) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_chunks_for_test(chunks: Vec<CodeChunk>) -> Self {
         let mut index = Self::new();
         for mut chunk in chunks {
             if chunk.token_count == 0 {
@@ -415,9 +415,9 @@ impl BM25Index {
     /// tokenization. Never consult metadata-only caches or persist this view.
     ///
     /// `subdir` / `in_scope` narrow the walk itself (see
-    /// [`walk::list_scoped_code_files`]), so the file budget counts only sources the
+    /// `walk::list_scoped_code_files`), so the file budget counts only sources the
     /// caller asked about.
-    pub(crate) fn build_from_admitted_sources(
+    pub fn build_from_admitted_sources(
         root: &Path,
         subdir: Option<&str>,
         in_scope: &dyn Fn(&str) -> bool,

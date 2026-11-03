@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: Apache-2.0
+use rmcp::ErrorData;
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
+
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_str};
+use lean_ctx::tool_defs::tool_def;
+
+pub struct CtxHeatmapTool;
+
+impl McpTool for CtxHeatmapTool {
+    fn name(&self) -> &'static str {
+        "ctx_heatmap"
+    }
+
+    fn tool_def(&self) -> Tool {
+        tool_def(
+            "ctx_heatmap",
+            "File access heatmap — shows most frequently accessed files per session.\n\
+             action=status (default) for summary, action=detail for per-file access counts.\n\
+             Identify hot files to optimize context usage.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "description": "status|detail" },
+                    "path": { "type": "string" }
+                }
+            }),
+        )
+    }
+
+    fn handle(
+        &self,
+        args: &Map<String, Value>,
+        ctx: &ToolContext,
+    ) -> Result<ToolOutput, ErrorData> {
+        let action = get_str(args, "action").unwrap_or_else(|| "status".to_string());
+        let path = get_str(args, "path")
+            .map(|raw| lean_ctx::core::workspace_authority::confine(&raw, &ctx.project_root, false))
+            .transpose()
+            .map_err(|error| ErrorData::invalid_params(error, None))?;
+        let result = crate::tools::ctx_heatmap::handle(&action, path.as_deref());
+        Ok(ToolOutput {
+            text: result,
+            original_tokens: 0,
+            saved_tokens: 0,
+            mode: Some(action),
+            path: None,
+            changed: false,
+            shell_outcome: None,
+            content_blocks: None,
+        })
+    }
+}

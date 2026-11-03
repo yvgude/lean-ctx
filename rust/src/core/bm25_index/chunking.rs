@@ -3,7 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
-pub(crate) fn tokenize(text: &str) -> Vec<String> {
+pub fn tokenize(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
 

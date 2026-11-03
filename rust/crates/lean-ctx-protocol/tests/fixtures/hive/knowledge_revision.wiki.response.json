@@ -18,7 +18,7 @@
         ],
         "id": "hive.screening-first",
         "kind": "decision",
-        "statement": "Every outbound item passes engine screening before it is queued."
+        "statement": "Every outbound item passes instance screening before it is queued."
       },
       {
         "anchors": [
@@ -47,7 +47,7 @@
         "items": [
           {
             "kind": "prose",
-            "text": "Everything an engine sends to Hive takes one path."
+            "text": "Everything an instance sends to Hive takes one path."
           },
           {
             "id": "hive.screening-first",

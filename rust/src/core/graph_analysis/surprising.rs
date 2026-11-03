@@ -17,7 +17,7 @@ use crate::core::graph_provider::EdgeInfo;
 
 /// An unexpected coupling between two files.
 #[derive(Debug, Clone, Serialize, PartialEq)]
-pub(crate) struct SurprisingConnection {
+pub struct SurprisingConnection {
     pub from: String,
     pub to: String,
     pub score: f64,
@@ -27,7 +27,7 @@ pub(crate) struct SurprisingConnection {
 
 /// Returns the top `limit` surprising connections, highest score first.
 /// Deterministic. `community` maps file path → community id (may be partial).
-pub(crate) fn find_surprising_connections(
+pub fn find_surprising_connections(
     edges: &[EdgeInfo],
     community: &HashMap<String, usize>,
     limit: usize,

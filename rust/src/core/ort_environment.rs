@@ -23,7 +23,7 @@
 //! versioned variant (`libonnxruntime.so.1.24.1`, `libonnxruntime.1.24.1.dylib`),
 //! which is what pip wheels and Debian runtime packages ship.
 //!
-//! If no copy is found, [`ensure_ort_env`] returns an eager error — session
+//! If no copy is found, `ensure_ort_env` returns an eager error — session
 //! creation hangs rather than failing, so we fail fast.
 
 use std::ffi::{CStr, c_char, c_void};
@@ -87,7 +87,7 @@ pub(crate) fn resolved_ort_dylib_path() -> anyhow::Result<PathBuf> {
 /// Resolve and version-check the runtime without initialising ORT
 /// (`lean-ctx embeddings status`). Returns the library path and the version
 /// string the runtime reports about itself (#1887).
-pub(crate) fn check_ort_runtime() -> anyhow::Result<(PathBuf, String)> {
+pub fn check_ort_runtime() -> anyhow::Result<(PathBuf, String)> {
     let path = resolve_ort_dylib()?;
     let version = validate_ort_dylib_version(&path)?;
     Ok((path, version))

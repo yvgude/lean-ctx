@@ -397,6 +397,12 @@ pub fn home_dirs() -> Vec<PathBuf> {
     homes
 }
 
+/// A startup root the server must not adopt as a jail root: too broad
+/// ([`is_broad_or_unsafe_root`]) or an agent/IDE config directory.
+pub fn is_suspicious_root(dir: &Path) -> bool {
+    is_broad_or_unsafe_root(dir) || is_agent_config_dir(dir)
+}
+
 /// Returns `true` if the directory is too broad to be a valid project root.
 /// Rejects home directories (including WSL-mounted Windows profiles), filesystem
 /// root, `.` (bare CWD), agent/IDE config directories ([`AGENT_CONFIG_DIRS`])

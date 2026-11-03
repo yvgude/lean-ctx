@@ -849,7 +849,7 @@ async function cockpitStart($: EngineInterface): Promise<void> {
   if (!panelEnabled) return
   // Fire-and-forget, and never an unhandled rejection: a surface that draws
   // no panes (or none yet) simply leaves the sidebar closed.
-  $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS }).catch(() => {})
+  $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS, closeOnEscape: true }).catch(() => {})
   startProofClock($)
 }
 
@@ -909,7 +909,7 @@ async function runCockpitCommand($: EngineInterface, args: string): Promise<stri
   if (choice !== '' && choice !== 'on') return COCKPIT_USAGE
   const kept = choice === 'on' ? await persistChoice($, 'cockpit_panel', true) : true
   if (choice === 'on') panelEnabled = true
-  const { isPlaced } = await $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS })
+  const { isPlaced } = await $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS, closeOnEscape: true })
   $.clock.after(0, () => void refresh($).catch(() => {}))
   $.clock.after(0, () => void prove($).catch(() => {}))
   if (panelEnabled) startProofClock($)

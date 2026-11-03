@@ -58,7 +58,7 @@ fn validate_engine_version(value: &str) -> Result<(), ValidationError> {
         Ok(())
     } else {
         Err(ValidationError::new(
-            "engine_version must be a semantic version of at most 32 characters",
+            "instance_version must be a semantic version of at most 32 characters",
         ))
     }
 }
@@ -70,10 +70,10 @@ pub struct DeviceCodeRequestV1 {
     pub schema: String,
     /// Always [`HIVE_ENGINE_CLIENT_ID`].
     pub client_id: String,
-    pub engine_version: String,
+    pub instance_version: String,
     pub os: EngineOs,
     /// The name the user gave this engine (`--label`), shown on the approval
-    /// page and prefilled as its name (Hive task #11). Like `engine_version`
+    /// page and prefilled as its name (Hive task #11). Like `instance_version`
     /// and `os` it is the requester's claim. Absent when the user gave none:
     /// the host-name default goes only into [`DeviceTokenRequestV1`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -81,11 +81,11 @@ pub struct DeviceCodeRequestV1 {
 }
 
 impl DeviceCodeRequestV1 {
-    pub fn new(engine_version: impl Into<String>, os: EngineOs) -> Self {
+    pub fn new(instance_version: impl Into<String>, os: EngineOs) -> Self {
         Self {
             schema: DEVICE_CODE_REQUEST_SCHEMA.into(),
             client_id: HIVE_ENGINE_CLIENT_ID.into(),
-            engine_version: engine_version.into(),
+            instance_version: instance_version.into(),
             os,
             instance_label: None,
         }
@@ -108,7 +108,7 @@ impl DeviceCodeRequestV1 {
         if let Some(label) = &self.instance_label {
             validate_text(label, MAX_INSTANCE_LABEL_CHARS, "instance_label", false)?;
         }
-        validate_engine_version(&self.engine_version)
+        validate_engine_version(&self.instance_version)
     }
 }
 
@@ -232,7 +232,7 @@ pub struct DeviceTokenRequestV1 {
     pub instance_kx_public_key: String,
     /// User-visible name, e.g. the host name when labels are on.
     pub instance_label: String,
-    pub engine_version: String,
+    pub instance_version: String,
     pub os: EngineOs,
 }
 
@@ -243,7 +243,7 @@ impl fmt::Debug for DeviceTokenRequestV1 {
             .field("device_code", &"<redacted>")
             .field("instance_public_key", &self.instance_public_key)
             .field("instance_label", &self.instance_label)
-            .field("engine_version", &self.engine_version)
+            .field("instance_version", &self.instance_version)
             .field("os", &self.os)
             .finish_non_exhaustive()
     }
@@ -261,7 +261,7 @@ impl DeviceTokenRequestV1 {
             "instance_label",
             false,
         )?;
-        validate_engine_version(&self.engine_version)
+        validate_engine_version(&self.instance_version)
     }
 }
 
@@ -539,7 +539,7 @@ mod tests {
 
     #[test]
     fn requests_refuse_unknown_fields() {
-        let json = r#"{"schema":"leanctx.hive.device-code-request/v1","client_id":"lean-ctx-engine","engine_version":"3.12.0","os":"macos","extra":true}"#;
+        let json = r#"{"schema":"leanctx.hive.device-code-request/v1","client_id":"lean-ctx-engine","instance_version":"3.12.0","os":"macos","extra":true}"#;
         assert!(serde_json::from_str::<DeviceCodeRequestV1>(json).is_err());
     }
 }

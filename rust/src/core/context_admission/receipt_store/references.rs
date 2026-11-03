@@ -8,8 +8,8 @@
 //! sidecar then lists the noted ids that the delivered bytes actually carry:
 //! a reference the host was not handed is not one it can pass back.
 //!
-//! Bounded on both sides: the newest [`MAX_ISSUED`] ids of the process are
-//! remembered, a sidecar lists at most [`MAX_RECOVERY_REFERENCES`] and counts
+//! Bounded on both sides: the newest `MAX_ISSUED` ids of the process are
+//! remembered, a sidecar lists at most `MAX_RECOVERY_REFERENCES` and counts
 //! the rest.
 
 use std::collections::VecDeque;
@@ -30,7 +30,7 @@ fn is_id_byte(byte: u8) -> bool {
 
 /// A recovery copy was stored under `id` by this process. Anything that is
 /// not a canonical id (64 lowercase hex characters) is ignored.
-pub(crate) fn note_recovery(id: &str) {
+pub fn note_recovery(id: &str) {
     if id.len() != ID_LEN || !id.bytes().all(is_id_byte) {
         return;
     }

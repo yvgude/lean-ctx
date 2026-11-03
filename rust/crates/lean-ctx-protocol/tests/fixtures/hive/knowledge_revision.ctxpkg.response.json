@@ -1,6 +1,6 @@
 {
-  "ctxpkg_commit": "sha256:668f83d2788fc35009a3349288cd2b93b632d6fe79d2477b60b272752d233a66",
-  "ctxpkg_tree": "sha256:fd4e10d20c8b3174f732b6a4964b765085733e7680cb7ddd6edc34174d7b9a62",
+  "ctxpkg_commit": "sha256:ab3dadb59af0ac813361757ff6ed15092f4e6fcd3dfa607d2746b44e7a5a77fb",
+  "ctxpkg_tree": "sha256:83230eb43c07d26ee95dba350cbb898f5d28ae584b128b3db04e79549a9d12e2",
   "document": {
     "facts": [
       {
@@ -20,7 +20,7 @@
         ],
         "id": "hive.screening-first",
         "kind": "decision",
-        "statement": "Every outbound item passes engine screening before it is queued."
+        "statement": "Every outbound item passes instance screening before it is queued."
       },
       {
         "anchors": [
@@ -49,7 +49,7 @@
         "items": [
           {
             "kind": "prose",
-            "text": "Everything an engine sends to Hive takes one path."
+            "text": "Everything an instance sends to Hive takes one path."
           },
           {
             "id": "hive.screening-first",

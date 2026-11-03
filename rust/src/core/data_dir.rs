@@ -45,14 +45,47 @@ pub(crate) fn resolve_data_dir() -> Result<PathBuf, String> {
     // test fixtures showed up as "today 61%" on the user dashboard. Tests that
     // set LEAN_CTX_DATA_DIR keep full control (handled above); everyone else
     // lands in a per-process temp dir and physically cannot touch real data.
+    if sandboxed() {
+        return Ok(test_sandbox_dir());
+    }
+    resolve_home_data_dir()
+}
+
+/// Unit-test executables of the crates above the engine.
+#[cfg(all(not(test), feature = "test-support"))]
+const UNIT_TEST_HARNESSES: &[&str] = &[
+    "lean_ctx_cli-",
+    "lean_ctx_hooks-",
+    "lean_ctx_hive-",
+    "lean_ctx_proxy-",
+    "lean_ctx_server-",
+];
+
+/// Whether this process is a test harness that must stay inside the
+/// per-process data sandbox (GL #512). The engine's own unit tests are
+/// compiled with `cfg(test)`; the composition root (`lean_ctx_cli`) runs its
+/// unit tests against an engine with the additive `test-support` feature, and
+/// there the sandbox applies only to that unit-test harness (executable
+/// `lean_ctx_cli-<hash>`), never to the `lean-ctx` binary that integration
+/// tests spawn.
+pub fn sandboxed() -> bool {
     #[cfg(test)]
     {
-        Ok(test_sandbox_dir())
+        true
     }
-
-    #[cfg(not(test))]
+    #[cfg(all(not(test), feature = "test-support"))]
     {
-        resolve_home_data_dir()
+        static CLI_UNIT_TESTS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *CLI_UNIT_TESTS.get_or_init(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .is_some_and(|name| UNIT_TEST_HARNESSES.iter().any(|h| name.starts_with(h)))
+        })
+    }
+    #[cfg(all(not(test), not(feature = "test-support")))]
+    {
+        false
     }
 }
 
@@ -61,7 +94,6 @@ pub(crate) fn resolve_data_dir() -> Result<PathBuf, String> {
 /// the developer's real `~/.lean-ctx` (GL #512). Tests that need an *empty*,
 /// private dir should use [`isolated_data_dir`] instead (the shared sandbox is
 /// not empty: parallel tests write into it).
-#[cfg(test)]
 pub(crate) fn test_sandbox_dir() -> PathBuf {
     static TEST_SANDBOX: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     TEST_SANDBOX
@@ -190,7 +222,7 @@ pub(crate) fn ensure_dir_permissions(_path: &std::path::Path) {}
 // engine and its foundation crates share one lock.
 pub use lean_ctx_fs::env_lock::{TestEnvGuard, test_env_lock};
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) use lean_ctx_fs::env_lock::holds_test_env_lock;
 
 /// RAII data-dir isolation for tests (GL #556): holds `test_env_lock` for
@@ -200,13 +232,13 @@ pub(crate) use lean_ctx_fs::env_lock::holds_test_env_lock;
 /// `set_var`/`remove_var` pairs whenever a test needs an empty, private
 /// data dir (the shared per-process sandbox is NOT empty: parallel tests
 /// write stores like feedback, bandit and sessions into it).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub struct IsolatedDataDir {
     tmp: tempfile::TempDir,
     _guard: TestEnvGuard,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl IsolatedDataDir {
     pub fn path(&self) -> &std::path::Path {
         self.tmp.path()
@@ -215,7 +247,7 @@ impl IsolatedDataDir {
 
 /// Category env vars pointed at the isolated temp dir so all four XDG
 /// categories (config/data/state/cache) collapse onto it in tests (GH #408).
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 const ISOLATED_ENV_VARS: &[&str] = &[
     "LEAN_CTX_DATA_DIR",
     "LEAN_CTX_CONFIG_DIR",
@@ -223,7 +255,7 @@ const ISOLATED_ENV_VARS: &[&str] = &[
     "LEAN_CTX_CACHE_DIR",
 ];
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for IsolatedDataDir {
     fn drop(&mut self) {
         // Struct Drop runs before field drops, so the env is restored while
@@ -234,7 +266,7 @@ impl Drop for IsolatedDataDir {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn isolated_data_dir() -> IsolatedDataDir {
     let guard = test_env_lock();
     let tmp = tempfile::tempdir().expect("tempdir for isolated data dir");

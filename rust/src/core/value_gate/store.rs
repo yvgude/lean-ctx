@@ -94,7 +94,7 @@ impl ValueGateStore {
         Self::load_from_path(&Self::persist_path())
     }
 
-    pub(crate) fn append_to_path(path: &Path, assessment: &ValueAssessment) -> io::Result<()> {
+    pub fn append_to_path(path: &Path, assessment: &ValueAssessment) -> io::Result<()> {
         let json = serde_json::to_string(assessment)
             .map_err(|error| io::Error::other(format!("serialize assessment: {error}")))?;
         fs::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")))?;
@@ -105,7 +105,7 @@ impl ValueGateStore {
         file.write_all(format!("{json}\n").as_bytes())
     }
 
-    pub(crate) fn load_from_path(path: &Path) -> Vec<ValueAssessment> {
+    pub fn load_from_path(path: &Path) -> Vec<ValueAssessment> {
         let mut assessments = Self::read_tail(&path.with_extension("jsonl.1"));
         assessments.extend(Self::read_tail(path));
         let keep_from = assessments.len().saturating_sub(MAX_DISK_ASSESSMENTS);

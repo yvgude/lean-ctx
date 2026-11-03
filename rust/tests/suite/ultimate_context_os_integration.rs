@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 fn lean_ctx_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
-    cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
+    cmd.current_dir(crate::engine_dir());
     cmd.env("LEAN_CTX_ACTIVE", "1");
     // Tool-backed subcommands would auto-start a daemon that outlives the
     // test and indexes the repo at ~300 % CPU on CI (GL #1291).
@@ -756,7 +756,7 @@ mod cli_commands {
         let out = lean_ctx_bin().arg("--help").output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("Context Gateway for AI Systems"));
+        assert!(stdout.contains("Context Gateway for AI agents"));
     }
 
     #[test]
@@ -809,7 +809,7 @@ mod cli_commands {
 
     #[test]
     fn cli_ls() {
-        let manifest = env!("CARGO_MANIFEST_DIR");
+        let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
         let out = lean_ctx_bin().args(["ls", manifest]).output().unwrap();
         assert!(out.status.success(), "lean-ctx ls must succeed");
         let stdout = String::from_utf8_lossy(&out.stdout);
@@ -846,7 +846,7 @@ mod cli_commands {
 mod contract_gates {
     #[test]
     fn contracts_md_exists_and_has_content() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../CONTRACTS.md");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../CONTRACTS.md");
         if std::path::Path::new(path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
             assert!(
@@ -861,7 +861,7 @@ mod contract_gates {
     fn mcp_manifest_exists() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../website/generated/mcp-tools.json"
+            "/../../../website/generated/mcp-tools.json"
         );
         if std::path::Path::new(path).exists() {
             let content = std::fs::read_to_string(path).unwrap();
@@ -875,7 +875,7 @@ mod contract_gates {
 
     #[test]
     fn committed_contract_docs_are_valid() {
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let manifest_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
         let committed = vec!["a2a-contract-v1.md", "http-mcp-contract-v1.md"];
 
         for name in &committed {
@@ -891,7 +891,7 @@ mod contract_gates {
 
     #[test]
     fn contract_docs_directory_exists() {
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../docs/contracts");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../docs/contracts");
         assert!(
             std::path::Path::new(path).is_dir(),
             "docs/contracts/ directory must exist"

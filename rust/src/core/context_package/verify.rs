@@ -1158,7 +1158,7 @@ pub(crate) fn validate_document_path(path: &str) -> Result<(), String> {
 
 /// Outcome of one verification check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CheckOutcome {
+pub enum CheckOutcome {
     Pass,
     Fail,
     /// Not applicable — e.g. signature check on an unsigned package.
@@ -1179,7 +1179,7 @@ impl CheckOutcome {
 /// Per-check verification report, mirroring the checks every conforming
 /// reader runs (and the shape of the @ctxpkg/verify reference output).
 #[derive(Debug)]
-pub(crate) struct VerifyReport {
+pub struct VerifyReport {
     pub name: Option<String>,
     pub version: Option<String>,
     pub structure: CheckOutcome,
@@ -1192,7 +1192,7 @@ pub(crate) struct VerifyReport {
 }
 
 impl VerifyReport {
-    pub(crate) fn valid(&self) -> bool {
+    pub fn valid(&self) -> bool {
         self.errors.is_empty()
     }
 
@@ -1333,7 +1333,7 @@ pub(crate) fn verify_package_text(doc: &str) -> VerifyReport {
 }
 
 /// Read and verify a `.ctxpkg` file (size- and extension-gated like import).
-pub(crate) fn verify_package_file(path: &Path) -> Result<VerifyReport, String> {
+pub fn verify_package_file(path: &Path) -> Result<VerifyReport, String> {
     Ok(verify_package_text(&read_package_text(path)?))
 }
 

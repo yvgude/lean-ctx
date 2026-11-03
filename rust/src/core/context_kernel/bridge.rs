@@ -2,7 +2,7 @@
 
 //! Runtime integration helpers for the Context Control Kernel.
 
-pub(crate) mod runtime;
+pub mod runtime;
 
 use super::autopilot::{
     AdaptiveLearningState, AutopilotController, AutopilotDecision, AutopilotEconomics,

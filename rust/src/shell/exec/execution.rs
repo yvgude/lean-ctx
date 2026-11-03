@@ -5,7 +5,7 @@ use crate::core::config;
 
 /// An allowlist-admitted shell execution that owns the effective command or
 /// the original pre-split argv.
-pub(crate) enum PreparedShellExecution {
+pub enum PreparedShellExecution {
     Shell {
         command: String,
         collapsed_nested: bool,
@@ -18,14 +18,14 @@ pub(crate) enum PreparedShellExecution {
 
 /// Result of dispatching an admitted shell execution.
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct ShellDispatchObservation {
-    pub(crate) exit_code: i32,
-    pub(crate) child_dispatch_attempted: bool,
+pub struct ShellDispatchObservation {
+    pub exit_code: i32,
+    pub child_dispatch_attempted: bool,
 }
 
 /// Prepare a shell command, applying wrapper unwrapping, nested-command
 /// collapsing, and the allowlist gate exactly once.
-pub(crate) fn prepare_exec(command: &str) -> Result<PreparedShellExecution, i32> {
+pub fn prepare_exec(command: &str) -> Result<PreparedShellExecution, i32> {
     if let Some(code) = reject_if_exec_depth_exceeded() {
         return Err(code);
     }
@@ -56,7 +56,7 @@ pub(crate) fn prepare_exec(command: &str) -> Result<PreparedShellExecution, i32>
 }
 
 /// Prepare pre-split argv without reparsing it through a shell.
-pub(crate) fn prepare_exec_argv(args: &[String]) -> Result<PreparedShellExecution, i32> {
+pub fn prepare_exec_argv(args: &[String]) -> Result<PreparedShellExecution, i32> {
     if args.is_empty() {
         return Err(127);
     }
@@ -100,7 +100,7 @@ pub(crate) fn prepare_exec_argv(args: &[String]) -> Result<PreparedShellExecutio
 /// Admission is complete before this function runs; no allowlist check belongs
 /// here. Dispatch is considered attempted before entering a child helper, so a
 /// spawn failure with exit `127` is still an attempted dispatch.
-pub(crate) fn execute_prepared(prepared: PreparedShellExecution) -> ShellDispatchObservation {
+pub fn execute_prepared(prepared: PreparedShellExecution) -> ShellDispatchObservation {
     let exit_code = match prepared {
         PreparedShellExecution::Shell {
             command,
@@ -210,7 +210,7 @@ fn exec_direct(args: &[String]) -> i32 {
 fn allowlist_must_enforce() -> bool {
     let hook_child = crate::core::runtime_flags::hook_child_enabled();
     let warn_only = crate::core::config::shell_policy::cli_warn_only_requested();
-    let interactive = io::stderr().is_terminal() && io::stdin().is_terminal();
+    let interactive = io::stderr().is_terminal() && crate::core::host_env::stdin_is_terminal();
     allowlist_must_enforce_inner(hook_child, agent_host_marker(), warn_only, interactive)
 }
 
@@ -345,12 +345,12 @@ fn command_has_file_redirect(cmd: &str) -> bool {
 ///
 /// Returns `Some(126)` when the command is blocked and the caller must return
 /// that exit code; `None` when execution may proceed (allowed, or warn-only for
-/// an interactive human — see [`allowlist_must_enforce`]).
+/// an interactive human — see `allowlist_must_enforce`).
 ///
 /// Also the gate of the CLI pass-through path (`lean-ctx -c` / `-t` under an
 /// inherited `LEAN_CTX_WRAPPED` or `LEAN_CTX_DISABLED`), which skips
 /// compression but must never skip this boundary (GH #2004).
-pub(crate) fn allowlist_gate(command: &str) -> Option<i32> {
+pub fn allowlist_gate(command: &str) -> Option<i32> {
     if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(command) {
         if allowlist_must_enforce() {
             eprintln!("{msg}");
@@ -403,7 +403,7 @@ fn prepare_shell_command(command: &str) -> (String, bool) {
 
 fn execute_shell_post_gate(command: &str, collapsed_nested: bool) -> i32 {
     let (shell, shell_flag) = super::super::platform::shell_and_flag();
-    let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
+    let command = crate::shell::command_text::normalize_command_for_shell(command);
     // #1286: keep the zsh preamble (`setopt nonomatch noequals; `) OUT of the
     // command string used for classification and compression — every
     // `starts_with("ls ")`/`git`-style pattern matcher silently stopped
@@ -675,12 +675,12 @@ fn exec_inherit_tracked(command: &str, shell: &str, shell_flag: &str) -> i32 {
 /// Label inserted between stdout and stderr of a FAILED command so the agent can
 /// attribute the error to the right stream instead of guessing — and never has to
 /// re-run the command raw just to locate the failure. See #809 / #812.
-pub(crate) const STDERR_LABEL: &str = "--- stderr ---";
+pub const STDERR_LABEL: &str = "--- stderr ---";
 
 /// Join captured stdout and stderr for display/recovery. On failure (non-zero
 /// exit) with both streams present, a labeled delimiter separates them; success
 /// output keeps the plain `stdout\nstderr` shape (determinism, #498).
-pub(crate) fn combine_streams(stdout: &str, stderr: &str, exit_code: i32) -> String {
+pub fn combine_streams(stdout: &str, stderr: &str, exit_code: i32) -> String {
     match (stdout.is_empty(), stderr.is_empty()) {
         (_, true) => stdout.to_string(),
         (true, false) => stderr.to_string(),

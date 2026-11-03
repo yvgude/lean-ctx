@@ -36,7 +36,7 @@ const RADAR_TAIL_BYTES: u64 = 262_144;
 const MAX_SOURCES: usize = 20;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct EchoReport {
+pub struct EchoReport {
     pub response_lines: usize,
     pub code_lines: usize,
     pub echoed_lines: usize,
@@ -45,7 +45,7 @@ pub(crate) struct EchoReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct EchoStats {
+pub struct EchoStats {
     pub reports: Vec<EchoReport>,
     /// Index (count of analyzed responses) at the last nudge.
     pub last_nudge_at: u64,
@@ -54,7 +54,7 @@ pub(crate) struct EchoStats {
 }
 
 impl EchoStats {
-    pub(crate) fn avg_ratio(&self, window: usize) -> f64 {
+    pub fn avg_ratio(&self, window: usize) -> f64 {
         let recent: Vec<&EchoReport> = self.reports.iter().rev().take(window).collect();
         if recent.is_empty() {
             return 0.0;
@@ -65,7 +65,7 @@ impl EchoStats {
     /// Per-day `(YYYY-MM-DD, avg_echo_ratio, samples)` over the last `days`
     /// days, ascending by day — the dashboard's learning trend (#507).
     /// Days are UTC, consistent with the ledger's day slices.
-    pub(crate) fn daily_trend(&self, days: u32) -> Vec<(String, f64, u64)> {
+    pub fn daily_trend(&self, days: u32) -> Vec<(String, f64, u64)> {
         use std::collections::BTreeMap;
         let cutoff = now_unix().saturating_sub(u64::from(days) * 86_400);
         let mut by_day: BTreeMap<String, (f64, u64)> = BTreeMap::new();
@@ -100,7 +100,7 @@ fn now_unix() -> u64 {
         .map_or(0, |d| d.as_secs())
 }
 
-pub(crate) fn load_stats() -> EchoStats {
+pub fn load_stats() -> EchoStats {
     std::fs::read_to_string(stats_path())
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -260,7 +260,7 @@ fn radar_tail_sources() -> (Vec<String>, u64) {
 
 /// Hook entry point: analyze an agent response against the radar tail,
 /// persist rolling stats and emit the automatic feedback event.
-pub(crate) fn analyze_and_record(response: &str) {
+pub fn analyze_and_record(response: &str) {
     let (sources, turn_input_tokens) = radar_tail_sources();
     let report = analyze(response, &sources);
 
@@ -298,7 +298,7 @@ fn emit_feedback_event(response: &str, turn_input_tokens: u64) {
     });
     let modes = modes.filter(|m| !m.is_empty());
 
-    let model = crate::hook_handlers::load_detected_model().map(|(name, _)| name);
+    let model = crate::core::host_state::load_detected_model().map(|(name, _)| name);
 
     let ev = crate::core::llm_feedback::LlmFeedbackEvent {
         agent_id: "output_echo_auto".to_string(),
@@ -322,7 +322,7 @@ fn emit_feedback_event(response: &str, turn_input_tokens: u64) {
 /// CEP nudge for the MCP server to append to a tool result. Stable text in
 /// 10%-steps (prompt-cache friendly, #498), cooldown-limited. Consuming the
 /// nudge advances the cooldown marker.
-pub(crate) fn take_pending_nudge() -> Option<String> {
+pub fn take_pending_nudge() -> Option<String> {
     let mut stats = load_stats();
     if stats.reports.len() < NUDGE_WINDOW {
         return None;
@@ -343,7 +343,7 @@ pub(crate) fn take_pending_nudge() -> Option<String> {
 }
 
 /// Average echo ratio over the rolling window — CEP score input.
-pub(crate) fn current_avg_ratio() -> f64 {
+pub fn current_avg_ratio() -> f64 {
     load_stats().avg_ratio(MAX_REPORTS)
 }
 

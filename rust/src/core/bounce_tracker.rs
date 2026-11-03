@@ -57,7 +57,7 @@ impl ReadView {
     /// fabricate a correction.
     #[must_use]
     pub fn of_mode(mode: &str) -> Self {
-        use crate::tools::ctx_read::ReadMode;
+        use crate::core::read_mode::ReadMode;
         match mode.parse::<ReadMode>() {
             Ok(
                 ReadMode::Full | ReadMode::FullCompact | ReadMode::Raw | ReadMode::Anchored(None),
@@ -178,7 +178,7 @@ impl BounceTracker {
         if self.persist && compressed {
             // K10: a compressed view is a truncated output of its read mode.
             {
-                use crate::core::hive::metrics_v2::signals;
+                use crate::core::hive_signals as signals;
                 signals::truncated(&signals::read_mode_filter(mode));
             }
             // Keep the long-term majority rule honest: compressed reads that
@@ -345,7 +345,7 @@ impl BounceTracker {
             crate::core::savings_ledger::record_bounce_event(wasted);
             // K10: the compressed view was fetched back in full.
             {
-                use crate::core::hive::metrics_v2::signals;
+                use crate::core::hive_signals as signals;
                 signals::refetched(&signals::read_mode_filter(&mode));
             }
             // Long-term per-path memory (#496): remember which exact
@@ -424,7 +424,7 @@ impl BounceTracker {
     /// is charged to the read that caused it. `None`: no read is known here
     /// (another process, or before a restart). A partial read (line window)
     /// is precise, not lossy, so it reports `false` like a full read.
-    pub(crate) fn last_read(
+    pub fn last_read(
         &self,
         path: &str,
     ) -> Option<(
@@ -580,7 +580,7 @@ pub fn global() -> &'static Mutex<BounceTracker> {
 
 /// Process shutdown: commit the global tracker's provisional bounces. A no-op
 /// when this process never created the tracker (no read was served).
-pub(crate) fn flush_pending() {
+pub fn flush_pending() {
     if let Some(tracker) = GLOBAL_TRACKER.get()
         && let Ok(mut bt) = tracker.lock()
     {
@@ -619,7 +619,7 @@ fn rotated_beacon_path(path: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// Hook processes: report a native host edit of `path` (best-effort).
-pub(crate) fn note_host_edit(path: &str) {
+pub fn note_host_edit(path: &str) {
     let Some(beacon) = edit_beacon_path() else {
         return;
     };
@@ -629,14 +629,14 @@ pub(crate) fn note_host_edit(path: &str) {
 /// Hook processes: report the files a native shell command rewrites
 /// (`sed -i`, `>`, `tee`, `cp`/`mv`, `apply_patch` bodies), relative paths
 /// resolved against `cwd`. Best-effort, like [`note_host_edit`].
-pub(crate) fn note_host_shell_edits(command: &str, cwd: &str) {
+pub fn note_host_shell_edits(command: &str, cwd: &str) {
     for path in crate::core::shell_file_effects::analyze(command).edits {
         note_host_edit(&resolve_against(cwd, &path));
     }
 }
 
 /// Hook processes: report the files of a Codex `apply_patch` patch body.
-pub(crate) fn note_host_patch_edits(patch: &str, cwd: &str) {
+pub fn note_host_patch_edits(patch: &str, cwd: &str) {
     for path in crate::core::shell_file_effects::apply_patch_targets(patch) {
         note_host_edit(&resolve_against(cwd, &path));
     }

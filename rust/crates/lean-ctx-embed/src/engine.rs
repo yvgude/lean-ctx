@@ -46,9 +46,9 @@ use tokio::sync::RwLock;
 
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::session::SessionState;
-use lean_ctx::server::registry::{ToolRegistry, build_registry};
-use lean_ctx::server::tool_trait::{ToolContext, ToolOutput};
-use lean_ctx::tools::{CrpMode, SharedCache};
+use lean_ctx_server::server::registry::{ToolRegistry, build_registry};
+use lean_ctx_server::server::tool_trait::{ToolContext, ToolOutput};
+use lean_ctx_server::tools::{CrpMode, SharedCache};
 
 use crate::error::Error;
 use crate::output::Output;
@@ -139,6 +139,9 @@ impl EngineBuilder {
         let project_root = project_root.to_string_lossy().into_owned();
 
         configure_process_env(self.data_dir.as_deref());
+        // The Hive connector's hooks, as the CLI registers them at start-up
+        // (idempotent: the first registration wins).
+        lean_ctx_hive::register_hooks();
 
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(self.worker_threads)
@@ -300,7 +303,7 @@ impl Engine {
                 "repo aliases are not permitted by the embedded engine".into(),
             ));
         }
-        for key in lean_ctx::server::tool_trait::PATH_LIKE_KEYS {
+        for key in lean_ctx_server::server::tool_trait::PATH_LIKE_KEYS {
             if let Some(value) = args.get(*key) {
                 let raw = value
                     .as_str()
@@ -412,7 +415,7 @@ impl Engine {
 
         match joined {
             Ok(Ok(mut out)) => {
-                out.text = lean_ctx::server::policy_guard::redact_model_text(&out.text);
+                out.text = lean_ctx_server::server::policy_guard::redact_model_text(&out.text);
                 Ok(out)
             }
             Ok(Err(e)) => Err(Error::tool(&tool_owned, e.message)),

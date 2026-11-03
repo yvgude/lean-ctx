@@ -1,6 +1,6 @@
 {RULES_MARKER}
 
-LeanCTX (lean-ctx) is the Context Gateway for AI Systems.
+LeanCTX (lean-ctx) is the Context Gateway for AI agents.
 
 PREFER lean-ctx MCP tools over native equivalents for task-relevant context and caching:
 

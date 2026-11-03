@@ -58,7 +58,7 @@ pub(crate) fn check_stored(
 /// may not. A file the store does not hold is judged by its signer — signed
 /// with a key that is not this machine's publisher key, it is someone
 /// else's package.
-pub(crate) fn check_document(registry: &LocalRegistry, doc: &str) -> Result<(), String> {
+pub fn check_document(registry: &LocalRegistry, doc: &str) -> Result<(), String> {
     let value: serde_json::Value =
         serde_json::from_str(doc).map_err(|e| format!("parse package: {e}"))?;
     let manifest = value

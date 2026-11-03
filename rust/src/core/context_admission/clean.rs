@@ -69,7 +69,7 @@ pub(super) fn get_source(key: &Key) -> Option<Arc<CachedAdmission>> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn clear() {
     let mut memo = memo().lock().unwrap_or_else(PoisonError::into_inner);
     memo.order.clear();

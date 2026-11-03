@@ -51,7 +51,7 @@
         },
         {
           "id": "lg_eeeeeeeeeeeeeeeeeeeeeeeeee",
-          "kind": "engine.connected",
+          "kind": "instance.connected",
           "actor": {
             "kind": "person",
             "name": "yves"

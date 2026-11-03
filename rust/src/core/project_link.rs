@@ -21,25 +21,25 @@ pub(crate) const MAX_LINKS: usize = 1024;
 /// Largest store read.
 const MAX_STORE_BYTES: u64 = 1024 * 1024;
 /// Longest label kept.
-pub(crate) const MAX_LABEL_CHARS: usize = 128;
+pub const MAX_LABEL_CHARS: usize = 128;
 /// How long a writer waits for another one.
 const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
-pub(crate) const CHANGE_WITH: &str = "lean-ctx project link --project <id>";
-pub(crate) const REMOVE_WITH: &str = "lean-ctx project unlink";
+pub const CHANGE_WITH: &str = "lean-ctx project link --project <id>";
+pub const REMOVE_WITH: &str = "lean-ctx project unlink";
 
 /// One checkout's link. Fields that are not known locally stay `None` and
 /// are left out of every answer rather than invented.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ProjectLink {
-    pub(crate) workspace_root: String,
-    pub(crate) team_project_id: String,
+pub struct ProjectLink {
+    pub workspace_root: String,
+    pub team_project_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) organization_id: Option<String>,
+    pub organization_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) label: Option<String>,
+    pub label: Option<String>,
     /// RFC 3339 UTC, whole seconds.
-    pub(crate) linked_at: String,
+    pub linked_at: String,
 }
 
 impl ProjectLink {
@@ -66,7 +66,7 @@ impl ProjectLink {
 }
 
 /// `project.mapping` for `root`: the link object, or `"unmapped"`.
-pub(crate) fn mapping_json(root: &str) -> serde_json::Value {
+pub fn mapping_json(root: &str) -> serde_json::Value {
     link_for_root(root).map_or_else(|| "unmapped".into(), |link| link.mapping_json())
 }
 
@@ -168,7 +168,7 @@ fn data_dir() -> Result<PathBuf, String> {
 
 /// The link of the checkout at `root`, if any. An unreadable store reads as
 /// no link here; `link`/`unlink` report it.
-pub(crate) fn link_for_root(root: &str) -> Option<ProjectLink> {
+pub fn link_for_root(root: &str) -> Option<ProjectLink> {
     link_in(&data_dir().ok()?, root)
 }
 
@@ -183,7 +183,7 @@ fn link_in(dir: &Path, root: &str) -> Option<ProjectLink> {
 /// as the checkout at `root`, with that link: the checkouts whose
 /// `convention` facts `root` is served (AP01 §4). Ordered by partition, so
 /// a reply built from them is byte-stable. `None` when `root` is unlinked.
-pub(crate) fn linked_checkouts(root: &str) -> Option<(ProjectLink, Vec<String>)> {
+pub fn linked_checkouts(root: &str) -> Option<(ProjectLink, Vec<String>)> {
     linked_checkouts_in(&data_dir().ok()?, root)
 }
 
@@ -205,7 +205,7 @@ fn linked_checkouts_in(dir: &Path, root: &str) -> Option<(ProjectLink, Vec<Strin
 }
 
 /// Link the checkout at `link.workspace_root`; returns the link it replaced.
-pub(crate) fn link(link: ProjectLink) -> Result<Option<ProjectLink>, String> {
+pub fn link(link: ProjectLink) -> Result<Option<ProjectLink>, String> {
     link_into(&data_dir()?, link)
 }
 
@@ -224,7 +224,7 @@ fn link_into(dir: &Path, link: ProjectLink) -> Result<Option<ProjectLink>, Strin
 }
 
 /// Remove the link of the checkout at `root`; returns it.
-pub(crate) fn unlink(root: &str) -> Result<Option<ProjectLink>, String> {
+pub fn unlink(root: &str) -> Result<Option<ProjectLink>, String> {
     unlink_in(&data_dir()?, root)
 }
 
@@ -236,7 +236,7 @@ fn unlink_in(dir: &Path, root: &str) -> Result<Option<ProjectLink>, String> {
 }
 
 /// `now` as a link time: RFC 3339 UTC, whole seconds.
-pub(crate) fn link_time() -> String {
+pub fn link_time() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 

@@ -343,7 +343,7 @@ fn line_embedder(line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
     static LINE_EMBED_CACHE: Mutex<Option<HashMap<u64, Vec<f32>>>> = Mutex::new(None);
 
     let engine = if line_count <= MAX_LINES_FOR_SEMANTIC {
-        crate::tools::ctx_knowledge::embeddings::embedding_engine_nonblocking()
+        crate::core::embedding_access::embedding_engine_nonblocking()
     } else {
         None
     };

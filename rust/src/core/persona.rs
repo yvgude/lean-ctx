@@ -369,7 +369,7 @@ pub fn personas_dir() -> PathBuf {
 }
 
 /// Load a persona from `<personas_dir>/<name>.toml`. `Ok(None)` if absent.
-fn load_from_dir(name: &str) -> Result<Option<Persona>, PersonaError> {
+pub fn load_from_dir(name: &str) -> Result<Option<Persona>, PersonaError> {
     let path = personas_dir().join(format!("{name}.toml"));
     if !path.is_file() {
         return Ok(None);

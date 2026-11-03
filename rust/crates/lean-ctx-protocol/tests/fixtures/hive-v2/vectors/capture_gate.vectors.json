@@ -1,9 +1,9 @@
 {
   "rules": {
     "version": 1,
-    "statement": "claim types (fact, decision, gotcha, finding): checks run in this order and the first failing one decides: G2 length 24-300 Unicode scalar values (too_short / too_long), G3 single line (multi_line), G8 list marker (multi_claim), G6 log text (log_text), G4 at most 2 sentences (multi_claim), G5 complete sentence (not_sentence), G7 not truncated (truncated), G9 path share <= 40 % (log_text); reason null = passes",
+    "statement": "claim types (fact, decision, gotcha, finding): checks run in this order and the first failing one decides: G2 length 24-300 Unicode scalar values (too_short / too_long), G3 single line (multi_line), G8 list marker (multi_claim), G6 log text (log_text), G4 at most 2 sentences (multi_claim), G5 complete sentence (not_sentence; a claim is also refused when its first word is Not, Listed, See, Also, e.g. or i.e., when more than half of its characters are inside backtick code spans, or when fewer than 4 letter runs stand outside them; unbalanced backticks are left to G7), G7 not truncated (truncated), G9 path share <= 40 % (log_text); reason null = passes",
     "node_type": "explicit node_type wins; archetype decision -> decision, gotcha -> gotcha, workflow -> procedure with steps else fact; then exact category tokens (split on - _ : / space, lowercase): deny {log, trace, debug, output, temp} -> no_type, {decision, adr} -> decision, {gotcha, pitfall, warning} -> gotcha, {procedure, howto, runbook} -> procedure with steps else fact; otherwise fact",
-    "refs": "reference grammar of G10; `server: syntax_only` = Hive checks the grammar only (it has no checkout); engines also check the target at HEAD",
+    "refs": "reference grammar of G10; `server: syntax_only` = Hive checks the grammar only (it has no checkout); instances also check the target at HEAD",
     "procedure": "title 8-120 chars, one line, starts like a sentence (final punctuation optional); 1-20 steps of 8-300 chars, single line, no log text, not truncated; 0-10 commands {shell sh|pwsh|cmd, cmd 1-500 chars, cwd_hint <= 120}; failures -> procedure_shape, a bad title -> not_sentence"
   },
   "statement_cases": [
@@ -25,7 +25,14 @@
     {"input": "Columns are | a | b | c in the report table.", "reason": "log_text"},
     {"input": "The relay drops frames when the (link is slow.", "reason": "truncated"},
     {"input": "Run `cargo test and then check the output now.", "reason": "truncated"},
-    {"input": "See rust/src/core/hive/outbox.rs and rust/src/core/hive/capture/mod.rs.", "reason": "log_text"}
+    {"input": "The fix touched rust/src/core/hive/outbox.rs and rust/src/core/hive/capture/mod.rs.", "reason": "log_text"},
+    {"input": "See rust/src/core/hive/outbox.rs and rust/src/core/hive/capture/mod.rs.", "reason": "not_sentence"},
+    {"input": "`cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`.", "reason": "not_sentence"},
+    {"input": "`cargo deny check` (advisories, licenses, sources) — `deny.toml`.", "reason": "not_sentence"},
+    {"input": "Not 3.12.0 surfaces; listed so the threats are planned before they ship.", "reason": "not_sentence"},
+    {"input": "A try_files fallback in nginx is an internal redirect that is matched again.", "reason": null},
+    {"input": "The lease check lives in crates/hive-server/src/signing.rs and verifies every key set at startup.", "reason": null},
+    {"input": "`HIVE_KEYSET_V3_FILE` must list the lease signer with purpose policy.", "reason": null}
   ],
   "node_type_cases": [
     {"category": "architecture-decision", "node_type": "decision"},

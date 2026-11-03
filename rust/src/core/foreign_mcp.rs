@@ -31,7 +31,7 @@ const TRANSCRIPT_WINDOW_DAYS: u64 = 45;
 
 /// One foreign (non-lean-ctx) MCP server the client loads.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct ForeignServerEntry {
+pub struct ForeignServerEntry {
     pub name: String,
     /// Where the server was discovered (config scope or observed connection).
     pub source: String,

@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::time::Instant;
 
 #[derive(Clone)]
-pub(crate) struct AutoFinding {
+pub struct AutoFinding {
     pub file: Option<String>,
     pub summary: String,
 }
@@ -46,11 +46,7 @@ pub(crate) fn is_activity_record(summary: &str) -> bool {
 /// `path_hint` carries the `path` argument of the originating call (when the
 /// caller knows it): small full-mode reads emit raw content without a header
 /// line, so the path cannot be recovered from the output alone.
-pub(crate) fn extract(
-    tool_name: &str,
-    output: &str,
-    path_hint: Option<&str>,
-) -> Option<AutoFinding> {
+pub fn extract(tool_name: &str, output: &str, path_hint: Option<&str>) -> Option<AutoFinding> {
     let finding = match tool_name {
         "ctx_read" => extract_ctx_read(output, path_hint),
         "ctx_search" => extract_ctx_search(output),
@@ -396,7 +392,7 @@ pub(crate) const NOISE_PATH_SEGMENTS: &[&str] = &[
 /// VCS/dependency/build dirs, virtualenvs, caches, the user's home dotfiles
 /// (e.g. `~/.ssh/config`), and binary/log files. Such findings polluted the
 /// session and knowledge store (see EPIC 6 / #2363).
-pub(crate) fn is_noise_path(path: &str) -> bool {
+pub fn is_noise_path(path: &str) -> bool {
     let p = path.replace('\\', "/");
     // Match a noise directory anywhere in the path (leading, middle, or with a
     // leading slash). Splitting on components handles relative paths too.
@@ -457,7 +453,7 @@ fn truncate(s: &str, max: usize) -> String {
 
 /// Extracts a one-line structural hint from file/tool output.
 /// Shared between auto-findings and session file-summary generation.
-pub(crate) fn extract_content_hint(output: &str) -> String {
+pub fn extract_content_hint(output: &str) -> String {
     let lines: Vec<&str> = output.lines().skip(1).take(20).collect();
 
     // Layer 1: deps/exports/module-level descriptions

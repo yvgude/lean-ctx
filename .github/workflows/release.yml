@@ -172,7 +172,7 @@ jobs:
           # The listing must live OUTSIDE the crate directory: the shell
           # creates the redirect target before cargo runs, and cargo package
           # (even --list) fails the VCS dirty-check on the just-created file.
-          cargo package --locked --no-verify --list -p lean-ctx > "$RUNNER_TEMP/package-files.txt"
+          cargo package --locked --no-verify --list -p lean-ctx-engine > "$RUNNER_TEMP/package-files.txt"
           for asset in \
             assets/ocla/capability-manifests/leanctx/context-optimization-v1.json \
             assets/ocla/capability-manifests/leanctx/passthrough-v1.json \
@@ -221,7 +221,7 @@ jobs:
       - name: Rehearse hermetic rollback contract
         run: python3 tests/delivery/test_rehearse_delivery.py
       - name: Verify deterministic Python Engine wheel builder
-        run: python3 -m unittest tests.delivery.test_python_engine_wheel tests.delivery.test_windows_packages -v
+        run: python3 -m unittest tests.delivery.test_python_engine_wheel tests.delivery.test_windows_packages tests.delivery.test_windows_imports -v
       - name: Verify public source archive boundary
         run: python3 -m unittest tests.delivery.test_source_archive -v
 
@@ -503,6 +503,15 @@ jobs:
           else
             cargo build --release --locked --target ${{ matrix.target }} "${feature_args[@]}"
           fi
+
+      # #2178: a Windows engine must start on a clean Windows, so it may not
+      # import the Visual C++ Redistributable (VCRUNTIME140.dll, MSVCP140.dll)
+      # or the MinGW runtime. MSVC links the CRT statically via
+      # rust/.cargo/config.toml; this fails the build if that ever regresses.
+      - name: Windows runtime imports
+        if: runner.os == 'Windows'
+        shell: bash
+        run: python scripts/check-windows-imports.py "rust/target/${{ matrix.target }}/release/lean-ctx.exe"
 
       # Focus plan item 15: a measured artifact may not outgrow its recorded
       # ceiling (product/binary-budget.json); unmeasured ones are reported only.
@@ -1227,6 +1236,10 @@ jobs:
     needs: publish-release
     if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
     runs-on: ubuntu-latest
+    # crates.io rate-limits the creation of NEW crates (a small burst, then about
+    # one per ten minutes). The crate split publishes many first versions at
+    # once, so the job must be able to wait those windows out.
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -1241,7 +1254,27 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
-          CRATE_VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          # One publish with a wait-and-retry on crates.io's rate limit (HTTP 429
+          # "too many requests" / "published too many new crates"). Any other
+          # failure stops the release at once.
+          publish() {
+            local crate=$1 attempt=1 out
+            while :; do
+              if out=$(cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p "$crate" 2>&1); then
+                printf '%s\n' "$out"
+                return 0
+              fi
+              printf '%s\n' "$out"
+              if grep -qiE '429|too many|rate.?limit|try again after' <<<"$out" && [ "$attempt" -lt 12 ]; then
+                echo "crates.io rate limit while publishing ${crate}; waiting 11 minutes (attempt ${attempt}/11)..."
+                sleep 660
+                attempt=$((attempt + 1))
+                continue
+              fi
+              return 1
+            done
+          }
+          CRATE_VERSION="$(grep -m1 '^version' crates/lean-ctx/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           if curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/lean-ctx/${CRATE_VERSION}" >/dev/null 2>&1; then
             echo "crates.io already has lean-ctx ${CRATE_VERSION} — skipping publish."
@@ -1252,7 +1285,7 @@ jobs:
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/lean-ctx-protocol/${PROTO_VERSION}" >/dev/null 2>&1; then
             echo "Publishing lean-ctx-protocol ${PROTO_VERSION} to crates.io first..."
-            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-protocol
+            publish lean-ctx-protocol
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
@@ -1260,7 +1293,7 @@ jobs:
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/lean-ctx-patterns/${PATTERNS_VERSION}" >/dev/null 2>&1; then
             echo "Publishing lean-ctx-patterns ${PATTERNS_VERSION} to crates.io first..."
-            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-patterns
+            publish lean-ctx-patterns
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
@@ -1268,7 +1301,7 @@ jobs:
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/lean-ctx-workgraph/${LEAN_CTX_WORKGRAPH_VERSION}" >/dev/null 2>&1; then
             echo "Publishing lean-ctx-workgraph ${LEAN_CTX_WORKGRAPH_VERSION} to crates.io first..."
-            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-workgraph
+            publish lean-ctx-workgraph
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
@@ -1276,7 +1309,7 @@ jobs:
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/lean-ctx-compress/${LEAN_CTX_COMPRESS_VERSION}" >/dev/null 2>&1; then
             echo "Publishing lean-ctx-compress ${LEAN_CTX_COMPRESS_VERSION} to crates.io first..."
-            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-compress
+            publish lean-ctx-compress
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
@@ -1284,7 +1317,7 @@ jobs:
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/lean-ctx-fs/${LEAN_CTX_FS_VERSION}" >/dev/null 2>&1; then
             echo "Publishing lean-ctx-fs ${LEAN_CTX_FS_VERSION} to crates.io first..."
-            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-fs
+            publish lean-ctx-fs
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
@@ -1292,7 +1325,15 @@ jobs:
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/lean-ctx-syntax/${LEAN_CTX_SYNTAX_VERSION}" >/dev/null 2>&1; then
             echo "Publishing lean-ctx-syntax ${LEAN_CTX_SYNTAX_VERSION} to crates.io first..."
-            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-syntax
+            publish lean-ctx-syntax
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          DOC_VERSION="$(grep -m1 '^version' crates/lean-ctx-doc/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-doc/${DOC_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-doc ${DOC_VERSION} to crates.io first..."
+            publish lean-ctx-doc
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
@@ -1300,7 +1341,7 @@ jobs:
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/leanctx-native-storage/${STORAGE_VERSION}" >/dev/null 2>&1; then
             echo "Publishing leanctx-native-storage ${STORAGE_VERSION} to crates.io first..."
-            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p leanctx-native-storage
+            publish leanctx-native-storage
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
@@ -1308,18 +1349,63 @@ jobs:
           if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
                "https://crates.io/api/v1/crates/lean-ctx-ocla/${OCLA_VERSION}" >/dev/null 2>&1; then
             echo "Publishing lean-ctx-ocla ${OCLA_VERSION} to crates.io..."
-            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-ocla
+            publish lean-ctx-ocla
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
           # `cargo package` verifies the engine from its packaged source after
           # its published protocol dependencies are available and local
-          # `[patch.crates-io]` entries have been stripped. This must pass
-          # before we promise that `cargo install lean-ctx` works.
-          cargo package --locked -p lean-ctx
+          # `[patch.crates-io]` entries have been stripped. Packaging the
+          # Engine library (lean-ctx-engine) together with the `lean-ctx`
+          # binary crate verifies the binary against the just-packaged Engine.
+          # This must pass before we promise that `cargo install lean-ctx` works.
+          cargo package --locked -p lean-ctx-engine -p lean-ctx-hooks -p lean-ctx-hive -p lean-ctx-server -p lean-ctx-proxy -p lean-ctx
           # Verification is intentionally mandatory: source packages cannot rely
           # on this repository's local `[patch.crates-io]` entries.
-          cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx
+          # Release order: the Engine first, then the agent hooks and the Hive
+          # connector above it, the MCP server (which uses both) and the proxy
+          # (whose tests use the server), then the binary crate on top of all.
+          ENGINE_VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-engine/${ENGINE_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-engine ${ENGINE_VERSION} to crates.io first..."
+            publish lean-ctx-engine
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          HOOKS_VERSION="$(grep -m1 '^version' crates/lean-ctx-hooks/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-hooks/${HOOKS_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-hooks ${HOOKS_VERSION} to crates.io..."
+            publish lean-ctx-hooks
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          HIVE_VERSION="$(grep -m1 '^version' crates/lean-ctx-hive/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-hive/${HIVE_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-hive ${HIVE_VERSION} to crates.io..."
+            publish lean-ctx-hive
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          SERVER_VERSION="$(grep -m1 '^version' crates/lean-ctx-server/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-server/${SERVER_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-server ${SERVER_VERSION} to crates.io..."
+            publish lean-ctx-server
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          PROXY_VERSION="$(grep -m1 '^version' crates/lean-ctx-proxy/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-proxy/${PROXY_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-proxy ${PROXY_VERSION} to crates.io..."
+            publish lean-ctx-proxy
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          publish lean-ctx
 
   publish-npm:
     name: Publish to npm

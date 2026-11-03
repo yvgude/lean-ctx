@@ -50,7 +50,7 @@ fn check_schema(tool: &str, node: &Value, path: &str, errors: &mut Vec<String>) 
 
 #[test]
 fn all_tool_schemas_survive_strict_validators() {
-    let registry = lean_ctx::server::registry::build_registry();
+    let registry = lean_ctx_server::server::registry::build_registry();
     let tools = registry.tool_defs();
     // Floor for the public surface (≈50 since the focus release hid 30
     // deprecated tools, 2026-10-15); a much smaller count means broken wiring.
@@ -75,6 +75,7 @@ fn all_tool_schemas_survive_strict_validators() {
 
 #[test]
 fn granular_and_unified_defs_are_strict_safe() {
+    lean_ctx_server::server::registry::register_tool_catalog();
     let mut errors = Vec::new();
     for tool in lean_ctx::tool_defs::granular_tool_defs()
         .iter()

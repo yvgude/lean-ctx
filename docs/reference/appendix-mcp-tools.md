@@ -4,10 +4,10 @@ A categorized overview of the MCP tools lean-ctx advertises. Your AI editor
 calls these instead of its native file/search tools.
 
 > **Full parameter detail:** [`generated/mcp-tools.md`](generated/mcp-tools.md)
-> is generated from the registry (`rust/src/server/registry.rs`) and is the
+> is generated from the registry (`rust/crates/lean-ctx-server/src/server/registry.rs`) and is the
 > single source of truth for tool names, descriptions and parameters. This page
 > only groups the tools and shows profile membership. Regenerate with
-> `cargo run --example gen_docs --features dev-tools`.
+> `cargo run -p lean-ctx-server --example gen_docs --features dev-tools`.
 
 ## Tool profiles
 

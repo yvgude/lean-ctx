@@ -500,7 +500,7 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode, setup: &dyn super
 
     if !quiet
         && !crate::core::update_scheduler::has_user_decided()
-        && std::io::IsTerminal::is_terminal(&std::io::stdin())
+        && crate::core::host_env::stdin_is_terminal()
     {
         print!("  Want to get updates like this automatically? \x1b[1m[y/N]\x1b[0m ");
         use std::io::Write;

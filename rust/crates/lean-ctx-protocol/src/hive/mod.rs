@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! LeanCTX Hive engine↔service wire contract, protocol major 1.
+//! LeanCTX | Hive engine↔service wire contract, protocol major 1.
 //!
 //! The engine connector and the Hive service build against these types and
 //! the golden fixtures in `tests/fixtures/hive/`. A contract change is a
@@ -36,7 +36,6 @@ pub mod facts;
 pub mod graph;
 pub mod knowledge;
 pub mod lease;
-pub mod messages;
 pub mod metrics_v2;
 pub mod optin;
 pub mod policy;
@@ -71,7 +70,7 @@ pub const HEADER_PROTOCOL: &str = "Hive-Protocol";
 /// Instance id on authenticated requests.
 pub const HEADER_INSTANCE: &str = "Hive-Instance";
 /// Lowest engine version the service accepts; sent with `426`.
-pub const HEADER_MIN_ENGINE: &str = "Hive-Min-Engine";
+pub const HEADER_MIN_ENGINE: &str = "Hive-Min-Instance";
 /// Client-chosen ULID on every `POST`; replays return the first response.
 pub const HEADER_IDEMPOTENCY_KEY: &str = "Idempotency-Key";
 /// 1.9 VA (until the 3.12 release day): an engine that speaks the vault

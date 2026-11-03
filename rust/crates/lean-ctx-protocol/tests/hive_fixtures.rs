@@ -105,7 +105,6 @@ fn lease_envelope() -> Value {
             "knowledge.read", "knowledge.draft", "knowledge.merge", "metrics.upload",
             "receipts.upload", "policy.pull", "bus.relay", "bus.control", "sealed", "runtime"
         ],
-        "policy_signer_keys": [{"org": ORG, "ed25519_pub": public(POLICY_SEED)}],
         "issued_at": T0,
         "expires_at": "2026-10-21T12:00:00Z",
         "grace_until": "2026-10-27T12:00:00Z",
@@ -135,7 +134,7 @@ fn document() -> Value {
         "format": RESEARCH_CONTEXT_FORMAT,
         "facts": [
             first,
-            fact("hive.screening-first", "Every outbound item passes engine screening before it is queued."),
+            fact("hive.screening-first", "Every outbound item passes instance screening before it is queued."),
         ],
         "relations": [{"from": "hive.screening-first", "to": "hive.never-blocks", "type": "supports"}],
         "open_gaps": ["How are drafts rebased after a merge?"],
@@ -217,11 +216,6 @@ fn fixtures() -> Vec<Fixture> {
     let document = document();
     let ops = patch_ops();
     let receipt = receipt_document();
-    let deliver = json!({
-        "t": "deliver", "seq": 42, "channel": channel(), "from": "claude-3e", "to": "codex-85",
-        "kind": "status", "priority": "normal", "privacy": "team",
-        "body": {"text": "STATUS C0 Review"}, "server_time": T0,
-    });
     let list = [
         Fixture {
             name: "error.authorization_pending",
@@ -273,19 +267,19 @@ fn fixtures() -> Vec<Fixture> {
             kind: Response,
             value: error(
                 "upgrade_required",
-                "This engine is too old for Hive.",
-                json!({"min_engine": "3.12.0"}),
+                "This instance is too old for Hive.",
+                json!({"min_instance": "3.12.0"}),
             ),
         },
         Fixture {
             name: "device_code.request",
             kind: Request,
-            value: json!({"schema": DEVICE_CODE_REQUEST_SCHEMA, "client_id": HIVE_ENGINE_CLIENT_ID, "engine_version": "3.12.0", "os": "macos"}),
+            value: json!({"schema": DEVICE_CODE_REQUEST_SCHEMA, "client_id": HIVE_ENGINE_CLIENT_ID, "instance_version": "3.12.0", "os": "macos"}),
         },
         Fixture {
             name: "device_code_labelled.request",
             kind: Request,
-            value: json!({"schema": DEVICE_CODE_REQUEST_SCHEMA, "client_id": HIVE_ENGINE_CLIENT_ID, "engine_version": "3.12.0", "os": "macos", "instance_label": "build-box"}),
+            value: json!({"schema": DEVICE_CODE_REQUEST_SCHEMA, "client_id": HIVE_ENGINE_CLIENT_ID, "instance_version": "3.12.0", "os": "macos", "instance_label": "build-box"}),
         },
         Fixture {
             name: "device_code.response",
@@ -303,7 +297,7 @@ fn fixtures() -> Vec<Fixture> {
             value: json!({
                 "schema": DEVICE_TOKEN_REQUEST_SCHEMA, "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
                 "instance_public_key": public(INSTANCE_SEED), "instance_kx_public_key": B64.encode(KX_PUBLIC),
-                "instance_label": "studio-mac", "engine_version": "3.12.0", "os": "macos",
+                "instance_label": "studio-mac", "instance_version": "3.12.0", "os": "macos",
             }),
         },
         Fixture {
@@ -382,17 +376,6 @@ fn fixtures() -> Vec<Fixture> {
             value: json!({"schema": KNOWLEDGE_REVISION_SCHEMA, "vault_id": VAULT, "revision": 3, "document": document, "updated_at": T0}),
         },
         Fixture {
-            name: "revision_list.response",
-            kind: Response,
-            value: json!({
-                "schema": REVISION_LIST_SCHEMA, "vault_id": VAULT,
-                "revisions": [
-                    {"revision": 2, "created_at": "2026-10-19T08:30:00Z", "proposal": 10, "digest": hex(&Sha256::digest(b"revision-2"))},
-                    {"revision": 3, "created_at": T0, "proposal": 11, "digest": hex(&Sha256::digest(canonical_json(&document).unwrap()))},
-                ],
-            }),
-        },
-        Fixture {
             name: "proposal.request",
             kind: Request,
             value: json!({
@@ -444,11 +427,6 @@ fn fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            name: "knowledge_put.request",
-            kind: Request,
-            value: json!({"schema": KNOWLEDGE_PUT_REQUEST_SCHEMA, "expected_revision": 3, "document": document}),
-        },
-        Fixture {
             name: "metrics.request",
             kind: Request,
             value: json!({
@@ -479,84 +457,6 @@ fn fixtures() -> Vec<Fixture> {
             name: "policy_bundle.response",
             kind: Response,
             value: json!({"schema": POLICY_BUNDLE_SCHEMA, "filter_packs": [filter_pack()]}),
-        },
-        Fixture {
-            name: "bus.hello",
-            kind: Other,
-            value: json!({"t": "hello", "instance_id": INSTANCE, "agents": [{"agent_id": "claude-3e", "role": "hive", "vault_id": VAULT}], "cursors": {channel(): 41}}),
-        },
-        Fixture {
-            name: "bus.presence",
-            kind: Other,
-            value: json!({"t": "presence", "agent_id": "claude-3e", "state": "active"}),
-        },
-        Fixture {
-            name: "bus.publish",
-            kind: Other,
-            value: json!({
-                "t": "publish", "client_msg_id": "01jb8z8m2q4r6s8t0v2w4x6y8z", "channel": channel(), "to": "codex-85",
-                "from": "claude-3e", "kind": "status", "priority": "normal", "privacy": "team", "body": {"text": "STATUS C0 Review"},
-            }),
-        },
-        Fixture {
-            name: "bus.published",
-            kind: Other,
-            value: json!({"t": "published", "client_msg_id": "01jb8z8m2q4r6s8t0v2w4x6y8z", "channel": channel(), "seq": 42, "server_time": T0}),
-        },
-        Fixture {
-            name: "bus.deliver",
-            kind: Other,
-            value: deliver.clone(),
-        },
-        Fixture {
-            name: "bus.ack",
-            kind: Other,
-            value: json!({"t": "ack", "channel": channel(), "seq": 42}),
-        },
-        Fixture {
-            name: "bus.presence_update",
-            kind: Other,
-            value: json!({"t": "presence_update", "agent_id": "codex-85", "instance_id": "inst_01jb8z9", "role": "hive-server", "vault_id": VAULT, "state": "idle", "server_time": T0}),
-        },
-        Fixture {
-            name: "bus.control",
-            kind: Other,
-            value: json!({"t": "control", "control_id": "ctl_01jb8za", "target_agent": "claude-3e", "action": "hold", "reason": "Owner review of the contract.", "issued_by": "admin@acme", "seq": 43, "server_time": T0}),
-        },
-        Fixture {
-            name: "bus.handoff_offer",
-            kind: Other,
-            value: json!({"t": "handoff.offer", "handoff_id": "hof_01jb8zb", "channel": channel(), "from": "claude-3e", "to": "codex-85", "bundle_ref": "bundle:sha256:5d41402abc4b2a76b9719d911017c592", "deadline": "2026-10-20T12:30:00Z"}),
-        },
-        Fixture {
-            name: "bus.handoff_ack",
-            kind: Other,
-            value: json!({"t": "handoff.ack", "handoff_id": "hof_01jb8zb", "by": "codex-85"}),
-        },
-        Fixture {
-            name: "bus.handoff_reject",
-            kind: Other,
-            value: json!({"t": "handoff.reject", "handoff_id": "hof_01jb8zb", "by": "codex-85", "reason": "Busy with E3."}),
-        },
-        Fixture {
-            name: "bus.ping",
-            kind: Other,
-            value: json!({"t": "ping", "nonce": 7}),
-        },
-        Fixture {
-            name: "bus.error",
-            kind: Other,
-            value: json!({"t": "error", "client_msg_id": "01jb8z8m2q4r6s8t0v2w4x6y8z", "error": {"code": "forbidden_right", "message": "This lease has no bus.relay right."}}),
-        },
-        Fixture {
-            name: "bus_poll.response",
-            kind: Response,
-            value: json!({"schema": BUS_POLL_SCHEMA, "frames": [deliver.clone()], "cursor": "c_42"}),
-        },
-        Fixture {
-            name: "bus_events.response",
-            kind: Response,
-            value: json!({"schema": BUS_EVENTS_SCHEMA, "channel": channel(), "events": [deliver]}),
         },
         Fixture {
             name: "bus_lease.request",
@@ -624,7 +524,6 @@ fn fixtures() -> Vec<Fixture> {
     ];
     let mut list = list.into_iter().collect::<Vec<_>>();
     list.extend(task_fixtures());
-    list.extend(message_fixtures());
     list.extend(knowledge_fixtures());
     list.push(metrics_hive_fixture());
     list.extend(profile_fixtures());
@@ -816,140 +715,6 @@ fn task_fixtures() -> Vec<Fixture> {
     ]
 }
 
-/// C0 1.9 section 2: agent messages and networks.
-fn message_fixtures() -> Vec<Fixture> {
-    use Kind::*;
-    use lean_ctx_protocol::hive::messages::*;
-    let org = json!({"kind": "org", "channel": channel()});
-    let question = json!({
-        "t": "message", "client_msg_id": "01JBMSGQ1", "network": org, "type": "question",
-        "from": "claude-3e", "deadline": "2026-10-21T12:00:00Z",
-        "body": {"text": "Which retry budget does payments use, 3 or 5?",
-                 "references": [{"kind": "task", "number": 9}, {"kind": "fact", "id": "f-retry-3"}]},
-    });
-    vec![
-        Fixture {
-            name: "bus.message.question",
-            kind: Other,
-            value: question,
-        },
-        Fixture {
-            name: "bus.message.answer",
-            kind: Other,
-            value: json!({
-                "t": "message", "client_msg_id": "01JBMSGA1", "network": org, "type": "answer",
-                "from": "codex-85", "to": "claude-3e", "reply_to": "msg_01jbq1",
-                "body": {"text": "3, set in retry.rs since the outage review.", "references": [{"kind": "commit", "id": "9f01cf32a3"}]},
-            }),
-        },
-        Fixture {
-            name: "bus.message_deliver.org",
-            kind: Other,
-            value: json!({
-                "t": "message.deliver", "gid": "msg_01jba1", "seq": 43, "network": org, "type": "answer",
-                "from": {"kind": "agent", "agent": "codex-85", "instance_label": "ci-runner-2", "instance_id": "inst_01jb8z9", "owner": "Ben", "model": "gpt-6-luna", "mine": false},
-                "to": "claude-3e", "thread_id": "msg_01jbq1", "reply_to": "msg_01jbq1",
-                "body": {"text": "3, set in retry.rs since the outage review.", "references": [{"kind": "commit", "id": "9f01cf32a3"}]},
-                "trust": "team", "server_time": T0, "expires_at": "2026-11-19T12:00:00Z",
-            }),
-        },
-        Fixture {
-            name: "bus.message_deliver.person",
-            kind: Other,
-            value: json!({
-                "t": "message.deliver", "gid": "msg_01jba2", "seq": 44, "network": org, "type": "answer",
-                "from": {"kind": "person", "label": "Ada"}, "thread_id": "msg_01jbq1", "reply_to": "msg_01jbq1",
-                "body": {"text": "Confirmed, 3."}, "trust": "team", "server_time": T0, "expires_at": "2026-11-19T12:00:00Z",
-            }),
-        },
-        Fixture {
-            name: "bus.message_stored",
-            kind: Other,
-            value: json!({
-                "t": "message.stored", "client_msg_id": "01JBMSGQ1", "gid": "msg_01jbq1", "thread_id": "msg_01jbq1",
-                "network": org, "seq": 42, "server_time": T0, "expires_at": "2026-11-19T12:00:00Z",
-            }),
-        },
-        Fixture {
-            name: "error.message_refused",
-            kind: Response,
-            value: error(
-                "invalid_request",
-                "Only questions carry a deadline.",
-                json!({"field": "deadline"}),
-            ),
-        },
-        Fixture {
-            name: "bus.message_receipt",
-            kind: Other,
-            value: json!({"t": "message.receipt", "gid": "msg_01jba1", "by": "claude-3e", "state": "read"}),
-        },
-        Fixture {
-            name: "bus.message_status",
-            kind: Other,
-            value: json!({"t": "message.status", "gid": "msg_01jbq1", "client_msg_id": "01JBMSGQ1", "by": "codex-85", "state": "delivered", "server_time": T0}),
-        },
-        Fixture {
-            name: "bus.task_event",
-            kind: Other,
-            value: json!({
-                "t": "task.event", "channel": channel(), "seq": 45, "number": 7, "event": "claimed", "state": "claimed",
-                "by": {"kind": "instance", "label": "ada-laptop", "agent": "claude-3e", "owner": "Ada", "mine": true},
-                "server_time": T0,
-            }),
-        },
-        Fixture {
-            name: "message_list.response",
-            kind: Response,
-            value: json!({
-                "schema": MESSAGE_LIST_SCHEMA,
-                "messages": [{
-                    "gid": "msg_01jba2", "seq": 44, "network": org, "type": "answer",
-                    "from": {"kind": "person", "label": "Ada"}, "thread_id": "msg_01jbq1", "reply_to": "msg_01jbq1",
-                    "body": {"text": "Confirmed, 3."}, "trust": "team", "server_time": T0, "expires_at": "2026-11-19T12:00:00Z",
-                }],
-                "next": "msg_01jba2",
-            }),
-        },
-        Fixture {
-            name: "bus.message.direct",
-            kind: Other,
-            value: json!({
-                "t": "message", "client_msg_id": "01JBMSGD1", "network": org, "type": "handoff",
-                "from": "claude-3e", "to": "codex-85", "to_instance": "inst_01jb8z9",
-                "body": {"text": "The outbox ordering task is yours from here.", "references": [{"kind": "task", "number": 9}]},
-            }),
-        },
-        Fixture {
-            name: "error.to_instance_not_found",
-            kind: Response,
-            value: error(
-                "not_found",
-                "No such instance in this organization.",
-                json!({"field": "to_instance"}),
-            ),
-        },
-        Fixture {
-            name: "error.ambiguous_recipient",
-            kind: Response,
-            value: error(
-                "invalid_state",
-                "Several instances run this agent; name one in to_instance.",
-                json!({"reason": "ambiguous_recipient"}),
-            ),
-        },
-        Fixture {
-            name: "error.reply_not_found",
-            kind: Response,
-            value: error(
-                "not_found",
-                "No such message.",
-                json!({"field": "reply_to"}),
-            ),
-        },
-    ]
-}
-
 const OUTBOX_ENQUEUE: &str =
     "pub fn enqueue(item: OutboundItem) -> Result<()> {\n    outbox().push(item)\n}\n";
 
@@ -978,7 +743,7 @@ fn wiki_document() -> Value {
         "id": "hive.outbound",
         "title": "Outbound path",
         "items": [
-            {"kind": "prose", "text": "Everything an engine sends to Hive takes one path."},
+            {"kind": "prose", "text": "Everything an instance sends to Hive takes one path."},
             {"kind": "fact", "id": "hive.screening-first"},
             {"kind": "fact", "id": "hive.never-blocks"},
             {"kind": "fact", "id": "hive.outbox-order"},
@@ -1007,59 +772,6 @@ fn knowledge_fixtures() -> Vec<Fixture> {
                 "schema": KNOWLEDGE_REVISION_SCHEMA, "vault_id": VAULT, "revision": 4, "document": wiki,
                 "updated_at": T0, "quarantined_after": 1, "fact_states": [contradicted, to_verify],
             }),
-        },
-        Fixture {
-            name: "knowledge_revision.quarantined.response",
-            kind: Response,
-            value: json!({
-                "schema": KNOWLEDGE_REVISION_SCHEMA, "vault_id": VAULT, "revision": 5, "document": wiki,
-                "updated_at": "2026-10-20T13:00:00Z", "state": "quarantined",
-            }),
-        },
-        Fixture {
-            name: "revision_list.quarantine.response",
-            kind: Response,
-            value: json!({
-                "schema": REVISION_LIST_SCHEMA, "vault_id": VAULT,
-                "revisions": [
-                    {"revision": 4, "created_at": T0, "proposal": 12, "digest": hex(&Sha256::digest(canonical_json(&wiki).unwrap()))},
-                    {"revision": 5, "created_at": "2026-10-20T13:00:00Z", "proposal": 13, "digest": hex(&Sha256::digest(b"revision-5")), "state": "rolled_back"},
-                    {"revision": 6, "created_at": "2026-10-20T14:00:00Z", "digest": hex(&Sha256::digest(canonical_json(&wiki).unwrap())), "rolls_back": 4},
-                ],
-            }),
-        },
-        Fixture {
-            name: "knowledge_put.rollback.request",
-            kind: Request,
-            value: json!({"schema": KNOWLEDGE_PUT_REQUEST_SCHEMA, "expected_revision": 5, "document": wiki, "rolls_back": 4}),
-        },
-        Fixture {
-            name: "knowledge_diff.response",
-            kind: Response,
-            value: json!({
-                "schema": REVISION_DIFF_SCHEMA, "vault_id": VAULT, "from": 3, "to": 4,
-                "ops": [
-                    {"op": "add_fact", "fact": wiki["facts"][2]},
-                    {"op": "add_relation", "relation": wiki["relations"][1]},
-                    {"op": "add_page", "page": wiki["pages"][0]},
-                ],
-            }),
-        },
-        Fixture {
-            name: "knowledge_diff.credits.response",
-            kind: Response,
-            value: {
-                let mut credited = wiki["facts"][2].clone();
-                credited["from_contributions"] = json!(["p12"]);
-                json!({
-                    "schema": REVISION_DIFF_SCHEMA, "vault_id": VAULT, "from": 3, "to": 4,
-                    "ops": [
-                        {"op": "add_fact", "fact": credited},
-                        {"op": "add_relation", "relation": wiki["relations"][1]},
-                        {"op": "add_page", "page": wiki["pages"][0]},
-                    ],
-                })
-            },
         },
         Fixture {
             name: "fact_states.request",
@@ -1105,14 +817,6 @@ fn knowledge_fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            name: "bus.knowledge_event",
-            kind: Other,
-            value: json!({
-                "t": "knowledge.event", "channel": channel(), "seq": 46, "revision": 5, "event": "quarantined",
-                "review_by": "2026-10-21T13:00:00Z", "server_time": "2026-10-20T13:00:00Z",
-            }),
-        },
-        Fixture {
             name: "error.quarantine_blocked",
             kind: Response,
             value: error(
@@ -1134,7 +838,7 @@ fn optin_fixtures() -> Vec<Fixture> {
     use Kind::*;
     vec![
         Fixture {
-            name: "engine_optin.response",
+            name: "instance_optin.response",
             kind: Response,
             value: json!({
                 "schema": optin::ENGINE_OPTIN_SCHEMA, "optin_id": "opt_01jbq7k2", "active": true,
@@ -1147,7 +851,7 @@ fn optin_fixtures() -> Vec<Fixture> {
         },
         // Hive task #19: every limit left out is no limit, the task count too.
         Fixture {
-            name: "engine_optin.unlimited.response",
+            name: "instance_optin.unlimited.response",
             kind: Response,
             value: json!({
                 "schema": optin::ENGINE_OPTIN_SCHEMA, "optin_id": "opt_01jbq7k4", "active": true,
@@ -1158,7 +862,7 @@ fn optin_fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            name: "engine_optin.stopped.response",
+            name: "instance_optin.stopped.response",
             kind: Response,
             value: json!({
                 "schema": optin::ENGINE_OPTIN_SCHEMA, "optin_id": "opt_01jbq7k3", "active": false,
@@ -1169,7 +873,7 @@ fn optin_fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            name: "engine_optin.none.response",
+            name: "instance_optin.none.response",
             kind: Response,
             value: json!({
                 "schema": optin::ENGINE_OPTIN_SCHEMA, "active": false, "vaults": [], "networks": [],
@@ -1178,7 +882,7 @@ fn optin_fixtures() -> Vec<Fixture> {
             }),
         },
         Fixture {
-            name: "engine_optin_stop.request",
+            name: "instance_optin_stop.request",
             kind: Request,
             value: json!({"schema": optin::ENGINE_OPTIN_STOP_SCHEMA, "active": false}),
         },
@@ -1205,7 +909,7 @@ fn optin_fixtures() -> Vec<Fixture> {
             kind: Response,
             value: error(
                 "invalid_state",
-                "This engine is not opted in.",
+                "This instance is not opted in.",
                 json!({"reason": "optin_inactive"}),
             ),
         },
@@ -1233,44 +937,27 @@ fn optin_fixtures() -> Vec<Fixture> {
 /// Section 5: profiles and reputation.
 fn profile_fixtures() -> Vec<Fixture> {
     use Kind::*;
-    let profile = json!({"display_name": "Claude (contracts)", "model": "claude-opus-5-5", "roles": ["contracts", "review"]});
-    vec![
-        Fixture {
-            name: "bus.presence.profile",
-            kind: Other,
-            value: json!({"t": "presence", "agent_id": "claude-3e", "state": "active", "profile": profile}),
-        },
-        Fixture {
-            name: "bus.presence_update.profile",
-            kind: Other,
-            value: json!({
-                "t": "presence_update", "agent_id": "claude-3e", "instance_id": "inst_01jb8z3", "role": "contracts",
-                "vault_id": VAULT, "state": "active", "server_time": T0,
-                "profile_id": "prof_01jbc3e", "profile": profile,
-            }),
-        },
-        Fixture {
-            name: "agent_profile_list.response",
-            kind: Response,
-            value: json!({
-                "schema": profiles::AGENT_PROFILE_LIST_SCHEMA,
-                "profiles": [
-                    {
-                        "profile_id": "prof_01jbc3e", "agent": "claude-3e", "instance_label": "studio-mac",
-                        "owner": "Ada Muster", "display_name": "Claude (contracts)", "model": "claude-opus-5-5",
-                        "roles": ["contracts", "review"], "strengths": ["hive protocol", "decision facts"],
-                        "reputation": {"score": 42, "contributions": 17, "weight_pct": 100},
-                        "mine": true, "last_seen": T0,
-                    },
-                    {
-                        "profile_id": "prof_01jbc85", "agent": "codex-85", "instance_label": "build-box",
-                        "owner": "Repo Maintainer", "display_name": "Codex (server)", "roles": [], "strengths": [],
-                        "reputation": {"score": 0, "contributions": 0, "weight_pct": 100}, "mine": false,
-                    },
-                ],
-            }),
-        },
-    ]
+    vec![Fixture {
+        name: "agent_profile_list.response",
+        kind: Response,
+        value: json!({
+            "schema": profiles::AGENT_PROFILE_LIST_SCHEMA,
+            "profiles": [
+                {
+                    "profile_id": "prof_01jbc3e", "agent": "claude-3e", "instance_label": "studio-mac",
+                    "owner": "Ada Muster", "display_name": "Claude (contracts)", "model": "claude-opus-5-5",
+                    "roles": ["contracts", "review"], "strengths": ["hive protocol", "decision facts"],
+                    "reputation": {"score": 42, "contributions": 17, "weight_pct": 100},
+                    "mine": true, "last_seen": T0,
+                },
+                {
+                    "profile_id": "prof_01jbc85", "agent": "codex-85", "instance_label": "build-box",
+                    "owner": "Repo Maintainer", "display_name": "Codex (server)", "roles": [], "strengths": [],
+                    "reputation": {"score": 0, "contributions": 0, "weight_pct": 100}, "mine": false,
+                },
+            ],
+        }),
+    }]
 }
 
 /// Section 7: the threshold proposal view and the ctxpkg mapping.
@@ -1705,8 +1392,6 @@ fn every_fixture_decodes_validates_and_round_trips() {
             n if n.starts_with("knowledge_revision.") => {
                 check(&fixture, KnowledgeRevisionV1::validate)
             }
-            n if n.starts_with("revision_list.") => check(&fixture, RevisionListV1::validate),
-            n if n.starts_with("knowledge_diff.") => check(&fixture, RevisionDiffV1::validate),
             n if n.starts_with("fact_states.") => {
                 check(&fixture, facts::FactStateReportV1::validate)
             }
@@ -1720,36 +1405,20 @@ fn every_fixture_decodes_validates_and_round_trips() {
             "agent_profile_list.response" => {
                 check(&fixture, profiles::AgentProfileListV1::validate)
             }
-            "engine_optin_stop.request" => check(&fixture, optin::EngineOptinStopV1::validate),
-            n if n.starts_with("engine_optin.") => check(&fixture, optin::EngineOptinV1::validate),
+            "instance_optin_stop.request" => check(&fixture, optin::EngineOptinStopV1::validate),
+            n if n.starts_with("instance_optin.") => {
+                check(&fixture, optin::EngineOptinV1::validate)
+            }
             "anchor_digest.vectors" => {}
             n if n.starts_with("proposal.") => check(&fixture, DraftProposalV1::validate),
             "proposal_ack.response" => check::<ProposalAckV1>(&fixture, ok),
             "proposal_list.response" => check::<ProposalListV1>(&fixture, ok),
-            n if n.starts_with("knowledge_put.") => {
-                check(&fixture, KnowledgePutRequestV1::validate)
-            }
             n if n.starts_with("proposal_view.") => check(&fixture, ProposalV1::validate),
             n if n.starts_with("metrics.") => check(&fixture, MetricsUploadV1::validate),
             "metrics_ack.response" => check::<MetricsAckV1>(&fixture, ok),
             "receipts.request" => check(&fixture, ReceiptsUploadV1::validate),
             "receipts_ack.response" => check::<ReceiptsAckV1>(&fixture, ok),
             n if n.starts_with("policy_bundle.") => check(&fixture, PolicyBundleV1::validate),
-            n if n.starts_with("bus.") => check(&fixture, |frame: &BusFrameV1| match frame {
-                BusFrameV1::MessageDeliver(delivery) => delivery.validate(),
-                BusFrameV1::Published { .. }
-                | BusFrameV1::Deliver { .. }
-                | BusFrameV1::PresenceUpdate { .. }
-                | BusFrameV1::Control { .. }
-                | BusFrameV1::MessageStored(_)
-                | BusFrameV1::MessageStatus(_)
-                | BusFrameV1::TaskEvent(_)
-                | BusFrameV1::KnowledgeEvent(_)
-                | BusFrameV1::Error { .. } => Ok(()),
-                client => client.validate(),
-            }),
-            "bus_poll.response" => check::<BusPollV1>(&fixture, ok),
-            "bus_events.response" => check(&fixture, BusEventsV1::validate),
             "bus_lease.request" => check(&fixture, BusLeaseRequestV1::validate),
             "bus_lease_renew.request" => check(&fixture, BusLeaseRenewRequestV1::validate),
             n if n.starts_with("bus_lease.") => check(&fixture, BusLeaseV1::validate),
@@ -1768,7 +1437,6 @@ fn every_fixture_decodes_validates_and_round_trips() {
             }
             n if n.starts_with("task.") => check(&fixture, tasks::TaskV1::validate),
             "task_list.response" => check(&fixture, tasks::TaskListV1::validate),
-            "message_list.response" => check(&fixture, messages::MessageListV1::validate),
             "vectors" => {}
             other => panic!("fixture {other} has no type mapping"),
         }
@@ -1944,7 +1612,7 @@ fn a_daily_task_limit_is_absent_or_one_to_a_hundred() {
     let with = |tasks: serde_json::Value| {
         let mut v = optin_fixtures()
             .into_iter()
-            .find(|f| f.name == "engine_optin.unlimited.response")
+            .find(|f| f.name == "instance_optin.unlimited.response")
             .unwrap()
             .value;
         v["daily_budget"]["tasks"] = tasks;

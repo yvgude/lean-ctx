@@ -6,7 +6,7 @@ async fn context_engine_call_tool_text_reads_file() {
     let file_path = dir.path().join("a.txt");
     std::fs::write(&file_path, "hello-engine\n").expect("write file");
 
-    let engine = lean_ctx::engine::ContextEngine::with_project_root(dir.path());
+    let engine = lean_ctx_server::engine::ContextEngine::with_project_root(dir.path());
     let out = engine
         .call_tool_text(
             "ctx_read",
@@ -41,7 +41,7 @@ async fn context_engine_handles_concurrent_reads_without_hang() {
         .expect("write file");
     }
 
-    let engine = std::sync::Arc::new(lean_ctx::engine::ContextEngine::with_project_root(
+    let engine = std::sync::Arc::new(lean_ctx_server::engine::ContextEngine::with_project_root(
         dir.path(),
     ));
     let mut handles = Vec::with_capacity(CALLS);

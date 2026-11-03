@@ -304,7 +304,7 @@ pub fn local_sensitive_overrides(local_toml: &str) -> Vec<&'static str> {
 /// A string-array key from the raw GLOBAL config table — never the merged
 /// runtime view, so project-local or default values are never persisted
 /// globally.
-pub(crate) fn global_string_list(key: &str) -> Vec<String> {
+pub fn global_string_list(key: &str) -> Vec<String> {
     let Some(path) = Config::path() else {
         return Vec::new();
     };
@@ -368,7 +368,7 @@ impl Config {
     /// server serving several projects must apply each one's own
     /// `.lean-ctx.toml` and trust, never the first one it happened to resolve
     /// (AP04-G3).
-    pub(crate) fn find_project_root() -> Option<String> {
+    pub fn find_project_root() -> Option<String> {
         static ROOT_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
         if let Ok(project) =
             crate::core::policy::runtime::REQUEST_PROJECT.try_with(|slot| slot.borrow().clone())
@@ -645,7 +645,28 @@ impl Config {
             .as_deref()
             .filter(|_| reset_pending)
             .and_then(reset_legacy_telemetry_opt_out);
-        if reset.is_some() && self.telemetry.preference == super::TelemetryPreference::DefaultOn {
+        let reenables =
+            reset.is_some() && self.telemetry.preference == super::TelemetryPreference::DefaultOn;
+        // The opt-out the migrated document will carry: with the reset applied
+        // only an explicit preference keeps telemetry off.
+        let preserve_opt_out = if reenables {
+            self.telemetry.preference == super::TelemetryPreference::ExplicitlyDisabled
+        } else {
+            self.telemetry.explicitly_disabled()
+        };
+        // The reset flips consent, so it takes effect in memory only once it is
+        // on disk. While it cannot be persisted (#2175: a refused journal), the
+        // user's saved `enabled = false` stays authoritative and the reset
+        // stays pending.
+        let persisted = self.persist_v4_migration(
+            path.as_deref(),
+            writable,
+            raw.as_deref(),
+            reset.as_deref(),
+            reset_pending,
+            preserve_opt_out,
+        );
+        if reenables && persisted {
             self.telemetry.enabled = true;
         }
         let preserve_opt_out = self.telemetry.explicitly_disabled();
@@ -656,8 +677,22 @@ impl Config {
                 self.telemetry.preference = super::TelemetryPreference::ExplicitlyEnabled;
             }
         }
+    }
+
+    /// Writes the migrated document through the config migration journal.
+    /// Returns whether the on-disk config now carries the migration (also
+    /// `true` when nothing had to change).
+    fn persist_v4_migration(
+        &self,
+        path: Option<&Path>,
+        writable: bool,
+        raw: Option<&str>,
+        reset: Option<&str>,
+        reset_pending: bool,
+        preserve_opt_out: bool,
+    ) -> bool {
         let Some(path) = path else {
-            return;
+            return false;
         };
         let Some(raw) = raw else {
             if !writable {
@@ -669,9 +704,9 @@ impl Config {
             if reset_pending && !path.exists() {
                 crate::core::telemetry_consent::mark_legacy_opt_out_reset();
             }
-            return;
+            return false;
         };
-        let source = reset.as_deref().unwrap_or(&raw);
+        let source = reset.unwrap_or(raw);
         let migrated = match Self::migrate_v4_config_document(
             source,
             environment_config_profile().as_deref(),
@@ -681,22 +716,32 @@ impl Config {
             Ok(None) => (source != raw).then(|| source.to_string()),
             Err(error) => {
                 tracing::warn!("config migration failed: {error}");
-                return;
+                return false;
             }
         };
         let persisted = match migrated {
-            Some(updated) => crate::config_io::write_atomic_config_migration_checked(
-                &path,
-                &updated,
-                Some(raw.as_bytes()),
-            )
-            .map_err(|error| tracing::warn!("config migration could not be persisted: {error}"))
-            .is_ok(),
+            Some(updated) => {
+                match crate::config_io::write_atomic_config_migration_checked(
+                    path,
+                    &updated,
+                    Some(raw.as_bytes()),
+                ) {
+                    Ok(()) => true,
+                    Err(error) => {
+                        warn_config_migration_paused_once(path, raw, &updated, &error);
+                        false
+                    }
+                }
+            }
             None => true,
         };
+        if persisted {
+            clear_config_migration_pause_marker(path);
+        }
         if persisted && reset_pending {
             crate::core::telemetry_consent::mark_legacy_opt_out_reset();
         }
+        persisted
     }
 
     pub(super) fn migrate_v4_config_document(
@@ -865,6 +910,248 @@ impl Config {
     /// [`Config::update_global`], which refuses instead.
     pub(super) fn load_global_from(path: &Path) -> Self {
         Self::try_load_global_from(path).unwrap_or_default()
+    }
+}
+
+/// Prefix of the per-config markers in the state dir that hold the
+/// fingerprint of the last reported paused migration. Every command loads the
+/// config, so without them one refused journal warns on every invocation
+/// (#2175).
+const CONFIG_MIGRATION_PAUSE_MARKER: &str = "config_migration_paused";
+
+/// Marker for one config file: keyed by the blake3 of its canonical write
+/// target, so two config paths (profiles, overrides) never share or clear
+/// each other's state. Content-addressed name, no time or counter.
+pub(super) fn config_migration_pause_marker(path: &Path) -> Option<std::path::PathBuf> {
+    let target =
+        crate::config_io::config_migration_target(path).unwrap_or_else(|| path.to_path_buf());
+    let key = blake3::hash(target.to_string_lossy().as_bytes()).to_hex();
+    crate::core::paths::state_dir()
+        .ok()
+        .map(|dir| dir.join(format!("{CONFIG_MIGRATION_PAUSE_MARKER}.{}", &key[..16])))
+}
+
+/// Why a config migration is paused and what the user can do about it.
+/// Every field is a deterministic function of the config path and the
+/// journal state on disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigMigrationPause {
+    /// Stable class, e.g. `write-refused` or `backup-mismatch`.
+    pub label: &'static str,
+    pub config: std::path::PathBuf,
+    pub backup: std::path::PathBuf,
+    pub receipt: std::path::PathBuf,
+    /// What is wrong, in one sentence.
+    pub reason: String,
+    /// The action that works in this state.
+    pub action: String,
+    /// Archive that keeps the config from before the first recorded migration.
+    pub original: Option<std::path::PathBuf>,
+}
+
+/// Describes the paused migration of `path` from the journal state on disk.
+/// A journal that verifies (or none) means the writer itself was refused.
+pub(super) fn describe_config_migration_pause(path: &Path) -> ConfigMigrationPause {
+    use crate::config_io::{ConfigMigrationJournalRefusal as Refusal, ConfigMigrationJournalState};
+    let config =
+        crate::config_io::config_migration_target(path).unwrap_or_else(|| path.to_path_buf());
+    let (backup, receipt) =
+        crate::config_io::config_migration_journal_files(path).unwrap_or_else(|| {
+            (
+                config.with_file_name("config.toml.v4-migration.bak"),
+                config.with_file_name("config.toml.v4-migration.json"),
+            )
+        });
+    let next = crate::config_io::config_migration_next_receipt_file(path)
+        .unwrap_or_else(|| config.with_file_name("config.toml.v4-migration.next.json"));
+    let dir = config
+        .parent()
+        .map_or_else(|| ".".to_string(), |dir| dir.display().to_string());
+    let (b, r, n, c) = (
+        backup.display(),
+        receipt.display(),
+        next.display(),
+        config.display(),
+    );
+    let fresh = "; the migration starts a fresh journal on the next command.";
+    let state = crate::config_io::config_migration_journal_state(path);
+    let (label, reason, action) = if let ConfigMigrationJournalState::Refused(refusal) = state {
+        let (reason, action) = match refusal {
+            Refusal::Symlink => (
+                "a migration journal file is a symbolic link, which lean-ctx does not follow."
+                    .to_string(),
+                format!(
+                    "Replace {b}, {r} and {n} with regular files or move them out of {dir}{fresh}"
+                ),
+            ),
+            Refusal::Unreadable => (
+                "a migration journal file cannot be read.".to_string(),
+                format!(
+                    "Make {b} and {r} readable for lean-ctx; the migration retries on the next command."
+                ),
+            ),
+            Refusal::ReceiptUnverifiable => (
+                format!(
+                    "the journal receipt {r} cannot be verified, so neither the migration nor \
+                         `lean-ctx migrate config --rollback` can use it."
+                ),
+                format!(
+                    "Check {b} (the config before the recorded migration) and {r}, then move \
+                         both out of {dir}{fresh}"
+                ),
+            ),
+            Refusal::BackupMismatch => (
+                format!(
+                    "the journal backup {b} does not match its receipt {r}, so neither the \
+                         migration nor `lean-ctx migrate config --rollback` can use it."
+                ),
+                format!("Check {b} and {r}, then move both out of {dir}{fresh}"),
+            ),
+            Refusal::OrphanBackup => (
+                format!(
+                    "{b} has no receipt and matches neither the config nor an archived journal."
+                ),
+                format!("Check {b}, then move it out of {dir}{fresh}"),
+            ),
+            Refusal::OrphanReceipt => (
+                format!("{r} has no backup and the config is not the source it records."),
+                format!("Check {r}, then move it out of {dir}{fresh}"),
+            ),
+            Refusal::NextReceiptUnverifiable => (
+                format!(
+                    "the unfinished journal update {n} cannot be verified and the config \
+                         matches neither recorded state."
+                ),
+                format!(
+                    "Check {n}, then move it out of {dir}; the migration retries on the next \
+                         command."
+                ),
+            ),
+        };
+        (refusal.label(), reason, action)
+    } else {
+        let mut action = format!(
+            "Make {dir} and {c} writable for lean-ctx; the migration retries on the next command."
+        );
+        if state.rollback_available() {
+            action.push_str(&format!(
+                " `lean-ctx migrate config --rollback` restores the config recorded in {b}."
+            ));
+        }
+        (
+            "write-refused",
+            "lean-ctx could not write the migrated config or its migration journal.".to_string(),
+            action,
+        )
+    };
+    ConfigMigrationPause {
+        label,
+        original: crate::config_io::original_config_migration_backup(path),
+        config,
+        backup,
+        receipt,
+        reason,
+        action,
+    }
+}
+
+impl ConfigMigrationPause {
+    /// The one-time warning text; stable for a given state.
+    pub fn message(&self) -> String {
+        let original = self
+            .original
+            .as_deref()
+            .map(crate::config_io::original_config_sentence)
+            .unwrap_or_default();
+        format!(
+            "config migration paused for {} ({}): {} {}{original} Reported once until the config \
+             or the journal changes.",
+            self.config.display(),
+            self.label,
+            self.reason,
+            self.action
+        )
+    }
+}
+
+/// The paused migration of `path`, if the last load had to pause it (for
+/// `lean-ctx doctor`, which reports it on every run, independent of the
+/// once-per-state warning).
+pub fn config_migration_pause_status(path: &Path) -> Option<ConfigMigrationPause> {
+    config_migration_pause_marker(path)
+        .is_some_and(|marker| marker.is_file())
+        .then(|| describe_config_migration_pause(path))
+}
+
+/// Deterministic identity of one paused-migration state: the stable class,
+/// the config path and bytes, the proposed output and every journal file.
+/// Never the error text, which can carry random temporary file names.
+pub(super) fn config_migration_pause_fingerprint(
+    path: &Path,
+    raw: &str,
+    updated: &str,
+    label: &str,
+) -> String {
+    let mut hasher = blake3::Hasher::new();
+    let target =
+        crate::config_io::config_migration_target(path).unwrap_or_else(|| path.to_path_buf());
+    let target = target.to_string_lossy();
+    for part in [
+        label.as_bytes(),
+        target.as_bytes(),
+        raw.as_bytes(),
+        updated.as_bytes(),
+    ] {
+        hasher.update(&(part.len() as u64).to_le_bytes());
+        hasher.update(part);
+    }
+    let journal = crate::config_io::config_migration_journal_files(path)
+        .map(|(backup, receipt)| vec![backup, receipt])
+        .unwrap_or_default();
+    let next = crate::config_io::config_migration_next_receipt_file(path);
+    for file in journal.into_iter().chain(next) {
+        let bytes = std::fs::read(file).unwrap_or_default();
+        hasher.update(&(bytes.len() as u64).to_le_bytes());
+        hasher.update(&bytes);
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
+/// Warns about a refused config migration once per distinct state; repeats
+/// of the same state go to debug level only. Returns whether it warned.
+pub(super) fn warn_config_migration_paused_once(
+    path: &Path,
+    raw: &str,
+    updated: &str,
+    error: &str,
+) -> bool {
+    let pause = describe_config_migration_pause(path);
+    let fingerprint = config_migration_pause_fingerprint(path, raw, updated, pause.label);
+    let marker = config_migration_pause_marker(path);
+    let reported = marker
+        .as_deref()
+        .and_then(|marker| std::fs::read_to_string(marker).ok())
+        .is_some_and(|seen| seen.lines().next() == Some(fingerprint.as_str()));
+    // The raw error can name random temporary files: debug only.
+    tracing::debug!("config migration paused ({}): {error}", pause.label);
+    if reported {
+        return false;
+    }
+    tracing::warn!("{}", pause.message());
+    if let Some(marker) = marker {
+        if let Some(parent) = marker.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(marker, format!("{fingerprint}\n{}\n", pause.label));
+    }
+    true
+}
+
+fn clear_config_migration_pause_marker(path: &Path) {
+    if let Some(marker) = config_migration_pause_marker(path)
+        && marker.exists()
+    {
+        let _ = std::fs::remove_file(marker);
     }
 }
 

@@ -250,7 +250,7 @@ pub struct ProjectKnowledge {
     /// Records excluded from this read view. Never serialized or exposed by a
     /// formatter; the checked persistence path retains them without modification.
     #[serde(skip)]
-    pub(crate) withheld: Vec<WithheldKnowledge>,
+    pub withheld: Vec<WithheldKnowledge>,
 }
 
 /// A complete typed record hidden from this read view and retained only so the
@@ -259,7 +259,7 @@ pub struct ProjectKnowledge {
 // allocation per record to make the rarer variants smaller.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
-pub(crate) enum WithheldKnowledge {
+pub enum WithheldKnowledge {
     Fact(KnowledgeFact),
     Pattern(ProjectPattern),
     History(ConsolidatedInsight),

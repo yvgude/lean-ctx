@@ -32,6 +32,54 @@ pub fn daemon_pid_path() -> PathBuf {
     data_dir().join("daemon.pid")
 }
 
+/// The daemon's process identity, next to `daemon.pid` (#2176 review #1).
+/// A separate file keeps `daemon.pid` a plain PID, which earlier releases
+/// (still running MCP servers during an update) read and parse.
+fn daemon_identity_path() -> PathBuf {
+    data_dir().join("daemon.identity.json")
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct DaemonIdentityFile {
+    pid: u32,
+    identity: ipc::process::ProcessIdentity,
+}
+
+/// The recorded daemon: the PID from `daemon.pid` and, when the identity
+/// file names the same PID, the identity recorded at start. A PID file of an
+/// earlier release has no identity; it is gated by command line only.
+#[must_use]
+pub fn read_daemon_record() -> Option<ipc::process::RecordedPid> {
+    let pid = read_daemon_pid()?;
+    let identity = fs::read(daemon_identity_path())
+        .ok()
+        .filter(|bytes| bytes.len() <= 16 * 1024)
+        .and_then(|bytes| serde_json::from_slice::<DaemonIdentityFile>(&bytes).ok())
+        .filter(|file| file.pid == pid)
+        .map(|file| file.identity);
+    Some(ipc::process::RecordedPid { pid, identity })
+}
+
+fn remove_daemon_record() {
+    let _ = fs::remove_file(daemon_pid_path());
+    let _ = fs::remove_file(daemon_identity_path());
+}
+
+/// The PID of the recorded daemon when it really is this user's lean-ctx
+/// daemon: command line `serve --_foreground-daemon`, lean-ctx executable,
+/// same user, and the recorded identity where there is one. Slower than
+/// [`is_daemon_running`] (reads the command line); for `doctor` and `stop`.
+#[must_use]
+pub fn verified_daemon() -> Option<ipc::process::ServiceProcess> {
+    let record = read_daemon_record()?;
+    ipc::process::find_service_processes(
+        &[record],
+        ipc::process::ServiceSweep::Only(ipc::process::ServiceKind::Daemon),
+    )
+    .into_iter()
+    .next()
+}
+
 /// Releases up to 3.12.0 kept `daemon.pid` and `daemon.sock` in the OS
 /// data-local directory. A daemon such a release started is stopped before a
 /// new one starts and by `stop_daemon`, so the two never run side by side. Only
@@ -53,17 +101,14 @@ fn stop_legacy_daemon() {
     else {
         return;
     };
-    if ipc::process::is_alive(pid) && ipc::process::find_pids_by_name("lean-ctx").contains(&pid) {
-        let _ = ipc::process::terminate_gracefully(pid);
-        for _ in 0..20 {
-            if !ipc::process::is_alive(pid) {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-        if ipc::process::is_alive(pid) {
-            let _ = ipc::process::force_kill(pid);
-        }
+    // Only when the PID still is a lean-ctx daemon of this user (command
+    // line, executable, identity): a name match alone also matched MCP
+    // servers on Windows, where PIDs are reused quickly (#2176 review #1).
+    let report = ipc::process::stop_services(
+        &[ipc::process::RecordedPid::bare(pid)],
+        ipc::process::ServiceSweep::Only(ipc::process::ServiceKind::Daemon),
+    );
+    if !report.stopped.is_empty() {
         eprintln!("Stopped the daemon of an earlier release (PID {pid}).");
     }
     let _ = fs::remove_file(&pid_path);
@@ -75,20 +120,49 @@ pub fn daemon_addr() -> ipc::DaemonAddr {
     ipc::DaemonAddr::default_for_current_os()
 }
 
+/// Fast check on the hot path (every MCP request): the recorded PID is
+/// alive and, when the daemon recorded its identity, still that process. A
+/// PID file of an earlier release has no identity; [`verified_daemon`] also
+/// checks the command line.
 pub fn is_daemon_running() -> bool {
-    let pid_path = daemon_pid_path();
-    let Ok(contents) = fs::read_to_string(&pid_path) else {
+    let Some(record) = read_daemon_record() else {
         return false;
     };
-    let Ok(pid) = contents.trim().parse::<u32>() else {
-        return false;
-    };
-    if ipc::process::is_alive(pid) {
+    if record.pid == std::process::id() {
         return true;
     }
-    let _ = fs::remove_file(&pid_path);
+    let pid_alive = ipc::process::is_alive(record.pid);
+    match record.identity.as_ref() {
+        Some(identity) if pid_alive && ipc::process::is_same_process(record.pid, identity) => {
+            return true;
+        }
+        // A PID file without identity (an earlier release, or a PID reused
+        // after a reboot): only a verified lean-ctx daemon counts (#2176 VM).
+        // Rare, so the slower command-line gate is fine. A live process that
+        // cannot be verified keeps its files: `daemon start`/`stop` decide.
+        None if pid_alive => return legacy_record_verified(record.pid),
+        Some(_) | None => {}
+    }
+    remove_daemon_record();
     ipc::cleanup(&daemon_addr());
     false
+}
+
+/// [`verified_daemon`] for an identity-less PID file, remembered per PID for
+/// this process: the hot path must not read command lines on every request.
+fn legacy_record_verified(pid: u32) -> bool {
+    // Bit 33: cached; bit 32: verified; low 32 bits: the PID.
+    static LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let last = LAST.load(Ordering::Relaxed);
+    if last & (1 << 33) != 0 && last as u32 == pid {
+        return last & (1 << 32) != 0;
+    }
+    let verified = verified_daemon().is_some_and(|daemon| daemon.pid == pid);
+    LAST.store(
+        (1 << 33) | (u64::from(verified) << 32) | u64::from(pid),
+        Ordering::Relaxed,
+    );
+    verified
 }
 
 pub fn read_daemon_pid() -> Option<u32> {
@@ -133,16 +207,21 @@ pub fn start_daemon(args: &[String]) -> Result<()> {
 }
 
 /// Source installs launch the verified installed copy, preserving the caller's CWD.
-pub(crate) fn start_daemon_with_binary(
-    args: &[String],
-    binary: Option<&std::path::Path>,
-) -> Result<()> {
+pub fn start_daemon_with_binary(args: &[String], binary: Option<&std::path::Path>) -> Result<()> {
     // Held for the whole critical section; released when `_start_lock` drops.
     let _start_lock = acquire_start_lock();
 
-    if is_daemon_running() {
-        let pid = read_daemon_pid().unwrap_or(0);
-        anyhow::bail!("Daemon already running (PID {pid}). Use --stop to stop it first.");
+    // #2176 VM: a reused PID in daemon.pid (any live process) must not block
+    // the start; only a verified lean-ctx daemon of this user does.
+    if let Some(daemon) = verified_daemon() {
+        anyhow::bail!(
+            "Daemon already running (PID {}). Use --stop to stop it first.",
+            daemon.pid
+        );
+    }
+    if let Some(pid) = read_daemon_pid() {
+        eprintln!("{}", stale_pid_message(pid));
+        remove_daemon_record();
     }
 
     stop_legacy_daemon();
@@ -175,21 +254,18 @@ pub(crate) fn start_daemon_with_binary(
         .truncate(true)
         .open(&stderr_log);
     let stderr_cfg = match stderr_file {
-        Ok(f) => std::process::Stdio::from(f),
+        Ok(f) => ipc::process::DetachedStderr::File(f),
         Err(error) => {
             eprintln!(
                 "Cannot open {}: {error}; daemon stderr disabled.",
                 stderr_log.display()
             );
-            std::process::Stdio::null()
+            ipc::process::DetachedStderr::Null
         }
     };
 
     let mut cmd = Command::new(&exe);
-    cmd.args(&cmd_args)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(stderr_cfg);
+    cmd.args(&cmd_args);
     // #356: if the *spawner* is a launchd-standalone process (e.g. the proxy
     // auto-starting the daemon), the spawned daemon's ppid is the spawner — not
     // 1 — so `getppid()`-based detection would miss it and the daemon's TCC path
@@ -198,9 +274,9 @@ pub(crate) fn start_daemon_with_binary(
     if crate::core::pathutil::process_is_tcc_standalone() {
         cmd.env("LEAN_CTX_TCC_STANDALONE", "1");
     }
-    // Detached spawn: on Windows the daemon must escape the parent's
-    // console/Job so it survives AI-client MCP process recycling (GL #545).
-    let child = ipc::process::spawn_detached(&mut cmd)
+    // Detached spawn: on Windows the daemon leaves the caller's job and
+    // inherits none of its handles (GL #545, #2176).
+    let child = ipc::process::spawn_detached(&mut cmd, stderr_cfg)
         .with_context(|| format!("failed to spawn daemon: {}", exe.display()))?;
 
     let pid = child.id();
@@ -209,7 +285,7 @@ pub(crate) fn start_daemon_with_binary(
     std::thread::sleep(std::time::Duration::from_millis(200));
 
     if !ipc::process::is_alive(pid) {
-        let _ = fs::remove_file(daemon_pid_path());
+        remove_daemon_record();
         let stderr_content = fs::read_to_string(&stderr_log).unwrap_or_default();
         let stderr_trimmed = stderr_content.trim();
         if stderr_trimmed.is_empty() {
@@ -230,59 +306,81 @@ pub(crate) fn start_daemon_with_binary(
     Ok(())
 }
 
+/// What `stop_daemon` says when the recorded daemon had already exited. A
+/// stale PID file is normal after a reboot, a crash or an editor closing, so
+/// the line is neutral rather than alarming (#2176).
+fn stale_pid_message(pid: u32) -> String {
+    format!("No daemon was running (stale PID file for PID {pid} removed).")
+}
+
 pub fn stop_daemon() -> Result<()> {
     stop_legacy_daemon();
-    let pid_path = daemon_pid_path();
 
-    let Some(pid) = read_daemon_pid() else {
+    let Some(record) = read_daemon_record() else {
         eprintln!("No daemon PID file found. Nothing to stop.");
         return Ok(());
     };
+    let pid = record.pid;
 
-    if !ipc::process::is_alive(pid) {
-        eprintln!("Daemon (PID {pid}) is not running. Cleaning up stale files.");
+    // #2176 review #1: the PID file survives a reboot or crash, and Windows
+    // reuses PIDs quickly — the PID may now be an MCP server, an editor or
+    // any other process. It is signalled only while it is still this user's
+    // lean-ctx daemon (command line, executable, recorded identity).
+    let Some(daemon) = ipc::process::find_service_processes(
+        std::slice::from_ref(&record),
+        ipc::process::ServiceSweep::Only(ipc::process::ServiceKind::Daemon),
+    )
+    .into_iter()
+    .next() else {
+        // Not provably the daemon: never signalled. Should the check have
+        // failed for a real daemon (unreadable command line), the endpoint
+        // shutdown still ends it before its endpoint files are removed.
+        if ipc::process::is_alive(pid) {
+            let _ = try_http_shutdown();
+        }
+        eprintln!("{}", stale_pid_message(pid));
         ipc::cleanup(&daemon_addr());
-        let _ = fs::remove_file(&pid_path);
+        remove_daemon_record();
         return Ok(());
-    }
+    };
 
-    let http_shutdown_ok = try_http_shutdown();
-
-    if http_shutdown_ok {
+    // The HTTP shutdown goes to this instance's daemon endpoint, never to a PID.
+    if try_http_shutdown() {
         for _ in 0..30 {
             std::thread::sleep(std::time::Duration::from_millis(100));
-            if !ipc::process::is_alive(pid) {
+            if !daemon.is_running() {
                 break;
             }
         }
     }
 
-    if ipc::process::is_alive(pid) {
-        let _ = ipc::process::terminate_gracefully(pid);
+    if daemon.is_running() {
+        daemon.signal(ipc::process::StopSignal::Terminate);
         for _ in 0..20 {
             std::thread::sleep(std::time::Duration::from_millis(100));
-            if !ipc::process::is_alive(pid) {
+            if !daemon.is_running() {
                 break;
             }
         }
     }
 
-    if ipc::process::is_alive(pid) {
+    if daemon.is_running() {
         eprintln!("Daemon (PID {pid}) did not stop gracefully, force killing.");
-        let _ = ipc::process::force_kill(pid);
+        daemon.signal(ipc::process::StopSignal::Kill);
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
 
-    let _ = fs::remove_file(&pid_path);
+    remove_daemon_record();
     ipc::cleanup(&daemon_addr());
     eprintln!("lean-ctx daemon stopped (PID {pid}).");
 
     // #1292: stopping one daemon ends that daemon only. A machine-wide
-    // `kill_all_by_name` here reached every other lean-ctx process — the real
+    // name-based sweep here reached every other lean-ctx process — the real
     // user's daemon and proxy under a sandbox HOME, other worktrees' daemons,
     // other agents' `lean-ctx -c` commands — from `setup`, `daemon stop` and
-    // `serve`. The commands that mean "stop everything" (`stop`, `restart`,
-    // `config apply`, `uninstall`, `dev-install`) sweep explicitly themselves.
+    // `serve`. The lifecycle commands (`stop`, `restart`, `config apply`,
+    // `uninstall`, `dev-install`) sweep the background services explicitly
+    // with `ipc::process::stop_services`, never MCP servers (#2176).
     Ok(())
 }
 
@@ -301,7 +399,7 @@ fn try_http_shutdown() -> bool {
 pub fn daemon_status() -> String {
     let addr = daemon_addr();
     if let Some(pid) = read_daemon_pid() {
-        if ipc::process::is_alive(pid) {
+        if verified_daemon().is_some() {
             let listening = addr.is_listening();
             return format!(
                 "Daemon running (PID {pid})\n  Endpoint: {} ({})\n  PID file: {}",
@@ -324,6 +422,20 @@ fn write_pid_file(pid: u32) -> Result<()> {
     let mut f = fs::File::create(&pid_path)
         .with_context(|| format!("cannot write PID file: {}", pid_path.display()))?;
     write!(f, "{pid}")?;
+    // The identity defends the PID against reuse after a reboot or crash;
+    // without one (unsupported platform) the PID is gated by command line.
+    let identity_path = daemon_identity_path();
+    match ipc::process::identity(pid) {
+        Some(identity) => {
+            let file = DaemonIdentityFile { pid, identity };
+            if let Ok(bytes) = serde_json::to_vec(&file) {
+                let _ = crate::core::updater::atomic_write_bytes(&identity_path, &bytes);
+            }
+        }
+        None => {
+            let _ = fs::remove_file(&identity_path);
+        }
+    }
     Ok(())
 }
 
@@ -349,8 +461,85 @@ pub fn init_foreground_daemon() -> Result<()> {
     Ok(())
 }
 
+/// PIDs of the background services this instance (data dir) recorded: the
+/// daemon PID file, the proxy that answers `/health` on the configured port,
+/// and the Cockpit launch record. Nothing else is ever a stop candidate —
+/// MCP stdio servers, `lean-ctx -c` runners, hooks and other instances'
+/// services have no record here (#2176).
+#[must_use]
+pub fn owned_service_pids() -> Vec<ipc::process::RecordedPid> {
+    let mut pids = Vec::new();
+    pids.extend(read_daemon_record());
+    pids.extend(crate::proxy_autostart::recorded_proxy_pid().map(ipc::process::RecordedPid::bare));
+    // #2176 review #6: the Cockpit record carries the identity it started
+    // with; a record whose PID was reused is not a candidate.
+    pids.extend(crate::core::cockpit_launch_record::read_record().map(|r| {
+        ipc::process::RecordedPid {
+            pid: r.pid,
+            identity: r.identity,
+        }
+    }));
+    pids
+}
+
+/// Stop this instance's recorded background services that `sweep` includes
+/// (see [`owned_service_pids`]); every PID is gated again by command line,
+/// user and process identity in `ipc::process::stop_services`.
+pub fn stop_owned_services(sweep: ipc::process::ServiceSweep) -> ipc::process::ServiceStopReport {
+    ipc::process::stop_services(&owned_service_pids(), sweep)
+}
+
+/// lean-ctx background services of this user that this instance has no
+/// record of. Listed by `stop`, `uninstall` and `doctor`, never stopped
+/// (owner decision 02.11.).
+#[must_use]
+pub fn unrecorded_services() -> Vec<ipc::process::ServiceProcess> {
+    let recorded: Vec<u32> = owned_service_pids().iter().map(|r| r.pid).collect();
+    ipc::process::find_unrecorded_services(&recorded)
+}
+
+/// The two lines `stop`/`uninstall`/`doctor` print for
+/// [`unrecorded_services`] — what still runs, and how to stop it — or `None`.
+#[must_use]
+pub fn unrecorded_services_warning() -> Option<(String, String)> {
+    ipc::process::unrecorded_services_lines(&unrecorded_services(), cfg!(windows))
+}
+
+/// Start a proxy that `restart`/`config apply` stopped again when no
+/// autostart service brought it back (#2176 review #4): detached, with the
+/// arguments it ran with, by the installed binary. `None` when there was
+/// nothing to restore; otherwise the PID or the spawn error.
+pub fn restore_stopped_proxy(
+    report: &ipc::process::ServiceStopReport,
+    autostart_restarted: bool,
+) -> Option<std::io::Result<u32>> {
+    let args = ipc::process::proxy_respawn_args(&report.stopped, autostart_restarted)?;
+    let binary = crate::core::portable_binary::resolve_portable_binary();
+    let mut cmd = Command::new(binary);
+    cmd.args(&args);
+    Some(
+        ipc::process::spawn_detached(&mut cmd, ipc::process::DetachedStderr::Null)
+            .map(|child| child.id()),
+    )
+}
+
 /// Cleanup PID file and IPC endpoint on shutdown.
 pub fn cleanup_daemon_files() {
-    let _ = fs::remove_file(daemon_pid_path());
+    remove_daemon_record();
     ipc::cleanup(&daemon_addr());
+}
+
+#[cfg(test)]
+mod tests {
+    /// #2176: a stale PID file on `restart` read as an alarm ("is not
+    /// running. Cleaning up stale files."); it is a neutral note now.
+    #[test]
+    fn stale_pid_message_is_neutral() {
+        let line = super::stale_pid_message(36492);
+        assert_eq!(
+            line,
+            "No daemon was running (stale PID file for PID 36492 removed)."
+        );
+        assert!(!line.contains("Cleaning up"));
+    }
 }

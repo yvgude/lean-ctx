@@ -3,7 +3,7 @@
 //! Mirrors the engine's internal tool output but is owned by the façade (and
 //! derives `Debug`/`Clone`) so embedders never depend on engine internals.
 
-use lean_ctx::server::tool_trait::ToolOutput;
+use lean_ctx_server::server::tool_trait::ToolOutput;
 
 /// The result of an [`crate::Engine`] tool call.
 #[derive(Debug, Clone)]

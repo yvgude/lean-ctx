@@ -19,8 +19,23 @@ const PRIVATE_KEY_HEADER: &str = concat!("-----BEGIN RSA PRIVATE", " KEY-----");
 const VALID_CARD: &str = "4111 1111 1111 1111";
 const LUHN_FAILING_CARD: &str = "4111 1111 1111 1112";
 
+impl AdmissionPolicy {
+    /// [`Self::builtin`] with `LEAN_CTX_CONTEXT_GATEWAY` taken as unset, for
+    /// tests that judge the configuration: other tests switch the variable
+    /// off under the env lock while these run, so they never read it.
+    pub(crate) fn builtin_for_tests(
+        gateway: ContextGatewayConfig,
+        secret_patterns: SecretDetectionConfig,
+    ) -> Self {
+        Self {
+            env_switch: EnvSwitch::Unset,
+            ..Self::builtin(gateway, secret_patterns)
+        }
+    }
+}
+
 fn policy() -> AdmissionPolicy {
-    AdmissionPolicy::builtin(
+    AdmissionPolicy::builtin_for_tests(
         ContextGatewayConfig::default(),
         SecretDetectionConfig::default(),
     )

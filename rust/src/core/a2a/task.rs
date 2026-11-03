@@ -1,6 +1,6 @@
 pub mod delivery_authority;
 pub mod delivery_delegation;
-pub(crate) mod policy_file;
+pub mod policy_file;
 
 const MAX_TASK_STORE_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_TASKS: usize = 10_000;

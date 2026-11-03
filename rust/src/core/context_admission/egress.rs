@@ -54,7 +54,7 @@ pub const PROXY_RECEIPT_KEY: &str = "<proxy>";
 /// Who dispatches an admitted egress request — what its receipt is indexed
 /// under and what its audit entries and trace sidecar name (G08).
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum EgressCaller<'a> {
+pub enum EgressCaller<'a> {
     /// The lean-ctx proxy: index `<proxy>`, tool `proxy`, sidecar transport
     /// `proxy` with the provider label as its endpoint.
     Proxy,
@@ -209,10 +209,10 @@ pub struct EgressOutcome {
 
 /// Content-free lifecycle evidence returned after admission records persist.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct EgressEvidence {
-    pub(crate) decision_receipt: Option<ContextDecisionReceiptV1>,
-    pub(crate) admission: Option<EgressAdmissionReceiptV1>,
-    pub(crate) admission_digest: Option<Sha256Digest>,
+pub struct EgressEvidence {
+    pub decision_receipt: Option<ContextDecisionReceiptV1>,
+    pub admission: Option<EgressAdmissionReceiptV1>,
+    pub admission_digest: Option<Sha256Digest>,
 }
 
 impl EgressOutcome {
@@ -230,7 +230,7 @@ impl EgressOutcome {
 
     /// The receipt duty frozen with this admission.
     #[cfg(any(test, feature = "http-server"))]
-    pub(crate) fn receipt_required(&self) -> bool {
+    pub fn receipt_required(&self) -> bool {
         self.receipt_required
     }
 
@@ -238,7 +238,7 @@ impl EgressOutcome {
     /// (`receipt_store::keyed`). Decides nothing.
     #[must_use]
     #[cfg(any(test, feature = "http-server"))]
-    pub(crate) fn for_principal(mut self, principal_ref: Option<String>) -> Self {
+    pub fn for_principal(mut self, principal_ref: Option<String>) -> Self {
         self.refs.principal = principal_ref;
         self
     }
@@ -247,14 +247,14 @@ impl EgressOutcome {
     /// reference. Decides nothing.
     #[must_use]
     #[cfg(any(test, feature = "http-server"))]
-    pub(crate) fn with_request_head(mut self, head_ref: Option<String>) -> Self {
+    pub fn with_request_head(mut self, head_ref: Option<String>) -> Self {
         self.refs.request_head = head_ref;
         self
     }
 
     /// Re-read the Gateway configuration before durable preparation or output.
     /// The project fingerprint is separately verified by `PublicationAuthority`.
-    pub(crate) fn policy_epoch_current_for_project(&self, project_fingerprint: &[u8]) -> bool {
+    pub fn policy_epoch_current_for_project(&self, project_fingerprint: &[u8]) -> bool {
         let policy = AdmissionPolicy::from_config(&crate::core::config::Config::load_arc());
         let current = combined_policy_fingerprint(&policy.fingerprint(), project_fingerprint);
         self.policy_fingerprint == current
@@ -303,7 +303,7 @@ pub fn admit_request_with_binding(
 /// Admit a host request under the project policy captured by the caller's
 /// explicit source view. The caller binds and revalidates that view around both
 /// admission and receipt persistence.
-pub(crate) fn admit_request_for_project(
+pub fn admit_request_for_project(
     doc: &Value,
     target: &EgressTarget<'_>,
     project_fingerprint: &[u8],
@@ -317,7 +317,7 @@ pub(crate) fn admit_request_for_project(
 }
 
 #[cfg(any(test, feature = "http-server"))]
-pub(crate) fn admit_request_for_project_with_binding(
+pub fn admit_request_for_project_with_binding(
     doc: &Value,
     target: &EgressTarget<'_>,
     project_fingerprint: &[u8],
@@ -586,10 +586,38 @@ fn admit_request_inner(
 /// project outcome also the project fingerprint the caller supplied.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolicyEpoch {
-    fingerprint: Vec<u8>,
+    fingerprint: EpochFingerprint,
+}
+
+/// The canonical policy bytes (settings and secret patterns — never written
+/// anywhere), or only their digest for an epoch restored from storage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EpochFingerprint {
+    Bytes(Vec<u8>),
+    Digest([u8; 32]),
 }
 
 impl PolicyEpoch {
+    /// The digest a holder outside this process keeps instead of the epoch:
+    /// the canonical policy bytes contain the secret patterns and settings
+    /// and are never stored (#2177).
+    #[must_use]
+    pub fn digest(&self) -> [u8; 32] {
+        match &self.fingerprint {
+            EpochFingerprint::Bytes(bytes) => epoch_digest(bytes),
+            EpochFingerprint::Digest(digest) => *digest,
+        }
+    }
+
+    /// An epoch from its stored [`Self::digest`]: it matches exactly the
+    /// policies whose canonical bytes have that digest.
+    #[must_use]
+    pub fn from_digest(digest: [u8; 32]) -> Self {
+        Self {
+            fingerprint: EpochFingerprint::Digest(digest),
+        }
+    }
+
     /// Whether the gateway policy read NOW, combined with `project_fingerprint`
     /// exactly as at admission (`None` for outcomes admitted without a project,
     /// including opaque ones), is still the one this epoch was taken under.
@@ -604,26 +632,32 @@ impl PolicyEpoch {
     /// input: settings, secret patterns, the effective switch including the
     /// environment override, semantic-detector presence and the load state.
     /// Project, root and role are bound through the caller's fingerprint.
-    pub(crate) fn matches(
-        &self,
-        policy: &AdmissionPolicy,
-        project_fingerprint: Option<&[u8]>,
-    ) -> bool {
+    pub fn matches(&self, policy: &AdmissionPolicy, project_fingerprint: Option<&[u8]>) -> bool {
         let gateway = policy.fingerprint();
         let current = project_fingerprint.map_or_else(
             || gateway.clone(),
             |project| combined_policy_fingerprint(&gateway, project),
         );
-        self.fingerprint == current
+        match &self.fingerprint {
+            EpochFingerprint::Bytes(bytes) => *bytes == current,
+            EpochFingerprint::Digest(digest) => *digest == epoch_digest(&current),
+        }
     }
+}
+
+fn epoch_digest(bytes: &[u8]) -> [u8; 32] {
+    let mut hash = blake3::Hasher::new();
+    hash.update(b"leanctx-policy-epoch-v1\0");
+    hash.update(bytes);
+    *hash.finalize().as_bytes()
 }
 
 impl EgressOutcome {
     /// The organization decision this admission noted from its own snapshot
     /// (`None`: it has no capture). For tests of the callers that decide
     /// which admission runs.
-    #[cfg(test)]
-    pub(crate) fn org_evidence(&self) -> Option<super::capture::OrgEvidence> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn org_evidence(&self) -> Option<super::capture::OrgEvidence> {
         self.capture.as_ref().map(|capture| capture.org_policy())
     }
 
@@ -632,7 +666,7 @@ impl EgressOutcome {
     #[must_use]
     pub fn policy_epoch(&self) -> PolicyEpoch {
         PolicyEpoch {
-            fingerprint: self.policy_fingerprint.clone(),
+            fingerprint: EpochFingerprint::Bytes(self.policy_fingerprint.clone()),
         }
     }
 
@@ -1174,7 +1208,7 @@ pub fn finish(
 /// indexed under [`PROXY_RECEIPT_KEY`]. A host that dispatches itself uses
 /// [`finish_admission_for`].
 #[cfg(feature = "http-server")]
-pub(crate) fn finish_admission(
+pub fn finish_admission(
     outcome: &EgressOutcome,
     forwarded: Option<&[u8]>,
     original_bytes: usize,
@@ -1189,11 +1223,11 @@ pub(crate) fn finish_admission(
     )
 }
 
-/// [`finish_admission`] for the caller that dispatches the request: the
+/// `finish_admission` for the caller that dispatches the request: the
 /// decision receipt is indexed under the caller's project and its trace
 /// sidecar names the caller's transport and operation. Everything else —
 /// the receipt, the admission record, the fail-closed rule — is the same.
-pub(crate) fn finish_admission_for(
+pub fn finish_admission_for(
     outcome: &EgressOutcome,
     forwarded: Option<&[u8]>,
     original_bytes: usize,
@@ -1272,7 +1306,7 @@ fn receipt_unavailable(required: bool) -> Result<Option<ContextDecisionReceiptV1
 /// Lifecycle-aware asynchronous variant for transports that will record a
 /// separate observation after each actual dispatch attempt.
 #[cfg(feature = "http-server")]
-pub(crate) async fn finish_admission_off_runtime(
+pub async fn finish_admission_off_runtime(
     outcome: EgressOutcome,
     forwarded: Option<Vec<u8>>,
     original_bytes: usize,
@@ -1298,13 +1332,13 @@ pub(crate) async fn finish_admission_off_runtime(
 }
 
 #[cfg(feature = "http-server")]
-pub(crate) fn append_engine_observation(
+pub fn append_engine_observation(
     observation: &EgressTransportObservationV1,
 ) -> Result<(), &'static str> {
     super::receipt_store::append_engine_observation(observation)
 }
 
-pub(crate) fn record_host_observation(
+pub fn record_host_observation(
     request: &lean_ctx_protocol::EngineEgressHostReportRequestV1,
 ) -> Result<lean_ctx_protocol::EngineEgressHostReportResponseV1, &'static str> {
     request
@@ -1325,7 +1359,7 @@ pub(crate) fn record_host_observation(
     })
 }
 
-pub(crate) fn load_egress_for_decision(
+pub fn load_egress_for_decision(
     decision_digest: &Sha256Digest,
 ) -> Result<Option<super::receipt_store::EgressLifecycleView>, &'static str> {
     super::receipt_store::load_egress_for_decision(decision_digest)

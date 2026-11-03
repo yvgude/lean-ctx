@@ -14,14 +14,14 @@ use crate::core::graph_provider::EdgeInfo;
 
 /// A circular dependency: a set of files that import each other.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub(crate) struct ImportCycle {
+pub struct ImportCycle {
     pub files: Vec<String>,
     pub size: usize,
 }
 
 /// Finds import cycles (SCCs of size >= 2), largest first, capped at `limit`.
 /// Output is deterministic.
-pub(crate) fn find_import_cycles(edges: &[EdgeInfo], limit: usize) -> Vec<ImportCycle> {
+pub fn find_import_cycles(edges: &[EdgeInfo], limit: usize) -> Vec<ImportCycle> {
     let deps = dependency_edges(edges);
     if deps.is_empty() {
         return Vec::new();

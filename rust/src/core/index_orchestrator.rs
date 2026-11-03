@@ -608,7 +608,7 @@ pub fn build_semantic_background(project_root: &str) {
         .stack_size(INDEXER_STACK_BYTES)
         .spawn(move || {
             start_index_memory_guard("semantic_build");
-            if !disk_status(&root).bm25_index.exists {
+            if !disk_status_for_bm25(&root).exists {
                 ensure_all_background(&root);
             }
             while progress_view(&root).graph_bm25_active() {
@@ -985,7 +985,11 @@ pub struct DiskStatusAll {
     pub semantic_index: DiskStatus,
 }
 
-fn disk_status_for_graph(project_root: &str) -> DiskStatus {
+/// On-disk state of the graph index: its catalogued files, timed by
+/// `graph.meta.json`. Reads row counts only — never materializes the index
+/// (#2179: that checked every catalogued file through the serving gate and
+/// left `doctor` running for minutes on a large project).
+pub fn disk_status_for_graph(project_root: &str) -> DiskStatus {
     // #696 C4: the property graph is the sole store. The logical graph-index
     // view (file count) is timed by `graph.meta.json`, which the mirror stamps
     // on every build; `disk_status_for_code_graph` reports the raw SQLite store
@@ -999,8 +1003,10 @@ fn disk_status_for_graph(project_root: &str) -> DiskStatus {
         return DiskStatus::default();
     }
     let meta = std::fs::metadata(&meta_file).ok();
-    let file_count =
-        graph_index::ProjectIndex::load(project_root).map(|idx| idx.files.len() as u64);
+    // An empty catalog is an unbuilt index, as `ProjectIndex::load` reads it.
+    let file_count = crate::core::property_graph::stored_counts(project_root)
+        .map(|counts| counts.files)
+        .filter(|files| *files > 0);
     DiskStatus {
         exists: true,
         size_bytes: None,
@@ -1010,7 +1016,9 @@ fn disk_status_for_graph(project_root: &str) -> DiskStatus {
     }
 }
 
-fn disk_status_for_bm25(project_root: &str) -> DiskStatus {
+/// On-disk state of the BM25 index: file size and the chunk count from its
+/// header, without loading it.
+pub fn disk_status_for_bm25(project_root: &str) -> DiskStatus {
     let root = Path::new(project_root);
     let path = BM25Index::index_file_path(root);
     if !path.exists() {
@@ -1033,14 +1041,10 @@ fn disk_status_for_code_graph(project_root: &str) -> DiskStatus {
         return DiskStatus::default();
     }
     let meta = std::fs::metadata(&db_path).ok();
-    let node_count = crate::core::property_graph::CodeGraph::open(project_root)
-        .ok()
-        .and_then(|g| {
-            g.connection()
-                .query_row("SELECT count(*) FROM nodes", [], |r| r.get::<_, i64>(0))
-                .ok()
-                .map(|c| c as u64)
-        });
+    // A status read opens the store without migrating it and gives up on a
+    // graph another process holds busy (#2179).
+    let node_count =
+        crate::core::property_graph::stored_counts(project_root).map(|counts| counts.nodes);
     DiskStatus {
         exists: true,
         size_bytes: meta.as_ref().map(std::fs::Metadata::len),

@@ -2168,7 +2168,105 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lean-ctx"
-version = "3.12.0"
+version = "3.12.1"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.22.1",
+ "blake3",
+ "chrono",
+ "clap",
+ "dirs",
+ "ed25519-dalek",
+ "filetime",
+ "fs2",
+ "futures",
+ "gethostname",
+ "getrandom 0.4.3",
+ "glob",
+ "hex",
+ "http",
+ "ignore",
+ "insta",
+ "jsonschema",
+ "lean-ctx-doc",
+ "lean-ctx-engine",
+ "lean-ctx-hive",
+ "lean-ctx-hooks",
+ "lean-ctx-ocla",
+ "lean-ctx-protocol",
+ "lean-ctx-proxy",
+ "lean-ctx-server",
+ "libc",
+ "md-5 0.11.0",
+ "proptest",
+ "rayon",
+ "regex",
+ "reqwest",
+ "rmcp",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "subtle",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tikv-jemalloc-ctl",
+ "tokio",
+ "tokio-rustls",
+ "toml",
+ "toml_edit",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "ureq",
+ "urlencoding",
+ "uuid",
+ "walkdir",
+ "windows-sys 0.61.2",
+ "zeroize",
+ "zip",
+]
+
+[[package]]
+name = "lean-ctx-compress"
+version = "0.1.0"
+dependencies = [
+ "lean-ctx-patterns",
+ "regex",
+ "serde_json",
+ "similar 3.1.2",
+ "yaml_serde",
+]
+
+[[package]]
+name = "lean-ctx-doc"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+]
+
+[[package]]
+name = "lean-ctx-embed"
+version = "0.1.0"
+dependencies = [
+ "lean-ctx-engine",
+ "lean-ctx-hive",
+ "lean-ctx-server",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
+name = "lean-ctx-engine"
+version = "3.12.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2199,6 +2297,7 @@ dependencies = [
  "jsonschema",
  "keyring",
  "lean-ctx-compress",
+ "lean-ctx-doc",
  "lean-ctx-fs",
  "lean-ctx-ocla",
  "lean-ctx-patterns",
@@ -2268,27 +2367,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lean-ctx-compress"
-version = "0.1.0"
-dependencies = [
- "lean-ctx-patterns",
- "regex",
- "serde_json",
- "similar 3.1.2",
- "yaml_serde",
-]
-
-[[package]]
-name = "lean-ctx-embed"
-version = "0.1.0"
-dependencies = [
- "lean-ctx",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
 name = "lean-ctx-fs"
 version = "0.1.0"
 dependencies = [
@@ -2305,8 +2383,68 @@ dependencies = [
 ]
 
 [[package]]
+name = "lean-ctx-hive"
+version = "3.12.1"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "chacha20poly1305",
+ "chrono",
+ "dirs",
+ "ed25519-dalek",
+ "fs2",
+ "futures",
+ "getrandom 0.4.3",
+ "hex",
+ "hkdf",
+ "hmac",
+ "http",
+ "jsonschema",
+ "keyring",
+ "lean-ctx-doc",
+ "lean-ctx-engine",
+ "lean-ctx-protocol",
+ "libc",
+ "p256",
+ "regex",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "toml",
+ "tracing",
+ "unicode-normalization",
+ "ureq",
+ "uuid",
+ "zeroize",
+ "zstd",
+]
+
+[[package]]
+name = "lean-ctx-hooks"
+version = "3.12.1"
+dependencies = [
+ "blake3",
+ "chrono",
+ "dirs",
+ "lean-ctx-engine",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "similar 3.1.2",
+ "tempfile",
+ "toml_edit",
+ "tracing",
+]
+
+[[package]]
 name = "lean-ctx-ocla"
-version = "4.0.0"
+version = "5.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2336,7 +2474,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-protocol"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
@@ -2347,6 +2485,93 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+]
+
+[[package]]
+name = "lean-ctx-proxy"
+version = "3.12.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "blake3",
+ "chrono",
+ "dirs",
+ "flate2",
+ "futures",
+ "getrandom 0.4.3",
+ "hmac",
+ "http",
+ "lean-ctx-engine",
+ "lean-ctx-protocol",
+ "lean-ctx-server",
+ "libc",
+ "regex",
+ "reqwest",
+ "rmcp",
+ "rustls",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "subtle",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "toml",
+ "tower",
+ "tracing",
+ "uuid",
+ "windows-sys 0.61.2",
+ "zstd",
+]
+
+[[package]]
+name = "lean-ctx-server"
+version = "3.12.1"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "blake3",
+ "bytecount",
+ "chrono",
+ "dirs",
+ "ed25519-dalek",
+ "fs2",
+ "futures",
+ "glob",
+ "ignore",
+ "jsonschema",
+ "lean-ctx-doc",
+ "lean-ctx-engine",
+ "lean-ctx-hive",
+ "lean-ctx-hooks",
+ "lean-ctx-ocla",
+ "lean-ctx-protocol",
+ "libc",
+ "lsp-types",
+ "md-5 0.11.0",
+ "rayon",
+ "regex",
+ "rmcp",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "similar 3.1.2",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "tree-sitter",
+ "uuid",
+ "walkdir",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4418,7 +4643,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

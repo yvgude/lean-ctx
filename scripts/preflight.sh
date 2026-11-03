@@ -33,7 +33,7 @@
 # CI parity (.github/workflows/ci.yml):
 #   - global env: RUSTFLAGS=-Dwarnings, LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD=0
 #   - Documentation job: RUSTDOCFLAGS=-Dwarnings cargo doc --no-deps --all-features
-#                        cargo run --example gen_docs --features dev-tools -- --check
+#                        cargo run -p lean-ctx-server --example gen_docs --features dev-tools -- --check
 #   - Clippy job:        cargo clippy --all-features -- -D warnings
 #   - Format job:        cargo fmt --check
 #   - Test job (Windows) compiles for x86_64-pc-windows-gnu
@@ -95,12 +95,12 @@ classify_changes() {
       docs/reference/generated/*) GENERATED_DOCS_CHANGED=1 ;;
     esac
     case "$f" in
-      rust/src/proxy/*|rust/src/tools/*|rust/src/core/config/schema/*) CONTRACT_CHANGED=1 ;;
+      rust/src/proxy/*|rust/crates/lean-ctx-proxy/*|rust/src/tools/*|rust/crates/lean-ctx-server/src/tools/*|rust/src/core/config/schema/*) CONTRACT_CHANGED=1 ;;
     esac
     # CCR recovery surface (#983): a change here must keep the robustness suite
     # green, so flag it for the change-aware `cargo test --lib ccr_robustness` gate.
     case "$f" in
-      rust/src/proxy/ccr.rs|rust/src/core/ccr.rs|rust/src/core/ccr/storage.rs|rust/src/proxy/ccr_robustness_tests.rs|rust/src/tools/ctx_expand.rs|rust/src/tools/registered/ctx_retrieve.rs|rust/src/core/read_stub_index.rs|rust/src/core/tabular_crush.rs) CCR_CHANGED=1 ;;
+      rust/crates/lean-ctx-proxy/src/ccr.rs|rust/src/core/ccr.rs|rust/src/core/ccr/storage.rs|rust/crates/lean-ctx-proxy/src/ccr_robustness_tests.rs|rust/crates/lean-ctx-server/src/tools/ctx_expand.rs|rust/src/tools/registered/ctx_retrieve.rs|rust/src/core/read_stub_index.rs|rust/src/core/tabular_crush.rs) CCR_CHANGED=1 ;;
     esac
     case "$f" in
       rust/tests/*|*/tests/*|*test*.rs|*tests.rs) TEST_SIGNAL=1 ;;
@@ -198,7 +198,7 @@ step "Engine ↔ Agent-Tools-SDK coupling" \
   "$COUPLING_PY" "$REPO_ROOT/scripts/check-sdk-engine-coupling.py"
 
 # Always-on, <1s, no build: plan/licence/entitlement checks only under
-# rust/src/core/hive/ or in product/local-free-allowlist.toml
+# rust/crates/lean-ctx-hive/src/ or in product/local-free-allowlist.toml
 # (docs/contracts/local-free-invariant-v2.md).
 step "Local-free invariant (check-local-free.py)" \
   "$COUPLING_PY" "$REPO_ROOT/scripts/check-local-free.py" --root "$REPO_ROOT"
@@ -234,7 +234,7 @@ fi
 
 if [[ "$RUN_GEN_DOCS" -eq 1 ]]; then
   step "Generated-docs drift (gen_docs --check)" \
-    cargo run --quiet --example gen_docs --features dev-tools -- --check
+    cargo run -p lean-ctx-server --quiet --example gen_docs --features dev-tools -- --check
 else
   skip "Generated-docs drift (gen_docs --check)" "no Rust or generated-doc files changed"
 fi

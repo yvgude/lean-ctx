@@ -165,7 +165,7 @@ fn path() -> Result<PathBuf, String> {
         .join("providers.json"))
 }
 
-fn load() -> Store {
+pub fn load() -> Store {
     let Ok(path) = path() else {
         return Store::new();
     };

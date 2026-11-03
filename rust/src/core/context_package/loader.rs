@@ -11,7 +11,7 @@ use super::graph_model::ContextGraph;
 use super::manifest::{PackageLayer, PackageManifest};
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct LoadReport {
+pub struct LoadReport {
     pub package_name: String,
     pub package_version: String,
     pub knowledge_facts_merged: u32,
@@ -107,7 +107,7 @@ impl std::fmt::Display for LoadReport {
 /// Apply an admitted package to the project's stores (knowledge, graph,
 /// patterns, gotchas, session). The type is the gate: an [`AdmittedPackage`]
 /// exists only for content that passed the current admission unchanged.
-pub(crate) fn load_admitted_package(
+pub fn load_admitted_package(
     package: &AdmittedPackage,
     project_root: &str,
 ) -> Result<LoadReport, String> {

@@ -1,7 +1,7 @@
 # lean-ctx Install Guide
 
 > **Status: local Engine setup reference.** LeanCTX is the **Context Gateway for AI Systems**.
-> **Control what your AI can see.** This guide installs LeanCTX Engine for
+> **Control what your AI can see.** This guide installs LeanCTX | OSS for
 > supported local integrations. LeanCTX SDK and Enterprise have separate
 > integration and deployment contracts. Confirm installed behavior with
 > `lean-ctx doctor`; see [current positioning](../POSITIONING_CANONICAL.md).

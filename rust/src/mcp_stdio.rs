@@ -27,7 +27,7 @@ enum WireProtocol {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SharedProtocol(Arc<Mutex<Option<WireProtocol>>>);
+pub struct SharedProtocol(Arc<Mutex<Option<WireProtocol>>>);
 
 impl SharedProtocol {
     fn new() -> Self {
@@ -85,7 +85,7 @@ where
 
     /// Clone of the framing-negotiation state (which wire protocol the client
     /// used). Lets pre-init error replies mirror the client's framing.
-    pub(crate) fn protocol(&self) -> SharedProtocol {
+    pub fn protocol(&self) -> SharedProtocol {
         self.protocol.clone()
     }
 }
@@ -266,7 +266,7 @@ fn write_method_not_found(id: &serde_json::Value, method: &str, protocol: Option
 ///
 /// The message mirrors the legacy-handshake-only contract so dual-era
 /// clients can detect the server class and proceed.
-pub(crate) fn write_method_not_found_pre_init(
+pub fn write_method_not_found_pre_init(
     id: &serde_json::Value,
     method: &str,
     protocol: &SharedProtocol,

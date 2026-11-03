@@ -195,8 +195,8 @@ class PythonEngineWheelTests(unittest.TestCase):
         for relative in (
             "src/lib.rs",
             "src/core/memory_guard.rs",
-            "src/dashboard/routes/memory.rs",
-            "src/doctor/checks/storage.rs",
+            "crates/lean-ctx/src/dashboard/routes/memory.rs",
+            "crates/lean-ctx/src/doctor/checks/storage.rs",
         ):
             source = (ROOT / "rust" / relative).read_text(encoding="utf-8")
             with self.subTest(relative=relative):

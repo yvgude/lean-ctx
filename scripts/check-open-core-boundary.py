@@ -146,7 +146,7 @@ def public_path(path: Path) -> bool:
     """Return whether a path is in the public Rust surface checked here."""
 
     name = relative_path(path)
-    return name.startswith("rust/src/") or name.startswith("rust/crates/lean-ctx-")
+    return name.startswith("rust/src/") or name.startswith(("rust/crates/lean-ctx-", "rust/crates/lean-ctx/"))
 
 
 def normalize_pattern(candidate: str) -> Optional[str]:
@@ -1343,7 +1343,7 @@ def _consumer_findings(
     findings = []
     for path in files:
         relative = _relative(root, path)
-        if not (relative.startswith("rust/src/") or relative.startswith("rust/crates/lean-ctx-")):
+        if not (relative.startswith("rust/src/") or relative.startswith(("rust/crates/lean-ctx-", "rust/crates/lean-ctx/"))):
             continue
         if relative == module_path:
             continue
@@ -1506,7 +1506,7 @@ def check_repo(root: Path = ROOT, manifest_path: Optional[Path] = None) -> List[
             path
             for path in _rust_files(root)
             if _relative(root, path).startswith("rust/src/")
-            or _relative(root, path).startswith("rust/crates/lean-ctx-")
+            or _relative(root, path).startswith(("rust/crates/lean-ctx-", "rust/crates/lean-ctx/"))
         ]
         if not files:
             raise ManifestError("no Rust source files found")
@@ -1538,7 +1538,7 @@ def check_repo(root: Path = ROOT, manifest_path: Optional[Path] = None) -> List[
             else:
                 statements, code = [], ""
             use_cache[path] = statements
-            if relative.startswith("rust/src/") or relative.startswith("rust/crates/lean-ctx-"):
+            if relative.startswith("rust/src/") or relative.startswith(("rust/crates/lean-ctx-", "rust/crates/lean-ctx/")):
                 code_cache[path] = code
         findings = []
         findings.extend(_source_injection_findings(root, files, source_cache, masked_cache))

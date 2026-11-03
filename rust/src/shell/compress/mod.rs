@@ -1,7 +1,7 @@
 mod boundaries;
 mod classification;
 #[allow(dead_code)]
-pub(crate) mod engine;
+pub mod engine;
 mod footer;
 mod passthrough;
 #[cfg(test)]

@@ -226,9 +226,9 @@ pub(crate) mod lenient {
 
 /// One line of the signed savings ledger, as far as the bridge reads it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub(crate) struct LedgerEntry {
+pub struct LedgerEntry {
     #[serde(default, deserialize_with = "lenient::opt_str")]
-    pub(crate) ts: Option<String>,
+    pub ts: Option<String>,
     #[serde(default, deserialize_with = "lenient::opt_str")]
     pub(crate) tool: Option<String>,
     #[serde(default, deserialize_with = "lenient::opt_str")]
@@ -238,13 +238,13 @@ pub(crate) struct LedgerEntry {
     #[serde(default, deserialize_with = "lenient::opt_str")]
     pub(crate) version: Option<String>,
     #[serde(default, deserialize_with = "lenient::opt_i64")]
-    pub(crate) baseline_tokens: Option<i64>,
+    pub baseline_tokens: Option<i64>,
     #[serde(default, deserialize_with = "lenient::opt_i64")]
-    pub(crate) actual_tokens: Option<i64>,
+    pub actual_tokens: Option<i64>,
     #[serde(default, deserialize_with = "lenient::opt_i64")]
-    pub(crate) saved_tokens: Option<i64>,
+    pub saved_tokens: Option<i64>,
     #[serde(default, deserialize_with = "lenient::opt_i64")]
-    pub(crate) bounce_adjustment: Option<i64>,
+    pub bounce_adjustment: Option<i64>,
     #[serde(default, deserialize_with = "lenient::opt_f64")]
     pub(crate) saved_usd: Option<f64>,
     #[serde(default, deserialize_with = "lenient::opt_f64")]
@@ -258,20 +258,20 @@ pub(crate) struct LedgerEntry {
     #[serde(default, deserialize_with = "lenient::opt_i64")]
     pub(crate) loc_removed: Option<i64>,
     #[serde(default, deserialize_with = "lenient::opt_str")]
-    pub(crate) measurement_method: Option<String>,
+    pub measurement_method: Option<String>,
     #[serde(default, deserialize_with = "lenient::opt_str")]
-    pub(crate) evidence_class: Option<String>,
+    pub evidence_class: Option<String>,
     /// Confidence `[0, 1]` of the savings measurement (engine metrics K7 range).
     #[serde(
         default,
         deserialize_with = "lenient::opt_f64",
         skip_serializing_if = "Option::is_none"
     )]
-    pub(crate) confidence: Option<f64>,
+    pub confidence: Option<f64>,
     #[serde(default, deserialize_with = "lenient::opt_str")]
     pub(crate) attribution_group: Option<String>,
     #[serde(default, deserialize_with = "lenient::opt_str")]
-    pub(crate) repo_hash: Option<String>,
+    pub repo_hash: Option<String>,
     #[serde(default, deserialize_with = "lenient::opt_str")]
     pub(crate) prev_hash: Option<String>,
     #[serde(default, deserialize_with = "lenient::opt_str")]
@@ -465,12 +465,12 @@ pub(crate) struct HostUsageFile {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct HostCounts {
-    pub(crate) requests: i64,
-    pub(crate) input: i64,
-    pub(crate) cache_read: i64,
-    pub(crate) cache_write: i64,
-    pub(crate) output: i64,
+pub struct HostCounts {
+    pub requests: i64,
+    pub input: i64,
+    pub cache_read: i64,
+    pub cache_write: i64,
+    pub output: i64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

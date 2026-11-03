@@ -6,6 +6,8 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+## [3.12.1] — 2026-11-03
+
 ### Security
 
 - **The skill's `curl | bash` installer verifies the binary.** It installed whatever archive
@@ -257,6 +259,35 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Added
 
+- **Instance metrics and receipts reach LeanCTX | Hive, only where sharing is allowed.**
+  A connected instance sends hourly instance metrics (counters and closed names, never a
+  path, command or prompt) and its tool receipts (digests keyed on this machine, counts
+  and measurements) to its Hive workspace. Nothing is collected or sent unless the
+  workspace's "Share instance metrics" rule allows it; a Personal workspace asks once in a
+  terminal (`lean-ctx hive metrics confirm`). `hive.metrics_upload = false` and
+  `hive.receipts_upload = false` switch them off for this instance.
+- **Claude Code `SendMessage` shows up on the local agent bus.** A message one Claude session
+  sends another is mirrored as a `direct` bus entry (sender, recipient, body), so `ctx_agent read`
+  and the dashboard see that traffic too. It stays on this machine, is redacted before it is
+  stored, capped at 8 KiB with a truncation marker, and written once per tool call; the hook
+  never blocks or fails the send. Standard and governor setups both install it.
+- **Long agent sessions through the proxy cost about a quarter less.** Once an Anthropic
+  conversation passes 180 000 characters, tool output older than the last few messages and
+  longer than 2 000 characters leaves as a one-line stub; the full text stays in a private
+  file under the LeanCTX state directory that the stub names, so the model can `cat` it back.
+  The cut advances in steps of 16 messages, so the prompt cache is rewritten once per step,
+  not every turn; your own prompts send the same shortened history, so they read the cache
+  instead of writing it again. Measured on Claude
+  Code with Haiku 5.5: cost x0.74 (95 % CI 0.53–0.94) against native, 12 of 12 long tasks
+  solved on both. On by default; `[proxy] long_session_elide = false` or
+  `LEAN_CTX_PROXY_LONG_SESSION_ELIDE=off` turns it off.
+- **`lean-ctx hive docs import --markdown <file|dir>…` turns docs into Hive pages.** One
+  page per markdown file, one section per heading, each anchored to its file; running it
+  again revises only the sections that changed. `--dry-run` shows what would be written.
+  A section that screening refuses is held back alone, and the command names it as
+  `file › heading: reason`; the rest of the page goes through. Long sections are split, so
+  long docs are never blocked by size. (`lean-ctx import docs` still turns docs into
+  single facts for the knowledge store.)
 - **A project linked to an emspace space uses it without setup.** `ctx_read` indexes the
   space in the background (detached, bounded, one pass per project at a time) and names the
   page that documents the file, `stale` when its sources moved; a once-a-minute journal check
@@ -274,10 +305,10 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `action=repin` re-anchors a fact marked to verify to its code as it is now without
   retyping it, and `action=coverage` lists the most edited files that no fact is anchored to.
 - **`ctx_provider query mode=text`** lists each item with its body, for every provider.
-- **A connected engine keeps the vault in line with what its agents changed.** Until now a
+- **A connected instance keeps the vault in line with what its agents changed.** Until now a
   fact reached the Hive vault once, when it was captured; correcting, superseding, removing or
-  re-pinning it later never left the machine, so other engines kept receiving knowledge its
-  author had withdrawn. Each sync now compares the engine's own vault items with its knowledge
+  re-pinning it later never left the machine, so other instances kept receiving knowledge its
+  author had withdrawn. Each sync now compares the instance's own vault items with its knowledge
   store: a superseded fact whose successor is shared gets `supersedes` (the vault shows it
   outdated), a withdrawn one is retracted (reason "withdrawn by author", no content), and a
   fact re-pinned locally is re-anchored in the vault. Only items this checkout captured, the
@@ -332,6 +363,19 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   tokens). The PreToolUse hook keeps only security: the shell-allowlist wrap, now with raw
   output, and the secret-path deny for native Read, Grep and Glob. `--mode hybrid` reverts
   the setup; the default setup is unchanged.
+- **Governor setup on every host with tool hooks.** `lean-ctx init --agent <host> --mode
+  governor` now works for CodeBuddy (full governor: `hook rewrite-enforce` + `hook govern`,
+  the same Claude-compatible payloads), and for Cursor, Codex CLI, Gemini CLI and Copilot CLI
+  (enforcement only: their pre-tool hooks deny an allowlist violation or a secret-like read
+  in the host's own dialect and never approve; their post-tool hooks cannot replace a tool
+  result). Each writes the governor rules block into the host's one rules channel and removes
+  the LeanCTX MCP server; `--mode hybrid` reverts and pins. New installs of these hosts
+  get it by default, and an existing standard setup switches once per version on update,
+  after backups, as on Claude Code; a pin (`[governor] pinned.<host>` or a global
+  `hook_mode`) keeps the chosen mode. Codex uses a new `hook codex-enforce`, because a
+  Claude-dialect rewrite would be ignored there. Hosts without hooks, or with a hook dialect
+  not yet verified (Qoder, Windsurf, Vibe, Antigravity), keep today's setup
+  ([governor-hosts.md](docs/reference/governor-hosts.md)).
 - **`ctx_shell` asks you before refusing an unlisted program.** When a command is refused
   only because programs in it are not on the shell allowlist, lean-ctx asks in your AI
   tool's approval dialog (MCP form elicitation): allow once, allow for this session, always
@@ -346,33 +390,80 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Changed
 
-- **The engine speaks Hive-Protocol 2.2: agents check each other's task results.** Every
-  Hive request sends `Hive-Protocol: 2.2`; the engine records the minor Hive answers (2.0,
-  2.1 or 2.2) at engine start and writes the 2.2 shapes only to a 2.2 Hive: a captured
+- **An instance, not an engine.** lean-ctx on one machine is now called an instance
+  everywhere LeanCTX | Hive shows it: the CLI, the MCP tool texts, the web app and the
+  protocol. The MCP server is listed as `LeanCTX`. Hive's protocol (C0 2.2) uses the new
+  names too (`instance_version`, `instance=self`, the `Hive-Min-Instance` header, the
+  `/me/instances/…` routes); this version speaks only that form, and no earlier release
+  connects to Hive.
+- **The capture gate refuses fragments.** A claim that starts with Not, Listed, See, Also,
+  e.g. or i.e., that is mostly code in backticks, or that has fewer than four words outside
+  code stays on the machine (`not_sentence`). Instance and Hive decide from the same
+  published test vectors.
+- **Claude Code uses the governor setup by default.** Measured on Claude Code, it costs
+  less per request than the standard setup (×0.88 against native Claude Code on long
+  conversations, where the standard setup measured ×1.08–1.23), mostly because it drops the
+  ~5.8k-token fixed prefix of MCP tool schemas and rules; it writes no rules block either,
+  because Claude Code wraps any `CLAUDE.md` in ~220 tokens of its own frame and the
+  `[unchanged …]` stubs explain themselves (measured on Haiku 5.5: without the block it is
+  level with native Claude Code on short tasks, with it +7 %). A new install
+  (`lean-ctx setup`, `onboard`, `init --agent claude`) gets Claude Code's native tools plus
+  two hooks — `hook govern` (PostToolUse: rules R1.read, R1.bash, R2 and R4 on, R3 shadow,
+  written to the new `[governor]` config section; `LEAN_CTX_GOVERNOR_*` override it) and
+  `hook rewrite-enforce` (PreToolUse: shell allowlist and secret-path deny only) — and no
+  lean-ctx MCP server; an earlier lean-ctx block in `~/.claude/CLAUDE.md` is removed. An existing Claude Code
+  setup is switched on the next `update`, `setup` or `init --agent claude`, once per
+  version: `settings.json`, `~/.claude.json`, `CLAUDE.md` and the lean-ctx config are first
+  copied to `*.pre-governor-<version>.bak`, text outside the lean-ctx markers stays, and an
+  interrupted switch is completed on the next run. For the `ctx_*` MCP tools run
+  `lean-ctx init --agent claude --mode hybrid` (or `replace`, `mcp`); the choice is recorded
+  in `[governor] pinned` and no later update changes it, and a global `hook_mode` (written by
+  `lean-ctx harden`) counts as a choice too. A governor setup chosen earlier with
+  `--mode governor`/`governor-mcp` gets the same rule modes where `[governor]` does not set
+  them, once, after a config backup. With `governor-mcp`, setup no longer installs the Claude
+  Code plugin, which would front-load lean-ctx tool schemas. CodeBuddy, Cursor, Codex CLI,
+  Gemini CLI and Copilot CLI get the same default and the same once-per-version switch
+  (see the host governor entry); hosts without tool hooks keep their setup.
+  `doctor` names the setup and, for an unpinned standard Claude Code setup, the one command
+  to switch.
+- **The instance speaks Hive-Protocol 2.2: agents check each other's task results.** Every
+  Hive request, the enrollment (`/v1/device/code`, `/token`, `/setup`), the token mint and
+  the bus upgrade included, sends `Hive-Protocol: 2.2`; the instance records the minor Hive
+  answers (2.0, 2.1 or 2.2) at start and writes the 2.2 shapes only to a 2.2 Hive: a captured
   decision now carries its anchors there. A task result leaves the task `submitted` until
   another agent checks it: `ctx_tasks action=verify verdict=accept|reject` (a reject names
   its reason and opens the task again; Hive refuses the agent that did the work). Hive's
-  new `task.event` bus frame reaches every engine of the vault: the engine refreshes its
+  new `task.event` bus frame reaches every instance of the vault: the instance refreshes its
   task list and tells its own agents on the local bus, every agent of the project when a
   task is open (again), and every agent but the one that did the work when a result waits
   for its check. The vault bus knows six message types (`question`, `offer`, `handoff`,
   `finding`, `answer` and `progress` as a status line); `need`, `claim`, `result`, the
   progress `goal` and `~` swarm addresses are gone. The consent kinds `procedure_confirm`
-  and `reviewer_enable` are gone with Hive's review gates; the engine never runs a shared
+  and `reviewer_enable` are gone with Hive's review gates; the instance never runs a shared
   procedure's commands (delivery shows its title and steps). A delivered vault item no longer has an `[unconfirmed]` bucket, and the
-  knowledge state follows the 2.2 vectors (no `unconfirmed` reason).
-- **The engine speaks Hive-Protocol 2.1.** Every Hive request, the enrollment included,
-  sends `Hive-Protocol: 2.1`. Hive answers a 2.1 enrollment with key set v3; the engine
-  accepts it and checks it, and the lease it signs, as it checks every stored v3 set (the
+  knowledge state follows the 2.2 vectors (no `unconfirmed` reason). Hive answers the
+  enrollment with key set v3; the instance accepts it and checks it, and the lease it signs, as it checks every stored v3 set (the
   lease key is the v3 key of purpose `policy`). Enrollments with key set v1 keep working.
-- **Hive's TOML org policy is no longer read.** Hive-Protocol 2.1 has none: the engine
+- **Hive's TOML org policy is no longer read.** Hive-Protocol 2.1 has none: the instance
   ignores `org_policy`, `unpin` and `policy_version` in the policy bundle and the lease's
   `policy_signer_keys`, installs no org policy from Hive and no longer refuses a bundle that
   drops one ("drops the org policy without a signed unpin"). Org-policy state an older
-  engine kept in `<data_dir>/hive/policy/` is ignored and dropped on the next save, so it can
+  instance kept in `<data_dir>/hive/policy/` is ignored and dropped on the next save, so it can
   never refuse a bundle. Hive filter packs are verified and applied as before. `hive status`
   no longer prints a "Company policy" or "Required" line, `hive status --json` has no
-  `policy` field, and `hive sync` reports "Policy bundle verified (N filter packs)".
+  `policy` field, and `hive sync` reports "Policy bundle verified (N filter packs)". Hive no
+  longer sends these fields at all, and `lean-ctx doctor` reports the verified filter packs
+  instead of an org policy. The local org policy (`lean-ctx policy org`) is unchanged.
+- **`ctx_agent`'s `to_agent` says where a post goes.** It names the three targets: an agent
+  of this machine, `@wkr_…` for a worker of another machine, and `#workspace/vault` for that
+  vault's Hive bus. A post without a target stays on this machine and never reaches the
+  Hive bus.
+- **The Rust library is split into crates published in lockstep.** Besides `lean-ctx` and
+  `lean-ctx-engine`, 3.12.1 publishes `lean-ctx-hive` (the LeanCTX | Hive connector),
+  `lean-ctx-server` (the MCP server and its tools), `lean-ctx-hooks` (agent hook handlers
+  and installers) and `lean-ctx-proxy` (the model-API proxy) at the same version, plus the
+  leaf crates `lean-ctx-patterns`, `lean-ctx-workgraph`, `lean-ctx-compress`, `lean-ctx-fs`,
+  `lean-ctx-syntax` and `lean-ctx-doc`. `cargo install lean-ctx` is unchanged.
 - **`ctx_search` drops the `[∈ enclosing symbol → …]` legend line.** The `∈name@Lstart`
   tags on hits stay — agents read those symbols by name and line — but no agent in the
   benchmark transcripts used the `handle=` form the legend described; it cost about 30
@@ -466,8 +557,11 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   have no effect (see Deprecated); `autopilot evidence` still shows the local evidence. The config key
   `intelligence_runtime.context_policy_apply` is still accepted but has no effect, and a
   previously promoted policy file under `context-policy/` in the data directory is ignored.
-- lean-ctx-protocol → 0.5.0 (breaking). The version bump, its pins and lockfiles, the SBOM
-  and the notices follow in the next release preparation. The status output types
+- lean-ctx-ocla → 5.0.0 (breaking): its public traits and verifiers use lean-ctx-protocol
+  types (`CapabilityManifestV1`, receipts, decisions), so moving to protocol 0.5.0 is a
+  breaking change for ocla as well. Its API is otherwise unchanged.
+- lean-ctx-protocol → 0.5.0 (breaking): every dependent's version requirement and lockfile
+  now asks for 0.5.0, since 0.4.0 on crates.io holds the earlier contract. The status output types
   (`HiveCliStatusV1` and its siblings) drop `deny_unknown_fields` (or become
   `#[non_exhaustive]`), as the contract's convention for response types says, so later
   additive fields are not breaking for typed readers. The same bump removes
@@ -579,10 +673,10 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - **Human review of Hive knowledge** (owner decision 2026-11-01: in Hive agents work
   together and people only watch). Gone are `lean-ctx hive review` (list and merge
   proposals), the `ctx_tasks` actions `read`, `confirm` and `object` on knowledge
-  proposals, and the automatic objections an engine sent to 1.x proposals that contradicted
+  proposals, and the automatic objections an instance sent to 1.x proposals that contradicted
   its knowledge. The sharing question no longer lists 1.x merges and objections. A
   submitted task result now says another agent checks it before it is done. On a C0 2.0
-  Hive the engine queues no 1.x knowledge draft any more: neither a session draft for a
+  Hive the instance queues no 1.x knowledge draft any more: neither a session draft for a
   project that is not linked or bound, nor an import draft (`lean-ctx import docs|git`).
   Knowledge reaches the vault as signed events through capture, and a draft still queued
   from before is dropped on the next sync.
@@ -592,8 +686,8 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `hive.sealed_grants` (no longer read), the sealed key store, the `v2_plain` sealing
   conversion with its cursors under `<data>/hive/convert/`, sealed event bodies and sealed
   places in sync (epoch keys, place secrets, `{converted: true}` tail stubs), sealed bus
-  messages, sealed drafts, revisions, code graphs and task texts, the engine-side merge of
-  `ready` sealed proposals and the re-seal after a key rotation, the engine-side review
+  messages, sealed drafts, revisions, code graphs and task texts, the instance-side merge of
+  `ready` sealed proposals and the re-seal after a key rotation, the instance-side review
   decision (E41), the local trust and health figures of sealed places, and the "Key print"
   line of `hive status`. A vault that Hive reports as sealed is refused with an error that
   says sealed vaults are not supported. Capture keeps only `public` claims.
@@ -640,7 +734,7 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `benchmark run|report|scorecard|dual-arm`, `gain` and `doctor overhead` are unchanged.
 
 - **Hive swarms and Task Compute** (owner decision 2026-10-30; Hive answers `404` on every
-  `/v1/swarms/*` and `/v1/compute/*` route). The engine drops the swarm client, participation,
+  `/v1/swarms/*` and `/v1/compute/*` route). The instance drops the swarm client, participation,
   pledges and conductor, the Task Compute client, the `ctx_compute` MCP tool, `ctx_tasks`
   `scope=swarm`, `ctx_agent send swarm_id`, and `lean-ctx hive swarm`, `hive compute` and
   `hive replica --swarm` (`hive swarm` and `hive compute` are unknown subcommands); such
@@ -650,11 +744,11 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - **The Hive 1.x protocol fallback** (owner decision 2026-10-31; Hive has not shipped, keeps
   no 1.x compatibility and answers `Hive-Protocol: 1.x` with `426`). A session no longer
   drops to `Hive-Protocol: 1.9` when the instance card was not answered: every request
-  sends 2.0, and an answer that names another major is an error saying the engine requires
+  sends 2.0, and an answer that names another major is an error saying the instance requires
   `Hive-Protocol 2.x`, instead of being accepted as 1.x.
 - **The client of the daily Hive metrics upload** (`POST /v1/metrics`, a route Hive does
   not have). It was always off; `hive sync` and `hive status` no longer print a "Metrics"
-  line. Engine metrics v2 (hourly, the "Engine metrics" line) carry the same figures.
+  line. Instance metrics v2 (hourly, the "Instance metrics" line) carry the same figures.
 
 - Internal clean-up, no behaviour change: modules and functions without a production
   caller are gone from the Engine (among them the process-slot guard, the recovery
@@ -755,6 +849,95 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   both are set. Earliest removal 3.15.0 (`rust/data/DEPRECATIONS.toml`).
 
 ### Fixed
+
+- **A Hive lease renews after the keyset v3 rotation.** An instance verified a renewed lease
+  only against the key set it enrolled with, so a lease signed with the v3 policy key failed
+  and the instance fell into its grace period a day after enrolling. A failed renewal also
+  stopped the background pass for good, so knowledge, policy, metrics and receipts paused
+  until the next restart. Renewal now picks the key set that names the lease's key, a failed
+  renewal is retried on the next pass, and `hive status` shows the last renewal error.
+- **Escape closes the Cockpit pane in Claude Code.** In a narrow terminal the pane's close
+  button could not be reached.
+
+- **A `ctx_read` cut by the turn budget is read again in full.** A full read larger than the
+  per-turn budget reaches the model only as a prefix, but the session cache recorded it as
+  delivered, so the next full read of the unchanged file answered `[unchanged]` while the cut
+  part had never been shown. Such a read no longer counts as delivered, as the read dedup
+  already decided (#2172).
+
+- **`lean-ctx restart` and `stop` end only the services lean-ctx started (#2176).** On
+  Windows, `restart` ended the MCP servers of running Claude Code sessions as "orphan
+  processes": the name-based sweep relied on `wmic`, which current Windows versions no longer
+  ship. `restart`, `stop`, `config apply`, `uninstall` and `dev-install` now stop only the
+  daemon, proxy and Cockpit this instance recorded, each checked again by command line, user
+  and process identity right before the signal; MCP servers, `-c` runs, hooks and other
+  installs are never touched. Unrecorded lean-ctx services are listed with the command that
+  stops them (also in `doctor`) instead of a false "All stopped", `restart` brings back a
+  proxy it stopped, and on Windows the daemon and proxy no longer stay in the caller's job or
+  hold its handles, so a captured `lean-ctx restart` (or PowerShell `Start-Job`) no longer
+  hangs.
+- **The Cockpit starts on Windows (#2174).** `lean-ctx cockpit` and `dashboard` refused
+  every port with "Port N is used by another program": Windows refuses a connect to a
+  closed loopback port only after about 2 s, so the 400 ms probe took every free port for
+  a busy one. A port now counts as free when it can be bound and nothing answers on it,
+  as `doctor` already checked. A port that answers nothing but cannot be bound (a Windows
+  excluded port range) gets its own message.
+- **The config migration warning no longer repeats on every command (#2175).** Once the
+  v4 migration had run, every later migration was refused because its journal was still
+  there, and every command warned that the journal "already exists". A later migration
+  now resumes an interrupted one, extends a completed one or archives a journal that later
+  edits superseded; `lean-ctx migrate config --rollback` still restores the original
+  pre-v4 config. A migration that cannot be verified is reported once and names both
+  journal files and the rollback command. The empty `config.toml.v4-migration.lock` left
+  by 3.11 is removed.
+- **The Windows MSVC build runs on a clean Windows (#2178).** It needed the Visual C++
+  Redistributable (`VCRUNTIME140.dll`) and exited silently with `0xC0000135` without it.
+  The C runtime is now linked statically, and the release refuses a Windows binary that
+  imports a Visual C++ or MinGW runtime DLL.
+- **`doctor` finishes (#2179).** Its search-index and graph checks loaded the whole
+  project index to count files, which on a large project ran for minutes after the last
+  check was printed. They now read the stored counts read-only, run with a 10 s limit and
+  report "skipped (busy)" instead of waiting. `doctor --json` prints a single JSON
+  document; daemon diagnostics no longer precede it on stdout.
+- **Freed memory goes back to the operating system (#2075).** The allocator's purge was a
+  silent no-op, tree-sitter allocated outside it and the search index kept every project
+  resident, so the daemon's memory only grew. Freed pages are now returned, the index drops
+  roots it no longer needs, memory is reclaimed before a search, and `daemon_max_rss_mb`
+  caps the daemon.
+- **Docs, test values and key ids no longer trip Hive's screening.** Instance and Hive
+  refused text that only documents a secret: an `Authorization: Bearer …` placeholder
+  (`…`, `<token>`, `$TOKEN`, `hive_p_…`), one of Stripe's published test card numbers, a
+  public key id or digest (`ed25519-` with 32 hex, `sha256:`/`blake3:` with 64 hex) and a
+  redaction marker shown inside a code span. These narrow cases now pass; a real-looking
+  token, any other valid card number, a key id of another length and a marker outside a
+  code span are refused as before. Both sides read the same published vectors.
+- **An agent no longer misses a task that opens while it reconnects.** Task notices are
+  not stored on Hive; an agent that registered just before a task opened could miss it.
+  After every reconnect the instance now fetches the open tasks once and tells its agents.
+- **A new role gets its own Hive worker when the machine has 32.** Hive allows 32 workers
+  per instance; on a machine at that limit a new role's session was attached to an
+  unrelated worker, so Hive refused its task claims ("not on the bus"). Now the
+  longest-unused worker without a session gives way and is retired on Hive; a worker that
+  comes back keeps its id. `lean-ctx hive status` shows the count at the limit and any
+  retirements still waiting.
+- **An agent that registers again with another role is announced afresh.** After
+  `ctx_agent register role=…` other machines kept listing the agent under its old role and
+  could not address it, so messages and handoffs to it went nowhere. A changed role now
+  announces the agent again on the Hive bus.
+- **A git worktree is a project LeanCTX can share.** In a linked worktree `.git` is a file,
+  and `hive connect` said the folder had no git remote; the instance now follows it to the
+  repository's remote. Local knowledge of existing worktrees keeps its place.
+- **`lean-ctx import docs` reaches a 2.x Hive.** Imported doc facts only went through the
+  old 1.x draft path and never reached a 2.x vault; the capture now includes them.
+- **`ctx_agent register` refuses `project_root`.** It accepted the argument and ignored it;
+  an agent joins the bus of the project its MCP session runs in, and the answer now says so.
+- **`lean-ctx import --help` lists `docs` and `git`.**
+- **`lean-ctx init --agent <host> --dry-run` writes nothing.** The agent and governor setup
+  ran before the dry-run check, so a preview already wrote MCP, hook and rules files; it now
+  prints what it would configure and stops. Claude Code hook matchers drop the lowercase
+  aliases (`bash`, `read`, `grep`, …), which Claude Code never sends because tool names are
+  case-sensitive; an install from before keeps exactly one hook after the next refresh.
+  Reimplements community PR #2169 by ZacKienzle2.
 
 - **The kernel trailer no longer ends in an empty heading.** When the 150-token budget cut
   right after a provider heading, the delivered `--- kernel context ---` block ended in
@@ -898,6 +1081,14 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `DefaultHasher`, which Rust does not keep stable, so the same content could get another id
   after an update. New ids are the first 16 hex digits of its BLAKE3 hash; existing ids keep
   resolving.
+- **Project store names no longer depend on the Rust toolchain.** The directory names of a
+  project's knowledge, archives and session stores came from `DefaultHasher`, so a
+  toolchain update could have moved them and lost their contents. The same algorithm is
+  now fixed in LeanCTX: existing directories keep their names and nothing moves.
+- **Interactive checks on Windows never wait on a stdin pipe (#2176).** A lean-ctx command
+  whose input was a pipe its parent read at the same time (PowerShell `Start-Job`) could
+  hang while checking for a terminal. The check now asks the console directly and uses
+  the terminal test only inside MSYS, Git Bash or Cygwin.
 - **A project with a non-UTF-8 source file keeps its cached call graph.** The build skipped
   such files silently, so the cached graph never matched the file list and was rebuilt on
   every load. Skipped files are now recorded in the graph (`skipped_files`) and count as
@@ -923,10 +1114,6 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   start and kept relaying after `bus = "off"` or `enabled = false` until the daemon
   restarted. It now reads it before every connect and on every tick, closes its socket when
   switched off and connects again when switched back on.
-- **The engine speaks Hive protocol 2.0 from the first request.** The enrollment
-  (`/v1/device/code`, `/token`, `/setup`), the token mint and the v2 bus upgrade sent
-  `Hive-Protocol: 1.9` also to a 2.0 Hive, a path that ends with the 1.x sunset. Every request
-  now sends 2.0.
 - **Hive never holds up a tool call.** `ctx_tasks`, the Hive side of a `ctx_agent` lease and
   the first-call briefing waited for Hive inside the call (up to 3-5 s each). Task lists, tasks
   and the briefing now answer at once from the last data Hive sent and say when it is stale or
@@ -955,6 +1142,21 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   (and archived) with the partial-output note, as the foreground path does; a governed
   gateway still withholds them, and truncated, timed-out or cancelled captures are unchanged.
   (#2164)
+- **The shell approval dialog preselects "once" in Claude Code, so Accept works there.** The
+  form asked for a required choice with nothing preselected, and Claude Code does not
+  submit a form while a required field is empty: Accept only marked the field as required
+  and the dialog stayed open. In Claude Code, Accept on an untouched form now allows this
+  one command; "session" and "always" still need an explicit choice, and an accept without
+  content still approves nothing. Other clients keep the form with nothing preselected.
+  (#2171)
+- **`ctx_read` and `ctx_expand` deliver the lines that were asked for.** A read larger than
+  the turn budget reached the model cut, yet was recorded as delivered, so asking for the
+  same file or range again answered "unchanged, already in context" for lines never shown.
+  Such reads are no longer recorded or answered with that reference. A cut `ctx_expand`
+  reply was archived again under a new id, so following ids gave nested archives; it now
+  uses the verbatim budget, is never re-archived and says how to narrow the same id. Its
+  output also skips terse compression, and `search` on a shell log ignores case like the
+  archive search does. (#2172)
 - **`ctx_search` semantic no longer waits indefinitely on its source scan.** Without a
   `mode`, the tool reads and admits every project source on each call; it resolved the
   gateway configuration (re-reading the config files) for every file, so on slow storage the

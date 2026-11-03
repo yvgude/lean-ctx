@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.87"
 license = "Apache-2.0"
-description = "Experimental Apache Rust facade for embedding the local lean-ctx Engine in-process. Not an SDK: the LeanCTX SDK is thinkery-leanctx-sdk (Python)."
+description = "Experimental Apache Rust facade for embedding LeanCTX | OSS in-process. Not an SDK: LeanCTX | SDK is thinkery-leanctx-sdk (Python)."
 repository = "https://github.com/yvgude/lean-ctx"
 keywords = ["mcp", "llm", "tokens", "context", "embedding"]
 categories = ["development-tools", "api-bindings"]
@@ -24,7 +24,18 @@ path = "src/lib.rs"
 # the SDK does NOT force a `#[global_allocator]` onto the host binary — the one
 # real embedder landmine. The listed Engine features support the current
 # low-level read/search/symbol surface; `tree-sitter` powers AST read modes.
-lean-ctx = { path = "../..", default-features = false, features = [
+lean-ctx-engine = { path = "../..", default-features = false, features = [
+  "tree-sitter",
+  "embeddings",
+  "http-server",
+  "secure-update",
+] }
+# The Hive connector: the engine builder registers its hooks
+# (`lean_ctx_hive::register_hooks`), as every entry point does.
+lean-ctx-hive = { path = "../lean-ctx-hive", default-features = false, features = ["http-server"] }
+# The engine's in-process tool façade (`lean_ctx_server::engine`), split upward
+# out of the Engine; same feature set.
+lean-ctx-server = { path = "../lean-ctx-server", default-features = false, features = [
   "tree-sitter",
   "embeddings",
   "http-server",

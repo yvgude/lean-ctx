@@ -18,7 +18,7 @@
         ],
         "id": "hive.screening-first",
         "kind": "decision",
-        "statement": "Every outbound item passes engine screening before it is queued."
+        "statement": "Every outbound item passes instance screening before it is queued."
       }
     ],
     "format": "ctxpkg.research-context.v1",

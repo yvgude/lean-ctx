@@ -1,0 +1,103 @@
+// SPDX-License-Identifier: Apache-2.0
+pub(super) fn handle(
+    path: &str,
+    _query_str: &str,
+    _method: &str,
+    _body: &str,
+) -> Option<(&'static str, &'static str, String)> {
+    match path {
+        "/api/profile" => {
+            let active_name = lean_ctx::core::profiles::active_profile_name();
+            let profile = lean_ctx::core::profiles::active_profile();
+            let all = lean_ctx::core::profiles::list_profiles();
+            let active_info = all.iter().find(|p| p.name == active_name);
+            let available: Vec<serde_json::Value> = all
+                .iter()
+                .map(|p| {
+                    serde_json::json!({
+                        "name": p.name,
+                        "description": p.description,
+                        "source": p.source.to_string(),
+                    })
+                })
+                .collect();
+            let payload = serde_json::json!({
+                "active_name": active_name,
+                "active_source": active_info.map(|i| i.source.to_string()),
+                "active_description": active_info.map(|i| i.description.clone()),
+                "profile": profile,
+                "available": available,
+            });
+            let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+            Some(("200 OK", "application/json", json))
+        }
+        "/api/buddy" => Some(("200 OK", "application/json", "{}".to_string())),
+        "/api/version" => {
+            // Self-healing freshness (#563): the dashboard used to only read
+            // the 24h cache, so long-running daemons displayed a frozen
+            // "latest" forever (user report showed 3.6.26 while 3.7.5 was
+            // out). Kick the TTL-guarded background refresh on every poll —
+            // non-blocking, opt-out respected.
+            lean_ctx::core::version_check::check_background();
+            let json = lean_ctx::core::version_check::version_info_json();
+            Some(("200 OK", "application/json", json))
+        }
+        "/metrics" => {
+            let prom = lean_ctx::core::telemetry::global_metrics().to_prometheus();
+            Some(("200 OK", "text/plain; version=0.0.4; charset=utf-8", prom))
+        }
+        "/api/verification" => {
+            let snap = lean_ctx::core::output_verification::stats_snapshot();
+            let json = serde_json::to_string(&snap).unwrap_or_else(|_| "{}".to_string());
+            Some(("200 OK", "application/json", json))
+        }
+        // Protection area (GL #487): the OWASP agentic-risk alignment that
+        // `lean-ctx audit` prints, as JSON for the dashboard guards view.
+        "/api/owasp" => {
+            let mappings = lean_ctx::core::owasp_alignment::alignment();
+            let json = serde_json::to_string(&mappings).unwrap_or_else(|_| "[]".to_string());
+            Some(("200 OK", "application/json", json))
+        }
+        // Guards that fired: `lean-ctx value --all` as JSON — lifetime counts
+        // re-derived from the verified savings ledger and audit trail; for the
+        // project a read names, only that project's entries.
+        "/api/value" => {
+            let proof = match super::helpers::request_ledger_scope() {
+                Some(scope) => lean_ctx::core::value::proof::build_lifetime_for(&scope),
+                None => lean_ctx::core::value::proof::build(None, true),
+            };
+            let json = serde_json::to_string(&proof).unwrap_or_else(|_| "{}".to_string());
+            Some(("200 OK", "application/json", json))
+        }
+        "/api/theme-tokens" => {
+            let cfg = lean_ctx::core::config::Config::load();
+            let theme = lean_ctx::core::theme::load_theme(&cfg.theme);
+            let color_hex = |c: &lean_ctx::core::theme::Color| -> String {
+                let lean_ctx::core::theme::Color::Hex(h) = c;
+                h.clone()
+            };
+            let payload = serde_json::json!({
+                "name": theme.name,
+                "tokens": {
+                    "primary": color_hex(&theme.primary),
+                    "secondary": color_hex(&theme.secondary),
+                    "accent": color_hex(&theme.accent),
+                    "success": color_hex(&theme.success),
+                    "warning": color_hex(&theme.warning),
+                    "danger": color_hex(&theme.danger),
+                    "muted": color_hex(&theme.muted),
+                    "text": color_hex(&theme.text),
+                    "surface": color_hex(&theme.surface),
+                    "background": color_hex(&theme.background),
+                    "barStart": color_hex(&theme.bar_start),
+                    "barEnd": color_hex(&theme.bar_end),
+                    "border": color_hex(&theme.border),
+                },
+                "css": theme.to_css_vars(),
+            });
+            let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
+            Some(("200 OK", "application/json", json))
+        }
+        _ => None,
+    }
+}

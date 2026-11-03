@@ -11,7 +11,7 @@ const CACHE_TTL_SECS: u64 = 300;
 const MAX_ENTRIES: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct CliCacheEntry {
+pub struct CliCacheEntry {
     pub path: String,
     pub hash: String,
     pub line_count: usize,
@@ -35,7 +35,7 @@ pub(crate) struct CliCacheStore {
     pub total_reads: u64,
 }
 
-pub(crate) enum CacheResult {
+pub enum CacheResult {
     Hit {
         entry: CliCacheEntry,
         file_ref: String,
@@ -110,8 +110,31 @@ fn in_process_guard() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// How long a transaction waits for the cross-process file lock: the shared
+/// `FileLock` bound.
+#[cfg(not(test))]
+fn lock_timeout() -> std::time::Duration {
+    crate::core::agents::ACQUIRE_TIMEOUT
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Per-thread override so lock-timeout tests wait milliseconds instead of
+    /// the production bound. Thread-local: concurrent tests (and worker
+    /// threads that must wait the full bound) keep the real timeout.
+    static LOCK_TIMEOUT_OVERRIDE: std::cell::Cell<Option<std::time::Duration>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn lock_timeout() -> std::time::Duration {
+    LOCK_TIMEOUT_OVERRIDE
+        .with(std::cell::Cell::get)
+        .unwrap_or(crate::core::agents::ACQUIRE_TIMEOUT)
+}
+
 impl CacheTransaction {
-    fn load() -> std::io::Result<Self> {
+    pub(crate) fn load() -> std::io::Result<Self> {
         let in_process = in_process_guard();
         let path =
             cache_file().ok_or_else(|| std::io::Error::other("CLI cache directory unavailable"))?;
@@ -120,8 +143,11 @@ impl CacheTransaction {
         })?;
         std::fs::create_dir_all(parent)?;
         // Lock the stable sidecar, not the JSON inode replaced by atomic writes.
-        let lock = crate::core::agents::FileLock::acquire(&path.with_extension("lock"))
-            .map_err(|error| std::io::Error::other(format!("CLI cache lock: {error}")))?;
+        let lock = crate::core::agents::FileLock::acquire_with_timeout(
+            &path.with_extension("lock"),
+            lock_timeout(),
+        )
+        .map_err(|error| std::io::Error::other(format!("CLI cache lock: {error}")))?;
         let store = match std::fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes)
                 .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?,
@@ -162,7 +188,7 @@ fn file_ref(key: &str, store: &CliCacheStore) -> String {
 /// Check/update the CLI metadata cache only after the caller has freshly
 /// admitted the source. A hit is metadata-only; the source must be re-read and
 /// re-admitted before this function is called.
-pub(crate) fn check_admitted(
+pub fn check_admitted(
     path: &str,
     source: &crate::core::context_admission::SourceAdmission,
 ) -> CacheResult {
@@ -248,9 +274,9 @@ pub(crate) fn check_admitted(
 /// Compatibility adapter for callers that need the cache to perform its own
 /// read. It still admits the freshly decoded source before any metadata lookup
 /// or persistence; the CLI hot path passes its already-admitted source above.
-#[cfg(test)]
-pub(crate) fn check_and_read(path: &str) -> CacheResult {
-    let Ok(source) = crate::tools::ctx_read::read_file_lossy_admitted_for_cli(path) else {
+#[cfg(any(test, feature = "test-support"))]
+pub fn check_and_read(path: &str) -> CacheResult {
+    let Ok(source) = crate::core::rooted_read::read_file_lossy_admitted_for_cli(path) else {
         return CacheResult::Miss {
             content: String::new(),
         };
@@ -258,14 +284,14 @@ pub(crate) fn check_and_read(path: &str) -> CacheResult {
     check_admitted(path, &source)
 }
 
-pub(crate) fn invalidate(path: &str) -> std::io::Result<()> {
+pub fn invalidate(path: &str) -> std::io::Result<()> {
     let key = normalize_key(path);
     let mut transaction = CacheTransaction::load()?;
     transaction.store.entries.remove(&key);
     transaction.save()
 }
 
-pub(crate) fn clear() -> std::io::Result<usize> {
+pub fn clear() -> std::io::Result<usize> {
     let mut transaction = CacheTransaction::load()?;
     let count = transaction.store.entries.len();
     transaction.store.entries.clear();
@@ -273,7 +299,7 @@ pub(crate) fn clear() -> std::io::Result<usize> {
     Ok(count)
 }
 
-pub(crate) fn clear_project(project_root: &str) -> std::io::Result<usize> {
+pub fn clear_project(project_root: &str) -> std::io::Result<usize> {
     let mut transaction = CacheTransaction::load()?;
     let store = &mut transaction.store;
     let prefix = normalize_key(project_root);
@@ -286,7 +312,7 @@ pub(crate) fn clear_project(project_root: &str) -> std::io::Result<usize> {
     Ok(removed)
 }
 
-pub(crate) fn stats() -> std::io::Result<(u64, u64, usize)> {
+pub fn stats() -> std::io::Result<(u64, u64, usize)> {
     let transaction = CacheTransaction::load()?;
     let store = &transaction.store;
     Ok((store.total_hits, store.total_reads, store.entries.len()))
@@ -315,7 +341,7 @@ fn evict_stale(store: &mut CliCacheStore, now: u64) {
     }
 }
 
-pub(crate) fn format_hit(entry: &CliCacheEntry, file_ref: &str, short_path: &str) -> String {
+pub fn format_hit(entry: &CliCacheEntry, file_ref: &str, short_path: &str) -> String {
     if crate::core::protocol::savings_footer_visible() {
         format!(
             "{file_ref} cached {short_path} [{}L {}t] (read #{})",
@@ -551,9 +577,25 @@ mod tests {
         assert!(matches!(check_and_read(&path), CacheResult::Miss { .. }));
     }
 
+    /// Shortens this thread's cache-lock wait until the guard drops (with
+    /// `--test-threads 1` libtest reuses one thread for every test).
+    struct ShortLockTimeout;
+
+    impl Drop for ShortLockTimeout {
+        fn drop(&mut self) {
+            LOCK_TIMEOUT_OVERRIDE.with(|cell| cell.set(None));
+        }
+    }
+
+    fn short_lock_timeout() -> ShortLockTimeout {
+        LOCK_TIMEOUT_OVERRIDE.with(|cell| cell.set(Some(std::time::Duration::from_millis(100))));
+        ShortLockTimeout
+    }
+
     #[test]
     fn cache_lock_timeout_preserves_bytes_and_still_serves_the_hit() {
         let _data = crate::core::data_dir::isolated_data_dir();
+        let _short = short_lock_timeout();
         let file = tempfile::NamedTempFile::new().unwrap();
         let content = "cache timeout content\n";
         std::fs::write(file.path(), content).unwrap();
@@ -574,6 +616,7 @@ mod tests {
     #[test]
     fn cache_lock_timeout_without_an_entry_returns_full_content() {
         let _data = crate::core::data_dir::isolated_data_dir();
+        let _short = short_lock_timeout();
         let file = tempfile::NamedTempFile::new().unwrap();
         let content = "never cached\n";
         std::fs::write(file.path(), content).unwrap();

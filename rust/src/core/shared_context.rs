@@ -98,17 +98,18 @@ impl SharedContext {
         // Those releases wrote under `dirs::home_dir()`. Tests redirect the
         // home through `HOME`, which `dirs` ignores on Windows (known folder):
         // without this they would share the runner's real profile.
-        #[cfg(not(test))]
-        let home = dirs::home_dir();
-        #[cfg(test)]
-        let home = crate::core::home::resolve_home_dir();
+        let home = if crate::core::data_dir::sandboxed() {
+            crate::core::home::resolve_home_dir()
+        } else {
+            dirs::home_dir()
+        };
         home.map(|home| Self::new(home.join(".local/share/lean-ctx/shared_context.jsonl")))
     }
 
     /// Facts left in a partition that is no longer the current one of the
     /// root they recorded: that project's identity (remote, package name)
     /// changed since. Served to no project until adopted.
-    pub(crate) fn orphaned_entries() -> Vec<(PathBuf, SharedContextEntry)> {
+    pub fn orphaned_entries() -> Vec<(PathBuf, SharedContextEntry)> {
         let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir().map(|d| d.join("shared_context"))
         else {
             return Vec::new();
@@ -553,7 +554,7 @@ impl SharedContext {
         Ok(file)
     }
 
-    fn load(&self) -> Result<Vec<SharedContextEntry>, String> {
+    pub fn load(&self) -> Result<Vec<SharedContextEntry>, String> {
         if !self.path.exists() {
             return Ok(Vec::new());
         }
@@ -680,7 +681,7 @@ pub fn session_start_hint(project_root: &str) -> Option<String> {
         .map(|entry| format!("- [{} · {}] {}", entry.category, entry.agent, entry.content))
         .collect::<Vec<_>>()
         .join("\n");
-    crate::tools::admitted_sources::serve_originless(
+    crate::core::admitted_sources::serve_originless(
         &format!("--- SHARED CONTEXT ---\n{facts}"),
         "shared memory",
     )

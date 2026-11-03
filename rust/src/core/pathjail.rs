@@ -337,9 +337,9 @@ pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
     // Engine-owned knowledge persistence uses its own authorized store writer.
     crate::core::protected_store::enforce_protected_store_path(candidate)?;
     // Hive policies and limits are never changed by an agent (Release B).
-    if crate::core::hive::effective_floor::is_policy_path(&canonical_target(candidate)) {
+    if crate::core::policy::hive_floor::is_policy_path(&canonical_target(candidate)) {
         return Err(format!(
-            "Hive policy files are written by the engine only; agents cannot change them: {}",
+            "Hive policy files are written by the instance only; agents cannot change them: {}",
             candidate.display()
         ));
     }
@@ -1164,7 +1164,7 @@ fn jail_path_checked(
         let allowed = path_allowed_by_jail(&base, &root, &allow);
 
         if !allowed {
-            let is_suspicious = crate::tools::startup::is_suspicious_root(&root);
+            let is_suspicious = crate::core::pathutil::is_suspicious_root(&root);
             let mut hint = if is_suspicious || root == std::path::Path::new("/") {
                 ". lean-ctx has not bound this session to a project yet (the host reported \
                      no project directory). Relative paths cannot bind it: pass one \
@@ -1262,24 +1262,17 @@ mod protected_store_tests {
         assert!(jail_path(&code, project.path()).is_ok());
         assert!(jail_path_with_roots(Path::new("facts.json"), &store, &roots).is_err());
         // Raw backup paths enter the shared atomic writer without the dispatch
-        // resolver; they must not overwrite a hidden record or create a sibling.
+        // resolver; its write guard must refuse a hidden record or a sibling.
+        // (The writer itself is exercised end to end in `tools::edit_io`.)
         for target in [&fact, &store.join("new/backup.json")] {
-            assert!(
-                crate::tools::edit_io::write_atomic_bytes_with_permissions(
-                    target,
-                    b"forged local context",
-                    None,
-                )
-                .is_err()
-            );
+            assert!(enforce_writable(target).is_err(), "{target:?}");
         }
         assert_eq!(
             std::fs::read_to_string(&fact).unwrap(),
             "private stored context"
         );
         assert!(!store.join("new").exists());
-        crate::tools::edit_io::write_atomic_bytes_with_permissions(&code, b"fn main() {}\n", None)
-            .unwrap();
+        enforce_writable(&code).unwrap();
         // Internal storage is unaffected by the model-directed path resolver.
         std::fs::write(&fact, "retained internal update").unwrap();
         assert_eq!(

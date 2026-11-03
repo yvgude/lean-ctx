@@ -2,9 +2,9 @@
 
 <!-- GENERATED FILE — do not edit by hand. Run: `cargo run --example gen_docs --features dev-tools` -->
 
-Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
+Source of truth: `rust/crates/lean-ctx-server/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **49 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+lean-ctx registers **50 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_artifacts`
 
@@ -120,6 +120,17 @@ Then use ctx_call to invoke discovered tools (for static-tool-list clients).
 ANTIPATTERN: not for runtime invocation — use ctx_call(name=..., arguments=...) directly.
 
 Parameters: `query`
+
+## `ctx_doc`
+
+Project documentation in the linked Hive vault: pages of sections, bound to code.
+WORKFLOW: action=list or search first, then show slug (outline=true, section=<heading-slug>).
+Reads are local (offline). action=write slug content='# Title\n…' creates or revises a page;
+action=edit slug find replace changes one unique stretch; action=note adds an addendum.
+anchors=[file:…] binds a page to code; action=status lists stale pages, action=confirm re-pins after a check.
+Writes are queued and sent in the background. Link pages as [text](/slug#heading).
+
+Parameters: `action`*, `anchors`, `content`, `find`, `outline`, `query`, `replace`, `section`, `slug`, `status`, `type`
 
 ## `ctx_edit`
 

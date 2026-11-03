@@ -215,8 +215,8 @@ Tip: open a ticket via the [New Compression Pattern](.github/ISSUE_TEMPLATE/comp
 - For a CLI surface, add `rust/src/cli/<name>_cmd.rs` and route it in
   `rust/src/cli/dispatch/mod.rs` (+ `dispatch/help.rs`).
 - Regenerate and commit the SSOT artifacts:
-  `cargo run --example gen_mcp_manifest --features dev-tools` and
-  `cargo run --example gen_docs --features dev-tools`.
+  `cargo run -p lean-ctx-server --example gen_mcp_manifest --features dev-tools` and
+  `cargo run -p lean-ctx-server --example gen_docs --features dev-tools`.
 - If you change the public tool surface, also update `LEANCTX_FEATURE_CATALOG.md`
   (SSOT snapshot). The `entrypoints_wired`, `mcp_manifest_up_to_date` and
   `reference_docs_drift` tests gate the wiring end to end.

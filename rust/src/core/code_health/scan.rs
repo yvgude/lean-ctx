@@ -184,7 +184,7 @@ fn walk_sources(root: &Path) -> Vec<(String, String, String)> {
         // text of a source whose ORIGINAL may be kept, read through the common
         // rooted reader under `root` (G01, E3). A source that is withheld,
         // restricted or incompletely decoded is not scanned.
-        let read = crate::tools::admitted_sources::read(
+        let read = crate::core::admitted_sources::read(
             &path.to_string_lossy(),
             &root_text,
             "ctx_quality",

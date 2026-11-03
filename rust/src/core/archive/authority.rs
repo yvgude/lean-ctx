@@ -18,6 +18,33 @@ use std::sync::{Arc, Mutex};
 /// unverifiable and the result is withheld from every source-bound store.
 pub(crate) const MAX_SOURCES: usize = 64;
 
+/// (project, path, tool) of one file source.
+type PermissionKey = (String, String, String);
+
+thread_local! {
+    /// The permission verdicts of the sources checked in the current
+    /// [`with_permission_memo`] scope; `None` outside of one.
+    static PERMITTED: std::cell::RefCell<Option<std::collections::HashMap<PermissionKey, bool>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `operation` with one memo of source permissions: within it,
+/// `ArchiveAuthority::still_permitted` reads each (project, path, tool)
+/// once. For one returning request, whose sealed items carry lineages that
+/// share most sources; the memo never outlives `operation`.
+pub fn with_permission_memo<T>(operation: impl FnOnce() -> T) -> T {
+    struct Restore(Option<std::collections::HashMap<PermissionKey, bool>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let previous = self.0.take();
+            PERMITTED.with(|memo| *memo.borrow_mut() = previous);
+        }
+    }
+    let _restore =
+        Restore(PERMITTED.with(|memo| memo.borrow_mut().replace(std::collections::HashMap::new())));
+    operation()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveAuthority {
     version: u8,
@@ -44,7 +71,7 @@ struct AdditionalSource {
 
 /// What one call acquired, as the capture saw it.
 #[derive(Debug, Default)]
-pub(crate) struct CaptureSlot {
+pub struct CaptureSlot {
     authority: Mutex<Option<ArchiveAuthority>>,
     /// A source was read whose authority could not be built or bound. The
     /// captured set is then not the whole acquisition.
@@ -115,22 +142,22 @@ impl CaptureSlot {
 pub(crate) type Capture = Arc<CaptureSlot>;
 
 tokio::task_local! {
-    pub(crate) static CAPTURE: Option<Capture>;
+    pub static CAPTURE: Option<Capture>;
 }
 
-pub(crate) fn current_capture() -> Option<Capture> {
+pub fn current_capture() -> Option<Capture> {
     CAPTURE.try_with(Clone::clone).ok().flatten()
 }
 
 /// Run `operation` without the call's source capture: reads inside it are not
 /// published. For work that inspects sources without deriving the result from
 /// them (a scan) — the caller publishes what did contribute afterwards.
-pub(crate) fn without_capture<T>(operation: impl FnOnce() -> T) -> T {
+pub fn without_capture<T>(operation: impl FnOnce() -> T) -> T {
     CAPTURE.sync_scope(None, operation)
 }
 
 /// Mark the current call's acquisition as incomplete.
-pub(crate) fn mark_unbound() {
+pub fn mark_unbound() {
     if let Some(capture) = current_capture() {
         capture
             .unbound
@@ -140,7 +167,7 @@ pub(crate) fn mark_unbound() {
 
 /// Publish one admitted source read into the current call's capture.
 ///
-/// Called by the admitted readers themselves (`tools::ctx_read::file_io`), so
+/// Called by the admitted readers themselves (`core::rooted_read`), so
 /// a tool that reads through them publishes every source without code of its
 /// own. `project` is the root the read was authorized for, `canonical_path`
 /// the path the reader resolved, `admitted` the text it returned.
@@ -149,7 +176,7 @@ pub(crate) fn mark_unbound() {
 /// hashed). Under protection a source that cannot be bound — outside the
 /// project, project not resolvable — marks the capture incomplete: the call's
 /// source set is then unknown, never silently smaller.
-pub(crate) fn publish_read(project: &Path, canonical_path: &str, tool: &str, admitted: &str) {
+pub fn publish_read(project: &Path, canonical_path: &str, tool: &str, admitted: &str) {
     // G08: the call's receipt trace names this source the way its reader
     // shows it — the path relative to the project. Independent of the source
     // capture below; a no-op without an admission capture.
@@ -171,7 +198,7 @@ pub(crate) fn publish_read(project: &Path, canonical_path: &str, tool: &str, adm
 ///   is unknown;
 /// - `None`: no source was published. This is an observation, not an
 ///   attestation — an uninstrumented reader publishes nothing either.
-pub(crate) async fn capture<T>(
+pub async fn capture<T>(
     operation: impl std::future::Future<Output = T>,
 ) -> (T, Option<ArchiveAuthority>) {
     let capture = Arc::new(CaptureSlot::default());
@@ -179,10 +206,10 @@ pub(crate) async fn capture<T>(
     (result, capture.finish_within(SLOT_WAIT))
 }
 
-/// [`capture`] for a synchronous caller (the CLI tool path): run `operation`
+/// `capture` for a synchronous caller (the CLI tool path): run `operation`
 /// on this thread and return what it acquired, with the same three outcomes.
 /// Reads on other threads or tasks spawned inside are not seen.
-pub(crate) fn capture_sync<T>(operation: impl FnOnce() -> T) -> (T, Option<ArchiveAuthority>) {
+pub fn capture_sync<T>(operation: impl FnOnce() -> T) -> (T, Option<ArchiveAuthority>) {
     let capture = Arc::new(CaptureSlot::default());
     let result = CAPTURE.sync_scope(Some(capture.clone()), operation);
     (result, capture.finish_within(SLOT_WAIT))
@@ -190,7 +217,7 @@ pub(crate) fn capture_sync<T>(operation: impl FnOnce() -> T) -> (T, Option<Archi
 
 impl ArchiveAuthority {
     /// Called with the canonical path and bytes returned by the admitted rooted read.
-    pub(crate) fn file(project: &Path, path: &str, tool: &str, admitted: &str) -> Option<Self> {
+    pub fn file(project: &Path, path: &str, tool: &str, admitted: &str) -> Option<Self> {
         if !crate::core::context_admission::stored::source_authority_required() {
             return None;
         }
@@ -271,7 +298,7 @@ impl ArchiveAuthority {
 
     /// Whether the source set is unknown (a source could not be bound, or the
     /// set exceeded its bound). Such an authority never admits.
-    pub(crate) fn is_incomplete(&self) -> bool {
+    pub fn is_incomplete(&self) -> bool {
         self.incomplete
     }
 
@@ -295,14 +322,14 @@ impl ArchiveAuthority {
     /// Add this source to the call's authority. A second source joins the
     /// set; it never replaces the first. If the slot cannot be acquired within
     /// its budget the capture becomes incomplete instead of losing the source.
-    pub(crate) fn publish(self) {
+    pub fn publish(self) {
         if let Some(capture) = current_capture() {
             capture.publish_within(self, SLOT_WAIT);
         }
     }
 
     /// Union of two authorities of one derivation.
-    pub(crate) fn join(&mut self, other: Self) {
+    pub fn join(&mut self, other: Self) {
         if other.project != self.project {
             self.incomplete = true;
             return;
@@ -398,7 +425,7 @@ impl ArchiveAuthority {
         Some(hash.finalize().to_hex().to_string())
     }
 
-    pub(crate) fn admitted(&self) -> bool {
+    pub fn admitted(&self) -> bool {
         self.admitted_budgeted(&mut crate::core::limits::max_read_bytes())
     }
 
@@ -415,6 +442,61 @@ impl ArchiveAuthority {
     #[must_use]
     pub(crate) fn still_admitted(&self) -> bool {
         crate::core::policy::runtime::with_source_view(|| self.admitted()).unwrap_or(false)
+    }
+
+    /// Whether every source this authority names is still PERMITTED now —
+    /// the check for returning a provider-sealed item (#2177), weaker than
+    /// [`Self::still_admitted`] in exactly two ways: a source whose bytes
+    /// changed since it was admitted still counts, and there is no read
+    /// budget shared across the sources (each read gets the ordinary
+    /// per-read cap). Archive and recovery reuse keep byte equality.
+    ///
+    /// Everything else holds as in [`Self::still_admitted`]: a fresh policy
+    /// view, the request project, a complete set, and every source re-read
+    /// through the admitted rooted reader for its tool under the current
+    /// policy and role — path jail and path rules, content policy, and the
+    /// original still complete and storable. Storability is judged on the
+    /// file's CURRENT content, so a source that became restricted or
+    /// secret-like no longer permits (owner decision E3). A missing, moved,
+    /// unreadable or withheld source yields `false`.
+    ///
+    /// Inside [`with_permission_memo`] each (project, path, tool) is read
+    /// once: the lineages of one returning request share most sources.
+    #[must_use]
+    pub(crate) fn still_permitted(&self) -> bool {
+        crate::core::policy::runtime::with_source_view(|| self.permitted()).unwrap_or(false)
+    }
+
+    fn permitted(&self) -> bool {
+        if self.incomplete || !self.matches_project() {
+            return false;
+        }
+        std::iter::once((&self.path, &self.tool))
+            .chain(self.more.iter().map(|source| (&source.path, &source.tool)))
+            .all(|(path, tool)| {
+                let key = (self.project.clone(), path.clone(), tool.clone());
+                if let Some(known) = PERMITTED.with(|memo| {
+                    memo.borrow()
+                        .as_ref()
+                        .and_then(|memo| memo.get(&key).copied())
+                }) {
+                    return known;
+                }
+                let mut remaining = crate::core::limits::max_read_bytes();
+                let permitted = crate::core::rooted_read::read_file_for_tool_rooted_admitted(
+                    path,
+                    &self.project,
+                    tool,
+                    &mut remaining,
+                )
+                .is_ok_and(|read| read.complete && read.storable);
+                PERMITTED.with(|memo| {
+                    if let Some(memo) = memo.borrow_mut().as_mut() {
+                        memo.insert(key, permitted);
+                    }
+                });
+                permitted
+            })
     }
 
     /// A stable, content-free identity of this lineage: the same sources
@@ -473,7 +555,7 @@ impl ArchiveAuthority {
             )
             .all(|(path, tool, digest)| {
                 *remaining != 0
-                    && crate::tools::ctx_read::read_file_for_tool_rooted_admitted(
+                    && crate::core::rooted_read::read_file_for_tool_rooted_admitted(
                         path,
                         &self.project,
                         tool,

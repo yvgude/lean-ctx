@@ -178,7 +178,7 @@ fn notice_text() -> String {
 /// first interactive command. Never prints for MCP, hooks or piped use, never
 /// when telemetry is already off or blocked, and never touches stdout.
 pub fn maybe_show_notice() {
-    if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
+    if !(std::io::stderr().is_terminal() && crate::core::host_env::stdin_is_terminal()) {
         return;
     }
     if notice_seen() || !telemetry_would_send() {
@@ -189,7 +189,7 @@ pub fn maybe_show_notice() {
     mark_notice_seen();
 }
 
-pub(crate) fn telemetry_would_send() -> bool {
+pub fn telemetry_would_send() -> bool {
     let Ok(config) = crate::core::config::Config::try_load_global() else {
         return false;
     };

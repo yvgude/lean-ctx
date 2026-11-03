@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "source_file": "config.toml",
+  "backup_file": "config.toml.v4-migration.bak",
+  "source_sha256": "319e20d3e00cad06aecec204d4b03016f6a0b6ed30c98cf2ff3af3f35bd9bbb2",
+  "output_sha256": "e2c6d93e25e6ce8cf3b75c3695e6820a6adebbc42c4d7b9de74b3a577c037d8a"
+}

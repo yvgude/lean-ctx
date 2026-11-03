@@ -9,7 +9,7 @@
 //! the graph and `ctx_search`, so `ctx_compose` answered "no match" for code
 //! that was plainly on disk.
 //!
-//! [`decode`] never fails:
+//! `decode` never fails:
 //! - a UTF-8 BOM is stripped (it is an encoding artifact, not content);
 //! - a UTF-16 LE/BE BOM selects UTF-16;
 //! - valid UTF-8 passes through without copying;
@@ -57,11 +57,11 @@ pub(crate) fn read_text(path: impl AsRef<Path>) -> std::io::Result<String> {
     Ok(decode(bytes))
 }
 
-/// [`read_text`] with the decoder's outcome: the text, the encoding it was
+/// `read_text` with the decoder's outcome: the text, the encoding it was
 /// decoded as, and whether any byte could not be represented. Readers that
 /// feed admission, caches or indexes use this form — a `String` alone cannot
 /// say that the text is not the whole source.
-pub(crate) fn read_text_checked(path: impl AsRef<Path>) -> std::io::Result<Decoded> {
+pub fn read_text_checked(path: impl AsRef<Path>) -> std::io::Result<Decoded> {
     let bytes = std::fs::read(path.as_ref())?;
     if looks_binary(&bytes) {
         return Err(std::io::Error::new(
@@ -92,15 +92,15 @@ pub(crate) enum DecodeLoss {
 /// a complete source: it may be delivered as the mode defines, but it is
 /// never complete for admission and never storable.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Decoded {
-    pub(crate) text: String,
+pub struct Decoded {
+    pub text: String,
     pub(crate) encoding: Encoding,
     pub(crate) loss: Option<DecodeLoss>,
 }
 
 impl Decoded {
     #[must_use]
-    pub(crate) fn complete(&self) -> bool {
+    pub fn complete(&self) -> bool {
         self.loss.is_none()
     }
 }
@@ -149,7 +149,7 @@ pub(crate) fn decode_checked(mut bytes: Vec<u8>) -> Decoded {
 
 /// NUL bytes mark binary data — except in UTF-16, where they are half the text.
 #[must_use]
-pub(crate) fn looks_binary(bytes: &[u8]) -> bool {
+pub fn looks_binary(bytes: &[u8]) -> bool {
     !has_utf16_bom(bytes) && bytes.iter().take(SNIFF_BYTES).any(|&b| b == 0)
 }
 

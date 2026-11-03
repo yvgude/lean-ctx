@@ -6,13 +6,13 @@ use crate::core::intent_engine::{IntentDimension, TaskType, classify, route_inte
 /// Context strategy only (the read view `ctx_plan` uses). Model and provider
 /// selection belong to the caller.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct IntentRouteV2 {
+pub struct IntentRouteV2 {
     pub inputs: IntentRouteInputsV2,
     pub decision: IntentRouteDecisionV2,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct IntentRouteInputsV2 {
+pub struct IntentRouteInputsV2 {
     /// BLAKE3 hex; the serialized name keeps its historical `_md5` suffix.
     #[serde(rename = "query_md5")]
     pub query_hash: String,
@@ -29,7 +29,7 @@ pub(crate) struct IntentRouteInputsV2 {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct PressureSummaryV1 {
+pub struct PressureSummaryV1 {
     pub utilization_pct: u8,
     pub remaining_tokens: usize,
     pub action: PressureActionV1,
@@ -37,7 +37,7 @@ pub(crate) struct PressureSummaryV1 {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum PressureActionV1 {
+pub enum PressureActionV1 {
     NoAction,
     SuggestCompression,
     ForceCompression,
@@ -56,7 +56,7 @@ impl PressureActionV1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub(crate) struct IntentRouteDecisionV2 {
+pub struct IntentRouteDecisionV2 {
     pub recommended_read_mode: String,
     pub effective_read_mode: String,
     pub degraded_by_pressure: bool,
@@ -70,7 +70,7 @@ pub(crate) struct RouteInputs {
     pub pressure_remaining_tokens: usize,
 }
 
-pub(crate) fn route_v2(query: &str) -> IntentRouteV2 {
+pub fn route_v2(query: &str) -> IntentRouteV2 {
     let ledger = crate::core::context_ledger::ContextLedger::load();
     let pressure = ledger.pressure();
     let profile_name = crate::core::profiles::active_profile_name();

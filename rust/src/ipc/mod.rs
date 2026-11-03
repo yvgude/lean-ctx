@@ -1,3 +1,4 @@
+pub mod detached;
 pub mod process;
 pub mod runtime;
 

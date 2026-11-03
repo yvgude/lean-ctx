@@ -20,7 +20,7 @@ const JSON_PREVIEW_KEYS: usize = 32;
 
 /// Tools whose large outputs are eligible for the firewall. Explicit file reads are
 /// intentionally excluded — they have their own read-mode (`lines:`, `signatures`, …).
-pub(crate) fn is_firewallable_tool(name: &str) -> bool {
+pub fn is_firewallable_tool(name: &str) -> bool {
     matches!(
         name,
         "ctx_shell" | "ctx_execute" | "ctx_search" | "ctx_tree"
@@ -33,7 +33,7 @@ pub(crate) fn is_firewallable_tool(name: &str) -> bool {
 /// of output size or config. This is the single source of truth for "an explicit
 /// read always returns content"; both the firewall and the reference-results path
 /// honour it so a `ctx_read` can never degrade to a preview the agent can't edit.
-pub(crate) fn is_protected_read(name: &str) -> bool {
+pub fn is_protected_read(name: &str) -> bool {
     name == "ctx_read"
 }
 
@@ -43,7 +43,7 @@ pub(crate) fn min_tokens(config: &Config) -> usize {
 }
 
 /// Whether a result of `output_tokens` from `tool` should be firewalled.
-pub(crate) fn should_firewall(tool: &str, output_tokens: usize, config: &Config) -> bool {
+pub fn should_firewall(tool: &str, output_tokens: usize, config: &Config) -> bool {
     config.archive.ephemeral_effective()
         && is_firewallable_tool(tool)
         && output_tokens >= min_tokens(config)
@@ -63,7 +63,7 @@ pub(crate) const DEFAULT_RAW_COMMANDS: &[&str] = &["sqlite3", "psql", "duckdb", 
 /// first, so the digest is a compression, never a loss. Explicit `raw`/`bypass`
 /// and the `LEAN_CTX_MINIMAL` escape hatch are never capped — callers gate on
 /// those before asking. `0` disables the cap.
-pub(crate) fn verbatim_cap_exceeded(tool: &str, output_tokens: usize, config: &Config) -> bool {
+pub fn verbatim_cap_exceeded(tool: &str, output_tokens: usize, config: &Config) -> bool {
     let cap = config.archive.verbatim_max_tokens_effective();
     cap > 0 && is_firewallable_tool(tool) && output_tokens >= cap
 }
@@ -71,7 +71,7 @@ pub(crate) fn verbatim_cap_exceeded(tool: &str, output_tokens: usize, config: &C
 /// Whether `command` runs a dataset program in any of its pipeline segments.
 /// `gh` counts only with `--json`/`--jq` — plain `gh` output is prose and
 /// compresses fine.
-pub(crate) fn is_raw_command(command: &str, config: &Config) -> bool {
+pub fn is_raw_command(command: &str, config: &Config) -> bool {
     command
         .split(['|', ';', '&', '\n'])
         .any(|seg| match seg.split_whitespace().next() {
@@ -88,11 +88,7 @@ pub(crate) fn is_raw_command(command: &str, config: &Config) -> bool {
 
 /// Whether an explicitly requested `ctx_shell(inline=true)` result fits the
 /// configured verbatim-delivery cap.
-pub(crate) fn should_inline_shell(
-    inline_requested: bool,
-    output_bytes: usize,
-    config: &Config,
-) -> bool {
+pub fn should_inline_shell(inline_requested: bool, output_bytes: usize, config: &Config) -> bool {
     inline_requested && output_bytes <= config.archive.inline_max_bytes_effective()
 }
 
@@ -100,7 +96,7 @@ pub(crate) fn should_inline_shell(
 /// a head/tail excerpt for multi-line output, or a char-bounded excerpt for output with
 /// few but very long lines (e.g. a single giant JSON line), followed by drilldown
 /// instructions keyed on `archive_id`.
-pub(crate) fn summarize(
+pub fn summarize(
     full: &str,
     archive_id: &str,
     tool: &str,
@@ -191,7 +187,7 @@ pub(crate) fn summarize(
 
 /// Keep the context bound even when output cannot safely be archived. The
 /// preview makes no lossless-recovery promise and contains no fabricated handle.
-pub(crate) fn summarize_unavailable(full: &str, tool: &str, output_tokens: usize) -> String {
+pub fn summarize_unavailable(full: &str, tool: &str, output_tokens: usize) -> String {
     let head_end = full.floor_char_boundary(LONG_LINE_HEAD_CHARS.min(full.len()));
     let mut out = format!(
         "[Firewalled {tool} output — {} chars, {output_tokens} tok; recovery unavailable]\n--- preview ---\n{}",

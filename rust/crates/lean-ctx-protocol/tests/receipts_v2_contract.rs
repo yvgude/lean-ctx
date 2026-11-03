@@ -80,7 +80,7 @@ fn every_invalid_receipts_fixture_is_refused_at_its_layer() {
         seen += 1;
     }
     assert!(
-        seen >= 8,
+        seen >= 7,
         "the invalid receipts fixtures were not found ({seen})"
     );
 }

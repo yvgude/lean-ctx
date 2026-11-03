@@ -646,7 +646,7 @@ pub fn info_tags() -> Vec<(&'static str, String)> {
         .ok()
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
         .unwrap_or_else(|| "unknown".to_string());
-    let model = crate::hook_handlers::load_detected_model()
+    let model = crate::core::host_state::load_detected_model()
         .map_or_else(|| "unknown".to_string(), |(name, _)| name);
     vec![
         ("project", project),

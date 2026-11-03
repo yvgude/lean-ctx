@@ -1,6 +1,6 @@
 {RULES_MARKER} (Global)
 
-LeanCTX (lean-ctx) is the Context Gateway for AI Systems. Use its MCP tools for file reads, shell commands and code searches: select task-relevant views, reuse cached context and recover detail from authorized sources or archives. Your host owns the task, agent loop and model.
+LeanCTX (lean-ctx) is the Context Gateway for AI agents. Use its MCP tools for file reads, shell commands and code searches: select task-relevant views, reuse cached context and recover detail from authorized sources or archives. Your host owns the task, agent loop and model.
 
 ## Tool Replacement Rules
 

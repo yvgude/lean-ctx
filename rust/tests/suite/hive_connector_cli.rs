@@ -6,9 +6,9 @@
 
 use crate::support::fake_hive::{FakeHive, FakeOptions, RecordedRequest};
 use base64::Engine as _;
-use lean_ctx::core::hive::auth::Session;
-use lean_ctx::core::hive::status::report;
-use lean_ctx::core::hive::{HiveConfig, HiveStore};
+use lean_ctx_hive::auth::Session;
+use lean_ctx_hive::status::report;
+use lean_ctx_hive::{HiveConfig, HiveStore};
 use lean_ctx_protocol::hive::lease::{HivePlan, LeaseState};
 use lean_ctx_protocol::hive::status::HiveCliStatusV1;
 use std::path::Path;
@@ -108,7 +108,7 @@ fn mode(path: &Path) -> u32 {
 /// Hive; `status` still answers "not connected".
 #[test]
 fn release_switch_refuses_connect_and_link_without_a_request() {
-    if lean_ctx::core::hive::HIVE_AVAILABLE {
+    if lean_ctx_hive::HIVE_AVAILABLE {
         return;
     }
     let fake = FakeHive::start();
@@ -139,7 +139,7 @@ fn release_switch_refuses_connect_and_link_without_a_request() {
         assert_eq!(output.status.code(), Some(1), "{args:?}: {output:?}");
         assert_eq!(
             text(&output.stderr).trim_end(),
-            lean_ctx::core::hive::NOT_AVAILABLE,
+            lean_ctx_hive::NOT_AVAILABLE,
             "{args:?}"
         );
         assert!(output.stdout.is_empty(), "{args:?}: {output:?}");
@@ -212,7 +212,7 @@ fn connect_status_disconnect_round_trip() {
     let human = text(&machine.run(&["status"]).stdout);
     assert!(human.contains("Lease:        valid until"), "{human}");
     assert!(
-        human.contains("Plan:         Team · 25 engines connected at once"),
+        human.contains("Plan:         Team · 25 instances connected at once"),
         "{human}"
     );
     assert!(
@@ -270,8 +270,8 @@ fn connect_status_disconnect_round_trip() {
 /// the next connect asks nothing and needs no request for the known vault.
 #[test]
 fn connect_confirms_sharing_once_and_maps_the_project_here() {
-    use lean_ctx::core::hive::consent::broker::Approval;
-    use lean_ctx::core::hive::consent::{Broker, Kind, State, Trust};
+    use lean_ctx_hive::consent::broker::Approval;
+    use lean_ctx_hive::consent::{Broker, Kind, State, Trust};
     let fake = FakeHive::start();
     let machine = Machine::new();
     let repo = machine.home.path().join("payments");
@@ -648,14 +648,14 @@ fn a_connect_refused_after_enrolment_drops_its_key_and_the_next_one_works() {
 #[test]
 fn disconnect_removes_a_key_an_unfinished_connect_left() {
     let machine = Machine::new();
-    lean_ctx::core::hive::instance_key::InstanceKeys::load_or_create(&machine.store()).unwrap();
+    lean_ctx_hive::instance_key::InstanceKeys::load_or_create(&machine.store()).unwrap();
     let output = machine.run(&["disconnect"]);
     assert!(output.status.success(), "{output:?}");
     assert!(
         text(&output.stdout).contains("Removed the instance key an unfinished connect left"),
         "{output:?}"
     );
-    assert!(lean_ctx::core::hive::instance_key::InstanceKeys::load(&machine.store()).is_err());
+    assert!(lean_ctx_hive::instance_key::InstanceKeys::load(&machine.store()).is_err());
     let again = machine.run(&["disconnect"]);
     assert_eq!(text(&again.stdout).trim(), "Not connected to Hive.");
 }
@@ -697,7 +697,7 @@ fn plan_and_seat_limits_are_explained_without_retrying() {
     let output = second.connect(&fake);
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        text(&output.stderr).contains("all engine instances of the workspace are in use (1 of 1)"),
+        text(&output.stderr).contains("all instances of the workspace are in use (1 of 1)"),
         "{output:?}"
     );
     assert!(!second.status_json().connected);
@@ -709,12 +709,12 @@ fn plan_and_seat_limits_are_explained_without_retrying() {
     let output = Machine::new().connect(&no_plan);
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        text(&output.stderr).contains("Personal 3 engines, 2 connected at once; Team 5 per seat"),
+        text(&output.stderr).contains("Personal 3 instances, 2 connected at once; Team 5 per seat"),
         "{output:?}"
     );
 
     let old = FakeHive::start_with(FakeOptions {
-        min_engine: Some("9.0.0".into()),
+        min_instance: Some("9.0.0".into()),
         ..FakeOptions::default()
     });
     let output = Machine::new().connect(&old);
@@ -743,15 +743,18 @@ fn a_cooling_engine_slot_points_to_the_web_recovery_and_stays_in_status() {
     let stderr = text(&output.stderr);
     assert!(
         stderr.contains(&format!(
-            "this workspace has used all its engine slots (1 of 1); nothing is charged for more; \
-             a revoked engine's slot frees at {reset} (7-day cool-down), or for a lost or broken \
-             device, recover its slot now on the Hive web (Settings › Engines › Recover, with your \
+            "this workspace has used all its instance slots (1 of 1); nothing is charged for more; \
+             a revoked instance's slot frees at {reset} (7-day cool-down), or for a lost or broken \
+             device, recover its slot now on the Hive web (Settings › Connected instances › Recover, with your \
              second factor; once per 30 days)"
         )),
         "{output:?}"
     );
     assert!(
-        text(&output.stdout).contains(&format!("Engines:      {} (Settings › Engines)", fake.url)),
+        text(&output.stdout).contains(&format!(
+            "Instances:    {} (Settings › Connected instances)",
+            fake.url
+        )),
         "{output:?}"
     );
     let status = second.run(&["status"]);
@@ -1268,7 +1271,7 @@ fn receipts_follow_the_engine_and_lease_switches() {
     std::fs::write(&config, toml).unwrap();
     let status = text(&machine.run(&["status"]).stdout);
     assert!(
-        status.contains("Receipts:     not sent: switched off on this engine"),
+        status.contains("Receipts:     not sent: switched off on this instance"),
         "{status}"
     );
 }
@@ -1284,69 +1287,121 @@ fn wait_for(what: &str, condition: impl Fn() -> bool) {
     }
 }
 
-#[test]
-fn the_bus_relay_catches_up_and_acks_deliveries_from_other_instances() {
-    let fake = FakeHive::start();
-    let machine = Machine::new();
-    assert!(machine.connect(&fake).status.success());
-    let project = git_project(&machine, "bus", "git@github.com:acme/bus.git");
-    assert!(machine.run_in(&project, &["hive", "sync"]).status.success());
-    let project_id = fake.project_ids().pop().expect("project resolved");
-    let channel = format!("org:org_acme/vault:{project_id}/general");
+/// A 2.x Hive: the relay connects once the instance card answered.
+fn hive_2x() -> FakeHive {
+    FakeHive::start_with(FakeOptions {
+        instance_card: true,
+        ..FakeOptions::default()
+    })
+}
 
-    // Missed while offline: replayed from the hello cursors.
-    let missed = fake.inject_event(
-        &channel,
-        "codex-85",
-        "status",
-        &serde_json::json!({"text": "E4 merged"}),
-    );
-    let home = machine.home.path().to_path_buf();
-    let mut relay = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(&home)
+/// `#ns/name` of the vault the machine's first linked checkout belongs to.
+fn vault_address(home: &Path) -> String {
+    let vaults: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.join("data/hive/projects.json")).unwrap())
+            .unwrap();
+    let vault = vaults["projects"]
+        .as_object()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap();
+    format!(
+        "#{}/{}",
+        vault["ns"].as_str().unwrap(),
+        vault["name"].as_str().unwrap()
+    )
+}
+
+/// `lean-ctx hive bus relay --for <seconds>` on the machine at `home`.
+fn relay_command(home: &Path, seconds: &str) -> Command {
+    let mut relay = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+    relay
+        .current_dir(home)
         .env("LEAN_CTX_HIVE_PREVIEW", "1")
-        .env("HOME", &home)
-        .env("LEAN_CTX_PROJECT_ROOT", &home)
+        .env("HOME", home)
+        .env("LEAN_CTX_PROJECT_ROOT", home)
         .env("LEAN_CTX_DATA_DIR", home.join("data"))
         .env("LEAN_CTX_CONFIG_DIR", home.join("config"))
         .env("LEAN_CTX_STATE_DIR", home.join("state"))
         .env("LEAN_CTX_CACHE_DIR", home.join("cache"))
         .env("LEAN_CTX_HOOK_CHILD", "1")
-        .args(["hive", "bus", "relay", "--for", "30"])
-        .spawn()
-        .unwrap();
-    wait_for("the relay to connect", || !fake.bus_connected().is_empty());
-    let acked = |seq: u64| {
-        fake.bus_acks()
+        .args(["hive", "bus", "relay", "--for", seconds]);
+    relay
+}
+
+/// Another machine's worker, as the C0 fixtures name it.
+const OTHER_WORKER: &str = "wkr_gawyravj36igdp3irdfo";
+
+/// The relay follows the vault buses its active agents work in: what it
+/// missed comes from its hello cursors, live messages over the open socket,
+/// both into the local bus (fenced); the cursor is saved, so a restart
+/// replays nothing.
+#[test]
+fn the_bus_relay_catches_up_from_its_cursors_and_files_deliveries_locally() {
+    let fake = hive_2x();
+    let machine = Machine::new();
+    assert!(machine.connect(&fake).status.success());
+    let project = git_project(&machine, "bus", "git@github.com:acme/bus.git");
+    assert!(machine.run_in(&project, &["hive", "sync"]).status.success());
+    let home = machine.home.path().to_path_buf();
+    let address = vault_address(&home);
+    let mut host = McpSession::start(&machine, &project);
+    let registered = host.call(
+        "ctx_agent",
+        &serde_json::json!({"action": "register", "agent_type": "claude", "role": "dev"}),
+    );
+    assert!(registered.contains("Agent registered"), "{registered}");
+
+    // Missed while offline: replayed from the hello cursors.
+    let missed = fake.inject_event(
+        &address,
+        OTHER_WORKER,
+        "progress",
+        &serde_json::json!({"step": "E4 merged"}),
+    );
+    let mut relay = relay_command(&home, "30").spawn().unwrap();
+    let delivered = |seq: u64| {
+        fake.bus_deliveries()
             .iter()
-            .any(|(_, ch, s)| ch == &channel && *s == seq)
+            .any(|(_, to, s)| to == &address && *s == seq)
     };
-    wait_for("the missed event to be acked", || acked(missed));
+    wait_for("the missed message", || delivered(missed));
 
     // Live: delivered over the open socket.
     let live = fake.inject_event(
-        &channel,
-        "codex-85",
-        "handoff",
-        &serde_json::json!({"text": "your turn"}),
+        &address,
+        OTHER_WORKER,
+        "progress",
+        &serde_json::json!({"step": "your turn"}),
     );
-    wait_for("the live event to be acked", || acked(live));
-    // The relay saves its cursor before it acks, so an ack Hive has seen
-    // is already on disk; a kill right now must not lose it.
-    let state = home.join("data/hive/bus/state.json");
-    let cursor = std::fs::read(&state)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .and_then(|value| value["cursors"][&channel].as_u64());
-    assert_eq!(cursor, Some(live), "cursor persisted before the ack");
+    wait_for("the live message", || delivered(live));
+    let state = home.join("data/hive/bus/state_v2.json");
+    let cursor = || {
+        std::fs::read(&state)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|value| value["cursors"][&address].as_u64())
+    };
+    wait_for("the cursor saved", || cursor() == Some(live));
+    let read = host.call("ctx_agent", &serde_json::json!({"action": "read"}));
+    assert!(
+        read.contains("E4 merged") && read.contains("your turn"),
+        "{read}"
+    );
+    assert!(read.contains("[hive]"), "fenced as foreign data: {read}");
     relay.kill().ok();
     relay.wait().ok();
 
-    // A restart resumes after the cursor: nothing is acked twice.
-    let before = fake.bus_acks().len();
+    // A restart resumes after the cursor: nothing is delivered twice.
+    let before = fake.bus_deliveries().len();
     let output = machine.run(&["bus", "relay", "--for", "3"]);
     assert!(output.status.success(), "{output:?}");
-    assert_eq!(fake.bus_acks().len(), before, "no replay after the cursor");
+    assert_eq!(
+        fake.bus_deliveries().len(),
+        before,
+        "no replay after the cursor"
+    );
 }
 
 /// H2: tasks of a linked project are read through the contract, text from
@@ -1425,7 +1480,7 @@ fn project_tasks_are_listed_opened_once_and_claimed_only_under_the_optin() {
     );
     // Opted in for this repo: the claim goes out under the opt-in.
     let mut optin: serde_json::Value = serde_json::from_str(include_str!(
-        "../../crates/lean-ctx-protocol/tests/fixtures/hive/engine_optin.response.json"
+        "../../crates/lean-ctx-protocol/tests/fixtures/hive/instance_optin.response.json"
     ))
     .unwrap();
     optin["vaults"] = serde_json::json!([project_id]);
@@ -1585,30 +1640,18 @@ impl Drop for McpSession {
     }
 }
 
-/// An agent that registers while the relay is connected is announced with
-/// a fresh hello on the same socket and can send at once (Hive, like the
-/// fake, refuses frames from agents no hello announced).
+/// An agent that registers while the relay is connected is announced in a
+/// fresh hello (the relay reconnects for it) and can post at once (Hive,
+/// like the fake, refuses a publish from a worker no hello announced).
 #[test]
 fn an_agent_registered_after_the_relay_connected_is_announced_and_can_send() {
-    let fake = FakeHive::start();
+    let fake = hive_2x();
     let machine = Machine::new();
     assert!(machine.connect(&fake).status.success());
     let project = git_project(&machine, "late", "git@github.com:acme/late.git");
     assert!(machine.run_in(&project, &["hive", "sync"]).status.success());
     let home = machine.home.path().to_path_buf();
-    let mut relay = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(&home)
-        .env("LEAN_CTX_HIVE_PREVIEW", "1")
-        .env("HOME", &home)
-        .env("LEAN_CTX_PROJECT_ROOT", &home)
-        .env("LEAN_CTX_DATA_DIR", home.join("data"))
-        .env("LEAN_CTX_CONFIG_DIR", home.join("config"))
-        .env("LEAN_CTX_STATE_DIR", home.join("state"))
-        .env("LEAN_CTX_CACHE_DIR", home.join("cache"))
-        .env("LEAN_CTX_HOOK_CHILD", "1")
-        .args(["hive", "bus", "relay", "--for", "60"])
-        .spawn()
-        .unwrap();
+    let mut relay = relay_command(&home, "60").spawn().unwrap();
     wait_for("the relay's first hello", || !fake.bus_hellos().is_empty());
     let sessions = fake.bus_sessions();
 
@@ -1617,52 +1660,38 @@ fn an_agent_registered_after_the_relay_connected_is_announced_and_can_send() {
         "ctx_agent",
         &serde_json::json!({"action": "register", "agent_type": "claude", "role": "late"}),
     );
-    let agent = registered
-        .split("Agent registered: ")
-        .nth(1)
-        .and_then(|rest| rest.split_whitespace().next())
-        .unwrap_or_else(|| panic!("{registered}"))
-        .to_string();
+    assert!(registered.contains("Agent registered"), "{registered}");
     // D6: only an explicitly addressed post leaves the machine; address it
     // to the vault this checkout is linked to.
-    let vaults: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(home.join("data/hive/projects.json")).unwrap())
-            .unwrap();
-    let vault = vaults["projects"]
-        .as_object()
-        .unwrap()
-        .values()
-        .next()
-        .unwrap();
-    let address = format!(
-        "#{}/{}",
-        vault["ns"].as_str().unwrap(),
-        vault["name"].as_str().unwrap()
-    );
+    let address = vault_address(&home);
     let posted = host.call(
         "ctx_agent",
         &serde_json::json!({"action": "post", "message": "late agent reports in", "category": "status", "to_agent": address}),
     );
     assert!(posted.contains("Posted"), "{posted}");
 
+    let late_worker = || {
+        fake.bus_hellos().last().and_then(|(_, presence)| {
+            presence
+                .iter()
+                .find(|p| p["role"] == "late")
+                .and_then(|p| p["worker_id"].as_str().map(str::to_string))
+        })
+    };
     wait_for("a hello announcing the late agent", || {
-        fake.bus_hellos()
-            .last()
-            .is_some_and(|(_, agents)| agents.contains(&agent))
+        late_worker().is_some()
     });
-    wait_for("the late agent's message on the bus", || {
-        fake.bus_events().iter().any(|event| {
-            event["from"] == agent.as_str() && event["body"]["text"] == "late agent reports in"
+    let worker = late_worker().unwrap();
+    wait_for("the late agent's post on the bus", || {
+        fake.bus_events().iter().any(|message| {
+            message["worker_id"] == worker.as_str()
+                && message["type"] == "progress"
+                && message["body"]["step"] == "late agent reports in"
         })
     });
-    assert_eq!(
-        fake.bus_sessions(),
-        sessions,
-        "announced on the open socket, without reconnecting"
-    );
     assert!(
-        fake.bus_hellos().len() >= 2,
-        "a second hello on that socket"
+        fake.bus_sessions() > sessions,
+        "the fresh hello opened a new session"
     );
     relay.kill().ok();
     relay.wait().ok();
@@ -1675,23 +1704,11 @@ fn an_agent_registered_after_the_relay_connected_is_announced_and_can_send() {
 /// relay is back with a hello within seconds, not after the old backoff.
 #[test]
 fn after_an_hive_restart_the_relay_says_hello_again_within_seconds() {
-    let fake = FakeHive::start();
+    let fake = hive_2x();
     let machine = Machine::new();
     assert!(machine.connect(&fake).status.success());
     let home = machine.home.path().to_path_buf();
-    let mut relay = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(&home)
-        .env("LEAN_CTX_HIVE_PREVIEW", "1")
-        .env("HOME", &home)
-        .env("LEAN_CTX_PROJECT_ROOT", &home)
-        .env("LEAN_CTX_DATA_DIR", home.join("data"))
-        .env("LEAN_CTX_CONFIG_DIR", home.join("config"))
-        .env("LEAN_CTX_STATE_DIR", home.join("state"))
-        .env("LEAN_CTX_CACHE_DIR", home.join("cache"))
-        .env("LEAN_CTX_HOOK_CHILD", "1")
-        .args(["hive", "bus", "relay", "--for", "90"])
-        .spawn()
-        .unwrap();
+    let mut relay = relay_command(&home, "90").spawn().unwrap();
     wait_for("the relay's first hello", || fake.bus_hellos().len() == 1);
 
     // Down for two connects, then up again.
@@ -1743,7 +1760,7 @@ fn agent_cli_refuses_unknown_subcommands_and_reads_once() {
 /// rev; policy off sends nothing and drops the buffer (K3, K15, K16).
 #[test]
 fn engine_metrics_go_signed_per_vault_hour_and_stop_when_policy_turns_them_off() {
-    use lean_ctx::core::hive::vault::{VaultMap, VaultRecord};
+    use lean_ctx_hive::vault::{VaultMap, VaultRecord};
     use lean_ctx_protocol::hive::metrics_v2::{
         PlanDefault, PolicyLevel, SharingPolicyValueV2, SharingStateV2, SharingValue,
     };
@@ -1778,7 +1795,7 @@ fn engine_metrics_go_signed_per_vault_hour_and_stop_when_policy_turns_them_off()
     std::fs::write(
         floor_dir.join("floor.json"),
         serde_json::json!({
-            "schema": lean_ctx::core::hive::effective_floor::FLOOR_SCHEMA,
+            "schema": lean_ctx_hive::effective_floor::FLOOR_SCHEMA,
             "version": 1, "digest": "sha256:test",
             "not_after": (chrono::Utc::now() + chrono::Duration::days(1))
                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
@@ -1827,26 +1844,16 @@ fn engine_metrics_go_signed_per_vault_hour_and_stop_when_policy_turns_them_off()
         command.output().unwrap()
     };
 
-    // Not released: nothing is collected or sent, status says so.
-    assert!(machine.run(&["sync"]).status.success());
-    assert_eq!(hours(), 0, "held back until the release");
-    let status = text(&machine.run(&["status"]).stdout);
-    assert!(
-        status.contains("Sharing engine metrics with") && status.contains("not released yet"),
-        "{status}"
-    );
-    assert!(
-        !machine
-            .home
-            .path()
-            .join("data/hive/metrics-v2/buffer")
-            .exists()
-    );
-
-    // Released for the fake wire: one signed bucket with the vault's slice.
+    // Released (owner go 03.11.2026): one signed bucket with the vault's slice,
+    // and status names the sharing without a release hold.
     let sync = sync_released();
     assert!(sync.status.success(), "{sync:?}");
     assert_eq!(hours(), 1, "{sync:?}");
+    let status = text(&machine.run(&["status"]).stdout);
+    assert!(
+        status.contains("Sharing instance metrics with") && !status.contains("not released yet"),
+        "{status}"
+    );
     let stored = fake.metrics_hours();
     assert_eq!(stored.len(), 1);
     let (_, rev, bucket) = &stored[0];
@@ -1894,7 +1901,7 @@ fn engine_metrics_go_signed_per_vault_hour_and_stop_when_policy_turns_them_off()
     let off = sync_released();
     assert!(off.status.success(), "{off:?}");
     assert!(
-        text(&off.stdout).contains("Engine metrics not sent: off (policy, set by Team)"),
+        text(&off.stdout).contains("Instance metrics not sent: off (policy, set by Workspace)"),
         "{off:?}"
     );
     assert_eq!(hours(), before, "policy off sends nothing");
@@ -1915,13 +1922,6 @@ fn engine_metrics_confirmation_needs_a_terminal() {
     let fake = FakeHive::start();
     let machine = Machine::new();
     assert!(machine.connect(&fake).status.success());
-    // Before the release there is nothing to confirm, and nothing is asked.
-    let unreleased = machine.run(&["metrics", "confirm"]);
-    assert!(unreleased.status.success(), "{unreleased:?}");
-    assert!(
-        text(&unreleased.stdout).contains("not released yet"),
-        "{unreleased:?}"
-    );
     let home = machine.home.path();
     let confirm = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
         .current_dir(home)
@@ -1945,8 +1945,8 @@ fn engine_metrics_confirmation_needs_a_terminal() {
     let preview = machine.run(&["metrics", "preview"]);
     assert!(preview.status.success(), "{preview:?}");
     let out = text(&preview.stdout);
-    assert!(out.contains("Engine metrics."), "{out}");
-    assert!(out.contains("/privacy/engine-metrics"), "{out}");
+    assert!(out.contains("Instance metrics."), "{out}");
+    assert!(out.contains("/privacy/instance-metrics"), "{out}");
     assert!(
         fake.requests()
             .iter()
@@ -1959,7 +1959,7 @@ fn engine_metrics_confirmation_needs_a_terminal() {
 /// Hive (scratch HOME): prints what would be sent, sends nothing.
 #[test]
 fn engine_metrics_preview_shows_a_sample_hour_and_sends_nothing() {
-    use lean_ctx::core::hive::vault::{VaultMap, VaultRecord};
+    use lean_ctx_hive::vault::{VaultMap, VaultRecord};
     use sha2::Digest as _;
     const VAULT: &str = "3f9a1c7e5b2d4a6f8e0c1b3d5f7a9c2e";
     let fake = FakeHive::start();
@@ -2053,7 +2053,7 @@ fn engine_metrics_preview_shows_a_sample_hour_and_sends_nothing() {
     let json = preview(true);
     assert!(json.status.success(), "{json:?}");
     let body: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(body["schema"], "leanctx.hive.engine-metrics/v2");
+    assert_eq!(body["schema"], "leanctx.hive.instance-metrics/v2");
     assert!(
         fake.requests()
             .iter()

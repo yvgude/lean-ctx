@@ -27,13 +27,13 @@ const GRAPH_PROVIDER: &str = "index.graph";
 const GRAPH_NEIGHBOURS_PER_SEED: usize = 3;
 
 /// Supplies persisted project knowledge facts as context candidates.
-pub(crate) struct KnowledgeProvider {
+pub struct KnowledgeProvider {
     project_root: String,
 }
 
 impl KnowledgeProvider {
     /// Creates a provider scoped to `project_root`.
-    pub(crate) fn new(project_root: impl Into<String>) -> Self {
+    pub fn new(project_root: impl Into<String>) -> Self {
         Self {
             project_root: project_root.into(),
         }
@@ -301,7 +301,7 @@ impl IndexSource {
                 let admission = crate::core::context_admission::stores::StoreAdmission::current();
                 // A resident index built under another admission policy may
                 // hold chunks of files that are excluded now.
-                crate::tools::ctx_semantic_search::bm25_store::get_thread_cache()
+                crate::core::bm25_store::get_thread_cache()
                     .and_then(|cache| crate::core::bm25_cache::peek(&cache, root))
                     .filter(|index| index.admission_policy.as_deref() == Some(admission.digest()))
                     .or_else(|| persisted_index(root, admission.digest()))
@@ -870,61 +870,5 @@ mod tests {
             offered(&session),
             ["noted without a file", "the pool leaks one lease"]
         );
-    }
-
-    /// The knowledge provider offers a fact bound to a source while the
-    /// source admits and not once it is deleted; a fact without a binding is
-    /// offered either way.
-    #[test]
-    fn a_fact_whose_source_is_gone_is_not_a_candidate() {
-        use crate::core::archive::bindings::{self, Item};
-        use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
-        let _data = governed();
-        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
-        let (_directory, root) = project();
-        std::fs::write(format!("{root}/auth.rs"), "pub fn verify_rs256() {}\n").expect("source");
-        let bound = "Tokens are verified with RS256 in the auth module";
-        let typed = "Deployments are promoted by the release captain on Fridays";
-        for (key, value) in [("token-check", bound), ("release-duty", typed)] {
-            let reply = crate::tools::ctx_knowledge::handle(
-                &root,
-                "remember",
-                Some("architecture"),
-                Some(key),
-                Some(value),
-                None,
-                "session-1",
-                None,
-                None,
-                None,
-                None,
-                None,
-            );
-            assert!(reply.starts_with("Remembered"), "{reply}");
-        }
-        let item = Item::KnowledgeFact {
-            project: &root,
-            category: "architecture",
-            key: "token-check",
-        };
-        let sources =
-            bindings::sources_at(&root, &["auth.rs"], "ctx_knowledge").expect("readable source");
-        assert!(bindings::bind(&item, bound, &root, sources));
-
-        let mut ctx = retrieval_context();
-        ctx.query = "tokens deployments".into();
-        ctx.project_root.clone_from(&root);
-        let offered = || {
-            let candidates = scoped(&root, || KnowledgeProvider::new(&root).candidates(&ctx));
-            let mut contents: Vec<String> = candidates
-                .into_iter()
-                .filter_map(|candidate| candidate.content)
-                .collect();
-            contents.sort();
-            contents
-        };
-        assert_eq!(offered(), [typed, bound]);
-        std::fs::remove_file(format!("{root}/auth.rs")).expect("delete");
-        assert_eq!(offered(), [typed]);
     }
 }

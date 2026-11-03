@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "worker_not_owned",
+    "message": "this worker belongs to another instance"
+  }
+}

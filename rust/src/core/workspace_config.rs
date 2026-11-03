@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 #[derive(Debug, Default)]
-pub(crate) struct LinkedProjects {
+pub struct LinkedProjects {
     pub roots: Vec<PathBuf>,
     pub warnings: Vec<String>,
     pub source: Option<PathBuf>,
@@ -15,7 +15,7 @@ struct WorkspaceConfigFile {
     linked_projects: Vec<String>,
 }
 
-pub(crate) fn load_linked_projects(project_root: &Path) -> LinkedProjects {
+pub fn load_linked_projects(project_root: &Path) -> LinkedProjects {
     let mut out = LinkedProjects::default();
 
     let Some((source, content)) = read_config_file(project_root) else {

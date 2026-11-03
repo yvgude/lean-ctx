@@ -6,13 +6,13 @@ use super::tool_def;
 /// Full tool definitions for the MCP `tools/list` fallback and the lazy core
 /// set.
 ///
-/// Single source of truth: derived directly from the canonical tool registry
-/// (`server::registry::build_registry`) so this list can never drift from the
-/// trait-based `McpTool::tool_def()` schemas. `build_registry()` is a pure,
-/// cheap-to-build function (registers unit structs only), so calling it here is
-/// inexpensive and keeps schemas in lock-step (#141).
+/// Single source of truth: derived from the canonical tool registry
+/// (`server::registry::build_registry`, registered as the engine's
+/// [`crate::core::tool_catalog`]) so this list can never drift from the
+/// trait-based `McpTool::tool_def()` schemas (#141). Empty until a catalog is
+/// registered (the CLI and every MCP server register it at start-up).
 pub fn granular_tool_defs() -> Vec<Tool> {
-    crate::server::registry::build_registry().tool_defs()
+    crate::core::tool_catalog::tool_defs()
 }
 
 /// Consolidated tool surface for `LEAN_CTX_UNIFIED` clients: the four native
@@ -155,7 +155,7 @@ mod tests {
     #[test]
     fn granular_defs_match_registry() {
         let granular = granular_tool_defs();
-        let registry = crate::server::registry::build_registry().tool_defs();
+        let registry = crate::core::tool_catalog::tool_defs();
         assert_eq!(
             granular.len(),
             registry.len(),
@@ -172,33 +172,6 @@ mod tests {
                 g.input_schema, r.input_schema,
                 "schema drift for {}",
                 g.name
-            );
-        }
-    }
-
-    /// Every curated core tool must exist in the registry, otherwise lazy mode
-    /// would silently drop it (the #141 drift symptom).
-    #[test]
-    fn core_tool_names_exist_in_registry() {
-        let registry = crate::server::registry::build_registry();
-        for &name in crate::tool_defs::CORE_TOOL_NAMES {
-            assert!(
-                registry.contains(name),
-                "CORE_TOOL_NAMES references '{name}' which is not registered"
-            );
-        }
-    }
-
-    /// The unified surface may only advertise registry tools plus the single
-    /// `ctx` meta-tool (which fans out via its `action` argument).
-    #[test]
-    fn unified_names_are_registry_tools_or_meta() {
-        let registry = crate::server::registry::build_registry();
-        for t in unified_tool_defs() {
-            let name = t.name.as_ref();
-            assert!(
-                name == "ctx" || registry.contains(name),
-                "unified tool '{name}' is neither the ctx meta-tool nor a registry tool"
             );
         }
     }
@@ -234,7 +207,7 @@ mod tests {
     /// allow them in restricted/readonly subagent contexts.
     #[test]
     fn readonly_tools_have_annotation() {
-        let defs = crate::server::registry::build_registry().tool_defs();
+        let defs = crate::core::tool_catalog::tool_defs();
         for t in &defs {
             let name = t.name.as_ref();
             if crate::tool_defs::READONLY_TOOL_NAMES.contains(&name) {
@@ -254,7 +227,7 @@ mod tests {
     /// Destructive tools must carry `destructiveHint: true`.
     #[test]
     fn destructive_tools_have_annotation() {
-        let defs = crate::server::registry::build_registry().tool_defs();
+        let defs = crate::core::tool_catalog::tool_defs();
         for t in &defs {
             let name = t.name.as_ref();
             if crate::tool_defs::DESTRUCTIVE_TOOL_NAMES.contains(&name) {
@@ -268,18 +241,6 @@ mod tests {
                     "DESTRUCTIVE tool '{name}' must have destructiveHint=true"
                 );
             }
-        }
-    }
-
-    /// Every tool in READONLY_TOOL_NAMES must exist in the registry.
-    #[test]
-    fn readonly_tool_names_exist_in_registry() {
-        let registry = crate::server::registry::build_registry();
-        for &name in crate::tool_defs::READONLY_TOOL_NAMES {
-            assert!(
-                registry.contains(name),
-                "READONLY_TOOL_NAMES references '{name}' which is not registered"
-            );
         }
     }
 }

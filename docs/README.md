@@ -17,7 +17,7 @@ Your application, agent loop and model stay yours.
 4. [Setup guides](guides/README.md) — use existing AI tools.
 5. [LeanCTX SDK](https://github.com/Thinkery-AG/leanctx-sdk) — embed supported Engine capabilities.
 
-The **LeanCTX Engine** is the runtime; the **LeanCTX SDK** is its application
+**LeanCTX | OSS** is the runtime; the **LeanCTX SDK** is its application
 integration surface. Context Intelligence is a capability inside the Gateway.
 
 ## Product status

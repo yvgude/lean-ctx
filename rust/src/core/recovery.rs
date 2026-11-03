@@ -51,7 +51,7 @@ pub(crate) fn tier() -> RecoveryHints {
 /// ("read the file directly") so orgs that forbid MCP still have a route, then
 /// the `ctx_*` shortcuts. `None` when the tier is `Off`.
 #[must_use]
-pub(crate) fn read_footer(file_path: &str) -> Option<String> {
+pub fn read_footer(file_path: &str) -> Option<String> {
     match tier() {
         RecoveryHints::Off => None,
         // Points at the one-call follow-ups (a symbol body or a line window)
@@ -75,7 +75,7 @@ pub(crate) fn read_footer(file_path: &str) -> Option<String> {
 /// collapses it to the bare path so a `recovery_hints=off` operator still gets the
 /// pointer without the coaching.
 #[must_use]
-pub(crate) fn handle_clause(id: &str, on_disk_path: Option<&str>) -> String {
+pub fn handle_clause(id: &str, on_disk_path: Option<&str>) -> String {
     if on_disk_path.is_some_and(|path| {
         crate::core::protected_store::enforce_protected_store_path(std::path::Path::new(path))
             .is_err()
@@ -114,12 +114,7 @@ pub(crate) fn archive_original(tool: &str, label: &str, original: &str) -> Optio
 
 /// `truncated` followed by the pointer to `original`, when it can be archived.
 #[must_use]
-pub(crate) fn with_original_pointer(
-    tool: &str,
-    label: &str,
-    original: &str,
-    truncated: String,
-) -> String {
+pub fn with_original_pointer(tool: &str, label: &str, original: &str, truncated: String) -> String {
     match archive_original(tool, label, original) {
         Some(pointer) => format!("{truncated}\n{pointer}"),
         None => truncated,

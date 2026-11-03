@@ -22,7 +22,7 @@ const MAX_DIVERGENCES: usize = 20;
 
 /// Quantified comparison of PropertyGraph vs graph_index facade output.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct ParityReport {
+pub struct ParityReport {
     pub files: usize,
     pub symbol_count_gi: usize,
     pub symbol_count_pg: usize,
@@ -48,7 +48,7 @@ impl ParityReport {
     /// True when PG loses nothing graph_index exposed: exact counts, identical
     /// file inventory, no dependency/dependent loss, every sampled symbol
     /// matched, and the structural-edge set is a superset.
-    pub(crate) fn is_lossless(&self) -> bool {
+    pub fn is_lossless(&self) -> bool {
         self.symbol_count_pg == self.symbol_count_gi
             && self.edge_count_pg == self.edge_count_gi
             && self.file_inventory_equal
@@ -68,7 +68,7 @@ impl ParityReport {
 /// Build an in-memory PropertyGraph from `index` and compare it, through the
 /// shared [`GraphProvider`] facade, against the same index served as
 /// graph_index. Pure in-memory — no disk, no rescan.
-pub(crate) fn compare(index: &ProjectIndex) -> anyhow::Result<ParityReport> {
+pub fn compare(index: &ProjectIndex) -> anyhow::Result<ParityReport> {
     // Both sides are read through the facade: the in-memory copy gets the
     // gate of the project the index belongs to, like the index side (G04).
     let pg = CodeGraph::open_in_memory()?.gated_for(&index.project_root);
@@ -153,7 +153,7 @@ pub(crate) fn compare(index: &ProjectIndex) -> anyhow::Result<ParityReport> {
 }
 
 /// Render a [`ParityReport`] as a compact, deterministic text block.
-pub(crate) fn format_report(r: &ParityReport) -> String {
+pub fn format_report(r: &ParityReport) -> String {
     let verdict = if r.is_lossless() {
         "LOSSLESS — PropertyGraph reproduces graph_index (safe to flip)"
     } else {

@@ -45,7 +45,7 @@ impl CandidateProvider for ExplicitSourceProvider {
     }
 }
 
-pub(crate) fn plan(
+pub fn plan(
     root: &Path,
     request: EngineContextSourcePlanRequestV1,
 ) -> Result<EngineContextSourcePlanResponseV1, &'static str> {
@@ -492,7 +492,7 @@ pub(super) fn revalidate_admitted_sources(
 /// more sensitive than this plan may carry. A source whose DECLARED
 /// classification exceeds the policy is unchanged: it stays a candidate and
 /// the kernel records its canonical policy exclusion.
-fn candidate(
+pub fn candidate(
     source: &EngineContextSourceV1,
     now: DateTime<Utc>,
     max_sensitivity: &SensitivityLevel,

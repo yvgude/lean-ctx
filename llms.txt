@@ -2,7 +2,7 @@
 
 > Context Gateway for AI Systems. Control what your AI can see.
 
-LeanCTX sits between AI and the systems it reads: SELECT → CONTROL → LEARN → PROVE. LeanCTX Engine selects task-relevant context, applies supported access and content controls, retains local task and knowledge records, and records context operations that an integration can observe. Context-only receipts cannot prove unobserved provider delivery. The Engine is Apache-2.0; LeanCTX SDK and commercial Enterprise have separate license and deployment contracts.
+LeanCTX sits between AI and the systems it reads: SELECT → CONTROL → LEARN → PROVE. LeanCTX | OSS selects task-relevant context, applies supported access and content controls, retains local task and knowledge records, and records context operations that an integration can observe. Context-only receipts cannot prove unobserved provider delivery. LeanCTX | OSS is Apache-2.0; LeanCTX SDK and commercial Enterprise have separate license and deployment contracts.
 
 Key properties for an LLM evaluating lean-ctx:
 

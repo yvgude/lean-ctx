@@ -16,7 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use std::sync::{OnceLock, RwLock};
 
 use regex::Regex;
@@ -28,9 +28,11 @@ use crate::core::input_filters::{FilterAction, FilterConfig};
 
 mod refresh;
 /// Process-scoped pin set by explicit protected launchers; absent in Community.
-pub(crate) const REQUIRED_POLICY_ROOT_ENV: &str = "LEAN_CTX_REQUIRED_POLICY_ROOT";
-pub(crate) const REQUIRED_POLICY_DIGEST_ENV: &str = "LEAN_CTX_REQUIRED_POLICY_DIGEST";
-pub(crate) use refresh::{protected_authority_paths, protected_policy_digest};
+pub const REQUIRED_POLICY_ROOT_ENV: &str = "LEAN_CTX_REQUIRED_POLICY_ROOT";
+pub const REQUIRED_POLICY_DIGEST_ENV: &str = "LEAN_CTX_REQUIRED_POLICY_DIGEST";
+pub use refresh::{protected_authority_paths, protected_policy_digest};
+#[cfg(any(test, feature = "test-support"))]
+pub mod held_horizon_support;
 #[cfg(test)]
 pub(crate) mod held_horizon_tests;
 #[cfg(test)]
@@ -38,13 +40,13 @@ mod refresh_tests;
 
 tokio::task_local! {
     /// Per-request project authority; never mutate process CWD for MCP roots.
-    pub(crate) static REQUEST_PROJECT: std::cell::RefCell<Option<PathBuf>>;
+    pub static REQUEST_PROJECT: std::cell::RefCell<Option<PathBuf>>;
     /// Immutable policy view for one synchronous source-admission operation.
     pub(crate) static SOURCE_VIEW: std::cell::RefCell<Option<SourceView>>;
 }
 
 #[derive(Clone)]
-pub(crate) struct SourceView {
+pub struct SourceView {
     project: PathBuf,
     policy: Option<Arc<ActivePolicy>>,
     fingerprint: blake3::Hash,
@@ -97,10 +99,30 @@ impl SourceView {
 
 struct SourceViewLifetime(Arc<AtomicBool>);
 
+/// The stored form of a [`PublicationAuthority`]: project root, policy and
+/// role fingerprints and the lifetime of the view it was captured from.
+/// Content-free.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoredPublicationAuthority {
+    project: PathBuf,
+    fingerprint: [u8; 32],
+    role_fingerprint: [u8; 32],
+    lifetime: Option<StoredLifetime>,
+}
+
+/// The stored lifetime of a view: its signed horizon, `None` for a view bound
+/// to a lifted requirement, which has none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoredLifetime {
+    horizon: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 /// Revalidate buffered CLI data at its output and persistence boundaries.
 /// This does not lock policy files against a concurrent administrator write.
 #[derive(Debug)]
-pub(crate) struct PublicationAuthority {
+pub struct PublicationAuthority {
     project: PathBuf,
     fingerprint: blake3::Hash,
     role_fingerprint: blake3::Hash,
@@ -110,7 +132,7 @@ pub(crate) struct PublicationAuthority {
 }
 
 impl PublicationAuthority {
-    pub(crate) fn capture() -> Result<Self, String> {
+    pub fn capture() -> Result<Self, String> {
         let view = current_source_view().ok_or("source authority unavailable")?;
         if !view.within_horizon() {
             return Err("source authority unavailable".into());
@@ -124,7 +146,44 @@ impl PublicationAuthority {
         })
     }
 
-    pub(crate) fn verify(&self) -> Result<(), String> {
+    /// The content-free form a holder that outlives this process keeps (the
+    /// proxy's register of provider-sealed items, #2177). `None` once the
+    /// view this authority was captured from was invalidated: such an
+    /// authority never verifies again, so nothing of it is kept. The flag is
+    /// read at this moment; what can still invalidate the view afterwards is
+    /// its signed horizon, which the stored form carries and checks.
+    pub fn stored(&self) -> Option<StoredPublicationAuthority> {
+        self.valid
+            .load(Ordering::Acquire)
+            .then(|| StoredPublicationAuthority {
+                project: self.project.clone(),
+                fingerprint: *self.fingerprint.as_bytes(),
+                role_fingerprint: *self.role_fingerprint.as_bytes(),
+                lifetime: self.lifetime.map(|lifetime| StoredLifetime {
+                    horizon: lifetime.horizon(),
+                }),
+            })
+    }
+
+    /// An authority from its stored form. It proves nothing by itself:
+    /// [`Self::verify`] re-verifies the project policy and role afresh and
+    /// checks the signed horizon, exactly as for an authority captured in
+    /// this process — only the in-process invalidation of the original view
+    /// is not carried over (an invalidated authority is never stored).
+    #[must_use]
+    pub fn restore(stored: StoredPublicationAuthority) -> Self {
+        Self {
+            project: stored.project,
+            fingerprint: blake3::Hash::from_bytes(stored.fingerprint),
+            role_fingerprint: blake3::Hash::from_bytes(stored.role_fingerprint),
+            lifetime: stored
+                .lifetime
+                .map(|lifetime| super::org::Lifetime::restored(lifetime.horizon)),
+            valid: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    pub fn verify(&self) -> Result<(), String> {
         if !self.valid.load(Ordering::Acquire)
             || REQUEST_PROJECT
                 .try_with(|slot| {
@@ -156,14 +215,14 @@ impl PublicationAuthority {
 
     /// Fingerprint used to bind derived decisions to this exact project and
     /// policy snapshot without exposing any policy contents.
-    pub(crate) fn fingerprint_bytes(&self) -> [u8; 32] {
+    pub fn fingerprint_bytes(&self) -> [u8; 32] {
         *self.fingerprint.as_bytes()
     }
 
     /// Role authorization is a separate part of source authority and must be
     /// bound independently into persisted provenance metadata.
     #[cfg(any(test, feature = "http-server"))]
-    pub(crate) fn role_fingerprint_bytes(&self) -> [u8; 32] {
+    pub fn role_fingerprint_bytes(&self) -> [u8; 32] {
         *self.role_fingerprint.as_bytes()
     }
 }
@@ -182,14 +241,14 @@ fn current_source_view() -> Option<SourceView> {
 }
 
 /// Capture the pinned view when propagating a synchronous worker scope.
-pub(crate) fn inherited_source_view() -> Option<SourceView> {
+pub fn inherited_source_view() -> Option<SourceView> {
     current_source_view()
 }
 
 /// Resolve the project root for a detached worker without retaining request-
 /// lifetime policy or capture state. The worker must reopen a fresh source view
 /// from this root when it stores output.
-pub(crate) fn detached_project_root(fallback: &Path) -> Result<PathBuf, String> {
+pub fn detached_project_root(fallback: &Path) -> Result<PathBuf, String> {
     let request_project = REQUEST_PROJECT
         .try_with(|slot| slot.borrow().clone())
         .ok()
@@ -239,14 +298,14 @@ pub(crate) fn pinned_role() -> Option<crate::core::roles::Role> {
 }
 
 /// Run `operation` as part of a request for `project`.
-pub(crate) fn in_project<T>(project: impl Into<PathBuf>, operation: impl FnOnce() -> T) -> T {
+pub fn in_project<T>(project: impl Into<PathBuf>, operation: impl FnOnce() -> T) -> T {
     REQUEST_PROJECT.sync_scope(std::cell::RefCell::new(Some(project.into())), operation)
 }
 
 /// Start `operation` on its own thread as part of a request for `project`.
 /// A spawned thread inherits no task-local: without this it reads the
 /// configuration and admission state of the process's own project (AP04-G3).
-pub(crate) fn spawn_for_project<T: Send + 'static>(
+pub fn spawn_for_project<T: Send + 'static>(
     project: impl Into<PathBuf>,
     operation: impl FnOnce() -> T + Send + 'static,
 ) -> std::thread::JoinHandle<T> {
@@ -254,7 +313,7 @@ pub(crate) fn spawn_for_project<T: Send + 'static>(
     std::thread::spawn(move || in_project(project, operation))
 }
 
-pub(crate) fn bind_request_project(project: Option<&str>) {
+pub fn bind_request_project(project: Option<&str>) {
     if current_source_view().is_some() {
         return;
     }
@@ -292,7 +351,7 @@ pub(crate) fn request_project_is(root: &Path) -> bool {
 /// Run a source operation with an explicit fallback project root. An existing
 /// request project remains authoritative; the fallback only fills an unbound
 /// request scope.
-pub(crate) fn with_project_source_view<T>(
+pub fn with_project_source_view<T>(
     project_root: &str,
     operation: impl FnOnce() -> T,
 ) -> Result<T, String> {
@@ -311,7 +370,7 @@ pub(crate) fn with_project_source_view<T>(
 /// Run an egress preparation for one explicitly selected project. Unlike the
 /// source-view fallback helper, this rejects a conflicting trusted request root
 /// and revalidates authority after the operation before its result is published.
-pub(crate) fn with_explicit_project_source_view<T>(
+pub fn with_explicit_project_source_view<T>(
     project_root: &Path,
     operation: impl FnOnce(&PublicationAuthority) -> T,
 ) -> Result<T, String> {
@@ -350,7 +409,7 @@ pub(crate) fn with_explicit_project_source_view<T>(
 /// Run a synchronous source operation against one freshly verified policy
 /// snapshot. Publish the returned value only if the same authority still holds.
 /// Nested calls reuse the parent snapshot; they never refresh into a weaker view.
-pub(crate) fn with_source_view<T>(operation: impl FnOnce() -> T) -> Result<T, String> {
+pub fn with_source_view<T>(operation: impl FnOnce() -> T) -> Result<T, String> {
     with_source_view_when(|_, _| true, operation)?
         .ok_or_else(|| "source policy view is no longer active".into())
 }
@@ -365,11 +424,9 @@ pub(crate) fn with_source_view<T>(operation: impl FnOnce() -> T) -> Result<T, St
 /// there is no probe first and a second resolution after, so what the caller
 /// branched on is what its view holds. Everything else is `with_source_view`
 /// — the nested-view rules, the closing recheck and the horizon. Inside,
-/// [`is_active`] and [`active_observed`] read the held view.
+/// [`is_active`] and `active_observed` read the held view.
 #[cfg(feature = "http-server")]
-pub(crate) fn with_governed_source_view<T>(
-    operation: impl FnOnce() -> T,
-) -> Result<Option<T>, String> {
+pub fn with_governed_source_view<T>(operation: impl FnOnce() -> T) -> Result<Option<T>, String> {
     with_source_view_when(|policy, observed| policy || observed, operation)
 }
 
@@ -474,7 +531,7 @@ pub(crate) fn role_fingerprint(role: &crate::core::roles::Role) -> Result<blake3
         .map_err(|_| "source role view unavailable".into())
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn source_view_policy(fresh: Option<Arc<ActivePolicy>>) -> Option<Arc<ActivePolicy>> {
     let state = test_override()
         .read()
@@ -485,7 +542,7 @@ fn source_view_policy(fresh: Option<Arc<ActivePolicy>>) -> Option<Arc<ActivePoli
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-support")))]
 fn source_view_policy(fresh: Option<Arc<ActivePolicy>>) -> Option<Arc<ActivePolicy>> {
     fresh
 }
@@ -505,7 +562,7 @@ pub struct ActivePolicy {
     /// How many of `redaction` + `blocked_patterns` a Hive filter pack
     /// added; they have their own budget next to the pack's.
     pub(crate) hive_rules: usize,
-    pub(crate) content_valid: bool,
+    pub content_valid: bool,
     /// Compiled inbound content filters (GL #675), built once from the pack's
     /// `[filters]` section.
     pub filters: FilterConfig,
@@ -550,8 +607,11 @@ impl ActivePolicy {
         self
     }
 
-    pub(crate) fn from_resolved(resolved: ResolvedPolicy) -> Self {
-        Self::from_resolved_with_hive(resolved, &crate::core::hive::policy::FilterRules::default())
+    pub fn from_resolved(resolved: ResolvedPolicy) -> Self {
+        Self::from_resolved_with_hive(
+            resolved,
+            &crate::core::policy::hive_filters::FilterRules::default(),
+        )
     }
 
     /// As [`Self::from_resolved`], with the rules of the installed Hive
@@ -560,11 +620,11 @@ impl ActivePolicy {
     /// refuses such sets, so this is defensive.
     pub(crate) fn from_resolved_with_hive(
         mut resolved: ResolvedPolicy,
-        hive: &crate::core::hive::policy::FilterRules,
+        hive: &crate::core::policy::hive_filters::FilterRules,
     ) -> Self {
         use super::content::{MAX_REDACTION_RULES, MAX_RULE_LABEL_BYTES, MAX_RULE_PATTERN_BYTES};
         let hive_rules = hive.redaction.len() + hive.blocked.len();
-        let hive_bounded = hive_rules <= crate::core::hive::policy::HIVE_MAX_RULES
+        let hive_bounded = hive_rules <= crate::core::policy::hive_filters::HIVE_MAX_RULES
             && hive
                 .redaction
                 .iter()
@@ -719,7 +779,7 @@ fn load_from_disk() -> Option<Arc<ActivePolicy>> {
         local,
         crate::core::policy::org::active_resolved_checked(),
         None,
-        &crate::core::hive::policy::FilterRules::default(),
+        &crate::core::policy::hive_filters::FilterRules::default(),
         None,
     )
 }
@@ -732,7 +792,7 @@ fn apply_org_floor(
     local: Option<ResolvedPolicy>,
     org: Result<Option<ResolvedPolicy>, String>,
     horizon: Option<chrono::DateTime<chrono::Utc>>,
-    hive: &crate::core::hive::policy::FilterRules,
+    hive: &crate::core::policy::hive_filters::FilterRules,
     hive_floor: Option<&ResolvedPolicy>,
 ) -> Option<Arc<ActivePolicy>> {
     // Invalid configured org policy must not silently remove the org floor.
@@ -748,7 +808,7 @@ fn apply_org_floor(
         }
     };
     let effective = match hive_floor {
-        Some(floor) => Some(crate::core::hive::effective_floor::apply(
+        Some(floor) => Some(crate::core::policy::hive_floor::apply(
             floor,
             effective.as_ref(),
         )),
@@ -847,7 +907,7 @@ pub(crate) fn active_observed() -> (Option<Arc<ActivePolicy>>, Option<super::org
         }
         return (view.policy, view.observation);
     }
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     {
         let state = test_override()
             .read()
@@ -874,8 +934,8 @@ pub(crate) fn active_observed() -> (Option<Arc<ActivePolicy>>, Option<super::org
 /// observed `observation` and left no policy — the state after a signed
 /// unpin on an endpoint without a project pack. Tests only: a real view comes
 /// from `with_source_view` and nowhere else.
-#[cfg(test)]
-pub(crate) fn with_observed_view_for_test<T>(
+#[cfg(any(test, feature = "test-support"))]
+pub fn with_observed_view_for_test<T>(
     project: &Path,
     observation: Option<super::org::Observation>,
     operation: impl FnOnce() -> T,
@@ -946,19 +1006,19 @@ pub fn reload() {
     let _ = active();
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 enum OverrideState {
     Live,
     Fixed(Option<Arc<ActivePolicy>>),
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn test_override() -> &'static RwLock<OverrideState> {
     static OVERRIDE: OnceLock<RwLock<OverrideState>> = OnceLock::new();
     OVERRIDE.get_or_init(|| RwLock::new(OverrideState::Live))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn test_override_lock() -> &'static std::sync::Mutex<()> {
     static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
@@ -968,14 +1028,14 @@ fn test_override_lock() -> &'static std::sync::Mutex<()> {
 /// one order every test takes them: environment first, then policy. Held as
 /// one value so that neither outlives the other; the fields are declared in
 /// release order — policy before environment.
-#[cfg(test)]
-pub(crate) struct TestOverrideGuard {
+#[cfg(any(test, feature = "test-support"))]
+pub struct TestOverrideGuard {
     _policy: std::sync::MutexGuard<'static, ()>,
     _environment: crate::core::data_dir::TestEnvGuard,
 }
 
-#[cfg(test)]
-pub(crate) fn lock_test_override() -> TestOverrideGuard {
+#[cfg(any(test, feature = "test-support"))]
+pub fn lock_test_override() -> TestOverrideGuard {
     let environment = crate::core::data_dir::test_env_lock();
     let policy = test_override_lock()
         .lock()
@@ -987,13 +1047,13 @@ pub(crate) fn lock_test_override() -> TestOverrideGuard {
 }
 
 /// Process-wide test override held under a shared lock for its whole lifetime.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub struct TestPolicyOverride {
     previous: OverrideState,
     _lock: TestOverrideGuard,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl TestPolicyOverride {
     pub fn set(resolved: Option<ResolvedPolicy>) -> Self {
         let lock = lock_test_override();
@@ -1012,7 +1072,7 @@ impl TestPolicyOverride {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for TestPolicyOverride {
     fn drop(&mut self) {
         *test_override()

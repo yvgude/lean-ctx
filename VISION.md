@@ -14,7 +14,7 @@ Give AI useful context. Decide what may cross the boundary. Connect local
 knowledge across sessions. Inspect what happened. These are four complementary
 responsibilities; Learn means context continuity, not model training.
 
-The **LeanCTX Engine** implements the runtime capabilities. The **LeanCTX SDK**
+**LeanCTX | OSS** implements the runtime capabilities. The **LeanCTX SDK**
 connects applications to supported Engine interfaces. **Context Intelligence**
 describes the retrieval, structural understanding and preparation inside the
 Gateway; it is not a separate product category.

@@ -10,7 +10,7 @@ use super::{GUARD_KINDS, ProError, ProResult, plain_text};
 pub(crate) const MAX_REQUEST_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Op {
+pub enum Op {
     SecurityReport,
     MemoryAnalyze,
     MemoryCompare,
@@ -56,14 +56,14 @@ const OPS: [(&str, Op); 19] = [
 ];
 
 impl Op {
-    pub(crate) fn parse(name: &str) -> Option<Self> {
+    pub fn parse(name: &str) -> Option<Self> {
         OPS.iter().find(|(n, _)| *n == name).map(|(_, op)| *op)
     }
 
     /// Ops that read only device-wide stores (audit trail, receipts, the
     /// savings ledger, host sessions) and so answer "All projects" too. The
     /// others read or write one project's knowledge and need a project.
-    pub(crate) fn device_wide(self) -> bool {
+    pub fn device_wide(self) -> bool {
         matches!(
             self,
             Self::SecurityReport

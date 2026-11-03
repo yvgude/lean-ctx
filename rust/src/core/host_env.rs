@@ -7,7 +7,7 @@
 //! that way cannot see `CI`, `DO_NOT_TRACK` or `LEAN_CTX_TELEMETRY`, so a CI
 //! job reported as a local machine and an opt-out set in the shell did not
 //! reach the server. On Linux the nearest ancestor that sets one of the
-//! [`HOST_KEYS`] supplies it when this process has none. Only those keys are
+//! `HOST_KEYS` supplies it when this process has none. Only those keys are
 //! kept; the rest of an ancestor's environment is never stored.
 
 use std::collections::HashMap;
@@ -52,14 +52,60 @@ const HOST_KEYS: &[&str] = &[
 #[cfg(all(target_os = "linux", not(test)))]
 const MAX_ANCESTORS: usize = 4;
 
-/// `key` from this process, else from the nearest ancestor for [`HOST_KEYS`].
+/// `key` from this process, else from the nearest ancestor for `HOST_KEYS`.
 /// A key this process sets, even to an empty value, is never overridden.
 #[must_use]
-pub(crate) fn var(key: &str) -> Option<String> {
+pub fn var(key: &str) -> Option<String> {
     match std::env::var(key) {
         Ok(value) => Some(value),
         Err(_) => ancestors().get(key).cloned(),
     }
+}
+
+/// Whether stdin is an interactive terminal, without ever blocking.
+///
+/// On Windows `std`'s `is_terminal` asks a non-console handle for its file
+/// name (MSYS pty detection). When stdin is a synchronous pipe that the
+/// parent is reading from at the same time — PowerShell's `Start-Job` hands
+/// its remoting pipe to every child — that query waits for the parent's
+/// read, so `lean-ctx --version` hung forever under `Start-Process -Wait`
+/// (#2176 VM). Here a console counts on Windows (a character device with a
+/// console mode). An MSYS/Cygwin pty is a pipe: only inside such a terminal
+/// (`MSYSTEM` or `TERM` set — PowerShell and cmd set neither) is `std`'s
+/// name-based pty check asked, so Git Bash prompts stay interactive while a
+/// plain pipe is never queried.
+#[must_use]
+pub fn stdin_is_terminal() -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{FILE_TYPE_CHAR, GetFileType};
+        use windows_sys::Win32::System::Console::GetConsoleMode;
+        let handle = std::io::stdin().as_raw_handle();
+        if handle.is_null() || handle as isize == -1 {
+            return false;
+        }
+        // SAFETY: GetFileType and GetConsoleMode only inspect the handle
+        // (neither waits on a pipe's pending I/O, verified on Windows Server
+        // 2025); `mode` is a valid out-pointer.
+        let console = unsafe {
+            let mut mode = 0_u32;
+            GetFileType(handle) == FILE_TYPE_CHAR && GetConsoleMode(handle, &raw mut mode) != 0
+        };
+        console || (inside_posix_terminal() && std::io::IsTerminal::is_terminal(&std::io::stdin()))
+    }
+    #[cfg(not(windows))]
+    {
+        use std::io::IsTerminal as _;
+        std::io::stdin().is_terminal()
+    }
+}
+
+/// Running inside an MSYS2/Git Bash/Cygwin terminal, where stdin may be a
+/// pty pipe that only `std`'s name check recognises.
+#[cfg(windows)]
+fn inside_posix_terminal() -> bool {
+    std::env::var_os("MSYSTEM").is_some() || std::env::var_os("TERM").is_some()
 }
 
 fn ancestors() -> &'static HashMap<&'static str, String> {

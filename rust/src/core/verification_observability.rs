@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct VerificationObservabilityV1 {
+pub struct VerificationObservabilityV1 {
     pub schema_version: u32,
     pub created_at: String,
     pub role: String,
@@ -11,7 +11,7 @@ pub(crate) struct VerificationObservabilityV1 {
     pub pipeline: crate::core::pipeline::PipelineStats,
 }
 
-pub(crate) fn snapshot_v1() -> VerificationObservabilityV1 {
+pub fn snapshot_v1() -> VerificationObservabilityV1 {
     let created_at = chrono::Utc::now().to_rfc3339();
     let role = crate::core::roles::active_role_name();
     let profile = crate::core::profiles::active_profile_name();
@@ -31,7 +31,7 @@ pub(crate) fn snapshot_v1() -> VerificationObservabilityV1 {
     }
 }
 
-pub(crate) fn format_compact(v: &VerificationObservabilityV1) -> String {
+pub fn format_compact(v: &VerificationObservabilityV1) -> String {
     let proof_last = v
         .proof
         .last_written_at

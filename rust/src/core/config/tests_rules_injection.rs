@@ -2,12 +2,18 @@ use super::*;
 
 #[test]
 fn default_is_shared() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     let cfg = Config::default();
     assert_eq!(cfg.rules_injection_effective(), RulesInjection::Shared);
 }
 
 #[test]
 fn config_dedicated() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     let cfg = Config {
         rules_injection: Some("dedicated".to_string()),
         ..Default::default()
@@ -17,6 +23,9 @@ fn config_dedicated() {
 
 #[test]
 fn config_off() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     for raw in ["off", "none", "disabled"] {
         let cfg = Config {
             rules_injection: Some(raw.to_string()),
@@ -32,6 +41,9 @@ fn config_off() {
 
 #[test]
 fn off_disables_dedicated_session_context() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     let cfg = Config {
         rules_injection: Some("off".to_string()),
         ..Default::default()
@@ -41,6 +53,9 @@ fn off_disables_dedicated_session_context() {
 
 #[test]
 fn unknown_value_falls_back_to_shared() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     let cfg = Config {
         rules_injection: Some("nonsense".to_string()),
         ..Default::default()
@@ -52,6 +67,9 @@ fn unknown_value_falls_back_to_shared() {
 
 #[test]
 fn off_declines_rule_steering() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     // #1599's rule reaches the in-band setup tip too: off means off, on every
     // channel. Under `off` the tip is also unclearable — `lean-ctx setup`
     // removes the rules block rather than writing it.
@@ -69,6 +87,9 @@ fn off_declines_rule_steering() {
 
 #[test]
 fn explicit_auto_inject_false_declines_rule_steering() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     // "never inject" said in the setup section is the same refusal.
     let cfg = Config {
         setup: SetupConfig {
@@ -82,6 +103,9 @@ fn explicit_auto_inject_false_declines_rule_steering() {
 
 #[test]
 fn auto_and_explicit_true_still_accept_rule_steering() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     // `None` is auto, not a refusal: rules are simply not present yet, which is
     // exactly the case the tip exists for. `Some(true)` wants them outright.
     assert!(!Config::default().declines_rule_steering());
@@ -98,6 +122,9 @@ fn auto_and_explicit_true_still_accept_rule_steering() {
 
 #[test]
 fn deserialization_from_toml() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     let cfg: Config = toml::from_str(r#"rules_injection = "dedicated""#).unwrap();
     assert_eq!(cfg.rules_injection.as_deref(), Some("dedicated"));
     assert_eq!(cfg.rules_injection_effective(), RulesInjection::Dedicated);
@@ -105,6 +132,9 @@ fn deserialization_from_toml() {
 
 #[test]
 fn dedicated_session_context_gated_by_scope() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     // Dedicated + non-project scope → SessionStart summary active.
     let cfg = Config {
         rules_injection: Some("dedicated".to_string()),
@@ -127,6 +157,9 @@ fn dedicated_session_context_gated_by_scope() {
 
 #[test]
 fn local_override_merges() {
+    // rules_injection_effective reads LEAN_CTX_RULES_INJECTION, which other
+    // tests set (context_overhead): hold the env lock while reading it.
+    let _env = crate::core::data_dir::test_env_lock();
     let mut base = Config::default();
     base.merge_local(r#"rules_injection = "dedicated""#, true);
     assert_eq!(base.rules_injection_effective(), RulesInjection::Dedicated);

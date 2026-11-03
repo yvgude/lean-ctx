@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 const INSTANCE_SEED: [u8; 32] = [0x49; 32];
 
 fn fixture(name: &str) -> Value {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = crate::engine_dir()
         .join("crates/lean-ctx-protocol/tests/fixtures/hive")
         .join(format!("{name}.json"));
     serde_json::from_str(&std::fs::read_to_string(&path).expect("fixture")).expect("fixture json")
@@ -261,21 +261,17 @@ fn engine_flow_round_trips_every_contract_fixture() {
     );
     assert_eq!(status, 304);
 
-    let mut put = fixture("knowledge_put.request");
-    let (status, conflict) =
-        client.call("PUT", &format!("/vaults/{pid}/knowledge"), Some(&put), &[]);
-    let detail = decode::<HiveErrorBody>(&conflict).error;
-    assert_eq!(
-        (status, detail.code, detail.expected, detail.actual),
-        (409, HiveErrorCode::RevisionConflict, Some(3), Some(0))
-    );
-    put["expected_revision"] = Value::from(0);
-    let (status, merged) = client.call("PUT", &format!("/vaults/{pid}/knowledge"), Some(&put), &[]);
-    assert_eq!(status, 200, "{merged}");
-    assert_eq!(decode::<KnowledgeRevisionV1>(&merged).revision, 1);
-    for _ in 0..2 {
-        fake.publish_revision(&pid, put["document"].clone());
+    let document = fixture("knowledge_revision.response")["document"].clone();
+    for _ in 0..3 {
+        fake.publish_revision(&pid, document.clone());
     }
+    let (status, head) = client.get(&format!("/vaults/{pid}/knowledge"));
+    assert_eq!(status, 200, "{head}");
+    assert_eq!(
+        decode::<KnowledgeRevisionV1>(&head).revision,
+        3,
+        "the head only"
+    );
 
     let (status, ack) = client.post(
         &format!("/vaults/{pid}/proposals"),
@@ -288,16 +284,6 @@ fn engine_flow_round_trips_every_contract_fixture() {
     let list: ProposalListV1 = decode(&list);
     assert_eq!(list.proposals.len(), 1);
     assert!(list.proposals[0].mine);
-    let (status, revisions) = client.get(&format!(
-        "/vaults/{pid}/knowledge/revisions?after=1&limit=1"
-    ));
-    assert_eq!(status, 200);
-    let revisions: RevisionListV1 = decode(&revisions);
-    revisions.validate().unwrap();
-    assert_eq!(
-        (revisions.revisions[0].revision, revisions.next_after),
-        (2, Some(2))
-    );
 
     let mut metrics = fixture("metrics.request");
     metrics["days"][0]["vault"]["id"] = Value::from(pid.clone());
@@ -341,17 +327,6 @@ fn engine_flow_round_trips_every_contract_fixture() {
     let after_expiry: BusLeaseV1 = decode(&after_expiry);
     assert!(after_expiry.granted, "the service clock expires leases");
     assert!(after_expiry.fencing_token > granted.fencing_token);
-
-    let channel = format!("org:org_acme/vault:{pid}/general");
-    fake.inject_event(&channel, "codex-85", "status", &json!({"text": "hello"}));
-    let (status, events) = client.get(&format!(
-        "/bus/channels/{}/events?after_seq=0",
-        urlencoding::encode(&channel)
-    ));
-    assert_eq!(status, 200, "{events}");
-    decode::<BusEventsV1>(&events).validate().unwrap();
-    let (_, poll) = client.get("/bus/poll?cursor=c_0");
-    assert_eq!(decode::<BusPollV1>(&poll).frames.len(), 1);
 
     let (status, renewed) = client.post(
         &format!(
@@ -414,17 +389,6 @@ fn contract_errors_are_enforced() {
     );
 
     let project = resolve(&client);
-    let (status, body) = client.call(
-        "PUT",
-        &format!("/vaults/{}/knowledge", project.vault_id),
-        Some(&fixture("knowledge_put.request")),
-        &[],
-    );
-    assert_eq!(
-        (status, error_code(&body)),
-        (403, HiveErrorCode::ForbiddenRight),
-        "default lease has no knowledge.merge"
-    );
 
     let key = [(HEADER_IDEMPOTENCY_KEY, "01jb8zsamekey00000000000000")];
     let proposal = fixture("proposal.request");
@@ -438,7 +402,7 @@ fn contract_errors_are_enforced() {
     for _ in 0..3 {
         fake.publish_revision(
             &project.vault_id,
-            fixture("knowledge_put.request")["document"].clone(),
+            fixture("knowledge_revision.response")["document"].clone(),
         );
     }
     let (status, first) = client.call("POST", &path, Some(&proposal), &key);
@@ -544,14 +508,14 @@ fn seats_plans_and_lease_lapse() {
     );
 
     let old = FakeHive::start_with(FakeOptions {
-        min_engine: Some("3.12.1".into()),
+        min_instance: Some("3.12.1".into()),
         ..FakeOptions::default()
     });
     let (status, body) =
         Client::new(&old.url).post("/device/code", &fixture("device_code.request"));
     let detail = decode::<HiveErrorBody>(&body).error;
     assert_eq!(
-        (status, detail.min_engine.as_deref()),
+        (status, detail.min_instance.as_deref()),
         (426, Some("3.12.1"))
     );
 }
@@ -799,11 +763,6 @@ fn conformance_against_deployed_hive() {
                 &[("If-None-Match", &etag)],
             );
             assert_eq!(status, 304, "conditional GET");
-            let (status, body) = client.get(&format!(
-                "/vaults/{project_id}/knowledge/revisions?after=0&limit=10"
-            ));
-            assert_eq!(status, 200, "{body}");
-            decode::<RevisionListV1>(&body).validate().unwrap();
             let mut draft = fixture("proposal.request");
             draft["context_patch"]["base_revision"] = Value::from(revision.revision);
             // Identical drafts map to the first sender's proposal; make this run's unique.
@@ -880,16 +839,6 @@ fn conformance_against_deployed_hive() {
             let release = format!("/bus/leases/{lease_id}?fencing_token={token}");
             let (status, _) = client.call("DELETE", &release, None, &[]);
             assert_eq!(status, 204, "release");
-            let channel = format!("org:{}/vault:{project_id}/general", lease.org_id);
-            let (status, body) = client.get(&format!(
-                "/bus/channels/{}/events?after_seq=0",
-                urlencoding::encode(&channel)
-            ));
-            assert_eq!(status, 200, "{body}");
-            decode::<BusEventsV1>(&body).validate().unwrap();
-            let (status, body) = client.get("/bus/poll");
-            assert_eq!(status, 200, "{body}");
-            decode::<BusPollV1>(&body);
         });
         area("disconnect", &mut || {
             let (status, body) =

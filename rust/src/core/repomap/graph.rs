@@ -10,7 +10,7 @@ use crate::core::graph_index::{self, ProjectIndex, SymbolEntry};
 
 /// A symbol definition with its file context.
 #[derive(Debug, Clone)]
-pub(crate) struct SymbolDef {
+pub struct SymbolDef {
     pub name: String,
     pub kind: String,
     pub file: String,
@@ -21,7 +21,7 @@ pub(crate) struct SymbolDef {
 }
 
 /// File-level graph combining import edges and call edges.
-pub(crate) struct RepoGraph {
+pub struct RepoGraph {
     pub files: HashSet<String>,
     /// Forward adjacency: file -> list of files it depends on.
     pub forward: HashMap<String, Vec<String>>,
@@ -34,7 +34,7 @@ impl RepoGraph {
     ///
     /// Loads or builds the project index and call graph,
     /// then merges their edges into a unified file-level graph.
-    pub(crate) fn build(project_root: &str) -> Self {
+    pub fn build(project_root: &str) -> Self {
         let (index, content_cache) = graph_index::scan_with_content_cache(project_root);
         let calls = graph_call_pairs(project_root).unwrap_or_else(|| {
             let cg_inputs = CallGraphInputs::from_project_index(&index);

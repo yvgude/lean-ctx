@@ -4,7 +4,7 @@
 
 **Control what your AI can see.**
 
-The LeanCTX Engine operates between sources/tools and the AI application that
+LeanCTX | OSS operates between sources/tools and the AI application that
 consumes their results. The LeanCTX SDK exposes supported Engine interfaces to
 applications that own their model calls and workflow.
 
@@ -13,7 +13,7 @@ applications that own their model calls and workflow.
 ```mermaid
 flowchart TD
   S[Files, repositories, tool results and configured providers] --> G
-  subgraph G[LeanCTX Engine]
+  subgraph G[LeanCTX]
     A[Select task-relevant context] --> B[Control supported access and content]
     B --> L[Learn through local task and knowledge continuity]
     L --> C[Prove with source references and observable evidence]

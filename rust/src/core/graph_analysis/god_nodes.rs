@@ -9,7 +9,7 @@ use crate::core::graph_provider::EdgeInfo;
 
 /// A highly connected file in the dependency graph.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub(crate) struct GodNode {
+pub struct GodNode {
     pub path: String,
     /// Files that depend on this one (fan-in).
     pub in_degree: usize,
@@ -22,7 +22,7 @@ pub(crate) struct GodNode {
 /// Ranks files by total dependency degree (fan-in + fan-out) and returns the top
 /// `limit`. Deterministic: ties broken by path so the output is stable across
 /// rebuilds.
-pub(crate) fn compute_god_nodes(edges: &[EdgeInfo], limit: usize) -> Vec<GodNode> {
+pub fn compute_god_nodes(edges: &[EdgeInfo], limit: usize) -> Vec<GodNode> {
     let deps = dependency_edges(edges);
     let mut incoming: HashMap<&str, usize> = HashMap::new();
     let mut outgoing: HashMap<&str, usize> = HashMap::new();

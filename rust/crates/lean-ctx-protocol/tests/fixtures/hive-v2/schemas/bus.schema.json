@@ -568,7 +568,7 @@
       ]
     },
     "publish": {
-      "description": "E17 body and place.publish frame body (engine → server); worker_id required from engines",
+      "description": "E17 body and place.publish frame body (instance → server); worker_id required from instances",
       "allOf": [
         {
           "$ref": "#/$defs/publish_fields"
@@ -1423,7 +1423,7 @@
       }
     },
     "f_task_event": {
-      "description": "C0 2.2: a task of a vault the socket follows changed. Fanned out to every subscriber of the vault like message.deliver (the acting engine too) and fenced the same way; not stored, so there is no replay: an engine catches up with GET /v1/vaults/{pid}/tasks?state=.",
+      "description": "C0 2.2: a task of a vault the socket follows changed. Fanned out to every subscriber of the vault like message.deliver (the acting instance too) and fenced the same way; not stored, so there is no replay: an instance catches up with GET /v1/vaults/{pid}/tasks?state=.",
       "required": [
         "vault",
         "number",
@@ -1464,7 +1464,7 @@
           ]
         },
         "by": {
-          "description": "the acting worker and its engine, or Hive itself (a lapsed lease, a person's cancel)",
+          "description": "the acting worker and its instance, or Hive itself (a lapsed lease, a person's cancel)",
           "oneOf": [
             {
               "type": "object",
@@ -1534,8 +1534,8 @@
         },
         "resource": {
           "enum": [
-            "registered_engines",
-            "connected_engines",
+            "registered_instances",
+            "connected_instances",
             "private_vaults",
             "storage_bytes",
             "transfer_bytes",

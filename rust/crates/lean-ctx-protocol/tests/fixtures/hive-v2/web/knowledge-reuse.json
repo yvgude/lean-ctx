@@ -49,13 +49,13 @@
       "weeks": [
         {
           "delivery": {
-            "engines": 2,
+            "instances": 2,
             "nodes": 9,
             "pairs": 12
           },
           "from": "2026-10-19T00:00:00Z",
           "reuse": {
-            "engines": 0,
+            "instances": 0,
             "nodes": 0,
             "pairs": 0,
             "verified_knowledge_pairs": 0
@@ -65,13 +65,13 @@
         },
         {
           "delivery": {
-            "engines": 1,
+            "instances": 1,
             "nodes": 3,
             "pairs": 3
           },
           "from": "2026-10-26T00:00:00Z",
           "reuse": {
-            "engines": 1,
+            "instances": 1,
             "nodes": 1,
             "pairs": 1,
             "verified_knowledge_pairs": 1

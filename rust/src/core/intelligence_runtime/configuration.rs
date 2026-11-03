@@ -7,29 +7,29 @@ use crate::core::config::{Config, IntelligenceRuntimeConfig};
 
 use super::{InstallError, Result, health};
 
-pub(crate) const DISCLOSURE: &str = "Optional Intelligence Runtime: proprietary, runs locally. Its commercial features are licensed through LeanCTX Hive or a commercial licence; the public reference runtime works without either. Staging packages are not production releases.";
+pub const DISCLOSURE: &str = "Optional Intelligence Runtime: proprietary, runs locally. Its commercial features are licensed through LeanCTX | Hive or a commercial licence; the public reference runtime works without either. Staging packages are not production releases.";
 
 /// Verified setup snapshot: discovery never starts proprietary code or grants consent.
-pub(crate) struct SetupRuntime {
+pub struct SetupRuntime {
     config: IntelligenceRuntimeConfig,
     observed_config: IntelligenceRuntimeConfig,
     version: Option<String>,
 }
 
 impl SetupRuntime {
-    pub(crate) fn available(&self) -> bool {
+    pub fn available(&self) -> bool {
         self.version.is_some()
     }
 
-    pub(crate) fn channel_available(&self) -> bool {
+    pub fn channel_available(&self) -> bool {
         !self.config.channel_url.is_empty()
     }
 
-    pub(crate) fn enabled(&self) -> bool {
+    pub fn enabled(&self) -> bool {
         self.available() && self.config.enabled && self.config.accept_proprietary
     }
 
-    pub(crate) fn status(&self) -> &'static str {
+    pub fn status(&self) -> &'static str {
         if self.enabled() {
             "configured"
         } else if self.available() {
@@ -88,7 +88,7 @@ impl SetupRuntime {
     }
 
     /// The caller must obtain explicit consent for this captured, trusted selection.
-    pub(crate) fn enable(&self) -> Result<serde_json::Value> {
+    pub fn enable(&self) -> Result<serde_json::Value> {
         if !self.available() {
             return Err(InstallError::State);
         }
@@ -102,7 +102,7 @@ impl SetupRuntime {
     }
 
     /// Called only after explicit consent; discovery itself never uses the network.
-    pub(crate) fn install_and_enable(&self) -> Result<serde_json::Value> {
+    pub fn install_and_enable(&self) -> Result<serde_json::Value> {
         if !self.channel_available() {
             return Err(InstallError::Policy);
         }
@@ -163,7 +163,7 @@ impl SetupRuntime {
     }
 }
 
-pub(crate) fn inspect_setup() -> Result<SetupRuntime> {
+pub fn inspect_setup() -> Result<SetupRuntime> {
     // Never merge project configuration, search PATH, download or start a child.
     let observed_config = global_runtime()?;
     let config = if observed_config == IntelligenceRuntimeConfig::default() {

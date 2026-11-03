@@ -60,7 +60,7 @@ const EXPIRED: &str = "expired-content-policy";
 
 /// What the release point may do with one finished text under the pack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReleaseCheck {
+pub enum ReleaseCheck {
     /// The pack leaves the text exactly as it is.
     Unchanged,
     /// No rule of the pack blocks or rewrites the text; only the built-in
@@ -75,7 +75,7 @@ pub(crate) enum ReleaseCheck {
 /// pack itself objects to. The first may be masked and delivered where the
 /// position allows a rewrite; the second is never rewritten at the release
 /// point (a finished result the pack would change is stale).
-pub(crate) fn release_check(text: &str, active: &ActivePolicy) -> ReleaseCheck {
+pub fn release_check(text: &str, active: &ActivePolicy) -> ReleaseCheck {
     let own = evaluate_pack_rules(text, active, &active.filters);
     if own.blocked || own.text != text {
         return ReleaseCheck::Refused;
@@ -120,7 +120,7 @@ fn evaluate_pack_rules(text: &str, active: &ActivePolicy, filters: &FilterConfig
         > MAX_REDACTION_RULES
             + active
                 .hive_rules
-                .min(crate::core::hive::policy::HIVE_MAX_RULES)
+                .min(crate::core::policy::hive_filters::HIVE_MAX_RULES)
         || active
             .redaction
             .iter()
@@ -379,6 +379,17 @@ mod tests {
         assert!(evaluate_text("customer", &ActivePolicy::from_resolved(resolved)).blocked);
         assert!(evaluate_text("customer", &ActivePolicy::deny_all()).blocked);
     }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+/// A protected policy (`extra` added to a minimal pack) for this thread until
+/// the guard drops. Shared by the storage tests and the proxy's CCR tests.
+pub fn protected_for_test(extra: &str) -> super::runtime::TestPolicyOverride {
+    let pack = super::parse(&format!(
+        "name = \"storage-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n{extra}"
+    ))
+    .expect("test pack");
+    super::runtime::TestPolicyOverride::set(Some(super::resolve(&pack).expect("test pack")))
 }
 
 #[cfg(test)]

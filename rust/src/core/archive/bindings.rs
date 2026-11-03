@@ -13,7 +13,7 @@
 //! A binding is written only from sources that exist AT THE WRITE: files the
 //! writer named and the admitted reader returned then ([`sources_at`]), or the
 //! complete source set of the very call that produced the item
-//! ([`sources_of_call`]). Nothing is inferred later. Owner decision E3: a
+//! (`sources_of_call`). Nothing is inferred later. Owner decision E3: a
 //! restricted source or text binds nothing.
 
 use super::authority::ArchiveAuthority;
@@ -29,7 +29,7 @@ const REGISTER: Register = Register {
 
 /// The identity of a stored item.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Item<'a> {
+pub enum Item<'a> {
     /// A knowledge fact: project root as its store names it, category, key.
     KnowledgeFact {
         project: &'a str,
@@ -81,11 +81,7 @@ impl Item<'_> {
 /// it. `None` when no path is named or any of them cannot be bound (missing,
 /// outside the project, not permitted, restricted, only lossily readable):
 /// an item is bound to all the sources it names or to none.
-pub(crate) fn sources_at<S: AsRef<str>>(
-    project: &str,
-    paths: &[S],
-    tool: &str,
-) -> Option<Vec<SourceRef>> {
+pub fn sources_at<S: AsRef<str>>(project: &str, paths: &[S], tool: &str) -> Option<Vec<SourceRef>> {
     if paths.is_empty() {
         return None;
     }
@@ -120,13 +116,13 @@ pub(crate) fn sources_of_call(capture: &ArchiveAuthority) -> Option<Vec<SourceRe
 /// source is restricted or withheld, when admission would rewrite the text
 /// (the binding would be of another text), without a project under
 /// protection, or when the register refuses the write.
-pub(crate) fn bind(item: &Item<'_>, text: &str, project: &str, sources: Vec<SourceRef>) -> bool {
+pub fn bind(item: &Item<'_>, text: &str, project: &str, sources: Vec<SourceRef>) -> bool {
     prepare(item, text, project, sources).is_some_and(|binding| write(item, text, binding))
 }
 
 /// The binding [`bind`] would write, not yet written. `None` for every case
 /// in which [`bind`] leaves the item originless before the register is asked.
-fn prepare(
+pub(crate) fn prepare(
     item: &Item<'_>,
     text: &str,
     project: &str,
@@ -146,15 +142,15 @@ fn write(item: &Item<'_>, text: &str, binding: StoredBinding) -> bool {
 }
 
 /// A binding prepared for an item that is derived from bound items, to be
-/// written once the item's store has kept the text ([`carry`]).
-pub(crate) struct Carried(StoredBinding);
+/// written once the item's store has kept the text (`carry`).
+pub struct Carried(StoredBinding);
 
 impl Carried {
     /// Write the binding for `item`, whose store keeps `text` now. `false`
     /// when `text` is not the text the binding was prepared for or the
     /// register refuses the write: the item is then NOT bound, and its store
     /// must not keep a text that was derived from bound items.
-    pub(crate) fn commit(self, item: &Item<'_>, text: &str) -> bool {
+    pub fn commit(self, item: &Item<'_>, text: &str) -> bool {
         self.0.binds(text) && write(item, text, self.0)
     }
 }
@@ -306,7 +302,7 @@ pub(crate) fn carry_from(
 /// re-reads go through the admitted reader, which publishes every read, so
 /// they run outside the capture. A check that ends in a refusal — or an item
 /// its caller then does not copy — leaves no source behind.
-pub(crate) fn held(
+pub fn held(
     item: &Item<'_>,
     text: &str,
     reader_project: Option<&str>,
@@ -332,7 +328,7 @@ pub(crate) fn held(
 /// does not lie in the bound checkout, and any file that is missing,
 /// changed (another branch or revision) or no longer admitted. Refused
 /// re-reads leave nothing in the capture.
-pub(crate) fn holds_in_checkout(item: &Item<'_>, text: &str, checkout: &str) -> bool {
+pub fn holds_in_checkout(item: &Item<'_>, text: &str, checkout: &str) -> bool {
     use std::path::{Component, Path, PathBuf};
     let Some(binding) = binding_of(item, text) else {
         return false;
@@ -403,11 +399,7 @@ fn binding_of(item: &Item<'_>, text: &str) -> Option<StoredBinding> {
 ///   it is delivered stays the decision of its store, as before.
 ///
 /// Without protection nothing is checked or published.
-pub(crate) fn serve(
-    item: &Item<'_>,
-    text: &str,
-    reader_project: Option<&str>,
-) -> Result<(), Withheld> {
+pub fn serve(item: &Item<'_>, text: &str, reader_project: Option<&str>) -> Result<(), Withheld> {
     if !stored::source_authority_required() {
         return Ok(());
     }
@@ -571,8 +563,9 @@ mod tests {
         let (_directory, root) = project();
         let path = format!("{root}/build.rs");
         std::fs::write(&path, "fn main() { panic!(\"linker\") }\n").expect("source");
-        let admitted = crate::tools::ctx_read::read_file_for_tool_rooted(&path, &root, "ctx_read")
-            .expect("admitted read");
+        let admitted =
+            crate::core::rooted_read::read_file_for_tool_rooted(&path, &root, "ctx_read")
+                .expect("admitted read");
         // What the admitted reader publishes into the call's capture.
         let capture =
             ArchiveAuthority::file(std::path::Path::new(&root), &path, "ctx_read", &admitted)

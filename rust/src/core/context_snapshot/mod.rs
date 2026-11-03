@@ -4,15 +4,15 @@
 //! A snapshot is a distilled, typed, signed projection of the live context
 //! stores at a point in time:
 //!
-//! - **git anchor** — commit / branch / dirty state ([`GitAnchorV1`])
-//! - **lineage** — what entered the window, from Context IR ([`SnapshotLineageV1`])
-//! - **ledger** — why it was there, with Φ-scores ([`SnapshotLedgerV1`])
-//! - **ROI** — token savings at that moment ([`SnapshotRoiV1`])
-//! - **session** — the task/decisions behind it ([`SnapshotSessionV1`])
+//! - **git anchor** — commit / branch / dirty state (`GitAnchorV1`)
+//! - **lineage** — what entered the window, from Context IR (`SnapshotLineageV1`)
+//! - **ledger** — why it was there, with Φ-scores (`SnapshotLedgerV1`)
+//! - **ROI** — token savings at that moment (`SnapshotRoiV1`)
+//! - **session** — the task/decisions behind it (`SnapshotSessionV1`)
 //!
 //! Snapshots chain via [`ContextSnapshotV1::parent_id`] into an append-only
 //! timeline. The id is content-addressed (BLAKE3 of the canonical body, see
-//! [`digest`]) and the signature (ed25519, see [`signing`]) is computed over it.
+//! `digest`) and the signature (ed25519, see `signing`) is computed over it.
 //!
 //! This module is the **contract** (Phase 0): the types, the deterministic
 //! id/signing semantics, and their tests. The builder that fills snapshots from
@@ -21,18 +21,18 @@
 pub(crate) mod builder;
 pub(crate) mod digest;
 #[allow(dead_code)]
-pub(crate) mod publish;
-pub(crate) mod restore;
+pub mod publish;
+pub mod restore;
 pub(crate) mod signing;
 pub(crate) mod timeline;
-pub(crate) mod types;
+pub mod types;
 
-pub(crate) use builder::{SnapshotOptions, create};
-pub(crate) use publish::{ImportOutcome, PublishOptions, PublishOutcome, import, publish};
-pub(crate) use restore::{GitRestore, RestoreOptions, RestoreOutcome, restore};
-pub(crate) use signing::verify_snapshot;
-pub(crate) use timeline::{load_entries, read_snapshot, resolve_id};
-pub(crate) use types::ContextSnapshotV1;
+pub use builder::{SnapshotOptions, create};
+pub use publish::{ImportOutcome, PublishOptions, PublishOutcome, import, publish};
+pub use restore::{GitRestore, RestoreOptions, RestoreOutcome, restore};
+pub use signing::verify_snapshot;
+pub use timeline::{load_entries, read_snapshot, resolve_id};
+pub use types::ContextSnapshotV1;
 
 #[cfg(test)]
 mod tests {

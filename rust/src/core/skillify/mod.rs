@@ -2,15 +2,15 @@
 //! git-committable `.cursor/rules/skillify-*.mdc` rule files.
 //!
 //! Pipeline: [`candidate::mine_candidates`] (read diary + knowledge) →
-//! [`gate::judge`] (precision-biased KEEP/SKIP) → [`rule_file::plan`]
+//! `gate::judge` (precision-biased KEEP/SKIP) → `rule_file::plan`
 //! (create / merge / unchanged). Runs on demand only; nothing is written unless
 //! the miner is invoked, and re-runs are idempotent.
 //!
 //! A rule file is a derived copy of the facts it was distilled from: it is
 //! bound to their sources when it is written and asked again before lean-ctx
-//! lists or promotes it ([`provenance`]).
+//! lists or promotes it (`provenance`).
 
-pub(crate) mod candidate;
+pub mod candidate;
 pub(crate) mod gate;
 mod provenance;
 pub(crate) mod rule_file;
@@ -22,7 +22,7 @@ use rule_file::WriteOutcome;
 
 /// Summary of one mining run, for human + machine reporting.
 #[derive(Debug, Default)]
-pub(crate) struct MineReport {
+pub struct MineReport {
     pub created: Vec<String>,
     pub merged: Vec<String>,
     pub unchanged: Vec<String>,
@@ -36,7 +36,7 @@ pub(crate) struct MineReport {
 
 /// One generated rule on disk.
 #[derive(Debug, Clone)]
-pub(crate) struct RuleSummary {
+pub struct RuleSummary {
     pub slug: String,
     pub version: u32,
     pub title: String,
@@ -45,7 +45,7 @@ pub(crate) struct RuleSummary {
 /// A rule file that needs the user's attention. Never a rule: the path, a
 /// reason code and a fixed sentence — nothing of the file's content.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RuleNotice {
+pub struct RuleNotice {
     pub path: String,
     pub code: &'static str,
     pub reason: &'static str,
@@ -54,7 +54,7 @@ pub(crate) struct RuleNotice {
 /// What `list` returns: the rules lean-ctx may show now, and — apart from
 /// them — the files it reports instead. Both sorted (#498).
 #[derive(Debug, Default)]
-pub(crate) struct RuleListing {
+pub struct RuleListing {
     pub rules: Vec<RuleSummary>,
     pub notices: Vec<RuleNotice>,
 }
@@ -87,7 +87,7 @@ fn output_root(project_root: &str, scope: &str) -> PathBuf {
 
 /// Run the miner end-to-end. Returns an error only when skillify is disabled or
 /// a write fails; an empty project simply yields an empty report.
-pub(crate) fn mine(project_root: &str) -> Result<MineReport, String> {
+pub fn mine(project_root: &str) -> Result<MineReport, String> {
     let cfg = config();
     if !cfg.enabled {
         return Err("skillify is disabled — set `[skillify] enabled = true`".to_string());
@@ -159,7 +159,7 @@ fn write_rule(
 }
 
 /// List the generated rules currently on disk for the configured scope.
-pub(crate) fn list_rules(project_root: &str) -> RuleListing {
+pub fn list_rules(project_root: &str) -> RuleListing {
     let cfg = config();
     let root = output_root(project_root, &cfg.scope);
     let dir = rule_file::rules_dir(&root);
@@ -196,7 +196,7 @@ pub(crate) fn list_rules(project_root: &str) -> RuleListing {
         // The listed title is content of a file in the output root: it is
         // read through the common rooted admitted reader; a rule that is
         // withheld is not listed.
-        if let Ok(content) = crate::tools::ctx_read::read_file_for_tool_rooted(
+        if let Ok(content) = crate::core::rooted_read::read_file_for_tool_rooted(
             &path.to_string_lossy(),
             &root.to_string_lossy(),
             "ctx_skillify",
@@ -217,7 +217,7 @@ pub(crate) fn list_rules(project_root: &str) -> RuleListing {
 
 /// Copy a project-scoped generated rule into the global `~/.cursor/rules` so it
 /// applies to every project. Returns the destination path on success.
-pub(crate) fn promote(project_root: &str, slug: &str) -> Result<String, String> {
+pub fn promote(project_root: &str, slug: &str) -> Result<String, String> {
     let home = dirs::home_dir().ok_or("cannot resolve home directory")?;
     promote_into(project_root, slug, &home)
 }
@@ -260,7 +260,7 @@ fn promote_into(project_root: &str, slug: &str, home: &Path) -> Result<String, S
 /// policy would mask is not copied as it is, and never copied masked.
 fn promotable(src: &std::path::Path, project_root: &str) -> Result<String, String> {
     let mut remaining = crate::core::limits::max_read_bytes();
-    let read = crate::tools::ctx_read::read_file_for_tool_rooted_admitted(
+    let read = crate::core::rooted_read::read_file_for_tool_rooted_admitted(
         &src.to_string_lossy(),
         project_root,
         "ctx_skillify",
@@ -295,7 +295,7 @@ fn admitted_candidate(
 }
 
 /// Current skillify configuration, for `status`.
-pub(crate) fn current_config() -> crate::core::config::SkillifyConfig {
+pub fn current_config() -> crate::core::config::SkillifyConfig {
     config()
 }
 

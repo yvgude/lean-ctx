@@ -7,7 +7,7 @@
 
 pub mod canonical_receipt;
 pub mod event;
-pub(crate) mod host;
+pub mod host;
 pub mod migration;
 pub mod producer;
 pub mod projection;

@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: Apache-2.0
+# The LeanCTX model-API proxy, split upward out of the Engine: it depends on the
+# Engine library (package lean-ctx-engine, lib `lean_ctx`) and is used by the
+# composition root (crates/lean-ctx). Published after lean-ctx-engine.
+[package]
+name = "lean-ctx-proxy"
+version = "3.12.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "The LeanCTX model-API proxy: provider adapters, compression and accounting on top of LeanCTX | OSS."
+repository = "https://github.com/yvgude/lean-ctx"
+homepage = "https://leanctx.com"
+readme = "../../README.md"
+keywords = ["lean-ctx", "llm", "proxy", "context"]
+categories = ["development-tools"]
+
+[lib]
+name = "lean_ctx_proxy"
+path = "src/lib.rs"
+
+[features]
+default = []
+enterprise = ["lean-ctx-engine/enterprise"]
+http-server = ["lean-ctx-engine/http-server", "dep:axum", "dep:tokio-tungstenite", "dep:rustls"]
+shape-xlat = ["lean-ctx-engine/shape-xlat"]
+
+[dependencies]
+lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
+rmcp = { version = "2", features = [
+  "server",
+  "client",
+  "transport-io",
+  "transport-streamable-http-server",
+  "transport-child-process",
+  "transport-streamable-http-client-reqwest",
+  # OAuth 2.1 for HTTP MCP servers that require a browser login (#1391):
+  # discovery, dynamic client registration, PKCE, code exchange, refresh.
+  "auth",
+  # Form elicitation: ctx_shell asks the user to approve a command the shell
+  # allowlist does not name (server/shell_approval.rs).
+  "elicitation",
+] }
+http = "1.4"
+tokio = { version = "1.52", features = [
+  "rt",
+  "rt-multi-thread",
+  "macros",
+  "io-std",
+  "io-util",
+  "net",
+  "sync",
+  "time",
+  "signal",
+  "process",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
+subtle = "2.6"
+anyhow = "1.0"
+regex = "1.12"
+tracing = "0.1"
+futures = "0.3"
+dirs = "6.0"
+chrono = { version = "0.4", features = ["serde"] }
+toml = "1.1"
+flate2 = "1.1"
+axum = { version = "0.8", optional = true, features = ["ws"] }
+tower = "0.5"
+tokio-tungstenite = { version = "0.29", default-features = false, features = [
+  "connect",
+  "rustls-tls-webpki-roots",
+], optional = true }
+rustls = { version = "0.23.45", optional = true }
+base64 = "0.22"
+hmac = "0.13"
+sha2 = "0.11"
+getrandom = "0.4"
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3.27"
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls",
+  "stream",
+  "json",
+  "cookies",
+] }
+libc = "0.2"
+blake3 = "1.8"
+zstd = "0.14.3"
+async-trait = "0.1.91"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_System_Threading",
+  "Win32_System_ProcessStatus",
+  "Win32_System_SystemInformation",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Pipes",
+  "Win32_Storage_FileSystem",
+  "Wdk_Foundation",
+  "Wdk_Storage_FileSystem",
+  "Wdk_System_SystemServices",
+  "Win32_System_IO",
+] }
+
+[dev-dependencies]
+# The proxy's CCR tests follow handles through the server's ctx_expand tool.
+lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.1", default-features = false, features = ["http-server"] }
+# The Engine's test helpers for this crate's unit tests (see core::test_mode).
+lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false, features = ["test-support"] }
+serial_test = "3.5"
+
+[lints]
+workspace = true

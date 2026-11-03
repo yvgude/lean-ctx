@@ -1,7 +1,7 @@
 # lean-ctx-syntax
 
 Tree-sitter based code structure for the
-[LeanCTX Engine](https://github.com/yvgude/lean-ctx).
+[LeanCTX | OSS](https://github.com/yvgude/lean-ctx).
 
 It extracts signatures (tree-sitter first, regex fallback), runs deep AST
 queries (imports, calls, type definitions and uses), resolves imports to

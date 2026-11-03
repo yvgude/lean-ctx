@@ -130,7 +130,7 @@ fn is_standard_xdg_data_dir(p: &Path) -> bool {
 /// data-only pin and keeps config parity. Pure function of `pin` + the current
 /// process' env/HOME (the terminal's view), so `doctor` can compare an editor's
 /// baked pin against the CLI's own resolution without mutating env or spawning.
-pub(crate) fn data_pin_diverges_config(pin: &Path) -> bool {
+pub fn data_pin_diverges_config(pin: &Path) -> bool {
     !is_standard_xdg_data_dir(pin)
 }
 
@@ -188,22 +188,17 @@ fn resolve_category_dir(
 
     // A category override always wins, even under #[cfg(test)] — this lets the
     // RO-config sandbox integration test point each category at a temp dir.
-    #[cfg(test)]
-    {
+    if super::data_dir::sandboxed() {
         if let Some(p) = category_override {
             return Ok(p);
         }
         // Unit tests share one per-process sandbox so stray store writes can't
         // escape to a developer's real dirs. The branch logic itself is covered
         // by the pure `resolve` / `single_dir_override_fs` tests below.
-        let _ = (xdg_env, home_fallback);
-        Ok(super::data_dir::test_sandbox_dir())
+        return Ok(super::data_dir::test_sandbox_dir());
     }
-    #[cfg(not(test))]
-    {
-        let base = xdg_base(xdg_env, home_fallback)?;
-        Ok(resolve(category_override, single_dir_override(), &base))
-    }
+    let base = xdg_base(xdg_env, home_fallback)?;
+    Ok(resolve(category_override, single_dir_override(), &base))
 }
 
 /// Config directory — `config.toml`, shell hooks, `env.sh`. RO-safe.
@@ -231,8 +226,9 @@ pub fn config_dir_read_only() -> Result<PathBuf, String> {
 /// touch a developer's real `~/Library/Application Support`.
 pub fn config_dir_member(sub: &str) -> Result<PathBuf, String> {
     let canonical = config_dir()?.join(sub);
-    #[cfg(not(test))]
-    adopt_legacy_config_member(sub, &canonical);
+    if !super::data_dir::sandboxed() {
+        adopt_legacy_config_member(sub, &canonical);
+    }
     Ok(canonical)
 }
 
@@ -271,7 +267,6 @@ fn relocate(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// One-time adoption of a legacy `dirs::config_dir()/lean-ctx/<sub>` member into
 /// the canonical config dir. Best-effort: any IO failure leaves the legacy copy
 /// in place and resolution simply proceeds against the canonical path.
-#[cfg(not(test))]
 fn adopt_legacy_config_member(sub: &str, canonical: &Path) {
     let Some(legacy_base) = dirs::config_dir() else {
         return;
@@ -305,7 +300,7 @@ pub fn state_dir() -> Result<PathBuf, String> {
 }
 
 /// Resolve STATE without creating directories or repairing permissions.
-pub(crate) fn state_dir_read_only() -> Result<PathBuf, String> {
+pub fn state_dir_read_only() -> Result<PathBuf, String> {
     resolve_category_dir("LEAN_CTX_STATE_DIR", "XDG_STATE_HOME", ".local/state")
 }
 

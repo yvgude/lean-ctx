@@ -311,7 +311,7 @@ fn looks_like_file_path(s: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Default)]
-pub(crate) struct EnrichmentStats {
+pub struct EnrichmentStats {
     pub commits_indexed: usize,
     pub tests_indexed: usize,
     pub knowledge_indexed: usize,
@@ -335,7 +335,7 @@ impl EnrichmentStats {
         s.unresolved += o.unresolved;
     }
 
-    pub(crate) fn format_summary(&self) -> String {
+    pub fn format_summary(&self) -> String {
         let mut out = format!(
             "Graph enriched: {} commits, {} tests, {} knowledge entries, {} edges",
             self.commits_indexed, self.tests_indexed, self.knowledge_indexed, self.edges_created
@@ -351,7 +351,7 @@ impl EnrichmentStats {
     }
 }
 
-pub(crate) fn enrich_graph(
+pub fn enrich_graph(
     graph: &CodeGraph,
     project_root: &Path,
     max_commits: usize,
@@ -407,7 +407,7 @@ const IDLE_BEFORE_REFRESH: std::time::Duration = std::time::Duration::from_secs(
 /// Tool calls in flight in this process, and when the last one ended — so
 /// background semantic passes run in the agent's pauses, not alongside its
 /// calls. Lock-free: two atomics.
-pub(crate) struct ToolActivity;
+pub struct ToolActivity;
 
 static IN_FLIGHT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// Milliseconds since `ACTIVITY_EPOCH` at the last call's end.
@@ -416,10 +416,10 @@ static ACTIVITY_EPOCH: std::sync::LazyLock<std::time::Instant> =
     std::sync::LazyLock::new(std::time::Instant::now);
 
 /// Ends one tool call on drop (also on panic or early return).
-pub(crate) struct ToolActivityGuard;
+pub struct ToolActivityGuard;
 
 impl ToolActivity {
-    pub(crate) fn begin() -> ToolActivityGuard {
+    pub fn begin() -> ToolActivityGuard {
         IN_FLIGHT.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         ToolActivityGuard
     }
@@ -679,7 +679,7 @@ fn consolidate_call_edges(
 /// Writes a relation pass's edges (except those `skip` rejects) and
 /// withdraws the ones this producer no longer derives — for settled
 /// declaring files only.
-pub(crate) fn apply_relation_edges(
+pub fn apply_relation_edges(
     graph: &CodeGraph,
     relation: crate::core::semantic::relations::Relation,
     pass: &crate::core::semantic::relations::RelationPass,

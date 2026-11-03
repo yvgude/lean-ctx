@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 #[cfg(test)]
 use rusqlite::Connection;
 
-pub(crate) struct PageRankInput {
+pub struct PageRankInput {
     pub files: HashSet<String>,
     pub forward: HashMap<String, Vec<String>>,
 }
@@ -62,11 +62,7 @@ impl PageRankInput {
     }
 }
 
-pub(crate) fn compute(
-    input: &PageRankInput,
-    damping: f64,
-    iterations: usize,
-) -> HashMap<String, f64> {
+pub fn compute(input: &PageRankInput, damping: f64, iterations: usize) -> HashMap<String, f64> {
     compute_personalized(input, damping, iterations, &[])
 }
 

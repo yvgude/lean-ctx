@@ -512,7 +512,7 @@ pub fn load_events_from_file(n: usize) -> Vec<LeanCtxEvent> {
 pub fn load_served_events(n: usize, project: Option<&std::path::Path>) -> Vec<LeanCtxEvent> {
     use crate::core::context_os::observation::ObservationGate;
 
-    let request = crate::tools::admitted_sources::request_root();
+    let request = crate::core::admitted_sources::request_root();
     let reader = project
         .map(|root| root.to_string_lossy().into_owned())
         .or_else(|| (!request.is_empty()).then_some(request));
@@ -525,7 +525,7 @@ pub fn load_served_events(n: usize, project: Option<&std::path::Path>) -> Vec<Le
         // one is not served from it.
         // Compared in the view's own spelling: it pins `Path::canonicalize`
         // of the project (`policy::runtime::canonical_project_root`).
-        let pinned = crate::tools::admitted_sources::request_root();
+        let pinned = crate::core::admitted_sources::request_root();
         let same = std::path::Path::new(&reader)
             .canonicalize()
             .is_ok_and(|asked| asked == std::path::Path::new(&pinned));

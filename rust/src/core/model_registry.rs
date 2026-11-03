@@ -135,7 +135,7 @@ fn registry_lookup(model: &str, registry: &Registry) -> Option<usize> {
 /// Look up context window for a model name.
 /// Layers: User Config → `[1m]`-style suffix → Local Registry → Bundled
 /// Registry → 200k default.
-pub(crate) fn context_window_for_model(model: &str) -> usize {
+pub fn context_window_for_model(model: &str) -> usize {
     // Layer 1: User config override ([model_context_windows] in config.toml)
     if let Some(w) = user_config_override(model) {
         return w;
@@ -192,7 +192,7 @@ const BACKGROUND_MODELS: &[&str] = &[
 /// The id is compared after removing what hosts add around it: a provider
 /// route (`anthropic/…`, `us.anthropic.…`), a `[1m]` window marker, a Bedrock
 /// `-v1:0` revision and a `-latest` or date snapshot suffix.
-pub(crate) fn is_background_model(model: &str) -> bool {
+pub fn is_background_model(model: &str) -> bool {
     let mut m = model.trim().to_lowercase();
     if let Some((_, last)) = m.rsplit_once('/') {
         m = last.to_string();

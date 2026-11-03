@@ -98,7 +98,7 @@
     }
   ],
   "rules": {
-    "digest": "hex(sha256(anchored content bytes)); file: the whole file, sym: the symbol's source span as the engine's anchor extractor returns it",
+    "digest": "hex(sha256(anchored content bytes)); file: the whole file, sym: the symbol's source span as the instance's anchor extractor returns it",
     "re_anchor": "field.set {field: anchors, value: [anchors], verified_at} (no new event kind)",
     "ref": "file:<path> | sym:<path>::<symbol>; path relative, no leading /, no .. segment, no whitespace, backslash or colon; symbol 1–200 non-whitespace",
     "required": "fact: every applies_to entry starting file: or sym: needs an anchor with the same ref; anchors also allowed on gotcha and procedure"

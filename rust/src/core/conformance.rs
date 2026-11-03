@@ -14,6 +14,8 @@
 //! It is data, not prose, so it can be rendered (CLI), shared (JSON), or gated
 //! on (`all_passed()` in `tests/conformance_suite.rs`).
 
+use std::sync::OnceLock;
+
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -249,29 +251,76 @@ const MUST_KEEP_SYMBOLS: &[&str] = &["add_item", "total_count", "Inventory"];
 /// Body-local identifiers `signatures`/`map` must strip.
 const MUST_DROP_BODIES: &[&str] = &["body_secret_alpha", "body_secret_beta"];
 
-fn render_mode(mode: &str) -> String {
-    render_mode_full(mode).0
+/// The `ctx_read` mode renderer the accuracy checks measure: the signature of
+/// `tools::ctx_read::process_mode` (content, mode, file ref, short name,
+/// extension, original tokens, CRP mode, file path, task) returning the
+/// rendered view and its pre-footer body token count.
+pub type ReadModeRenderer = fn(
+    &str,
+    &str,
+    &str,
+    &str,
+    &str,
+    usize,
+    crate::core::protocol::CrpMode,
+    &str,
+    Option<&str>,
+) -> (String, usize);
+
+static READ_MODE_RENDERER: OnceLock<ReadModeRenderer> = OnceLock::new();
+
+/// Register the `ctx_read` renderer the accuracy checks run against. The read
+/// tools live above the engine; the CLI registers them at start-up
+/// (`tools::ctx_read::register_conformance_renderer`). The first registration
+/// wins.
+///
+/// Unregistered, the scorecard cannot verify the read modes: it then carries a
+/// failing `accuracy` check instead of skipping them, so a run without the
+/// renderer never reports `all_passed()`.
+pub fn register_read_mode_renderer(renderer: ReadModeRenderer) {
+    let _ = READ_MODE_RENDERER.set(renderer);
+}
+
+fn render_mode(render: ReadModeRenderer, mode: &str) -> String {
+    render_mode_full(render, mode).0
 }
 
 /// Rendered view plus its pre-footer body token count. The compression-size
 /// invariant measures `.1` (the body), since the reactive recovery footer and the
 /// savings line are orthogonal affordances appended after compression, not part of
 /// the compressed content.
-fn render_mode_full(mode: &str) -> (String, usize) {
-    crate::tools::ctx_read::render::process_mode(
+fn render_mode_full(render: ReadModeRenderer, mode: &str) -> (String, usize) {
+    render(
         ACCURACY_FIXTURE,
         mode,
         "",
         "fixture.rs",
         "rs",
         crate::core::tokens::count_tokens(ACCURACY_FIXTURE),
-        crate::tools::CrpMode::Off,
+        crate::core::protocol::CrpMode::Off,
         "conformance/fixture.rs",
         None,
     )
 }
 
 fn accuracy_checks() -> Vec<Check> {
+    match READ_MODE_RENDERER.get() {
+        Some(render) => accuracy_checks_with(*render),
+        None => vec![unregistered_renderer_check()],
+    }
+}
+
+fn unregistered_renderer_check() -> Check {
+    Check::fail(
+        "accuracy",
+        "read_mode_renderer_registered",
+        "the ctx_read renderer is not registered; read-mode accuracy is unverified",
+    )
+}
+
+fn accuracy_checks_with(render: ReadModeRenderer) -> Vec<Check> {
+    let render_mode = |mode: &str| render_mode(render, mode);
+    let render_mode_full = |mode: &str| render_mode_full(render, mode);
     let mut checks = Vec::new();
 
     for mode in ["map", "signatures", "aggressive", "entropy"] {
@@ -483,15 +532,36 @@ fn read_mode_invariants(name: &str, m: &dyn crate::core::extension_registry::Rea
 mod tests {
     use super::*;
 
+    /// Everything but the read-mode accuracy checks; the full suite with the
+    /// registered `ctx_read` renderer runs in `tools::ctx_read`.
     #[test]
-    fn builtin_suite_passes() {
-        let card = run();
+    fn builtin_engine_checks_pass() {
+        let mut checks = Vec::new();
+        checks.extend(contract_checks());
+        checks.extend(reproducibility_checks());
+        checks.extend(extension_checks());
+        checks.extend(a2a_checks());
+        let card = Scorecard { version: 1, checks };
         assert!(
             card.all_passed(),
             "conformance failures: {:?}",
             card.failures()
         );
         assert!(card.total() >= 6, "expected a meaningful number of checks");
+    }
+
+    /// Without the renderer the read modes are unverified: the scorecard
+    /// carries a failing check instead of skipping them.
+    #[test]
+    fn an_unregistered_renderer_fails_the_scorecard() {
+        let check = unregistered_renderer_check();
+        assert!(!check.passed);
+        assert_eq!(check.category, "accuracy");
+        let card = Scorecard {
+            version: 1,
+            checks: vec![check],
+        };
+        assert!(!card.all_passed());
     }
 
     #[test]

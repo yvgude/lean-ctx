@@ -29,7 +29,7 @@ enum BudgetScope {
 }
 
 impl NativeContextBinding {
-    pub(super) fn capture(task: &TaskEnvelopeV1) -> Result<Option<Self>, String> {
+    pub(crate) fn capture(task: &TaskEnvelopeV1) -> Result<Option<Self>, String> {
         let runtime::KernelPlanningHandoff::Prepared(context) = runtime::current_handoff() else {
             return Ok(None);
         };

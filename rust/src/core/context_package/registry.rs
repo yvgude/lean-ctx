@@ -23,7 +23,7 @@ pub(crate) struct PackageIndex {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PackageEntry {
+pub struct PackageEntry {
     pub name: String,
     pub version: String,
     pub description: String,
@@ -51,7 +51,7 @@ pub(crate) struct PackageEntry {
 /// How a stored package came to this machine (V02).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum PackageOrigin {
+pub enum PackageOrigin {
     /// Built here from this machine's own sources (`pack create`).
     Built,
     /// Imported, installed from a registry, received or added as an addon.
@@ -60,7 +60,7 @@ pub(crate) enum PackageOrigin {
 
 impl PackageEntry {
     /// Whether this package is auto-loaded into `project_root`.
-    pub(crate) fn auto_loads_into(&self, project_root: &str) -> bool {
+    pub fn auto_loads_into(&self, project_root: &str) -> bool {
         self.auto_load
             && self
                 .auto_load_projects
@@ -69,7 +69,7 @@ impl PackageEntry {
 
     /// Auto-load is set, but bound to no project (an index entry from before
     /// the binding): it loads nowhere.
-    pub(crate) fn auto_load_unbound(&self) -> bool {
+    pub fn auto_load_unbound(&self) -> bool {
         self.auto_load && self.auto_load_projects.is_empty()
     }
 }
@@ -84,7 +84,7 @@ impl PackageIndex {
     }
 }
 
-pub(crate) struct LocalRegistry {
+pub struct LocalRegistry {
     root: PathBuf,
 }
 
@@ -99,7 +99,7 @@ enum InstallMode {
 }
 
 impl LocalRegistry {
-    pub(crate) fn open() -> Result<Self, String> {
+    pub fn open() -> Result<Self, String> {
         let data_dir = crate::core::data_dir::lean_ctx_data_dir()?;
         let root = data_dir.join(PACKAGES_DIR);
         std::fs::create_dir_all(&root).map_err(|e| format!("create packages dir: {e}"))?;
@@ -114,7 +114,7 @@ impl LocalRegistry {
         })
     }
 
-    pub(crate) fn root(&self) -> &Path {
+    pub fn root(&self) -> &Path {
         &self.root
     }
 
@@ -132,7 +132,7 @@ impl LocalRegistry {
     /// Installs a package this machine just built from its own sources
     /// (`pack create`, skills pack create): a rebuild at the same
     /// name@version replaces the previous local build.
-    pub(crate) fn install_local_build(
+    pub fn install_local_build(
         &self,
         manifest: &PackageManifest,
         content: &PackageContent,
@@ -282,7 +282,7 @@ impl LocalRegistry {
         Ok(pkg_dir)
     }
 
-    pub(crate) fn remove(&self, name: &str, version: Option<&str>) -> Result<u32, String> {
+    pub fn remove(&self, name: &str, version: Option<&str>) -> Result<u32, String> {
         let _lock = self.lock_index()?;
         let mut index = self.load_index()?;
         let before = index.entries.len();
@@ -322,7 +322,7 @@ impl LocalRegistry {
         Ok(removed)
     }
 
-    pub(crate) fn list(&self) -> Result<Vec<PackageEntry>, String> {
+    pub fn list(&self) -> Result<Vec<PackageEntry>, String> {
         let index = self.load_index()?;
         Ok(index.entries.into_iter().map(served).collect())
     }
@@ -342,7 +342,7 @@ impl LocalRegistry {
 
     /// The stored package as its two parts. Admitted like
     /// [`Self::load_admitted`]; for callers that render or export the parts.
-    pub(crate) fn load_package(
+    pub fn load_package(
         &self,
         name: &str,
         version: &str,
@@ -353,11 +353,7 @@ impl LocalRegistry {
 
     /// The stored package, hash verified first and then admitted under the
     /// CURRENT policy — the only way to obtain what the loader applies.
-    pub(crate) fn load_admitted(
-        &self,
-        name: &str,
-        version: &str,
-    ) -> Result<AdmittedPackage, String> {
+    pub fn load_admitted(&self, name: &str, version: &str) -> Result<AdmittedPackage, String> {
         let pkg_dir = self.package_dir(name, version);
         if !pkg_dir.exists() {
             return Err(format!("package {name}@{version} not found"));
@@ -382,7 +378,7 @@ impl LocalRegistry {
     /// Enable or disable auto-load of `name@version` for `project_root` only
     /// (V03): other projects — a same-named one at another root included —
     /// are not affected.
-    pub(crate) fn set_auto_load(
+    pub fn set_auto_load(
         &self,
         name: &str,
         version: &str,
@@ -412,10 +408,7 @@ impl LocalRegistry {
 
     /// The packages auto-loaded into `project_root` (V03). An entry bound to
     /// no project loads nowhere.
-    pub(crate) fn auto_load_packages(
-        &self,
-        project_root: &str,
-    ) -> Result<Vec<PackageEntry>, String> {
+    pub fn auto_load_packages(&self, project_root: &str) -> Result<Vec<PackageEntry>, String> {
         let index = self.load_index()?;
         Ok(index
             .entries
@@ -429,12 +422,7 @@ impl LocalRegistry {
     /// [`Self::load_package`]: hash first, then the current admission — a
     /// package that would be refused today is not exported, and nothing is
     /// written to `output` (the write is the last step).
-    pub(crate) fn export_to_file(
-        &self,
-        name: &str,
-        version: &str,
-        output: &Path,
-    ) -> Result<u64, String> {
+    pub fn export_to_file(&self, name: &str, version: &str, output: &Path) -> Result<u64, String> {
         let (manifest, content) = self.load_package(name, version)?;
         self.may_pass_on(&manifest)?;
 
@@ -459,7 +447,7 @@ impl LocalRegistry {
     /// required by the hosted registry. The stored package stays untouched;
     /// only the exported bundle carries the signature. `private` stamps
     /// `visibility=private` into the bundle for the hosted registry (#524).
-    pub(crate) fn export_to_file_signed(
+    pub fn export_to_file_signed(
         &self,
         name: &str,
         version: &str,
@@ -517,8 +505,8 @@ impl LocalRegistry {
         Ok((bundle, json))
     }
 
-    #[cfg(test)]
-    pub(crate) fn import_from_file(
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn import_from_file(
         &self,
         path: &Path,
         policy: SignaturePolicy<'_>,
@@ -527,12 +515,12 @@ impl LocalRegistry {
             .map(|(manifest, _)| manifest)
     }
 
-    /// [`Self::import_from_file`], also returning what the package's
+    /// `Self::import_from_file`, also returning what the package's
     /// signature covers as written (`None` = unsigned). An unsigned package
     /// is admitted only under [`SignaturePolicy::AllowUnsigned`], the
     /// caller's explicit opt-in (GHSA-gvg8-285q-m62g); an identity-only
     /// signature is admitted with a warning (K02).
-    pub(crate) fn import_from_file_checked(
+    pub fn import_from_file_checked(
         &self,
         path: &Path,
         policy: SignaturePolicy<'_>,
@@ -569,7 +557,7 @@ impl LocalRegistry {
 
     /// Install a `kind=addon` package.
     ///
-    /// Deliberately a separate entry point from [`Self::import_from_file`]
+    /// Deliberately a separate entry point from `Self::import_from_file`
     /// rather than a flag on it: the two differ only in which kind they accept,
     /// but they differ completely in consequence. Importing knowledge is
     /// reversible and inert; installing an addon puts code where the extension
@@ -577,10 +565,10 @@ impl LocalRegistry {
     /// asks the user before calling this.
     ///
     /// Every other check is identical, and shared through
-    /// [`Self::verify_bundle_integrity`] — integrity digest, then signature —
+    /// `Self::verify_bundle_integrity` — integrity digest, then signature —
     /// so the executable path can never end up with *weaker* verification than
     /// the inert one.
-    pub(crate) fn install_addon_from_file(
+    pub fn install_addon_from_file(
         &self,
         path: &Path,
         policy: SignaturePolicy<'_>,
@@ -789,7 +777,7 @@ struct ExportBundle {
     content: PackageContent,
 }
 
-pub(crate) fn write_checkpoint_bundle(
+pub fn write_checkpoint_bundle(
     mut manifest: PackageManifest,
     content: PackageContent,
     output: &Path,
@@ -837,7 +825,7 @@ pub(crate) fn write_checkpoint_bundle(
     Ok(manifest)
 }
 
-pub(crate) fn read_checkpoint_bundle(
+pub fn read_checkpoint_bundle(
     path: &Path,
 ) -> Result<(PackageManifest, CheckpointPackageContentV1), String> {
     let json = super::verify::read_package_text(path)?;
@@ -857,9 +845,7 @@ pub(crate) fn read_checkpoint_bundle(
 
 /// Validate a network context package without installing it. The transport
 /// authenticates its sender separately; executable addons use the consent gate.
-pub(crate) fn parse_context_transfer(
-    json: &str,
-) -> Result<(PackageManifest, PackageContent), String> {
+pub fn parse_context_transfer(json: &str) -> Result<(PackageManifest, PackageContent), String> {
     if json.len() as u64 > crate::core::contracts::MAX_PACKAGE_FILE_BYTES {
         return Err("context package exceeds the package size limit".into());
     }
@@ -949,7 +935,7 @@ const MCP_UNVERIFIED_HINT: &str = "The user can pin the publisher key in trusted
 /// How strictly an install door treats package signatures
 /// (GHSA-gvg8-285q-m62g).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SignaturePolicy<'a> {
+pub enum SignaturePolicy<'a> {
     /// Local file the caller explicitly vouched for (`--allow-unsigned`).
     AllowUnsigned,
     /// A valid signature is required, from any key (local imports with
@@ -998,7 +984,7 @@ fn package_signer_trusted(manifest: &PackageManifest) -> bool {
 /// `None` when the package is signed by an anchored key; otherwise the signer
 /// key fingerprint (or `"unsigned"`) for a rejection message
 /// (GHSA-gvg8-285q-m62g). Call after the signature itself verified.
-pub(crate) fn untrusted_package_signer(manifest: &PackageManifest) -> Option<String> {
+pub fn untrusted_package_signer(manifest: &PackageManifest) -> Option<String> {
     if package_signer_trusted(manifest) {
         return None;
     }
@@ -1010,7 +996,7 @@ pub(crate) fn untrusted_package_signer(manifest: &PackageManifest) -> Option<Str
 
 /// One-line signature status for install output: integrity is not identity,
 /// so a signer key is only called trusted when it is anchored.
-pub(crate) fn describe_package_signature(manifest: &PackageManifest) -> String {
+pub fn describe_package_signature(manifest: &PackageManifest) -> String {
     let Some(signature) = manifest.signature.as_ref() else {
         return "WARNING unsigned (origin not verifiable)".to_string();
     };

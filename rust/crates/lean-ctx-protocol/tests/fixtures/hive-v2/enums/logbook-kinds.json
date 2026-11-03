@@ -58,12 +58,12 @@
       "counts": []
     },
     {
-      "value": "engine.connected",
+      "value": "instance.connected",
       "generated_in_3_12_0": true,
       "counts": []
     },
     {
-      "value": "engine.revoked",
+      "value": "instance.revoked",
       "generated_in_3_12_0": true,
       "counts": []
     },

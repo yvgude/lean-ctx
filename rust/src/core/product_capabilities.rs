@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::ocla::OclaCapabilityKind;
 
 /// The plan ladder a capability's minimum is ranked on. Account plans live
-/// in LeanCTX Hive; the engine only orders them.
+/// in LeanCTX | Hive; the engine only orders them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Plan {
@@ -64,7 +64,7 @@ pub const REGISTRY_SOURCE: &str = include_str!("../../data/product-capabilities.
 #[serde(rename_all = "snake_case")]
 pub enum UserPriceClass {
     Free,
-    /// Paid right granted by a LeanCTX Hive plan; the record's
+    /// Paid right granted by a LeanCTX | Hive plan; the record's
     /// [`ProductCapability::hive_plan`] names the plan.
     Hive,
     /// Withdrawn capability: still a known lookup name, never granted.
@@ -121,7 +121,7 @@ pub enum RuntimeDelivery {
     LocalService,
     ManagedCloudService,
     EnterprisePrivateImage,
-    /// Delivered and controlled by the LeanCTX Hive service (filter packs,
+    /// Delivered and controlled by the LeanCTX | Hive service (filter packs,
     /// shared team state, governance), consumed by the local Engine.
     HiveService,
 }

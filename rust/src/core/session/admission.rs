@@ -102,7 +102,7 @@ impl Drop for StorageAdmissionProbe {
 
 /// Re-admit every persisted session text field under one current Gateway
 /// snapshot and the active project policy. This runs on a detached clone.
-pub(crate) fn for_storage(session: &SessionState) -> Result<SessionState, String> {
+pub fn for_storage(session: &SessionState) -> Result<SessionState, String> {
     for_storage_with_authority(session).map(|(projected, _)| projected)
 }
 
@@ -162,7 +162,7 @@ pub(crate) fn for_storage_with_authority(
 
 /// Re-admit session text under the active project and Gateway policies before
 /// any response formatter or structured exporter sees it.
-pub(crate) fn for_delivery(session: &SessionState) -> Result<SessionState, String> {
+pub fn for_delivery(session: &SessionState) -> Result<SessionState, String> {
     with_session_policy(session, || {
         let mut value = serde_json::to_value(session)
             .map_err(|_| "session projection unavailable".to_string())?;
@@ -187,7 +187,7 @@ pub(crate) fn for_delivery(session: &SessionState) -> Result<SessionState, Strin
     })?
 }
 
-pub(crate) fn admit_tool_value(session: &SessionState, text: &str) -> Result<String, String> {
+pub fn admit_tool_value(session: &SessionState, text: &str) -> Result<String, String> {
     with_session_policy(session, || {
         let admitted = admit_tool_output(text, OutputCompleteness::complete());
         admitted.text.ok_or_else(|| {
@@ -221,10 +221,7 @@ pub(crate) fn admit_storable_tool_text(text: &str) -> Result<String, String> {
 
 /// Admit user-provided text against the trusted live session's project policy
 /// and Gateway before it is retained in session state.
-pub(crate) fn admit_storable_session_text(
-    session: &SessionState,
-    text: &str,
-) -> Result<String, String> {
+pub fn admit_storable_session_text(session: &SessionState, text: &str) -> Result<String, String> {
     with_store_admission(session, |store| {
         admit_store_text(store, text)
             .ok_or_else(|| "session content withheld by current policy".to_string())
@@ -234,7 +231,7 @@ pub(crate) fn admit_storable_session_text(
 /// Resolve one Gateway storage policy for a detached session operation. The
 /// project view is established before any load, migration, derivation, or save,
 /// and the snapshot is rejected if its epoch changes before the operation ends.
-pub(crate) fn with_store_admission<T>(
+pub fn with_store_admission<T>(
     session: &SessionState,
     operation: impl FnOnce(&StoreAdmission) -> Result<T, String>,
 ) -> Result<T, String> {
@@ -247,7 +244,7 @@ pub(crate) fn with_store_admission<T>(
 }
 
 /// Admit pathless content under a previously captured storage policy.
-pub(crate) fn admit_store_text(store: &StoreAdmission, text: &str) -> Option<String> {
+pub fn admit_store_text(store: &StoreAdmission, text: &str) -> Option<String> {
     admit_for_storage(store, text, None)
 }
 

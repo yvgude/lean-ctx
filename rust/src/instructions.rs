@@ -1,6 +1,6 @@
 use crate::core::config::CompressionLevel;
+use crate::core::protocol::CrpMode;
 use crate::core::rules_canonical::{self as rc, Wrapper};
-use crate::tools::CrpMode;
 
 pub mod solution;
 pub use solution::solution_ladder_text;
@@ -172,7 +172,7 @@ pub fn build_instructions_with_client_for_compiler(
     client_name: &str,
     _unified_tool_mode: bool,
 ) -> String {
-    let tp = crate::server::tool_visibility::guidance_profile(
+    let tp = crate::core::tool_visibility::guidance_profile(
         &crate::core::config::Config::load(),
         client_name,
     );
@@ -340,7 +340,7 @@ fn build_full_instructions(
     // #1849: name only tools this session can call — the same gates as
     // `tools/list` (profile, `disabled_tools`, client quirks), not the bare
     // configured profile.
-    let tool_profile = crate::server::tool_visibility::guidance_profile(&cfg, client_name);
+    let tool_profile = crate::core::tool_visibility::guidance_profile(&cfg, client_name);
     let is_shadow_only = is_shadow_surface_active();
     let skeleton = if client_loads_rules_from_file(client_name) {
         let anchor = if client_is_hook_covered(client_name) {
@@ -386,7 +386,7 @@ fn build_full_instructions(
     let solution_ladder = {
         let loaded_config = crate::core::config::Config::load();
         let sol_cfg = &loaded_config.solution;
-        let is_subagent = crate::tools::ctx_read::is_subagent_context();
+        let is_subagent = crate::core::conversation::is_subagent_context();
         let inject_solution = if is_subagent {
             sol_cfg.inject_in_subagents
         } else {
@@ -656,7 +656,7 @@ mod tests {
         }
         fn prefix(session: &SessionState) -> String {
             let tools = serde_json::to_string(
-                &crate::server::tool_visibility::advertised_tool_defs_default(),
+                &crate::core::tool_visibility::advertised_tool_defs_default(),
             )
             .expect("tool defs serialize");
             let instructions = build_instructions_with_client_and_session(

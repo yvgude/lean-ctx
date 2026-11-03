@@ -2,15 +2,22 @@
 # SPDX-License-Identifier: Apache-2.0
 """Keep the engine crate split moving in one direction ("Split before you grow").
 
-Reads rust/CRATE_MAP.toml and enforces three rules:
+Reads rust/CRATE_MAP.toml and enforces five rules:
 
 1. A module scheduled for extraction may not gain a new outbound `crate::`
    edge beyond its recorded baseline (rust/crate_boundary_baseline.json).
    Every such edge is coupling that the extraction would have to cut first.
-2. An extracted crate never depends on the engine (`lean-ctx` / `lean_ctx`),
+2. An extracted crate never depends on the engine (`lean-ctx-engine`, the
+   `lean-ctx` binary package, or `lean_ctx::` paths),
    and depends on other workspace crates only where the map allows it.
 3. An extracted module's old engine directory keeps only its facade files, so
    new code lands in the crate, not next to the facade.
+4. A `[[no_inbound]]` module (one that will sit above the engine) is not
+   imported from the modules its `from` patterns name, beyond the exceptions
+   recorded in the baseline under `inbound:<module>`.
+5. Every crate above the engine whose unit tests enable the engine's
+   `test-support` feature is listed in `UNIT_TEST_HARNESSES`
+   (rust/src/core/data_dir.rs), so its tests stay in the data sandbox.
 
 `--update` rewrites the baseline from the current tree. Shrinking it is always
 welcome; growing it needs the crate-split lead's sign-off in the handover
@@ -30,6 +37,9 @@ REPO = Path(__file__).resolve().parent.parent
 RUST = REPO / "rust"
 MAP = RUST / "CRATE_MAP.toml"
 BASELINE = RUST / "crate_boundary_baseline.json"
+# The engine library package and the binary package above it; a leaf crate
+# depends on neither.
+ENGINE_PACKAGES = {"lean-ctx-engine", "lean-ctx"}
 
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 LINE_COMMENT = re.compile(r"(?<!:)//(?![/!]).*$", re.M)
@@ -135,6 +145,38 @@ def current_edges(src: Path, module: str) -> set[str]:
     return edges
 
 
+def source_modules(src: Path) -> dict[str, set[str]]:
+    """Every engine module (as `module_of` names it) and the modules it imports."""
+    out: dict[str, set[str]] = {}
+    for path in sorted(src.rglob("*.rs")):
+        module = module_of(path.relative_to(src).as_posix())
+        out.setdefault(module, set()).update(
+            edges_of_text(path.read_text(encoding="utf-8", errors="replace"))
+        )
+    return out
+
+
+def matches(module: str, pattern: str) -> bool:
+    """`core::*` matches every `core::` module; anything else matches exactly."""
+    if pattern.endswith("::*"):
+        return module.startswith(pattern[:-1])
+    return module == pattern
+
+
+def inbound_now(cmap: dict, src: Path) -> dict[str, list[str]]:
+    """`inbound:<module>` -> the modules (matching `from`) that import it now."""
+    sources = source_modules(src) if cmap.get("no_inbound") else {}
+    out = {}
+    for rule in cmap.get("no_inbound", []):
+        target = rule["module"]
+        importers = sorted(
+            m for m, edges in sources.items()
+            if m != target and target in edges and any(matches(m, p) for p in rule["from"])
+        )
+        out[f"inbound:{target}"] = importers
+    return out
+
+
 def load_map() -> dict:
     with MAP.open("rb") as fh:
         return tomllib.load(fh)
@@ -147,8 +189,8 @@ def check_crates(cmap: dict, errors: list[str]) -> None:
         manifest = (root / "Cargo.toml").read_text(encoding="utf-8")
         deps = set(re.findall(r'^\s*([A-Za-z0-9_-]+)\s*=\s*\{[^}\n]*\bpath\s*=', manifest, re.M))
         for dep in sorted(deps):
-            if dep == "lean-ctx":
-                errors.append(f"{crate['name']}: depends on the engine crate lean-ctx")
+            if dep in ENGINE_PACKAGES:
+                errors.append(f"{crate['name']}: depends on the engine package {dep}")
             elif dep in allowed_names and dep not in crate.get("may_depend_on", []):
                 errors.append(
                     f"{crate['name']}: depends on {dep}, which CRATE_MAP.toml does not allow"
@@ -170,6 +212,34 @@ def check_crates(cmap: dict, errors: list[str]) -> None:
                         )
 
 
+HARNESSES = re.compile(r"UNIT_TEST_HARNESSES:\s*&\[&str\]\s*=\s*&\[([^\]]*)\]")
+
+
+def check_test_sandbox(errors: list[str]) -> None:
+    """Rule 5: every crate above the engine whose unit tests use the engine's
+    `test-support` feature runs them inside the per-process data sandbox.
+
+    `core::data_dir::sandboxed()` recognises those harnesses by executable
+    name (`<lib name>-<hash>`); a crate missing from `UNIT_TEST_HARNESSES`
+    would run its unit tests against the real data directory.
+    """
+    data_dir = RUST / "src" / "core" / "data_dir.rs"
+    match = HARNESSES.search(data_dir.read_text(encoding="utf-8"))
+    listed = set(re.findall(r'"([^"]+)"', match.group(1))) if match else set()
+    for manifest in sorted((RUST / "crates").glob("*/Cargo.toml")):
+        doc = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        engine = doc.get("dev-dependencies", {}).get("lean-ctx-engine")
+        if not isinstance(engine, dict) or "test-support" not in engine.get("features", []):
+            continue
+        lib = doc.get("lib", {}).get("name") or doc["package"]["name"].replace("-", "_")
+        if f"{lib}-" not in listed:
+            errors.append(
+                f"{manifest.parent.relative_to(REPO)}: unit tests use the engine's test-support "
+                f"but `{lib}-` is not in UNIT_TEST_HARNESSES (rust/src/core/data_dir.rs); "
+                "they would run outside the data sandbox"
+            )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--update", action="store_true", help="rewrite the edge baseline")
@@ -181,9 +251,12 @@ def main(argv: list[str] | None = None) -> int:
         {m for entry in cmap.get("scheduled", []) for m in entry["modules"]}
     )
     now = {m: sorted(current_edges(src, m)) for m in scheduled}
+    inbound = inbound_now(cmap, src)
 
     if args.update:
-        BASELINE.write_text(json.dumps(now, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        BASELINE.write_text(
+            json.dumps({**now, **inbound}, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         print(f"crate boundaries: baseline rewritten for {len(now)} scheduled modules")
         return 0
 
@@ -211,7 +284,18 @@ def main(argv: list[str] | None = None) -> int:
         if base - set(now[module]):
             shrunk += 1
 
+    for key, importers in sorted(inbound.items()):
+        target = key.removeprefix("inbound:")
+        for source in sorted(set(importers) - set(baseline.get(key, []))):
+            errors.append(
+                f"{source} -> {target}: {target} sits above the engine (CRATE_MAP.toml "
+                "no_inbound); cut the edge with a move-down or a hook instead."
+            )
+        if set(baseline.get(key, [])) - set(importers):
+            shrunk += 1
+
     check_crates(cmap, errors)
+    check_test_sandbox(errors)
 
     if errors:
         print("crate boundaries: FAILED")

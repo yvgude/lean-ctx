@@ -9,9 +9,9 @@
 //! server, the daemon), at most hourly and one process at a time, sooner
 //! when a write did not fit under the ceiling — first counts every file of
 //! the store and rebuilds its ledger from that count
-//! ([`super::capacity::rebuild`]): the files are the truth, the ledger a
+//! (`super::capacity::rebuild`): the files are the truth, the ledger a
 //! cache. It then removes receipts past the retention window and brings the
-//! store down to [`TARGET_PERCENT`] of its ceiling, oldest first; a receipt
+//! store down to `TARGET_PERCENT` of its ceiling, oldest first; a receipt
 //! goes together with its trace sidecar and its observation, a task index
 //! none of whose receipts is left goes too. Plain receipts that stay are
 //! packed last, so nothing is packed only to be removed.
@@ -37,10 +37,10 @@ use std::time::{Duration, SystemTime};
 use serde::{Deserialize, Serialize};
 
 /// How long a receipt is kept at most (`LEAN_CTX_GATEWAY_RETENTION_DAYS`).
-pub(crate) const RETENTION_DAYS: u64 = 30;
+pub const RETENTION_DAYS: u64 = 30;
 /// Receipts younger than this are never removed
 /// (`LEAN_CTX_GATEWAY_PROTECT_HOURS`).
-pub(crate) const PROTECT_HOURS: u64 = 24;
+pub const PROTECT_HOURS: u64 = 24;
 /// A pass that has to make room brings the store down to this share of its
 /// ceiling, so it does not run again at the next delivery.
 pub(crate) const TARGET_PERCENT: u64 = 80;
@@ -79,7 +79,7 @@ pub(super) fn unpack(file: std::fs::File) -> std::io::Result<Vec<u8>> {
 
 /// What a pass may remove.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Policy {
+pub struct Policy {
     /// Older receipts are removed unless protected; `None`: kept by age.
     pub(crate) retention: Option<Duration>,
     /// Younger receipts are never removed.
@@ -94,7 +94,7 @@ pub(crate) struct Policy {
 impl Policy {
     /// The policy of this process: the environment overrides, else the
     /// defaults; the target from the store's ceiling.
-    pub(crate) fn current() -> Self {
+    pub fn current() -> Self {
         let number = |name: &str, default: u64| {
             std::env::var(name)
                 .ok()
@@ -119,17 +119,17 @@ impl Policy {
 
 /// What one pass did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct Maintenance {
-    pub(crate) packed: u64,
-    pub(crate) removed: u64,
-    pub(crate) removed_tasks: u64,
-    pub(crate) freed_bytes: u64,
+pub struct Maintenance {
+    pub packed: u64,
+    pub removed: u64,
+    pub removed_tasks: u64,
+    pub freed_bytes: u64,
     /// The store's size as counted, after the pass.
-    pub(crate) bytes: u64,
+    pub bytes: u64,
     /// The protected evidence alone leaves no room for a lifecycle.
-    pub(crate) full: bool,
+    pub full: bool,
     /// Another process was on it: nothing was done here.
-    pub(crate) skipped: bool,
+    pub skipped: bool,
 }
 
 /// What a finished pass found, as stamped.
@@ -151,7 +151,7 @@ fn identity(dir: &Path) -> Option<String> {
     }
     #[cfg(not(unix))]
     {
-        drop(meta);
+        let _ = meta;
         std::fs::canonicalize(dir)
             .ok()
             .map(|path| path.display().to_string())
@@ -178,7 +178,7 @@ fn own_stamp(dir: &Path) -> Option<(Stamp, Duration)> {
 
 /// The last pass over this store, which ended within the hour, counted its
 /// files and found the protected evidence alone filling the ceiling.
-pub(crate) fn proven_full(dir: &Path) -> bool {
+pub fn proven_full(dir: &Path) -> bool {
     own_stamp(dir).is_some_and(|(stamp, age)| stamp.full && age < MAINTAIN_EVERY)
 }
 
@@ -189,7 +189,7 @@ static MAINTAINING: AtomicBool = AtomicBool::new(false);
 
 /// When the last pass over THIS store ended, if one did: the stamp of a
 /// store this one was copied from does not count.
-pub(crate) fn last_pass(dir: &Path) -> Option<SystemTime> {
+pub fn last_pass(dir: &Path) -> Option<SystemTime> {
     own_stamp(dir)?;
     std::fs::metadata(dir.join(STAMP))
         .and_then(|meta| meta.modified())
@@ -200,7 +200,7 @@ pub(crate) fn last_pass(dir: &Path) -> Option<SystemTime> {
 /// the background from now on, and starts a pass now when none ended within
 /// the hour, so an upgraded installation brings an old store within its
 /// bound before it is needed.
-pub(crate) fn maintain_at_startup() {
+pub fn maintain_at_startup() {
     ALLOWED.store(true, Ordering::Release);
     if let Some(dir) = super::gateway_dir() {
         maintain_in_background(dir, false);
@@ -230,7 +230,7 @@ pub(crate) fn maintain_in_background(dir: PathBuf, urgent: bool) {
     }
 }
 
-fn log(outcome: &Result<Maintenance, String>) {
+pub fn log(outcome: &Result<Maintenance, String>) {
     match outcome {
         Ok(done) if done.packed + done.removed + done.removed_tasks > 0 || done.full => {
             tracing::info!(
@@ -253,11 +253,7 @@ fn log(outcome: &Result<Maintenance, String>) {
 }
 
 /// One pass over `dir` at `now` under `policy`.
-pub(crate) fn maintain_in(
-    dir: &Path,
-    now: SystemTime,
-    policy: Policy,
-) -> Result<Maintenance, String> {
+pub fn maintain_in(dir: &Path, now: SystemTime, policy: Policy) -> Result<Maintenance, String> {
     use fs2::FileExt;
     if !dir.is_dir() {
         return Ok(Maintenance::default());

@@ -1,0 +1,824 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Observe hook handler: records all IDE hook events for context awareness
+//! (event parsing, token estimation, model/transcript detection, radar log).
+//! Split out of `hook_handlers/mod.rs`; `use super::*` re-imports parent items.
+
+#[allow(clippy::wildcard_imports)]
+use super::*;
+
+/// Shared-mode SessionStart routing note, sent only to hosts whose rules file
+/// lacks the lean-ctx block (A3). States the routing once, neutrally — the
+/// pilot (P6) showed "ALWAYS"/"orient FIRST" pushes adding steps on short tasks.
+const SHARED_SESSION_CONTEXT: &str = "\
+lean-ctx tools for this session: ctx_read for Read, ctx_search for Grep, \
+ctx_shell for Shell, ctx_glob for Glob, ctx_tree for ls. \
+Native Read stays available for editing.";
+/// Opt-in per-turn routing reminder (`prompt_reinject = on`, #1288).
+const PROMPT_SUBMIT_PRECEDENCE: &str = "lean-ctx routing: reads/searches via \
+                ctx_read/ctx_search/ctx_glob/ctx_tree, commands via ctx_shell; \
+                this takes precedence over session text that prefers native \
+                Bash/cat/sed/grep.";
+
+// ---------------------------------------------------------------------------
+// Observe handler — records ALL hook events for context awareness
+// ---------------------------------------------------------------------------
+
+/// Unified observe handler for all IDE hook events.
+/// Reads JSON from stdin, normalizes to `ObserveEvent`, counts tokens,
+/// appends to `context_radar.jsonl`, and exits immediately.
+pub fn handle_observe() {
+    if is_disabled() {
+        return;
+    }
+    let Some(raw_input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
+        return;
+    };
+    let input = super::solution_capture::sanitize_json_control_chars(&raw_input);
+    // Dedicated rules-injection mode (#343): a Claude/Codex/CodeBuddy `SessionStart` hook
+    // injects the compact lean-ctx summary as `additionalContext` — the
+    // non-polluting stand-in for the (skipped) CLAUDE.md/CODEBUDDY.md/AGENTS.md block. All
+    // three agents register `hook observe` on SessionStart, so this is the single
+    // emit point (the Codex-specific handler stays silent in dedicated mode).
+    // The value recap (Stop/SessionStart `systemMessage`, user-only) rides in
+    // the same JSON object: a host parses exactly one per hook.
+    let context = dedicated_session_context(&input);
+    let recap = super::value_recap::system_message(&input);
+    if let Some(json) =
+        super::value_recap::hook_output("SessionStart", context.as_deref(), recap.as_deref())
+    {
+        println!("{json}");
+    }
+    // #1288: per-turn tool-precedence reinjection. Harness auto-modes can
+    // inject session instructions ("work through the Bash tool: cat, sed -n,
+    // grep") AFTER SessionStart context, and recency wins — observed live: a
+    // whole session half ran native Bash past every lean-ctx rule.
+    // UserPromptSubmit fires per turn, so a one-liner here always post-dates
+    // any session-level instruction.
+    emit_prompt_submit_precedence(&input);
+    record_session_lifecycle_presence(&input);
+
+    // Native-edit code-health notice (#1085): when the agent edits code with the
+    // host's native Edit/MultiEdit tools (bypassing ctx_edit's gate), surface an
+    // advisory complexity-regression notice via PostToolUse additionalContext.
+    super::edit_health::maybe_emit(&input);
+
+    // One admission decision on the ORIGINAL payload (full native tool input
+    // and output), before anything text-bearing is derived from it. Solution
+    // capture, the radar's `detail`/`content` and echo analysis inherit it;
+    // content-free facts below (event type, tool name, token estimate, LOC
+    // metering, compaction marker) do not depend on it.
+    let admission = super::admission::admit_payload(&input);
+    super::solution_capture::maybe_capture_admitted(&input, admission.derivable(&input));
+    // Host SendMessage → local bus "direct" entry; the bus admits the body
+    // itself (redaction + withholding) before it is stored.
+    super::send_mirror::maybe_mirror(&input);
+
+    let Some(event) = parse_observe_event(&input) else {
+        return;
+    };
+    let event = admitted_event(event, &admission);
+    // Compaction evicts the conversation the read-dedup stubs would point into
+    // (GL #1140): purge the session's re-read records so every file delivers
+    // full content again, mirroring the MCP-side compaction sync (GL #555).
+    if event.event_type == "compaction"
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(&input)
+        && let Some(session_id) = v.get("session_id").and_then(|s| s.as_str())
+    {
+        super::read_dedup::purge_session(session_id);
+    }
+    append_radar_event(&event);
+
+    // Output-echo analysis (#501): measure how much of the agent's reply
+    // re-quotes content lean-ctx already delivered, and feed the adaptive
+    // mode policy with an automatic feedback event.
+    if event.event_type == "agent_response"
+        && let Some(text) = event.content.as_deref()
+    {
+        lean_ctx::core::output_echo::analyze_and_record(text);
+    }
+}
+
+/// Bind the text-bearing fields of a radar event to the payload's admission.
+/// The event itself (type, tool name, token estimate, ids) is content-free and
+/// always recorded; `detail` and `content` are text from the payload and are
+/// stored only as admitted: unchanged, re-derived from the redacted payload,
+/// or replaced by the typed, content-free reason.
+fn admitted_event(
+    mut event: ObserveEvent,
+    admission: &super::admission::PayloadAdmission,
+) -> ObserveEvent {
+    use super::admission::PayloadAdmission;
+    match admission {
+        PayloadAdmission::Unchanged => {}
+        PayloadAdmission::Rewritten(payload) => {
+            let redacted = serde_json::from_str::<serde_json::Value>(payload)
+                .ok()
+                .and_then(|value| detect_event_type(&value, event.ts));
+            event.detail = redacted.as_ref().and_then(|event| event.detail.clone());
+            event.content = redacted.and_then(|event| event.content);
+        }
+        PayloadAdmission::Withheld(withheld) => {
+            event.detail = Some(withheld.notice());
+            event.content = None;
+        }
+    }
+    event
+}
+
+/// #1288: emit a one-line tool-routing reminder as `additionalContext` on
+/// UserPromptSubmit. Gated by `prompt_reinject` (on|off|auto; auto = off, A3).
+/// Costs ~45 tokens per turn — kept to a single line by design.
+fn emit_prompt_submit_precedence(input: &str) {
+    // This is explicit rule/tool-precedence steering, not passive telemetry.
+    // Honour the same central opt-out as every other automatic steering channel.
+    if lean_ctx::core::config::Config::load().declines_rule_steering() {
+        return;
+    }
+
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
+        return;
+    };
+    if v.get("hook_event_name").and_then(|e| e.as_str()) != Some("UserPromptSubmit") {
+        return;
+    }
+    if !prompt_reinject_enabled() {
+        return;
+    }
+    println!(
+        "{}",
+        serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": PROMPT_SUBMIT_PRECEDENCE
+            }
+        })
+    );
+}
+
+/// Effective `prompt_reinject` gate (#1288). Env wins over config. `auto`
+/// (the default) is off since A3: the routing already reaches the model once
+/// through the host's rules channel, and a per-turn copy accumulates in the
+/// history. `on` restores the reminder.
+fn prompt_reinject_enabled() -> bool {
+    let mode = match std::env::var("LEAN_CTX_PROMPT_REINJECT") {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => lean_ctx::core::config::Config::load()
+            .prompt_reinject
+            .unwrap_or_default(),
+    };
+    matches!(
+        mode.trim().to_ascii_lowercase().as_str(),
+        "on" | "true" | "1"
+    )
+}
+
+/// Records durable logical presence for every host SessionStart and SessionEnd hook.
+///
+/// This is deliberately separate from the MCP-process presence registered by
+/// `LeanCtxServer`: a host session can own several short-lived MCP connections.
+/// Hook telemetry remains fail-open so a registry lock cannot wedge an editor;
+/// the MCP ingress itself is fail-closed before any tool executes.
+fn record_session_lifecycle_presence(input: &str) {
+    let Ok(payload) = serde_json::from_str::<serde_json::Value>(input) else {
+        return;
+    };
+    let Some((event, source, workspace, session_id)) = session_lifecycle_presence_fields(&payload)
+    else {
+        return;
+    };
+    if event == "close" {
+        // Queue the session's learnings for Hive (local only, no network).
+        lean_ctx::core::knowledge::hooks::session_ended(&workspace, &session_id);
+    }
+    if let Err(error) = lean_ctx::core::agents::AgentRegistry::record_logical_session_presence(
+        event,
+        &source,
+        &workspace,
+        &session_id,
+    ) {
+        tracing::warn!(
+            %error,
+            source,
+            workspace = %workspace,
+            event,
+            "lean-ctx: failed to record logical session presence"
+        );
+    }
+}
+
+fn session_lifecycle_presence_fields(
+    payload: &serde_json::Value,
+) -> Option<(&'static str, String, String, String)> {
+    let event = match payload
+        .get("hook_event_name")
+        .and_then(serde_json::Value::as_str)
+    {
+        Some("SessionStart") => "open",
+        Some("SessionEnd") => "close",
+        _ => return None,
+    };
+
+    let session_id = ["session_id", "conversation_id"]
+        .iter()
+        .find_map(|key| payload.get(*key).and_then(serde_json::Value::as_str))
+        .filter(|value| !value.trim().is_empty())?
+        .to_string();
+    let workspace = ["cwd", "workspace", "project_root"]
+        .iter()
+        .find_map(|key| payload.get(*key).and_then(serde_json::Value::as_str))
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .map(|path| path.to_string_lossy().into_owned())
+        })?;
+    let source = session_lifecycle_source(payload, &session_id, |key| {
+        std::env::var(key)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+    });
+    Some((event, source.to_string(), workspace, session_id))
+}
+
+/// Host session-id variables exported to hook subprocesses, per host.
+/// Sources: Claude Code env-vars reference (`CLAUDE_CODE_SESSION_ID`, "set
+/// automatically to the current session ID in … hook command subprocesses";
+/// `CLAUDE_SESSION_ID` kept for older builds), Gemini CLI hooks guide
+/// (`GEMINI_SESSION_ID`, `GEMINI_PROJECT_DIR`), and the Codex/CodeBuddy
+/// variables this module already relied on.
+const SESSION_ENV_SIGNALS: &[(&str, &[&str])] = &[
+    ("codex", &["CODEX_THREAD_ID"]),
+    ("gemini", &["GEMINI_SESSION_ID"]),
+    ("claude", &["CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"]),
+    ("codebuddy", &["CODEBUDDY_SESSION_ID"]),
+];
+
+/// Which host fired a SessionStart/SessionEnd hook. Cursor is recognised by
+/// its payload (`conversation_id`). Otherwise an env session id equal to the
+/// payload's `session_id` is decisive; failing that, presence decides in a
+/// fixed order. Gemini precedes Claude because Gemini CLI also exports
+/// `CLAUDE_PROJECT_DIR` to hooks for compatibility; neither that alias nor
+/// `CLAUDECODE` (also set in IDE terminals) is used as a signal.
+fn session_lifecycle_source(
+    payload: &serde_json::Value,
+    session_id: &str,
+    env: impl Fn(&str) -> Option<String>,
+) -> &'static str {
+    if payload.get("conversation_id").is_some() {
+        return "cursor";
+    }
+    if let Some((source, _)) = SESSION_ENV_SIGNALS.iter().find(|(_, keys)| {
+        keys.iter()
+            .any(|key| env(key).is_some_and(|value| value.trim() == session_id))
+    }) {
+        return source;
+    }
+    let present = |keys: &[&str]| keys.iter().any(|key| env(key).is_some());
+    if present(&["CODEX_THREAD_ID", "CODEX_PROFILE"]) {
+        "codex"
+    } else if present(&["GEMINI_SESSION_ID", "GEMINI_PROJECT_DIR"]) {
+        "gemini"
+    } else if present(&["CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"]) {
+        "claude"
+    } else if present(&["CODEBUDDY_SESSION_ID"]) {
+        "codebuddy"
+    } else {
+        "agent"
+    }
+}
+
+/// The SessionStart rules for this payload (`additionalContext`), if any.
+fn dedicated_session_context(input: &str) -> Option<String> {
+    // SessionStart additionalContext is model-visible rule steering.
+    // Do not emit it after the user explicitly declined that steering.
+    if lean_ctx::core::config::Config::load().declines_rule_steering() {
+        return None;
+    }
+
+    let v = serde_json::from_str::<serde_json::Value>(input).ok()?;
+    if !session_start_honours_additional_context(&v) {
+        return None;
+    }
+    let cfg = lean_ctx::core::config::Config::load();
+
+    if cfg.dedicated_session_context_active() {
+        // Full Bare rules for dedicated-mode hosts (Claude Code, Codex, CodeBuddy)
+        // where the static rules file is skipped.
+        let profile = lean_ctx::core::tool_profiles::ToolProfile::from_config(&cfg);
+        let client_name = session_start_client_name(&v);
+        Some(build_dedicated_session_context(
+            client_name,
+            cfg.shadow_mode,
+            &profile,
+        ))
+    } else {
+        // Shared mode: the host's own rules file is its single lean-ctx rules
+        // channel (A3). Once that file carries the block, this nudge repeated
+        // the same mapping a third time (with the MCP instructions anchor and
+        // the file); it only ships to hosts whose carrier is missing.
+        let session_id = ["session_id", "conversation_id"]
+            .iter()
+            .find_map(|key| v.get(*key).and_then(serde_json::Value::as_str))
+            .unwrap_or_default();
+        let source = session_lifecycle_source(&v, session_id, |key| {
+            std::env::var(key)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        });
+        let covered = lean_ctx::core::home::resolve_home_dir()
+            .is_some_and(|home| shared_host_carries_rules(source, &home));
+        (!covered).then(|| SHARED_SESSION_CONTEXT.to_string())
+    }
+}
+
+/// Whether the SessionStart host (`session_lifecycle_source`) already
+/// auto-loads the lean-ctx rules block from its own rules file.
+fn shared_host_carries_rules(source: &str, home: &std::path::Path) -> bool {
+    let client = match source {
+        "claude" => "claude-code",
+        "gemini" => "gemini-cli",
+        "cursor" | "codex" | "codebuddy" => source,
+        _ => return false,
+    };
+    lean_ctx::core::rules_channel::client_autoloads_rules(client, home)
+}
+
+/// Builds dedicated SessionStart rules, using shadow-minimal only when hooks cover native tools.
+fn build_dedicated_session_context(
+    client_name: &str,
+    shadow: bool,
+    profile: &lean_ctx::core::tool_profiles::ToolProfile,
+) -> String {
+    let effective_shadow = shadow && client_is_hook_covered(client_name);
+    lean_ctx::core::rules_canonical::render(
+        effective_shadow,
+        lean_ctx::core::rules_canonical::Wrapper::Bare,
+        lean_ctx::core::config::CompressionLevel::Off,
+        profile,
+    )
+}
+
+/// Identifies hook coverage from the installed rules-channel configuration.
+fn client_is_hook_covered(client_name: &str) -> bool {
+    lean_ctx::core::home::resolve_home_dir()
+        .is_some_and(|home| lean_ctx::core::rules_channel::client_hook_covered(client_name, &home))
+}
+
+/// Maps SessionStart payload shape to the only potentially hook-covered client, Cursor.
+fn session_start_client_name(payload: &serde_json::Value) -> &'static str {
+    if payload.get("conversation_id").is_some() {
+        "cursor"
+    } else {
+        "claude"
+    }
+}
+
+/// True for SessionStart payloads from hosts that honour `additionalContext`.
+///
+/// Cursor fixed SessionStart `additionalContext` support circa Q1 2026 —
+/// confirmed on the Cursor community forum as the only hook event where
+/// `additional_context` works end-to-end. The prior exclusion (#1031) is
+/// therefore removed: Cursor sessions now receive the same dedicated rules
+/// reinforcement as Claude/Codex/CodeBuddy.
+fn session_start_honours_additional_context(v: &serde_json::Value) -> bool {
+    v.get("hook_event_name").and_then(|e| e.as_str()) == Some("SessionStart")
+}
+
+#[derive(serde::Serialize)]
+struct ObserveEvent {
+    ts: u64,
+    event_type: &'static str,
+    tokens: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    conversation_id: Option<String>,
+}
+
+const MAX_CONTENT_CHARS: usize = 50_000;
+
+fn parse_observe_event(input: &str) -> Option<ObserveEvent> {
+    let v: serde_json::Value = serde_json::from_str(input).ok()?;
+
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let model = v
+        .get("model")
+        .and_then(|m| m.as_str())
+        .filter(|m| !m.is_empty())
+        .map(String::from);
+    let conversation_id = v
+        .get("conversation_id")
+        .and_then(|c| c.as_str())
+        .filter(|c| !c.is_empty())
+        .map(String::from);
+
+    let transcript_path = v
+        .get("transcript_path")
+        .and_then(|t| t.as_str())
+        .filter(|t| !t.is_empty())
+        .map(String::from);
+
+    // Claude Code / Codex / CodeBuddy carry a per-session `session_id` but no
+    // `conversation_id`. Persisting it lets the read-cache scope a session's
+    // deliveries the same way Cursor's `conversation_id` does, so a new session
+    // never inherits a prior one's `[unchanged]` stubs (#1004).
+    let session_id = v
+        .get("session_id")
+        .and_then(|s| s.as_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+
+    if let Some(ref m) = model {
+        persist_detected_model(m);
+    }
+    if let Some(ref tp) = transcript_path {
+        persist_transcript_path(tp, conversation_id.as_deref(), session_id.as_deref());
+    }
+
+    let mut event = detect_event_type(&v, ts)?;
+    event.model = model;
+    event.conversation_id = conversation_id;
+    Some(event)
+}
+
+fn detect_event_type(v: &serde_json::Value, ts: u64) -> Option<ObserveEvent> {
+    // GitHub Copilot CLI postToolUse: camelCase `toolName` + `toolArgs`
+    // (JSON-encoded string) + `toolResult`. None of the snake_case branches
+    // below match this shape, so without a dedicated arm Copilot telemetry
+    // (heatmap, token savings, radar) is silently dropped (#551).
+    if let Some(result) = v.get("toolResult") {
+        let tool = super::payload::resolve_tool_name(v).unwrap_or_else(|| "unknown".to_string());
+        let args = super::payload::resolve_tool_args(v);
+        let command = args
+            .as_ref()
+            .and_then(|a| a.get("command"))
+            .and_then(|c| c.as_str());
+        let result_text = result
+            .get("textResultForLlm")
+            .and_then(|t| t.as_str())
+            .map_or_else(|| result.to_string(), String::from);
+        let tokens = result_text.len() / 4;
+        let is_lctx = tool.starts_with("ctx_") || tool.starts_with("mcp__lean-ctx__");
+        let event_type = if is_lctx {
+            "mcp_call"
+        } else if command.is_some() {
+            "shell"
+        } else {
+            "native_tool"
+        };
+        let content = match command {
+            Some(cmd) => format!("$ {cmd}\n{result_text}"),
+            None => result_text,
+        };
+        return Some(ObserveEvent {
+            ts,
+            event_type,
+            tokens,
+            tool_name: Some(tool),
+            detail: command.map(|c| truncate_str(c, 80)),
+            content: Some(cap_content(&content)),
+            model: None,
+            conversation_id: None,
+        });
+    }
+
+    if let Some(result) = v
+        .get("result_json")
+        .or_else(|| v.get("result"))
+        .or_else(|| v.get("tool_response"))
+        .or_else(|| v.get("tool_output"))
+    {
+        let tool = v
+            .get("tool_name")
+            .and_then(|t| t.as_str())
+            .unwrap_or("unknown");
+        let tokens = estimate_tokens_json(result);
+        let content_str = match result {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        return Some(ObserveEvent {
+            ts,
+            event_type: "mcp_call",
+            tokens,
+            tool_name: Some(tool.to_string()),
+            detail: v
+                .get("server_name")
+                .and_then(|s| s.as_str())
+                .map(String::from),
+            content: Some(cap_content(&content_str)),
+            model: None,
+            conversation_id: None,
+        });
+    }
+
+    if let Some(output) = v.get("output") {
+        let cmd = v
+            .get("command")
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .to_string();
+        let tokens = estimate_tokens_value(output);
+        let out_str = match output {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        return Some(ObserveEvent {
+            ts,
+            event_type: "shell",
+            tokens,
+            tool_name: None,
+            detail: Some(truncate_str(&cmd, 80)),
+            content: Some(cap_content(&format!("$ {cmd}\n{out_str}"))),
+            model: None,
+            conversation_id: None,
+        });
+    }
+
+    if v.get("content").is_some() && v.get("file_path").is_some() {
+        let path = v
+            .get("file_path")
+            .and_then(|p| p.as_str())
+            .unwrap_or("")
+            .to_string();
+        let file_content = v.get("content").and_then(|c| c.as_str()).unwrap_or("");
+        let tokens = file_content.len() / 4;
+        return Some(ObserveEvent {
+            ts,
+            event_type: "file_read",
+            tokens,
+            tool_name: None,
+            detail: Some(truncate_str(&path, 120)),
+            content: Some(cap_content(file_content)),
+            model: None,
+            conversation_id: None,
+        });
+    }
+
+    if let Some(text) = v.get("text").and_then(|t| t.as_str()) {
+        let has_duration = v.get("duration_ms").is_some();
+        let event_type = if has_duration {
+            "thinking"
+        } else {
+            "agent_response"
+        };
+        let tokens = text.len() / 4;
+        return Some(ObserveEvent {
+            ts,
+            event_type,
+            tokens,
+            tool_name: None,
+            detail: None,
+            content: Some(cap_content(text)),
+            model: None,
+            conversation_id: None,
+        });
+    }
+
+    if let Some(prompt) = v.get("prompt").and_then(|p| p.as_str()) {
+        let tokens = prompt.len() / 4;
+        let mut full = prompt.to_string();
+        if let Some(attachments) = v.get("attachments").and_then(|a| a.as_array())
+            && !attachments.is_empty()
+        {
+            full.push_str(&format!("\n\n[{} attachments]", attachments.len()));
+            for att in attachments {
+                if let Some(name) = att.get("name").and_then(|n| n.as_str()) {
+                    full.push_str(&format!("\n  - {name}"));
+                }
+            }
+        }
+        return Some(ObserveEvent {
+            ts,
+            event_type: "user_message",
+            tokens,
+            tool_name: None,
+            detail: v
+                .get("attachments")
+                .and_then(|a| a.as_array())
+                .map(|a| format!("{} attachments", a.len())),
+            content: Some(cap_content(&full)),
+            model: None,
+            conversation_id: None,
+        });
+    }
+
+    if v.get("tool_name").is_some() || v.get("tool_input").is_some() {
+        let tool = v
+            .get("tool_name")
+            .and_then(|t| t.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let is_lctx = tool.starts_with("ctx_") || tool.starts_with("mcp__lean-ctx__");
+        let tokens = v.get("tool_input").map_or(0, estimate_tokens_json);
+        let input_str = v
+            .get("tool_input")
+            .map(std::string::ToString::to_string)
+            .unwrap_or_default();
+        return Some(ObserveEvent {
+            ts,
+            event_type: if is_lctx { "mcp_call" } else { "native_tool" },
+            tokens,
+            tool_name: Some(tool),
+            detail: None,
+            content: if input_str.is_empty() {
+                None
+            } else {
+                Some(cap_content(&input_str))
+            },
+            model: None,
+            conversation_id: None,
+        });
+    }
+
+    // Claude Code emits `hook_event_name: "PreCompact"` (code.claude.com/docs/
+    // en/hooks); the generic `event`/`compaction` shapes cover other hosts.
+    // This check must run BEFORE the `session_id` catch-all below: every
+    // Claude hook payload carries `session_id` as a common field, so the
+    // compaction branch was unreachable for Claude — compactions were never
+    // recorded, `sync_if_compacted` never reset delivery flags, and
+    // post-compaction re-reads kept answering with "[unchanged]" stubs that
+    // pointed at context the host had already evicted (GL #555). Agents then
+    // fell back to native Read to recover the content.
+    let is_compaction = v.get("compaction").is_some()
+        || v.get("messages_count").is_some()
+        || v.get("hook_event_name")
+            .and_then(|e| e.as_str())
+            .is_some_and(|e| e == "PreCompact")
+        || v.get("event")
+            .and_then(|e| e.as_str())
+            .is_some_and(|e| e == "compaction" || e == "compact");
+    if !is_compaction && v.get("session_id").is_some() {
+        return Some(ObserveEvent {
+            ts,
+            event_type: "session",
+            tokens: 0,
+            tool_name: None,
+            detail: v
+                .get("session_id")
+                .and_then(|s| s.as_str())
+                .map(String::from),
+            content: None,
+            model: None,
+            conversation_id: None,
+        });
+    }
+
+    if is_compaction {
+        return Some(ObserveEvent {
+            ts,
+            event_type: "compaction",
+            tokens: 0,
+            tool_name: None,
+            detail: None,
+            content: None,
+            model: None,
+            conversation_id: None,
+        });
+    }
+
+    None
+}
+
+fn estimate_tokens_json(v: &serde_json::Value) -> usize {
+    match v {
+        serde_json::Value::String(s) => s.len() / 4,
+        _ => v.to_string().len() / 4,
+    }
+}
+
+fn estimate_tokens_value(v: &serde_json::Value) -> usize {
+    match v {
+        serde_json::Value::String(s) => s.len() / 4,
+        _ => v.to_string().len() / 4,
+    }
+}
+
+pub use lean_ctx::core::host_state::{load_active_transcript, load_detected_model};
+use lean_ctx::core::host_state::{persist_detected_model, persist_transcript_path};
+
+pub fn model_context_window(model: &str) -> usize {
+    lean_ctx::core::model_registry::context_window_for_model(model)
+}
+
+fn cap_content(s: &str) -> String {
+    if s.len() <= MAX_CONTENT_CHARS {
+        s.to_string()
+    } else {
+        let truncated = safe_truncate(s, MAX_CONTENT_CHARS);
+        format!("{}…\n\n[truncated: {} total chars]", truncated, s.len())
+    }
+}
+
+fn truncate_str(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}...", safe_truncate(s, max))
+    }
+}
+
+/// Truncate a string at a char boundary <= max bytes. Never panics on multi-byte UTF-8.
+fn safe_truncate(s: &str, max: usize) -> &str {
+    if max >= s.len() {
+        return s;
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+fn append_radar_event(event: &ObserveEvent) {
+    let Ok(data_dir) = lean_ctx::core::data_dir::lean_ctx_data_dir() else {
+        return;
+    };
+    let radar_path = data_dir.join("context_radar.jsonl");
+
+    if event.event_type == "session"
+        && let Ok(meta) = std::fs::metadata(&radar_path)
+    {
+        const MAX_RADAR_SIZE: u64 = 10 * 1024 * 1024; // 10 MB
+        if meta.len() > MAX_RADAR_SIZE {
+            let prev = data_dir.join("context_radar.prev.jsonl");
+            let _ = std::fs::rename(&radar_path, &prev);
+        }
+    }
+
+    let Ok(line) = serde_json::to_string(event) else {
+        return;
+    };
+
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    if let Ok(mut f) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&radar_path)
+    {
+        let _ = writeln!(f, "{line}");
+    }
+
+    // #808: write an atomic marker file so the MCP server can detect
+    // compactions reliably even when large events bury the radar entry.
+    if event.event_type == "compaction" {
+        write_compaction_marker(&data_dir, event.ts);
+    }
+}
+
+/// Atomically write `last_compaction.json` via temp-file + rename.
+/// The marker is a few bytes; no other event can displace it.
+fn write_compaction_marker(data_dir: &std::path::Path, ts: u64) {
+    use std::io::Write;
+    let marker_path = data_dir.join("last_compaction.json");
+    let tmp_path = data_dir.join("last_compaction.json.tmp");
+    let payload = format!(r#"{{"ts":{ts}}}"#);
+    let Ok(mut f) = std::fs::File::create(&tmp_path) else {
+        return;
+    };
+    if f.write_all(payload.as_bytes()).is_err() || f.sync_all().is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+        return;
+    }
+    drop(f);
+    let _ = std::fs::rename(&tmp_path, &marker_path);
+}
+
+/// Count the IDE-hook observe events recorded in `context_radar.jsonl`.
+///
+/// `watch` uses this to explain an empty live feed (#593): a non-zero count
+/// means IDE hooks ARE firing — lean-ctx is wired into the editor — even though
+/// no `ctx_*` MCP tool has been called yet. That distinguishes "the agent is
+/// using native tools instead of ctx_*" from "nothing is connected at all".
+/// Counts newline-delimited records; returns 0 when the file is absent.
+#[must_use]
+pub fn radar_event_count() -> usize {
+    let Ok(data_dir) = lean_ctx::core::data_dir::lean_ctx_data_dir() else {
+        return 0;
+    };
+    let Ok(file) = std::fs::File::open(data_dir.join("context_radar.jsonl")) else {
+        return 0;
+    };
+    use std::io::{BufRead, BufReader};
+    BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .filter(|l| !l.trim().is_empty())
+        .count()
+}
+
+#[cfg(test)]
+#[path = "observe_tests.rs"]
+mod tests;

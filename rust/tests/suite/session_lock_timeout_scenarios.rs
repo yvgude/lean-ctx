@@ -205,7 +205,7 @@ mod session_lock_timeout {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod read_file_safety {
-    use lean_ctx::tools::ctx_read::read_file_lossy;
+    use lean_ctx_server::tools::ctx_read::read_file_lossy;
     use std::time::{Duration, Instant};
 
     #[test]

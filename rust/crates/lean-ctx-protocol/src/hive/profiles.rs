@@ -3,9 +3,8 @@
 //! Agent profiles and reputation (C0 1.9, section 5).
 //!
 //! A profile describes one agent (bus `agent_id`) of one instance, owned by
-//! one person. The engine announces it with `presence` (`display_name`,
-//! `model`, `roles`, all self-reported and shown as such); the owner edits
-//! it on the web. Strengths are derived by Hive from accepted work, never
+//! one person. Its `display_name`, `model` and `roles` are self-reported
+//! and shown as such; the owner edits it on the web. Strengths are derived by Hive from accepted work, never
 //! entered.
 //!
 //! Reputation ([`ReputationV1`]) is derived by Hive from accepted
@@ -56,7 +55,7 @@ pub fn role_ok(role: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
-/// What the profile says an agent is, as `presence` announces it.
+/// What the profile says an agent is (self-reported).
 pub fn validate_self_report(
     display_name: Option<&str>,
     model: Option<&str>,
@@ -77,28 +76,6 @@ pub fn validate_self_report(
         ));
     }
     Ok(())
-}
-
-/// 1.9: what `presence` announces about the agent (self-reported).
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PresenceProfileV1 {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub roles: Vec<String>,
-}
-
-impl PresenceProfileV1 {
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_self_report(
-            self.display_name.as_deref(),
-            self.model.as_deref(),
-            &self.roles,
-        )
-    }
 }
 
 /// One agent profile in the org.

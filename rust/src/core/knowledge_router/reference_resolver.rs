@@ -85,7 +85,8 @@ mod tests {
     #[test]
     fn detects_existing_rust_paths() {
         assert_eq!(
-            PatternReferenceResolver.resolve("src/main.rs")[0].ref_type,
+            // A real path of this crate (the binary moved to crates/lean-ctx).
+            PatternReferenceResolver.resolve("src/lib.rs")[0].ref_type,
             ReferenceType::FilePath
         );
     }

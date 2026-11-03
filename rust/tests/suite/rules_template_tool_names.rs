@@ -8,12 +8,12 @@
 //! drift unnoticed (#548).
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use lean_ctx::server::registry::build_registry;
+use lean_ctx_server::server::registry::build_registry;
 
 fn templates_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("src/templates")
+    crate::engine_dir().join("src/templates")
 }
 
 /// Extract distinct `ctx_<name>` identifiers from `text`, where `<name>` is one
@@ -65,7 +65,7 @@ fn template_files() -> Vec<PathBuf> {
 /// for months because this gate only checked registration.
 #[test]
 fn templates_only_reference_registered_ctx_tools() {
-    use lean_ctx::server::dynamic_tools::is_publicly_advertised_tool;
+    use lean_ctx_server::server::dynamic_tools::is_publicly_advertised_tool;
     let registry = build_registry();
     let mut violations: Vec<String> = Vec::new();
 
@@ -86,7 +86,7 @@ fn templates_only_reference_registered_ctx_tools() {
         .collect();
     texts.push((
         "hermes extras".to_string(),
-        lean_ctx::hooks::agents::hermes::HERMES_TOOL_EXTRAS.to_string(),
+        lean_ctx_hooks::hooks::agents::hermes::HERMES_TOOL_EXTRAS.to_string(),
     ));
 
     for (name, text) in texts {

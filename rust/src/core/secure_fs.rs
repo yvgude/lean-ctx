@@ -4,8 +4,6 @@
 /// Writes a secret file atomically (tmp + rename) with owner-only permissions
 /// (0o600 on Unix), so secrets are never world-readable — not even
 /// transiently between create and chmod.
-// Used by the Hive connector's state store (`core::hive::state`).
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn write_secret_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
 
@@ -49,6 +47,31 @@ pub(crate) fn write_secret_file(path: &std::path::Path, bytes: &[u8]) -> std::io
         let _ = std::fs::remove_file(&tmp);
     }
     result
+}
+
+/// Creates `dir` (and its parents) and restricts it to its owner (0700 on Unix). Errors name
+/// the step and the path.
+pub fn private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    let step = |what: &str, e: std::io::Error| {
+        std::io::Error::new(e.kind(), format!("{what} {}: {e}", dir.display()))
+    };
+    std::fs::create_dir_all(dir).map_err(|e| step("create", e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| step("restrict", e))?;
+    }
+    Ok(())
+}
+
+/// Writes `dir/name` so that it is never readable by others and never seen half-written:
+/// [`private_dir`] and `write_secret_file`.
+pub fn write_private(dir: &std::path::Path, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    private_dir(dir)?;
+    write_secret_file(&dir.join(name), bytes).map_err(|e| {
+        std::io::Error::new(e.kind(), format!("write {name} in {}: {e}", dir.display()))
+    })
 }
 
 #[cfg(test)]

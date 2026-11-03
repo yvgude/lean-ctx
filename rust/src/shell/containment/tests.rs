@@ -17,7 +17,11 @@ use std::process::{Child, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use super::gate::last_gated_for_test;
-pub(crate) use super::gate::{GuardFault, set_guard_fault_for_test};
+pub use super::gate::{GuardFault, set_guard_fault_for_test};
+pub use super::spawner::{
+    break_helper_for_test, fail_next_release_send_for_test, fail_next_spawn_send_for_test,
+    helper_pid_for_test, kill_helper_for_test, set_helper_fault_for_test,
+};
 use super::{
     CallGuard, GroupEnd, GuardOutcome, Refusal, end_pinned_group, live_members, start_behind_guard,
 };
@@ -54,6 +58,12 @@ fn helper(mode: &str) -> Command {
 #[test]
 #[ignore = "subprocess helper for the containment tests"]
 fn containment_helper() {
+    containment_helper_main();
+}
+
+/// The body of the ignored helper test [`HELPER_TEST`]; the server crate's
+/// unit-test harness mounts a helper test at the same path that runs it.
+pub fn containment_helper_main() {
     let mode = std::env::var(HELPER_ENV).expect("helper mode");
     match mode.as_str() {
         "group-guard" => {
@@ -63,7 +73,6 @@ fn containment_helper() {
         "session-starter" => std::process::exit(super::starter::run(&starter_options())),
         "spawn-helper" => std::process::exit(super::spawn_helper::serve(libc::STDIN_FILENO)),
         "engine-standin" => engine_standin(),
-        "mcp-engine-standin" => mcp_engine_standin(),
         "capture-caller" => capture_caller(),
         "starter-parent" => starter_parent(),
         other => fixture(other.strip_prefix("fixture:").expect("known helper mode")),
@@ -109,7 +118,7 @@ fn starter_parent() {
     }
 }
 
-fn alive(pid: libc::pid_t) -> bool {
+pub fn alive(pid: libc::pid_t) -> bool {
     // SAFETY: signal 0 only probes for existence.
     unsafe { libc::kill(pid, 0) == 0 }
 }
@@ -127,7 +136,7 @@ fn gone(pid: libc::pid_t) -> bool {
 
 /// Whether the group has no live member left within five seconds. Reads the
 /// process table only.
-fn wait_gone(group: libc::pid_t) -> bool {
+pub fn wait_gone(group: libc::pid_t) -> bool {
     let deadline = Instant::now() + Duration::from_secs(5);
     while live_members(group) != Some(0) {
         if Instant::now() >= deadline {
@@ -216,8 +225,8 @@ const EXTERNAL_COMPLETE: &str = "FIXTURE-COMPLETE external";
 /// of this binary as a fixture — in a process group of its own, bounded, with
 /// the verdict line as the result. `module` is `module_path!()` of the caller.
 /// The fixture body must start with [`external_fixture`] and end with
-/// [`ExternalFixture::complete`].
-pub(crate) fn run_external_fixture(module: &str, name: &str) {
+/// [`ExternalFixture::complete`]. Returns what the fixture wrote.
+pub fn run_external_fixture(module: &str, name: &str) -> String {
     // Test names carry no crate name.
     let module = module.split_once("::").map_or(module, |(_, rest)| rest);
     let mut command = Command::new(std::env::current_exe().unwrap());
@@ -242,6 +251,37 @@ pub(crate) fn run_external_fixture(module: &str, name: &str) {
         "fixture status {:?}\n{stdout}\n{stderr}",
         captured.output.status
     );
+    stdout.into_owned()
+}
+
+const EXTERNAL_HELPER: &str = "external-helper";
+
+/// For process tests of other modules, inside an external fixture: the
+/// command that runs the ignored test `module::name` of this binary as a
+/// helper process of the fixture. The helper body must start with
+/// [`external_helper_body`].
+pub fn external_helper(module: &str, name: &str) -> Command {
+    let module = module.split_once("::").map_or(module, |(_, rest)| rest);
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            format!("{module}::{name}").as_str(),
+            "--exact",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env(HELPER_ENV, EXTERNAL_HELPER);
+    command
+}
+
+/// Must be the first statement of an [`external_helper`] body. Refuses to
+/// run anywhere but as a helper process of a fixture.
+pub fn external_helper_body() {
+    assert_eq!(
+        std::env::var(HELPER_ENV).as_deref(),
+        Ok(EXTERNAL_HELPER),
+        "this test body runs only as a fixture's helper process"
+    );
 }
 
 const CALLER_STANDIN: &str = "caller-standin";
@@ -253,7 +293,7 @@ const CALLER_STANDIN: &str = "caller-standin";
 /// between "the command's process exists" and "attach its guard" and is
 /// SIGKILLed exactly there. Asserted: nothing of the command is left, and its
 /// program never ran — there is no mark.
-pub(crate) fn caller_killed_before_its_guard(module: &str, standin: &str) {
+pub fn caller_killed_before_its_guard(module: &str, standin: &str) {
     let module = module.split_once("::").map_or(module, |(_, rest)| rest);
     // The stand-in may keep what else it needs beside the mark; the
     // directory is removed here, whatever became of the stand-in.
@@ -291,7 +331,7 @@ pub(crate) fn caller_killed_before_its_guard(module: &str, standin: &str) {
 
 /// Must be the first statement of a stand-in caller: the file its command is
 /// to write its mark to. Refuses to run anywhere but as a stand-in.
-pub(crate) fn caller_standin_marker() -> std::path::PathBuf {
+pub fn caller_standin_marker() -> std::path::PathBuf {
     assert_eq!(
         std::env::var(HELPER_ENV).as_deref(),
         Ok(CALLER_STANDIN),
@@ -304,12 +344,12 @@ pub(crate) fn caller_standin_marker() -> std::path::PathBuf {
 
 /// The drop guard of an external fixture body: ends the fixture's own group,
 /// the fixture included, also when an assertion fails.
-pub(crate) struct ExternalFixture(#[allow(dead_code)] EndOwnGroup);
+pub struct ExternalFixture(#[allow(dead_code)] EndOwnGroup);
 
 /// Must be the first statement of an external fixture body. Refuses to run
 /// anywhere but in a fixture process (an ignored test run by hand would
 /// otherwise end the group of whoever started it).
-pub(crate) fn external_fixture() -> ExternalFixture {
+pub fn external_fixture() -> ExternalFixture {
     assert_eq!(
         std::env::var(HELPER_ENV).as_deref(),
         Ok(EXTERNAL_FIXTURE),
@@ -323,7 +363,7 @@ pub(crate) fn external_fixture() -> ExternalFixture {
 
 impl ExternalFixture {
     /// Prints the verdict line; the group is ended when `self` is dropped.
-    pub(crate) fn complete(self) {
+    pub fn complete(self) {
         println!("{EXTERNAL_COMPLETE}");
     }
 }
@@ -364,12 +404,8 @@ fn fixture(name: &str) {
         "starter-parent-gone" => starter_parent_gone(),
         "starter-own-group" => starter_own_group(),
         "capture-ownership" => capture_ownership(),
-        "helper-call" => helper_call(),
         "helper-timeout" => helper_timeout(),
-        "helper-unclear" => helper_unclear(),
         "capture-caller-killed" => capture_caller_killed(),
-        "helper-engine-killed" => helper_engine_gone(false),
-        "helper-engine-shutdown" => helper_engine_gone(true),
         "costs" => costs(),
         other => panic!("unknown fixture: {other}"),
     }
@@ -716,9 +752,7 @@ fn capture_ownership() {
 
 // --- spawn helper (the MCP shell, server/execute.rs) -----------------------
 
-const ORDERLY_ENV: &str = "LEAN_CTX_TEST_CONTAINMENT_ORDERLY";
-
-fn temp_dir_text() -> String {
+pub fn temp_dir_text() -> String {
     std::env::temp_dir()
         .canonicalize()
         .unwrap()
@@ -728,7 +762,7 @@ fn temp_dir_text() -> String {
 }
 
 /// Reads the process id a shell wrote to `path`, once it is there.
-fn pid_from_file(path: &std::path::Path) -> libc::pid_t {
+pub fn pid_from_file(path: &std::path::Path) -> libc::pid_t {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         if let Some(pid) = std::fs::read_to_string(path)
@@ -740,204 +774,6 @@ fn pid_from_file(path: &std::path::Path) -> libc::pid_t {
         assert!(Instant::now() < deadline, "no pid in {}", path.display());
         std::thread::sleep(Duration::from_millis(20));
     }
-}
-
-/// Stands in for an Engine that serves MCP shell calls: one call that leaves
-/// a background process and is released, then one that is still running when
-/// this process ends — killed by the fixture, or in order (`ORDERLY_ENV`).
-fn mcp_engine_standin() {
-    use crate::server::execute::execute_command_in;
-    let dir = std::env::var(SCRIPT_ENV).unwrap();
-    let (text, code) = execute_command_in(
-        &format!("sleep 20 >/dev/null 2>&1 & echo $! > {dir}/released"),
-        &dir,
-    );
-    assert_eq!(code, 0, "{text}");
-    if std::env::var_os(ORDERLY_ENV).is_some() {
-        let held = std::path::Path::new(&dir).join("held");
-        std::thread::spawn(move || {
-            pid_from_file(&held);
-            super::shutdown_spawn_helper();
-            std::process::exit(0);
-        });
-    }
-    let _ = execute_command_in(&format!("echo $$ > {dir}/held; sleep 10 & sleep 10"), &dir);
-}
-
-/// The Engine dies during a call: the helper ends that call's session, and
-/// does not touch what an earlier, released call left running. An Engine
-/// that ends in order has the helper end nothing.
-fn helper_engine_gone(orderly: bool) {
-    let dir = tempfile::tempdir().unwrap();
-    let dir_path = dir.path().canonicalize().unwrap();
-    let mut engine = helper("mcp-engine-standin");
-    engine
-        .env(SCRIPT_ENV, &dir_path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit());
-    if orderly {
-        engine.env(ORDERLY_ENV, "1");
-    }
-    let mut engine = engine.spawn().unwrap();
-    let held = pid_from_file(&dir_path.join("held"));
-    let released = pid_from_file(&dir_path.join("released"));
-    assert!(alive(released), "a released call keeps its background");
-    if orderly {
-        let status = reap_within(&mut engine, Duration::from_secs(10)).expect("it exits");
-        assert!(status.success());
-        std::thread::sleep(Duration::from_millis(500));
-        assert!(
-            live_members(held).is_some_and(|live| live >= 1),
-            "an orderly shutdown ends nothing"
-        );
-    } else {
-        assert!(live_members(held).is_some_and(|live| live >= 1));
-        engine.kill().unwrap();
-        engine.wait().unwrap();
-        assert!(
-            wait_gone(held),
-            "the helper ends the session of a dead Engine's call"
-        );
-    }
-    assert!(
-        alive(released),
-        "what a released call left running is never signalled"
-    );
-}
-
-/// Run while no helper can be started, so that every call here has the
-/// helper notice. The notice is a field of the result, not a line of its
-/// text — on the captured result, through the foreground path `ctx_shell`
-/// takes, and on a finished background job, whose retained text is what
-/// storage admission, scrubbing and a later poll work on.
-fn notice_travels_beside_the_text(cwd: &str, helped: &(String, i32)) {
-    use crate::server::background_shell::{
-        CapturedForegroundResult, JobState, run_foreground_or_detach_captured, snapshot, start,
-    };
-    use crate::server::execute::execute_command_with_env_captured;
-    use std::collections::HashMap;
-    const QUIET: &str = "printf 'out\\n'";
-
-    let captured =
-        execute_command_with_env_captured("printf 'out\\n'; exit 3", cwd, &HashMap::new(), None);
-    assert_eq!(captured.notice, Some(super::HELPER_NOTICE));
-    assert!(!captured.output.contains(super::HELPER_NOTICE));
-    assert_eq!(captured.exit_code, helped.1);
-
-    let foreground = run_foreground_or_detach_captured(
-        QUIET.to_string(),
-        cwd.to_string(),
-        HashMap::new(),
-        None,
-        Duration::from_secs(30),
-        None,
-        None,
-    );
-    let CapturedForegroundResult::Finished { output, notice, .. } = foreground else {
-        panic!("the foreground call finishes");
-    };
-    assert_eq!(notice, Some(super::HELPER_NOTICE));
-    assert!(!output.contains(super::HELPER_NOTICE), "{output}");
-
-    let job = start(
-        format!("{QUIET}; true"),
-        cwd.to_string(),
-        HashMap::new(),
-        None,
-    );
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let finished = loop {
-        let job = snapshot(&job).expect("the job is kept");
-        if !matches!(job.state, JobState::Running { .. }) {
-            break job;
-        }
-        assert!(Instant::now() < deadline, "the background job finishes");
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    assert_eq!(finished.notice, Some(super::HELPER_NOTICE));
-    let (JobState::Completed { output, .. } | JobState::Cancelled { output }) = finished.state
-    else {
-        panic!("the job has finished");
-    };
-    assert!(!output.contains(super::HELPER_NOTICE), "{output}");
-}
-
-/// One helper serves every call; its results are those of the direct path,
-/// byte for byte; a dead helper is replaced; without one the call still runs
-/// and says so in its first line; a call that loses its helper says so too.
-fn helper_call() {
-    use super::spawner::{
-        break_helper_for_test, fail_next_release_send_for_test, helper_pid_for_test,
-        kill_helper_for_test,
-    };
-    use crate::server::execute::{execute_command_in, execute_command_with_env_captured};
-    use std::collections::HashMap;
-    const SCRIPT: &str = "printf 'out\\n'; printf 'err\\n' >&2; exit 3";
-    let cwd = temp_dir_text();
-
-    assert_eq!(helper_pid_for_test(), None, "no helper before a call");
-    let helped = execute_command_in(SCRIPT, &cwd);
-    assert_eq!(helped.1, 3, "{}", helped.0);
-    assert!(helped.0.contains("out") && helped.0.contains("err"));
-    assert!(!helped.0.contains(super::HELPER_NOTICE));
-    let first = helper_pid_for_test().expect("the first call starts the helper");
-    assert_eq!(execute_command_in(SCRIPT, &cwd), helped);
-    assert_eq!(helper_pid_for_test(), Some(first), "one helper, many calls");
-    let (text, code) = execute_command_in("definitely-not-a-command-q13", &cwd);
-    assert_ne!(code, 0, "{text}");
-
-    kill_helper_for_test();
-    assert_eq!(execute_command_in(SCRIPT, &cwd), helped, "a new helper");
-    let second = helper_pid_for_test().expect("the helper was started again");
-    assert_ne!(second, first);
-
-    kill_helper_for_test();
-    break_helper_for_test(true);
-    let direct = execute_command_in(SCRIPT, &cwd);
-    assert_eq!(direct.1, 3);
-    assert_eq!(
-        direct.0,
-        format!("{}\n{}", super::HELPER_NOTICE, helped.0),
-        "the direct path: the notice line, then the same bytes"
-    );
-    assert_eq!(helper_pid_for_test(), None);
-    notice_travels_beside_the_text(&cwd, &helped);
-    break_helper_for_test(false);
-    assert_eq!(execute_command_in(SCRIPT, &cwd), helped, "a helper again");
-
-    // A release that does not reach the helper: the command finished and its
-    // result is whole; the caller is told that what it left running may not
-    // have been left running.
-    fail_next_release_send_for_test();
-    let unreleased = execute_command_with_env_captured(SCRIPT, &cwd, &HashMap::new(), None);
-    assert_eq!(unreleased.notice, Some(super::RELEASE_NOTICE));
-    assert_eq!((unreleased.output, unreleased.exit_code), helped);
-    assert!(unreleased.completeness.is_complete());
-    let released = execute_command_with_env_captured(SCRIPT, &cwd, &HashMap::new(), None);
-    assert_eq!(
-        released.notice, None,
-        "a release that was sent adds nothing"
-    );
-
-    // The helper dies during a call: the call ends, reports failure and
-    // carries the fixed notice; the command is not started a second time.
-    let marker = tempfile::NamedTempFile::new().unwrap();
-    let script = format!("echo ran >> {}; sleep 3", marker.path().display());
-    let running = std::thread::spawn({
-        let cwd = cwd.clone();
-        move || execute_command_in(&script, &cwd)
-    });
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while std::fs::read_to_string(marker.path()).unwrap().is_empty() {
-        assert!(Instant::now() < deadline, "the command starts");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    kill_helper_for_test();
-    let (text, code) = running.join().unwrap();
-    assert_eq!(code, 1, "{text}");
-    assert_eq!(text.lines().next(), Some(super::END_NOTICE), "{text}");
-    assert_eq!(std::fs::read_to_string(marker.path()).unwrap(), "ran\n");
 }
 
 /// Stands in for a process that starts a bounded capture: the command would
@@ -981,85 +817,11 @@ fn capture_caller_killed() {
     );
 }
 
-/// A command is never started a second time unless it is proven that it was
-/// not started. The command here writes nothing and appends one line to a
-/// file per execution, so the file counts the executions.
-fn helper_unclear() {
-    use super::spawner::{
-        fail_next_spawn_send_for_test, helper_pid_for_test, kill_helper_for_test,
-        set_helper_fault_for_test,
-    };
-    use crate::server::execute::execute_command_in;
-    let cwd = temp_dir_text();
-    let marker = tempfile::NamedTempFile::new().unwrap();
-    let script = format!("echo ran >> {}", marker.path().display());
-    let runs = || {
-        std::fs::read_to_string(marker.path())
-            .unwrap()
-            .lines()
-            .count()
-    };
-
-    let (text, code) = execute_command_in(&script, &cwd);
-    assert_eq!((code, runs()), (0, 1), "{text}");
-
-    // The helper dies after it started the command and before it said so:
-    // the pipes are empty and at their end, and the command DID run. The
-    // call fails with the fixed notice and the command is not repeated.
-    kill_helper_for_test();
-    set_helper_fault_for_test(Some("die-after-start"));
-    let (text, code) = execute_command_in(&script, &cwd);
-    assert_ne!(code, 0, "{text}");
-    assert_eq!(text.lines().next(), Some(super::UNCLEAR_NOTICE), "{text}");
-    assert_eq!(runs(), 2, "run once by the dying helper, never again");
-
-    // The helper answers that it executed nothing: proof. The caller starts
-    // the command itself, once, and says that no helper held it.
-    set_helper_fault_for_test(Some("refuse"));
-    let (text, code) = execute_command_in(&script, &cwd);
-    assert_eq!(code, 0, "{text}");
-    assert_eq!(text.lines().next(), Some(super::HELPER_NOTICE), "{text}");
-    assert_eq!(runs(), 3);
-
-    // The helper is dead before the request is sent: proof. A new helper,
-    // a normal call, one execution.
-    set_helper_fault_for_test(None);
-    kill_helper_for_test();
-    let (text, code) = execute_command_in(&script, &cwd);
-    assert_eq!(code, 0, "{text}");
-    assert!(!text.contains("[lean-ctx:"), "{text}");
-    assert_eq!(runs(), 4);
-
-    // The send fails before one byte left: proof. A new helper, one execution.
-    let before = helper_pid_for_test().expect("a helper runs");
-    fail_next_spawn_send_for_test();
-    let (text, code) = execute_command_in(&script, &cwd);
-    assert_eq!(code, 0, "{text}");
-    assert!(!text.contains("[lean-ctx:"), "{text}");
-    assert_eq!(runs(), 5);
-    assert_ne!(
-        helper_pid_for_test(),
-        Some(before),
-        "the old helper is not used"
-    );
-}
-
-/// A timeout through the helper ends the whole session of the call; the
-/// helper's group signal is sent while the leader is its unreaped child and
-/// the leader is reaped afterwards — no signal by number after the reap.
+/// The helper's group signal is sent while the leader is its unreaped child
+/// and the leader is reaped afterwards — no signal by number after the reap.
+/// (That a timed-out MCP call ends its whole session is tested with the
+/// server's executor, `server::execute`.)
 fn helper_timeout() {
-    let cwd = temp_dir_text();
-    let marker = tempfile::NamedTempFile::new().unwrap();
-    let (text, code) = crate::server::execute::execute_command_with_env(
-        &format!("echo $$ > {}; sleep 60 & sleep 60", marker.path().display()),
-        &cwd,
-        &std::collections::HashMap::new(),
-        Some(400),
-    );
-    assert_eq!(code, 124, "{text}");
-    assert!(crate::server::execute::output_before_timeout_marker(&text).is_some());
-    assert!(wait_gone(pid_from_file(marker.path())));
-
     let (signals, group, reaped) =
         super::spawn_helper::kill_path_for_test(super::wire::SpawnSpec {
             program: "sh".into(),
@@ -1077,9 +839,7 @@ fn helper_timeout() {
 /// this test binary here, which starts more slowly than `lean-ctx`.
 fn costs() {
     use super::spawner::{break_helper_for_test, kill_helper_for_test};
-    use crate::server::execute::execute_command_in;
     use crate::shell::process_tree::ShellChild;
-    let cwd = temp_dir_text();
     let note = |name: &str, samples: &mut Vec<Duration>| {
         samples.sort();
         let total: Duration = samples.iter().sum();
@@ -1113,24 +873,11 @@ fn costs() {
         "helper: start, steady state",
         &mut (0..50).map(|_| start_once()).collect(),
     );
-    let run_true = |cwd: &str| {
-        let begun = Instant::now();
-        let _ = execute_command_in("true", cwd);
-        begun.elapsed()
-    };
-    note(
-        "helper: whole call `true`",
-        &mut (0..30).map(|_| run_true(&cwd)).collect(),
-    );
     kill_helper_for_test();
     break_helper_for_test(true);
     note(
         "direct: start",
         &mut (0..50).map(|_| start_once()).collect(),
-    );
-    note(
-        "direct: whole call `true`",
-        &mut (0..30).map(|_| run_true(&cwd)).collect(),
     );
     break_helper_for_test(false);
 
@@ -1198,23 +945,8 @@ fn containment_costs_on_this_machine() {
 }
 
 #[test]
-fn one_helper_serves_mcp_shell_calls_and_is_replaced_or_done_without() {
-    run_fixture("helper-call");
-}
-
-#[test]
 fn a_helper_timeout_ends_the_session_and_signals_only_while_unreaped() {
     run_fixture("helper-timeout");
-}
-
-#[test]
-fn a_killed_engine_leaves_the_helper_to_end_its_running_shell() {
-    run_fixture("helper-engine-killed");
-}
-
-#[test]
-fn an_orderly_shutdown_has_the_helper_end_nothing() {
-    run_fixture("helper-engine-shutdown");
 }
 
 /// The notice for a call that ran without the helper is one fixed line that
@@ -1235,11 +967,6 @@ fn the_helper_notice_is_one_fixed_content_free_line() {
 #[test]
 fn a_captured_command_never_runs_before_its_guard_is_ready() {
     run_fixture("capture-caller-killed");
-}
-
-#[test]
-fn a_command_is_never_started_twice_without_proof_that_it_did_not_run() {
-    run_fixture("helper-unclear");
 }
 
 #[test]

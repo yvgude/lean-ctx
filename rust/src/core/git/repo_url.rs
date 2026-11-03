@@ -12,7 +12,7 @@
 
 /// A parsed repository reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RepoRef {
+pub struct RepoRef {
     /// Host, e.g. `github.com`.
     pub host: String,
     /// Namespace before the repo name (may contain `/` for GitLab subgroups).
@@ -29,7 +29,7 @@ pub(crate) struct RepoRef {
 
 impl RepoRef {
     /// `owner/repo` (namespace + name), the human project path.
-    pub(crate) fn project_path(&self) -> String {
+    pub fn project_path(&self) -> String {
         format!("{}/{}", self.owner, self.repo)
     }
 
@@ -41,7 +41,7 @@ impl RepoRef {
 }
 
 /// Parse a repository URL, or return `None` when it is not an https repo URL.
-pub(crate) fn parse(url: &str) -> Option<RepoRef> {
+pub fn parse(url: &str) -> Option<RepoRef> {
     let rest = url.trim().strip_prefix("https://")?;
     let (host, path) = rest.split_once('/')?;
     if !is_valid_host(host) {

@@ -6,14 +6,14 @@ use super::store::SummaryStore;
 
 /// One recalled summary with its score and the recall mode that produced it.
 #[derive(Debug, Clone)]
-pub(crate) struct RecallHit {
+pub struct RecallHit {
     pub record: SummaryRecord,
     pub score: f32,
     pub mode: &'static str,
 }
 
 /// Recall the `top_k` summaries most relevant to `query`.
-pub(crate) fn recall(project_root: &str, query: &str, top_k: usize) -> Vec<RecallHit> {
+pub fn recall(project_root: &str, query: &str, top_k: usize) -> Vec<RecallHit> {
     // Ranking and rendering both work on the served view: a summary that is
     // not released now can neither match a query nor be returned.
     let store = super::served(SummaryStore::load_or_create(project_root));

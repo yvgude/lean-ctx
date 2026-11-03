@@ -49,7 +49,7 @@ impl Sandbox {
 
 /// Removal log lines that must NEVER appear when only asking for help.
 const REMOVAL_MARKERS: &[&str] = &[
-    "Processes stopped",
+    "Services stopped",
     "Data directory removed",
     "Binary removed",
     "fully removed",

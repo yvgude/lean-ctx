@@ -10,7 +10,7 @@
 //! the hook handlers (`lean-ctx hook …`) and the `lean-ctx -c` shell wrapper —
 //! [`capture`] the relevant variables into a small file in the data dir. The MCP
 //! server then [`load`]s them when constructing the child environment for
-//! `ctx_shell` (see `crate::server::execute`).
+//! `ctx_shell` (see `server::execute`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -68,7 +68,7 @@ const TTL_SECS: u64 = 7_200;
 /// (2) is not credential-shaped — session/thread identifiers cross the bridge,
 /// secrets never do (GH security audit, finding 2).
 #[must_use]
-pub(crate) fn is_forwardable(key: &str) -> bool {
+pub fn is_forwardable(key: &str) -> bool {
     FORWARD_PREFIXES
         .iter()
         .any(|prefix| key.starts_with(prefix))
@@ -174,7 +174,7 @@ fn read_store(path: &Path) -> Option<(BTreeMap<String, String>, u64)> {
 /// prevents a process with a stripped environment (e.g. the MCP server itself)
 /// from clobbering a good capture. The file is only rewritten when the variable
 /// set actually changes, keeping the cost of capturing on every shell command low.
-pub(crate) fn capture() {
+pub fn capture() {
     let vars = collect_from_process();
     if vars.is_empty() {
         return;
@@ -205,7 +205,7 @@ pub(crate) fn capture() {
 /// spawned by an agent that sets runtime vars only in native shell commands
 /// (e.g. Codex with CODEX_THREAD_ID) without going through `lean-ctx -c` first.
 #[must_use]
-pub(crate) fn load() -> BTreeMap<String, String> {
+pub fn load() -> BTreeMap<String, String> {
     let Some(path) = store_path() else {
         return BTreeMap::new();
     };

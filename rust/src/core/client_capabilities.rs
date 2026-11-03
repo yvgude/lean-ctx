@@ -1,7 +1,7 @@
 use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone)]
-pub(crate) struct ClientMcpCapabilities {
+pub struct ClientMcpCapabilities {
     pub client_id: String,
     pub resources: bool,
     pub prompts: bool,
@@ -26,7 +26,7 @@ impl Default for ClientMcpCapabilities {
 }
 
 impl ClientMcpCapabilities {
-    pub(crate) fn detect(client_name: &str) -> Self {
+    pub fn detect(client_name: &str) -> Self {
         let hint = std::env::var("LEAN_CTX_CLIENT_HINT").ok();
         Self::detect_with_hint(client_name, hint.as_deref())
     }
@@ -112,7 +112,7 @@ impl ClientMcpCapabilities {
         }
     }
 
-    pub(crate) fn tier(&self) -> u8 {
+    pub fn tier(&self) -> u8 {
         let score = [
             self.resources,
             self.prompts,
@@ -132,7 +132,7 @@ impl ClientMcpCapabilities {
         }
     }
 
-    pub(crate) fn format_summary(&self) -> String {
+    pub fn format_summary(&self) -> String {
         let features: Vec<&str> = [
             ("resources", self.resources),
             ("prompts", self.prompts),
@@ -323,7 +323,7 @@ fn presence_host_id_with_hint(client_name: &str, hint: Option<&str>) -> String {
 
 /// The MCP `clientInfo` this process received, for presence attribution.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ClientHandshake {
+pub struct ClientHandshake {
     pub host: String,
     pub name: String,
     pub version: Option<String>,
@@ -346,7 +346,7 @@ fn sanitize_handshake_field(value: &str) -> Option<String> {
 static HANDSHAKE: OnceLock<Mutex<Option<ClientHandshake>>> = OnceLock::new();
 
 /// Records the `initialize` handshake of this process and returns it.
-pub(crate) fn record_handshake(name: &str, version: &str) -> ClientHandshake {
+pub fn record_handshake(name: &str, version: &str) -> ClientHandshake {
     let handshake = ClientHandshake {
         host: presence_host_id(name),
         name: sanitize_handshake_field(name).unwrap_or_else(|| "unknown".to_string()),
@@ -387,20 +387,20 @@ pub(crate) fn global() -> &'static Mutex<ClientMcpCapabilities> {
     GLOBAL.get_or_init(|| Mutex::new(ClientMcpCapabilities::default()))
 }
 
-pub(crate) fn set_detected(caps: &ClientMcpCapabilities) {
+pub fn set_detected(caps: &ClientMcpCapabilities) {
     if let Ok(mut g) = global().lock() {
         *g = caps.clone();
     }
     persist_to_disk(caps);
 }
 
-pub(crate) fn current() -> ClientMcpCapabilities {
+pub fn current() -> ClientMcpCapabilities {
     global().lock().map(|g| g.clone()).unwrap_or_default()
 }
 
 /// Load persisted client info from disk (for cross-process use, e.g. dashboard).
 /// Returns `None` if file missing or older than `max_age_secs`.
-pub(crate) fn load_persisted(max_age_secs: u64) -> Option<ClientMcpCapabilities> {
+pub fn load_persisted(max_age_secs: u64) -> Option<ClientMcpCapabilities> {
     let path = persisted_path()?;
     let content = std::fs::read_to_string(&path).ok()?;
     let val: serde_json::Value = serde_json::from_str(&content).ok()?;

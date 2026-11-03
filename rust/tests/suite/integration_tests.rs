@@ -2,7 +2,7 @@ use std::process::Command;
 
 fn lean_ctx_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
-    cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
+    cmd.current_dir(crate::engine_dir());
     cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd.env("__LEAN_CTX_SKIP_EVENTS", "1");
     // Prevent the CLI from auto-starting or contacting a daemon — integration
@@ -39,7 +39,7 @@ fn binary_prints_help() {
         .expect("failed to run lean-ctx");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("Context Gateway for AI Systems"),
+        stdout.contains("Context Gateway for AI agents"),
         "help should contain the canonical product category"
     );
     assert!(stdout.contains("lean-ctx"), "help should mention lean-ctx");
@@ -108,7 +108,7 @@ fn shell_hook_compresses_echo() {
 #[test]
 fn disabled_env_bypasses_compression() {
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(crate::engine_dir())
         .env("LEAN_CTX_DISABLED", "1")
         .env("LEAN_CTX_COMPRESS", "1")
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
@@ -151,7 +151,7 @@ fn pipe_guard_no_compression_when_stdout_is_piped() {
         return;
     }
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(crate::engine_dir())
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         .args(["-c", "echo hello world"])
         .output()
@@ -170,7 +170,7 @@ fn pipe_guard_force_compress_overrides_pipe_guard() {
         return;
     }
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(crate::engine_dir())
         .env("LEAN_CTX_COMPRESS", "1")
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         .args(["-c", "echo hello world"])
@@ -194,7 +194,7 @@ fn pipe_guard_multiline_output_unchanged_when_piped() {
     }
     let script = "echo line1; echo line2; echo line3; echo 'result: 42'";
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(crate::engine_dir())
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         .args(["-c", script])
         .output()
@@ -332,7 +332,7 @@ fn redirect_fidelity_command() -> &'static str {
 /// would then (correctly) defer to the parent instead of compressing.
 fn forced_compress_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
-    cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
+    cmd.current_dir(crate::engine_dir())
         .env_remove("LEAN_CTX_RAW")
         .env_remove("LEAN_CTX_DISABLED")
         .env_remove("LEAN_CTX_ACTIVE")
@@ -486,7 +486,7 @@ fn pipe_guard_rust_side_defense_in_depth() {
     }
     let script = "for i in 1 2 3 4 5; do echo \"item_$i: $(date +%s)\"; done";
     let output = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .current_dir(crate::engine_dir())
         .env("__LEAN_CTX_SKIP_EVENTS", "1")
         // `for` + command substitution are not allowlisted; this test pins the
         // pipe guard, not enforcement (covered by shell::exec unit tests).

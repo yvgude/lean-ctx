@@ -23,7 +23,7 @@ use crate::core::{
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct HostCheckpointResumeRequest {
+pub struct HostCheckpointResumeRequest {
     schema_version: u32,
     artifact_digest: Sha256Digest,
 }
@@ -70,7 +70,7 @@ pub(super) struct Signer {
 }
 
 impl HostReceiptAuthority {
-    pub(crate) fn resume_checkpoint(
+    pub fn resume_checkpoint(
         &self,
         request: &HostCheckpointResumeRequest,
     ) -> Result<serde_json::Value> {

@@ -1,6 +1,6 @@
 {
   "consent_channel": "os_presence",
-  "engine_version": "3.12.0",
+  "instance_version": "3.12.0",
   "key_id": "47983724220c8521",
-  "signature": "f0226af602129f7b951beaefe18e8e50c57dcfda014e6e3ce6917d808449d748ea38afc43b22cf7d6b6683f0d41779447eff73ea18a92717068986defb5b5b0e"
+  "signature": "4d94b641d06f34d1bbf45ecabc72525dccce39f261b8bfefe7a888d2d1d254c7cba4aa4d339040bc5365baab7904c79410979fd573fb3590ea5aacdf24a50706"
 }

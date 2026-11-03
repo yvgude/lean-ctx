@@ -17,6 +17,8 @@ paths-ignore:
   # about deliberate fixtures. 26 of the 142 alerts came from here.
   - "rust/tests/**"
   - "rust/benches/**"
+  - "rust/crates/lean-ctx-server/tests/**"
+  - "rust/crates/lean-ctx-server/benches/**"
   # The Python test harnesses (tests/security, tests/delivery, …), same
   # reason: they plant secret-shaped strings and forged evidence on purpose to
   # prove the gates reject them. The gates they exercise live in scripts/ and

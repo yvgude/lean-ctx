@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 /// Markdown outline: heading tree + fenced code block boundaries.
-pub(crate) fn extract_markdown_outline(content: &str) -> String {
+pub fn extract_markdown_outline(content: &str) -> String {
     let mut parts = Vec::new();
     let mut in_code_block = false;
 
@@ -43,7 +43,7 @@ fn parse_heading(line: &str) -> Option<String> {
 
 /// JSON structure: key-tree with types, depth 3, max 20 keys per level.
 /// Reuses logic from `patterns::json_schema` but produces a read-mode output.
-pub(crate) fn extract_json_structure(content: &str) -> String {
+pub fn extract_json_structure(content: &str) -> String {
     let trimmed = content.trim();
     let val: serde_json::Value = match serde_json::from_str(trimmed) {
         Ok(v) => v,
@@ -109,7 +109,7 @@ fn json_type_name(val: &serde_json::Value) -> &'static str {
 }
 
 /// YAML structure: indent-based key extraction with nested structure.
-pub(crate) fn extract_yaml_structure(content: &str) -> String {
+pub fn extract_yaml_structure(content: &str) -> String {
     let mut parts = Vec::new();
     let mut prev_indent = 0usize;
 
@@ -170,7 +170,7 @@ fn deduplicate_consecutive(lines: &[String]) -> String {
 }
 
 /// TOML structure: `[section]` headers + top-level key=value pairs.
-pub(crate) fn extract_toml_structure(content: &str) -> String {
+pub fn extract_toml_structure(content: &str) -> String {
     let mut sections: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut current_section = String::new();
 
@@ -220,7 +220,7 @@ pub(crate) fn extract_toml_structure(content: &str) -> String {
 }
 
 /// Lock file summary: package count + direct dependency names.
-pub(crate) fn extract_lock_summary(content: &str, path: &str) -> String {
+pub fn extract_lock_summary(content: &str, path: &str) -> String {
     let lower = path.to_lowercase();
     if lower.ends_with("cargo.lock") {
         extract_cargo_lock_summary(content)

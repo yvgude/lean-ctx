@@ -25,7 +25,7 @@ const SAVE_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5)
 const SAVE_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SessionScopeError {
+pub enum SessionScopeError {
     ProjectRootMismatch,
 }
 
@@ -495,7 +495,7 @@ impl SessionState {
 
     /// Return the current project root only when it is an absolute, non-broad
     /// root normalized with the same path rules as scoped session loading.
-    pub(crate) fn strict_project_root(&self) -> Option<String> {
+    pub fn strict_project_root(&self) -> Option<String> {
         self.project_root
             .as_deref()
             .and_then(normalized_strict_project_root)
@@ -538,7 +538,7 @@ impl SessionState {
     /// Import publication never replaces an existing session archive. A failure
     /// after primary publication may retain a new recovery candidate, not erase
     /// the previous live session or source archive.
-    pub(crate) fn save_new(&mut self) -> Result<(), String> {
+    pub fn save_new(&mut self) -> Result<(), String> {
         let prepared = self
             .prepare_save()
             .inspect_err(|_| self.note_save_failure())?;
@@ -616,7 +616,7 @@ impl SessionState {
     /// optional, while scanning every persisted session on each MCP launch is
     /// not acceptable under concurrent agent load. New saves populate the
     /// index; legacy sessions remain available through explicit session tools.
-    pub(crate) fn load_recent_for_project_root(project_root: &str, limit: usize) -> Vec<Self> {
+    pub fn load_recent_for_project_root(project_root: &str, limit: usize) -> Vec<Self> {
         let Some(project_root) = normalized_strict_project_root(project_root) else {
             return Vec::new();
         };
@@ -718,7 +718,7 @@ impl SessionState {
 
     /// Loads a specific session only when its persisted root already matches
     /// the receiving root; legacy normalization runs after that check.
-    pub(crate) fn load_by_id_for_project_root(
+    pub fn load_by_id_for_project_root(
         id: &str,
         expected_root: &str,
     ) -> Result<Option<Self>, SessionScopeError> {

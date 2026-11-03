@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: Apache-2.0
+pub(crate) fn cmd_verify(args: &[String]) {
+    let mut format: Option<String> = None;
+
+    let mut it = args.iter().peekable();
+    while let Some(a) = it.next() {
+        if let Some(v) = a.strip_prefix("--format=") {
+            format = Some(v.to_string());
+            continue;
+        }
+        if a == "--format" {
+            if let Some(v) = it.peek()
+                && !v.starts_with("--")
+            {
+                format = Some((*v).clone());
+                it.next();
+            }
+            continue;
+        }
+        if a == "--json" {
+            format = Some("json".to_string());
+        }
+    }
+
+    lean_ctx::core::output_verification::run_self_check();
+
+    let project_root = super::common::detect_project_root(args);
+    match super::common::CliToolRun::new("ctx_verify", &project_root, None)
+        .human_facing()
+        .deliver(|| lean_ctx_server::tools::ctx_verify::handle_stats(format.as_deref()))
+    {
+        Ok(out) => super::common::print_released(&out),
+        Err(e) => {
+            eprintln!("ERROR: {e}");
+            eprintln!(
+                "Usage: lean-ctx verify [--format summary|json|both] [--json]\n\
+                 Examples:\n\
+                   lean-ctx verify\n\
+                   lean-ctx verify --json\n"
+            );
+            std::process::exit(2);
+        }
+    }
+}

@@ -207,7 +207,7 @@
               ]
             }
           },
-          "level": "engine"
+          "level": "instance"
         }
       ]
     },
@@ -257,7 +257,7 @@
             },
             "schema": "leanctx.hive.policy/v1"
           },
-          "level": "engine"
+          "level": "instance"
         }
       ]
     },
@@ -362,7 +362,7 @@
               "task_claim_min_role": "contributor"
             }
           },
-          "level": "engine"
+          "level": "instance"
         }
       ]
     },
@@ -476,7 +476,7 @@
             },
             "schema": "leanctx.hive.policy/v1"
           },
-          "level": "engine"
+          "level": "instance"
         }
       ]
     },
@@ -527,7 +527,7 @@
             },
             "schema": "leanctx.hive.policy/v1"
           },
-          "level": "engine"
+          "level": "instance"
         }
       ]
     },
@@ -563,7 +563,7 @@
           "document": {
             "schema": "leanctx.hive.policy/v1"
           },
-          "level": "engine"
+          "level": "instance"
         },
         {
           "document": {
@@ -647,11 +647,11 @@
             },
             "schema": "leanctx.hive.policy/v1"
           },
-          "level": "engine"
+          "level": "instance"
         }
       ]
     }
   ],
   "name": "policy_merge",
-  "note": "Merge of the policy hierarchy (policy.schema.json): `levels` outermost first (org, workspace, vault, engine; at most one each), each document validated, then merged member by member by its x-merge rule. `effective` is authored by hand and never re-blessed; `effective_digest` = \"sha256:\" + hex(sha256(canonical_json(effective))) is derived. A case with `error` must be refused with that code at that member path (\"\" = the document or chain as a whole). Merging never weakens any member relative to any input, is idempotent, commutative and associative where defined. Case bundle_chain is the input of routes/policy_bundle.v2.response.json."
+  "note": "Merge of the policy hierarchy (policy.schema.json): `levels` outermost first (org, workspace, vault, instance; at most one each), each document validated, then merged member by member by its x-merge rule. `effective` is authored by hand and never re-blessed; `effective_digest` = \"sha256:\" + hex(sha256(canonical_json(effective))) is derived. A case with `error` must be refused with that code at that member path (\"\" = the document or chain as a whole). Merging never weakens any member relative to any input, is idempotent, commutative and associative where defined. Case bundle_chain is the input of routes/policy_bundle.v2.response.json."
 }

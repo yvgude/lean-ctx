@@ -5,7 +5,7 @@ use std::fmt;
 
 /// What a bundle limit counts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) enum Unit {
+pub enum Unit {
     /// Unicode scalar values — what chat input boxes count.
     #[default]
     Chars,
@@ -14,7 +14,7 @@ pub(crate) enum Unit {
 }
 
 impl Unit {
-    pub(crate) fn parse(raw: &str) -> Result<Self, String> {
+    pub fn parse(raw: &str) -> Result<Self, String> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "chars" | "char" | "characters" => Ok(Self::Chars),
             "tokens" | "token" => Ok(Self::Tokens),
@@ -44,7 +44,7 @@ impl fmt::Display for Unit {
 ///
 /// Suffixes are decimal (`k` = 1 000, `m` = 1 000 000) because chat products
 /// advertise their limits that way. Zero and values that overflow are refused.
-pub(crate) fn parse_limit(raw: &str) -> Result<usize, String> {
+pub fn parse_limit(raw: &str) -> Result<usize, String> {
     let trimmed = raw.trim().replace('_', "");
     let (number, multiplier) = match trimmed.char_indices().last() {
         Some((idx, 'k' | 'K')) => (&trimmed[..idx], 1_000.0),

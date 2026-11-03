@@ -51,6 +51,7 @@ pub fn auto_approve_tools() -> Vec<&'static str> {
         "ctx_control",
         "ctx_discover_tools",
         "ctx_provider",
+        "ctx_doc",
         "ctx_radar",
         "ctx_compress_memory",
         "ctx_load_tools",

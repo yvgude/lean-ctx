@@ -46,7 +46,7 @@ impl SessionState {
     /// binding, so a summary that carries any of it marks the capture
     /// incomplete. What remains unmarked is fixed text, the session counters
     /// and the project root the request is bound to.
-    pub(crate) fn format_compact_delivered(&self) -> String {
+    pub fn format_compact_delivered(&self) -> String {
         let (summary, unsourced) = self.compact_summary();
         if unsourced {
             crate::core::archive::authority::mark_unbound();

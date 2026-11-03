@@ -22,6 +22,21 @@ pub(crate) fn write_mcp_json(
         lean_ctx_server_entry_with_instructions(binary, include_aa, &target.agent_key)
     };
     let is_claude = target.agent_key == "claude" || target.name == "Claude Code";
+    // The governor setup owns Claude Code's MCP entry (none, or its deferred
+    // one): a setup refresh must not register the standard server again.
+    // `~/.claude.json` sits in the home (or `CLAUDE_CONFIG_DIR`, which the
+    // governor's paths honour too).
+    if is_claude
+        && target
+            .config_path
+            .parent()
+            .is_some_and(crate::core::claude_host::is_governor_installed)
+    {
+        return Ok(WriteResult {
+            action: WriteAction::Already,
+            note: Some("governor setup (no lean-ctx MCP server)".to_string()),
+        });
+    }
     if is_claude {
         desired["alwaysLoad"] = Value::Bool(true);
     }
@@ -100,7 +115,7 @@ fn find_first_in_path(names: &[&str]) -> Option<std::path::PathBuf> {
 /// an npm install, #2061 — std escapes batch-file arguments since Rust 1.77, and
 /// the shim must still sit under a trusted root). `LEAN_CTX_TRUST_CLAUDE_PATH=1`
 /// overrides the location check for unusual installs — only the exact value `1`.
-pub(crate) fn validate_claude_binary() -> Result<std::path::PathBuf, String> {
+pub fn validate_claude_binary() -> Result<std::path::PathBuf, String> {
     let names: &[&str] = if cfg!(windows) {
         &["claude.exe", "claude.cmd"]
     } else {

@@ -3,7 +3,8 @@
 //! loop: `<data>/agents/friction.jsonl`, one `{"at", "signal", "agent"?,
 //! "root"?}` line per event (fixed keys and ids, never message text),
 //! summed by `lean-ctx agent friction [--since <dur>]` and per hour, worker
-//! and vault by `core::hive::friction` for the vault bus (V16.1).
+//! and vault by the Hive connector's friction counter for the vault bus
+//! (V16.1).
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -12,19 +13,19 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 
 /// A task claim Hive refused because the agent was not on the bus.
-pub(crate) const CLAIM_REFUSED_PRESENCE: &str = "claim_refused_presence";
+pub const CLAIM_REFUSED_PRESENCE: &str = "claim_refused_presence";
 /// A task claim Hive refused because the agent was on the bus in another role.
-pub(crate) const CLAIM_REFUSED_ROLE: &str = "claim_refused_role";
+pub const CLAIM_REFUSED_ROLE: &str = "claim_refused_role";
 /// A task claim Hive refused for a role or consent reason it did not name.
-pub(crate) const CLAIM_REFUSED_PERMIT: &str = "claim_refused_permit";
+pub const CLAIM_REFUSED_PERMIT: &str = "claim_refused_permit";
 /// A claim this machine held ended before its agent finished (stale or closed).
-pub(crate) const CLAIM_EXPIRED: &str = "claim_expired";
+pub const CLAIM_EXPIRED: &str = "claim_expired";
 /// An agent's registration had expired and a heartbeat renewed it.
-pub(crate) const REGISTRATION_RENEWED: &str = "registration_renewed";
+pub const REGISTRATION_RENEWED: &str = "registration_renewed";
 /// `ctx_agent wait` / `lean-ctx agent wait` ended without a message.
-pub(crate) const WAIT_TIMEOUT: &str = "wait_timeout";
+pub const WAIT_TIMEOUT: &str = "wait_timeout";
 /// The bound checkout had unmerged paths while an agent worked in it.
-pub(crate) const MERGE_CONFLICT: &str = "merge_conflict";
+pub const MERGE_CONFLICT: &str = "merge_conflict";
 
 const FILE: &str = "friction.jsonl";
 /// Past this size the log keeps its newest half, so it stays small.
@@ -44,7 +45,7 @@ struct Line {
 
 /// One recorded signal.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Event {
+pub struct Event {
     pub at: DateTime<Utc>,
     pub signal: String,
     pub agent: Option<String>,
@@ -53,7 +54,7 @@ pub(crate) struct Event {
 
 /// Count one `signal` now for `agent` in checkout `root` (either unknown).
 /// Best effort: a failure is logged, never raised.
-pub(crate) fn record_for(signal: &str, agent: Option<&str>, root: Option<&str>) {
+pub fn record_for(signal: &str, agent: Option<&str>, root: Option<&str>) {
     let Ok(dir) = super::persistence::agents_dir() else {
         return;
     };
@@ -94,7 +95,7 @@ fn record_in(
 }
 
 /// The signals recorded in `[from, to)`, oldest first.
-pub(crate) fn events(from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Event> {
+pub fn events(from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Event> {
     super::persistence::agents_dir()
         .map(|dir| events_in(&dir, from, to))
         .unwrap_or_default()
@@ -121,7 +122,7 @@ pub(crate) fn events_in(dir: &Path, from: DateTime<Utc>, to: DateTime<Utc>) -> V
 }
 
 /// Signal → count of the events at or after `since` (all when `None`).
-pub(crate) fn summary(since: Option<DateTime<Utc>>) -> BTreeMap<String, u64> {
+pub fn summary(since: Option<DateTime<Utc>>) -> BTreeMap<String, u64> {
     super::persistence::agents_dir()
         .map(|dir| summary_in(&dir, since))
         .unwrap_or_default()
@@ -147,7 +148,7 @@ fn summary_in(dir: &Path, since: Option<DateTime<Utc>>) -> BTreeMap<String, u64>
 }
 
 /// The summary as text: one `signal count` line each, sorted by signal.
-pub(crate) fn render(counts: &BTreeMap<String, u64>) -> String {
+pub fn render(counts: &BTreeMap<String, u64>) -> String {
     if counts.is_empty() {
         return "No friction recorded.".to_string();
     }
@@ -160,7 +161,7 @@ pub(crate) fn render(counts: &BTreeMap<String, u64>) -> String {
 }
 
 /// `30m`, `12h`, `7d` or plain seconds.
-pub(crate) fn parse_duration(text: &str) -> Option<chrono::Duration> {
+pub fn parse_duration(text: &str) -> Option<chrono::Duration> {
     let text = text.trim();
     let (number, unit) = text
         .find(|c: char| !c.is_ascii_digit())

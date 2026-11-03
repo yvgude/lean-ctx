@@ -91,7 +91,7 @@ pub fn parse(xml: &str, _source_url: &str) -> FeedDoc {
     }
 }
 
-struct Item {
+pub struct Item {
     title: String,
     link: Option<String>,
     date: Option<String>,
@@ -196,7 +196,7 @@ fn feed_title(doc: &Xml) -> Option<String> {
 /// arrive entity-*encoded* (`&lt;p&gt;`), so a single pre-decode strip would
 /// leave visible `<p>` once decoded. RSS CDATA payloads carry literal tags, so
 /// the first strip catches those.
-fn summarize(raw: &str) -> String {
+pub fn summarize(raw: &str) -> String {
     let unwrapped = strip_cdata(raw);
     let once = strip_tags(&unwrapped);
     let decoded = decode_entities(&once);

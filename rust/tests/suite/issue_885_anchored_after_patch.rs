@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use lean_ctx::core::cache::SessionCache;
 use lean_ctx::core::session::SessionState;
-use lean_ctx::server::tool_trait::{McpTool, ToolContext};
-use lean_ctx::tools::registered::ctx_patch::CtxPatchTool;
-use lean_ctx::tools::registered::ctx_read::CtxReadTool;
+use lean_ctx_server::server::tool_trait::{McpTool, ToolContext};
+use lean_ctx_server::tools::registered::ctx_patch::CtxPatchTool;
+use lean_ctx_server::tools::registered::ctx_read::CtxReadTool;
 use serde_json::json;
 use tokio::sync::RwLock;
 
@@ -20,7 +20,7 @@ fn ctx_for(root: &std::path::Path, file: &str) -> ToolContext {
         extra_roots: Vec::new(),
         minimal: false,
         resolved_paths,
-        crp_mode: lean_ctx::tools::CrpMode::Off,
+        crp_mode: lean_ctx_server::tools::CrpMode::Off,
         cache: Some(cache),
         session: Some(session),
         tool_calls: None,

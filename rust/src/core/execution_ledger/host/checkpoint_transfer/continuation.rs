@@ -76,10 +76,7 @@ fn metadata(session: &SessionState) -> Option<CopyMetadata> {
 }
 
 impl super::super::HostReceiptAuthority {
-    pub(crate) fn continue_checkpoint(
-        &self,
-        request: &HostCheckpointImportRequest,
-    ) -> Result<Value> {
+    pub fn continue_checkpoint(&self, request: &HostCheckpointImportRequest) -> Result<Value> {
         match self.import_checked(request, false, true)? {
             ImportOutcome::Continued(value) => Ok(value),
             _ => anyhow::bail!("invalid continuation action"),

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Pure work-graph and outcome model for the LeanCTX Engine.
+//! Pure work-graph and outcome model for LeanCTX | OSS.
 //!
 //! [`work_graph`] bounds multi-agent delegation (budget inheritance, fan-out,
 //! depth, stop conditions, execution fences, receipts), [`budget_cascade`]

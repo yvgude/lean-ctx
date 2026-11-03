@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 
 fn root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    crate::engine_dir().to_path_buf()
 }
 
 fn read(path: &Path) -> String {
@@ -155,6 +155,20 @@ fn sent_reasons(source: &str) -> Vec<(Option<String>, String, usize)> {
             }
         }
     }
+    // Helpers that take the code too (`|code: HiveErrorCode, reason: &str, …|`):
+    // every call names both, possibly over several lines.
+    let coded =
+        Regex::new(r"let\s+([a-z_]+)\s*=\s*\|code:\s*HiveErrorCode,\s*reason:\s*&str").unwrap();
+    for name in coded.captures_iter(source).map(|c| c[1].to_owned()) {
+        let call = Regex::new(&format!(
+            r#"\b{name}\(\s*HiveErrorCode::([A-Z][A-Za-z]+),\s*"([a-z_]+)""#
+        ))
+        .unwrap();
+        for c in call.captures_iter(source) {
+            let line = source[..c.get(0).unwrap().start()].lines().count() + 1;
+            out.push((Some(wire_code(&c[1])), c[2].to_owned(), line));
+        }
+    }
     out
 }
 
@@ -205,7 +219,7 @@ fn the_engine_maps_only_contract_error_reasons() {
     // `(HiveErrorCode::X, "reason")` match arms of the engine's error mapping.
     let arm = Regex::new(r#"\(\s*HiveErrorCode::([A-Z][A-Za-z]+)\s*,\s*"([a-z_]+)"\s*\)"#).unwrap();
     let mut drift = Vec::new();
-    for file in rust_files(&root().join("src/core/hive")) {
+    for file in rust_files(&root().join("crates/lean-ctx-hive/src")) {
         let source = read(&file);
         let sent: Vec<(Option<String>, String, usize)> = source
             .lines()
@@ -280,11 +294,15 @@ fn every_query_parameter_the_engine_sends_is_a_contract_parameter() {
     );
     let in_path = Regex::new(r#""/[^"]*[?&]([a-z_]+)=|"[?&]([a-z_]+)=|&([a-z_]+)=\{"#).unwrap();
     let pushed = Regex::new(r#"push\(format!\("([a-z_]+)="#).unwrap();
-    let mut files = rust_files(&root().join("src/core/hive"));
-    files.extend(rust_files(&root().join("src/cli")).into_iter().filter(|p| {
-        p.file_name()
-            .is_some_and(|n| n.to_string_lossy().starts_with("hive"))
-    }));
+    let mut files = rust_files(&root().join("crates/lean-ctx-hive/src"));
+    files.extend(
+        rust_files(&root().join("crates/lean-ctx/src/cli"))
+            .into_iter()
+            .filter(|p| {
+                p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("hive"))
+            }),
+    );
     let mut sent = Vec::new();
     for file in &files {
         for (i, line) in read(file).lines().enumerate() {

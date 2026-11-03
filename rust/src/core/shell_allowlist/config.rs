@@ -121,7 +121,7 @@ pub fn shadowed_allowlist_entries_pub(entries: &[String]) -> Vec<(String, String
 /// §4 of the design doc: an entry's only valid `*` placement is a single
 /// trailing token. Bare `*`, an embedded `*`, or more than one `*` are
 /// invalid.
-pub(crate) fn is_valid_allowlist_entry(entry: &str) -> bool {
+pub fn is_valid_allowlist_entry(entry: &str) -> bool {
     let words: Vec<&str> = entry.split_whitespace().collect();
     match words.iter().filter(|w| **w == "*").count() {
         0 => true,

@@ -3,7 +3,7 @@
 **Embed LeanCTX context control into your application.**
 
 LeanCTX is the **Context Gateway for AI Systems**. **Control what your AI can see.**
-The **LeanCTX SDK** connects your application to a compatible **LeanCTX Engine**;
+The **LeanCTX SDK** connects your application to a compatible **LeanCTX | OSS**;
 you keep your model, workflow and UI.
 
 In this consolidated checkout the SDK has one source tree, `sdk/`, with Python,

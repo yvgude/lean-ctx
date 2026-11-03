@@ -224,7 +224,7 @@ pub fn unranged_view(r: ResolvedMode, path: &str, line_count: usize) -> Resolved
 }
 
 fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
-    if crate::tools::ctx_read::is_instruction_file(ctx.path) {
+    if crate::core::instruction_files::is_instruction_file(ctx.path) {
         return resolved("full", "instruction_file");
     }
 

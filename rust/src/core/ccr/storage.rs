@@ -43,11 +43,11 @@ fn store_path(path: &Path) -> Option<()> {
 
 /// One bounded, no-follow read shared by selectors, HTTP, CLI and in-band
 /// recovery. Policy is freshly resolved before I/O and rechecked at publication.
-pub(crate) fn read(path: &Path) -> Option<String> {
+pub fn read(path: &Path) -> Option<String> {
     read_detailed(path).ok()
 }
 
-pub(crate) fn read_detailed(path: &Path) -> Result<String, &'static str> {
+pub fn read_detailed(path: &Path) -> Result<String, &'static str> {
     runtime::with_source_view(|| {
         // Checked here, at the one read every caller shares — not only where
         // a caller thought of it, and not only for a policy pack.
@@ -110,7 +110,7 @@ pub(crate) fn read_detailed(path: &Path) -> Result<String, &'static str> {
 
 /// Never publish an incomplete, oversized, unfiltered or protected originless
 /// copy. Atomic replacement preserves shell's latest-output handle contract.
-pub(crate) fn write(path: &Path, text: &str) -> Option<()> {
+pub fn write(path: &Path, text: &str) -> Option<()> {
     community(|| {
         if text.len() > limit() || text.contains('\0') {
             return None;

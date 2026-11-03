@@ -29,13 +29,16 @@ class OpenCoreBoundaryTests(unittest.TestCase):
             "rust/crates/lean-ctx-protocol/src/outcome_engine.rs",
             "rust/crates/lean-ctx-protocol/src/rollout.rs",
             "rust/crates/lean-ctx-protocol/src/value_share.rs",
-            "rust/src/proxy/mod.rs",
-            "rust/src/proxy/auto_routing.rs",
-            "rust/src/proxy/rollout.rs",
+            "rust/crates/lean-ctx-proxy/src/lib.rs",
+            "rust/crates/lean-ctx-proxy/src/auto_routing.rs",
+            "rust/crates/lean-ctx-proxy/src/rollout.rs",
         ):
             destination = self.repo / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ROOT / relative, destination)
+        # Consumer fixtures are engine sources; the proxy files above no longer
+        # create rust/src as a side effect (the proxy is its own crate).
+        (self.repo / "rust/src").mkdir(parents=True, exist_ok=True)
         self.manifest = self.repo / "security/public-protocol-surface-freeze-v1.json"
         self.manifest.parent.mkdir()
         shutil.copy2(ROOT / "security/public-protocol-surface-freeze-v1.json", self.manifest)
@@ -81,13 +84,13 @@ class OpenCoreBoundaryTests(unittest.TestCase):
         self.assertTrue(any("[manifest]" in finding for finding in GATE.check_repo(self.repo)))
 
     def test_public_module_root_drift_is_rejected(self):
-        path = self.repo / "rust/src/proxy/mod.rs"
+        path = self.repo / "rust/crates/lean-ctx-proxy/src/lib.rs"
         path.write_text(path.read_text(encoding="utf-8") + "\npub mod value_share;\n", encoding="utf-8")
         findings = GATE.check_repo(self.repo)
         self.assertTrue(any("value_share module_roots drift" in finding for finding in findings))
 
     def test_root_reexport_drift_is_rejected(self):
-        path = self.repo / "rust/src/proxy/rollout.rs"
+        path = self.repo / "rust/crates/lean-ctx-proxy/src/rollout.rs"
         source = path.read_text(encoding="utf-8").replace("RolloutConfig, assign_rollout", "RolloutConfig")
         path.write_text(source, encoding="utf-8")
         findings = GATE.check_repo(self.repo)

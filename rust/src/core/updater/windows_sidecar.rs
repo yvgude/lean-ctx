@@ -18,7 +18,7 @@ pub(crate) fn sidecar_path(exe: &Path) -> PathBuf {
 
 /// Free the sidecar path for the next swap: sweep leftovers from earlier
 /// swaps, then make sure `sidecar_path(exe)` no longer exists.
-pub(crate) fn clear_sidecar(exe: &Path) -> Result<PathBuf, String> {
+pub fn clear_sidecar(exe: &Path) -> Result<PathBuf, String> {
     clear_sidecar_with(exe, |path| std::fs::remove_file(path))
 }
 

@@ -8,7 +8,7 @@ pub struct EnhancedDashboard {
     /// Current adaptive-compression state.
     pub adaptive: super::adaptive_bridge::AdaptiveSummary,
     /// Search activity recorded for the current session.
-    pub search: crate::tools::search_kernel::SearchSummary,
+    pub search: crate::core::search_kernel::SearchSummary,
     /// Evidence totals observed at dispatch boundaries.
     pub evidence_dispatch: super::evidence_wiring::DispatchSummary,
     /// Existing live dashboard snapshot.
@@ -23,7 +23,7 @@ pub fn enhanced_dashboard() -> EnhancedDashboard {
     EnhancedDashboard {
         kernel_health: super::health::kernel_health(),
         adaptive: super::adaptive_bridge::adaptive_summary(),
-        search: crate::tools::search_kernel::search_summary(),
+        search: crate::core::search_kernel::search_summary(),
         evidence_dispatch: super::evidence_wiring::dispatch_summary(),
         live,
     }
@@ -40,7 +40,7 @@ pub fn health_json() -> String {
 pub mod tests {
     use super::{enhanced_dashboard, health_json};
     use crate::core::context_kernel::{adaptive_bridge, evidence_wiring, kernel_config};
-    use crate::tools::search_kernel;
+    use crate::core::search_kernel;
 
     fn isolated() -> std::sync::MutexGuard<'static, ()> {
         let guard = kernel_config::KERNEL_TEST_LOCK

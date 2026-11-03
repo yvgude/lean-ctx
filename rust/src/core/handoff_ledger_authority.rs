@@ -49,7 +49,7 @@ pub(super) const CURATED_TOOL: &str = "ctx_handoff";
 
 /// One finding or fact as it stands in a ledger.
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum LedgerPart<'a> {
+pub enum LedgerPart<'a> {
     /// A finding: its summary.
     Finding(&'a str),
     /// A knowledge fact.

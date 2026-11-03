@@ -154,7 +154,7 @@ pub(crate) fn resolve_history_source(
     history_root: &Path,
     path: &Path,
 ) -> Result<HistorySource, SourceRefusal> {
-    let request = crate::tools::admitted_sources::request_root();
+    let request = crate::core::admitted_sources::request_root();
     let named = [PathBuf::from(request), history_root.to_path_buf()];
     let path = path.canonicalize().map_err(|_| SourceRefusal::Unreadable)?;
     named
@@ -300,7 +300,7 @@ pub(crate) fn admit_column(result: &mut ImportResult, original: Value) -> Option
 }
 
 impl ImportResult {
-    pub(crate) fn merge(&mut self, mut other: Self) {
+    pub fn merge(&mut self, mut other: Self) {
         self.sessions_found += other.sessions_found;
         self.facts_extracted += other.facts_extracted;
         self.files_touched += other.files_touched;
@@ -354,7 +354,7 @@ fn scratch_parent() -> std::io::Result<PathBuf> {
 /// decoded feeds no store (E3). The gateway rules are those of `gateway`, the
 /// ONE snapshot of this source.
 fn read_transcript(root: &Path, path: &Path, gateway: &Gateway) -> Result<String, SourceRefusal> {
-    use crate::tools::admitted_sources::{self, SourceRead};
+    use crate::core::admitted_sources::{self, SourceRead};
     let source = resolve_history_source(root, path)?;
     let size = std::fs::metadata(&source.path)
         .map_err(|_| SourceRefusal::Unreadable)?

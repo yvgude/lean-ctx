@@ -33,15 +33,17 @@ inside the product. Other deeper lifecycles must not replace the primary story.
 
 ## Names and boundaries
 
+The product components are LeanCTX | OSS and LeanCTX SDK; LeanCTX running on a
+machine is an instance.
+
 | Name | Meaning |
 |---|---|
 | **LeanCTX** | The product and brand |
 | **Context Gateway for AI Systems** | The primary category |
-| **LeanCTX Engine** | The runtime implementing context capabilities |
-| **LeanCTX SDK** | The integration surface for embedding supported Engine capabilities |
+| **LeanCTX \| OSS** | The open-source runtime implementing context capabilities, free and complete on its supported local paths, under Apache-2.0 (formerly "Community") |
+| **LeanCTX SDK** | The integration surface for embedding supported LeanCTX \| OSS capabilities |
 | **Context Intelligence** | Context selection and preparation capabilities inside LeanCTX |
-| **LeanCTX OSS** | The open-source Engine, free and complete on its supported local paths, under Apache-2.0 (formerly "Community") |
-| **LeanCTX Hive** | The paid version (Personal · Team · Enterprise): control and proof on top of OSS — filter packs, org policy, compliance, Cockpit across engines, shared context and team coordination — scoped to the licensed release and agreement |
+| **LeanCTX Hive** | The paid version (Personal · Team · Enterprise): control and proof on top of OSS — filter packs, org policy, compliance, Cockpit across instances, shared context and team coordination — scoped to the licensed release and agreement |
 | **SDK / OEM** | Embedding and distribution scope under the applicable SDK/runtime licenses and commercial agreement |
 
 Keep the customer's application, agent loop, model choice and UI. Coding agents

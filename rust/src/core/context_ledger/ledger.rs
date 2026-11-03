@@ -607,7 +607,7 @@ impl ContextLedger {
             })
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
-        if let Some((_model, window)) = crate::hook_handlers::load_detected_model() {
+        if let Some((_model, window)) = crate::core::host_state::load_detected_model() {
             ledger.window_size = window;
         }
         // #715 migration: older Windows builds persisted `\`-separated paths;

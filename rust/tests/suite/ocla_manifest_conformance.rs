@@ -39,7 +39,7 @@ fn load_manifest(path: &Path) -> CapabilityManifestV1 {
 }
 
 fn manifest_directory() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/contracts/ocla/capability-manifests")
+    crate::engine_dir().join("../docs/contracts/ocla/capability-manifests")
 }
 
 #[test]

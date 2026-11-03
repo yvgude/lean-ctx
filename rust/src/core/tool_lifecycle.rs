@@ -33,7 +33,7 @@ pub(crate) fn usable_root(root: Option<&str>) -> Option<&str> {
 /// MCP dispatcher applies before handing content to the IR store
 /// (`server/call_tool.rs`), kept identical so CLI- and MCP-recorded IR items are
 /// byte-compatible. `ContextIrV1::record` redacts and further caps it.
-pub(crate) fn ir_excerpt(text: &str) -> &str {
+pub fn ir_excerpt(text: &str) -> &str {
     const MAX: usize = 200;
     if text.len() <= MAX {
         return text;
@@ -51,7 +51,7 @@ pub(crate) fn ir_excerpt(text: &str) -> &str {
 /// dispatcher records both for every tool call but the shadow-mode `lean-ctx
 /// read` subprocess used to drop them, so IR/`ctx_proof` exports were blind to
 /// compressed shadow reads.
-pub(crate) fn record_file_read(
+pub fn record_file_read(
     path: &str,
     mode: &str,
     original_tokens: usize,
@@ -92,7 +92,7 @@ pub(crate) fn record_file_read(
 
 /// Compatibility accounting without IR persistence or an independent flush.
 /// The CLI lifecycle calls this once in its accounting stage.
-pub(crate) fn record_file_read_accounting(
+pub fn record_file_read_accounting(
     path: &str,
     mode: &str,
     original_tokens: usize,
@@ -177,7 +177,7 @@ pub(crate) fn record_file_read_accounting(
     record_read_observation(path, mode, &learning_root);
 }
 
-pub(crate) fn record_file_read_projection(
+pub fn record_file_read_projection(
     path: &str,
     mode: &str,
     original_tokens: usize,
@@ -269,7 +269,7 @@ pub(crate) fn record_search(
 }
 
 /// Existing search bookkeeping, separated from the IR writer for stage ownership.
-pub(crate) fn record_search_accounting(
+pub fn record_search_accounting(
     modeled_baseline: usize,
     observed_tokens: usize,
     output_tokens: usize,
@@ -307,7 +307,7 @@ pub(crate) fn record_search_accounting(
 }
 
 /// Record a tree/ls operation with full Context OS side effects.
-pub(crate) fn record_tree(original_tokens: usize, output_tokens: usize) {
+pub fn record_tree(original_tokens: usize, output_tokens: usize) {
     stats::record("cli_ls", original_tokens, output_tokens);
 
     // Emit event so the live dashboard feed sees shadow-mode tree/ls.
@@ -400,7 +400,7 @@ pub(crate) fn maybe_periodic_flush() {
 /// command flush the *exact same* set — the historical per-arm copies had
 /// drifted (the `read` arm flushed only `stats`, the `-c` arm four sinks, the
 /// daemon nine), which is precisely how the gap went unnoticed.
-pub(crate) fn flush_all() {
+pub fn flush_all() {
     stats::flush();
     heatmap::flush();
     crate::core::path_mode_memory::flush();
@@ -416,7 +416,7 @@ pub(crate) fn flush_all() {
 /// `flush_all` then persists. Not part of `flush_all` itself, which also runs
 /// after single tool executions where committing early would book a
 /// read-before-edit as a bounce.
-pub(crate) fn flush_all_at_exit() {
+pub fn flush_all_at_exit() {
     crate::core::bounce_tracker::flush_pending();
     flush_all();
 }

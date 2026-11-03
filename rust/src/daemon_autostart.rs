@@ -6,6 +6,22 @@ const PLIST_LABEL: &str = "com.leanctx.daemon";
 #[cfg(target_os = "linux")]
 const SYSTEMD_SERVICE: &str = "lean-ctx-daemon";
 
+/// Whether this platform has a daemon autostart service (LaunchAgent on
+/// macOS, systemd user unit on Linux). Windows has none: the daemon starts
+/// through `lean-ctx daemon start` or on demand from an editor (#2176).
+#[must_use]
+pub const fn is_supported() -> bool {
+    cfg!(any(target_os = "macos", target_os = "linux"))
+}
+
+/// What `lean-ctx daemon enable|disable` reports where no autostart service
+/// exists — one line, never followed by a success claim (#2176).
+#[must_use]
+pub fn unsupported_message() -> &'static str {
+    "Daemon autostart is not available on this platform. \
+     Start the daemon with `lean-ctx daemon start` (editors also start it on demand)."
+}
+
 /// Platform service unit name (`systemctl --user <name>` / `launchctl print gui/$UID/<name>`).
 /// `None` on platforms without autostart support.
 pub fn service_name() -> Option<&'static str> {
@@ -46,7 +62,7 @@ pub fn install(quiet: bool) {
     install_with_binary(&binary, quiet);
 }
 
-pub(crate) fn install_with_binary(binary: &str, quiet: bool) {
+pub fn install_with_binary(binary: &str, quiet: bool) {
     if binary.is_empty() {
         if !quiet {
             tracing::error!("Cannot find lean-ctx binary for daemon autostart");
@@ -362,6 +378,17 @@ fn uninstall_systemd(quiet: bool) {
 
 #[cfg(test)]
 mod tests {
+    /// #2176: support and the service path agree, and the unsupported line
+    /// never claims success.
+    #[test]
+    fn autostart_support_matches_service_path() {
+        assert_eq!(super::is_supported(), super::service_file_path().is_some());
+        let msg = super::unsupported_message();
+        assert!(msg.contains("not available"));
+        assert!(msg.contains("lean-ctx daemon start"));
+        assert!(!msg.contains('✓') && !msg.contains("enabled"));
+    }
+
     // GH #394: the service file path must be discoverable programmatically so
     // enable/disable/status/doctor can print it.
     #[cfg(any(target_os = "macos", target_os = "linux"))]

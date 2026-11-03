@@ -279,11 +279,7 @@ fn symbols(content: &str, ext: &str) -> Vec<(String, std::ops::Range<usize>)> {
 }
 
 /// The anchored bytes of `symbol` (or of the whole file) in `content`.
-pub(crate) fn anchored<'a>(
-    content: &'a [u8],
-    path: &str,
-    symbol: Option<&str>,
-) -> Option<&'a [u8]> {
+pub fn anchored<'a>(content: &'a [u8], path: &str, symbol: Option<&str>) -> Option<&'a [u8]> {
     let Some(symbol) = symbol else {
         return Some(content);
     };

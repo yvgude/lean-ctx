@@ -1,7 +1,0 @@
-{
-  "error": {
-    "code": "not_found",
-    "field": "reply_to",
-    "message": "No such message."
-  }
-}

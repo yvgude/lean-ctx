@@ -24,7 +24,7 @@ pub(crate) const ENTERPRISE_HINT: &str = "framework coverage (EU AI Act, ISO 420
 
 /// Ask the licensed runtime for the framework reports of `facts`. The caller
 /// checks the answer against the request ([`FrameworksAnswer::check`]).
-pub(crate) fn assess(facts: &ComplianceFactsV1) -> Result<FrameworksAnswer, String> {
+pub fn assess(facts: &ComplianceFactsV1) -> Result<FrameworksAnswer, String> {
     let input = serde_json::to_string(facts).map_err(|e| format!("compliance facts: {e}"))?;
     match super::exchange::invoke(&CAPABILITY, &input) {
         Ok(output) => serde_json::from_str(&output)

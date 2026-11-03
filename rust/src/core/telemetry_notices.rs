@@ -59,7 +59,7 @@ fn valid_link(link: &str) -> bool {
 }
 
 /// One notice from the response, or `None` when any part is malformed.
-fn parse(value: &serde_json::Value) -> Option<Notice> {
+pub fn parse(value: &serde_json::Value) -> Option<Notice> {
     let id = uuid::Uuid::parse_str(value.get("id")?.as_str()?).ok()?;
     let message = value.get("message")?.as_str()?.trim();
     let chars = message.chars().count();
@@ -159,7 +159,7 @@ fn render(notice: &Notice) -> String {
 /// Shows pending notices once, on stderr of an interactive command. Never for
 /// MCP, hooks or piped use.
 pub fn maybe_show() {
-    if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
+    if !(std::io::stderr().is_terminal() && crate::core::host_env::stdin_is_terminal()) {
         return;
     }
     let mut store = load();

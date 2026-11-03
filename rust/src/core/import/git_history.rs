@@ -21,7 +21,7 @@
 //!
 //! On a machine connected to Hive, `lean-ctx import git` queues the facts it
 //! added or changed as import drafts, each sourced `import:git:<sha>`
-//! ([`crate::core::hive::knowledge::import_draft`]).
+//! (the Hive connector's knowledge import drafts).
 
 use std::collections::HashSet;
 use std::path::Path;

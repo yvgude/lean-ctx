@@ -6,23 +6,70 @@ mod bootstrap;
 mod catalog;
 mod channel;
 mod cli;
-pub(crate) mod cockpit;
-pub(crate) mod code_security;
-pub(crate) mod compliance_frameworks;
+pub mod cockpit;
+pub mod code_security;
+pub mod compliance_frameworks;
 mod configuration;
 pub(crate) mod dashboard_pro;
 mod exchange;
 pub(crate) mod org_policy_verifier;
-pub(crate) mod personal_protection;
+pub mod personal_protection;
 pub(crate) mod semantic_coverage;
-pub(crate) mod semantic_detectors;
+pub mod semantic_detectors;
+
+// Exercise the same explicit private-directory prerequisite as the CLI.
+#[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(
+    not(any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))),
+    allow(dead_code)
+)]
+pub(crate) fn private_root_for_test() -> tempfile::TempDir {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("runtime-install-test-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    builder.tempdir().expect("private test root")
+}
+
+/// Signs `document` under `domain` as a release manifest would be signed.
+#[cfg(all(
+    any(test, feature = "test-support"),
+    any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))
+))]
+pub(crate) fn sign_document(
+    document: &serde_json::Value,
+    key: &ed25519_dalek::SigningKey,
+    domain: &[u8],
+) -> (Vec<u8>, Vec<u8>, String) {
+    use ed25519_dalek::Signer;
+    let manifest = serde_json::to_vec(document).expect("manifest");
+    let mut payload = domain.to_vec();
+    payload.extend_from_slice(&manifest);
+    let signature = key.sign(&payload).to_bytes().to_vec();
+    let selected = sha256(&manifest);
+    (manifest, signature, selected)
+}
+
+/// The company-journey fixture endpoint for tests outside the Engine (the
+/// proxy's held-floor journey); inside the Engine it is the test module.
+#[cfg(all(
+    feature = "test-support",
+    not(test),
+    any(target_os = "macos", all(target_os = "linux", target_env = "gnu"))
+))]
+#[allow(dead_code, unused_imports, clippy::unwrap_used)]
+#[path = "company_journey_tests.rs"]
+pub mod company_journey_support;
 mod semantic_worker;
-pub(crate) use configuration::{DISCLOSURE, inspect_setup};
+pub use configuration::{DISCLOSURE, inspect_setup};
 mod health;
 mod install;
 mod license;
-// The Hive connector (`core::hive::runtime_lease`) registers the source.
-pub(crate) mod lease;
+// The Hive connector's runtime lease registers the source.
+pub mod lease;
 mod manifest;
 mod rotation;
 #[cfg(any(unix, windows))]
@@ -36,7 +83,7 @@ pub(crate) mod tests;
 use std::io::Read;
 use std::path::Path;
 
-pub(crate) use cli::run;
+pub use cli::run;
 use manifest::{VerifiedPackage, verify, verify_kind};
 
 // The signed archive member stays platform-neutral; only materialized files vary.
@@ -78,7 +125,7 @@ impl RuntimeKind {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum InstallError {
+pub enum InstallError {
     #[error("invalid runtime installer arguments")]
     Usage,
     #[error("runtime download URL, transport or response rejected")]

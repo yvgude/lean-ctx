@@ -1,0 +1,1089 @@
+// SPDX-License-Identifier: Apache-2.0
+use crate::dashboard;
+use lean_ctx::core;
+
+#[cfg(feature = "http-server")]
+const MAX_A2A_PEERS_BYTES: u64 = 1024 * 1024;
+
+#[cfg(feature = "http-server")]
+fn read_a2a_task_authority(path: &std::path::Path) -> Result<String, String> {
+    lean_ctx::core::a2a::task::policy_file::read_bounded(path)
+}
+
+#[cfg(feature = "http-server")]
+fn read_a2a_peers(path: &std::path::Path) -> Result<String, String> {
+    let raw = read_a2a_task_authority(path)?;
+    if raw.len() as u64 > MAX_A2A_PEERS_BYTES {
+        return Err(format!(
+            "A2A peer table exceeds {MAX_A2A_PEERS_BYTES} bytes"
+        ));
+    }
+    Ok(raw)
+}
+
+/// A secret (the A2A signing key, the HTTP auth token) from a file: bounded,
+/// no symlink, the trailing line break removed. Keeps the secret out of the
+/// process arguments, which every local user can list.
+fn read_secret_file(path: &std::path::Path) -> Result<String, String> {
+    let raw = lean_ctx::core::a2a::task::policy_file::read_bounded(path)?;
+    let key = raw.trim_end_matches(['\n', '\r']);
+    if key.trim().is_empty() {
+        return Err("the file is empty".to_string());
+    }
+    Ok(key.to_string())
+}
+
+/// Printed when `--a2a-signing-key <key>` is used (deprecation
+/// `cli-serve-a2a-signing-key-argv` in `DEPRECATIONS.toml`).
+#[cfg(feature = "http-server")]
+const A2A_SIGNING_KEY_ARGV_WARNING: &str = "warning: --a2a-signing-key <key> is deprecated: \
+     the key is visible in the process list. Use --a2a-signing-key-file <path> or the \
+     LEAN_CTX_A2A_SIGNING_KEY environment variable instead.";
+
+/// Printed when `serve --auth-token <token>` is used (deprecation
+/// `cli-serve-auth-token-argv` in `DEPRECATIONS.toml`).
+#[cfg(feature = "http-server")]
+const AUTH_TOKEN_ARGV_WARNING: &str = "warning: lean-ctx serve --auth-token <token> is deprecated: \
+     the token is visible in the process list. Use --auth-token-file <path> or the \
+     LEAN_CTX_HTTP_TOKEN environment variable instead.";
+
+/// Printed when `cockpit --auth-token=<token>` (or `--token=`) is used
+/// (deprecation `cli-cockpit-auth-token-argv` in `DEPRECATIONS.toml`).
+const COCKPIT_AUTH_TOKEN_ARGV_WARNING: &str = "warning: lean-ctx cockpit --auth-token=<token> is \
+     deprecated: the token is visible in the process list. Use --auth-token-file <path> or the \
+     LEAN_CTX_HTTP_TOKEN environment variable instead.";
+
+/// The Bearer token `cockpit` pins: the deprecated `--auth-token=` /
+/// `--token=` value (warned on stderr), else the token file
+/// (`--auth-token-file`, else `LEAN_CTX_HTTP_TOKEN_FILE` when
+/// `LEAN_CTX_HTTP_TOKEN` is unset). `Ok(None)` leaves `LEAN_CTX_HTTP_TOKEN`
+/// or a fresh random token to the dashboard. `Err` is the line to show.
+fn cockpit_auth_token(
+    rest: &[String],
+    env: impl Fn(&str) -> Option<String>,
+) -> Result<Option<String>, String> {
+    let argv = rest
+        .iter()
+        .find_map(|p| {
+            p.strip_prefix("--auth-token=")
+                .or_else(|| p.strip_prefix("--token="))
+        })
+        .map(String::from);
+    let file =
+        rest.iter()
+            .enumerate()
+            .find_map(|(i, arg)| match arg.strip_prefix("--auth-token-file=") {
+                Some(path) => Some(Some(path)),
+                None if arg == "--auth-token-file" => Some(rest.get(i + 1).map(String::as_str)),
+                None => None,
+            });
+    let file = match file {
+        None => None,
+        Some(Some(path)) if !path.trim().is_empty() && !path.starts_with("--") => {
+            Some(path.to_string())
+        }
+        Some(_) => {
+            return Err(
+                "--auth-token-file needs a path: --auth-token-file=<path> or --auth-token-file <path>"
+                    .to_string(),
+            );
+        }
+    };
+    let set = |name: &str| env(name).filter(|value| !value.trim().is_empty());
+    let file = match (argv, file) {
+        (Some(_), Some(_)) => {
+            return Err(
+                "Use either --auth-token-file or --auth-token, not both; prefer --auth-token-file."
+                    .to_string(),
+            );
+        }
+        (Some(token), None) => {
+            eprintln!("{COCKPIT_AUTH_TOKEN_ARGV_WARNING}");
+            return Ok(Some(token));
+        }
+        (None, Some(path)) => path,
+        (None, None) if set("LEAN_CTX_HTTP_TOKEN").is_none() => {
+            match set("LEAN_CTX_HTTP_TOKEN_FILE") {
+                Some(path) => path,
+                None => return Ok(None),
+            }
+        }
+        (None, None) => return Ok(None),
+    };
+    read_secret_file(std::path::Path::new(&file))
+        .map(Some)
+        .map_err(|error| format!("Invalid auth token file at {file}: {error}"))
+}
+
+pub(crate) mod cockpit_start;
+mod provider;
+pub(crate) use provider::*;
+mod proxy;
+pub(crate) use proxy::*;
+#[cfg(test)]
+mod tests;
+
+/// Open-mode when a `--vscode` / `--open=vscode` hand-off cannot produce a
+/// native editor tab (extension missing, or not inside an editor). Invariant
+/// (#424/#587): an explicit vscode intent NEVER falls back to the external
+/// browser — it shows the URL + how to open the dashboard inside the editor
+/// instead. Only `--no-open` downgrades it to a silent "none".
+fn vscode_fallback_open_mode(no_open: bool) -> &'static str {
+    if no_open { "none" } else { "vscode" }
+}
+
+/// Cockpit views opened by other commands (the Cockpit's hash routes).
+pub(crate) const VIEW_SAVINGS: &str = "savings";
+/// The Ledger (calls) view: the recorded call stream. The Cockpit has no
+/// separate Live page, so `gain --live` and `watch` point here.
+pub(crate) const VIEW_CALLS: &str = "calls";
+pub(crate) const VIEW_REPORT: &str = "report";
+
+const COCKPIT_HELP: &str = "\
+Usage: lean-ctx cockpit (also: lean-ctx dashboard) [--port N] [--foreground] [--no-open] [--host=H] [--base-path=PREFIX] [--auth-token-file=PATH] [--no-auth] [--project=PATH] [--vscode] [--export [--output=FILE] [--open]]
+       lean-ctx cockpit stop      Stop the Cockpit server started in the background
+       lean-ctx cockpit install   Install the Cockpit runtime package (signed, proprietary, free)
+       lean-ctx cockpit install --from <dir|file.tar.gz> [--allow-downgrade]   … from a shipped bundle, offline
+
+Opens the local Cockpit (Select · Control · Prove). On a terminal it reuses the
+server already running for this data dir, or starts one in the background, opens
+the browser and returns the prompt. A port another program holds is skipped for
+the next free one (an explicit --port is never swapped). Default: http://localhost:3333
+
+Examples:
+  lean-ctx cockpit
+  lean-ctx cockpit --foreground               Run the server in this terminal (Ctrl+C stops it; the
+                                              mode without a terminal, e.g. in Docker)
+  lean-ctx cockpit stop                       Stop the background server (by its recorded PID)
+  lean-ctx cockpit --no-open --port 3333
+  lean-ctx cockpit --host=0.0.0.0
+  lean-ctx cockpit --base-path=/cockpit       Mount behind a reverse proxy subpath
+  lean-ctx cockpit --auth-token-file=<path>   Pin the Bearer token read from a file (overrides LEAN_CTX_HTTP_TOKEN;
+                                              --auth-token=<token> / --token= are deprecated: visible in the process list)
+  lean-ctx cockpit --no-auth                  Run without a Bearer token (alias --auth=false).
+                                              Cross-origin/CSRF + DNS-rebinding stay blocked via
+                                              Sec-Fetch-Site/Origin/Host checks. Best on loopback;
+                                              for Docker publish to 127.0.0.1 (-p 127.0.0.1:PORT:PORT).
+  lean-ctx cockpit --export                   On a terminal: open the Cockpit report view (#report);
+                                              otherwise write the offline HTML report (lean-ctx-report.html)
+  lean-ctx cockpit --export --output=FILE     Write the offline HTML report to FILE
+  lean-ctx cockpit --export --open            … write it and open the Cockpit report view
+  lean-ctx cockpit --open=none                Start without launching a browser (also --no-open)
+  lean-ctx cockpit --vscode                   Open as a native editor tab (VS Code/Cursor/VSCodium/Windsurf) via the lean-ctx extension
+  lean-ctx cockpit --open=vscode              Alias for --vscode (falls back to printing how to open it inside the editor — never the external browser)
+  lean-ctx gain --web | --live                Open the Savings or Calls (Ledger) view
+In the terminal: lean-ctx gain --terminal   (on a terminal, plain `lean-ctx gain` opens #savings)
+
+Environment:
+  LEAN_CTX_DASHBOARD_OPEN=browser|none|vscode  Default reveal mode (overridden by --open=).
+  LEAN_CTX_HTTP_TOKEN=<token>   Pin the Bearer token (stable across restarts — ideal behind a reverse proxy). Overridden by --auth-token-file. Unset → a random token is generated each start.
+  LEAN_CTX_HTTP_TOKEN_FILE=<path>  File with the Bearer token, used when LEAN_CTX_HTTP_TOKEN is unset.
+  LEAN_CTX_SCRAPE_TOKEN=<token> Read-only token accepted ONLY for GET /metrics — hand this to Prometheus/Datadog agents instead of the dashboard token (docs/integrations/datadog.md).
+  LEAN_CTX_DASHBOARD_AUTH=true|false  Require the Bearer token (default true). false = no-auth mode (overridden by --no-auth/--auth=). Also settable via `lean-ctx config set dashboard_auth`.
+  LEAN_CTX_DASHBOARD_ALLOWED_HOSTS=host:port,…  Extra Host header values accepted in no-auth mode (loopback + bound host are always allowed).";
+
+/// `--port=N`, `--port N`, `-p=N` or `-p N`.
+/// `--project=<dir>` or `--project <dir>`. A missing or empty directory, or a
+/// flag in its place (`--project --port 3334`), is a usage error rather than
+/// a silently unbound dashboard.
+fn project_flag(rest: &[String]) -> Result<Option<String>, String> {
+    for (i, arg) in rest.iter().enumerate() {
+        let value = match arg.strip_prefix("--project=") {
+            Some(value) => Some(value),
+            None if arg == "--project" => rest.get(i + 1).map(String::as_str),
+            None => continue,
+        };
+        return match value.map(str::trim) {
+            Some(dir) if !dir.is_empty() && !dir.starts_with("--") => Ok(Some(dir.to_string())),
+            _ => Err("--project needs a directory: --project=<dir> or --project <dir>".into()),
+        };
+    }
+    Ok(None)
+}
+
+fn port_flag(rest: &[String]) -> Option<u16> {
+    rest.iter().enumerate().find_map(|(i, arg)| {
+        if let Some(value) = arg
+            .strip_prefix("--port=")
+            .or_else(|| arg.strip_prefix("-p="))
+        {
+            return value.parse().ok();
+        }
+        if arg == "--port" || arg == "-p" {
+            return rest.get(i + 1).and_then(|value| value.parse().ok());
+        }
+        None
+    })
+}
+
+/// `lean-ctx cockpit install`: the user's explicit request to install the
+/// Cockpit runtime package from the configured LeanCTX runtime channel.
+fn cockpit_install() {
+    use lean_ctx::core::intelligence_runtime::cockpit;
+    println!(
+        "Installing the LeanCTX Cockpit: a signed, proprietary runtime package (free for everyone)\n\
+         from the configured LeanCTX runtime channel. It is verified before it is activated and\n\
+         runs only on 127.0.0.1, started by `lean-ctx cockpit`."
+    );
+    match cockpit::install_cockpit() {
+        Ok(result) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string())
+            );
+            println!("Open it with: lean-ctx cockpit");
+        }
+        Err(reason) => {
+            eprintln!("lean-ctx cockpit install: {}", reason.message());
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `lean-ctx cockpit` (alias `lean-ctx dashboard`).
+pub(super) fn cmd_dashboard(rest: &[String]) {
+    cmd_cockpit(rest, None);
+}
+
+/// Start or open the Cockpit at `view` (a Cockpit hash route; `None` = start
+/// page).
+pub(crate) fn cmd_cockpit(rest: &[String], view: Option<&str>) {
+    if rest.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{COCKPIT_HELP}");
+        return;
+    }
+    if rest.first().map(String::as_str) == Some("install") {
+        if !lean_ctx::core::intelligence_runtime::cockpit::install_from_cli(&rest[1..]) {
+            cockpit_install();
+        }
+        return;
+    }
+    if rest.first().map(String::as_str) == Some("stop") {
+        let code = cockpit_start::stop();
+        if code != 0 {
+            std::process::exit(code);
+        }
+        return;
+    }
+    let mut view = view.map(str::to_string);
+    if rest.iter().any(|a| a == "--export") {
+        let explicit_output = rest.iter().find_map(|a| a.strip_prefix("--output="));
+        let open_after = rest.iter().any(|a| a == "--open");
+        // A person on a terminal gets the report view itself; scripts (and
+        // `--output=FILE`) keep the offline file.
+        let mut install_hint = None;
+        if explicit_output.is_none() && !open_after && super::cockpit_hint::redirect_allowed() {
+            match cockpit_start::open(Some(VIEW_REPORT), rest) {
+                cockpit_start::Outcome::Opened { port, base_path } => {
+                    println!(
+                        "{}",
+                        cockpit_start::opened_line(Some(VIEW_REPORT), port, &base_path)
+                    );
+                    return;
+                }
+                cockpit_start::Outcome::Unavailable(reason) => {
+                    install_hint = Some(cockpit_start::unavailable_line(reason).to_string());
+                }
+                cockpit_start::Outcome::Failed(message) => install_hint = Some(message),
+            }
+        }
+        let output = explicit_output.unwrap_or(crate::cli::report_export::DEFAULT_OUTPUT);
+        crate::cli::report_export::write_report(output);
+        if let Some(line) = install_hint {
+            eprintln!("\x1b[2m{line}\x1b[0m");
+        }
+        if !open_after {
+            return;
+        }
+        view = Some(VIEW_REPORT.to_string());
+    }
+    let port = port_flag(rest);
+    let host = rest
+        .iter()
+        .find_map(|p| p.strip_prefix("--host=").or_else(|| p.strip_prefix("-H=")))
+        .map(String::from);
+    let project = match project_flag(rest) {
+        Ok(project) => project,
+        Err(message) => {
+            eprintln!("{message}\n\n{COCKPIT_HELP}");
+            std::process::exit(2);
+        }
+    };
+    if let Some(ref project) = project {
+        core::runtime_flags::set_dashboard_project(project.clone());
+    }
+    // `--base-path` / `--prefix`: mount the dashboard behind a reverse-proxy
+    // subpath (e.g. `/dashboard`). See dashboard::base_path (#355).
+    let base_path = rest
+        .iter()
+        .find_map(|p| {
+            p.strip_prefix("--base-path=")
+                .or_else(|| p.strip_prefix("--prefix="))
+        })
+        .map(String::from);
+    // `--auth-token-file` (or the deprecated `--auth-token` / `--token`): pin
+    // the dashboard Bearer token from the CLI. Takes precedence over
+    // LEAN_CTX_HTTP_TOKEN so it survives container/service environments that
+    // strip or fail to inherit the env var (#377).
+    let auth_token = match cockpit_auth_token(rest, |name| std::env::var(name).ok()) {
+        Ok(token) => token,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
+    // `--no-auth` / `--auth=<bool>`: run the dashboard without a Bearer token.
+    // No-auth is not unprotected — cross-origin/CSRF and DNS-rebinding are blocked
+    // by request-header checks (Sec-Fetch-Site/Origin/Host allowlist). Precedence:
+    // this flag > LEAN_CTX_DASHBOARD_AUTH env > `dashboard_auth` config > true.
+    // `None` = "not given on the CLI" so the env/config decides.
+    let auth_enabled = if rest.iter().any(|a| a == "--no-auth") {
+        Some(false)
+    } else {
+        rest.iter()
+            .find_map(|p| p.strip_prefix("--auth="))
+            .and_then(|v| match v.trim().to_ascii_lowercase().as_str() {
+                "true" | "1" | "yes" | "on" => Some(true),
+                "false" | "0" | "no" | "off" => Some(false),
+                _ => None,
+            })
+    };
+    // `--open=<browser|none|vscode>`: how to reveal the URL once the server is
+    // up. `--no-open` is shorthand for `--open=none` (#424). Overrides
+    // LEAN_CTX_DASHBOARD_OPEN.
+    let open_mode = if rest.iter().any(|a| a == "--no-open") {
+        Some("none".to_string())
+    } else {
+        rest.iter()
+            .find_map(|p| p.strip_prefix("--open="))
+            .map(String::from)
+    };
+    // `--vscode` / `--open=vscode` (and LEAN_CTX_DASHBOARD_OPEN=vscode): open the
+    // dashboard as a native editor tab by handing off to the lean-ctx extension's
+    // URI handler. On a successful hand-off the extension owns the server, so we
+    // return without binding one here. Otherwise we fall back to the `vscode`
+    // guidance mode — print the URL + how to open it inside the editor — and
+    // NEVER the external browser (#424/#587). It stays "never a silent no-op"
+    // (#875) because the URL and actionable steps are always printed.
+    let want_vscode = rest.iter().any(|a| a == "--vscode")
+        || matches!(open_mode.as_deref(), Some("vscode" | "code" | "editor"))
+        || (open_mode.is_none()
+            && std::env::var("LEAN_CTX_DASHBOARD_OPEN").is_ok_and(|v| {
+                matches!(
+                    v.trim().to_ascii_lowercase().as_str(),
+                    "vscode" | "code" | "editor"
+                )
+            }));
+    let open_mode = if want_vscode {
+        use crate::dashboard::vscode_open::{EditorOpen, open_in_editor};
+        let fallback = vscode_fallback_open_mode(rest.iter().any(|a| a == "--no-open"));
+        match open_in_editor() {
+            EditorOpen::Handed(label) => {
+                println!("\x1b[32m✓\x1b[0m Opening the LeanCTX Cockpit in {label}…");
+                println!(
+                    "  \x1b[2mIt opens as a native editor tab via the lean-ctx extension.\x1b[0m"
+                );
+                return;
+            }
+            EditorOpen::NeedsExtension(label) => {
+                eprintln!(
+                    "  \x1b[33m⚠\x1b[0m {label} detected, but the lean-ctx extension isn't \
+                     installed — showing how to open the Cockpit inside {label} instead."
+                );
+                eprintln!(
+                    "  \x1b[2mInstall \"lean-ctx\" from the {label} Extensions view for a one-step native tab.\x1b[0m"
+                );
+                Some(fallback.to_string())
+            }
+            EditorOpen::NoEditor => Some(fallback.to_string()),
+        }
+    } else {
+        open_mode
+    };
+    // A person on a terminal: background server, browser, prompt back.
+    // `--foreground`, no terminal (Docker, services, scripts), a non-loopback
+    // host or a non-browser reveal mode keep the server in this process.
+    let loopback = host
+        .clone()
+        .or_else(|| std::env::var("LEAN_CTX_HOST").ok())
+        .is_none_or(|h| matches!(h.as_str(), "127.0.0.1" | "localhost" | "::1"));
+    if loopback
+        && !rest.iter().any(|a| a == "--foreground")
+        && cockpit_start::interactive()
+        && dashboard::resolve_open_mode(open_mode.as_deref()) == dashboard::DashboardOpen::Browser
+    {
+        match cockpit_start::open(view.as_deref(), rest) {
+            cockpit_start::Outcome::Opened { port, base_path } => {
+                println!(
+                    "{}",
+                    cockpit_start::opened_line(view.as_deref(), port, &base_path)
+                );
+                if view.is_none() {
+                    println!(
+                        "\x1b[2mRuns in the background \u{b7} stop it: lean-ctx cockpit stop\x1b[0m"
+                    );
+                }
+            }
+            cockpit_start::Outcome::Unavailable(reason) => {
+                eprintln!("{}", cockpit_start::unavailable_line(reason));
+                eprintln!("\x1b[2mIn the terminal: lean-ctx gain --terminal\x1b[0m");
+                std::process::exit(1);
+            }
+            cockpit_start::Outcome::Failed(message) => {
+                eprintln!("{message}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    // GH #450: pin the XDG layout before serving, exactly like the daemon/server
+    // start paths do. Without this the dashboard was the only writer that could
+    // land config.toml in a divergent (unpinned/legacy) dir while the runtime
+    // read another — so a saved quick-setting silently "reset" on the next read.
+    lean_ctx::core::layout_pin::heal();
+    super::spawn_proxy_if_needed();
+    core::runtime_flags::mark_dashboard_server();
+    super::run_async(dashboard::start(
+        port,
+        host,
+        base_path,
+        auth_token,
+        open_mode,
+        auth_enabled,
+        view,
+    ));
+}
+
+/// #1602: the live TUI dashboard went away with the dead-module cleanup in
+/// 3.9.20 (de96cc5b), but every surface kept advertising it — `help all` as
+/// "Live TUI dashboard", the completion spec as "Watch for file changes", and
+/// `watch --help` as if it still ran — while the command itself exited 1 with
+/// a bare removal notice and no way forward. The listings are gone; the
+/// command stays as a signpost, because the muscle memory outlives the
+/// feature. Both paths now say the same thing and name the replacement.
+pub(super) fn cmd_watch(rest: &[String]) {
+    const NOTICE: &str = "`lean-ctx watch` (live TUI dashboard) was removed in 3.9.20.\n\
+         The recorded calls are in the Cockpit: lean-ctx cockpit \u{2192} #calls \
+         (also `lean-ctx gain --live`), or `lean-ctx cep` for the metrics as text.\n\
+         For the codebase index watcher, the command is `lean-ctx index watch`.";
+    if rest.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{NOTICE}");
+        return;
+    }
+    // On a terminal the recorded calls open in the Cockpit.
+    let hint = match super::cockpit_hint::redirect(Some(VIEW_CALLS), rest) {
+        super::cockpit_hint::Handled::Opened => return,
+        super::cockpit_hint::Handled::Text(hint) => hint,
+    };
+    eprintln!("{NOTICE}");
+    super::cockpit_hint::print_hint(hint.as_deref());
+    std::process::exit(1);
+}
+
+/// True when the args ask for help anywhere (`--help`/`-h`/`help`).
+/// Subcommand handlers must check this BEFORE executing: `lean-ctx daemon
+/// enable --help` must print help, not install the service (GH #393).
+pub(super) fn wants_help(args: &[String]) -> bool {
+    args.iter()
+        .any(|a| a == "--help" || a == "-h" || a == "help")
+}
+
+fn daemon_help() {
+    println!("Usage: lean-ctx daemon <start|stop|restart|status|enable|disable>");
+    println!();
+    println!("Commands:");
+    println!("  start     Start the daemon in the background");
+    println!("  stop      Stop the running daemon");
+    println!("  restart   Stop the daemon, then start it again");
+    println!("  status    Show daemon status, PID, autostart state and service file");
+    println!("  enable    Install + start the autostart service (systemd user unit / LaunchAgent)");
+    println!("  disable   Stop + remove the autostart service");
+    if let (Some(name), Some(path)) = (
+        lean_ctx::daemon_autostart::service_name(),
+        lean_ctx::daemon_autostart::service_file_path(),
+    ) {
+        println!();
+        println!("Autostart service:");
+        println!("  Name:         {name}");
+        println!("  Service file: {}", path.display());
+    }
+}
+
+pub(super) fn cmd_daemon(rest: &[String]) {
+    // `--help` anywhere must never execute the verb (GH #393).
+    if wants_help(rest) {
+        daemon_help();
+        return;
+    }
+    let sub = rest.first().map_or("status", std::string::String::as_str);
+    match sub {
+        "enable" | "disable" if !lean_ctx::daemon_autostart::is_supported() => {
+            // #2176: Windows printed "Autostart not supported" and then
+            // "✓ Daemon autostart enabled". One honest line instead.
+            eprintln!("{}", lean_ctx::daemon_autostart::unsupported_message());
+            if sub == "enable" {
+                std::process::exit(1);
+            }
+        }
+        "enable" => {
+            lean_ctx::daemon_autostart::install(false);
+            println!(
+                "\x1b[32m✓\x1b[0m Daemon autostart enabled. Will start on login and restart if stopped."
+            );
+        }
+        "disable" => {
+            lean_ctx::daemon_autostart::uninstall(false);
+            println!("\x1b[32m✓\x1b[0m Daemon autostart disabled.");
+        }
+        "start" => {
+            if let Err(e) = lean_ctx::daemon::start_daemon(&rest[1..]) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        "stop" => {
+            lean_ctx::daemon_autostart::stop();
+            match lean_ctx::daemon::stop_daemon() {
+                Ok(()) => println!("Daemon stopped."),
+                Err(e) => eprintln!("Error: {e}"),
+            }
+        }
+        "restart" => {
+            // Stop both the supervised service and a manually started daemon,
+            // then start through the same channel that was active before.
+            lean_ctx::daemon_autostart::stop();
+            if let Err(e) = lean_ctx::daemon::stop_daemon() {
+                println!("  (stop: {e})");
+            }
+            if lean_ctx::daemon_autostart::is_installed() {
+                lean_ctx::daemon_autostart::start();
+                println!("\x1b[32m✓\x1b[0m Daemon restarted via autostart service.");
+            } else {
+                match lean_ctx::daemon::start_daemon(&rest[1..]) {
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    }
+                    _ => {
+                        println!("\x1b[32m✓\x1b[0m Daemon restarted.");
+                    }
+                }
+            }
+        }
+        "status" => {
+            println!("lean-ctx daemon:");
+            // #2176 VM: the identity gate, not a bare liveness check — a
+            // reused PID in daemon.pid is not "running".
+            let verified = lean_ctx::daemon::verified_daemon();
+            match (&verified, lean_ctx::daemon::read_daemon_pid()) {
+                (Some(daemon), _) => println!("  Status:    running (PID {})", daemon.pid),
+                (None, Some(pid)) => {
+                    println!("  Status:    not running (stale PID file for PID {pid})");
+                }
+                (None, None) => println!("  Status:    not running"),
+            }
+            let supported = lean_ctx::daemon_autostart::is_supported();
+            let installed = lean_ctx::daemon_autostart::is_installed();
+            println!(
+                "  Autostart: {}",
+                if installed {
+                    "enabled"
+                } else if supported {
+                    "not installed (run: lean-ctx daemon enable)"
+                } else {
+                    "not available on this platform"
+                }
+            );
+            if installed
+                && let (Some(name), Some(path)) = (
+                    lean_ctx::daemon_autostart::service_name(),
+                    lean_ctx::daemon_autostart::service_file_path(),
+                )
+            {
+                println!("  Service:   {name}");
+                println!("  File:      {}", path.display());
+            }
+            if verified.is_none() {
+                println!();
+                println!("  Start:     lean-ctx daemon start");
+                if supported && !installed {
+                    println!("  Autostart: lean-ctx daemon enable");
+                }
+            }
+        }
+        _ => daemon_help(),
+    }
+}
+
+pub(super) fn cmd_serve(rest: &[String]) {
+    #[cfg(feature = "http-server")]
+    {
+        let mut cfg = crate::http_server::HttpServerConfig::default();
+        let mut daemon_mode = false;
+        let mut stop_mode = false;
+        let mut status_mode = false;
+        let mut foreground_daemon = false;
+        let mut multi_roots: Vec<(String, Option<String>)> = Vec::new();
+        let mut rrf_k: Option<f64> = None;
+        let mut a2a_task_authority_path: Option<String> = None;
+        let mut a2a_peers_path: Option<String> = None;
+        let mut a2a_signing_key_file: Option<String> = None;
+        let mut auth_token_file: Option<String> = None;
+        let mut i = 0;
+        while i < rest.len() {
+            match rest[i].as_str() {
+                "--daemon" | "-d" => daemon_mode = true,
+                "--stop" => stop_mode = true,
+                "--status" => status_mode = true,
+                "--_foreground-daemon" => foreground_daemon = true,
+                "--host" | "-H" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.host.clone_from(&rest[i]);
+                    }
+                }
+                arg if arg.starts_with("--host=") => {
+                    cfg.host = arg["--host=".len()..].to_string();
+                }
+                "--port" | "-p" => {
+                    i += 1;
+                    if i < rest.len()
+                        && let Ok(p) = rest[i].parse::<u16>()
+                    {
+                        cfg.port = p;
+                    }
+                }
+                arg if arg.starts_with("--port=") => {
+                    if let Ok(p) = arg["--port=".len()..].parse::<u16>() {
+                        cfg.port = p;
+                    }
+                }
+                "--project-root" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.project_root = std::path::PathBuf::from(&rest[i]);
+                    }
+                }
+                arg if arg.starts_with("--project-root=") => {
+                    cfg.project_root = std::path::PathBuf::from(&arg["--project-root=".len()..]);
+                }
+                "--auth-token" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.auth_token = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--auth-token=") => {
+                    cfg.auth_token = Some(arg["--auth-token=".len()..].to_string());
+                }
+                "--auth-token-file" => {
+                    i += 1;
+                    if i < rest.len() {
+                        auth_token_file = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--auth-token-file=") => {
+                    auth_token_file = Some(arg["--auth-token-file=".len()..].to_string());
+                }
+                "--a2a-signing-key" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.a2a_signing_key = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-signing-key=") => {
+                    cfg.a2a_signing_key = Some(arg["--a2a-signing-key=".len()..].to_string());
+                }
+                "--a2a-signing-key-file" => {
+                    i += 1;
+                    if i < rest.len() {
+                        a2a_signing_key_file = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-signing-key-file=") => {
+                    a2a_signing_key_file = Some(arg["--a2a-signing-key-file=".len()..].to_string());
+                }
+                "--a2a-recipient-id" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.a2a_recipient_id = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-recipient-id=") => {
+                    cfg.a2a_recipient_id = Some(arg["--a2a-recipient-id=".len()..].to_string());
+                }
+                "--a2a-tenant-id" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.a2a_tenant_id = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-tenant-id=") => {
+                    cfg.a2a_tenant_id = Some(arg["--a2a-tenant-id=".len()..].to_string());
+                }
+                "--a2a-project-id" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.a2a_project_id = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-project-id=") => {
+                    cfg.a2a_project_id = Some(arg["--a2a-project-id=".len()..].to_string());
+                }
+                "--a2a-task-authority" => {
+                    i += 1;
+                    if i < rest.len() {
+                        a2a_task_authority_path = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-task-authority=") => {
+                    a2a_task_authority_path =
+                        Some(arg["--a2a-task-authority=".len()..].to_string());
+                }
+                "--a2a-peers" => {
+                    i += 1;
+                    if i < rest.len() {
+                        a2a_peers_path = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-peers=") => {
+                    a2a_peers_path = Some(arg["--a2a-peers=".len()..].to_string());
+                }
+                "--stateful" => cfg.stateful_mode = true,
+                "--stateless" => cfg.stateful_mode = false,
+                "--root" => {
+                    i += 1;
+                    if i < rest.len() {
+                        multi_roots.push((rest[i].clone(), None));
+                    }
+                }
+                arg if arg.starts_with("--root=") => {
+                    let val = arg["--root=".len()..].to_string();
+                    if let Some((path, alias)) = val.split_once(':') {
+                        multi_roots.push((path.to_string(), Some(alias.to_string())));
+                    } else {
+                        multi_roots.push((val, None));
+                    }
+                }
+                "--rrf-k" => {
+                    i += 1;
+                    if i < rest.len() {
+                        rrf_k = rest[i].parse::<f64>().ok();
+                    }
+                }
+                arg if arg.starts_with("--rrf-k=") => {
+                    rrf_k = arg["--rrf-k=".len()..].parse::<f64>().ok();
+                }
+                "--json" => cfg.json_response = true,
+                "--sse" => cfg.json_response = false,
+                "--disable-host-check" => cfg.disable_host_check = true,
+                "--allowed-host" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.allowed_hosts.push(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--allowed-host=") => {
+                    cfg.allowed_hosts
+                        .push(arg["--allowed-host=".len()..].to_string());
+                }
+                "--max-body-bytes" => {
+                    i += 1;
+                    if i < rest.len()
+                        && let Ok(n) = rest[i].parse::<usize>()
+                    {
+                        cfg.max_body_bytes = n;
+                    }
+                }
+                arg if arg.starts_with("--max-body-bytes=") => {
+                    if let Ok(n) = arg["--max-body-bytes=".len()..].parse::<usize>() {
+                        cfg.max_body_bytes = n;
+                    }
+                }
+                "--max-concurrency" => {
+                    i += 1;
+                    if i < rest.len()
+                        && let Ok(n) = rest[i].parse::<usize>()
+                    {
+                        cfg.max_concurrency = n;
+                    }
+                }
+                arg if arg.starts_with("--max-concurrency=") => {
+                    if let Ok(n) = arg["--max-concurrency=".len()..].parse::<usize>() {
+                        cfg.max_concurrency = n;
+                    }
+                }
+                "--max-rps" => {
+                    i += 1;
+                    if i < rest.len()
+                        && let Ok(n) = rest[i].parse::<u32>()
+                    {
+                        cfg.max_rps = n;
+                    }
+                }
+                arg if arg.starts_with("--max-rps=") => {
+                    if let Ok(n) = arg["--max-rps=".len()..].parse::<u32>() {
+                        cfg.max_rps = n;
+                    }
+                }
+                "--rate-burst" => {
+                    i += 1;
+                    if i < rest.len()
+                        && let Ok(n) = rest[i].parse::<u32>()
+                    {
+                        cfg.rate_burst = n;
+                    }
+                }
+                arg if arg.starts_with("--rate-burst=") => {
+                    if let Ok(n) = arg["--rate-burst=".len()..].parse::<u32>() {
+                        cfg.rate_burst = n;
+                    }
+                }
+                "--request-timeout-ms" => {
+                    i += 1;
+                    if i < rest.len()
+                        && let Ok(n) = rest[i].parse::<u64>()
+                    {
+                        cfg.request_timeout_ms = n;
+                    }
+                }
+                arg if arg.starts_with("--request-timeout-ms=") => {
+                    if let Ok(n) = arg["--request-timeout-ms=".len()..].parse::<u64>() {
+                        cfg.request_timeout_ms = n;
+                    }
+                }
+                "--help" | "-h" => {
+                    println!(
+                        "Usage: lean-ctx serve [--host H] [--port N] [--project-root DIR] [--daemon] [--stop] [--status]\n\
+                         \n\
+                         Options:\n  \
+                           --daemon, -d          Start as background daemon (UDS)\n  \
+                           --stop                Stop running daemon\n  \
+                           --status              Show daemon status\n  \
+                           --host, -H            Bind host (default: 127.0.0.1)\n  \
+                           --port, -p            Bind port (default: 8080)\n  \
+                           --project-root        Resolve relative paths against this root (default: cwd)\n  \
+                           --root PATH[:ALIAS]   Add a repo root for multi-repo mode (repeatable)\n  \
+                           --rrf-k N             RRF fusion parameter (default: 60.0)\n  \
+                           --a2a-signing-key-file  File with the key that verifies remote A2A envelope HMACs (must differ\n  \
+                                                 from auth token; env LEAN_CTX_A2A_SIGNING_KEY_FILE, or the key in LEAN_CTX_A2A_SIGNING_KEY)\n  \
+                           --a2a-signing-key     Deprecated: the key itself, visible in the process list\n  \
+                           --a2a-recipient-id    Bind incoming A2A envelopes to this server identity\n  \
+                           --a2a-tenant-id       Require signed tenant scope on incoming A2A envelopes\n  \
+                           --a2a-project-id      Require signed project scope on incoming A2A envelopes\n  \
+                           --a2a-task-authority  JSON peer/grant trust policy for signed A2A tasks (env LEAN_CTX_A2A_TASK_AUTHORITY)\n  \
+                           --a2a-peers           JSON bounded multi-peer relay table (env LEAN_CTX_A2A_PEERS)\n  \
+                           --auth-token-file     File with the token Authorization: Bearer <token> must carry (required\n  \
+                                                 for non-loopback binds; env LEAN_CTX_HTTP_TOKEN_FILE, or the token in LEAN_CTX_HTTP_TOKEN)\n  \
+                           --auth-token          Deprecated: the token itself, visible in the process list\n  \
+                           --stateful/--stateless  Streamable HTTP session mode (default: stateless)\n  \
+                           --json/--sse          Response framing in stateless mode (default: json)\n  \
+                           --max-body-bytes      Max request body size in bytes (default: 2097152)\n  \
+                           --max-concurrency     Max concurrent requests (default: 32)\n  \
+                           --max-rps             Max requests/sec (global, default: 50)\n  \
+                           --rate-burst          Rate limiter burst (global, default: 100)\n  \
+                           --request-timeout-ms  REST tool-call timeout (default: 30000)\n  \
+                           --allowed-host        Add allowed Host header (repeatable)\n  \
+                           --disable-host-check  Disable Host header validation (unsafe)"
+                    );
+                    return;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+
+        // Signed-task trust policy. Loaded before any listener starts so an
+        // unreadable or invalid policy stops the server instead of silently
+        // serving one that accepts nothing — or worse, a partial one.
+        let a2a_task_authority_path = a2a_task_authority_path.or_else(|| {
+            std::env::var("LEAN_CTX_A2A_TASK_AUTHORITY")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        });
+        if let Some(path) = a2a_task_authority_path {
+            match lean_ctx::core::a2a::task::TaskAuthorityConfigV1::from_file(std::path::Path::new(
+                &path,
+            )) {
+                Ok(policy) => cfg.a2a_task_authority = policy,
+                Err(error) => {
+                    eprintln!("Invalid A2A task authority policy at {path}: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        let a2a_peers_path = a2a_peers_path.or_else(|| {
+            std::env::var("LEAN_CTX_A2A_PEERS")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        });
+        if let Some(path) = a2a_peers_path {
+            match read_a2a_peers(std::path::Path::new(&path)).and_then(|raw| {
+                lean_ctx::core::a2a::relay::RelayPeerTableV1::from_json(&raw, false)
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(table) => cfg.a2a_peers = table,
+                Err(error) => {
+                    eprintln!("Invalid A2A peer table at {path}: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        // Apply environment fallbacks before daemon dispatch as both foreground
+        // and IPC servers validate the same remote-authority configuration.
+        // Auth token: the deprecated argv form, the token file, then the
+        // environment (the token, then a token file).
+        if cfg.auth_token.is_some() {
+            if auth_token_file.is_some() {
+                eprintln!(
+                    "Use either --auth-token-file or --auth-token, not both; \
+                     prefer --auth-token-file."
+                );
+                std::process::exit(1);
+            }
+            eprintln!("{AUTH_TOKEN_ARGV_WARNING}");
+        }
+        if cfg.auth_token.is_none()
+            && auth_token_file.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_HTTP_TOKEN")
+            && !v.trim().is_empty()
+        {
+            cfg.auth_token = Some(v);
+        }
+        let auth_token_file = auth_token_file.or_else(|| {
+            cfg.auth_token.is_none().then(|| {
+                std::env::var("LEAN_CTX_HTTP_TOKEN_FILE")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+            })?
+        });
+        if let Some(path) = auth_token_file {
+            match read_secret_file(std::path::Path::new(&path)) {
+                Ok(token) => cfg.auth_token = Some(token),
+                Err(error) => {
+                    eprintln!("Invalid auth token file at {path}: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        // Signing key: the deprecated argv form, the key file, then the
+        // environment (the key, then a key file).
+        if cfg.a2a_signing_key.is_some() {
+            if a2a_signing_key_file.is_some() {
+                eprintln!(
+                    "Use either --a2a-signing-key-file or --a2a-signing-key, not both; \
+                     prefer --a2a-signing-key-file."
+                );
+                std::process::exit(1);
+            }
+            eprintln!("{A2A_SIGNING_KEY_ARGV_WARNING}");
+        }
+        if cfg.a2a_signing_key.is_none()
+            && a2a_signing_key_file.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_A2A_SIGNING_KEY")
+            && !v.trim().is_empty()
+        {
+            cfg.a2a_signing_key = Some(v);
+        }
+        let a2a_signing_key_file = a2a_signing_key_file.or_else(|| {
+            cfg.a2a_signing_key.is_none().then(|| {
+                std::env::var("LEAN_CTX_A2A_SIGNING_KEY_FILE")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+            })?
+        });
+        if let Some(path) = a2a_signing_key_file {
+            match read_secret_file(std::path::Path::new(&path)) {
+                Ok(key) => cfg.a2a_signing_key = Some(key),
+                Err(error) => {
+                    eprintln!("Invalid A2A signing key file at {path}: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        if cfg.a2a_recipient_id.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_A2A_RECIPIENT_ID")
+            && !v.trim().is_empty()
+        {
+            cfg.a2a_recipient_id = Some(v);
+        }
+        if cfg.a2a_tenant_id.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_A2A_TENANT_ID")
+            && !v.trim().is_empty()
+        {
+            cfg.a2a_tenant_id = Some(v);
+        }
+        if cfg.a2a_project_id.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_A2A_PROJECT_ID")
+            && !v.trim().is_empty()
+        {
+            cfg.a2a_project_id = Some(v);
+        }
+
+        if !multi_roots.is_empty() {
+            if let Err(e) = lean_ctx::core::multi_repo::init_with_roots(&multi_roots, rrf_k) {
+                eprintln!("Multi-repo init error: {e}");
+                std::process::exit(1);
+            }
+            eprintln!("Multi-repo mode: {} roots configured", multi_roots.len());
+        }
+
+        if stop_mode {
+            lean_ctx::daemon_autostart::stop();
+            if let Err(e) = lean_ctx::daemon::stop_daemon() {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+            return;
+        }
+
+        if status_mode {
+            println!("{}", lean_ctx::daemon::daemon_status());
+            return;
+        }
+
+        if daemon_mode {
+            if let Err(e) = lean_ctx::daemon::start_daemon(rest) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+            return;
+        }
+
+        if foreground_daemon {
+            // Process RSS target, installed before the first request starts the
+            // memory guardian: the daemon indexes every root on the machine and
+            // a RAM percentage alone let it grow to several GB (#2075).
+            lean_ctx::core::memory_guard::set_process_rss_cap(
+                lean_ctx::core::config::Config::load()
+                    .daemon_max_rss_mb_effective()
+                    .saturating_mul(1024 * 1024),
+            );
+            if let Err(e) = lean_ctx::daemon::init_foreground_daemon() {
+                eprintln!("Error writing PID file: {e}");
+                std::process::exit(1);
+            }
+            let addr = lean_ctx::daemon::daemon_addr();
+            if let Err(e) = super::run_async(crate::http_server::serve_ipc(cfg.clone(), addr)) {
+                tracing::error!("Daemon server error: {e}");
+                lean_ctx::daemon::cleanup_daemon_files();
+                std::process::exit(1);
+            }
+            lean_ctx::daemon::cleanup_daemon_files();
+            return;
+        }
+
+        if let Err(e) = super::run_async(crate::http_server::serve(cfg)) {
+            tracing::error!("HTTP server error: {e}");
+            std::process::exit(1);
+        }
+    }
+    #[cfg(not(feature = "http-server"))]
+    {
+        let _ = rest;
+        eprintln!("lean-ctx serve is not available in this build");
+        std::process::exit(1);
+    }
+}

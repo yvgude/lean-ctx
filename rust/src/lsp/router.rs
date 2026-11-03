@@ -452,12 +452,8 @@ pub fn shutdown_all() {
     drop(drained);
 }
 
-#[cfg(test)]
-pub(crate) fn seed_stub_backend(
-    project_root: &str,
-    language: &'static str,
-    backend: Box<dyn LspBackend>,
-) {
+#[cfg(any(test, feature = "test-support"))]
+pub fn seed_stub_backend(project_root: &str, language: &'static str, backend: Box<dyn LspBackend>) {
     registry().insert(
         BackendKey::new(project_root, language),
         Entry {
@@ -470,8 +466,8 @@ pub(crate) fn seed_stub_backend(
 /// Serializes tests that seed [`BACKENDS`] stubs: `BACKENDS` is process-global,
 /// so two parallel tests seeding the same key would race (one stub overwrites
 /// the other between seed and use). Hold this for the whole test.
-#[cfg(test)]
-pub(crate) fn stub_test_lock() -> std::sync::MutexGuard<'static, ()> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn stub_test_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: Mutex<()> = Mutex::new(());
     LOCK.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)

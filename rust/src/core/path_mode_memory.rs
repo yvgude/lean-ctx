@@ -143,7 +143,7 @@ fn global() -> &'static Mutex<PathModeMemory> {
 
 /// Process-global: record a confirmed bounce for `path` (already normalized
 /// by the caller — `BounceTracker` normalizes via `pathutil`).
-pub(crate) fn record_bounce(norm_path: &str) {
+pub fn record_bounce(norm_path: &str) {
     let Ok(mut store) = global().lock() else {
         return;
     };
@@ -161,7 +161,7 @@ pub(crate) fn record_compressed_read_if_tracked(norm_path: &str) {
 }
 
 /// Process-global: should `mode=auto` resolve to `full` for this path?
-pub(crate) fn should_force_full(path: &str) -> bool {
+pub fn should_force_full(path: &str) -> bool {
     let norm = crate::core::pathutil::normalize_tool_path(path);
     global().lock().is_ok_and(|s| s.should_force_full(&norm))
 }
@@ -177,7 +177,7 @@ pub(crate) fn flush() {
 /// Dashboard summary: `(tracked_paths, forced_full_paths)`. Reads straight
 /// from disk so a separate process (the dashboard) sees the same state the
 /// MCP/CLI processes persisted (#505).
-pub(crate) fn disk_summary() -> (usize, usize) {
+pub fn disk_summary() -> (usize, usize) {
     let store = PathModeMemory::load_from_disk();
     let forced = store
         .paths

@@ -10,7 +10,7 @@ const BACKGROUND_TELEMETRY_TIMEOUT: std::time::Duration = std::time::Duration::f
 
 /// Whether this process may collect and send telemetry right now. Fails closed:
 /// an unreadable config never counts as consent.
-pub(crate) fn telemetry_send_eligible() -> bool {
+pub fn telemetry_send_eligible() -> bool {
     // In a test process only a thread that holds the test environment lock
     // knows whose data directory it resolves. The detached send of a tool
     // call's background tick runs on a thread of its own and resolved the
@@ -110,7 +110,7 @@ const DAEMON_TELEMETRY_INITIAL_DELAY: std::time::Duration = std::time::Duration:
 /// it also forwards the counters other processes persisted. Eligibility is
 /// re-checked on every tick, so an opt-out takes effect without a restart.
 #[cfg(feature = "http-server")]
-pub(crate) fn spawn_daemon_telemetry() {
+pub fn spawn_daemon_telemetry() {
     tokio::spawn(async {
         tokio::time::sleep(DAEMON_TELEMETRY_INITIAL_DELAY).await;
         loop {

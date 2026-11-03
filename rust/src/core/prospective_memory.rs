@@ -1,6 +1,6 @@
 use crate::core::gotcha_tracker::GotchaStore;
 
-pub(crate) fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
+pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
     let task_terms = tokenize(task);
     if task_terms.is_empty() {
         return Vec::new();
@@ -62,7 +62,7 @@ pub(crate) fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> 
         .collect()
 }
 
-fn tokenize(s: &str) -> Vec<String> {
+pub fn tokenize(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     for ch in s.chars() {

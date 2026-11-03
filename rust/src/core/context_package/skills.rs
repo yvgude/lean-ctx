@@ -28,7 +28,7 @@ use super::{keys, signing, verify};
 /// Everything `pack create --kind skills` produces: the signed bundle plus
 /// the facts the CLI discloses. No network I/O.
 #[derive(Debug)]
-pub(crate) struct SkillsPackPlan {
+pub struct SkillsPackPlan {
     pub name: String,
     pub version: String,
     /// The signed `.ctxpkg` document as verified by the self-check; the
@@ -74,7 +74,7 @@ fn packable(rel: &str, bytes: &[u8]) -> Result<(), String> {
 ///
 /// Collects every regular file under `dir` (hidden files/dirs and VCS
 /// metadata are skipped), sorted by relative path for deterministic bytes.
-pub(crate) fn build_skills_pack(
+pub fn build_skills_pack(
     dir: &Path,
     name: &str,
     version: &str,
@@ -291,7 +291,7 @@ pub(crate) fn materialize_documents(
 
 /// Store layout for materialized skills:
 /// `<store>/skills/<sanitized-name>/<version>/`.
-pub(crate) fn skills_dir(store_root: &Path, name: &str, version: &str) -> PathBuf {
+pub fn skills_dir(store_root: &Path, name: &str, version: &str) -> PathBuf {
     // `@ns/name` → `@ns__name`, mirroring `LocalRegistry::package_dir`.
     let safe_name = name.replace('/', "__");
     store_root.join("skills").join(safe_name).join(version)

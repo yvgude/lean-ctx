@@ -11,11 +11,11 @@ pub struct SessionState {
     /// Present only after admitted canonical adoption or validated local reload.
     /// Public legacy serializers remain projections, not a second authority.
     #[serde(skip)]
-    pub(crate) canonical_checkpoint: Option<Box<crate::core::context_checkpoint::CanonicalSession>>,
+    pub canonical_checkpoint: Option<Box<crate::core::context_checkpoint::CanonicalSession>>,
     #[serde(skip)]
-    pub(crate) save_gate: std::sync::Arc<super::save_outcome::SaveGate>,
+    pub save_gate: std::sync::Arc<super::save_outcome::SaveGate>,
     #[serde(skip)]
-    pub(crate) last_save_failed: bool,
+    pub last_save_failed: bool,
     pub id: String,
     pub version: u32,
     pub started_at: DateTime<Utc>,
@@ -77,7 +77,7 @@ pub struct SessionState {
     /// 5-change batch) still reaches disk — the dashboard reads session
     /// JSONs and otherwise showed "idle" for the whole batch window.
     #[serde(skip)]
-    pub(crate) last_flush: Option<std::time::Instant>,
+    pub last_flush: Option<std::time::Instant>,
 }
 
 /// Process-local state for an agent-controlled provider cache prefix.

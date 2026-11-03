@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Compiled {
+pub struct Compiled {
     schema_version: u32,
     pub rule_count: usize,
     pub redaction: BTreeMap<String, String>,
@@ -20,7 +20,7 @@ const CAPABILITY: super::exchange::Capability = super::exchange::Capability {
     tag: "protection",
 };
 
-pub(crate) fn compile(raw: &str) -> Result<Compiled> {
+pub fn compile(raw: &str) -> Result<Compiled> {
     if raw.len() > 128 * 1024 {
         return Err(InstallError::Policy);
     }

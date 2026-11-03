@@ -37,7 +37,7 @@
 //! admitted reader named one, and the word `withheld`, never a path, for a
 //! source that was not delivered (the reader shows a refusal in its place).
 //! `recovery` lists the recovery ids issued by this process that the
-//! prepared bytes carry ([`super::references`]): ids, never content.
+//! prepared bytes carry (`super::references`): ids, never content.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -65,7 +65,7 @@ const MAX_WORD_BYTES: usize = 128;
 /// CLI alike.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Transport {
+pub enum Transport {
     Mcp,
     Cli,
     Proxy,
@@ -85,7 +85,7 @@ pub(crate) enum Transport {
 /// The channel the released bytes are intended for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum Channel {
+pub enum Channel {
     /// The MCP result, returned by the handler to the transport layer.
     McpTransport,
     Stdout,
@@ -103,7 +103,7 @@ pub(crate) enum Channel {
 }
 
 /// What the caller knows about a delivery beyond its receipt.
-pub(crate) struct Delivery {
+pub struct Delivery {
     transport: Transport,
     endpoint: String,
     channel: Channel,
@@ -128,24 +128,24 @@ pub(crate) struct Delivery {
 /// Content-free: a closed state, a digest, a number and an instant.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OrgPolicyTrace {
+pub struct OrgPolicyTrace {
     /// `required`: a signed policy was enforced. `unpinned`: the requirement
     /// was lifted by a signed unpin — an organization decision, recorded
     /// although it leaves no floor.
-    pub(crate) state: OrgPolicyState,
+    pub state: OrgPolicyState,
     /// Digest of the accepted statement (the policy, or the unpin).
-    pub(crate) statement: Sha256Digest,
+    pub statement: Sha256Digest,
     /// The signed sequence of that statement: the policy version enforced.
     /// Not `pack_version`, which is the version word of the merged pack.
-    pub(crate) policy_version: u64,
+    pub policy_version: u64,
     /// The signed end of an enforced policy, as parsed and checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) valid_until: Option<String>,
+    pub valid_until: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum OrgPolicyState {
+pub enum OrgPolicyState {
     Required,
     Unpinned,
 }
@@ -215,13 +215,13 @@ impl TraceSidecarV1 {
 impl Delivery {
     /// The result of the MCP tool `tool`, to be returned to the MCP
     /// transport, under the call's policy snapshot.
-    pub(crate) fn mcp(tool: &str, snapshot: &CallSnapshot) -> Self {
+    pub fn mcp(tool: &str, snapshot: &CallSnapshot) -> Self {
         Self::of_call(Transport::Mcp, tool, Channel::McpTransport, snapshot)
     }
 
     /// The response frame of the tool-session call of `tool`, to be written
     /// to the session transport, under the call's policy snapshot.
-    pub(crate) fn tool_session(tool: &str, snapshot: &CallSnapshot) -> Self {
+    pub fn tool_session(tool: &str, snapshot: &CallSnapshot) -> Self {
         Self::of_call(
             Transport::ToolSession,
             tool,
@@ -232,7 +232,7 @@ impl Delivery {
 
     /// The wire document of the Engine-interface operation `operation`, to
     /// be written to stdout, under the invocation's policy snapshot.
-    pub(crate) fn engine_interface(operation: &str, snapshot: &CallSnapshot) -> Self {
+    pub fn engine_interface(operation: &str, snapshot: &CallSnapshot) -> Self {
         Self::of_call(
             Transport::EngineInterface,
             operation,
@@ -243,7 +243,7 @@ impl Delivery {
 
     /// Output of the CLI run of `tool`, to be written to `channel`, under
     /// the run's policy snapshot.
-    pub(crate) fn cli(tool: &str, channel: Channel, snapshot: &CallSnapshot) -> Self {
+    pub fn cli(tool: &str, channel: Channel, snapshot: &CallSnapshot) -> Self {
         Self::of_call(Transport::Cli, tool, channel, snapshot)
     }
 
@@ -324,13 +324,13 @@ impl Delivery {
 
     /// The digest of the prepared bytes where they are more than the
     /// delivered text: the whole MCP result (AP10-C3).
-    pub(crate) fn prepared_as(mut self, digest: Sha256Digest) -> Self {
+    pub fn prepared_as(mut self, digest: Sha256Digest) -> Self {
         self.released = Some(digest);
         self
     }
 
     /// The digest of the bytes as they were before the release point.
-    pub(crate) fn before_release(mut self, digest: Option<Sha256Digest>) -> Self {
+    pub fn before_release(mut self, digest: Option<Sha256Digest>) -> Self {
         self.before_release = digest;
         self
     }
@@ -369,7 +369,7 @@ fn admissible_word(gate: &ReleaseGate, word: &str, max_bytes: usize) -> bool {
 /// The reference of one itemized object, never more than its reader showed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum SourceRef {
+pub enum SourceRef {
     /// Delivered by an admitted reader under this path, relative to the
     /// project.
     Path(String),
@@ -382,24 +382,24 @@ pub(crate) enum SourceRef {
 
 /// Transformation and refusal counts of the whole delivery, by class.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Totals {
-    pub(crate) secrets_masked: u32,
-    pub(crate) pii_masked: u32,
-    pub(crate) injection_signals: u32,
-    pub(crate) withheld: u32,
-    pub(crate) not_fully_inspected: u32,
+pub struct Totals {
+    pub secrets_masked: u32,
+    pub pii_masked: u32,
+    pub injection_signals: u32,
+    pub withheld: u32,
+    pub not_fully_inspected: u32,
     /// Notes: statements about a source that stayed whole, with their code.
-    pub(crate) notes: u32,
+    pub notes: u32,
     /// Itemized decisions per typed reason code.
-    pub(crate) reasons: BTreeMap<String, u32>,
+    pub reasons: BTreeMap<String, u32>,
     /// Itemized decisions per required transformation kind.
-    pub(crate) transformations: BTreeMap<String, u32>,
+    pub transformations: BTreeMap<String, u32>,
 }
 
 /// One itemized object with the counts V1 holds only as receipt totals.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ObjectTrace {
-    pub(crate) object: Sha256Digest,
+pub struct ObjectTrace {
+    pub object: Sha256Digest,
     pub(crate) disposition: ContextDispositionV1,
     pub(crate) secrets_masked: u32,
     pub(crate) pii_masked: u32,
@@ -408,84 +408,84 @@ pub(crate) struct ObjectTrace {
     /// What the reader showed for this object; absent when no reader named
     /// it (not a project file, or the reference was not recorded).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) source: Option<SourceRef>,
+    pub source: Option<SourceRef>,
 }
 
 /// What was prepared for a channel BEFORE any byte left: the channel the
 /// bytes are intended for and the digest of exactly those bytes. Not a
 /// hand-over; see [`super::observed`] for what was observed afterwards.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ReleasePrepared {
-    pub(crate) channel: Channel,
-    pub(crate) bytes: Sha256Digest,
-    pub(crate) is_error: bool,
+pub struct ReleasePrepared {
+    pub channel: Channel,
+    pub bytes: Sha256Digest,
+    pub is_error: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct TraceSidecarV1 {
+pub struct TraceSidecarV1 {
     pub(crate) schema: String,
     pub(crate) version: u32,
     /// Canonical digest of the V1 receipt this record belongs to.
     pub(crate) receipt: Sha256Digest,
-    pub(crate) transport: Transport,
+    pub transport: Transport,
     /// The MCP tool, the tool id of the CLI command, the Engine operation,
     /// the proxy's provider label, or the host operation that dispatches an
     /// egress request itself.
-    pub(crate) endpoint: String,
+    pub endpoint: String,
     pub(crate) gateway_mode: GatewayModeV1,
     /// Hex digest of the policy snapshot taken at the call's entry (MCP,
     /// CLI). The receipt's own policy digest is that of the admissions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) policy_snapshot: Option<String>,
+    pub policy_snapshot: Option<String>,
     /// An admission of the call was decided under other gateway rules than
     /// that snapshot.
     #[serde(default)]
-    pub(crate) policy_diverged: bool,
+    pub policy_diverged: bool,
     /// Keyed reference of the caller the proxy told apart by its presented
     /// credential or gateway person ([`super::keyed`]); absent where
     /// the route tells no callers apart. The receipt's principal is the
     /// agent id the caller claimed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) principal_ref: Option<String>,
+    pub principal_ref: Option<String>,
     /// Keyed reference of the method, final URL and header set the request
     /// is bound to be sent with ([`super::keyed`]); proxy egress only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) request_head_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) pack_name: Option<String>,
+    pub pack_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) pack_version: Option<String>,
+    pub pack_version: Option<String>,
     /// The organization decision the delivery was made under. Absent when no
     /// verifier decision was observed — and when `org_policy_diverged`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) org_policy: Option<OrgPolicyTrace>,
+    pub org_policy: Option<OrgPolicyTrace>,
     /// The delivery's admissions rest on different organization decisions,
     /// or the observed one could not be recorded as a digest: none is named.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) org_policy_diverged: bool,
+    pub org_policy_diverged: bool,
     /// The delivery was admitted where no verified view was held to take an
     /// observation from, and no verifier was asked for it: no organization
     /// decision is available for this record. Not a statement that none was
     /// in force.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub(crate) org_policy_unavailable: bool,
+    pub org_policy_unavailable: bool,
     /// The delivery carried bytes no admission decided on.
-    pub(crate) unsourced: bool,
-    pub(crate) totals: Totals,
-    pub(crate) objects: Vec<ObjectTrace>,
-    pub(crate) objects_omitted: u32,
+    pub unsourced: bool,
+    pub totals: Totals,
+    pub objects: Vec<ObjectTrace>,
+    pub objects_omitted: u32,
     /// Source references that are not shown: not recorded by the capture
     /// (bound, not expressible) or not admissible as a sidecar word.
     #[serde(default)]
-    pub(crate) source_references_omitted: u32,
+    pub source_references_omitted: u32,
     /// Recovery ids issued by this process that the prepared bytes carry.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) recovery: Vec<String>,
+    pub recovery: Vec<String>,
     #[serde(default)]
-    pub(crate) recovery_omitted: u32,
+    pub recovery_omitted: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) before_release: Option<Sha256Digest>,
-    pub(crate) release_prepared: ReleasePrepared,
+    pub before_release: Option<Sha256Digest>,
+    pub release_prepared: ReleasePrepared,
 }
 
 fn serde_name<T: Serialize>(value: &T) -> String {
@@ -655,7 +655,7 @@ fn sidecar_path(dir: &Path, receipt: &Sha256Digest) -> PathBuf {
 
 /// A sidecar as it is found in the store.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum StoredTrace {
+pub enum StoredTrace {
     /// No record is filed under the receipt.
     Absent,
     /// A record is there but cannot be read as a sidecar of this schema.
@@ -671,7 +671,7 @@ pub(crate) enum StoredTrace {
 }
 
 /// The sidecar filed under `receipt`.
-pub(crate) fn load(receipt: &Sha256Digest) -> StoredTrace {
+pub fn load(receipt: &Sha256Digest) -> StoredTrace {
     match super::gateway_dir() {
         Some(dir) => load_in(&dir, receipt),
         None => StoredTrace::Absent,

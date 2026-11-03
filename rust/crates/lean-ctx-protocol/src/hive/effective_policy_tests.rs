@@ -119,11 +119,11 @@ fn every_member_of_the_schema_is_classified_once_as_its_x_enforcement_says() {
             for (name, prop) in props {
                 let member = format!("{section}.{name}");
                 match prop["x-enforcement"].as_str().unwrap() {
-                    "engine" => {
+                    "instance" => {
                         let mapped = ENGINE_MEMBERS.iter().find(|(m, _)| *m == member);
                         assert_eq!(
                             mapped.map(|(_, e)| *e),
-                            prop["x-engine"].as_str(),
+                            prop["x-instance"].as_str(),
                             "{member}"
                         );
                         assert!(!ADVISORY_MEMBERS.contains(&member.as_str()), "{member}");
@@ -139,7 +139,7 @@ fn every_member_of_the_schema_is_classified_once_as_its_x_enforcement_says() {
                             prop["x-server"].as_str().is_some_and(|s| !s.is_empty()),
                             "{member} names its server point"
                         );
-                        assert!(prop.get("x-engine").is_none(), "{member}");
+                        assert!(prop.get("x-instance").is_none(), "{member}");
                     }
                     "advisory" => {
                         assert!(ADVISORY_MEMBERS.contains(&member.as_str()), "{member}");

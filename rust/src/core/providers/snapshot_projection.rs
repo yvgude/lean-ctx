@@ -3,12 +3,12 @@
 use serde_json::Value;
 
 pub(crate) const MAX_SNAPSHOT_ARRAY_ITEMS: usize = 100;
-pub(crate) const MAX_SNAPSHOT_STRING_BYTES: usize = 4096;
-pub(crate) const MAX_SNAPSHOT_BODY_BYTES: usize = 32 * 1024;
+pub const MAX_SNAPSHOT_STRING_BYTES: usize = 4096;
+pub const MAX_SNAPSHOT_BODY_BYTES: usize = 32 * 1024;
 
 /// Apply the existing mandatory secret redactor to every string field before
 /// canonicalization.  This includes nested claims and caller-supplied filters.
-pub(crate) fn redact_and_bound(value: &mut Value, key: Option<&str>) -> bool {
+pub fn redact_and_bound(value: &mut Value, key: Option<&str>) -> bool {
     match value {
         Value::String(text) => {
             let max_bytes = if key == Some("body") {
@@ -45,7 +45,7 @@ pub(crate) fn redact_and_bound(value: &mut Value, key: Option<&str>) -> bool {
     }
 }
 
-pub(crate) fn truncate_utf8(value: &str, max_bytes: usize) -> String {
+pub fn truncate_utf8(value: &str, max_bytes: usize) -> String {
     if value.len() <= max_bytes {
         return value.to_owned();
     }

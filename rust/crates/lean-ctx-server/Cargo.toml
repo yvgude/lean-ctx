@@ -1,0 +1,169 @@
+# SPDX-License-Identifier: Apache-2.0
+# The LeanCTX MCP server and its tools on top of LeanCTX | OSS. Split upward out of the Engine: it depends on the Engine library
+# (package lean-ctx-engine, lib `lean_ctx`); crates above it depend on it.
+# Published in lockstep with the Engine.
+[package]
+name = "lean-ctx-server"
+version = "3.12.1"
+edition = "2024"
+license = "Apache-2.0"
+description = "The LeanCTX MCP server and its tools on top of LeanCTX | OSS."
+repository = "https://github.com/yvgude/lean-ctx"
+homepage = "https://leanctx.com"
+readme = "../../README.md"
+keywords = ["lean-ctx", "llm", "mcp", "context"]
+categories = ["development-tools"]
+# The moved integration tests, examples and benches read the Engine's tree
+# (rust/ and the repository): they cannot run from the published package.
+exclude = ["tests/", "examples/", "benches/"]
+
+[lib]
+name = "lean_ctx_server"
+path = "src/lib.rs"
+
+[features]
+# Same default set as the Engine: `cargo test/run -p lean-ctx-server` builds the Engine
+# with the features the composition root uses.
+default = [
+  "tree-sitter",
+  "embeddings",
+  "http-server",
+  "shape-xlat",
+  "secure-update",
+  "jemalloc",
+  "qdrant",
+  "pgvector",
+  "wasm",
+]
+embeddings = ["lean-ctx-engine/embeddings"]
+http-server = ["lean-ctx-hive/http-server", "lean-ctx-engine/http-server"]
+no-jail = ["lean-ctx-hooks/no-jail", "lean-ctx-engine/no-jail"]
+tree-sitter = ["lean-ctx-hooks/tree-sitter", "lean-ctx-engine/tree-sitter", "dep:tree-sitter"]
+enterprise = ["lean-ctx-engine/enterprise"]
+jemalloc = ["lean-ctx-engine/jemalloc"]
+dev-tools = ["lean-ctx-engine/dev-tools"]
+onnx = ["lean-ctx-engine/onnx"]
+ort-cuda = ["lean-ctx-engine/ort-cuda"]
+ort-webgpu = ["lean-ctx-engine/ort-webgpu"]
+ort-rocm = ["lean-ctx-engine/ort-rocm"]
+ort-directml = ["lean-ctx-engine/ort-directml"]
+ort-coreml = ["lean-ctx-engine/ort-coreml"]
+qdrant = ["lean-ctx-engine/qdrant"]
+pgvector = ["lean-ctx-engine/pgvector"]
+shape-xlat = ["lean-ctx-engine/shape-xlat"]
+secure-update = ["lean-ctx-engine/secure-update"]
+grammars-long-tail = ["lean-ctx-engine/grammars-long-tail"]
+grammar-ocaml = ["lean-ctx-engine/grammar-ocaml"]
+grammar-haskell = ["lean-ctx-engine/grammar-haskell"]
+grammar-julia = ["lean-ctx-engine/grammar-julia"]
+wasm = ["lean-ctx-engine/wasm"]
+# Test fixtures for the crates above (never enabled outside dev-dependencies).
+test-support = ["lean-ctx-engine/test-support", "lean-ctx-hive/test-support"]
+
+[dependencies]
+lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false }
+lean-ctx-hooks = { path = "../lean-ctx-hooks", version = "=3.12.1", default-features = false }
+lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.1", default-features = false }
+lean-ctx-ocla = { path = "../lean-ctx-ocla", version = "5.0.0" }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
+lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.1.0" }
+rmcp = { version = "2", features = [
+  "server",
+  "client",
+  "transport-io",
+  "transport-streamable-http-server",
+  "transport-child-process",
+  "transport-streamable-http-client-reqwest",
+  # OAuth 2.1 for HTTP MCP servers that require a browser login (#1391):
+  # discovery, dynamic client registration, PKCE, code exchange, refresh.
+  "auth",
+  # Form elicitation: ctx_shell asks the user to approve a command the shell
+  # allowlist does not name (server/shell_approval.rs).
+  "elicitation",
+] }
+tokio = { version = "1.52", features = [
+  "rt",
+  "rt-multi-thread",
+  "macros",
+  "io-std",
+  "io-util",
+  "net",
+  "sync",
+  "time",
+  "signal",
+  "process",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
+anyhow = "1.0"
+regex = "1.12"
+walkdir = "2.5"
+ignore = "0.4"
+tracing = "0.1"
+futures = "0.3"
+tokio-util = { version = "0.7", features = ["codec"] }
+dirs = "6.0"
+chrono = { version = "0.4", features = ["serde"] }
+toml = "1.1"
+similar = "3.1"
+rusqlite = { version = "0.39", features = ["bundled"] }
+tree-sitter = { version = "0.26", optional = true }
+base64 = "0.22"
+sha2 = "0.11"
+glob = "0.3"
+ed25519-dalek = { version = "2.2", features = ["rand_core"] }
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3.27"
+bytecount = "0.6"
+libc = "0.2"
+blake3 = "1.8"
+md-5 = "0.11"
+rayon = "1.12"
+lsp-types = "0.97"
+fs2 = "0.4"
+async-trait = "0.1.91"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_System_Threading",
+  "Win32_System_ProcessStatus",
+  "Win32_System_SystemInformation",
+  "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_System_Pipes",
+  "Win32_Storage_FileSystem",
+  "Wdk_Foundation",
+  "Wdk_Storage_FileSystem",
+  "Wdk_System_SystemServices",
+  "Win32_System_IO",
+] }
+
+[dev-dependencies]
+# The Engine's test helpers for this crate's unit tests (see core::test_mode).
+lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false, features = ["test-support"] }
+lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.1", default-features = false, features = ["test-support"] }
+jsonschema = { version = "0.46", default-features = false }
+serial_test = "3.5"
+axum = { version = "0.8", features = ["ws"] }
+
+[lints]
+workspace = true
+
+# Targets moved out of the Engine package: they use this crate.
+[[example]]
+name = "gen_mcp_manifest"
+path = "examples/gen_mcp_manifest.rs"
+required-features = ["dev-tools"]
+
+[[example]]
+name = "gen_docs"
+path = "examples/gen_docs.rs"
+required-features = ["dev-tools"]
+
+[[bench]]
+name = "efficiency"
+harness = false

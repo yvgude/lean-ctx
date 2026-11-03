@@ -329,13 +329,13 @@ fn admitted_in(open: Option<&Arc<AdmissionCapture>>, text: &str, remember: bool)
 /// gateway would mask or withhold is refused and recorded as a refusal in
 /// the open capture. For foreign text the project policy judges the
 /// original first and records its audit under the operation's tool label,
-/// as `tools::admitted_sources::admit_remote_text` does for a remote source.
+/// as `core::admitted_sources::admit_remote_text` does for a remote source.
 fn admit_bound_source(text: &str, origin: Origin) -> Result<()> {
     if let Origin::Foreign(tool) = origin
         && let Some(policy) = runtime::active()
     {
         let outcome = content::evaluate_text(text, &policy);
-        crate::server::policy_guard::audit_filter(tool, &outcome.audit, outcome.blocked);
+        crate::core::policy::audit_filter::audit_filter(tool, &outcome.audit, outcome.blocked);
         ensure!(!outcome.blocked, "checkpoint content withheld");
     }
     match crate::core::context_admission::admit_bound_context_source(text) {

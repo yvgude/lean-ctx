@@ -24,7 +24,7 @@ use super::types::{
 };
 
 /// Inputs for building a snapshot.
-pub(crate) struct SnapshotOptions {
+pub struct SnapshotOptions {
     /// Project root the snapshot is anchored to.
     pub project_root: String,
     /// Sign the snapshot with the publisher keypair (else just finalize the id).
@@ -61,7 +61,7 @@ pub(crate) fn build(opts: &SnapshotOptions) -> Result<ContextSnapshotV1, String>
 }
 
 /// Build, persist, and append the snapshot to the project's timeline.
-pub(crate) fn create(opts: &SnapshotOptions) -> Result<ContextSnapshotV1, String> {
+pub fn create(opts: &SnapshotOptions) -> Result<ContextSnapshotV1, String> {
     let snap = build(opts)?;
     super::timeline::write_snapshot(&opts.project_root, &snap)?;
     Ok(snap)

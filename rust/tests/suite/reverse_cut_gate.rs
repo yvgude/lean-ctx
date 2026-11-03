@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn repo_root() -> PathBuf {
-    let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let rust_dir = crate::engine_dir().to_path_buf();
     rust_dir.parent().map(PathBuf::from).unwrap_or(rust_dir)
 }
 
@@ -117,7 +117,7 @@ fn root_lean_md_seed_dir_is_removed() {
 /// that the lean-md addon would call back into must still be registered.
 #[test]
 fn lean_md_addon_outbound_tool_surface_survives() {
-    let reg = lean_ctx::server::registry::build_registry();
+    let reg = lean_ctx_server::server::registry::build_registry();
 
     let required_tools = [
         "ctx_read",
@@ -148,7 +148,7 @@ fn lean_md_addon_outbound_tool_surface_survives() {
 ///   - in-tree render tools are gone (this test)
 #[test]
 fn ctx_md_render_and_check_are_removed() {
-    let reg = lean_ctx::server::registry::build_registry();
+    let reg = lean_ctx_server::server::registry::build_registry();
 
     assert!(
         reg.get("ctx_md_render").is_none(),

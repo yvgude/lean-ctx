@@ -17,7 +17,7 @@ use super::{ProResult, ProjectScope, guard, host_usage, ledger, security_fields,
 
 /// The engine routes some inputs come from (`/api/knowledge-relations`,
 /// `/api/gotchas`, …), already bound to the dashboard's project.
-pub(crate) trait RouteSource {
+pub trait RouteSource {
     fn get(&self, path: &str) -> Option<Value>;
 }
 
@@ -470,10 +470,10 @@ pub(crate) fn inputs(
 /// `knowledge consolidate --dry-run` for the bound project.
 pub(crate) fn consolidate_preview(scope: &ProjectScope) -> ProResult<String> {
     use crate::core::consolidation_engine::ConsolidateOptions;
-    crate::tools::ctx_knowledge::consolidate_project_knowledge_with(
+    crate::core::knowledge_consolidate::consolidate_project_knowledge_with(
         &scope.root,
         &ConsolidateOptions::manual().into_dry_run(),
     )
-    .map(|report| crate::tools::ctx_knowledge::format_consolidation_report(&report))
+    .map(|report| crate::core::knowledge_consolidate::format_consolidation_report(&report))
     .map_err(|_| super::ProError::internal("Consolidation preview failed"))
 }

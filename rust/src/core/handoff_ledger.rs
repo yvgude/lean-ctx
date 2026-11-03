@@ -14,9 +14,9 @@ mod authority;
 #[path = "handoff_ledger_merge.rs"]
 mod merge;
 
-pub(crate) use authority::LedgerPart;
+pub use authority::LedgerPart;
 use authority::{BoundEntry, CURATED_TOOL, INCONSISTENT_CODE, LedgerAuthority, PartKind};
-pub(crate) use merge::{MAX_MERGE_INPUTS, MergeOutcome, merge_ledgers};
+pub use merge::{MAX_MERGE_INPUTS, MergeOutcome, merge_ledgers};
 
 pub(crate) const SCHEMA_VERSION: u32 = crate::core::contracts::HANDOFF_LEDGER_V1_SCHEMA_VERSION;
 const MAX_KNOWLEDGE_FACTS: usize = 50;
@@ -94,7 +94,7 @@ pub struct CuratedRef {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CreateLedgerInput {
+pub struct CreateLedgerInput {
     pub agent_id: Option<String>,
     pub client_name: Option<String>,
     pub project_root: Option<String>,
@@ -207,9 +207,7 @@ impl CopiedParts {
 /// The key is stored in its ledger, so it lives exactly as long as that
 /// ledger (`clear` removes both). A key needs a project: a project-less
 /// ledger is served to no one and could never be replayed.
-pub(crate) fn create_ledger(
-    input: CreateLedgerInput,
-) -> Result<(HandoffLedgerV1, PathBuf), String> {
+pub fn create_ledger(input: CreateLedgerInput) -> Result<(HandoffLedgerV1, PathBuf), String> {
     let CreateLedgerInput {
         agent_id,
         client_name,
@@ -627,7 +625,7 @@ fn keyed_ledger(
 
 /// The ledgers stored for `project_root`, newest first. Ledgers of other
 /// projects, and ledgers without a project, are not listed.
-pub(crate) fn list_ledgers(project_root: &str) -> Vec<PathBuf> {
+pub fn list_ledgers(project_root: &str) -> Vec<PathBuf> {
     let dir = handoffs_dir().ok();
     let Some(dir) = dir else {
         return Vec::new();
@@ -651,7 +649,7 @@ pub(crate) fn list_ledgers(project_root: &str) -> Vec<PathBuf> {
 /// at creation, has at least one bound part and was just served — also one
 /// with an originless part: the marker decides whether the ledger as a whole
 /// may register a lineage, not whether a restored part gets a binding.
-pub(crate) struct LedgerLineage {
+pub struct LedgerLineage {
     binding: crate::core::context_admission::stored::StoredBinding,
     /// The elements that were bound at creation; the record was found
     /// consistent with the stored ledger when it was loaded.
@@ -681,7 +679,7 @@ impl LedgerLineage {
     /// once was. More sources have to hold, never fewer; the cost is that a
     /// restored item is withheld when an unrelated file of the same ledger
     /// changes.
-    pub(crate) fn carry(
+    pub fn carry(
         &self,
         part: &LedgerPart<'_>,
         index: usize,
@@ -713,8 +711,15 @@ impl LedgerLineage {
 }
 
 /// A stored ledger for a reader that only renders it (`ctx_handoff show`).
-pub(crate) fn load_ledger(path: &Path) -> Result<HandoffLedgerV1, String> {
+pub fn load_ledger(path: &Path) -> Result<HandoffLedgerV1, String> {
     load_ledger_bound(path).map(|(ledger, _)| ledger)
+}
+
+/// The `ctx_handoff show` reply for a loaded ledger.
+pub fn format_show(path: &Path, ledger: &HandoffLedgerV1) -> String {
+    let mut out = serde_json::to_string_pretty(ledger).unwrap_or_else(|_| "{}".to_string());
+    out.push('\n');
+    format!("ctx_handoff show\n path: {}\n{}", path.display(), out)
 }
 
 /// A stored ledger, and the lineage its restored items inherit
@@ -723,11 +728,9 @@ pub(crate) fn load_ledger(path: &Path) -> Result<HandoffLedgerV1, String> {
 ///
 /// Every reader of a stored ledger (`show`, `pull`) passes here, and the
 /// ledger is re-authorized before it is parsed, rendered or handed on
-/// ([`serve_ledger`]: whole-ledger withholding). An `Err` is a typed,
+/// (`serve_ledger`: whole-ledger withholding). An `Err` is a typed,
 /// content-free refusal, returned before anything is written anywhere.
-pub(crate) fn load_ledger_bound(
-    path: &Path,
-) -> Result<(HandoffLedgerV1, Option<LedgerLineage>), String> {
+pub fn load_ledger_bound(path: &Path) -> Result<(HandoffLedgerV1, Option<LedgerLineage>), String> {
     load_served(path).map(|served| (served.ledger, served.lineage))
 }
 
@@ -872,7 +875,7 @@ pub(crate) fn compute_content_md5_for_ledger(ledger: &HandoffLedgerV1) -> String
 
 /// Stored ledgers that name no project: served to no project (AP05-G7).
 /// Read for the explicit `lean-ctx migrate legacy-context` adoption only.
-pub(crate) fn projectless_ledgers() -> Vec<(PathBuf, HandoffLedgerV1)> {
+pub fn projectless_ledgers() -> Vec<(PathBuf, HandoffLedgerV1)> {
     let Ok(rd) = handoffs_dir().and_then(|dir| std::fs::read_dir(dir).map_err(|e| e.to_string()))
     else {
         return Vec::new();
@@ -894,7 +897,7 @@ pub(crate) fn projectless_ledgers() -> Vec<(PathBuf, HandoffLedgerV1)> {
 /// Store a copy of the project-less ledger at `path` as a ledger of
 /// `project_root`, through the admission of a newly created ledger. The
 /// original stays untouched.
-pub(crate) fn adopt_projectless_ledger(path: &Path, project_root: &str) -> Result<PathBuf, String> {
+pub fn adopt_projectless_ledger(path: &Path, project_root: &str) -> Result<PathBuf, String> {
     let mut ledger: HandoffLedgerV1 = serde_json::from_str(
         &std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?,
     )
@@ -908,7 +911,7 @@ pub(crate) fn adopt_projectless_ledger(path: &Path, project_root: &str) -> Resul
 }
 
 /// Remove the ledgers of `project_root`; other projects' ledgers stay.
-pub(crate) fn clear_ledgers(project_root: &str) -> Result<u32, String> {
+pub fn clear_ledgers(project_root: &str) -> Result<u32, String> {
     let mut removed = 0u32;
     for p in list_ledgers(project_root) {
         if std::fs::remove_file(&p).is_ok() {
@@ -934,7 +937,7 @@ fn build_knowledge_excerpt(
     // this store's root, or the request's spelling of it. It is asked about
     // under both, with the running request as its reader — the facts
     // `ProjectKnowledge::delivery_filter` delivers, here with their sources.
-    let request = crate::tools::admitted_sources::request_root();
+    let request = crate::core::admitted_sources::request_root();
     let reader = Some(request.as_str()).filter(|root| !root.is_empty());
     let one_name = reader.is_none_or(|root| root == knowledge.project_root);
     let mut facts = Vec::new();
@@ -1013,14 +1016,14 @@ fn ledger_content_md5(ledger: &HandoffLedgerV1) -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct HandoffPackage {
+pub struct HandoffPackage {
     pub ledger: HandoffLedgerV1,
     pub intent: Option<IntentSnapshot>,
     pub context_snapshot: Option<ContextSnapshot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct IntentSnapshot {
+pub struct IntentSnapshot {
     pub task_type: String,
     pub scope: String,
     pub targets: Vec<String>,
@@ -1030,7 +1033,7 @@ pub(crate) struct IntentSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ContextSnapshot {
+pub struct ContextSnapshot {
     pub window_size: usize,
     pub tokens_used: usize,
     pub tokens_saved: usize,
@@ -1038,14 +1041,14 @@ pub(crate) struct ContextSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct LoadedFileInfo {
+pub struct LoadedFileInfo {
     pub path: String,
     pub mode: String,
     pub tokens: usize,
 }
 
 impl HandoffPackage {
-    pub(crate) fn build(
+    pub fn build(
         ledger: HandoffLedgerV1,
         intent: Option<&super::intent_engine::StructuredIntent>,
         context: Option<&crate::core::context_ledger::ContextLedger>,
@@ -1087,7 +1090,7 @@ impl HandoffPackage {
         }
     }
 
-    pub(crate) fn format_compact(&self) -> String {
+    pub fn format_compact(&self) -> String {
         let mut out = String::new();
 
         out.push_str("--- HANDOFF ---\n");

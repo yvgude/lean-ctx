@@ -94,14 +94,14 @@ pub(crate) fn unchanged_bytes(bytes: &[u8]) -> Result<(), Refusal> {
 }
 
 /// A package whose manifest text and content passed the current admission
-/// unchanged. The only constructor is [`AdmittedPackage::admit`], so holding
+/// unchanged. The only constructor is `AdmittedPackage::admit`, so holding
 /// one is the proof: the loader takes this type and nothing else, and no
 /// caller can apply package content by forgetting the admission call.
 ///
 /// It is a decision of the moment it was made. Hold it for one operation
 /// (load, export, render) and do not keep it across a policy change.
 #[derive(Debug)]
-pub(crate) struct AdmittedPackage {
+pub struct AdmittedPackage {
     manifest: PackageManifest,
     content: PackageContent,
 }
@@ -241,25 +241,21 @@ fn blobs(layer: &'static str, blobs: &[DocumentBlob]) -> Result<(), PackageRefus
     Ok(())
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support {
+    //! Package fixtures shared by these tests and the composition root's tests.
     use chrono::Utc;
     use sha2::{Digest, Sha256};
 
-    use super::super::content::{DocumentsContent, SessionFinding, SessionLayer};
+    use super::super::content::{PackageContent, SessionFinding, SessionLayer};
     use super::super::manifest::{
         CompatibilitySpec, PackageIntegrity, PackageKind, PackageLayer, PackageManifest,
         PackageProvenance, PackageStats,
     };
-    use super::super::registry::LocalRegistry;
-    use super::*;
 
-    pub(crate) const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
-    const BLOCK_CONFIDENTIAL: &str = "name = \"ctxpkg-admission-test\"\nversion = \"1.0.0\"\n\
-         description = \"test\"\n[filters]\nclassification = \"block\"\n\
-         blocked_labels = [\"CONFIDENTIAL\"]\n";
+    pub const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
 
-    pub(crate) fn session(finding: &str) -> PackageContent {
+    pub fn session(finding: &str) -> PackageContent {
         PackageContent {
             session: Some(SessionLayer {
                 task_description: Some("review the release notes".to_string()),
@@ -284,7 +280,7 @@ pub(crate) mod tests {
     }
 
     /// A manifest whose integrity binds exactly `content`.
-    pub(crate) fn manifest(name: &str, content: &PackageContent) -> PackageManifest {
+    pub fn manifest(name: &str, content: &PackageContent) -> PackageManifest {
         let compact = serde_json::to_string(content).expect("content");
         let content_hash = hex(compact.as_bytes());
         PackageManifest {
@@ -321,6 +317,53 @@ pub(crate) mod tests {
             redistributable: None,
         }
     }
+
+    #[derive(serde::Serialize)]
+    pub(super) struct Bundle<'a> {
+        manifest: &'a PackageManifest,
+        content: &'a PackageContent,
+    }
+
+    /// A legacy-named package file binding exactly `content`; returns its
+    /// bytes.
+    pub fn legacy_file(path: &std::path::Path, name: &str, content: &PackageContent) -> Vec<u8> {
+        let manifest = manifest(name, content);
+        let bytes = serde_json::to_vec_pretty(&Bundle {
+            manifest: &manifest,
+            content,
+        })
+        .expect("bundle");
+        std::fs::write(path, &bytes).expect("legacy package");
+        bytes
+    }
+
+    /// [`legacy_file`], signed with this machine's package key (so it is the
+    /// author's own package, not a received one): the network doors take
+    /// signed packages only (GHSA-rxv5-4c3x-g4q6).
+    pub fn signed_file(path: &std::path::Path, name: &str, content: &PackageContent) -> Vec<u8> {
+        let mut manifest = manifest(name, content);
+        let (key, _) = super::super::keys::load_or_create().expect("signing key");
+        super::super::signing::sign_package(&mut manifest, content, &key);
+        let bytes = serde_json::to_vec_pretty(&Bundle {
+            manifest: &manifest,
+            content,
+        })
+        .expect("bundle");
+        std::fs::write(path, &bytes).expect("signed package");
+        bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::content::DocumentsContent;
+    use super::super::registry::LocalRegistry;
+    use super::test_support::{AWS_KEY, legacy_file, manifest, session};
+    use super::*;
+
+    const BLOCK_CONFIDENTIAL: &str = "name = \"ctxpkg-admission-test\"\nversion = \"1.0.0\"\n\
+         description = \"test\"\n[filters]\nclassification = \"block\"\n\
+         blocked_labels = [\"CONFIDENTIAL\"]\n";
 
     fn block_confidential() -> crate::core::policy::runtime::TestPolicyOverride {
         let policy = crate::core::policy::load(BLOCK_CONFIDENTIAL).expect("policy");
@@ -492,49 +535,6 @@ pub(crate) mod tests {
         assert!(!store.path().join("keyed-pkg-1.0.0").exists());
         assert!(registry.list().expect("index").is_empty());
         assert!(registry.load_package("keyed-pkg", "1.0.0").is_err());
-    }
-
-    #[derive(serde::Serialize)]
-    struct Bundle<'a> {
-        manifest: &'a PackageManifest,
-        content: &'a PackageContent,
-    }
-
-    /// A legacy-named package file binding exactly `content`; returns its
-    /// bytes.
-    pub(crate) fn legacy_file(
-        path: &std::path::Path,
-        name: &str,
-        content: &PackageContent,
-    ) -> Vec<u8> {
-        let manifest = manifest(name, content);
-        let bytes = serde_json::to_vec_pretty(&Bundle {
-            manifest: &manifest,
-            content,
-        })
-        .expect("bundle");
-        std::fs::write(path, &bytes).expect("legacy package");
-        bytes
-    }
-
-    /// [`legacy_file`], signed with this machine's package key (so it is the
-    /// author's own package, not a received one): the network doors take
-    /// signed packages only (GHSA-rxv5-4c3x-g4q6).
-    pub(crate) fn signed_file(
-        path: &std::path::Path,
-        name: &str,
-        content: &PackageContent,
-    ) -> Vec<u8> {
-        let mut manifest = manifest(name, content);
-        let (key, _) = super::super::keys::load_or_create().expect("signing key");
-        super::super::signing::sign_package(&mut manifest, content, &key);
-        let bytes = serde_json::to_vec_pretty(&Bundle {
-            manifest: &manifest,
-            content,
-        })
-        .expect("bundle");
-        std::fs::write(path, &bytes).expect("signed package");
-        bytes
     }
 
     /// The manifest's own text is caller text too: it is listed, indexed and

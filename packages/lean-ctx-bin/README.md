@@ -1,6 +1,6 @@
 # lean-ctx-bin
 
-Pre-built binary distribution of **LeanCTX Engine**, the open-source runtime for [LeanCTX](https://github.com/yvgude/lean-ctx), the **Context Gateway for AI Systems**.
+Pre-built binary distribution of **LeanCTX | OSS**, the open-source runtime for [LeanCTX](https://github.com/yvgude/lean-ctx), the **Context Gateway for AI Systems**.
 
 **Control what your AI can see.** Select relevant context, apply supported access and content controls, retain local task and knowledge records, and inspect evidence of observed context operations: **Select · Control · Learn · Prove**. The [LeanCTX SDK](https://github.com/Thinkery-AG/leanctx-sdk) provides the separate application integration surface.
 
@@ -52,7 +52,7 @@ engine install still succeeds. Skip it with `LEAN_CTX_NO_COCKPIT=1`.
 
 ## License
 
-This npm package and the LeanCTX Engine (`lean-ctx`) are licensed under
+This npm package and LeanCTX | OSS (`lean-ctx`) are licensed under
 Apache-2.0. The LeanCTX Cockpit binary is not open source: it is free to use,
 including commercially, under the LeanCTX Cockpit EULA
 (`LicenseRef-LeanCTX-Cockpit-EULA`, shipped inside the Cockpit package as

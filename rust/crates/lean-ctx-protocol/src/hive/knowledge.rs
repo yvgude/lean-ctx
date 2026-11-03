@@ -5,7 +5,6 @@
 //!
 //! - `GET /v1/vaults/{vault_id}/knowledge` (`If-None-Match: "<revision>"`)
 //!   → [`KnowledgeRevisionV1`] with `ETag: "<revision>"`, or 304
-//! - `GET /v1/vaults/{vault_id}/knowledge/revisions?after=&limit=` → [`RevisionListV1`]
 //! - `POST /v1/vaults/{vault_id}/proposals` [`DraftProposalV1`] → [`ProposalAckV1`];
 //!   `Idempotency-Key` = the engine's outbox item id. A draft whose content is
 //!   identical to an existing engine draft of the vault maps to that proposal
@@ -13,15 +12,6 @@
 //! - `GET /v1/vaults/{vault_id}/proposals?state=&mine=1` → [`ProposalListV1`]
 //! - 1.6: `GET /v1/vaults/{vault_id}/proposals/{number}` → [`ProposalV1`]:
 //!   the draft exactly as its engine sent it, for engine-side review
-//! - `PUT /v1/vaults/{vault_id}/knowledge` [`KnowledgePutRequestV1`] →
-//!   [`KnowledgeRevisionV1`], or 409 `revision_conflict`; needs `knowledge.merge`.
-//!   The new revision is always `expected_revision + 1`. 1.6:
-//!   `merged_proposals` marks those proposals
-//!   merged at the new revision in the same transaction
-//!
-//! - 1.9: `GET /v1/vaults/{vault_id}/knowledge/diff?from=&to=` →
-//!   [`RevisionDiffV1`]: the ops from one released revision to another, so
-//!   an engine with a large document fetches deltas
 //!
 //! Revision 0 is the empty document. A draft becomes a revision only after
 //! review in Hive.
@@ -30,31 +20,24 @@
 //! produced (no person reviewed it) starts `quarantined`. `GET …/knowledge`
 //! delivers the newest *released* revision (`revision` is that delivered
 //! head) and counts the quarantined revisions after it in
-//! `quarantined_after`; `?revision=N` reads a quarantined one for review
-//! (right `knowledge.merge`). An engine never hands quarantined content to
-//! any agent except for that review. A person releases it, or rolls it back,
-//! within 24 hours. A rollback appends a new revision with the document
-//! of an earlier one (`rolls_back`).
+//! `quarantined_after`. An engine never hands quarantined content to any
+//! agent.
 //!
-//! A revision, a patch and a put carry their content in the clear.
+//! A revision and a patch carry their content in the clear.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use super::anchor::{CodeAnchorV1, validate_anchors};
-use super::{require_schema, validate_hex64, validate_id, validate_text};
+use super::{require_schema, validate_id, validate_text};
 use crate::{UtcTimestamp, ValidationError};
 
 pub const KNOWLEDGE_REVISION_SCHEMA: &str = "leanctx.hive.knowledge-revision/v1";
-pub const REVISION_LIST_SCHEMA: &str = "leanctx.hive.revision-list/v1";
 pub const DRAFT_PROPOSAL_SCHEMA: &str = "leanctx.hive.proposal/v1";
 pub const PROPOSAL_ACK_SCHEMA: &str = "leanctx.hive.proposal-ack/v1";
 pub const PROPOSAL_LIST_SCHEMA: &str = "leanctx.hive.proposal-list/v1";
-pub const KNOWLEDGE_PUT_REQUEST_SCHEMA: &str = "leanctx.hive.knowledge-put-request/v1";
 /// 1.6: one proposal with its draft.
 pub const PROPOSAL_VIEW_SCHEMA: &str = "leanctx.hive.proposal-view/v1";
-/// Most proposals one revision may merge.
-pub const MAX_MERGED_PROPOSALS: usize = 50;
 
 /// Format id of the knowledge document (the package format keeps its name).
 pub const RESEARCH_CONTEXT_FORMAT: &str = "ctxpkg.research-context.v1";
@@ -82,8 +65,7 @@ pub const RELATION_TYPES: [&str; 6] = [
 ];
 /// Ops per proposal patch.
 pub const MAX_PATCH_OPS: usize = 50;
-/// 1.9: 5,000 facts (wiki scale); engines fetch deltas with
-/// [`RevisionDiffV1`].
+/// 1.9: 5,000 facts (wiki scale).
 pub const MAX_FACTS: usize = 5000;
 pub const MAX_RELATIONS: usize = 15_000;
 pub const MAX_REFERENCES: usize = 50_000;
@@ -95,8 +77,6 @@ pub const MAX_KNOWLEDGE_BODY_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_PAGES: usize = 500;
 pub const MAX_PAGE_ITEMS: usize = 200;
 pub const MAX_PROSE_CHARS: usize = 4000;
-/// Revisions per page.
-pub const MAX_REVISIONS_PAGE: usize = 100;
 
 /// One fact.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -396,23 +376,7 @@ impl ResearchContextDocumentV1 {
 impl PatchOpV1 {
     /// Checks of one op on its own; applying it is the engine's/service's job.
     pub fn validate(&self) -> Result<(), ValidationError> {
-        self.check(false)
-    }
-
-    /// 1.9: an op Hive wrote ([`RevisionDiffV1`]); its facts carry their
-    /// full `from_contributions` in the target revision.
-    pub fn validate_authored(&self) -> Result<(), ValidationError> {
-        self.check(true)
-    }
-
-    fn check(&self, authored: bool) -> Result<(), ValidationError> {
-        let fact_ok = |fact: &FactV1| {
-            if authored {
-                fact.validate()
-            } else {
-                validate_patch_fact(fact)
-            }
-        };
+        let fact_ok = validate_patch_fact;
         match self {
             Self::AddFact { fact } => fact_ok(fact),
             Self::UpdateFact { id, fact } => {
@@ -539,70 +503,6 @@ impl KnowledgeRevisionV1 {
                     "fact_states must be sorted by fact without repeats",
                 ));
             }
-        }
-        Ok(())
-    }
-}
-
-/// One entry of the revision history.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RevisionSummaryV1 {
-    pub revision: u64,
-    pub created_at: UtcTimestamp,
-    /// Proposal number the revision merged, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proposal: Option<u64>,
-    /// `sha256` hex of the canonical document.
-    pub digest: String,
-    /// 1.9.
-    #[serde(default, skip_serializing_if = "RevisionState::is_released")]
-    pub state: RevisionState,
-    /// 1.9: the earlier revision whose document this one restores.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rolls_back: Option<u64>,
-    /// 1.9 (ctxpkg ids): the document tree and the revision commit
-    /// (`hive::ctxpkg`), computed by Hive over the stored document; clear
-    /// vaults only. An engine whose own ids differ treats the revision as
-    /// altered.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ctxpkg_tree: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ctxpkg_commit: Option<String>,
-}
-
-/// Response of `GET /v1/vaults/{vault_id}/knowledge/revisions`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RevisionListV1 {
-    pub schema: String,
-    pub vault_id: String,
-    pub revisions: Vec<RevisionSummaryV1>,
-    /// Pass as `after` for the next page; absent on the last page.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next_after: Option<u64>,
-}
-
-impl RevisionListV1 {
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        require_schema(&self.schema, REVISION_LIST_SCHEMA)?;
-        super::validate_vault_id(&self.vault_id)?;
-        if self.revisions.len() > MAX_REVISIONS_PAGE {
-            return Err(ValidationError::new("revision page is too long"));
-        }
-        let mut previous = None;
-        for summary in &self.revisions {
-            validate_hex64(&summary.digest, "digest")?;
-            if summary
-                .rolls_back
-                .is_some_and(|target| target >= summary.revision)
-            {
-                return Err(ValidationError::new(
-                    "a rollback restores an earlier revision",
-                ));
-            }
-            if previous.is_some_and(|previous| summary.revision <= previous) {
-                return Err(ValidationError::new("revisions must ascend"));
-            }
-            previous = Some(summary.revision);
         }
         Ok(())
     }
@@ -786,24 +686,6 @@ pub struct ProposalListV1 {
     pub proposals: Vec<ProposalSummaryV1>,
 }
 
-/// `PUT /v1/vaults/{vault_id}/knowledge`: compare-and-set a whole revision.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct KnowledgePutRequestV1 {
-    pub schema: String,
-    pub expected_revision: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub document: Option<ResearchContextDocumentV1>,
-    /// 1.6: proposals this revision merges (draft or open ones, ≤ 50,
-    /// unique); Hive marks them merged at the new revision.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub merged_proposals: Vec<u64>,
-    /// 1.9: this revision restores the document of that earlier revision
-    /// (a rollback); it merges no proposals.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rolls_back: Option<u64>,
-}
-
 /// Response of `GET /v1/vaults/{vault_id}/proposals/{number}` (1.6).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProposalV1 {
@@ -828,89 +710,6 @@ impl ProposalV1 {
     pub fn validate(&self) -> Result<(), ValidationError> {
         require_schema(&self.schema, PROPOSAL_VIEW_SCHEMA)?;
         self.draft.validate()
-    }
-}
-
-impl KnowledgePutRequestV1 {
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        require_schema(&self.schema, KNOWLEDGE_PUT_REQUEST_SCHEMA)?;
-        if self.merged_proposals.len() > MAX_MERGED_PROPOSALS
-            || self.merged_proposals.iter().collect::<HashSet<_>>().len()
-                != self.merged_proposals.len()
-        {
-            return Err(ValidationError::new(format!(
-                "merged_proposals lists at most {MAX_MERGED_PROPOSALS} distinct proposals"
-            )));
-        }
-        if let Some(target) = self.rolls_back {
-            if target >= self.expected_revision {
-                return Err(ValidationError::new(
-                    "a rollback restores an earlier revision",
-                ));
-            }
-            if !self.merged_proposals.is_empty() {
-                return Err(ValidationError::new("a rollback merges no proposals"));
-            }
-        }
-        self.document
-            .as_ref()
-            .ok_or_else(|| ValidationError::new("a put carries the document"))?
-            .validate()
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum KnowledgeEventKind {
-    /// A person merged, or released a quarantined revision.
-    Released,
-    /// A threshold merged a revision into quarantine (reviewers only act).
-    Quarantined,
-    /// A rollback revision undid `revision`.
-    RolledBack,
-    #[serde(other)]
-    Unknown,
-}
-
-/// 1.9 `knowledge.event` (service → client), on the vault channel: the
-/// engine fetches the delivered head (or the quarantined revision, to
-/// review it) over HTTP.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct KnowledgeEventV1 {
-    pub channel: String,
-    pub seq: u64,
-    pub revision: u64,
-    pub event: KnowledgeEventKind,
-    /// With `quarantined`: when the quarantine ends in a task (24 hours).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub review_by: Option<UtcTimestamp>,
-    pub server_time: UtcTimestamp,
-}
-
-pub const REVISION_DIFF_SCHEMA: &str = "leanctx.hive.revision-diff/v1";
-
-/// 1.9: `GET /v1/vaults/{vault_id}/knowledge/diff?from=&to=`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RevisionDiffV1 {
-    pub schema: String,
-    pub vault_id: String,
-    pub from: u64,
-    pub to: u64,
-    /// Applied in order to revision `from`, they give revision `to` exactly
-    /// (its digest), credits included: unlike patches, these ops carry
-    /// `from_contributions`, the fact's full list in `to`; applying
-    /// `update_fact` keeps earlier credits and appends the missing ones.
-    pub ops: Vec<PatchOpV1>,
-}
-
-impl RevisionDiffV1 {
-    pub fn validate(&self) -> Result<(), ValidationError> {
-        require_schema(&self.schema, REVISION_DIFF_SCHEMA)?;
-        super::validate_vault_id(&self.vault_id)?;
-        if self.to <= self.from {
-            return Err(ValidationError::new("a diff goes forward"));
-        }
-        self.ops.iter().try_for_each(PatchOpV1::validate_authored)
     }
 }
 

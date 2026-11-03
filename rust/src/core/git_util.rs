@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 
 /// Returns `true` when the working tree at `project_root` has uncommitted
 /// changes. Any git failure (not a repo, git absent) reports `false`.
-pub(crate) fn git_dirty(project_root: &Path) -> bool {
+pub fn git_dirty(project_root: &Path) -> bool {
     let out = Command::new("git")
         .args(["status", "--porcelain"])
         .current_dir(project_root)
@@ -25,7 +25,7 @@ pub(crate) fn git_dirty(project_root: &Path) -> bool {
 
 /// Runs `git <args>` in `project_root` and returns trimmed stdout, or `None`
 /// on non-zero exit, non-UTF-8 output, empty output, or spawn failure.
-pub(crate) fn git_out(project_root: &Path, args: &[&str]) -> Option<String> {
+pub fn git_out(project_root: &Path, args: &[&str]) -> Option<String> {
     let out = Command::new("git")
         .args(args)
         .current_dir(project_root)

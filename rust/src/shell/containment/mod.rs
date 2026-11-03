@@ -36,27 +36,61 @@
 
 use std::time::{Duration, Instant};
 
+/// Whether helpers and guards start as this test harness's ignored helper
+/// test (`tests::HELPER_TEST`) instead of the hidden modes of the `lean-ctx`
+/// binary. Always in the Engine's unit tests; under `test-support` only in the
+/// server crate's unit-test harness, which mounts that test at the same path —
+/// never in the `lean-ctx` binary that integration tests spawn.
+#[cfg(any(test, feature = "test-support"))]
+fn harness_helper() -> bool {
+    #[cfg(test)]
+    {
+        true
+    }
+    #[cfg(not(test))]
+    {
+        static HARNESS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *HARNESS.get_or_init(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .is_some_and(|name| name.starts_with("lean_ctx_server-"))
+        })
+    }
+}
+
 mod gate;
 mod guard;
 mod spawn_helper;
 mod spawner;
 mod starter;
-#[cfg(test)]
-pub(crate) mod tests;
+#[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(not(test), allow(dead_code, unused_imports, clippy::unwrap_used))]
+pub mod tests;
 mod wire;
 
-pub(crate) use gate::{Refusal, start_behind_guard};
-#[cfg(test)]
-pub(crate) use guard::force_outcome_for_test;
-pub(crate) use guard::{CallGuard, GuardOutcome};
+pub use gate::{Refusal, start_behind_guard};
+#[cfg(any(test, feature = "test-support"))]
+pub use guard::force_outcome_for_test;
+pub use guard::{CallGuard, GuardOutcome};
 pub(crate) use spawn_helper::lead_new_session;
-pub(crate) use spawner::{HelpedChild, HelperSpawn, shutdown_spawn_helper, spawn_shell};
+pub use spawner::{HelpedChild, HelperSpawn, shutdown_spawn_helper, spawn_shell};
 
 /// Whether this process is the `lean-ctx` binary, which is what can be
 /// started as a guard. Set by [`dispatch_hidden_mode`], the first thing the
 /// binary's entry point calls; true in this crate's own unit tests, whose
 /// binary carries a helper that runs the same guard.
 static GUARD_HOST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(cfg!(test));
+
+/// [`GUARD_HOST`], or the server crate's unit-test harness, whose binary
+/// carries the same helper test (`harness_helper`).
+fn guard_host() -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    if harness_helper() {
+        return true;
+    }
+    GUARD_HOST.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// Starts an Engine child that is not an agent-tool call (bounded captures,
 /// the sandbox runner, the credential reader) behind its guard: the program
@@ -78,7 +112,7 @@ static GUARD_HOST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool
 pub(crate) fn start_guarded_child(
     command: &mut std::process::Command,
 ) -> Result<(std::process::Child, Option<CallGuard>), Refusal> {
-    if !GUARD_HOST.load(std::sync::atomic::Ordering::Relaxed) {
+    if !guard_host() {
         note_no_guard_host();
         return command
             .spawn()
@@ -121,28 +155,28 @@ pub(crate) const EXIT_CONTAINMENT: i32 = 70;
 
 /// What a caller is told when a call's process group could not be confirmed
 /// as ended. Fixed text: no process id, no time, nothing of the run (#498).
-pub(crate) const END_NOTICE: &str =
+pub const END_NOTICE: &str =
     "[lean-ctx: processes started by this command could not be confirmed as ended]";
 
 /// What a caller is told when an MCP shell command ran without the spawn
 /// helper: nothing would have ended it had lean-ctx died meanwhile. Fixed
 /// text, as above.
-pub(crate) const HELPER_NOTICE: &str = "[lean-ctx: this command ran without the process helper; had lean-ctx stopped, nothing would have ended it]";
+pub const HELPER_NOTICE: &str = "[lean-ctx: this command ran without the process helper; had lean-ctx stopped, nothing would have ended it]";
 
 /// What a caller is told when the spawn helper went away without saying
 /// whether it had started the command. Nothing seen afterwards can prove
 /// that a command did not run, so it is never started a second time. Fixed
 /// text, as above.
-pub(crate) const UNCLEAR_NOTICE: &str =
+pub const UNCLEAR_NOTICE: &str =
     "[lean-ctx: this command may or may not have run; it was not repeated]";
 
 /// What a caller is told when a command finished and the word that lets what
 /// it left running go on could not be handed to the spawn helper: a helper
 /// that never read it ends those processes. Fixed text, as above.
-pub(crate) const RELEASE_NOTICE: &str = "[lean-ctx: this command finished, but lean-ctx could not confirm that its background processes were left running]";
+pub const RELEASE_NOTICE: &str = "[lean-ctx: this command finished, but lean-ctx could not confirm that its background processes were left running]";
 
 /// The notice for a guard outcome; `None` when the group is known to be empty.
-pub(crate) fn end_notice(outcome: GuardOutcome) -> Option<&'static str> {
+pub fn end_notice(outcome: GuardOutcome) -> Option<&'static str> {
     (outcome != GuardOutcome::Ended).then_some(END_NOTICE)
 }
 
@@ -152,7 +186,7 @@ const END_BUDGET: Duration = Duration::from_secs(5);
 /// Runs the hidden mode this invocation asks for, if any, and returns its exit
 /// code. Called before any other start-up work: no configuration, no data
 /// directory, no logging, no telemetry.
-pub(crate) fn dispatch_hidden_mode() -> Option<i32> {
+pub fn dispatch_hidden_mode() -> Option<i32> {
     GUARD_HOST.store(true, std::sync::atomic::Ordering::Relaxed);
     let mut args = std::env::args_os();
     let _program = args.next();
@@ -231,7 +265,7 @@ pub(crate) fn end_pinned_group(group: libc::pid_t, budget: Duration) -> GroupEnd
 
 /// How many live (not zombie) processes are members of `group`, read from the
 /// process table. `None` when it cannot be read. Sends no signal.
-pub(crate) fn live_members(group: libc::pid_t) -> Option<usize> {
+pub fn live_members(group: libc::pid_t) -> Option<usize> {
     let ps = ["/bin/ps", "/usr/bin/ps"]
         .into_iter()
         .find(|path| std::path::Path::new(path).is_file())

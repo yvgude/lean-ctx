@@ -13,13 +13,13 @@ const MAX_BUNDLE_BYTES: usize = 250_000;
 const MAX_NEXT_STEPS: usize = 25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BundlePrivacyV1 {
+pub enum BundlePrivacyV1 {
     Redacted,
     Full,
 }
 
 impl BundlePrivacyV1 {
-    pub(crate) fn parse(s: Option<&str>) -> Self {
+    pub fn parse(s: Option<&str>) -> Self {
         match s.unwrap_or("redacted").trim().to_lowercase().as_str() {
             "full" => Self::Full,
             _ => Self::Redacted,
@@ -28,7 +28,7 @@ impl BundlePrivacyV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct CcpSessionBundleV1 {
+pub struct CcpSessionBundleV1 {
     pub schema_version: u32,
     pub exported_at: DateTime<Utc>,
     pub project: ProjectIdentityV1,
@@ -38,13 +38,13 @@ pub(crate) struct CcpSessionBundleV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct ProjectIdentityV1 {
+pub struct ProjectIdentityV1 {
     pub project_root_hash: Option<String>,
     pub project_identity_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PolicyIdentityV1 {
+pub struct PolicyIdentityV1 {
     pub name: String,
     /// BLAKE3 hex; the serialized name keeps its historical `_md5` suffix.
     #[serde(rename = "policy_md5")]
@@ -52,7 +52,7 @@ pub(crate) struct PolicyIdentityV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct SessionExcerptV1 {
+pub struct SessionExcerptV1 {
     pub id: String,
     pub version: u32,
     pub started_at: DateTime<Utc>,
@@ -74,10 +74,7 @@ pub(crate) struct SessionExcerptV1 {
     pub compression_level: String,
 }
 
-pub(crate) fn build_bundle_v1(
-    session: &SessionState,
-    privacy: BundlePrivacyV1,
-) -> CcpSessionBundleV1 {
+pub fn build_bundle_v1(session: &SessionState, privacy: BundlePrivacyV1) -> CcpSessionBundleV1 {
     let role_name = crate::core::roles::active_role_name();
     let role = crate::core::roles::active_role();
     let profile_name = crate::core::profiles::active_profile_name();
@@ -183,7 +180,7 @@ pub(crate) fn build_bundle_v1(
     }
 }
 
-pub(crate) fn serialize_bundle_v1_pretty(bundle: &CcpSessionBundleV1) -> Result<String, String> {
+pub fn serialize_bundle_v1_pretty(bundle: &CcpSessionBundleV1) -> Result<String, String> {
     let json = serde_json::to_string_pretty(bundle).map_err(|e| e.to_string())?;
     if json.len() > MAX_BUNDLE_BYTES {
         return Err(format!(
@@ -207,7 +204,7 @@ pub(crate) fn parse_bundle_v1(json: &str) -> Result<CcpSessionBundleV1, String> 
     Ok(b)
 }
 
-pub(crate) fn write_bundle_v1(path: &Path, json: &str) -> Result<(), String> {
+pub fn write_bundle_v1(path: &Path, json: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "ERROR: invalid path".to_string())?;
@@ -225,7 +222,7 @@ pub(crate) fn write_bundle_v1(path: &Path, json: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn read_bundle_v1(path: &Path) -> Result<CcpSessionBundleV1, String> {
+pub fn read_bundle_v1(path: &Path) -> Result<CcpSessionBundleV1, String> {
     use std::io::Read as _;
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
@@ -261,7 +258,7 @@ pub(crate) fn read_bundle_v1(path: &Path) -> Result<CcpSessionBundleV1, String> 
     parse_bundle_v1(&json)
 }
 
-pub(crate) fn import_bundle_v1_into_session(
+pub fn import_bundle_v1_into_session(
     session: &mut SessionState,
     bundle: &CcpSessionBundleV1,
     current_project_root: Option<&str>,
@@ -367,7 +364,7 @@ pub(crate) fn import_bundle_v1_into_session(
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ImportReportV1 {
+pub struct ImportReportV1 {
     pub session_id: String,
     pub source_session_id: String,
     pub version: u32,

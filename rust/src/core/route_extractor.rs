@@ -12,7 +12,7 @@ macro_rules! static_regex {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct RouteEntry {
+pub struct RouteEntry {
     pub method: String,
     pub path: String,
     pub handler: String,
@@ -41,10 +41,7 @@ pub(crate) fn extract_routes_from_file(file_path: &str, content: &str) -> Vec<Ro
     routes
 }
 
-pub(crate) fn extract_routes_from_project(
-    project_root: &str,
-    file_paths: &[String],
-) -> Vec<RouteEntry> {
+pub fn extract_routes_from_project(project_root: &str, file_paths: &[String]) -> Vec<RouteEntry> {
     let mut all_routes = Vec::new();
 
     for rel_path in file_paths {

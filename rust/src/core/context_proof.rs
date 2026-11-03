@@ -8,7 +8,7 @@ static PROOFS_WRITTEN: AtomicU64 = AtomicU64::new(0);
 static LAST_WRITTEN_UNIX_MS: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct ProofStatsSnapshot {
+pub struct ProofStatsSnapshot {
     pub collected: u64,
     pub written: u64,
     pub last_written_at: Option<String>,
@@ -34,7 +34,7 @@ pub(crate) fn proof_stats_snapshot() -> ProofStatsSnapshot {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct ContextProofV1 {
+pub struct ContextProofV1 {
     pub schema_version: u32,
     pub created_at: String,
     pub lean_ctx_version: String,
@@ -51,13 +51,13 @@ pub(crate) struct ContextProofV1 {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct ProjectIdentity {
+pub struct ProjectIdentity {
     pub project_root_hash: Option<String>,
     pub project_identity_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct RoleIdentity {
+pub struct RoleIdentity {
     pub name: String,
     /// BLAKE3 hex; the serialized name keeps its historical `_md5` suffix.
     #[serde(rename = "policy_md5")]
@@ -65,7 +65,7 @@ pub(crate) struct RoleIdentity {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct ProfileIdentity {
+pub struct ProfileIdentity {
     pub name: String,
     /// BLAKE3 hex; the serialized name keeps its historical `_md5` suffix.
     #[serde(rename = "policy_md5")]
@@ -73,7 +73,7 @@ pub(crate) struct ProfileIdentity {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct LedgerSummary {
+pub struct LedgerSummary {
     pub window_size: usize,
     pub entries: usize,
     pub total_tokens_sent: usize,
@@ -83,7 +83,7 @@ pub(crate) struct LedgerSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct LedgerFileSummary {
+pub struct LedgerFileSummary {
     pub path: String,
     pub mode: String,
     pub sent_tokens: usize,
@@ -91,7 +91,7 @@ pub(crate) struct LedgerFileSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct EvidenceReceipt {
+pub struct EvidenceReceipt {
     pub tool: Option<String>,
     pub input_md5: Option<String>,
     pub output_md5: Option<String>,
@@ -101,7 +101,7 @@ pub(crate) struct EvidenceReceipt {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct ProofOptions {
+pub struct ProofOptions {
     pub max_evidence: usize,
     pub max_ledger_files: usize,
 }
@@ -114,7 +114,7 @@ pub struct ProofSources {
     pub ledger: Option<crate::core::context_ledger::ContextLedger>,
 }
 
-pub(crate) fn collect_v1(sources: ProofSources, opts: ProofOptions) -> ContextProofV1 {
+pub fn collect_v1(sources: ProofSources, opts: ProofOptions) -> ContextProofV1 {
     PROOFS_COLLECTED.fetch_add(1, Ordering::Relaxed);
     let created_at = chrono::Utc::now().to_rfc3339();
 
@@ -230,7 +230,7 @@ pub(crate) fn collect_v1(sources: ProofSources, opts: ProofOptions) -> ContextPr
     }
 }
 
-pub(crate) fn write_project_proof(
+pub fn write_project_proof(
     project_root: &Path,
     proof: &ContextProofV1,
     filename: Option<&str>,

@@ -1,7 +1,7 @@
 # LeanCTX Protocol Family & Contracts (v1)
 
 LeanCTX is the **Context Gateway for AI Systems**. **Control what your AI can see.**
-LeanCTX Engine implements the runtime; LeanCTX SDK is the separate application
+LeanCTX | OSS implements the runtime; LeanCTX SDK is the separate application
 integration surface. Contracts define the supported interfaces and evidence.
 
 ## Current product and historical contract scope

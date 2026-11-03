@@ -15,7 +15,7 @@
 //!   visible to lean-ctx.
 //! - **Unsupported:** no integration exists.
 
-use crate::hooks::{HYBRID_AGENTS, HookMode, MCP_ONLY_AGENTS, REPLACE_AGENTS};
+use crate::core::hook_mode::{HYBRID_AGENTS, HookMode, MCP_ONLY_AGENTS, REPLACE_AGENTS};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 #[serde(rename_all = "snake_case")]

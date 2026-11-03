@@ -64,6 +64,21 @@ impl CrpMode {
         }
         profile_crp.and_then(Self::parse).unwrap_or(Self::Off)
     }
+
+    /// Effective CRP mode for the active profile — see [`CrpMode::resolve`].
+    pub fn effective() -> Self {
+        Self::resolve(
+            crate::core::profiles::active_profile()
+                .compression
+                .crp_mode
+                .as_deref(),
+        )
+    }
+
+    /// Returns true if the mode is TDD (maximum compression).
+    pub fn is_tdd(&self) -> bool {
+        *self == Self::Tdd
+    }
 }
 
 /// Recorded metrics for a single MCP tool invocation.
@@ -139,7 +154,7 @@ fn is_workspace_root(dir: &Path) -> bool {
 /// True inside a request that is bound to no project: project-keyed writes
 /// are refused there (`project_unresolved`, AP01 §3) instead of keying them
 /// on a file's location.
-pub(crate) fn request_project_unresolved() -> bool {
+pub fn request_project_unresolved() -> bool {
     crate::core::policy::runtime::REQUEST_PROJECT
         .try_with(|slot| slot.borrow().is_none())
         .unwrap_or(false)

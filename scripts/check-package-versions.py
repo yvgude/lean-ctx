@@ -61,6 +61,22 @@ COUPLED_SOURCE_CONSTANTS = [
     ),
 ]
 
+# Rust crates split upward out of the Engine: they ship in lockstep with it.
+# Their [package] version must equal the engine's, and every exact pin they
+# hold on a lockstep crate (`version = "=x.y.z"`) must name that version.
+LOCKSTEP_CRATES = [
+    "rust/crates/lean-ctx/Cargo.toml",
+    "rust/crates/lean-ctx-hive/Cargo.toml",
+    "rust/crates/lean-ctx-proxy/Cargo.toml",
+    "rust/crates/lean-ctx-server/Cargo.toml",
+    "rust/crates/lean-ctx-hooks/Cargo.toml",
+]
+LOCKSTEP_NAMES = ("lean-ctx-engine", "lean-ctx-hive", "lean-ctx-proxy", "lean-ctx-server", "lean-ctx-hooks")
+LOCKSTEP_PIN = re.compile(
+    r'^(' + "|".join(map(re.escape, LOCKSTEP_NAMES)) + r')\s*=\s*\{[^}\n]*version\s*=\s*"=([^"]+)"',
+    re.M,
+)
+
 AUR_PKGBUILD = "aur/lean-ctx/PKGBUILD"
 
 FAILURES: list[str] = []
@@ -136,6 +152,26 @@ def main() -> int:
             FAILURES.append(
                 f"{label} is {got} but the engine ships {engine} — bump it to {engine}"
             )
+
+    for rel in LOCKSTEP_CRATES:
+        try:
+            manifest = read(rel)
+        except OSError as e:
+            FAILURES.append(f"{rel}: could not read ({e})")
+            continue
+        m = re.search(r'^version\s*=\s*"([^"]+)"', manifest, re.M)
+        got = m.group(1) if m else "?"
+        status = "ok" if got == engine else "DRIFT"
+        print(f"  {rel + ':version':<38} {got:<12} {status}")
+        if got != engine:
+            FAILURES.append(f"{rel} version is {got} but the engine ships {engine} — bump it")
+        for name, pinned in LOCKSTEP_PIN.findall(manifest):
+            status = "ok" if pinned == engine else "DRIFT"
+            print(f"  {rel + ':' + name + ' pin':<38} ={pinned:<11} {status}")
+            if pinned != engine:
+                FAILURES.append(
+                    f"{rel} pins {name} at ={pinned} but the engine ships {engine} — bump the pin"
+                )
 
     try:
         pkgver = aur_pkgver(read(AUR_PKGBUILD))

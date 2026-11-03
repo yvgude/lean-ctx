@@ -35,7 +35,7 @@ export function classifySearchExit(result: ExecExit, fallback: string): SearchEx
   return { kind: "error", message };
 }
 
-// Mirror of `is_dangerous_env_key` in rust/src/tools/registered/ctx_shell.rs:
+// Mirror of `is_dangerous_env_key` in rust/crates/lean-ctx-server/src/tools/registered/ctx_shell.rs:
 // the keys the MCP `env` parameter silently drops. The Pi tool must apply the
 // same policy, or the `env` recovery the CLI recommends (#1761) would be a
 // wider door here than there.

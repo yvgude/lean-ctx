@@ -2,7 +2,9 @@
 //! Signature/receipt compatibility checks; actual installation is qualified separately.
 
 use super::*;
+use crate::core::intelligence_runtime::sign_document;
 
+#[allow(unreachable_pub)]
 #[path = "company_journey_tests.rs"]
 pub(crate) mod company_journey_tests;
 
@@ -72,19 +74,6 @@ fn first_install_requires_explicit_null_and_v3_domain() {
         manifest["rollback_artifact"] = json!("b".repeat(64));
         assert!(check(&manifest, domain).is_ok());
     }
-}
-
-fn sign_document(
-    document: &serde_json::Value,
-    key: &SigningKey,
-    domain: &[u8],
-) -> (Vec<u8>, Vec<u8>, String) {
-    let manifest = serde_json::to_vec(document).unwrap();
-    let mut payload = domain.to_vec();
-    payload.extend_from_slice(&manifest);
-    let signature = key.sign(&payload).to_bytes().to_vec();
-    let selected = sha256(&manifest);
-    (manifest, signature, selected)
 }
 
 fn v3_staging_fixture() -> (Vec<u8>, Vec<u8>, Vec<u8>, String, SigningKey) {

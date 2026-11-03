@@ -5,7 +5,7 @@
 //! this single source of truth for the proxy port, the reachability timeout
 //! and the "is the proxy up" check.
 
-pub(crate) const DEFAULT_PROXY_PORT: u16 = 4444;
+pub const DEFAULT_PROXY_PORT: u16 = 4444;
 
 /// Proxy reachability timeout. Priority: env var > config.toml > 200ms default.
 pub fn proxy_timeout() -> std::time::Duration {
@@ -76,7 +76,7 @@ pub fn default_port() -> u16 {
 /// Derives a deterministic port from the user's UID to avoid collisions
 /// on multi-user systems. uid 1000 → 4444, uid 1001 → 4445, etc.
 /// System accounts (uid < 1000) and root always get the base port 4444.
-pub(crate) fn uid_based_port() -> u16 {
+pub fn uid_based_port() -> u16 {
     #[cfg(unix)]
     {
         // SAFETY: `getuid` takes no arguments, always succeeds, and only reads

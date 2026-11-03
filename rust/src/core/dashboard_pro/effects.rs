@@ -25,14 +25,14 @@ const MAX_PLANS: usize = 8;
 const SNAPSHOT_HINT: &str = "A snapshot was saved first; restore it under Memory Care → Snapshots.";
 
 /// Desktop and webhook delivery of alerts.
-pub(crate) trait Notifier: Send + Sync {
+pub trait Notifier: Send + Sync {
     fn desktop(&self, text: &str) -> bool;
     fn webhook(&self, url: &str, body: &[u8]) -> bool;
 }
 
 /// The engine's notifier: the native desktop notification and an https
 /// POST without redirects and with a timeout.
-pub(crate) struct SystemNotifier;
+pub struct SystemNotifier;
 
 impl Notifier for SystemNotifier {
     fn desktop(&self, text: &str) -> bool {
@@ -498,7 +498,7 @@ pub(crate) fn execute(ctx: &Ctx<'_>, plan: Plan) -> ProResult<Outcome> {
                 security_fields::effective(&key).map(|w| security_fields::expected_of(field, &w));
             ensure(
                 after.as_ref() == Some(&expected),
-                "The Engine did not report the new value. A setting in this project's own configuration may take precedence over the device setting.",
+                "The instance did not report the new value. A setting in this project's own configuration may take precedence over the device setting.",
             )?;
             applied(json!({ "key": key, "value": expected, "weakened": weakening }))
         }
@@ -570,12 +570,12 @@ pub(crate) fn execute(ctx: &Ctx<'_>, plan: Plan) -> ProResult<Outcome> {
         }
         Plan::MemoryConsolidate { .. } => {
             let safety = snapshot_now(ctx, "Before consolidation")?;
-            let report = crate::tools::ctx_knowledge::consolidate_project_knowledge_with(
+            let report = crate::core::knowledge_consolidate::consolidate_project_knowledge_with(
                 &ctx.scope.root,
                 &crate::core::consolidation_engine::ConsolidateOptions::manual(),
             )
             .map_err(|_| ProError::internal(format!("Consolidation failed. {SNAPSHOT_HINT}")))?;
-            let text = crate::tools::ctx_knowledge::format_consolidation_report(&report);
+            let text = crate::core::knowledge_consolidate::format_consolidation_report(&report);
             applied(json!({
                 "summary": consolidation_summary(&text),
                 "safety_snapshot": safety.id,

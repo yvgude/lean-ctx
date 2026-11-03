@@ -6,7 +6,7 @@ use std::time::Duration;
 /// into a `ureq::config::Config::builder().tls_config(platform_tls_config())` at each
 /// call site — ureq's builder scope typestate is private, so a shared *builder*
 /// cannot be returned from a function; the shared piece is this `TlsConfig`.
-pub(crate) fn platform_tls_config() -> ureq::tls::TlsConfig {
+pub fn platform_tls_config() -> ureq::tls::TlsConfig {
     ureq::tls::TlsConfig::builder()
         .root_certs(ureq::tls::RootCerts::PlatformVerifier)
         .build()
@@ -14,13 +14,13 @@ pub(crate) fn platform_tls_config() -> ureq::tls::TlsConfig {
 
 /// Builds a ureq agent from an already-assembled config (kept as a thin, nameable
 /// wrapper so call sites read uniformly alongside `platform_tls_config`).
-pub(crate) fn ureq_agent(config: ureq::config::Config) -> ureq::Agent {
+pub fn ureq_agent(config: ureq::config::Config) -> ureq::Agent {
     ureq::Agent::new_with_config(config)
 }
 
 /// Agent that honors platform roots and bounds only the connection-setup phases
 /// (DNS/connect/first-byte) — a large but progressing download stays uncapped.
-pub(crate) fn ureq_agent_with_timeouts(
+pub fn ureq_agent_with_timeouts(
     timeout_resolve: Option<Duration>,
     timeout_connect: Option<Duration>,
     timeout_recv_response: Option<Duration>,

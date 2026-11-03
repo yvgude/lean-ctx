@@ -27,13 +27,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::ValidationError;
 
-pub const ENGINE_METRICS_SCHEMA: &str = "leanctx.hive.engine-metrics/v2";
-pub const ENGINE_METRICS_ACK_SCHEMA: &str = "leanctx.hive.engine-metrics-ack/v2";
+pub const ENGINE_METRICS_SCHEMA: &str = "leanctx.hive.instance-metrics/v2";
+pub const ENGINE_METRICS_ACK_SCHEMA: &str = "leanctx.hive.instance-metrics-ack/v2";
 /// The policy member that gates engine metrics (`x-merge: false_wins`,
 /// `x-enforcement: server`; absent at every level = the plan default).
-pub const SHARE_ENGINE_METRICS_MEMBER: &str = "sharing.share_engine_metrics";
+pub const SHARE_ENGINE_METRICS_MEMBER: &str = "sharing.share_instance_metrics";
 /// Domain of the batch signature (instance key).
-pub const ENGINE_METRICS_DOMAIN: &str = "leanctx.hive.engine-metrics.v2\n";
+pub const ENGINE_METRICS_DOMAIN: &str = "leanctx.hive.instance-metrics.v2\n";
 /// HKDF info of the per-workspace secret fingerprint key.
 pub const SECRET_FINGERPRINT_INFO: &str = "leanctx.hive.secret-fingerprint.v1";
 /// `POST /v1/metrics/hours`, relative to the engine API base.
@@ -93,6 +93,7 @@ pub const KNOWN_TOOLS: &[&str] = &[
     "ctx_delta",
     "ctx_discover",
     "ctx_discover_tools",
+    "ctx_doc",
     "ctx_edit",
     "ctx_execute",
     "ctx_expand",
@@ -173,7 +174,7 @@ pub const KNOWN_RULES: &[&str] = &[
     "sharing.consent_required_for",
     "sharing.cross_team_sharing",
     "sharing.personal_workspace",
-    "sharing.share_engine_metrics",
+    "sharing.share_instance_metrics",
     "sharing.task_claim_min_role",
     "gateway.budget_exceeded",
     "gateway.cross_project",
@@ -404,7 +405,7 @@ pub const KNOWN_MODELS: &[&str] = &[
 ];
 
 fn invalid(what: &str) -> ValidationError {
-    ValidationError::new(format!("engine metrics: invalid {what}"))
+    ValidationError::new(format!("instance metrics: invalid {what}"))
 }
 
 // ── closed-pattern strings ───────────────────────────────────────────────────
@@ -764,17 +765,17 @@ pub enum PolicyLevel {
     Org,
     Workspace,
     Vault,
-    Engine,
+    Instance,
 }
 
 impl PolicyLevel {
-    /// How people read the level (Company › Team › Vault › Engine).
+    /// How people read the level (Company › Workspace › Vault › Instance).
     pub fn label(self) -> &'static str {
         match self {
             Self::Org => "Company",
-            Self::Workspace => "Team",
+            Self::Workspace => "Workspace",
             Self::Vault => "Vault",
-            Self::Engine => "Engine",
+            Self::Instance => "Instance",
         }
     }
 
@@ -783,7 +784,7 @@ impl PolicyLevel {
             "org" => Some(Self::Org),
             "workspace" => Some(Self::Workspace),
             "vault" => Some(Self::Vault),
-            "engine" => Some(Self::Engine),
+            "instance" => Some(Self::Instance),
             _ => None,
         }
     }
@@ -835,7 +836,7 @@ pub enum PlanDefault {
 #[serde(deny_unknown_fields)]
 pub struct HoursBodyV2 {
     pub schema: HoursSchema,
-    pub engine: EngineV2,
+    pub instance: EngineV2,
     pub buckets: Vec<BucketV2>,
 }
 
@@ -844,7 +845,7 @@ pub struct HoursBodyV2 {
 #[serde(deny_unknown_fields)]
 pub struct HoursRequestV2 {
     pub schema: HoursSchema,
-    pub engine: EngineV2,
+    pub instance: EngineV2,
     pub buckets: Vec<BucketV2>,
     pub key_id: KeyId,
     pub signature: SignatureHex,
@@ -853,7 +854,7 @@ pub struct HoursRequestV2 {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EngineV2 {
-    pub engine_version: EngineVersion,
+    pub instance_version: EngineVersion,
     pub os: EngineOs,
 }
 
@@ -1275,7 +1276,7 @@ impl HoursBodyV2 {
     /// without `signature` (the `worker_register` scheme).
     pub fn signing_input(&self, key_id: &KeyId) -> Result<Vec<u8>, ValidationError> {
         let mut value = serde_json::to_value(self)
-            .map_err(|e| ValidationError::new(format!("engine metrics: encode: {e}")))?;
+            .map_err(|e| ValidationError::new(format!("instance metrics: encode: {e}")))?;
         value["key_id"] = serde_json::Value::String(key_id.as_str().to_string());
         super::signing_input(ENGINE_METRICS_DOMAIN, &value)
     }
@@ -1283,7 +1284,7 @@ impl HoursBodyV2 {
     pub fn signed(self, key_id: KeyId, signature: SignatureHex) -> HoursRequestV2 {
         HoursRequestV2 {
             schema: self.schema,
-            engine: self.engine,
+            instance: self.instance,
             buckets: self.buckets,
             key_id,
             signature,
@@ -1296,7 +1297,7 @@ impl HoursRequestV2 {
     pub fn body(&self) -> HoursBodyV2 {
         HoursBodyV2 {
             schema: self.schema,
-            engine: self.engine.clone(),
+            instance: self.instance.clone(),
             buckets: self.buckets.clone(),
         }
     }
@@ -1322,7 +1323,7 @@ mod tests {
             assert_eq!(ToolName::or_other(unknown).as_str(), OTHER);
         }
         assert!(ToolName::new(OTHER).is_some());
-        assert!(RuleId::new("sharing.share_engine_metrics").is_some());
+        assert!(RuleId::new("sharing.share_instance_metrics").is_some());
         assert!(RuleId::new("gateway.tool_denied").is_some());
         assert!(RuleId::new("gateway.destination").is_some());
         assert!(RuleId::new("gateway.egress").is_some());
@@ -1392,7 +1393,7 @@ mod tests {
         let extra =
             serde_json::from_str::<TokensV2>(r#"{"input":1,"output":1,"saved":0,"prompt":"x"}"#);
         assert!(extra.is_err());
-        let schema = serde_json::from_str::<HoursSchema>(r#""leanctx.hive.engine-metrics/v3""#);
+        let schema = serde_json::from_str::<HoursSchema>(r#""leanctx.hive.instance-metrics/v3""#);
         assert!(schema.is_err());
     }
 }

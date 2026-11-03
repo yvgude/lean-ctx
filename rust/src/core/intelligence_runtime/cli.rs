@@ -10,7 +10,7 @@ use super::{
     InstallError, Result, RuntimeKind, install, manifest::MAX_ARCHIVE, read_regular, verify_kind,
 };
 
-pub(crate) fn run(args: &[String]) -> Result<String> {
+pub fn run(args: &[String]) -> Result<String> {
     let operation = args
         .first()
         .map(String::as_str)

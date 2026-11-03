@@ -25,7 +25,7 @@ Consequences:
 2. Paid capabilities use price class `hive` with `hive_plan = personal | team |
    enterprise`. Personal Cloud (`pro.cloud_sync`, `pro.hosted_index`) and
    `team.revenue_share` are `retired`: known lookup names, granted by no plan.
-3. Plan, licence and entitlement checks live only in `rust/src/core/hive/`
+3. Plan, licence and entitlement checks live only in `rust/crates/lean-ctx-hive/src/`
    (the Hive connector). No other Engine module decides from a plan, a licence,
    a signed entitlement or the billing capability CLI.
 4. When Hive is unreachable the Engine is unaffected; only Hive-delivered
@@ -36,7 +36,7 @@ Consequences:
 | Gate | What it fails on |
 |---|---|
 | `rust/tests/local_free_invariant.rs` | the default `plane` is not `personal`; an always-on Community feature is not `true`; a Community feature, or the free capability set, changes under `LEAN_CTX_LICENSE`, `LEAN_CTX_PLAN`, `LEAN_CTX_ACCOUNT` or a forged entitlement cache; a free capability requires an account or is refused to Community; a Community feature is not classified free |
-| `scripts/check-local-free.py` | a gating symbol in the code (comments excluded) of a tracked `rust/src/**/*.rs` file outside `rust/src/core/hive/` that is not listed in `product/local-free-allowlist.toml`; an allowlist entry without owner (strand B or C) or reason; a stale entry (no hit any more) |
+| `scripts/check-local-free.py` | a gating symbol in the code (comments excluded) of a tracked `*.rs` file of the Engine (`rust/src/`) or a crate split out of it (`SCAN_ROOTS` in the script, e.g. `rust/crates/lean-ctx/`) outside `rust/crates/lean-ctx-hive/src/` that is not listed in `product/local-free-allowlist.toml`; an allowlist entry without owner (strand B or C) or reason; a stale entry (no hit any more) |
 | `scripts/check-capabilities.py` | a schema-3 record with a legacy price class, `hive_plan` missing or misplaced, a free capability with `account_required = true`, a paid tier without an instance limit |
 
 Gating symbols: `entitlement` (any case), `require_pro`, `capability_admitted`,

@@ -26,7 +26,7 @@ async fn proxy_serves_health_and_enforces_auth() {
     let server = tokio::spawn({
         let token = token.clone();
         async move {
-            let _ = lean_ctx::proxy::start_proxy_with_token(port, Some(token)).await;
+            let _ = lean_ctx_proxy::start_proxy_with_token(port, Some(token)).await;
         }
     });
 

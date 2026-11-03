@@ -35,7 +35,7 @@ pub(super) fn cursor_wrapper_for_mdc(mdc_path: &Path) -> Wrapper {
 /// Wrap a rendered rules body in the Cursor mdc frontmatter. The description
 /// stays profile-neutral: whether native tools are replaced (Dedicated) or
 /// hook-covered (GL #1153) is stated by the body itself.
-pub(crate) fn cursor_mdc_document(body: &str) -> String {
+pub fn cursor_mdc_document(body: &str) -> String {
     format!(
         "---\n\
          description: \"lean-ctx: context compression layer — \

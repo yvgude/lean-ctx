@@ -23,7 +23,7 @@ const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 /// The V2 inventory kinds. Inputs are materialized bytes, never references
 /// back into an ambient data directory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CustomerProofArtifactKind {
+pub enum CustomerProofArtifactKind {
     ArmReceipt,
     ReceiptPredecessor,
     QualityMeasurement,
@@ -74,7 +74,7 @@ impl CustomerProofArtifactKind {
 /// The redaction declaration attached to one artifact. It is evidence
 /// provenance; assembly never silently claims redaction happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CustomerProofRedactionClass {
+pub enum CustomerProofRedactionClass {
     None,
     Pseudonymized,
     MetadataOnly,
@@ -99,11 +99,11 @@ impl CustomerProofRedactionClass {
 /// One present sidecar artifact. The assembler derives its content reference
 /// and inventory digest from these exact bytes.
 #[derive(Debug, Clone)]
-pub(crate) struct CustomerProofArtifact {
-    pub(crate) kind: CustomerProofArtifactKind,
-    pub(crate) path: String,
-    pub(crate) redaction_class: CustomerProofRedactionClass,
-    pub(crate) bytes: Vec<u8>,
+pub struct CustomerProofArtifact {
+    pub kind: CustomerProofArtifactKind,
+    pub path: String,
+    pub redaction_class: CustomerProofRedactionClass,
+    pub bytes: Vec<u8>,
 }
 
 impl CustomerProofArtifact {
@@ -125,22 +125,22 @@ impl CustomerProofArtifact {
 /// canonical identity, inventory, and signing fields now and rejects callers
 /// attempting to inject them.
 #[derive(Debug, Clone)]
-pub(crate) struct CustomerProofDraftV2 {
-    pub(crate) created_at: String,
-    pub(crate) status: String,
-    pub(crate) subject: Value,
-    pub(crate) matched_arms: Value,
-    pub(crate) quality: Value,
-    pub(crate) replay: Value,
-    pub(crate) limitations: Value,
-    pub(crate) redaction: Value,
-    pub(crate) claims: Value,
+pub struct CustomerProofDraftV2 {
+    pub created_at: String,
+    pub status: String,
+    pub subject: Value,
+    pub matched_arms: Value,
+    pub quality: Value,
+    pub replay: Value,
+    pub limitations: Value,
+    pub redaction: Value,
+    pub claims: Value,
 }
 
 /// Only a customer-configured or out-of-band key can be used to assemble a
 /// customer-proof candidate. A local identity alone is not sufficient.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CustomerProofTrustBasis {
+pub enum CustomerProofTrustBasis {
     CustomerConfigured,
     OutOfBand,
 }
@@ -157,17 +157,17 @@ impl CustomerProofTrustBasis {
 /// Explicit signing input. Trust is never embedded as a public key in V2; an
 /// independent verifier requires a matching external trust store.
 #[derive(Clone, Copy)]
-pub(crate) struct CustomerProofSigner<'a> {
-    pub(crate) signing_key: &'a SigningKey,
-    pub(crate) trust_basis: CustomerProofTrustBasis,
+pub struct CustomerProofSigner<'a> {
+    pub signing_key: &'a SigningKey,
+    pub trust_basis: CustomerProofTrustBasis,
 }
 
 /// Pure assembly result, suitable for a caller that wants to hand the bytes
 /// straight to a separate verifier before writing anything.
 #[derive(Debug, Clone)]
-pub(crate) struct AssembledCustomerProofV2 {
-    pub(crate) bundle_id: String,
-    pub(crate) bundle_digest: String,
+pub struct AssembledCustomerProofV2 {
+    pub bundle_id: String,
+    pub bundle_digest: String,
     pub(crate) canonical_json: Vec<u8>,
     artifacts: Vec<CustomerProofArtifact>,
 }
@@ -175,7 +175,7 @@ pub(crate) struct AssembledCustomerProofV2 {
 impl AssembledCustomerProofV2 {
     /// Writes one atomic local proof directory containing `customer-proof.json`
     /// and only the inventory files whose bytes were signed into the document.
-    pub(crate) fn write_to(&self, output: &Path) -> Result<(), String> {
+    pub fn write_to(&self, output: &Path) -> Result<(), String> {
         if output.exists() {
             return Err(format!(
                 "refusing to overwrite existing proof directory {}",
@@ -225,7 +225,7 @@ impl AssembledCustomerProofV2 {
 
 /// Build a V2 document from explicit evidence bytes. This is deterministic for
 /// the same draft, artifact bytes, and signing key.
-pub(crate) fn assemble_customer_proof_v2(
+pub fn assemble_customer_proof_v2(
     draft: &CustomerProofDraftV2,
     artifacts: Vec<CustomerProofArtifact>,
     signer: CustomerProofSigner<'_>,

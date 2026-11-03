@@ -17,8 +17,8 @@
 //!   re-reads and provider prompt caching still applies.
 //!
 //! This module is the single source of truth for the hash + rendering so the
-//! read side ([`crate::tools::ctx_read`]) and the edit side
-//! ([`crate::tools::ctx_patch`]) can never compute anchors differently.
+//! read side (`tools::ctx_read`) and the edit side
+//! (`tools::ctx_patch`) can never compute anchors differently.
 
 use crate::core::hasher;
 

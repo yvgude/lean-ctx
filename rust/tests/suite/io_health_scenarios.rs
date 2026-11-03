@@ -21,7 +21,7 @@ async fn bounded_read_returns_none_when_write_held() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::read(&lock, "test:write_held")
+        move || lean_ctx_server::server::bounded_lock::read(&lock, "test:write_held")
     })
     .await
     .unwrap();
@@ -48,7 +48,7 @@ async fn bounded_write_returns_none_when_read_held() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write(&lock, "test:read_held")
+        move || lean_ctx_server::server::bounded_lock::write(&lock, "test:read_held")
     })
     .await
     .unwrap();
@@ -75,7 +75,7 @@ async fn bounded_read_succeeds_when_free() {
 
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::read(&lock, "test:free")
+        move || lean_ctx_server::server::bounded_lock::read(&lock, "test:free")
     })
     .await
     .unwrap();
@@ -90,7 +90,7 @@ async fn bounded_write_succeeds_when_free() {
 
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write(&lock, "test:free_write")
+        move || lean_ctx_server::server::bounded_lock::write(&lock, "test:free_write")
     })
     .await
     .unwrap();
@@ -234,7 +234,8 @@ async fn concurrent_bounded_reads_dont_deadlock() {
     for i in 0..10 {
         let lock = lock.clone();
         handles.push(tokio::task::spawn_blocking(move || {
-            let guard = lean_ctx::server::bounded_lock::read(&lock, &format!("concurrent:{i}"));
+            let guard =
+                lean_ctx_server::server::bounded_lock::read(&lock, &format!("concurrent:{i}"));
             guard.map(|g| g.len())
         }));
     }
@@ -258,7 +259,9 @@ async fn mixed_read_write_with_timeout_doesnt_deadlock() {
     // Spawn writer that holds lock for 2s
     let lock_clone = lock.clone();
     handles.push(tokio::task::spawn_blocking(move || {
-        if let Some(mut guard) = lean_ctx::server::bounded_lock::write(&lock_clone, "slow_writer") {
+        if let Some(mut guard) =
+            lean_ctx_server::server::bounded_lock::write(&lock_clone, "slow_writer")
+        {
             *guard += 1;
             std::thread::sleep(Duration::from_secs(2));
         }
@@ -272,7 +275,8 @@ async fn mixed_read_write_with_timeout_doesnt_deadlock() {
     for i in 0..3 {
         let lock_clone = lock.clone();
         handles.push(tokio::task::spawn_blocking(move || {
-            let result = lean_ctx::server::bounded_lock::read(&lock_clone, &format!("reader:{i}"));
+            let result =
+                lean_ctx_server::server::bounded_lock::read(&lock_clone, &format!("reader:{i}"));
             if result.is_some() {
                 "read ok"
             } else {
@@ -298,7 +302,7 @@ async fn mixed_read_write_with_timeout_doesnt_deadlock() {
 
 #[test]
 fn proxy_default_port_returns_valid_port() {
-    let port = lean_ctx::proxy_setup::default_port();
+    let port = lean_ctx_cli::proxy_setup::default_port();
     assert!(port >= 4444, "port should be >= 4444, got {port}");
     assert!(port < 6000, "port should be < 6000, got {port}");
 }

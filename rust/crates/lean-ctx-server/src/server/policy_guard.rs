@@ -1,0 +1,325 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Context-policy-pack enforcement for the MCP server pipeline (GL #673).
+//!
+//! Consults the resolved active policy ([`lean_ctx::core::policy::runtime`]) to
+//! allow/deny tool calls, in addition to the [`super::role_guard`]. This is the
+//! runtime half of Context Policy Packs v1 (GL #489), whose engine module ships
+//! the format/validation/CLI and defers enforcement to here.
+//!
+//! - **Opt-in:** with no active pack, every tool is allowed (current behavior).
+//! - **Local-Free:** only the agent pipeline is constrained, never a human's
+//!   own local reads.
+//! - **No self-lockout:** the `EXEMPT_TOOLS` meta tools can never be
+//!   policy-denied, so an operator can always switch roles/policies back out.
+
+use rmcp::model::{CallToolResult, ContentBlock};
+
+use lean_ctx::core::policy::runtime::{self, ActivePolicy};
+
+pub use lean_ctx::core::policy::audit_filter::{audit_filter, audit_filter_as};
+
+mod release;
+pub use release::{release_outcome, release_result};
+
+/// Tools that can never be policy-denied (mirror role_guard's session/meta
+/// exemption), so a pack can't lock the operator out of fixing the policy.
+const EXEMPT_TOOLS: &[&str] = &["ctx", "ctx_session", "ctx_policy"];
+
+pub struct PolicyCheckResult {
+    pub blocked: bool,
+    pub policy_name: Option<String>,
+    pub message: Option<String>,
+}
+
+/// [`check_tool_access_as`] for this process's agent identity
+/// (`LEAN_CTX_AGENT_ID`, else `local`), for callers without an MCP session.
+pub fn check_tool_access(tool_name: &str) -> PolicyCheckResult {
+    check_tool_access_as(
+        tool_name,
+        lean_ctx::core::agent_identity::current_agent_id(),
+    )
+}
+
+/// Check whether `tool_name` is allowed by the active policy pack, recording an
+/// audit entry for `agent_id` on denial (same APIs as [`super::role_guard`]).
+pub fn check_tool_access_as(tool_name: &str, agent_id: &str) -> PolicyCheckResult {
+    let check = evaluate_with_exemptions(
+        runtime::active().as_deref(),
+        tool_name,
+        std::env::var_os(runtime::REQUIRED_POLICY_ROOT_ENV).is_none(),
+    );
+    if check.blocked
+        && let Some(policy) = &check.policy_name
+    {
+        lean_ctx::core::events::emit_policy_violation(
+            policy,
+            tool_name,
+            "tool denied by context policy pack",
+        );
+        lean_ctx::core::audit_trail::record(lean_ctx::core::audit_trail::AuditEntryData {
+            agent_id: agent_id.to_string(),
+            tool: tool_name.to_string(),
+            action: None,
+            input_hash: String::new(),
+            output_tokens: 0,
+            role: policy.clone(),
+            event_type: lean_ctx::core::audit_trail::AuditEventType::ToolDenied,
+        });
+    }
+    check
+}
+
+/// Pure decision (no side effects) — the audit-free core, unit-tested directly.
+#[cfg(test)]
+fn evaluate(active: Option<&ActivePolicy>, tool_name: &str) -> PolicyCheckResult {
+    evaluate_with_exemptions(active, tool_name, true)
+}
+
+fn evaluate_with_exemptions(
+    active: Option<&ActivePolicy>,
+    tool_name: &str,
+    allow_operator_recovery: bool,
+) -> PolicyCheckResult {
+    // Protected MCP clients are not the operator. Recovery remains available
+    // through the human's separate CLI, never by relaxing the model's boundary.
+    if allow_operator_recovery && EXEMPT_TOOLS.contains(&tool_name) {
+        return PolicyCheckResult {
+            blocked: false,
+            policy_name: None,
+            message: None,
+        };
+    }
+    let Some(active) = active else {
+        return PolicyCheckResult {
+            blocked: false,
+            policy_name: None,
+            message: None,
+        };
+    };
+    if active.tool_allowed(tool_name) {
+        return PolicyCheckResult {
+            blocked: false,
+            policy_name: Some(active.resolved.name.clone()),
+            message: None,
+        };
+    }
+    let policy_name = active.resolved.name.clone();
+    let detail = match &active.resolved.allow_tools {
+        Some(allow) => format!("Allowed tools: {}", allow.join(", ")),
+        None => format!("Denied tools: {}", active.resolved.deny_tools.join(", ")),
+    };
+    let message = format!(
+        "[POLICY DENIED] Tool '{tool_name}' is blocked by context policy pack '{policy_name}'.\n{detail}\n\
+         Adjust .lean-ctx/policy.toml or switch policy to proceed."
+    );
+    PolicyCheckResult {
+        blocked: true,
+        policy_name: Some(policy_name),
+        message: Some(message),
+    }
+}
+
+/// The denial as a tool error the agent can read; `None` when allowed.
+pub fn into_call_tool_result(check: &PolicyCheckResult) -> Option<CallToolResult> {
+    check.blocked.then(|| {
+        CallToolResult::error(vec![ContentBlock::text(
+            check
+                .message
+                .as_deref()
+                .unwrap_or("Blocked by context policy"),
+        )])
+    })
+}
+
+/// Apply the active policy's redaction patterns to outbound tool result text.
+/// Returns the (possibly redacted) text and the number of redactions applied.
+/// No-op (`hits == 0`, original text) when no pack is active or it has no
+/// `[redaction]` block.
+#[must_use]
+pub fn redact_result(text: &str) -> (String, usize) {
+    match runtime::active() {
+        Some(active) if !active.redaction.is_empty() => {
+            lean_ctx::core::redaction::redact_with_patterns(text, &active.redaction)
+        }
+        _ => (text.to_string(), 0),
+    }
+}
+
+/// Shared content decision for mutable tool output. A denial never echoes the
+/// input; structured/signed callers use `content::evaluate_text` directly and
+/// reject rewrites before computing their final digest.
+pub fn protect_result(tool: &str, text: &str) -> Result<String, &'static str> {
+    let Some(active) = runtime::active() else {
+        return Ok(text.to_owned());
+    };
+    let outcome = lean_ctx::core::policy::content::evaluate_text(text, &active);
+    audit_filter(tool, &outcome.audit, outcome.blocked);
+    if outcome.blocked {
+        return Err("[POLICY BLOCKED] Content withheld by the active context policy.");
+    }
+    let mut text = outcome.text;
+    for warning in outcome.warnings {
+        let rendered = format!("[FILTER] {warning}");
+        if !text.lines().any(|line| line == rendered) {
+            text.push_str("\n\n");
+            text.push_str(&rendered);
+        }
+    }
+    Ok(text)
+}
+
+/// Apply the policy-pack and built-in secret redactors to text sent to a model
+/// by protocol surfaces outside the MCP tool pipeline, then admit it through
+/// the context gateway like any other delivery: PII is masked, withheld
+/// content is replaced by a content-free reason, and the decision is recorded
+/// in the current call's receipt when one is open.
+pub fn redact_model_text(text: &str) -> String {
+    let (policy_redacted, _) = redact_result(text);
+    let redacted = lean_ctx::core::redaction::redact_text_if_enabled(&policy_redacted);
+    lean_ctx::core::context_admission::admit_source(&redacted, "protocol:model-text", false)
+        .unwrap_or_else(|error| format!("[lean-ctx gateway: {error}]"))
+}
+
+/// Audit a blocked egress (write/action) DLP decision (GL #676).
+/// **Privacy-preserving**: records the rule/class label (`forbidden-pattern:…`,
+/// `secret`, `pii:…`, `rate-limit`) — never the matched content — for the
+/// agent `agent_id` that attempted it.
+pub fn audit_egress(tool: &str, reason: &str, agent_id: &str) {
+    let policy =
+        runtime::active().map_or_else(|| "policy".to_string(), |a| a.resolved.name.clone());
+    lean_ctx::core::events::emit_policy_violation(
+        &policy,
+        tool,
+        &format!("egress blocked: {reason}"),
+    );
+    lean_ctx::core::audit_trail::record(lean_ctx::core::audit_trail::AuditEntryData {
+        agent_id: agent_id.to_string(),
+        tool: tool.to_string(),
+        action: None,
+        input_hash: String::new(),
+        output_tokens: 0,
+        role: policy,
+        event_type: lean_ctx::core::audit_trail::AuditEventType::ToolDenied,
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lean_ctx::core::policy::ResolvedPolicy;
+    use std::collections::BTreeMap;
+
+    fn active(allow: Option<Vec<&str>>, deny: Vec<&str>) -> ActivePolicy {
+        ActivePolicy::from_resolved(ResolvedPolicy {
+            name: "acme".into(),
+            version: "1.0.0".into(),
+            description: "t".into(),
+            chain: vec![],
+            default_read_mode: None,
+            allow_tools: allow.map(|a| a.into_iter().map(String::from).collect()),
+            deny_tools: deny.into_iter().map(String::from).collect(),
+            max_context_tokens: None,
+            audit_retention_days: None,
+            redaction: BTreeMap::new(),
+            filters: lean_ctx::core::policy::FilterRules::default(),
+            egress: lean_ctx::core::policy::EgressRules::default(),
+            routing: lean_ctx::core::policy::RoutingPolicyRules::default(),
+            budgets: lean_ctx::core::policy::BudgetRules::default(),
+        })
+    }
+
+    #[test]
+    fn no_pack_allows_everything() {
+        let r = evaluate(None, "ctx_shell");
+        assert!(!r.blocked);
+    }
+
+    #[test]
+    fn deny_tool_is_blocked_with_message() {
+        let p = active(None, vec!["ctx_url_read"]);
+        let r = evaluate(Some(&p), "ctx_url_read");
+        assert!(r.blocked);
+        assert_eq!(r.policy_name.as_deref(), Some("acme"));
+        assert!(r.message.unwrap().contains("[POLICY DENIED]"));
+    }
+
+    #[test]
+    fn allowlist_blocks_unlisted_tool() {
+        let p = active(Some(vec!["ctx_read"]), vec![]);
+        assert!(!evaluate(Some(&p), "ctx_read").blocked);
+        assert!(evaluate(Some(&p), "ctx_shell").blocked);
+    }
+
+    #[test]
+    fn exempt_tools_never_blocked_even_under_allowlist() {
+        // An allowlist of only ctx_read must still let the operator reach the
+        // policy/session meta-tools to recover.
+        let p = active(Some(vec!["ctx_read"]), vec![]);
+        for t in ["ctx", "ctx_session", "ctx_policy"] {
+            assert!(!evaluate(Some(&p), t).blocked, "{t} must be exempt");
+        }
+    }
+
+    #[test]
+    fn protected_clients_cannot_use_operator_recovery_exemptions() {
+        let p = active(Some(vec!["ctx_read"]), vec![]);
+        for tool in EXEMPT_TOOLS {
+            assert!(evaluate_with_exemptions(Some(&p), tool, false).blocked);
+        }
+        assert!(!evaluate_with_exemptions(Some(&p), "ctx_read", false).blocked);
+    }
+
+    #[test]
+    fn into_result_renders_denial() {
+        let p = active(None, vec!["ctx_shell"]);
+        let r = evaluate(Some(&p), "ctx_shell");
+        // A denial is a tool error, not a successful result.
+        assert_eq!(
+            into_call_tool_result(&r).and_then(|denied| denied.is_error),
+            Some(true)
+        );
+        let allowed = evaluate(None, "ctx_shell");
+        assert!(into_call_tool_result(&allowed).is_none());
+    }
+
+    /// End-to-end through the global runtime cache: the public allow path and
+    /// `redact_result` must reflect the active pack, and clearing it restores
+    /// the unrestricted default. (Deny audit side-effects are covered by the
+    /// pure `evaluate` tests, so this stays disk-free.)
+    #[test]
+    fn global_active_drives_allow_and_redaction() {
+        let mut redaction = BTreeMap::new();
+        redaction.insert("employee_id".to_string(), r"EMP-\d{4}".to_string());
+        {
+            let _policy = runtime::TestPolicyOverride::set(Some(ResolvedPolicy {
+                name: "itest".into(),
+                version: "1.0.0".into(),
+                description: "t".into(),
+                chain: vec![],
+                default_read_mode: Some("map".into()),
+                allow_tools: None,
+                deny_tools: vec!["ctx_url_read".into()],
+                max_context_tokens: Some(5_000),
+                audit_retention_days: None,
+                redaction,
+                filters: lean_ctx::core::policy::FilterRules::default(),
+                egress: lean_ctx::core::policy::EgressRules::default(),
+                routing: lean_ctx::core::policy::RoutingPolicyRules::default(),
+                budgets: lean_ctx::core::policy::BudgetRules::default(),
+            }));
+
+            assert!(!check_tool_access("ctx_read").blocked);
+            assert!(!check_tool_access("ctx_session").blocked, "exempt tool");
+            let (out, hits) = redact_result("contact EMP-1234 today");
+            assert_eq!(hits, 1);
+            assert!(out.contains("[REDACTED:employee_id]"));
+            assert!(out.starts_with("contact "));
+            assert!(out.ends_with(" today"));
+        }
+        assert!(
+            !check_tool_access("ctx_url_read").blocked,
+            "no pack → allow"
+        );
+        assert_eq!(redact_result("contact EMP-1234 today").1, 0);
+    }
+}

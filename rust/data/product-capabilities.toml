@@ -109,7 +109,7 @@ redistribution_oem_rights = "apache_rights"
 data_boundary = "explicit local export and import"
 telemetry_event_class = "none"
 public_maturity = "available"
-source_path = "rust/src/tools/ctx_handoff.rs; rust/src/core/context_package/mod.rs"
+source_path = "rust/crates/lean-ctx-server/src/tools/ctx_handoff.rs; rust/src/core/context_package/mod.rs"
 
 [[capability]]
 id = "pro.agent_bus.local"
@@ -129,7 +129,7 @@ redistribution_oem_rights = "apache_rights"
 data_boundary = "single-account local IPC and persisted coordination metadata"
 telemetry_event_class = "product_usage"
 public_maturity = "research"
-source_path = "rust/src/tools/ctx_agent.rs; rust/src/core/agents/mod.rs"
+source_path = "rust/crates/lean-ctx-server/src/tools/ctx_agent.rs; rust/src/core/agents/mod.rs"
 
 [[capability]]
 id = "pro.agent_presence.local"
@@ -169,7 +169,7 @@ redistribution_oem_rights = "apache_rights"
 data_boundary = "signed local capsule references"
 telemetry_event_class = "product_usage"
 public_maturity = "research"
-source_path = "rust/src/tools/ctx_agent.rs; rust/src/core/ocla/builtin/agent_gateway.rs"
+source_path = "rust/crates/lean-ctx-server/src/tools/ctx_agent.rs; rust/src/core/ocla/builtin/agent_gateway.rs"
 
 [[capability]]
 id = "pro.agent_knowledge.local"
@@ -189,7 +189,7 @@ redistribution_oem_rights = "apache_rights"
 data_boundary = "project-scoped local facts and references"
 telemetry_event_class = "product_usage"
 public_maturity = "research"
-source_path = "rust/src/tools/ctx_agent.rs; rust/src/core/knowledge/mod.rs"
+source_path = "rust/crates/lean-ctx-server/src/tools/ctx_agent.rs; rust/src/core/knowledge/mod.rs"
 
 [[capability]]
 id = "pro.agent_leases.local"
@@ -209,7 +209,7 @@ redistribution_oem_rights = "apache_rights"
 data_boundary = "local path and symbol ownership metadata"
 telemetry_event_class = "product_usage"
 public_maturity = "research"
-source_path = "rust/src/core/scent_field.rs; rust/src/tools/ctx_agent.rs"
+source_path = "rust/src/core/scent_field.rs; rust/crates/lean-ctx-server/src/tools/ctx_agent.rs"
 
 [[capability]]
 id = "pro.work_graph.local"
@@ -880,7 +880,7 @@ redistribution_oem_rights = "apache_rights"
 data_boundary = "user-configured provider transport"
 telemetry_event_class = "none"
 public_maturity = "available"
-source_path = "rust/src/proxy/mod.rs"
+source_path = "rust/crates/lean-ctx-proxy/src/lib.rs"
 
 [[capability]]
 id = "trust.runtime.sensitivity_floor"
@@ -960,7 +960,7 @@ redistribution_oem_rights = "apache_rights"
 data_boundary = "operator-written alias; selected provider performs network call"
 telemetry_event_class = "none"
 public_maturity = "available"
-source_path = "rust/src/proxy/routing.rs"
+source_path = "rust/crates/lean-ctx-proxy/src/routing.rs"
 
 [[capability]]
 id = "trust.runtime.ast_compression"
@@ -1020,7 +1020,7 @@ redistribution_oem_rights = "apache_rights"
 data_boundary = "local listener subject to explicit bind configuration"
 telemetry_event_class = "none"
 public_maturity = "available"
-source_path = "rust/src/http_server/mod.rs"
+source_path = "rust/crates/lean-ctx/src/http_server/mod.rs"
 
 [[capability]]
 id = "trust.runtime.wasm"
@@ -1060,7 +1060,7 @@ redistribution_oem_rights = "apache_rights"
 data_boundary = "local protocol transformation"
 telemetry_event_class = "none"
 public_maturity = "preview"
-source_path = "rust/src/proxy/forward/xlat.rs"
+source_path = "rust/crates/lean-ctx-proxy/src/forward/xlat.rs"
 
 [[capability]]
 id = "pro.cloud_sync"

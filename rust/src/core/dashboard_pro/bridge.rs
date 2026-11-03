@@ -16,18 +16,18 @@ use super::{ProError, ProResult, ProjectScope, watch};
 /// One analysis frame: requests and answers are at most 1 MiB.
 pub(crate) const MAX_FRAME_BYTES: usize = 1 << 20;
 
-pub(crate) struct Env<'a> {
-    pub(crate) scope: &'a ProjectScope,
-    pub(crate) routes: &'a dyn RouteSource,
-    pub(crate) notifier: &'a dyn Notifier,
-    pub(crate) now: DateTime<Utc>,
+pub struct Env<'a> {
+    pub scope: &'a ProjectScope,
+    pub routes: &'a dyn RouteSource,
+    pub notifier: &'a dyn Notifier,
+    pub now: DateTime<Utc>,
 }
 
 /// An HTTP answer for the cockpit.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Reply {
-    pub(crate) status: u16,
-    pub(crate) body: Value,
+pub struct Reply {
+    pub status: u16,
+    pub body: Value,
 }
 
 impl Reply {
@@ -47,7 +47,7 @@ impl Reply {
 /// `{request}` for the cockpit's computation. `alerts.evaluate` answers
 /// `{skip: true}` when there is nothing to evaluate, else also
 /// `guard_cursor`, which the cockpit hands back to `apply`.
-pub(crate) fn handle_inputs(env: &Env<'_>, raw: &str) -> Reply {
+pub fn handle_inputs(env: &Env<'_>, raw: &str) -> Reply {
     let request = match request::parse(raw).and_then(|r| scoped(env, r)) {
         Ok(request) => request,
         Err(error) => return Reply::error(&error),
@@ -76,7 +76,7 @@ pub(crate) fn handle_inputs(env: &Env<'_>, raw: &str) -> Reply {
 /// `POST /api/dashboard-analysis/apply` `{op, method, query, body, response,
 /// guard_cursor?}` → `{status, body | file | applied}`; a refusal keeps its
 /// status and answers `{error}`.
-pub(crate) fn handle_apply(env: &Env<'_>, raw: &str) -> Reply {
+pub fn handle_apply(env: &Env<'_>, raw: &str) -> Reply {
     if raw.len() > MAX_FRAME_BYTES + request::MAX_REQUEST_BYTES {
         return Reply::error(&ProError::new(413, "Request too large"));
     }
@@ -237,7 +237,7 @@ pub(crate) fn finish(
 }
 
 /// The HTTP status line of a reply.
-pub(crate) fn status_line(status: u16) -> &'static str {
+pub fn status_line(status: u16) -> &'static str {
     match status {
         200 => "200 OK",
         400 => "400 Bad Request",

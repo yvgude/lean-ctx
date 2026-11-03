@@ -20,7 +20,7 @@ task-relevant context, applies supported access and content controls before
 delivery, and records the context operations and delivery evidence it can observe.
 Your application, agent loop and model stay yours.
 
-The open-source **LeanCTX Engine** runs locally through CLI, MCP, hooks and proxy paths.
+The open-source **LeanCTX | OSS** runs locally through CLI, MCP, hooks and proxy paths.
 The **LeanCTX SDK** embeds supported Engine capabilities in your application.
 
 ---
@@ -134,7 +134,7 @@ first-class paths from other compatibility references.
 
 ---
 
-## Inside the LeanCTX Engine
+## Inside LeanCTX | OSS
 
 The Engine puts Select, Control, Learn and Prove into the context paths of your
 existing AI tools. Your host keeps control of the task, agent loop and model.
@@ -757,7 +757,7 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md). Easy first PR: propose a new CLI 
 
 ## License
 
-The LeanCTX Engine and its open interfaces (`rust/`, `packages/`, `docs/`,
+LeanCTX | OSS and its open interfaces (`rust/`, `packages/`, `docs/`,
 `scripts/`) are Apache-2.0. [LICENSE.md](LICENSE.md) and
 [LICENSE_MATRIX.toml](LICENSE_MATRIX.toml) are the path-level authority for
 that Apache host.

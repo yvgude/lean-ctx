@@ -127,13 +127,13 @@ fn test_error_does_not_block() {
 #[test]
 fn missing_task_text_yields_passthrough_profile() {
     use crate::core::triage::confidence::ACTIONABLE_FLOOR_MILLI;
-    use crate::server::context_gate::triage_filter_level;
 
     let runtime = DecisionLoopRuntime::with_triage(TriageEngine::default());
     let context = runtime.on_tool_start("ctx_read", None, "no-task-text", "agent");
 
     assert_eq!(context.profile_intent, "explore");
     let profile = runtime.profile_for_session("no-task-text").unwrap();
+    // Below the actionable floor: the server's output filter passes it
+    // through (asserted in `server::context_gate` tests).
     assert!(profile.confidence_milli < ACTIONABLE_FLOOR_MILLI);
-    assert_eq!(triage_filter_level(&profile), 0);
 }

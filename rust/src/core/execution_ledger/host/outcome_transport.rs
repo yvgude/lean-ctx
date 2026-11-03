@@ -11,7 +11,7 @@ use super::{HostOutcomeRequest, HostReceiptAuthority};
 use crate::core::outcome::signals::{OutcomeSignal, SignalType, SignalValue};
 
 impl HostReceiptAuthority {
-    pub(crate) fn observe_engine_outcome(
+    pub fn observe_engine_outcome(
         &self,
         request: &EngineOutcomeRequestV1,
     ) -> Result<EngineOutcomeResponseV1> {

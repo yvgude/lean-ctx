@@ -268,7 +268,7 @@
         "consent_request",
         "binding_frozen",
         "purge_pending",
-        "engine_revoked_events",
+        "instance_revoked_events",
         "contradiction_open",
         "retention_pending",
         "invite",
@@ -286,8 +286,8 @@
         "vault.transferred",
         "retention.scheduled",
         "worker.joined",
-        "engine.connected",
-        "engine.revoked",
+        "instance.connected",
+        "instance.revoked",
         "vault.visibility",
         "vault.released"
       ]
@@ -376,7 +376,7 @@
                 ]
               },
               "insights": {
-                "description": "engine metrics v2 KPIs of the workspace (GET …/insights/summary), or an overview_part_error",
+                "description": "instance metrics v2 KPIs of the workspace (GET …/insights/summary), or an overview_part_error",
                 "type": "object"
               }
             }
@@ -1699,7 +1699,7 @@
       "required": [
         "id",
         "name",
-        "engine",
+        "instance",
         "owner_handle",
         "host_app",
         "role",
@@ -1720,7 +1720,7 @@
         "name": {
           "$ref": "worker.schema.json#/$defs/name"
         },
-        "engine": {
+        "instance": {
           "type": "object",
           "required": [
             "id",
@@ -2055,14 +2055,14 @@
         "capture_gate": {
           "type": "object",
           "required": [
-            "engines",
+            "instances",
             "considered",
             "captured",
             "rejected"
           ],
           "additionalProperties": false,
           "properties": {
-            "engines": {
+            "instances": {
               "type": "integer",
               "minimum": 0
             },
@@ -2776,7 +2776,7 @@
       "$ref": "#/$defs/w9_response"
     },
     "w68_response": {
-      "description": "W68 GET /api/v1/orgs/{o}/knowledge/reuse?weeks=1..26 (v5 2.2.2, 2.6.1, plan v1.1 §5.3): per ISO week two separate figures, both derived on the server, never from engine telemetry. delivery: the server served engine B (E4 tail or E3 segment, first time per node and engine) a knowledge node another engine A wrote; it says the knowledge arrived, not that it was used. reuse: verified cross-engine reuse, only with a usage reference: B's own claim names A's node (node:<id> in its signed body) and B linked it with a live derived_from, references or depends_on edge; links without that citation never count. Oldest week first, the current ISO week last; evidence lists the newest usage references of the range",
+      "description": "W68 GET /api/v1/orgs/{o}/knowledge/reuse?weeks=1..26 (v5 2.2.2, 2.6.1, plan v1.1 §5.3): per ISO week two separate figures, both derived on the server, never from instance telemetry. delivery: the server served instance B (E4 tail or E3 segment, first time per node and instance) a knowledge node another instance A wrote; it says the knowledge arrived, not that it was used. reuse: verified cross-instance reuse, only with a usage reference: B's own claim names A's node (node:<id> in its signed body) and B linked it with a live derived_from, references or depends_on edge; links without that citation never count. Oldest week first, the current ISO week last; evidence lists the newest usage references of the range",
       "type": "object",
       "required": [
         "weeks",
@@ -2819,24 +2819,24 @@
                 "required": [
                   "pairs",
                   "nodes",
-                  "engines"
+                  "instances"
                 ],
                 "additionalProperties": false,
                 "properties": {
                   "pairs": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "distinct (node, receiving engine) pairs first delivered this week: the Home headline"
+                    "description": "distinct (node, receiving instance) pairs first delivered this week: the Home headline"
                   },
                   "nodes": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "distinct nodes delivered to another engine"
+                    "description": "distinct nodes delivered to another instance"
                   },
-                  "engines": {
+                  "instances": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "distinct receiving engines"
+                    "description": "distinct receiving instances"
                   }
                 }
               },
@@ -2845,7 +2845,7 @@
                 "required": [
                   "pairs",
                   "nodes",
-                  "engines",
+                  "instances",
                   "verified_knowledge_pairs"
                 ],
                 "additionalProperties": false,
@@ -2853,17 +2853,17 @@
                   "pairs": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "distinct (node, using engine) pairs with a usage reference this week; shown only when > 0"
+                    "description": "distinct (node, using instance) pairs with a usage reference this week; shown only when > 0"
                   },
                   "nodes": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "distinct nodes another engine used"
+                    "description": "distinct nodes another instance used"
                   },
-                  "engines": {
+                  "instances": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "distinct using engines"
+                    "description": "distinct using instances"
                   },
                   "verified_knowledge_pairs": {
                     "type": "integer",
@@ -2894,11 +2894,11 @@
             "properties": {
               "node_id": {
                 "$ref": "common.schema.json#/$defs/node_id",
-                "description": "the used node (engine A's)"
+                "description": "the used node (instance A's)"
               },
               "cited_by": {
                 "$ref": "common.schema.json#/$defs/node_id",
-                "description": "engine B's claim that names it"
+                "description": "instance B's claim that names it"
               },
               "edge_id": {
                 "$ref": "common.schema.json#/$defs/edge_id"
@@ -2963,7 +2963,7 @@
       }
     },
     "w97_response": {
-      "description": "W97 GET /api/v1/orgs/{o}/knowledge/flow?days=1..180 (the overview of all workspaces, /app/): the workspace's knowledge flow per UTC day, oldest first, today (UTC) last. captured: knowledge nodes the workspace's engines added that day; delivered: W68's delivery (first deliveries of a node to another engine) of that day; reused: W68's verified reuse, distinct (node, engine B) pairs whose usage-reference edge arrived that day. Derived on the server, never from engine telemetry; counts only, no names",
+      "description": "W97 GET /api/v1/orgs/{o}/knowledge/flow?days=1..180 (the overview of all workspaces, /app/): the workspace's knowledge flow per UTC day, oldest first, today (UTC) last. captured: knowledge nodes the workspace's instances added that day; delivered: W68's delivery (first deliveries of a node to another instance) of that day; reused: W68's verified reuse, distinct (node, instance B) pairs whose usage-reference edge arrived that day. Derived on the server, never from instance telemetry; counts only, no names",
       "type": "object",
       "required": [
         "from",
@@ -3009,12 +3009,12 @@
               "delivered": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "first deliveries (node, receiving engine) of that day"
+                "description": "first deliveries (node, receiving instance) of that day"
               },
               "reused": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "distinct verified-reuse pairs (node, using engine) of that day"
+                "description": "distinct verified-reuse pairs (node, using instance) of that day"
               }
             }
           }
@@ -3186,13 +3186,13 @@
       }
     },
     "policy_field": {
-      "description": "one member of the policy table: merge rule and who enforces it (x-merge, x-enforcement, x-engine, x-server)",
+      "description": "one member of the policy table: merge rule and who enforces it (x-merge, x-enforcement, x-instance, x-server)",
       "type": "object",
       "required": [
         "path",
         "merge",
         "enforcement",
-        "engine_field",
+        "instance_field",
         "server_point"
       ],
       "additionalProperties": false,
@@ -3215,12 +3215,12 @@
         },
         "enforcement": {
           "enum": [
-            "engine",
+            "instance",
             "server",
             "advisory"
           ]
         },
-        "engine_field": {
+        "instance_field": {
           "type": [
             "string",
             "null"
@@ -3238,13 +3238,13 @@
           "if": {
             "properties": {
               "enforcement": {
-                "const": "engine"
+                "const": "instance"
               }
             }
           },
           "then": {
             "properties": {
-              "engine_field": {
+              "instance_field": {
                 "type": "string"
               },
               "server_point": {
@@ -3263,7 +3263,7 @@
           },
           "then": {
             "properties": {
-              "engine_field": {
+              "instance_field": {
                 "type": "null"
               },
               "server_point": {
@@ -3282,7 +3282,7 @@
           },
           "then": {
             "properties": {
-              "engine_field": {
+              "instance_field": {
                 "type": "null"
               },
               "server_point": {
@@ -3294,7 +3294,7 @@
       ]
     },
     "w77_response": {
-      "description": "W77 GET /api/v1/orgs/{o}/policies (reader): current documents (org -> engine, removed scopes left out) and the member table",
+      "description": "W77 GET /api/v1/orgs/{o}/policies (reader): current documents (org -> instance, removed scopes left out) and the member table",
       "type": "object",
       "required": [
         "items",
@@ -3318,7 +3318,7 @@
       }
     },
     "w78_response": {
-      "description": "W78 GET /api/v1/orgs/{o}/policies/effective?instance= (own engine, admin): what that engine gets now; 409 non_mergeable with field",
+      "description": "W78 GET /api/v1/orgs/{o}/policies/effective?instance= (own instance, admin): what that instance gets now; 409 non_mergeable with field",
       "type": "object",
       "required": [
         "instance_id",
@@ -3355,7 +3355,7 @@
       }
     },
     "w79_response": {
-      "description": "W79 GET /api/v1/orgs/{o}/policies/enforcement (reader: own engines; admin: all): acked / refused / outdated / unreachable per live engine; acked.unenforced lists only engine-enforced members",
+      "description": "W79 GET /api/v1/orgs/{o}/policies/enforcement (reader: own instances; admin: all): acked / refused / outdated / unreachable per live instance; acked.unenforced lists only instance-enforced members",
       "type": "object",
       "required": [
         "items",
@@ -3488,7 +3488,7 @@
       }
     },
     "w79_refusal": {
-      "description": "the engine's last refusal of a bundle issued to it (POST /v1/policy/ack with `refused`); cleared once it applies that version or a newer one",
+      "description": "the instance's last refusal of a bundle issued to it (POST /v1/policy/ack with `refused`); cleared once it applies that version or a newer one",
       "type": "object",
       "required": [
         "version",
@@ -3526,7 +3526,7 @@
       }
     },
     "w80_request": {
-      "description": "W80 PUT /api/v1/orgs/{o}/policies/{level} (org, workspace: admin) and …/{level}/{scope} (vault: maintainer; engine: its owner or admin), class H0; loosening and org-level changes need step-up",
+      "description": "W80 PUT /api/v1/orgs/{o}/policies/{level} (org, workspace: admin) and …/{level}/{scope} (vault: maintainer; instance: its owner or admin), class H0; loosening and org-level changes need step-up",
       "type": "object",
       "required": [
         "document",
@@ -3913,7 +3913,7 @@
         "plan",
         "seats",
         "members",
-        "engines_connected"
+        "instances_connected"
       ],
       "additionalProperties": false,
       "properties": {
@@ -3941,7 +3941,7 @@
           "type": "integer",
           "minimum": 0
         },
-        "engines_connected": {
+        "instances_connected": {
           "type": "integer",
           "minimum": 0
         }
@@ -4020,7 +4020,7 @@
         }
       }
     },
-    "w73_engine": {
+    "w73_instance": {
       "type": "object",
       "required": [
         "id",
@@ -4177,7 +4177,7 @@
           ]
         }
       },
-      "description": "W73 engine of a linked workspace with its POLICY-B1 enforcement state (null once revoked)"
+      "description": "W73 instance of a linked workspace with its POLICY-B1 enforcement state (null once revoked)"
     },
     "w73_list": {
       "type": "object",
@@ -4190,7 +4190,7 @@
         "items": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/w73_engine"
+            "$ref": "#/$defs/w73_instance"
           }
         },
         "next_cursor": {
@@ -4460,7 +4460,7 @@
       "required": [
         "id",
         "at",
-        "engine",
+        "instance",
         "workspace",
         "reason",
         "compromised_since",
@@ -4474,7 +4474,7 @@
         "at": {
           "$ref": "#/$defs/time"
         },
-        "engine": {
+        "instance": {
           "type": "object",
           "required": [
             "id",
@@ -4603,7 +4603,7 @@
         "kind",
         "workspace",
         "vault",
-        "engine",
+        "instance",
         "purge_id"
       ],
       "additionalProperties": false,
@@ -4627,7 +4627,7 @@
         "vault": {
           "type": "string"
         },
-        "engine": {
+        "instance": {
           "type": "object",
           "required": [
             "id",
@@ -4708,7 +4708,7 @@
       "description": "W75 GET /api/v1/companies/{g}/activity/{view} and W76 GET /api/v1/orgs/{o}/activity/{view}: paged oversight, no message bodies"
     },
     "w95_response": {
-      "description": "W95 GET /api/v1/orgs/{o}/metrics/pilot?weeks=1..26 (admin; Release B commercial gate, CHECKLIST 3.4, plan v1.1 §8.4, §15): a workspace's pilot metrics from the server's own records, never engine telemetry: time to the first and second engine, vaults with active sync, engines on the current policy, per ISO week (oldest first) W68 delivery and reuse, reuse no longer current, coordination and policy-admin counts, and resource usage (bytes per vault, metered transfer and bus messages of the previous and current UTC month). Unit costs and margins are the operator's and never part of this response",
+      "description": "W95 GET /api/v1/orgs/{o}/metrics/pilot?weeks=1..26 (admin; Release B commercial gate, CHECKLIST 3.4, plan v1.1 §8.4, §15): a workspace's pilot metrics from the server's own records, never instance telemetry: time to the first and second instance, vaults with active sync, instances on the current policy, per ISO week (oldest first) W68 delivery and reuse, reuse no longer current, coordination and policy-admin counts, and resource usage (bytes per vault, metered transfer and bus messages of the previous and current UTC month). Unit costs and margins are the operator's and never part of this response",
       "type": "object",
       "required": [
         "from",
@@ -4735,10 +4735,10 @@
           "type": "object",
           "required": [
             "workspace_created_at",
-            "first_engine_at",
-            "first_engine_s",
-            "second_engine_at",
-            "second_engine_s"
+            "first_instance_at",
+            "first_instance_s",
+            "second_instance_at",
+            "second_instance_s"
           ],
           "additionalProperties": false,
           "properties": {
@@ -4746,29 +4746,29 @@
               "type": "string",
               "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
             },
-            "first_engine_at": {
+            "first_instance_at": {
               "type": [
                 "string",
                 "null"
               ],
               "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
-              "description": "first token of the workspace's first engine (revoked ones count)"
+              "description": "first token of the workspace's first instance (revoked ones count)"
             },
-            "first_engine_s": {
+            "first_instance_s": {
               "type": [
                 "integer",
                 "null"
               ],
               "minimum": 0
             },
-            "second_engine_at": {
+            "second_instance_at": {
               "type": [
                 "string",
                 "null"
               ],
               "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
             },
-            "second_engine_s": {
+            "second_instance_s": {
               "type": [
                 "integer",
                 "null"
@@ -4797,7 +4797,7 @@
             "active": {
               "type": "integer",
               "minimum": 0,
-              "description": "vaults an engine pushed into or read the snapshot/tail of within `days`"
+              "description": "vaults an instance pushed into or read the snapshot/tail of within `days`"
             },
             "active_share": {
               "type": [
@@ -4812,7 +4812,7 @@
         "policy": {
           "type": "object",
           "required": [
-            "engines",
+            "instances",
             "acked",
             "outdated",
             "refused",
@@ -4821,7 +4821,7 @@
           ],
           "additionalProperties": false,
           "properties": {
-            "engines": {
+            "instances": {
               "type": "integer",
               "minimum": 0
             },
@@ -4848,7 +4848,7 @@
               ],
               "minimum": 0,
               "maximum": 1,
-              "description": "acked / engines (W79 states)"
+              "description": "acked / instances (W79 states)"
             }
           }
         },
@@ -4891,7 +4891,7 @@
                 "required": [
                   "pairs",
                   "nodes",
-                  "engines"
+                  "instances"
                 ],
                 "additionalProperties": false,
                 "properties": {
@@ -4903,19 +4903,19 @@
                     "type": "integer",
                     "minimum": 0
                   },
-                  "engines": {
+                  "instances": {
                     "type": "integer",
                     "minimum": 0
                   }
                 }
               },
               "reuse": {
-                "description": "W68 verified cross-engine reuse of this week",
+                "description": "W68 verified cross-instance reuse of this week",
                 "type": "object",
                 "required": [
                   "pairs",
                   "nodes",
-                  "engines",
+                  "instances",
                   "verified_knowledge_pairs"
                 ],
                 "additionalProperties": false,
@@ -4928,7 +4928,7 @@
                     "type": "integer",
                     "minimum": 0
                   },
-                  "engines": {
+                  "instances": {
                     "type": "integer",
                     "minimum": 0
                   },
@@ -5040,7 +5040,7 @@
                   "saves": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "policy document versions saved in the workspace (org, workspace, vault, engine level)"
+                    "description": "policy document versions saved in the workspace (org, workspace, vault, instance level)"
                   },
                   "removals": {
                     "type": "integer",
@@ -5061,7 +5061,7 @@
           "required": [
             "storage_bytes",
             "vaults",
-            "engines_registered",
+            "instances_registered",
             "months"
           ],
           "additionalProperties": false,
@@ -5093,7 +5093,7 @@
                 }
               }
             },
-            "engines_registered": {
+            "instances_registered": {
               "type": "integer",
               "minimum": 0
             },
@@ -5108,8 +5108,8 @@
                   "complete",
                   "transfer_bytes",
                   "bus_messages",
-                  "engines_active",
-                  "transfer_per_engine_bytes"
+                  "instances_active",
+                  "transfer_per_instance_bytes"
                 ],
                 "additionalProperties": false,
                 "properties": {
@@ -5128,11 +5128,11 @@
                     "type": "integer",
                     "minimum": 0
                   },
-                  "engines_active": {
+                  "instances_active": {
                     "type": "integer",
                     "minimum": 0
                   },
-                  "transfer_per_engine_bytes": {
+                  "transfer_per_instance_bytes": {
                     "type": [
                       "integer",
                       "null"
@@ -5147,13 +5147,13 @@
       }
     },
     "w96_instance": {
-      "description": "W96 engine of the workspace (API.md §3 Instance). slot_free_at: when a revoked engine's registered slot frees (Pro: revoked_at + 7 days, the cool-down); null while it is enrolled, once its slot is free (cool-down over or recovered, P7) and on every other plan",
+      "description": "W96 instance of the workspace (API.md §3 Instance). slot_free_at: when a revoked instance's registered slot frees (Pro: revoked_at + 7 days, the cool-down); null while it is enrolled, once its slot is free (cool-down over or recovered, P7) and on every other plan",
       "type": "object",
       "required": [
         "id",
         "label",
         "owner",
-        "engine_version",
+        "instance_version",
         "os",
         "enrolled_at",
         "last_seen_at",
@@ -5194,7 +5194,7 @@
             }
           }
         },
-        "engine_version": {
+        "instance_version": {
           "type": "string"
         },
         "os": {
@@ -5265,7 +5265,7 @@
       }
     },
     "w96_response": {
-      "description": "W96 GET /api/v1/orgs/{o}/instances?state=connected|offline|revoked|all (reader: own engines, admin: all; ≤ 500, not revoked first)",
+      "description": "W96 GET /api/v1/orgs/{o}/instances?state=connected|offline|revoked|all (reader: own instances, admin: all; ≤ 500, not revoked first)",
       "type": "object",
       "required": [
         "items",
@@ -5502,7 +5502,7 @@
               "slug",
               "name",
               "members",
-              "connected_engines",
+              "connected_instances",
               "private_vaults",
               "storage_bytes",
               "transfer_bytes",
@@ -5522,7 +5522,7 @@
                 "type": "integer",
                 "minimum": 0
               },
-              "connected_engines": {
+              "connected_instances": {
                 "type": "integer",
                 "minimum": 0
               },

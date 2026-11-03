@@ -27,14 +27,14 @@ use transaction::{
 pub(crate) use github_api::github_api_json;
 #[cfg(test)]
 use github_api::{github_token, rate_limit_message};
-pub(crate) use rewire::SetupRefresh;
-pub(crate) use rewire::migrate_shadow_mode_default_public;
+pub use rewire::SetupRefresh;
+pub use rewire::migrate_shadow_mode_default_public;
 use rewire::{post_update_rewire, print_rewire_plan};
 
 mod platform;
 #[cfg(any(windows, test))]
 #[path = "updater/windows_sidecar.rs"]
-pub(crate) mod windows_sidecar;
+pub mod windows_sidecar;
 use platform::{
     gpu_build_already_installed, gpu_next_steps, gpu_platform_asset_name, platform_asset_name,
 };
@@ -51,12 +51,12 @@ const UPDATE_TRANSACTION_FILE: &str = "update-transaction.json";
 const UPDATE_LOCK_FILE: &str = "update.lock";
 
 /// `lean-ctx update`. `setup` is the refresh run after the binary is replaced.
-pub(crate) fn run(args: &[String], setup: &dyn SetupRefresh) {
+pub fn run(args: &[String], setup: &dyn SetupRefresh) {
     run_with_mode(args, UpdateMode::Normal, setup);
 }
 
 /// `lean-ctx enable-gpu`. `setup` is the refresh run after the binary is replaced.
-pub(crate) fn enable_gpu(args: &[String], setup: &dyn SetupRefresh) {
+pub fn enable_gpu(args: &[String], setup: &dyn SetupRefresh) {
     run_with_mode(args, UpdateMode::EnableGpu, setup);
 }
 
@@ -309,7 +309,7 @@ fn verify_download_integrity(
     #[cfg(not(feature = "secure-update"))]
     {
         let _ = (release, asset_name, bytes);
-        return Err("secure-update feature disabled (sha256 verification unavailable)".to_string());
+        Err("secure-update feature disabled (sha256 verification unavailable)".to_string())
     }
 
     #[cfg(feature = "secure-update")]
@@ -1052,25 +1052,16 @@ fn stop_managed_windows_processes() {
     // Try `lean-ctx stop` first — it's the cleanest shutdown path.
     let stop_result = std::process::Command::new("lean-ctx").arg("stop").output();
 
+    // `lean-ctx stop` stops only the services this instance recorded. There
+    // is no name-based fallback (`taskkill /IM lean-ctx.exe`): it reaches the
+    // MCP servers of running editor sessions (#2176, owner decision 02.11.).
+    // What still holds the binary is listed by `print_blocking_processes`.
     match stop_result {
         Ok(out) if out.status.success() => {
             eprintln!("  Managed processes stopped.");
         }
         _ => {
-            // Fallback: taskkill for known process types (proxy, serve).
-            // MCP servers managed by editors can't be killed safely.
-            for pattern in &["proxy start", "serve "] {
-                let _ = std::process::Command::new("taskkill")
-                    .args([
-                        "/F",
-                        "/FI",
-                        &format!("WINDOWTITLE eq *{pattern}*"),
-                        "/IM",
-                        "lean-ctx.exe",
-                    ])
-                    .output();
-            }
-            eprintln!("  Attempted to stop lean-ctx processes via taskkill.");
+            eprintln!("  Could not stop every lean-ctx service (see `lean-ctx stop`).");
         }
     }
 }

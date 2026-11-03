@@ -22,7 +22,7 @@ const INDEX_FILENAME: &str = "index.jsonl";
 /// One line in the append-only timeline — a compact pointer to a stored
 /// snapshot payload (the full snapshot lives in `<snapshot_id>.json`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct TimelineEntry {
+pub struct TimelineEntry {
     pub snapshot_id: String,
     pub parent_id: Option<String>,
     pub created_at: String,
@@ -116,7 +116,7 @@ fn read_snapshot_in(dir: &Path, snapshot_id: &str) -> Result<ContextSnapshotV1, 
 // --- public (project-scoped) -----------------------------------------------
 
 /// All timeline entries in chronological (append) order. Empty if none yet.
-pub(crate) fn load_entries(project_root: &str) -> Vec<TimelineEntry> {
+pub fn load_entries(project_root: &str) -> Vec<TimelineEntry> {
     snapshots_dir(project_root)
         .map(|d| load_entries_in(&d))
         .unwrap_or_default()
@@ -138,16 +138,13 @@ pub(crate) fn write_snapshot(
 }
 
 /// Load a stored snapshot payload by id.
-pub(crate) fn read_snapshot(
-    project_root: &str,
-    snapshot_id: &str,
-) -> Result<ContextSnapshotV1, String> {
+pub fn read_snapshot(project_root: &str, snapshot_id: &str) -> Result<ContextSnapshotV1, String> {
     read_snapshot_in(&snapshots_dir(project_root)?, snapshot_id)
 }
 
 /// Resolve a (possibly abbreviated) id prefix to a unique full snapshot id,
 /// git-style. Errors when nothing matches or the prefix is ambiguous.
-pub(crate) fn resolve_id(project_root: &str, prefix: &str) -> Result<String, String> {
+pub fn resolve_id(project_root: &str, prefix: &str) -> Result<String, String> {
     resolve_in(&load_entries(project_root), prefix)
 }
 

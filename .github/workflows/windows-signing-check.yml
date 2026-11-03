@@ -60,6 +60,9 @@ jobs:
           else
             cargo build --release --locked --target ${{ matrix.target }}
           fi
+      - name: Windows runtime imports
+        shell: bash
+        run: python scripts/check-windows-imports.py "rust/target/${{ matrix.target }}/release/lean-ctx.exe"
       - name: Reject unsigned binary
         shell: pwsh
         run: |

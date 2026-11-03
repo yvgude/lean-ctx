@@ -2,7 +2,7 @@
 
 > **Status: local setup note.** LeanCTX is the **Context Gateway for AI Systems**.
 > **Control what your AI can see.** This reference describes supported local
-> LeanCTX Engine integration behavior; it is not a general release or
+> LeanCTX | OSS integration behavior; it is not a general release or
 > performance guarantee. See [current positioning](../POSITIONING_CANONICAL.md).
 
 This guide outlines the process of installing **Lean-CTX** within a Windows Subsystem for Linux (WSL) environment and integrating it as an MCP server for **OpenCode** on Windows.

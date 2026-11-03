@@ -116,6 +116,18 @@ pub struct ProxyConfig {
     /// Anthropic's minimum cacheable size. `None`/`false` (the default) leaves the
     /// request untouched. See [`ProxyConfig::cache_breakpoint_enabled`].
     pub cache_breakpoint: Option<bool>,
+    /// Agent-loop cache lifetime for Anthropic. While the model works through
+    /// tool calls (the request ends in tool results), the conversation's cache
+    /// markers are written for 5 minutes instead of 1 hour; the person's last
+    /// prompt keeps a 1 h marker of its own, so a long pause loses at most this
+    /// turn's tool steps. A 1 h write costs 2x the input price, a 5 min write
+    /// 1.25x. See [`ProxyConfig::cache_ttl_loop_enabled`].
+    pub cache_ttl_loop: Option<bool>,
+    /// Long-session elision for Anthropic. Once a conversation's messages pass
+    /// 180 000 characters, tool output older than the live window and longer
+    /// than 2 000 characters leaves as a one-line stub naming a private archive
+    /// file with the full text. See [`ProxyConfig::long_session_elide_enabled`].
+    pub long_session_elide: Option<bool>,
     /// Opt-in counterfactual savings metering (#701). When enabled, each
     /// *rewritten* Anthropic `/v1/messages` request additionally fires a **free**
     /// `count_tokens` probe with the original, uncompressed body, concurrently
@@ -818,6 +830,29 @@ impl ProxyConfig {
         self.resolved_proxy_mode()
             .preset_for("cache_breakpoint")
             .unwrap_or(false)
+    }
+
+    /// Whether the agent-loop cache lifetime (5 min inside the loop, 1 h on the
+    /// person's last prompt) is applied to Anthropic requests.
+    /// `LEAN_CTX_PROXY_CACHE_TTL_LOOP=on|off` wins, then `[proxy]
+    /// cache_ttl_loop` in config.toml, else `true` (measured on Claude Code
+    /// `-p`, Haiku 5.5, Context Mode short tasks: -17.9 % cost, 79/80 vs 80/80
+    /// solved; only `cache_control` lifetimes change).
+    pub fn cache_ttl_loop_enabled(&self) -> bool {
+        env_bool_or("LEAN_CTX_PROXY_CACHE_TTL_LOOP", self.cache_ttl_loop, true)
+    }
+
+    /// Whether long-session elision applies to Anthropic requests
+    /// (every turn of a session past the threshold). `LEAN_CTX_PROXY_LONG_SESSION_ELIDE=on|off` wins,
+    /// then `[proxy] long_session_elide` in config.toml, else `true`
+    /// (measured on Claude Code, Haiku 5.5, long sessions: cost x0.74,
+    /// 95 % CI 0.53–0.94, 12/12 vs 12/12 solved).
+    pub fn long_session_elide_enabled(&self) -> bool {
+        env_bool_or(
+            "LEAN_CTX_PROXY_LONG_SESSION_ELIDE",
+            self.long_session_elide,
+            true,
+        )
     }
 
     /// Whether opt-in counterfactual savings metering (#701) is enabled. Off by

@@ -49,9 +49,9 @@ pub struct Config {
     /// Legacy `[cloud]` opt-in, migrated on load; never written back.
     #[serde(default, skip_serializing)]
     pub cloud: LegacyCloudConfig,
-    /// LeanCTX Hive connector (`[hive]`).
+    /// LeanCTX | Hive connector (`[hive]`).
     #[serde(default)]
-    pub hive: crate::core::hive::HiveConfig,
+    pub hive: crate::core::config::hive::HiveConfig,
     /// Model declaration for measured-vs-estimated cost reporting (MCP-only IDEs).
     #[serde(default)]
     pub cost: CostConfig,
@@ -857,6 +857,9 @@ pub struct Config {
     pub setup: SetupConfig,
     #[serde(default)]
     pub solution: super::solution::SolutionConfig,
+    /// Claude Code governor rule modes (`[governor]`; env overrides win).
+    #[serde(default)]
+    pub governor: super::governor::GovernorConfig,
     #[serde(default)]
     pub provenance: super::provenance::ProvenanceConfig,
     pub cross_agent: super::provenance::CrossAgentConfig,

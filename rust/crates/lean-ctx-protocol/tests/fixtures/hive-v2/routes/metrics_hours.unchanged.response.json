@@ -1,5 +1,5 @@
 {
-  "schema": "leanctx.hive.engine-metrics-ack/v2",
+  "schema": "leanctx.hive.instance-metrics-ack/v2",
   "accepted": 0,
   "unchanged": 1,
   "refused": [

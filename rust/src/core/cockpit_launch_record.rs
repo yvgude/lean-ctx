@@ -20,27 +20,27 @@ use crate::ipc::process::ProcessIdentity;
 /// The record file in the state dir.
 pub(crate) const RECORD_FILE: &str = "dashboard.launch.json";
 /// Set by a background start for its server child.
-pub(crate) const DETACHED_ENV: &str = "LEAN_CTX_COCKPIT_DETACHED";
+pub const DETACHED_ENV: &str = "LEAN_CTX_COCKPIT_DETACHED";
 
 /// Where the Cockpit server of this data dir runs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct LaunchRecord {
+pub struct LaunchRecord {
     pub(crate) schema_version: u32,
-    pub(crate) pid: u32,
+    pub pid: u32,
     /// Defends the PID against reuse by an unrelated process.
     pub(crate) identity: Option<ProcessIdentity>,
-    pub(crate) host: String,
-    pub(crate) port: u16,
-    pub(crate) base_path: String,
+    pub host: String,
+    pub port: u16,
+    pub base_path: String,
     pub(crate) version: String,
     /// Started by `lean-ctx cockpit` in the background (stoppable with
     /// `lean-ctx cockpit stop`), not in someone's terminal.
-    pub(crate) detached: bool,
+    pub detached: bool,
 }
 
 impl LaunchRecord {
     /// The record of this process, serving `host:port`.
-    pub(crate) fn of_this_process(host: &str, port: u16, base_path: &str) -> Self {
+    pub fn of_this_process(host: &str, port: u16, base_path: &str) -> Self {
         let pid = std::process::id();
         Self {
             schema_version: 1,
@@ -54,14 +54,23 @@ impl LaunchRecord {
         }
     }
 
+    /// The process identity recorded at start, when the platform has one.
+    #[must_use]
+    pub fn identity(&self) -> Option<&ProcessIdentity> {
+        self.identity.as_ref()
+    }
+
     /// The recorded process still runs (and is the one recorded, when the
-    /// platform can tell).
-    pub(crate) fn process_alive(&self) -> bool {
+    /// platform can tell). An update renaming the running image (`(deleted)`,
+    /// `lean-ctx.old.exe`) does not make it a different process.
+    pub fn process_alive(&self) -> bool {
         if !crate::ipc::process::is_alive(self.pid) {
             return false;
         }
         match (&self.identity, crate::ipc::process::identity(self.pid)) {
-            (Some(recorded), Some(current)) => *recorded == current,
+            (Some(recorded), Some(current)) => {
+                crate::ipc::process::same_process(recorded, &current)
+            }
             _ => true,
         }
     }
@@ -73,7 +82,7 @@ fn record_path() -> Option<PathBuf> {
         .map(|dir| dir.join(RECORD_FILE))
 }
 
-pub(crate) fn read_record() -> Option<LaunchRecord> {
+pub fn read_record() -> Option<LaunchRecord> {
     let bytes = std::fs::read(record_path()?).ok()?;
     if bytes.len() > 16 * 1024 {
         return None;
@@ -83,7 +92,7 @@ pub(crate) fn read_record() -> Option<LaunchRecord> {
         .filter(|record| record.schema_version == 1)
 }
 
-pub(crate) fn write_record(record: &LaunchRecord) {
+pub fn write_record(record: &LaunchRecord) {
     let Some(path) = record_path() else {
         return;
     };
@@ -96,7 +105,7 @@ pub(crate) fn write_record(record: &LaunchRecord) {
 }
 
 /// Remove the record when it names `pid` (a newer server may own it).
-pub(crate) fn remove_record_of(pid: u32) {
+pub fn remove_record_of(pid: u32) {
     if read_record().is_some_and(|record| record.pid == pid)
         && let Some(path) = record_path()
     {

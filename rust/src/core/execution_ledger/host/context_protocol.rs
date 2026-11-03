@@ -16,7 +16,7 @@ use crate::core::{
 
 impl HostReceiptAuthority {
     /// Initial publication has no quality signal; never derive acceptance from success.
-    pub(crate) fn published_context_protocol(
+    pub fn published_context_protocol(
         &self,
         attempt: &HostReceiptAttempt,
         invocation: &EngineInvocationV1,

@@ -13,12 +13,12 @@
       "contract_ref": "C-2026-017",
       "usage": {
         "quotas": {
-          "registered_engines": {
+          "registered_instances": {
             "limit": 100,
             "used": 4,
             "reset_at": null
           },
-          "connected_engines": {
+          "connected_instances": {
             "limit": 60,
             "used": 2,
             "reset_at": null
@@ -52,7 +52,7 @@
           "slug": "acme-platform",
           "name": "Acme Platform",
           "members": 2,
-          "connected_engines": 1,
+          "connected_instances": 1,
           "private_vaults": 3,
           "storage_bytes": 805306368,
           "transfer_bytes": 4294967296,
@@ -62,7 +62,7 @@
           "slug": "acme-research",
           "name": "Acme Research",
           "members": 1,
-          "connected_engines": 1,
+          "connected_instances": 1,
           "private_vaults": 2,
           "storage_bytes": 268435456,
           "transfer_bytes": 1073741824,

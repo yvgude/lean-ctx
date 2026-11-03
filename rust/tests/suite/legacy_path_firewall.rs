@@ -107,23 +107,31 @@ fn builds_home_legacy_path(text: &str) -> bool {
 
 #[test]
 fn no_new_home_legacy_path_construction() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut files = Vec::new();
-    collect_rs_files(&src, &mut files);
-    assert!(!files.is_empty(), "no source files found under {src:?}");
-
+    // The engine library, the MCP server (crates/lean-ctx-server) and the
+    // composition root (crates/lean-ctx) share one ALLOWLIST keyed by the
+    // path below each crate's `src/`.
+    let roots = [
+        crate::engine_dir().join("src"),
+        crate::engine_dir().join("crates/lean-ctx-server/src"),
+        crate::engine_dir().join("crates/lean-ctx/src"),
+    ];
     let mut offenders = BTreeSet::new();
-    for file in &files {
-        let Ok(text) = std::fs::read_to_string(file) else {
-            continue;
-        };
-        if builds_home_legacy_path(&text) {
-            let rel = file
-                .strip_prefix(&src)
-                .unwrap()
-                .to_string_lossy()
-                .replace('\\', "/");
-            offenders.insert(rel);
+    for src in &roots {
+        let mut files = Vec::new();
+        collect_rs_files(src, &mut files);
+        assert!(!files.is_empty(), "no source files found under {src:?}");
+        for file in &files {
+            let Ok(text) = std::fs::read_to_string(file) else {
+                continue;
+            };
+            if builds_home_legacy_path(&text) {
+                let rel = file
+                    .strip_prefix(src)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                offenders.insert(rel);
+            }
         }
     }
 

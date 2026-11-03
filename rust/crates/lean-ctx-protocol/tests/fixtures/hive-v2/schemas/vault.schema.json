@@ -25,7 +25,7 @@
       }
     },
     "candidate_kind": {
-      "description": "exact: every identity v2 part the checkout has; legacy: the v1 identity of engines before v5; history: the root commit alone (forks share it, so only a suggestion)",
+      "description": "exact: every identity v2 part the checkout has; legacy: the v1 identity of instances before v5; history: the root commit alone (forks share it, so only a suggestion)",
       "enum": [
         "exact",
         "legacy",
@@ -131,7 +131,7 @@
           "$ref": "#/$defs/vault_ref"
         },
         "sealed": {
-          "description": "only in answers to Hive-Protocol below 2.1, always false: the released 3.12.1 engine (C0 2.0) requires it (until MIN_ENGINE >= the C0 2.1 release)",
+          "description": "only in answers to Hive-Protocol below 2.1, always false: the released 3.12.1 instance (C0 2.0) requires it (until MIN_ENGINE >= the C0 2.1 release)",
           "const": false
         },
         "label": {
@@ -147,7 +147,7 @@
     "match_response": {
       "oneOf": [
         {
-          "description": "an exact or legacy hit on a vault the instance's owner may read: the engine maps it without asking; a legacy hit also bound the exact digest",
+          "description": "an exact or legacy hit on a vault the instance's owner may read: the instance maps it without asking; a legacy hit also bound the exact digest",
           "type": "object",
           "required": [
             "schema",
@@ -175,7 +175,7 @@
           }
         },
         {
-          "description": "a history hit (moved or renamed remote) that the instance may bind: the person confirms, then the engine calls resolve with the exact digest and vault {ns, name}; nothing is bound",
+          "description": "a history hit (moved or renamed remote) that the instance may bind: the person confirms, then the instance calls resolve with the exact digest and vault {ns, name}; nothing is bound",
           "type": "object",
           "required": [
             "schema",

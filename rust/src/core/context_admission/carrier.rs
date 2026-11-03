@@ -7,7 +7,7 @@
 //! - **carrier text** ([`admit_carrier_text`], [`admit_for_store`]): text that
 //!   arrived from an agent, a hook payload or a foreign tool and is about to be
 //!   derived from, echoed or persisted;
-//! - **downstream arguments** ([`admit_downstream_arguments`]): tool arguments
+//! - **downstream arguments** (`admit_downstream_arguments`): tool arguments
 //!   sent to a foreign MCP server are egress to a third party and are never
 //!   rewritten — a finding refuses the call before anything connects;
 //! - **release** ([`ReleaseGate`]): the last check on a finished tool result.
@@ -38,12 +38,12 @@ pub(super) const SOURCE_GONE_CODE: &str = "store.source_unavailable";
 
 /// A typed refusal. Carries reason codes only, never the inspected value.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Withheld {
+pub struct Withheld {
     codes: Vec<String>,
 }
 
 impl Withheld {
-    pub(crate) fn new(codes: &[&str]) -> Self {
+    pub fn new(codes: &[&str]) -> Self {
         Self {
             codes: codes.iter().map(|code| (*code).to_owned()).collect(),
         }
@@ -61,30 +61,30 @@ impl Withheld {
     }
 
     /// The copy has no source to authorize it (legacy record, lost lineage).
-    pub(crate) fn no_source_authority() -> Self {
+    pub fn no_source_authority() -> Self {
         Self::new(&[NO_SOURCE_AUTHORITY_CODE])
     }
 
     /// The source a copy was derived from is gone, unreadable or no longer
     /// permitted for the current project and role.
-    pub(crate) fn source_unavailable() -> Self {
+    pub fn source_unavailable() -> Self {
         Self::new(&[SOURCE_GONE_CODE])
     }
 
     /// The reason codes, for a caller that composes its own typed outcome.
-    pub(crate) fn codes(&self) -> &[String] {
+    pub fn codes(&self) -> &[String] {
         &self.codes
     }
 
-    #[cfg(test)]
-    pub(crate) fn has(&self, code: &str) -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn has(&self, code: &str) -> bool {
         self.codes.iter().any(|candidate| candidate == code)
     }
 
     /// `<subject> withheld by the context gateway (<codes>)` — the sentence
     /// form `admit_source` and the egress gate already use. A copy without
     /// current source authority gets the tee store's wording instead.
-    pub(crate) fn message(&self, subject: &str) -> String {
+    pub fn message(&self, subject: &str) -> String {
         if self
             .codes
             .iter()
@@ -100,7 +100,7 @@ impl Withheld {
 
     /// `[lean-ctx gateway: content withheld — <codes>]` — the in-band notice
     /// form of `Admission::hud_line`.
-    pub(crate) fn notice(&self) -> String {
+    pub fn notice(&self) -> String {
         format!(
             "[lean-ctx gateway: content withheld — {}]",
             self.codes.join(", ")
@@ -128,12 +128,12 @@ pub(super) fn current_policy() -> AdmissionPolicy {
     }
 }
 
-/// The gateway rules that apply here ([`current_policy`]), as ONE snapshot
+/// The gateway rules that apply here (`current_policy`), as ONE snapshot
 /// for everything a multi-part source read admits (the units of a transcript,
 /// the values of a history database). Unobserved: taking it touches no
 /// resident store. Its `digest()` is the identity a caller compares before
 /// it takes over what was read.
-pub(crate) fn gateway_snapshot() -> super::stores::StoreAdmission {
+pub fn gateway_snapshot() -> super::stores::StoreAdmission {
     super::stores::StoreAdmission::with_policy(current_policy())
 }
 
@@ -141,7 +141,7 @@ pub(crate) fn gateway_snapshot() -> super::stores::StoreAdmission {
 /// (agent message, hook payload, foreign tool text): project policy on the
 /// original bytes, then the gateway detectors, composed like `admit_source`.
 /// The decision lands in the current call's receipt when one is open.
-pub(crate) fn admit_carrier_text(text: &str) -> Result<SourceAdmission, Withheld> {
+pub fn admit_carrier_text(text: &str) -> Result<SourceAdmission, Withheld> {
     admit_carrier_text_under(text, None)
 }
 
@@ -157,13 +157,13 @@ pub(crate) fn admit_carrier_text_under(
 
 /// [`admit_carrier_text`] for text entering a derived store: restricted
 /// content is delivered to its reader but never persisted (E3).
-pub(crate) fn admit_for_store(text: &str) -> Result<String, Withheld> {
+pub fn admit_for_store(text: &str) -> Result<String, Withheld> {
     admit_for_store_under(text, None)
 }
 
 /// [`admit_for_store`] under one caller-captured policy snapshot (`None`: the
 /// rules configured at this moment).
-pub(crate) fn admit_for_store_under(
+pub fn admit_for_store_under(
     text: &str,
     policy: Option<&AdmissionPolicy>,
 ) -> Result<String, Withheld> {
@@ -179,7 +179,7 @@ fn record(policy: &AdmissionPolicy, admission: &super::Admission) {
     let decision = &admission.decision;
     if decision.disposition == ContextDispositionV1::Deny {
         // K12: a withheld object counts under the rules its reasons name.
-        crate::core::hive::metrics_v2::signals::admission_refused(
+        crate::core::hive_signals::admission_refused(
             decision.reason_codes.iter().map(ReasonCodeV1::as_str),
         );
     }
@@ -364,7 +364,7 @@ impl ArgumentWalk<'_> {
 
 /// Outcome of the final release check for one string of a tool result.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Release {
+pub enum Release {
     /// Admitted text: deliver the bytes as they are.
     Unchanged,
     /// The text still carried a value the gateway redacts. `notice` is the
@@ -377,16 +377,16 @@ pub(crate) enum Release {
 }
 
 /// One policy snapshot for releasing every block of one tool result.
-pub(crate) struct ReleaseGate {
+pub struct ReleaseGate {
     policy: AdmissionPolicy,
     fingerprint: Vec<u8>,
 }
 
 impl ReleaseGate {
-    /// The gate under the rules that apply here ([`current_policy`]): inside
+    /// The gate under the rules that apply here (`current_policy`): inside
     /// a call, the call's policy snapshot.
     #[must_use]
-    pub(crate) fn current() -> Self {
+    pub fn current() -> Self {
         Self::with(current_policy())
     }
 
@@ -415,7 +415,7 @@ impl ReleaseGate {
     }
 
     /// Nothing to check: the gateway is off (developer mode only).
-    pub(crate) fn inactive(&self) -> bool {
+    pub fn inactive(&self) -> bool {
         !self.policy.enabled_effective()
     }
 
@@ -423,7 +423,7 @@ impl ReleaseGate {
     /// [`Release::Unchanged`]: masked values are markers no detector matches,
     /// and flagged-but-delivered findings (`warn`) do not change the text.
     /// Only a string that bypassed admission can be redacted or withheld here.
-    pub(crate) fn text(&self, text: &str) -> Release {
+    pub fn text(&self, text: &str) -> Release {
         if text.is_empty() || self.inactive() {
             return Release::Unchanged;
         }
@@ -466,7 +466,7 @@ impl ReleaseGate {
     }
 
     /// Release a block no detector can read (image, audio, binary resource).
-    pub(crate) fn media(&self, bytes: u64) -> Result<(), Withheld> {
+    pub fn media(&self, bytes: u64) -> Result<(), Withheld> {
         if self.inactive() {
             return Ok(());
         }

@@ -164,7 +164,7 @@ fn hint_for(detection: Detection) -> &'static str {
 /// once-per-session budget; detections are counted either way. Called
 /// post-dispatch, so it must stay cheap: no I/O unless a (rare) detection
 /// fired.
-pub(crate) fn observe(
+pub fn observe(
     name: &str,
     args: Option<&serde_json::Map<String, serde_json::Value>>,
     output_tokens: usize,

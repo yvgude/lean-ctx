@@ -668,18 +668,18 @@ fn with_root_state<T>(project_root: &str, f: impl FnOnce(&mut RootState) -> T) -
 }
 
 /// Whether `project_root` is linked to a space this machine can read.
-pub(crate) fn is_linked(project_root: &str) -> bool {
+pub fn is_linked(project_root: &str) -> bool {
     with_root_state(project_root, |state| state.available)
 }
 
 /// Keep the linked space's index current in the background, so `ctx_read`
-/// hints need no provider call. At most once per [`CHANGE_CHECK_INTERVAL`]
+/// hints need no provider call. At most once per `CHANGE_CHECK_INTERVAL`
 /// a detached pass asks the journal for its newest LSN and re-reads the
 /// pages only when it moved since the last pass of any process (or after
-/// [`FULL_PASS_INTERVAL`]). A re-index replaces the previous pass (removed
+/// `FULL_PASS_INTERVAL`). A re-index replaces the previous pass (removed
 /// pages lose their chunks and edges); a failed read leaves it in place.
 /// Returns immediately; respects `providers.enabled` and `providers.auto_index`.
-pub(crate) fn refresh_index_if_due(project_root: &str) {
+pub fn refresh_index_if_due(project_root: &str) {
     let due = with_root_state(project_root, |state| {
         let due = state.available
             && state
@@ -857,12 +857,12 @@ pub(crate) fn open_sessions_block(project_root: &str) -> Option<String> {
     block
 }
 
-/// [`open_sessions_block`] admitted as provider source data for this call:
+/// `open_sessions_block` admitted as provider source data for this call:
 /// the text passes the current admission policy and its origin is recorded,
 /// like any `ctx_provider` item, so a tool that declares every source
 /// (`ctx_agent read`) still does. `None` when there is no block or the
 /// policy withholds it.
-pub(crate) fn admitted_sessions_block(project_root: &str) -> Option<String> {
+pub fn admitted_sessions_block(project_root: &str) -> Option<String> {
     let block = open_sessions_block(project_root)?;
     let origin = "provider:emspace/sessions";
     let admitted = crate::core::context_admission::admit_source(&block, origin, false).ok()?;

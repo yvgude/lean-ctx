@@ -8,7 +8,7 @@
 //! - `LEAN_CTX_ACTIVE`: shell-hook re-entry guard. Stops the *shell* hook from
 //!   re-firing inside a command lean-ctx already spawned. It is a plain env var
 //!   an agent's top-level process can legitimately inherit.
-//! - [`WRAP_MARKER`] (`LEAN_CTX_WRAPPED`): process-level ownership. Set ONLY by
+//! - `WRAP_MARKER` (`LEAN_CTX_WRAPPED`): process-level ownership. Set ONLY by
 //!   lean-ctx on the children it spawns, so its presence reliably means "a
 //!   parent lean-ctx already owns compression of this command tree" and a
 //!   nested `lean-ctx -c` must pass through. Because lean-ctx is the only
@@ -81,26 +81,26 @@ pub(crate) fn is_disabled() -> bool {
 /// `lean-ctx -c` should defer to the ambient shell defaults, not force raw
 /// command bytes, so shell-hook compression can still apply when configured.
 #[must_use]
-pub(crate) fn is_wrapped() -> bool {
+pub fn is_wrapped() -> bool {
     std::env::var(WRAP_MARKER).is_ok()
 }
 
 /// True when `lean-ctx -c` / `-t` must avoid owning compression itself: either
-/// a parent lean-ctx already owns this command tree ([`WRAP_MARKER`]) or
+/// a parent lean-ctx already owns this command tree (`WRAP_MARKER`) or
 /// compression is globally disabled (`LEAN_CTX_DISABLED`).
 ///
 /// Deliberately does **not** consult `LEAN_CTX_ACTIVE`: that flag is only a
 /// shell-hook re-entry guard, and an agent's top-level process can inherit it,
 /// which previously suppressed compression for every command it ran (#533).
 #[must_use]
-pub(crate) fn should_pass_through() -> bool {
+pub fn should_pass_through() -> bool {
     is_wrapped() || is_disabled()
 }
 
 /// Stamp a child command so nested lean-ctx invocations pass through and the
 /// shell hook does not re-fire: sets both the ownership marker
-/// ([`WRAP_MARKER`]) and the legacy hook guard (`LEAN_CTX_ACTIVE`).
-pub(crate) fn mark_child(cmd: &mut Command) {
+/// (`WRAP_MARKER`) and the legacy hook guard (`LEAN_CTX_ACTIVE`).
+pub fn mark_child(cmd: &mut Command) {
     cmd.env(ACTIVE_MARKER, "1").env(WRAP_MARKER, "1");
     stamp_exec_depth(cmd);
 }

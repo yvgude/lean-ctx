@@ -25,7 +25,7 @@ pub(crate) const GIT_TASK_INTENT: &str = "git";
 
 /// Whether a task intent marks an `auto_infer_task` label (re-derivable, never
 /// a stated task). A plan title is a stated task and stays authoritative.
-pub(crate) fn is_auto_task_intent(intent: Option<&str>) -> bool {
+pub fn is_auto_task_intent(intent: Option<&str>) -> bool {
     matches!(intent, Some(INFERRED_TASK_INTENT | GIT_TASK_INTENT))
 }
 
@@ -57,9 +57,7 @@ pub(super) fn describe_uncommitted_files<'a>(
 }
 
 /// Converts durable session signals into cross-session knowledge facts.
-pub(crate) fn extract_session_facts(
-    session: &SessionState,
-) -> Vec<crate::core::knowledge::KnowledgeFact> {
+pub fn extract_session_facts(session: &SessionState) -> Vec<crate::core::knowledge::KnowledgeFact> {
     session
         .derived_facts()
         .into_iter()

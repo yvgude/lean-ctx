@@ -74,7 +74,7 @@ pub fn mcp_tools_markdown() -> String {
     out.push_str(DO_NOT_EDIT);
     out.push_str("\n\n");
     out.push_str(
-        "Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.\n\n",
+        "Source of truth: `rust/crates/lean-ctx-server/src/server/registry.rs` and the tool definitions it registers.\n\n",
     );
     out.push_str(&format!(
         "lean-ctx registers **{} MCP tools** (granular profile). Each entry below lists the \
@@ -154,7 +154,7 @@ pub fn config_keys_markdown() -> String {
     out.push_str("# Appendix — Configuration Keys (generated)\n\n");
     out.push_str(DO_NOT_EDIT);
     out.push_str("\n\n");
-    out.push_str("Source of truth: `rust/src/core/config/schema.rs`.\n\n");
+    out.push_str("Source of truth: `rust/src/core/config/schema/mod.rs`.\n\n");
     out.push_str(
         "lean-ctx reads `~/.lean-ctx/config.toml` (and a project `.lean-ctx.toml` overlay). \
          Below is every recognized key with its type, default, and environment-variable \
@@ -226,24 +226,6 @@ fn value_to_inline(v: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn mcp_tools_doc_lists_every_registered_tool() {
-        let md = mcp_tools_markdown();
-        let count = crate::server::registry::tool_count();
-        // Every registered tool gets its own `## ` section heading.
-        let headings = md.matches("\n## `").count();
-        assert!(
-            headings >= count,
-            "expected at least one heading per tool: {headings} headings for {count} tools"
-        );
-        // Spot-check a couple of always-present tools.
-        assert!(md.contains("## `ctx_read`"), "ctx_read must be documented");
-        assert!(
-            md.contains("## `ctx_shell`"),
-            "ctx_shell must be documented"
-        );
-    }
 
     #[test]
     fn config_keys_doc_covers_all_known_keys() {

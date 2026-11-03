@@ -120,7 +120,7 @@ const ATTACHED_PAREN: &str = "a `(` attached to a word, which zsh reads as glob 
 const TOO_DEEP: &str = "substitutions, backticks or `${…}` nested more than 64 levels deep";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
+pub(crate) enum Mode {
     /// Ordinary shell text: quotes, comments and heredoc operators apply.
     Shell,
     /// An unquoted heredoc body: only `\`, `$…` expansions and backticks are

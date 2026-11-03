@@ -17,6 +17,22 @@ const CONTROL_TOOL: &str = "ctx_workflow";
 /// is gated by its own name at both call paths, so this opens nothing else.
 const WRAPPER_TOOL: &str = "ctx_call";
 
+/// Tools that always pass through the workflow gate regardless of state.
+/// Read-only tools should never be blocked — agents need them for context
+/// recovery after crashes or session transitions. The server passes this
+/// list to [`tool_gate`] on both call paths.
+pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] = &[
+    "ctx",
+    "ctx_workflow",
+    "ctx_read",
+    "ctx_multi_read",
+    "ctx_smart_read",
+    "ctx_search",
+    "ctx_tree",
+    "ctx_session",
+    "ctx_ledger",
+];
+
 /// What the gate answers for one tool call under an active run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolGate {
@@ -85,22 +101,14 @@ pub fn tool_gate(run: &WorkflowRun, tool: &str, passthrough: &[&str]) -> ToolGat
     ))
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::{ToolGate, tool_gate};
-    use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
-    use crate::core::policy::runtime::TestPolicyOverride;
-    use crate::core::workflow::store::{
-        is_run_stale, is_withheld_sentinel, load_active, save_active,
-    };
+#[cfg(any(test, feature = "test-support"))]
+/// Workflow fixtures shared with the tests of the two server gates.
+pub mod test_support {
     use crate::core::workflow::types::{StateSpec, WorkflowRun, WorkflowSpec};
-
-    /// The server's list, as `server::WORKFLOW_PASSTHROUGH_TOOLS` has it.
-    const PASSTHROUGH: &[&str] = crate::server::WORKFLOW_PASSTHROUGH_TOOLS;
 
     /// A real run whose only state allows `ctx_overview`. Shared with the
     /// tests of the two server gates.
-    pub(crate) fn review() -> WorkflowRun {
+    pub fn review() -> WorkflowRun {
         let now = chrono::Utc::now();
         WorkflowRun {
             spec: WorkflowSpec {
@@ -124,12 +132,26 @@ pub(crate) mod tests {
     }
 
     /// Where the store keeps the active workflow.
-    pub(crate) fn workflow_file() -> std::path::PathBuf {
+    pub fn workflow_file() -> std::path::PathBuf {
         crate::core::data_dir::lean_ctx_data_dir()
             .expect("data dir")
             .join("workflows")
             .join("active.json")
     }
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    pub(crate) use super::test_support::{review, workflow_file};
+    use super::{ToolGate, tool_gate};
+    use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
+    use crate::core::policy::runtime::TestPolicyOverride;
+    use crate::core::workflow::store::{
+        is_run_stale, is_withheld_sentinel, load_active, save_active,
+    };
+
+    /// The list both server call paths pass.
+    const PASSTHROUGH: &[&str] = super::WORKFLOW_PASSTHROUGH_TOOLS;
 
     /// The stand-in is closed and stays closed: neither the pass-through list
     /// nor its age opens it, the stored workflow it stands for is untouched,

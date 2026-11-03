@@ -109,7 +109,7 @@ pub(crate) fn get_cached(project_root: &str) -> Option<Arc<ProjectIndex>> {
 }
 
 /// Drops the cached graph index for a root (or all roots when `None`).
-pub(crate) fn invalidate(project_root: Option<&str>) {
+pub fn invalidate(project_root: Option<&str>) {
     let mut map = cache()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);

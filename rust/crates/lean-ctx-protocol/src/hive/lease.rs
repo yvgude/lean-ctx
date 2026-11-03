@@ -615,17 +615,6 @@ mod tests {
         assert!(envelope.lease().is_ok());
     }
 
-    /// The `policy_signer_keys` a Hive may still sign into a lease are
-    /// ignored (the signature covers the raw lease).
-    #[test]
-    fn policy_signer_keys_hive_still_sends_are_ignored() {
-        let mut raw = serde_json::to_value(lease()).unwrap();
-        raw["policy_signer_keys"] = serde_json::json!([]);
-        let decoded: HiveLeaseV1 = serde_json::from_value(raw).unwrap();
-        assert_eq!(decoded, lease());
-        assert!(decoded.validate().is_ok());
-    }
-
     #[test]
     fn unknown_rights_grant_nothing() {
         let mut lease = lease();

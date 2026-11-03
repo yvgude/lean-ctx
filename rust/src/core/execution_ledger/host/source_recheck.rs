@@ -30,7 +30,7 @@ const MAX_SOURCES: usize = 128;
 const MAX_TOTAL_BYTES: usize = 8 * 1024 * 1024;
 
 impl super::HostReceiptAuthority {
-    pub(crate) fn recheck_checkpoint_sources(
+    pub fn recheck_checkpoint_sources(
         &self,
         request: &super::checkpoint_transfer::HostCheckpointImportRequest,
     ) -> Result<serde_json::Value> {
@@ -231,7 +231,7 @@ pub(super) fn check_files(
                 let path = path
                     .to_str()
                     .ok_or_else(|| anyhow::anyhow!("receiving source path unavailable"))?;
-                let read = crate::tools::ctx_read::read_file_for_tool_rooted_with_path(
+                let read = crate::core::rooted_read::read_file_for_tool_rooted_with_path(
                     path,
                     root_text,
                     "ctx_read",

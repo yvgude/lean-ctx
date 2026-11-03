@@ -127,10 +127,10 @@ const BINARY_EXTENSIONS: &[&str] = &[
 const LLM_VIEWABLE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp"];
 
 /// Maximum file size for image passthrough (20 MB).
-pub(crate) const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
+pub const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
 /// Fast extension-based binary detection (zero I/O).
-pub(crate) fn has_binary_extension(path: &str) -> bool {
+pub fn has_binary_extension(path: &str) -> bool {
     Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -155,7 +155,7 @@ fn has_binary_content(path: &str) -> bool {
 
 /// Returns `true` if the file is likely a binary file.
 /// Checks extension first (zero I/O), falls back to content inspection.
-pub(crate) fn is_binary_file(path: &str) -> bool {
+pub fn is_binary_file(path: &str) -> bool {
     if has_binary_extension(path) {
         return true;
     }
@@ -163,7 +163,7 @@ pub(crate) fn is_binary_file(path: &str) -> bool {
 }
 
 /// Returns `true` if the file is an image format that LLMs can view visually.
-pub(crate) fn is_llm_viewable_image(path: &str) -> bool {
+pub fn is_llm_viewable_image(path: &str) -> bool {
     Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -172,7 +172,7 @@ pub(crate) fn is_llm_viewable_image(path: &str) -> bool {
 }
 
 /// Returns the MIME type for an LLM-viewable image, or None if not viewable.
-pub(crate) fn image_mime_type(path: &str) -> Option<&'static str> {
+pub fn image_mime_type(path: &str) -> Option<&'static str> {
     let ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())?
@@ -211,7 +211,7 @@ fn file_type_label(path: &str) -> &'static str {
 }
 
 /// Returns a helpful error message for binary files, including file type and suggestions.
-pub(crate) fn binary_file_message(path: &str) -> String {
+pub fn binary_file_message(path: &str) -> String {
     let ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())

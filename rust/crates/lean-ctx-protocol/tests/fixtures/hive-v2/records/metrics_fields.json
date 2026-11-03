@@ -4,21 +4,21 @@
     {
       "path": "schema",
       "type": "string",
-      "purpose": "Names the wire format (leanctx.hive.engine-metrics/v2).",
+      "purpose": "Names the wire format (leanctx.hive.instance-metrics/v2).",
       "source": "constant",
       "label": null,
       "retention": "hourly_and_daily_until_deleted"
     },
     {
-      "path": "engine.engine_version",
+      "path": "instance.instance_version",
       "type": "string",
-      "purpose": "Which engine version produced the counts (support, comparability).",
+      "purpose": "Which instance version produced the counts (support, comparability).",
       "source": "build",
       "label": null,
       "retention": "hourly_and_daily_until_deleted"
     },
     {
-      "path": "engine.os",
+      "path": "instance.os",
       "type": "enum",
       "purpose": "Operating system family: macos, linux or windows.",
       "source": "build",
@@ -53,7 +53,7 @@
       "path": "buckets[].rev",
       "type": "integer",
       "purpose": "Revision of the hour; Hive keeps the highest (idempotency).",
-      "source": "engine buffer",
+      "source": "instance buffer",
       "label": null,
       "retention": "hourly_and_daily_until_deleted"
     },
@@ -428,7 +428,7 @@
     {
       "path": "buckets[].slices[].spend[].model",
       "type": "enum",
-      "purpose": "The engine price-table key of the model, else other (never a fine-tuned or custom id).",
+      "purpose": "The instance price-table key of the model, else other (never a fine-tuned or custom id).",
       "source": "proxy usage meter, host logs",
       "label": null,
       "retention": "hourly_and_daily_until_deleted"
@@ -599,7 +599,7 @@
       "name": "savings.overhead",
       "label": "measured",
       "formula": "Tokens LeanCTX itself added (instructions, tool schemas, hints). Net own savings = savings.measured + savings.estimated − savings.overhead, and may be negative. The provider cache is not part of it (ledger.cache_discount).",
-      "source": "engine instruction and schema counters"
+      "source": "instance instruction and schema counters"
     },
     {
       "name": "calls.tool_calls",
@@ -748,7 +748,7 @@
     {
       "name": "spend.requests",
       "label": "measured",
-      "formula": "Model requests where the engine measures spend.",
+      "formula": "Model requests where the instance measures spend.",
       "source": "proxy usage meter, host logs"
     },
     {
@@ -782,9 +782,9 @@
       "source": "knowledge store"
     },
     {
-      "name": "engines.active",
+      "name": "instances.active",
       "label": "derived",
-      "formula": "Engines that reported at least one hour in the period (Hive only).",
+      "formula": "Instances that reported at least one hour in the period (Hive only).",
       "source": "Hive"
     }
   ],
@@ -803,5 +803,5 @@
   "sent_only_when": [
     "the MCP server name is sent only when the workspace's policy names it"
   ],
-  "retention": "Hourly detail and its daily rollup are kept without a time limit, until the customer deletes them (per engine or all) or the account is deleted. Exports (CSV, JSONL) are available at any time."
+  "retention": "Hourly detail and its daily rollup are kept without a time limit, until the customer deletes them (per instance or all) or the account is deleted. Exports (CSV, JSONL) are available at any time."
 }

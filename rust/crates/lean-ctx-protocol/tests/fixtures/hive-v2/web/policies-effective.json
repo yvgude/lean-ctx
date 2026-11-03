@@ -92,7 +92,7 @@
       "body": {
         "error": {
           "code": "forbidden",
-          "message": "this is another member's engine",
+          "message": "this is another member's instance",
           "required_role": "admin"
         }
       },

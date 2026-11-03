@@ -40,7 +40,7 @@ const MIN_SIGNIFICANT_LINE_CHARS: usize = 24;
 
 /// Whether a finding gates CI or is merely surfaced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Severity {
+pub enum Severity {
     /// Fails the CI gate.
     Error,
     /// Surfaced for triage, does not gate.
@@ -49,7 +49,7 @@ pub(crate) enum Severity {
 
 /// The category of a lint finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LintKind {
+pub enum LintKind {
     /// Two identical content lines in the rules block.
     DuplicateLine,
     /// A low-signal re-teaching phrase in the rules block.
@@ -62,7 +62,7 @@ pub(crate) enum LintKind {
 
 /// One linter finding against the injected context.
 #[derive(Debug, Clone)]
-pub(crate) struct LintFinding {
+pub struct LintFinding {
     pub severity: Severity,
     pub kind: LintKind,
     /// Where it was found (`"rules"` or `"tool:<name>"`).
@@ -154,16 +154,16 @@ pub(crate) fn lint_tool_descriptions(tools: &[rmcp::model::Tool]) -> Vec<LintFin
 
 /// Lints the live injected context this install would emit (rules + tool schemas).
 #[must_use]
-pub(crate) fn lint_injected_context() -> Vec<LintFinding> {
+pub fn lint_injected_context() -> Vec<LintFinding> {
     let mut findings = lint_rules_text("rules", &crate::rules_inject::canonical_rules_block());
-    let tools = crate::server::tool_visibility::advertised_tool_defs_default();
+    let tools = crate::core::tool_visibility::advertised_tool_defs_default();
     findings.extend(lint_tool_descriptions(&tools));
     findings
 }
 
 /// Number of gating (Error) findings.
 #[must_use]
-pub(crate) fn error_count(findings: &[LintFinding]) -> usize {
+pub fn error_count(findings: &[LintFinding]) -> usize {
     findings.iter().filter(|f| f.is_error()).count()
 }
 
