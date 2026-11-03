@@ -128,7 +128,7 @@
     "tests/security/test_history_policy_gate.py": "3aac0ee607d6968a9a0e755e2020be2a0fdfb2f44760cb91dba6fbc1aabb2f29",
     "tests/security/test_security_check_workflow.py": "2d0c9b9a6ceb61c97379290d549bbdcf7812ce17db9794b5d1b067e2202c2844",
     "rust/crates/lean-ctx-proxy/src/anthropic.rs": "e5afe959d4b1216ff5ed6c3830447dd3b46f186b8834e68aba2f8a595a1fe19a",
-    "rust/crates/lean-ctx-proxy/src/anthropic_tests.rs": "1e6568233157a24e0ccd2810ce3a64f6dbb169a661321559b3a2065fc02c6c00",
+    "rust/crates/lean-ctx-proxy/src/anthropic_tests.rs": "d7fde182afeeee749896ea84fe615360981fe3962a80e3a0d6d8ad13b3c3b5e0",
     "rust/crates/lean-ctx-protocol/src/credential_redaction.rs": "6e522741b965a4ab8bb858e4fb765f4f6ca7d5aa18dd14533490874341313cb1",
     "rust/crates/lean-ctx-protocol/src/context_checkpoint.rs": "698433cd958541d830f5dde38598625dc323d28d5724c072cb4532c322d8c102",
     "rust/crates/lean-ctx-protocol/src/context_checkpoint/tests_core.rs": "2aa83f250907035c82ea5ae56078d0077d539a5799b51b4ab2139940ea7630d0",
@@ -138,6 +138,6 @@
   "baseline": {
     "commit": "b37ee3be11f2525cd785348d3e43ccdbb590fe94",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "1751e2ef1a29c2f6f949de5d48ee792b4d0a6ce7a7721849a0159e8f48ab75d3"
+    "report_sha256": "b5d845acadf11ee9991567e4c042cf242c6f541d9ec25f6b8975e290acbcce23"
   }
 }

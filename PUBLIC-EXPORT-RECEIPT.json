@@ -331,11 +331,11 @@
    "size": 1033
   },
   {
-   "blob": "5fcfb3a284e21977274413a0f34b30ae2e827c40",
+   "blob": "c5a973f3742291d4ea6abaee83bf459d34eb740b",
    "mode": "100644",
    "path": "CHANGELOG.md",
-   "sha256": "111706be132cf11c78fde5c386585d4ad30b2f21446e190cefa4f5301ce0d889",
-   "size": 1215552
+   "sha256": "5fed2bf2f9578b505a91f00098d45bec96b0ac645db22bf289ef2a1e8fa12b1f",
+   "size": 1215501
   },
   {
    "blob": "77a7c7a520af8fc8b4df372eb5bd5fddcefbfecf",
@@ -3180,11 +3180,11 @@
    "size": 8690
   },
   {
-   "blob": "86ac8066674365dc421370481d68ee8bf09b29b5",
+   "blob": "f76ba0aadf82a504fb00f75cd2ee256c88bdd2a9",
    "mode": "100644",
    "path": "docs/reference/generated/config-keys.md",
-   "sha256": "b96ce9256f6287bf396704d0d145be437d9b16218cb347307c0d997b188c0501",
-   "size": 71454
+   "sha256": "6bf242ac5df56ac89432856a01d3f13cb5abd954645d226df48b1ae0bdc87a69",
+   "size": 71555
   },
   {
    "blob": "2c5050b1d9f7207fe6763446ae95b3460a2b1da8",
@@ -3551,11 +3551,11 @@
    "size": 9354
   },
   {
-   "blob": "ce947bd49f61bf8c74dd0bd880d5bf625365949f",
+   "blob": "d45801744365bff4f74744692821e317b0295b38",
    "mode": "100644",
    "path": "integrations/claude-code-mod/hooks/cockpit.tsx",
-   "sha256": "823ee999405260967e56d4b2710a3947aee84e10b9f1aa0bfac301202eba0de1",
-   "size": 64558
+   "sha256": "7705784f31ecdb0bf0c6872a22d76d392af2410836897945afff896af54f0a5c",
+   "size": 64696
   },
   {
    "blob": "9f45101460f1aad4ec66b7747876b8a64c40c739",
@@ -12154,11 +12154,11 @@
    "size": 29810
   },
   {
-   "blob": "7dbc627680ce3a07d9033546abf3525608b9dbb6",
+   "blob": "c6ae404b75b69d78da52de001d2f39d0e176290a",
    "mode": "100644",
    "path": "rust/crates/lean-ctx-proxy/src/anthropic_tests.rs",
-   "sha256": "1e6568233157a24e0ccd2810ce3a64f6dbb169a661321559b3a2065fc02c6c00",
-   "size": 52287
+   "sha256": "d7fde182afeeee749896ea84fe615360981fe3962a80e3a0d6d8ad13b3c3b5e0",
+   "size": 52340
   },
   {
    "blob": "85441cbc6c773f58d8257451e6ca252bca8d4148",
@@ -13372,11 +13372,11 @@
    "size": 8304
   },
   {
-   "blob": "5bcd22d6795b22c6800c3d7562eda038ebbbd838",
+   "blob": "4531beed771c23fa4164d85ad808858246c7ac2b",
    "mode": "100644",
    "path": "rust/crates/lean-ctx-server/src/server/mod.rs",
-   "sha256": "663d68ad474f9bd2a51d7e449c1b350f3a2981ba89a8eaec39dafc3aefa08476",
-   "size": 8994
+   "sha256": "252e8b4c38718e55eb545d615367a213d9b9539b080d870ac92566cdbc97d3dc",
+   "size": 9078
   },
   {
    "blob": "aa06d52d23eabf3216161575a3643aa84088dfef",
@@ -20435,11 +20435,11 @@
    "size": 12072
   },
   {
-   "blob": "c6a9ba0d584310fb2af09861efe380ce827e0453",
+   "blob": "c912f0c1426d5c793a741587bb2368c7784135c6",
    "mode": "100644",
    "path": "rust/src/core/config/proxy.rs",
-   "sha256": "5a0fcadc9d6a449994453d764afbc9da6137910ac62070e5a0c4e6009f31cf4c",
-   "size": 67365
+   "sha256": "6259f1567e8251849971ee3e92ea2581e31801dbe0f0c019fe4e8df89a33d112",
+   "size": 67451
   },
   {
    "blob": "23476d6e1c5fdc912d1e5cba619ab90798b81967",
@@ -20512,11 +20512,11 @@
    "size": 19736
   },
   {
-   "blob": "43a9528a03e7c86ebd14107b1e80437b4fcea171",
+   "blob": "fcf65ba0e491496bff18ba147f46f66bbf4118cd",
    "mode": "100644",
    "path": "rust/src/core/config/schema/sections_advanced.rs",
-   "sha256": "efae95ca77ffea7d876a964df4a4dd2151f2126b4c9075b8e23e8493d8edbe8a",
-   "size": 37943
+   "sha256": "7c183fb980e482dfef6bae280f1cedbfe6de38bbce3fb66ec761299948400294",
+   "size": 38044
   },
   {
    "blob": "06d415d46d96b7c563de07be20f5b39b440ae336",
@@ -28947,11 +28947,11 @@
    "size": 3354
   },
   {
-   "blob": "ce947bd49f61bf8c74dd0bd880d5bf625365949f",
+   "blob": "d45801744365bff4f74744692821e317b0295b38",
    "mode": "100644",
    "path": "rust/src/templates/claude_mod/cockpit.tsx",
-   "sha256": "823ee999405260967e56d4b2710a3947aee84e10b9f1aa0bfac301202eba0de1",
-   "size": 64558
+   "sha256": "7705784f31ecdb0bf0c6872a22d76d392af2410836897945afff896af54f0a5c",
+   "size": 64696
   },
   {
    "blob": "9f45101460f1aad4ec66b7747876b8a64c40c739",
@@ -31978,10 +31978,10 @@
    "size": 4960
   },
   {
-   "blob": "5ccaa10b2c985e25254150edbd57c6d895e33b73",
+   "blob": "aa70f0d528c68e89d70ecc9c9a9c233e21579698",
    "mode": "100644",
    "path": "security/evidence/full-history-baseline-v1.json",
-   "sha256": "1751e2ef1a29c2f6f949de5d48ee792b4d0a6ce7a7721849a0159e8f48ab75d3",
+   "sha256": "b5d845acadf11ee9991567e4c042cf242c6f541d9ec25f6b8975e290acbcce23",
    "size": 74762
   },
   {
@@ -32069,10 +32069,10 @@
    "size": 2019
   },
   {
-   "blob": "855fcec7002b5d215a648371560f0b96bb4c2779",
+   "blob": "636fc7e4d9e962b0a8c9a43ce43f098939ea74bb",
    "mode": "100644",
    "path": "security/history-policy-v1.json",
-   "sha256": "da92db6ff06d36a8c6854be0b5b9835c88268180f608eede92e9e1c80e4f1a8e",
+   "sha256": "002a8ed1cca98d8ff2aca286224214c237c346860d326a9c84090ee6fea89bba",
    "size": 7267
   },
   {
@@ -32921,7 +32921,7 @@
  ],
  "manifest_sha256": "e9e923ead0330e9ebe42cf73ab0f6f9bbbed81099953cdf17e8ce112ef426083",
  "schema": 1,
- "source_commit": "29709ddf8dcf467f008780092a58e03cc26ad3e5",
+ "source_commit": "0e3c66a97e4263db0fb15d4e546d889e6a269465",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "87c2a515d9add1213dc51e71c7db8531287ee751bd8a8c46bf20c56f42ad4740"
+ "tree_sha256": "638595b4c611e46bcb45f28c5c38c00070b3cfcaa9010c8c9ad499d166be7c5f"
 }

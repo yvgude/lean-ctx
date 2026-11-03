@@ -42,7 +42,8 @@ pub mod tool_trait;
 pub mod tool_visibility;
 pub mod tools_config_watch;
 pub(crate) mod walk_hint;
-#[cfg(test)]
+// Workspace authority verifies file ownership, which needs a Unix host.
+#[cfg(all(test, unix))]
 mod workspace_roots_tests;
 
 use futures::FutureExt;

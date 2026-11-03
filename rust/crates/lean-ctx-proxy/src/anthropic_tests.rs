@@ -190,7 +190,8 @@ fn inband_ccr_emit_echo_splice_round_trip() {
 fn long_session_elision_keeps_the_prefix_across_prompt_turns() {
     let _iso = lean_ctx::core::data_dir::isolated_data_dir();
     let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
-    lean_ctx::test_env::remove_var("LEAN_CTX_PROXY_LONG_SESSION_ELIDE");
+    // Opt-in since 3.12.1.
+    let _elide = lean_ctx::test_env::EnvVarGuard::set("LEAN_CTX_PROXY_LONG_SESSION_ELIDE", "on");
     let mut messages = vec![serde_json::json!({"role": "user", "content": "fix the build"})];
     for turn in 0..40 {
         let id = format!("t{turn}");

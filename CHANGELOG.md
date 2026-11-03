@@ -277,10 +277,11 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   file under the LeanCTX state directory that the stub names, so the model can `cat` it back.
   The cut advances in steps of 16 messages, so the prompt cache is rewritten once per step,
   not every turn; your own prompts send the same shortened history, so they read the cache
-  instead of writing it again. Measured on Claude
-  Code with Haiku 5.5: cost x0.74 (95 % CI 0.53–0.94) against native, 12 of 12 long tasks
-  solved on both. On by default; `[proxy] long_session_elide = false` or
-  `LEAN_CTX_PROXY_LONG_SESSION_ELIDE=off` turns it off.
+  instead of writing it again. Off by default:
+  measured on Claude Code with Haiku 5.5 it cut cost to x0.67 against native, but solved 9 of
+  12 long tasks against 12 of 12, because the model did not read back facts from elided early
+  outputs. Turn it on with `[proxy] long_session_elide = true` or
+  `LEAN_CTX_PROXY_LONG_SESSION_ELIDE=on`.
 - **`lean-ctx hive docs import --markdown <file|dir>…` turns docs into Hive pages.** One
   page per markdown file, one section per heading, each anchored to its file; running it
   again revises only the sections that changed. `--dry-run` shows what would be written.
@@ -856,9 +857,6 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   stopped the background pass for good, so knowledge, policy, metrics and receipts paused
   until the next restart. Renewal now picks the key set that names the lease's key, a failed
   renewal is retried on the next pass, and `hive status` shows the last renewal error.
-- **Escape closes the Cockpit pane in Claude Code.** In a narrow terminal the pane's close
-  button could not be reached.
-
 - **A `ctx_read` cut by the turn budget is read again in full.** A full read larger than the
   per-turn budget reaches the model only as a prefix, but the session cache recorded it as
   delivered, so the next full read of the unchanged file answered `[unchanged]` while the cut
