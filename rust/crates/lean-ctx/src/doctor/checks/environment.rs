@@ -186,6 +186,152 @@ pub(crate) fn skip_agent_aliases_outcome() -> Outcome {
     }
 }
 
+/// Claude Code can still search: a standard setup (a host pin `mcp`, `hybrid`
+/// or `replace`, or the Grep/Glob deny it writes) needs the lean-ctx MCP
+/// server. 3.12.1's automatic governor migration removed that entry while the
+/// deny stayed, and sessions had no search tool at all. `None` where Claude
+/// Code has no standard lean-ctx setup, runs the governor, or MCP registration
+/// is turned off on purpose (`[setup] auto_update_mcp = false`, #281).
+pub(crate) fn claude_tool_access_outcome(home: &std::path::Path) -> Option<Outcome> {
+    use lean_ctx_hooks::hooks::agents::claude_governor;
+    if claude_governor::is_installed(home) || !claude_governor::has_standard_setup(home) {
+        return None;
+    }
+    let settings_path =
+        lean_ctx::core::editor_registry::claude_state_dir(home).join("settings.json");
+    let settings: serde_json::Value = std::fs::read_to_string(&settings_path)
+        .ok()
+        .and_then(|c| lean_ctx::core::jsonc::parse_jsonc(&c).ok())
+        .unwrap_or_default();
+    let denies: Vec<&str> = settings
+        .pointer("/permissions/deny")
+        .and_then(|d| d.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str())
+        .collect();
+    let search_denied: Vec<&str> = denies
+        .iter()
+        .copied()
+        .filter(|v| matches!(*v, "Grep" | "Glob"))
+        .collect();
+    // The user's own shell denies leave no fallback either; named for context.
+    let shell_denied: Vec<&str> = denies
+        .iter()
+        .copied()
+        .filter(|v| {
+            ["cat", "grep", "rg", "find", "ls"]
+                .iter()
+                .any(|c| *v == format!("Bash({c}:*)"))
+        })
+        .collect();
+    let cfg = lean_ctx::core::config::Config::load();
+    let pinned = cfg
+        .governor
+        .pinned
+        .get("claude")
+        .filter(|m| lean_ctx_hooks::hooks::HookMode::from_str_loose(m).is_some())
+        .cloned();
+    if search_denied.is_empty() && pinned.is_none() {
+        return None;
+    }
+    if lean_ctx::core::claude_host::has_lean_ctx_mcp_entry(home) {
+        return Some(Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Claude Code tools{RST}  {GREEN}lean-ctx MCP server registered{RST}  {DIM}(the ctx_* tools of the setup's mode){RST}"
+            ),
+        });
+    }
+    if !cfg.setup.should_update_mcp() {
+        return None;
+    }
+    let mode = pinned.as_deref().unwrap_or("hybrid");
+    let fix = format!(
+        "{DIM}(run: lean-ctx init --agent claude --mode {mode}, then restart Claude Code){RST}"
+    );
+    let line = if search_denied.is_empty() {
+        format!(
+            "{BOLD}Claude Code tools{RST}  {RED}mode {mode} is pinned, but ~/.claude.json has no lean-ctx MCP server: sessions have no ctx_* tools{RST}  {fix}"
+        )
+    } else {
+        let mut all = search_denied.clone();
+        all.extend(&shell_denied);
+        format!(
+            "{BOLD}Claude Code tools{RST}  {RED}settings deny {}, but ~/.claude.json has no lean-ctx MCP server: sessions have no search tool{RST}  {fix}",
+            all.join(", ")
+        )
+    };
+    Some(Outcome { ok: false, line })
+}
+
+#[cfg(test)]
+mod claude_tool_access_tests {
+    /// The 3.12.1 state (deny list kept, MCP entry gone, replace pinned)
+    /// fails with the repair command; the entry back makes it pass. A global
+    /// hook mode without a Claude Code setup, or a pin without a deny while MCP
+    /// registration is off on purpose, is no finding.
+    #[test]
+    fn denied_tools_without_the_mcp_server_fail_with_the_fix() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        lean_ctx::test_env::remove_var("CLAUDE_CONFIG_DIR");
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        lean_ctx::test_env::set_var("LEAN_CTX_HOOK_MODE", "hybrid");
+        assert!(
+            super::claude_tool_access_outcome(h).is_none(),
+            "no Claude Code setup: a global hook mode alone is no finding"
+        );
+        lean_ctx::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+
+        std::fs::create_dir_all(h.join(".claude")).unwrap();
+        let hooks = r#""hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"lean-ctx hook rewrite"}]}]}"#;
+        std::fs::write(
+            h.join(".claude/settings.json"),
+            format!(r#"{{{hooks},"permissions":{{"deny":["Bash(cat:*)","Grep","Glob"]}}}}"#),
+        )
+        .unwrap();
+        std::fs::write(h.join(".claude.json"), r#"{"mcpServers":{}}"#).unwrap();
+        lean_ctx::core::config::Config::update_global(|c| {
+            c.governor.pinned.insert("claude".into(), "replace".into());
+        })
+        .unwrap();
+        let bad = super::claude_tool_access_outcome(h).expect("checked");
+        assert!(!bad.ok);
+        assert!(
+            bad.line.contains("deny Grep, Glob, Bash(cat:*)"),
+            "{}",
+            bad.line
+        );
+        assert!(bad.line.contains("no search tool"), "{}", bad.line);
+        assert!(
+            bad.line.contains("init --agent claude --mode replace"),
+            "{}",
+            bad.line
+        );
+
+        // Pinned without a deny: native search works, the ctx_* tools are
+        // missing — unless MCP registration is off on purpose (#281).
+        std::fs::write(h.join(".claude/settings.json"), format!("{{{hooks}}}")).unwrap();
+        let pinned = super::claude_tool_access_outcome(h).expect("checked");
+        assert!(
+            !pinned.ok && pinned.line.contains("no ctx_* tools"),
+            "{}",
+            pinned.line
+        );
+        lean_ctx::core::config::Config::update_global(|c| c.setup.auto_update_mcp = false).unwrap();
+        assert!(super::claude_tool_access_outcome(h).is_none());
+        lean_ctx::core::config::Config::update_global(|c| c.setup.auto_update_mcp = true).unwrap();
+
+        std::fs::write(
+            h.join(".claude.json"),
+            r#"{"mcpServers":{"lean-ctx":{"command":"lean-ctx"}}}"#,
+        )
+        .unwrap();
+        assert!(super::claude_tool_access_outcome(h).expect("checked").ok);
+    }
+}
+
 pub(crate) fn mcp_config_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {
@@ -199,14 +345,22 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
     let mut found: Vec<String> = Vec::new();
     let mut exists_no_ref: Vec<String> = Vec::new();
 
-    // The Claude Code governor setup has no lean-ctx MCP server by design.
-    let claude_governor = lean_ctx_hooks::hooks::agents::claude_governor::is_installed(&home);
+    // The Claude Code governor setup: no MCP server (governor), or one with
+    // deferred tools (governor-mcp).
+    let claude_governor = lean_ctx_hooks::hooks::agents::claude_governor::installed_arm(&home);
     for loc in &locations {
-        if claude_governor && loc.name == "Claude Code" {
-            found.push(format!(
-                "{} {DIM}(governor setup — hooks, no MCP server){RST}",
-                loc.name
-            ));
+        if let Some(arm) = claude_governor
+            && loc.name == "Claude Code"
+        {
+            let what = match arm {
+                lean_ctx_hooks::hooks::agents::claude_governor::GovernorArm::NoMcp => {
+                    "governor setup — hooks, no MCP server"
+                }
+                lean_ctx_hooks::hooks::agents::claude_governor::GovernorArm::McpDeferred => {
+                    "governor-mcp setup — hooks, MCP server with deferred tools"
+                }
+            };
+            found.push(format!("{} {DIM}({what}){RST}", loc.name));
             continue;
         }
         if std::fs::read_to_string(&loc.path).is_ok() {
@@ -370,16 +524,27 @@ pub(crate) fn plan_mode_outcomes() -> Vec<Outcome> {
         }
     }
 
-    // The no-MCP governor has no lean-ctx tools a plan-mode allow-list could
-    // name, so there is nothing to configure.
-    let claude_no_mcp_governor = lean_ctx::core::home::resolve_home_dir()
-        .and_then(|h| lean_ctx_hooks::hooks::agents::claude_governor::installed_arm(&h))
-        == Some(lean_ctx_hooks::hooks::agents::claude_governor::GovernorArm::NoMcp);
-    if claude_no_mcp_governor && status.claude_configured.is_some() {
+    // A governor setup writes no plan-mode allow-list (setup skips it for
+    // both arms): the no-MCP arm has no lean-ctx tools to allow, and
+    // governor-mcp's deferred tools are auto-approved in its MCP entry.
+    let claude_governor_arm = lean_ctx::core::home::resolve_home_dir()
+        .and_then(|h| lean_ctx_hooks::hooks::agents::claude_governor::installed_arm(&h));
+    if let Some(arm) = claude_governor_arm
+        && status.claude_configured.is_some()
+    {
+        let why = match arm {
+            lean_ctx_hooks::hooks::agents::claude_governor::GovernorArm::NoMcp => {
+                "no MCP tools to allow"
+            }
+            lean_ctx_hooks::hooks::agents::claude_governor::GovernorArm::McpDeferred => {
+                "deferred tools auto-approved in the MCP entry"
+            }
+        };
         results.push(Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Plan mode{RST}  Claude Code  {GREEN}governor setup{RST}  {DIM}(no MCP tools to allow){RST}"
+                "{BOLD}Plan mode{RST}  Claude Code  {GREEN}{} setup{RST}  {DIM}({why}){RST}",
+                arm.label()
             ),
         });
     } else if let Some(configured) = status.claude_configured {

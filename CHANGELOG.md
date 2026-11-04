@@ -6,8 +6,56 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+### Added
+
+- **LeanCTX | Hive is open.** `lean-ctx hive connect` and `hive link` connect an instance to
+  hive.leanctx.com (or a self-hosted Hive), and `hive` is back in help, suggestions and
+  completions; 3.12.0 and 3.12.1 shipped the connector switched off.
+
+### Security
+
+- **Write destinations stay inside the project without a Workspace (GHSA-483j-9vcj-2gxx).**
+  `ctx_package save`, `ctx_pack export`, the `ctx_edit`/`ctx_patch` backups, `ctx_checkpoint
+  restore` and the `ctx_knowledge` export wrote to the path the model passed, so an absolute or
+  `../` path left the project in the default configuration. A write destination now goes
+  through the path jail with or without a Workspace; reads are unchanged. Reported by
+  kasparovabi.
+
 ### Fixed
 
+- **A directory granted with `lean-ctx allow-path` is walkable (#2190).** `ctx_search`,
+  `ctx_tree` and `ctx_glob` refused a granted folder below a protected home location such as
+  `~/Library` although `ctx_read` read its files. A walk inside a granted directory now runs;
+  a grant never makes home, a filesystem root or a privacy-guarded home folder walkable.
+- **A dogfood or release-candidate build updates to its release.** The update check read
+  `3.12.1-dogfood.9` as 3.12.9 and answered "already up to date"; a prerelease now sorts
+  before its release, as in SemVer.
+- **Updates no longer switch an existing setup to the governor, and 3.12.1's switch is
+  undone.** The 3.12.1 update moved every unpinned Claude Code, CodeBuddy, Cursor, Codex,
+  Gemini and Copilot CLI setup to the governor without the lean-ctx MCP server. An update or
+  setup refresh now keeps the MCP, hybrid or replace setup it finds. A host that 3.12.1 switched
+  automatically (a `*.pre-governor-<version>.bak` backup or an interrupted migration, and no
+  governor pin) gets its previous mode back on the next `lean-ctx setup`, `lean-ctx update` or
+  `init --agent <host>`. The mode is read from the backup and pinned. `init --agent <host>
+  --mode governor|governor-mcp` now pins that choice too, so the repair leaves it alone.
+- **New Claude Code installs get `governor-mcp`.** Governor hooks plus the lean-ctx MCP server
+  with deferred tools, so Hive, the agent bus and knowledge work from the first session. New
+  installs of the other hosts get the standard MCP setup.
+- **Claude Code always keeps a search tool.** The standard setup denied native Grep/Glob even
+  when `~/.claude.json` had no lean-ctx MCP server. That happened after the 3.12.1 migration,
+  when a server or daemon of the previous build re-rendered the standard hooks, and sessions
+  then had neither native search nor `ctx_search`. The deny is now written only together with
+  the MCP entry, and a refresh removes it when the entry is missing. `lean-ctx doctor` reports
+  a pinned standard mode or a native-tool deny without the MCP server, with the repair command.
+- **An older binary no longer overwrites a newer setup.** Every explicit setup and init records
+  its version. The silent hook refresh of a server or daemon still running from before an update
+  leaves the setup alone when a newer build wrote it.
+- **A host pin selects the mode of later refreshes.** `[governor] pinned.<host>` (written by
+  `init --agent <host> --mode <m>`) is honoured by every setup and refresh path, not only by the
+  governor default.
+- **`gain` and the cockpit count the governor's applied savings.** Applied R1.bash, R2 and R4
+  decisions are recorded as `governor:<rule>` savings; shadow decisions still count nothing.
+  R1.read already did.
 - **Test processes of every LeanCTX crate stay off production endpoints.** The guard that
   sends test traffic to a loopback sink recognised only the Engine's own unit tests and
   processes cargo launched for the Engine or `lean-ctx` package. Since the crate split, the

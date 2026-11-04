@@ -30,7 +30,7 @@ default-members = [".", "crates/lean-ctx", "crates/lean-ctx-hooks", "crates/lean
 # split upward out of the Engine can sit between the two.
 [package]
 name = "lean-ctx-engine"
-version = "3.12.1"
+version = "3.12.2"
 edition = "2024"
 autobins = false
 description = "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI agents behind the lean-ctx CLI, MCP server and proxy integrations."

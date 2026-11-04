@@ -126,6 +126,23 @@ fn r1_bash_stubs_only_identical_unchanged_reruns() {
             let r = second.receipt.as_ref().expect("receipt");
             assert_eq!((r.rule_id, r.decision()), ("R1.bash", "applied"));
             assert!(r.baseline_tokens > r.actual_tokens + MIN_SAVED_TOKENS);
+            // gain/cockpit count the applied saving under the rule.
+            assert_eq!(
+                second.applied_stats(),
+                Some((
+                    "governor:R1.bash".to_string(),
+                    r.baseline_tokens,
+                    r.actual_tokens
+                ))
+            );
+            // The same rule in shadow delivers the native result: no saving.
+            let mut shadow = ALL_ON;
+            shadow.r1_bash = RuleMode::Shadow;
+            let third = decide(&bash(&s, "t3", "ls -R src", &listing()), &shadow);
+            assert!(third.output.is_empty());
+            assert_eq!(third.applied_stats(), None);
+        } else {
+            assert_eq!(second.applied_stats(), None, "case {i}");
         }
     }
 }

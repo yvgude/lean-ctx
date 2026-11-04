@@ -55,6 +55,9 @@ pub fn run_setup_with_options(opts: &SetupOptions) -> Result<SetupReport, String
     // Commit to the XDG layout (and drain any residual ~/.lean-ctx) so a stray
     // marker can never re-collapse config/data/state/cache later (GL #623).
     lean_ctx::core::layout_pin::heal();
+    // This binary writes the setup now: an older build's silent refresh
+    // (a server or daemon still running after an update) yields to it.
+    lean_ctx_hooks::hooks::setup_writer::record();
 
     // Before the MCP/rules/hook steps, which then leave a governor host alone.
     let governor_step = build_governor_step(opts, &home, &targets, &allows);
@@ -355,8 +358,10 @@ fn build_editor_step(
     editor_step
 }
 
-/// The governor default per host that has one (new install or once-per-version
-/// migration; pinned hosts untouched). The notice is printed once, here.
+/// The governor default per host that has one (a new Claude Code install
+/// gets governor-mcp, an automatic 3.12.1 migration is switched back; every
+/// existing or pinned setup is left to the standard steps). The notice is
+/// printed once, here.
 fn build_governor_step(
     opts: &SetupOptions,
     home: &std::path::Path,
@@ -381,17 +386,16 @@ fn build_governor_step(
             eprintln!("  \u{2139} {text}");
         }
         let status = match &outcome {
-            Outcome::Installed => "created",
-            Outcome::Migrated(_) | Outcome::Completed => "updated",
+            Outcome::Installed(_) => "created",
+            Outcome::Restored { .. } | Outcome::RuleModesEnabled(_) | Outcome::Completed => {
+                "updated"
+            }
             Outcome::AlreadyGovernor => "already",
-            _ => "skipped",
+            Outcome::Pinned(_) | Outcome::Standard => "skipped",
         };
         let note = match &outcome {
             Outcome::Pinned(mode) => format!("pinned mode {mode}"),
-            Outcome::SkippedThisVersion => format!(
-                "switched back after this version's migration; keep it: {}",
-                host.switch_back
-            ),
+            Outcome::Standard => "standard setup kept".to_string(),
             Outcome::AlreadyGovernor => "governor setup".to_string(),
             _ => notice.unwrap_or_default(),
         };
@@ -575,14 +579,20 @@ fn build_agent_hooks_step(
             && (host.is_installed)(&home)
         {
             (host.refresh)(&home);
+            let arm = if host.key == "claude"
+                && lean_ctx_hooks::hooks::agents::claude_governor::installed_arm(&home)
+                    == Some(
+                        lean_ctx_hooks::hooks::agents::claude_governor::GovernorArm::McpDeferred,
+                    ) {
+                "mode=governor-mcp; lean-ctx MCP server with deferred tools"
+            } else {
+                "mode=governor; no MCP server"
+            };
             hooks_step.items.push(SetupItem {
                 name: format!("{} hooks", target.name),
                 status: "installed".to_string(),
                 path: Some(target.detect_path.to_string_lossy().to_string()),
-                note: Some(format!(
-                    "mode=governor; no MCP server (switch back: {})",
-                    host.switch_back
-                )),
+                note: Some(format!("{arm} (switch back: {})", host.switch_back)),
             });
             continue;
         }

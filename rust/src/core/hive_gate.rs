@@ -4,20 +4,20 @@
 //! The engine reads it to keep Hive tools and commands out of every list;
 //! the Hive connector re-exports it.
 
-/// Release switch (owner, 3.12.0): the connector code ships, but `hive
-/// connect` and `hive link` refuse and `hive` stays out of help, suggestions
-/// and completions. 3.12.1 sets this to `true`; nothing else changes.
-pub const HIVE_AVAILABLE: bool = false;
+/// Release switch: the connector shipped switched off in 3.12.0 and 3.12.1
+/// (`hive connect`/`hive link` refused, `hive` hidden from help, suggestions
+/// and completions). Owner 2026-11-04: LeanCTX | Hive opens with 3.12.2.
+pub const HIVE_AVAILABLE: bool = true;
 /// Test switch: `LEAN_CTX_HIVE_PREVIEW=1` opens the connector before the
 /// release, for a loopback Hive only (the FakeHive of the test suite).
 pub const PREVIEW_ENV: &str = "LEAN_CTX_HIVE_PREVIEW";
 /// The one line `hive connect`/`hive link` print while the switch is off.
 pub const NOT_AVAILABLE: &str =
-    "LeanCTX | Hive comes with 3.12.1; this version does not connect to a Hive.";
+    "LeanCTX | Hive comes with 3.12.2; this version does not connect to a Hive.";
 /// The one line a call to a Hive MCP tool (`ctx_tasks`)
 /// answers while the switch is off; the tools stay out of every tool list.
 pub const TOOL_NOT_AVAILABLE: &str =
-    "LeanCTX | Hive comes with 3.12.1; this tool is not available in this version.";
+    "LeanCTX | Hive comes with 3.12.2; this tool is not available in this version.";
 /// Hive MCP tools. They ship with the connector but follow its release switch
 /// ([`available_locally`], owner 28.10.): while it is off they are in no tool
 /// list and every call answers [`TOOL_NOT_AVAILABLE`].

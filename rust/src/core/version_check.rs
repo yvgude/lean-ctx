@@ -61,12 +61,23 @@ fn fetch_latest_version() -> Result<String, String> {
     Ok(version)
 }
 
-pub(crate) fn is_newer(latest: &str, current: &str) -> bool {
-    let parse = |v: &str| -> Vec<u32> {
-        v.trim_start_matches('v')
+/// SemVer precedence on `MAJOR.MINOR.PATCH[-prerelease]`: a prerelease sorts
+/// before its release (`3.12.1-dogfood.9` < `3.12.1`). Splitting the whole
+/// string on `.` read `3.12.1-dogfood.9` as 3.12.9, so dogfood and rc builds
+/// never saw their own release as an update.
+pub fn is_newer(latest: &str, current: &str) -> bool {
+    let parse = |v: &str| -> (Vec<u32>, bool) {
+        let v = v.trim().trim_start_matches('v');
+        let (core, pre) = match v.split_once('-') {
+            Some((core, pre)) => (core, !pre.is_empty()),
+            None => (v, false),
+        };
+        let core = core
             .split('.')
-            .filter_map(|p| p.parse::<u32>().ok())
-            .collect()
+            .map(|p| p.parse::<u32>().unwrap_or(0))
+            .collect();
+        // A release outranks every prerelease of the same core.
+        (core, !pre)
     };
     parse(latest) > parse(current)
 }
@@ -159,6 +170,16 @@ mod tests {
         assert!(is_newer("2.9.14", "2.9.13"));
         assert!(is_newer("3.0.0", "2.9.99"));
         assert!(is_newer("2.10.0", "2.9.14"));
+    }
+
+    #[test]
+    fn a_release_is_newer_than_its_prereleases() {
+        assert!(is_newer("3.12.1", "3.12.1-dogfood.9"));
+        assert!(is_newer("v3.12.1", "3.12.1-rc.1"));
+        assert!(is_newer("3.12.2", "3.12.1-dogfood.9"));
+        assert!(!is_newer("3.12.1-dogfood.9", "3.12.1"));
+        assert!(!is_newer("3.12.0", "3.12.1-dogfood.9"));
+        assert!(!is_newer("3.12.1", "3.12.1"));
     }
 
     #[test]

@@ -31,11 +31,11 @@ pub fn setup_single_agent(
     let home = lean_ctx::core::home::resolve_home_dir().unwrap_or_default();
     let mut result = AgentSetupResult::default();
 
-    lean_ctx_hooks::hooks::install_agent_hook_respecting_rules_off(agent_name, global, mode);
-
     // #281: honor `[setup] auto_update_mcp = false` — skip MCP registration but
     // still install the hook, rules and skill. Locked-down environments can keep
     // the MCP server out of agent settings without losing the CLI integration.
+    // The MCP entry goes first: the hook step denies native search (Claude
+    // Code's Grep/Glob) only where the lean-ctx server that replaces it exists.
     if lean_ctx::core::config::Config::load()
         .setup
         .should_update_mcp()
@@ -47,6 +47,8 @@ pub fn setup_single_agent(
     } else {
         result.mcp_skipped = true;
     }
+
+    lean_ctx_hooks::hooks::install_agent_hook_respecting_rules_off(agent_name, global, mode);
 
     result.rules = lean_ctx::rules_inject::inject_rules_for_agent(&home, agent_name);
 

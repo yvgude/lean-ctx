@@ -125,8 +125,10 @@ pub fn run_setup_with_agents(agents: Option<std::collections::BTreeSet<String>>)
     let mut errors: Vec<&str> = Vec::new();
     let mut configured_integration_ids = Vec::new();
 
-    // The governor default first (new install or migration; pinned hosts
-    // untouched): the MCP/rules/hook steps below then leave that host alone.
+    // The governor default first (a new Claude Code install gets governor-mcp,
+    // an automatic 3.12.1 migration is switched back; existing and pinned
+    // setups untouched): the MCP/rules/hook steps below then render the rest.
+    lean_ctx_hooks::hooks::setup_writer::record();
     for (host, outcome) in
         lean_ctx_hooks::hooks::governor_default::apply_for_targets(&home, &targets, &allows)
     {

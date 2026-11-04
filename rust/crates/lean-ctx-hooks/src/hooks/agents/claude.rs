@@ -155,10 +155,19 @@ fn ensure_claude_mcp_entry_defaults(config_path: &std::path::Path, content: &str
 /// #1091, #1228). Deny always wins over allow, so a bare `Read` deny cannot
 /// carve out memory paths — remove it instead and steer exploration via
 /// CLAUDE.md + hooks.
+///
+/// The deny only stands together with the lean-ctx MCP entry that provides
+/// `ctx_search`/`ctx_glob`: without it a session would have no search tool at
+/// all (3.12.1: an automatic governor migration removed the entry while an
+/// older binary's refresh kept the deny). So a missing entry removes the deny.
 pub(crate) fn install_claude_permissions_deny_replace(home: &std::path::Path) {
     if super::claude_governor::is_installed(home) {
         return; // the governor keeps the host's own tool list
     }
+    // Unknown (the MCP config does not parse right now): leave the list as is.
+    let Some(has_mcp) = lean_ctx::core::claude_host::lean_ctx_mcp_entry_state(home) else {
+        return;
+    };
     let settings_path = home.join(".claude").join("settings.json");
     let read_mtime = lean_ctx::config_io::snapshot_mtime(&settings_path);
 
@@ -191,9 +200,17 @@ pub(crate) fn install_claude_permissions_deny_replace(home: &std::path::Path) {
     let mut changed = false;
     for tool in deny_tools {
         let val = serde_json::Value::String(tool.to_string());
-        if !arr.contains(&val) {
-            arr.push(val);
-            changed = true;
+        let pos = arr.iter().position(|v| v == &val);
+        match (has_mcp, pos) {
+            (true, None) => {
+                arr.push(val);
+                changed = true;
+            }
+            (false, Some(pos)) => {
+                arr.remove(pos);
+                changed = true;
+            }
+            _ => {}
         }
     }
 
@@ -211,9 +228,15 @@ pub(crate) fn install_claude_permissions_deny_replace(home: &std::path::Path) {
         && write_claude_settings(&settings_path, &json, read_mtime)
         && !mcp_server_quiet_mode()
     {
-        eprintln!(
-            "  \x1b[32m✓\x1b[0m Claude Code: denied native Grep/Glob (Read kept for edit gate + auto memory)"
-        );
+        if has_mcp {
+            eprintln!(
+                "  \x1b[32m✓\x1b[0m Claude Code: denied native Grep/Glob (Read kept for edit gate + auto memory)"
+            );
+        } else {
+            eprintln!(
+                "  \x1b[33m•\x1b[0m Claude Code: native Grep/Glob allowed again (no lean-ctx MCP server registered)"
+            );
+        }
     }
 }
 
