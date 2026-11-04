@@ -224,17 +224,14 @@ fn show_payload() {
     println!();
     println!(
         "\x1b[2mEndpoint: POST {}/api/telemetry/v2/batch\x1b[0m",
-        api_url()
+        // The endpoint a send would actually use (loopback in test processes).
+        lean_ctx::telemetry_transport::api_url()
     );
     println!(
         "\x1b[2mFrequency: cumulative daily totals, up to {} times per UTC day\x1b[0m",
         lean_ctx::core::telemetry_aggregate::DAILY_SEND_CAP
     );
     println!("\x1b[2mAuthentication: none\x1b[0m");
-}
-
-fn api_url() -> String {
-    std::env::var("LEAN_CTX_API_URL").unwrap_or_else(|_| "https://api.leanctx.com".to_string())
 }
 
 fn show_history() {
