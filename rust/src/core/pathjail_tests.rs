@@ -770,6 +770,7 @@ fn registered_cache_root_reads_allow_writes_deny() {
 /// elsewhere are not.
 #[test]
 fn agent_instruction_roots_are_admitted_but_credentials_stay_jailed() {
+    let _home = crate::core::data_dir::test_env_lock();
     let home = dirs::home_dir().expect("home dir in test env");
     for (inside, root) in [
         (".claude/skills/review/SKILL.md", ".claude/skills"),

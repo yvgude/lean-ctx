@@ -734,6 +734,7 @@ mod tests {
 
     #[test]
     fn noise_path_detects_home_dotfiles() {
+        let _home = crate::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             let ssh = format!("{}/.ssh/config", home.display());
             assert!(is_noise_path(&ssh));

@@ -217,6 +217,7 @@ mod tests {
 
     #[test]
     fn refuses_entries_that_grant_everything() {
+        let _home = lean_ctx::core::data_dir::test_env_lock();
         assert!(refusal(Path::new("/")).is_some());
         if let Some(home) = dirs::home_dir() {
             let home = std::fs::canonicalize(&home).unwrap_or(home);
@@ -229,6 +230,7 @@ mod tests {
 
     #[test]
     fn normalize_makes_relative_paths_absolute() {
+        let _home = lean_ctx::core::data_dir::test_env_lock();
         let p = normalize("some/rel/dir").unwrap();
         assert!(p.is_absolute(), "{}", p.display());
         // A not-yet-existing path keeps its expanded form.

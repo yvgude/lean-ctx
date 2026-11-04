@@ -50,6 +50,7 @@ fn explicit_root_is_not_promoted_to_parent_git_root() {
 
 #[test]
 fn explicit_root_expands_home_prefix() {
+    let _home = crate::core::data_dir::test_env_lock();
     let Some(home) = dirs::home_dir() else {
         return;
     };
@@ -108,6 +109,9 @@ mod jail_parity_tests {
 
     #[test]
     fn broad_root_is_refused() {
+        // HOME is read here and again inside the jail: a test that moves it
+        // in between turns home into a plain temp folder (CI, 3.12.2).
+        let _env = crate::core::data_dir::test_env_lock();
         let Some(home) = dirs::home_dir() else { return };
         let home = home.to_string_lossy().into_owned();
         let err = jail_cli_read_path(&format!("{home}/.profile"), &home).unwrap_err();

@@ -996,6 +996,7 @@ mod tests {
 
     #[test]
     fn broad_and_own_roots_are_refused() {
+        let _home = crate::core::data_dir::test_env_lock();
         let store = private_dir();
         let file = store.path().join("ws.json");
         assert!(create(&file, "w", Path::new("/")).is_err());

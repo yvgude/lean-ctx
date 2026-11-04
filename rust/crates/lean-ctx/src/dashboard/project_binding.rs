@@ -272,6 +272,7 @@ mod tests {
 
     #[test]
     fn only_a_pool_project_is_accepted_and_bound_to_the_pools_spelling() {
+        let _home = lean_ctx::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
         let alpha = project(dir.path(), "alpha");
         let beta = project(dir.path(), "beta");

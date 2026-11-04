@@ -96,6 +96,7 @@ mod tests {
 
     #[test]
     fn load_latest_for_broad_root_returns_none_without_scanning() {
+        let _home = crate::core::data_dir::test_env_lock();
         // The daemon boots with cwd "/" and the dispatcher passes that as the
         // project root. Broad roots must bail out before walking the session
         // store — stat-ing persisted roots under ~/Documents from the launchd

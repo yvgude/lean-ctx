@@ -1089,6 +1089,7 @@ mod tests {
 
     #[test]
     fn broad_root_rejects_home() {
+        let _home = crate::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             assert!(is_broad_or_unsafe_root(&home));
         }
@@ -1187,6 +1188,7 @@ mod tests {
 
     #[test]
     fn broad_root_allows_home_subdirs() {
+        let _home = crate::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             let subdir = home.join("projects").join("my-app");
             assert!(!is_broad_or_unsafe_root(&subdir));
@@ -1195,6 +1197,7 @@ mod tests {
 
     #[test]
     fn data_dir_collision_rejects_home() {
+        let _home = crate::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             assert!(is_data_dir_collision(&home));
         }

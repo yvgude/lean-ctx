@@ -220,6 +220,7 @@ mod tests {
 
     #[test]
     fn forbidden_patterns_and_home_paths_are_dropped() {
+        let _home = lean_ctx::core::data_dir::test_env_lock();
         let mut s = Screen::with_rules(
             Vec::new(),
             std::sync::Arc::new(Vec::new()),

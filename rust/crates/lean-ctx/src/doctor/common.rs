@@ -786,6 +786,7 @@ mod tests {
 
     #[test]
     fn display_user_path_abbreviates_home() {
+        let _home = lean_ctx::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             let shown = display_user_path(&home.join(".cursor").join("mcp.json"));
             assert_eq!(shown, "~/.cursor/mcp.json");
@@ -811,6 +812,7 @@ mod tests {
 
     #[test]
     fn display_user_path_respects_component_boundary() {
+        let _home = lean_ctx::core::data_dir::test_env_lock();
         // `/home/foo` must never turn `/home/foo-sibling/...` into `~-sibling/...`.
         if let Some(home) = dirs::home_dir()
             && let (Some(parent), Some(name)) = (home.parent(), home.file_name())
@@ -824,6 +826,7 @@ mod tests {
 
     #[test]
     fn tildify_home_replaces_home_in_formatted_text() {
+        let _home = lean_ctx::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             let line = format!("ok ({}/.config/x)", home.display());
             let shown = tildify_home(&line);
