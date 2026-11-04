@@ -844,14 +844,15 @@ impl ProxyConfig {
 
     /// Whether long-session elision applies to Anthropic requests
     /// (every turn of a session past the threshold). `LEAN_CTX_PROXY_LONG_SESSION_ELIDE=on|off` wins,
-    /// then `[proxy] long_session_elide` in config.toml, else `true`
-    /// (Claude Code, Haiku 5.5, long sessions: cost x0.69, 12/12 solved vs
-    /// 11/12 native in the control run; an earlier run solved 9/12 vs 12/12).
+    /// then `[proxy] long_session_elide` in config.toml, else `false`: on
+    /// Claude Code with Haiku 5.5 (three runs, 44 long tasks per arm) it cut
+    /// cost to x0.67-0.92 but solved 37/44 vs 42/44 natively, because the
+    /// model did not always read back an elided early output.
     pub fn long_session_elide_enabled(&self) -> bool {
         env_bool_or(
             "LEAN_CTX_PROXY_LONG_SESSION_ELIDE",
             self.long_session_elide,
-            true,
+            false,
         )
     }
 
