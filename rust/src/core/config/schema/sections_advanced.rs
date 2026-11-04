@@ -166,8 +166,8 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         "long_session_elide".into(),
         key_with_env(
             "bool",
-            serde_json::json!(true),
-            "Long-session elision for Anthropic. Once a conversation's messages pass 180 000 characters, tool output older than the live window (at least the last 8 messages) and longer than 2 000 characters is replaced by a one-line stub; the full text is archived in a private, content-addressed file under the lean-ctx state directory that the stub names (readable with cat). The window advances in steps of 16 messages, so the cached prefix is rewritten once per step, not every turn. It applies to every turn of such a session, prompt turns included, so they send the same prefix as the tool turn before. Measured on long Claude Code sessions (Haiku 5.5): cost x0.69 with 12 of 12 tasks solved against 11 of 12 natively in the control run; an earlier run solved 9 of 12 against 12 of 12 when the model did not read back an elided early output. Default true",
+            serde_json::json!(false),
+            "Long-session elision for Anthropic. Once a conversation's messages pass 180 000 characters, tool output older than the live window (at least the last 8 messages) and longer than 2 000 characters is replaced by a one-line stub; the full text is archived in a private, content-addressed file under the lean-ctx state directory that the stub names (readable with cat). The window advances in steps of 16 messages, so the cached prefix is rewritten once per step, not every turn. It applies to every turn of such a session, prompt turns included, so they send the same prefix as the tool turn before. Opt-in: on long Claude Code sessions (Haiku 5.5, three runs, 44 tasks per arm) it cut cost to x0.67-0.92 against native but solved 37 of 44 tasks against 42 of 44, when the model answered without reading back an elided early output. Default false",
             "LEAN_CTX_PROXY_LONG_SESSION_ELIDE",
         ),
     );
