@@ -239,6 +239,7 @@ mod tests {
 
     #[test]
     fn root_section_end_finds_first_header() {
+        let _home = lean_ctx::core::data_dir::test_env_lock();
         assert_eq!(root_section_end("a = 1\n[updates]\nb = 2\n"), 6);
         assert_eq!(root_section_end("[updates]\n"), 0);
         assert_eq!(root_section_end("a = 1\n[[items]]\n"), 6);

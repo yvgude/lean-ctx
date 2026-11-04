@@ -603,6 +603,12 @@ fn run_inner(json: bool) -> u32 {
     // 8) MCP
     let mcp = mcp_config_outcome();
     setup_item(&mut board, &mcp);
+    // 8a) Claude Code: denied native tools need the MCP server that replaces them.
+    if let Some(tools) = lean_ctx::core::home::resolve_home_dir()
+        .and_then(|home| checks::claude_tool_access_outcome(&home))
+    {
+        board.check(&tools);
+    }
     let user_scope_mcp_locations = dirs::home_dir()
         .map(|home| lean_ctx_mcp_location_names(&home))
         .unwrap_or_default();

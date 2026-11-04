@@ -432,18 +432,20 @@ mod tests {
             assert_eq!(r.total_tokens(), expected.total_tokens());
             assert!(r.total_tokens() * 10 < default_total, "{label} ≪ default");
         }
-        // A fresh Claude Code install gets the governor, so `doctor overhead`
+        // A fresh Claude Code install gets governor-mcp, so `doctor overhead`
         // reports its prefix, not the standard (MCP) one.
         lean_ctx::test_env::remove_var("LEAN_CTX_HOOK_MODE");
         let home = tempfile::tempdir().unwrap();
         let host = lean_ctx_hooks::hooks::governor_default::host("claude").unwrap();
         lean_ctx_hooks::hooks::governor_default::apply_default(host, home.path());
         let r = measure(home.path(), home.path());
-        assert_eq!(r.setup, "governor");
+        assert_eq!(r.setup, "governor-mcp");
         assert_eq!(
             r.total_tokens(),
-            lean_ctx::core::context_overhead::ContextOverhead::measure_governor(GovernorArm::NoMcp)
-                .total_tokens()
+            lean_ctx::core::context_overhead::ContextOverhead::measure_governor(
+                GovernorArm::McpDeferred
+            )
+            .total_tokens()
         );
     }
 

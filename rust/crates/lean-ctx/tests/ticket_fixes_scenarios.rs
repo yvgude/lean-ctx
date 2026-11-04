@@ -23,6 +23,7 @@ use std::collections::HashMap;
 
 #[test]
 fn antigravity_has_distinct_agent_key_from_gemini() {
+    let _home = lean_ctx::core::data_dir::test_env_lock();
     let home = dirs::home_dir().unwrap_or_default();
     let targets = lean_ctx::core::editor_registry::detect::build_targets(&home);
 
@@ -48,6 +49,7 @@ fn antigravity_has_distinct_agent_key_from_gemini() {
 
 #[test]
 fn antigravity_config_path_is_under_gemini_subdirectory() {
+    let _home = lean_ctx::core::data_dir::test_env_lock();
     let home = dirs::home_dir().unwrap_or_default();
     let targets = lean_ctx::core::editor_registry::detect::build_targets(&home);
     let antigravity = targets
@@ -68,6 +70,7 @@ fn antigravity_config_path_is_under_gemini_subdirectory() {
 
 #[test]
 fn antigravity_cli_target_exists_with_correct_paths() {
+    let _home = lean_ctx::core::data_dir::test_env_lock();
     let home = dirs::home_dir().unwrap_or_default();
     let targets = lean_ctx::core::editor_registry::detect::build_targets(&home);
     let cli = targets
@@ -89,6 +92,7 @@ fn antigravity_cli_target_exists_with_correct_paths() {
 
 #[test]
 fn antigravity_ide_and_cli_are_separate_targets() {
+    let _home = lean_ctx::core::data_dir::test_env_lock();
     let home = dirs::home_dir().unwrap_or_default();
     let targets = lean_ctx::core::editor_registry::detect::build_targets(&home);
     let ide = targets.iter().find(|t| t.agent_key == "antigravity");
@@ -105,6 +109,7 @@ fn antigravity_ide_and_cli_are_separate_targets() {
 
 #[test]
 fn antigravity_and_gemini_have_distinct_keys() {
+    let _home = lean_ctx::core::data_dir::test_env_lock();
     let home = dirs::home_dir().unwrap_or_default();
     let targets = lean_ctx::core::editor_registry::detect::build_targets(&home);
 
@@ -133,6 +138,7 @@ fn antigravity_and_gemini_have_distinct_keys() {
 
 #[test]
 fn zed_target_exists_with_correct_paths() {
+    let _home = lean_ctx::core::data_dir::test_env_lock();
     let home = dirs::home_dir().unwrap_or_default();
     let targets = lean_ctx::core::editor_registry::detect::build_targets(&home);
     let zed = targets

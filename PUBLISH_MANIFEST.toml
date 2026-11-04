@@ -721,6 +721,7 @@ new_paths = [
   "rust/crates/lean-ctx-protocol/tests/fixtures/hive-v2/routes/worker_retire.error.not_found.json",
   "rust/crates/lean-ctx-protocol/tests/fixtures/hive-v2/routes/worker_retire.error.not_owned.json",
   "rust/crates/lean-ctx-protocol/tests/fixtures/hive-v2/routes/worker_retire.request.json",
+  "rust/crates/lean-ctx-hooks/src/hooks/setup_writer.rs",
   "integrations/claude-code-mod/tests/pick-session.test.ts",
   "rust/crates/lean-ctx-protocol/tests/fixtures/hive-v2/vectors/screening_exceptions.vectors.json",
   "rust/crates/lean-ctx-protocol/tests/fixtures/hive-v2/web/organisation-instances-revoke.json",

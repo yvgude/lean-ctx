@@ -3,6 +3,15 @@
 use super::*;
 use lean_ctx::core::triage::profile::TaskProfileLocal;
 
+/// The bounce tracker is process-global: the tests that arm it (and the one
+/// asserting it is unarmed) run one at a time, or their `set_seq` calls and
+/// reads interleave and flip each other's verdicts.
+fn tracker_tests() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// A tool call without task text yields the rules-fallback profile, which
 /// must pass output through unfiltered.
 #[test]
@@ -45,6 +54,7 @@ fn pre_dispatch_passthrough_for_diff() {
 
 #[test]
 fn pre_dispatch_passthrough_for_anchored_window() {
+    let _tracker = tracker_tests();
     // #843: a windowed anchored:N-M read must keep its hash anchors —
     // bounce-prevention and the other heuristics must not clobber it to
     // "full" and silently drop the window.
@@ -79,6 +89,7 @@ fn pre_dispatch_passthrough_for_anchored_window() {
 
 #[test]
 fn pre_dispatch_passthrough_for_lines_multi_select() {
+    let _tracker = tracker_tests();
     // #971: `lines:A-B,C-D` is a precise pinned window exactly like
     // `lines:A-B`, but it parsed as Malformed, so `is_precise_pinned_mode`
     // reported "not pinned" and bounce-prevention rewrote an 8-line request
@@ -119,6 +130,7 @@ fn pre_dispatch_passthrough_for_lines_multi_select() {
 
 #[test]
 fn fresh_escapes_bounce_prevention() {
+    let _tracker = tracker_tests();
     // #1588: after an edit the gate pins the file to `full`. Without an
     // escape hatch, signatures/map/reference stay unreachable for the rest
     // of the session — `fresh=true` is that hatch.
@@ -255,12 +267,14 @@ fn pinned_read_still_blocks_exceeded_budget() {
 
 #[test]
 fn pre_dispatch_no_override_without_signals() {
+    let _tracker = tracker_tests();
     let result = pre_dispatch_read("src/unknown.rs", "auto", None, None);
     assert!(result.overridden_mode.is_none());
 }
 
 #[test]
 fn pre_dispatch_bounce_prevention_forces_full() {
+    let _tracker = tracker_tests();
     {
         let mut bt = lean_ctx::core::bounce_tracker::global()
             .lock()

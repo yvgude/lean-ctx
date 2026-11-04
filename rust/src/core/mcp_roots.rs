@@ -447,6 +447,7 @@ mod tests {
 
     #[test]
     fn best_root_rejects_home_without_marker() {
+        let _home = crate::core::data_dir::test_env_lock();
         // A client reporting HOME as its workspace root must NOT turn HOME into
         // the project root (root cause of cross-project session contamination).
         if let Some(home) = dirs::home_dir() {
@@ -461,6 +462,7 @@ mod tests {
 
     #[test]
     fn best_root_prefers_safe_dir_over_home() {
+        let _home = crate::core::data_dir::test_env_lock();
         if let Some(home) = dirs::home_dir() {
             let tmp = tempfile::tempdir().unwrap();
             let safe = tmp.path().join("real_project");

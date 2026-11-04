@@ -312,9 +312,10 @@ jobs:
         shell: bash
         run: |
           umask 077
-          if [[ "${{ runner.os }}" == "macOS" ]]; then
+          if [[ "${{ runner.os }}" == "macOS" && -x "${CARGO_HOME}/bin/cargo" ]]; then
             CARGO="${CARGO_HOME}/bin/cargo"
           else
+            # Newer macOS images install rustup's proxies outside CARGO_HOME.
             CARGO="cargo"
           fi
           if [[ "${{ runner.os }}" == "Windows" ]]; then

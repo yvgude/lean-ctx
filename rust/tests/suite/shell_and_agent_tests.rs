@@ -638,15 +638,19 @@ fn agent_init_codex_installs_compatible_hooks_and_instructions() {
     let owned_env = hermetic_env(home);
     let envs = env_refs(&owned_env);
 
-    // Without `--mode` a new Codex install gets the governor: enforcement
-    // hook, no MCP server, one rules channel (AGENTS.md, no LEAN-CTX.md).
+    // `--mode governor` (a new Codex install gets the standard MCP setup
+    // since 3.12.2): enforcement hook, no MCP server, one rules channel
+    // (AGENTS.md, no LEAN-CTX.md).
     let gov_tmp = tempfile::tempdir().expect("create tempdir");
     let gov_codex = gov_tmp.path().join(".codex");
     std::fs::create_dir_all(&gov_codex).unwrap();
     let owned_gov_env = hermetic_env(gov_tmp.path());
     let gov_envs = env_refs(&owned_gov_env);
-    let (_stdout, stderr, code) =
-        run_with_env(&["init", "--agent", "codex", "--global"], &gov_envs, None);
+    let (_stdout, stderr, code) = run_with_env(
+        &["init", "--agent", "codex", "--global", "--mode", "governor"],
+        &gov_envs,
+        None,
+    );
     assert_eq!(code, 0, "codex governor init should succeed: {stderr}");
     assert!(gov_codex.join("AGENTS.md").exists(), "governor rules block");
     assert!(
@@ -749,8 +753,8 @@ fn agent_init_codex_migrates_legacy_lean_ctx_hook_but_keeps_other_hooks() {
     let owned_env = hermetic_env(home);
     let envs = env_refs(&owned_env);
 
-    // The standard (hybrid) setup's migration of the legacy hook; without
-    // `--mode` an existing Codex setup now switches to the governor.
+    // The standard (hybrid) setup's migration of the legacy hook (without
+    // `--mode` an existing Codex setup keeps its mode since 3.12.2).
     let (_stdout, stderr, code) = run_with_env(
         &["init", "--agent", "codex", "--global", "--mode", "hybrid"],
         &envs,

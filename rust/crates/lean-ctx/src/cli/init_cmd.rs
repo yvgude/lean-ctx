@@ -82,6 +82,10 @@ pub fn cmd_init(args: &[String]) {
         return;
     }
 
+    if !agents.is_empty() {
+        // An explicit agent setup: an older build's silent refresh yields to it.
+        lean_ctx_hooks::hooks::setup_writer::record();
+    }
     if let Some(arm) = governor_arm {
         init_governor(&agents, arm);
         return;
@@ -268,7 +272,7 @@ pub fn cmd_init(args: &[String]) {
     qprintln!("    qoder, qodercli, qoderwork, qwen, roo, sublime, trae, verdent, vscode,");
     qprintln!("    windsurf, zed");
     qprintln!("  Modes: mcp, hybrid, replace  (auto-detected per agent, override with --mode)");
-    qprintln!("  Claude Code defaults to governor (no MCP server); MCP tools: --mode hybrid");
+    qprintln!("  New Claude Code installs get governor-mcp; existing setups keep their mode");
 }
 
 pub fn cmd_init_quiet(args: &[String]) {
@@ -315,7 +319,9 @@ fn init_governor(
         }
         lean_ctx_hooks::hooks::agents::claude_governor::install(&home, arm);
         if let Some(host) = lean_ctx_hooks::hooks::governor_default::host(agent) {
-            lean_ctx_hooks::hooks::governor_default::pin(host, None);
+            // A chosen governor is pinned like a chosen standard mode: no
+            // update or repair of the 3.12.1 migration switches it back.
+            lean_ctx_hooks::hooks::governor_default::pin(host, Some(arm.label()));
         }
         qprintln!("  ✓ Claude Code governor setup installed (revert: --mode hybrid)");
         if let Err(e) = crate::setup::agent_selection::remember_connected_agent(agent) {
@@ -325,9 +331,10 @@ fn init_governor(
 }
 
 /// `init --agent <host>` without `--mode` on a host with a governor: apply the
-/// default (new install or once-per-version migration). Returns whether the
-/// host is handled; `false` (pinned, or switched back this version) runs the
-/// standard setup.
+/// default (a new Claude Code install gets governor-mcp; an automatic 3.12.1
+/// migration is switched back). Returns whether the host is handled; `false`
+/// runs the standard setup (in the mode `recommend_hook_mode` reads, which
+/// includes the host's pin).
 fn init_governor_default(agent: &str) -> bool {
     use lean_ctx_hooks::hooks::governor_default::{Outcome, apply_default, host};
     let (Some(host), Some(home)) = (host(agent), lean_ctx::core::home::resolve_home_dir()) else {
@@ -343,7 +350,7 @@ fn init_governor_default(agent: &str) -> bool {
         (host.refresh)(&home);
         qprintln!("  ✓ {} governor setup up to date", host.name);
     }
-    !matches!(outcome, Outcome::Pinned(_) | Outcome::SkippedThisVersion)
+    !outcome.standard_setup_runs()
 }
 
 /// `init --agent <host> --mode governor` for a host other than Claude Code.
@@ -362,6 +369,11 @@ fn init_host_governor(
         return;
     }
     governor_hosts::install(spec, home);
+    // A chosen governor is pinned, so the repair of 3.12.1's automatic
+    // migration never switches it back.
+    if let Some(host) = lean_ctx_hooks::hooks::governor_default::host(agent) {
+        lean_ctx_hooks::hooks::governor_default::pin(host, Some(arm.label()));
+    }
     qprintln!(
         "  ✓ {} {} setup installed (switch back: {})",
         spec.name,
@@ -386,11 +398,11 @@ fn print_init_help() {
     println!("  --global, -g        Install the shell aliases into your shell profile");
     println!("  --agent <tool>      Configure an AI tool: MCP, hooks and rules (repeatable)");
     println!("  --mode <mode>       Hook mode for --agent: mcp, hybrid or replace");
-    println!("                      (auto-detected per agent when omitted). Claude Code,");
-    println!("                      CodeBuddy, Cursor, Codex, Gemini and Copilot CLI default");
-    println!("                      to governor (native tools + hooks, no MCP); an explicit");
-    println!("                      mode there is kept by later updates (Claude Code also:");
-    println!("                      governor-mcp)");
+    println!("                      (auto-detected per agent when omitted). A new Claude");
+    println!("                      Code install gets governor-mcp (governor hooks + MCP");
+    println!("                      server); existing setups keep their mode. Claude Code,");
+    println!("                      CodeBuddy, Cursor, Codex, Gemini and Copilot CLI also");
+    println!("                      take governor; an explicit mode is kept by later updates");
     println!("  --project           With --agent: also install project-local hooks");
     println!("  --no-shell-hook     Skip the shell aliases; MCP tools stay active");
     println!("  --dry-run           Show what the shell setup would change, change nothing");
@@ -436,10 +448,11 @@ mod tests {
         assert_eq!(opt_in_flag(&args(&["--prompt-foo"]), "--prompt"), None);
     }
 
-    /// `init --mode hybrid` after a governor migration restores the standard
-    /// setup and pins it, so the next update leaves it alone.
+    /// `init --agent claude` after an automatic 3.12.1 governor migration
+    /// (backups next to the files, governor hooks, no MCP entry) restores the
+    /// standard setup and pins it, so the next update leaves it alone.
     #[test]
-    fn revert_restores_the_standard_setup_pinned() {
+    fn init_restores_an_automatically_migrated_setup_pinned() {
         use lean_ctx::test_env;
         use lean_ctx_hooks::hooks::agents::claude_governor;
         use lean_ctx_hooks::hooks::governor_default::{Outcome, apply_default, host, pinned_mode};
@@ -455,9 +468,13 @@ mod tests {
         let h = home.path();
         let read = |p: &str| std::fs::read_to_string(h.join(p)).unwrap_or_default();
         let mcp = || serde_json::from_str::<serde_json::Value>(&read(".claude.json")).unwrap();
-        // A pre-governor standard install: MCP entry and rules block below
-        // the user's own text.
+        // The standard install the migration found, backed up as 3.12.1 did.
         std::fs::create_dir_all(h.join(".claude")).unwrap();
+        std::fs::write(
+            h.join(".claude/settings.json"),
+            r#"{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"lean-ctx hook rewrite"}]},{"matcher":"Read|Grep|Glob","hooks":[{"type":"command","command":"lean-ctx hook redirect"}]}]},"permissions":{"deny":["Grep","Glob"]}}"#,
+        )
+        .unwrap();
         std::fs::write(
             h.join(".claude.json"),
             r#"{"projects":{"/x":{}},"mcpServers":{"lean-ctx":{"command":"lean-ctx","alwaysLoad":true},"other":{"command":"o"}}}"#,
@@ -468,27 +485,75 @@ mod tests {
             "# My notes\nkeep me\n\n<!-- lean-ctx -->\nstandard block: use ctx_read\n<!-- /lean-ctx -->\n",
         )
         .unwrap();
+        for f in [".claude/settings.json", ".claude.json", ".claude/CLAUDE.md"] {
+            std::fs::copy(h.join(f), h.join(format!("{f}.pre-governor-3.12.1.bak"))).unwrap();
+        }
+        claude_governor::install(h, claude_governor::GovernorArm::NoMcp);
+        assert!(mcp().pointer("/mcpServers/lean-ctx").is_none(), "migrated");
 
-        let claude = host("claude").unwrap();
-        assert!(matches!(apply_default(claude, h), Outcome::Migrated(_)));
-        super::cmd_init_quiet(&args(&[
-            "--agent", "claude", "--mode", "hybrid", "--global",
-        ]));
+        super::cmd_init_quiet(&args(&["--agent", "claude", "--global"]));
 
         assert!(!claude_governor::is_installed(h));
         let settings = read(".claude/settings.json");
         assert!(settings.contains("lean-ctx hook rewrite"), "{settings}");
         assert!(!settings.contains("hook govern"), "{settings}");
         assert!(mcp().pointer("/mcpServers/lean-ctx").is_some(), "MCP back");
+        assert!(mcp().pointer("/mcpServers/other").is_some(), "foreign kept");
+        assert!(
+            settings.contains("\"Grep\""),
+            "the deny returns with the MCP entry: {settings}"
+        );
         assert!(read(".claude/CLAUDE.md").starts_with("# My notes\nkeep me\n"));
-        assert_eq!(pinned_mode(claude).as_deref(), Some("hybrid"));
+        assert_eq!(
+            pinned_mode(host("claude").unwrap()).as_deref(),
+            Some("hybrid")
+        );
         // The next update leaves the pinned choice alone.
         let before = (read(".claude/settings.json"), read(".claude/CLAUDE.md"));
-        assert_eq!(apply_default(claude, h), Outcome::Pinned("hybrid".into()));
+        assert_eq!(
+            apply_default(host("claude").unwrap(), h),
+            Outcome::Pinned("hybrid".into())
+        );
         assert_eq!(
             (read(".claude/settings.json"), read(".claude/CLAUDE.md")),
             before
         );
+
+        test_env::remove_var("LEAN_CTX_HOOK_BINARY");
+        match prev_home {
+            Some(p) => test_env::set_var("HOME", p),
+            None => test_env::remove_var("HOME"),
+        }
+    }
+
+    /// `init --agent claude` on a new home installs governor-mcp: governor
+    /// hooks plus the lean-ctx MCP server with deferred tools.
+    #[test]
+    fn a_new_claude_install_gets_governor_mcp() {
+        use lean_ctx::test_env;
+        use lean_ctx_hooks::hooks::agents::claude_governor;
+
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let home = tempfile::tempdir().unwrap();
+        let prev_home = std::env::var_os("HOME");
+        test_env::set_var("HOME", home.path());
+        test_env::set_var("LEAN_CTX_HOOK_BINARY", "lean-ctx");
+        for var in ["CLAUDE_CONFIG_DIR", "LEAN_CTX_HOOK_MODE", "LEAN_CTX_QUIET"] {
+            test_env::remove_var(var);
+        }
+        let h = home.path();
+        std::fs::create_dir_all(h.join(".claude")).unwrap();
+
+        super::cmd_init_quiet(&args(&["--agent", "claude", "--global"]));
+
+        assert_eq!(
+            claude_governor::installed_arm(h),
+            Some(claude_governor::GovernorArm::McpDeferred)
+        );
+        let mcp: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(h.join(".claude.json")).unwrap())
+                .unwrap();
+        assert_eq!(mcp["mcpServers"]["lean-ctx"]["alwaysLoad"], false);
 
         test_env::remove_var("LEAN_CTX_HOOK_BINARY");
         match prev_home {

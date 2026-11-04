@@ -292,6 +292,7 @@ fn safe_scan_root_rejects_fs_root() {
 
 #[test]
 fn safe_scan_root_rejects_home() {
+    let _home = crate::core::data_dir::test_env_lock();
     if let Some(home) = dirs::home_dir() {
         let home_str = home.to_string_lossy().to_string();
         assert!(
@@ -461,6 +462,7 @@ fn touch_without_content_change_keeps_index_fresh() {
 
 #[test]
 fn safe_scan_root_rejects_home_downloads() {
+    let _home = crate::core::data_dir::test_env_lock();
     if let Some(home) = dirs::home_dir() {
         let downloads = home.join("Downloads");
         // Only test if Downloads doesn't contain a .git (unlikely but possible)
@@ -476,6 +478,7 @@ fn safe_scan_root_rejects_home_downloads() {
 
 #[test]
 fn safe_scan_root_rejects_cloud_sync_roots() {
+    let _home = crate::core::data_dir::test_env_lock();
     // ~/OneDrive (and friends) must never be a scan root: walking them forces
     // OneDrive/Dropbox/Drive to hydrate every on-demand placeholder (#363).
     if let Some(home) = dirs::home_dir() {

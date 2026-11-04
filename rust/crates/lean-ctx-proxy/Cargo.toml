@@ -4,7 +4,7 @@
 # composition root (crates/lean-ctx). Published after lean-ctx-engine.
 [package]
 name = "lean-ctx-proxy"
-version = "3.12.1"
+version = "3.12.2"
 edition = "2024"
 license = "Apache-2.0"
 description = "The LeanCTX model-API proxy: provider adapters, compression and accounting on top of LeanCTX | OSS."
@@ -25,7 +25,7 @@ http-server = ["lean-ctx-engine/http-server", "dep:axum", "dep:tokio-tungstenite
 shape-xlat = ["lean-ctx-engine/shape-xlat"]
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false }
+lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false }
 lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
 rmcp = { version = "2", features = [
   "server",
@@ -110,9 +110,9 @@ windows-sys = { version = "0.61", features = [
 
 [dev-dependencies]
 # The proxy's CCR tests follow handles through the server's ctx_expand tool.
-lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.1", default-features = false, features = ["http-server"] }
+lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.2", default-features = false, features = ["http-server"] }
 # The Engine's test helpers for this crate's unit tests (see core::test_mode).
-lean-ctx-engine = { path = "../..", version = "=3.12.1", default-features = false, features = ["test-support"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false, features = ["test-support"] }
 serial_test = "3.5"
 
 [lints]

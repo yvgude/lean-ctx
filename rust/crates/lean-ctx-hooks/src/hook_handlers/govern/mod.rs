@@ -187,6 +187,24 @@ pub(crate) struct Decision {
 }
 
 impl Decision {
+    /// The savings stats entry of an applied rule (`governor:<rule>`, the
+    /// native tokens, the delivered tokens), so `gain` and the cockpit count
+    /// what the governor actually saved. Shadow decisions deliver the native
+    /// result and save nothing; an applied R1.read hit already records its
+    /// own counters (`read_stats`).
+    pub(crate) fn applied_stats(&self) -> Option<(String, usize, usize)> {
+        let r = self.receipt.as_ref()?;
+        (r.mode == RuleMode::On && self.read_stats.is_none() && !self.output.is_empty()).then(
+            || {
+                (
+                    format!("governor:{}", r.rule_id),
+                    r.baseline_tokens,
+                    r.actual_tokens,
+                )
+            },
+        )
+    }
+
     fn from_rule(
         mode: RuleMode,
         output: String,
@@ -240,6 +258,10 @@ pub fn handle_govern() {
     }
     if let Some(hit) = &decision.read_stats {
         hit.record_stats();
+    }
+    if let Some((key, native, delivered)) = decision.applied_stats() {
+        lean_ctx::core::stats::record(&key, native, delivered);
+        lean_ctx::core::stats::flush();
     }
     if let Some(receipt) = &decision.receipt {
         receipt.record();

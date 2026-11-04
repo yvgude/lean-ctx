@@ -235,6 +235,7 @@ mod tests {
 
     #[test]
     fn missing_relative_path_without_a_project_says_what_is_missing() {
+        let _home = crate::core::data_dir::test_env_lock();
         // A host started outside a project: the home directory, as OpenCode
         // does when launched from `~` (broad on every platform; `/` is not
         // broad on Windows, where it means the current drive's root).

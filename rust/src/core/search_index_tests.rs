@@ -11,6 +11,7 @@ fn corpus() -> tempfile::TempDir {
 
 #[test]
 fn build_refuses_to_index_home_directory() {
+    let _home = crate::core::data_dir::test_env_lock();
     // Auto-indexing HOME would walk the entire home tree and, on Windows,
     // hydrate every OneDrive placeholder (#363). The build must bail out.
     if let Some(home) = dirs::home_dir() {

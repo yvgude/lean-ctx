@@ -31,9 +31,40 @@ pub fn deny_unsafe_walk_root(dir: &str) -> Option<String> {
     if lean_ctx::core::graph_index::is_safe_scan_root_public(&abs) {
         return None;
     }
+    if granted_by_allow_path(path) {
+        return None;
+    }
     Some(format!(
-        "ERROR: refusing to scan '{dir}' — it resolves to a broad or privacy-protected directory ({abs}). Pass a specific project directory as `path`."
+        "ERROR: refusing to scan '{dir}' — it resolves to a broad or privacy-protected directory ({abs}). Pass a specific project directory as `path`, or grant this directory with `lean-ctx allow-path <dir>`."
     ))
+}
+
+/// A directory the user granted with `lean-ctx allow-path` (or `allow_paths`
+/// / `extra_roots` in config.toml) is walkable like a project (#2190): the
+/// PathJail already lets the tools read its files, so refusing the walk only
+/// pushed agents to read file by file. A grant never widens to a broad root
+/// itself (home, a filesystem root, a home folder macOS guards with a privacy
+/// prompt), and a process that may not probe the path still can't walk it.
+fn granted_by_allow_path(path: &std::path::Path) -> bool {
+    if !lean_ctx::core::pathutil::may_probe_path(path) || !path.is_dir() {
+        return false;
+    }
+    let candidate = comparable(&path.to_string_lossy());
+    let homes: Vec<std::path::PathBuf> = lean_ctx::core::pathutil::home_dirs()
+        .iter()
+        .map(|home| comparable(&home.to_string_lossy()))
+        .collect();
+    let broad = |p: &std::path::Path| {
+        p.parent().is_none()
+            || homes.iter().any(|home| home == p)
+            || lean_ctx::core::pathutil::is_tcc_sensitive_home_dir(p)
+    };
+    if broad(&candidate) {
+        return false;
+    }
+    lean_ctx::core::pathjail::allow_paths_from_env_and_config()
+        .iter()
+        .any(|granted| !broad(granted) && candidate.starts_with(granted))
 }
 
 /// Canonical form for ancestry comparisons; falls back to the absolute
@@ -158,6 +189,38 @@ mod tests {
         let msg =
             deny_unsafe_walk_root(&home.to_string_lossy()).expect("home directory must be refused");
         assert!(msg.contains("privacy-protected") || msg.contains("broad"));
+    }
+
+    /// #2190: a directory granted with `lean-ctx allow-path` is walkable even
+    /// below a home folder the scan-root check refuses, but the grant never
+    /// makes home itself walkable.
+    #[test]
+    fn an_allow_path_grant_makes_its_directories_walkable() {
+        let _env = lean_ctx::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = lean_ctx::core::pathutil::safe_canonicalize(tmp.path()).unwrap();
+        let granted = home.join("Library/Application Support/Claude/skills-plugin");
+        let skill = granted.join("abc/skills/state");
+        std::fs::create_dir_all(&skill).unwrap();
+        let _home = lean_ctx::test_env::EnvVarGuard::set("HOME", &home.to_string_lossy());
+        assert!(
+            deny_unsafe_walk_root(&skill.to_string_lossy()).is_some(),
+            "precondition: a markerless folder under ~/Library is refused"
+        );
+        let _grant =
+            lean_ctx::test_env::EnvVarGuard::set("LEAN_CTX_ALLOW_PATH", &granted.to_string_lossy());
+        assert_eq!(deny_unsafe_walk_root(&skill.to_string_lossy()), None);
+        assert!(
+            deny_unsafe_walk_root(&home.to_string_lossy()).is_some(),
+            "a grant never makes home walkable"
+        );
+        let _home_grant =
+            lean_ctx::test_env::EnvVarGuard::set("LEAN_CTX_ALLOW_PATH", &home.to_string_lossy());
+        assert!(
+            deny_unsafe_walk_root(&home.join("Library").to_string_lossy()).is_some()
+                || deny_unsafe_walk_root(&skill.to_string_lossy()).is_some(),
+            "granting home itself grants nothing below it"
+        );
     }
 
     #[test]

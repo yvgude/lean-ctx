@@ -144,11 +144,26 @@ pub fn is_supported_agent(agent: &str) -> bool {
 /// `LEAN_CTX_DISABLED=1` or `shadow_mode = false` cap the mode at Hybrid so
 /// the deny-list is never injected when the user opted out (#1037).
 pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
-    if let Some(override_mode) = crate::core::config::Config::load().hook_mode_override() {
+    let cfg = crate::core::config::Config::load();
+    // A global choice first, then the host's own pin (`init --agent <host>
+    // --mode <m>` writes `[governor] pinned.<host>`): a setup refresh or an
+    // update re-renders exactly the mode the user chose for that host.
+    let host = if agent_key.eq_ignore_ascii_case("claude-code") {
+        "claude"
+    } else {
+        agent_key
+    };
+    let chosen = cfg.hook_mode_override().or_else(|| {
+        cfg.governor
+            .pinned
+            .get(host)
+            .and_then(|m| HookMode::from_str_loose(m))
+    });
+    if let Some(chosen) = chosen {
         return if is_deny_suppressed() {
-            override_mode.cap_at_hybrid()
+            chosen.cap_at_hybrid()
         } else {
-            override_mode
+            chosen
         };
     }
     if REPLACE_AGENTS.contains(&agent_key) || HYBRID_AGENTS.contains(&agent_key) {

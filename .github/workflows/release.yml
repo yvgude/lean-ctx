@@ -1203,7 +1203,16 @@ jobs:
       - name: Publish the verified draft
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest
+        # GitHub can answer a 5xx after it applied the edit (3.12.1); the edit
+        # is idempotent, so a retry only confirms it. Success = not a draft.
+        run: |
+          for attempt in 1 2 3 4; do
+            gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest && exit 0
+            draft="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft || echo unknown)"
+            [[ "$draft" == "false" ]] && { echo "::warning::release edit errored but the release is published"; exit 0; }
+            sleep $((attempt * 15))
+          done
+          echo "::error::could not publish the draft"; exit 1
 
   jetbrains-plugin:
     # Build the JetBrains/IntelliJ plugin and attach it to the GitHub Release as a

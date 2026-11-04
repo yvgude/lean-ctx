@@ -60,6 +60,28 @@ pub fn is_governor_installed(home: &std::path::Path) -> bool {
     .is_ok_and(|c| c.contains(" hook govern\""))
 }
 
+/// True when Claude Code's MCP config (`~/.claude.json`, or the one under
+/// `CLAUDE_CONFIG_DIR`) registers the lean-ctx server. The standard setup's
+/// Grep/Glob deny is only safe with it: the deny hides native search in
+/// favour of `ctx_search`/`ctx_glob`, which only this entry provides.
+pub fn has_lean_ctx_mcp_entry(home: &std::path::Path) -> bool {
+    lean_ctx_mcp_entry_state(home) == Some(true)
+}
+
+/// Like [`has_lean_ctx_mcp_entry`], but `None` when the file exists and does
+/// not parse (Claude Code may be rewriting it): callers that would remove
+/// something on `false` leave it unchanged instead.
+pub fn lean_ctx_mcp_entry_state(home: &std::path::Path) -> Option<bool> {
+    match std::fs::read_to_string(crate::core::editor_registry::claude_mcp_json_path(home)) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(false),
+        Err(_) => None,
+        Ok(c) if c.trim().is_empty() => Some(false),
+        Ok(c) => crate::core::jsonc::parse_jsonc(&c)
+            .ok()
+            .map(|v| v.pointer("/mcpServers/lean-ctx").is_some()),
+    }
+}
+
 /// `… lean-ctx … statusline [args]` — the binary may be quoted or portable.
 pub fn is_lean_ctx_statusline(cmd: &str) -> bool {
     statusline_args(cmd).is_some()

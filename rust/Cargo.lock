@@ -2168,7 +2168,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lean-ctx"
-version = "3.12.1"
+version = "3.12.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -2266,7 +2266,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-engine"
-version = "3.12.1"
+version = "3.12.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2384,7 +2384,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hive"
-version = "3.12.1"
+version = "3.12.2"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2426,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hooks"
-version = "3.12.1"
+version = "3.12.2"
 dependencies = [
  "blake3",
  "chrono",
@@ -2489,7 +2489,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-proxy"
-version = "3.12.1"
+version = "3.12.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2529,7 +2529,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-server"
-version = "3.12.1"
+version = "3.12.2"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -401,11 +401,21 @@ fn strip_removes_orphaned_solution_block() {
     assert_eq!(std::fs::read_to_string(&md).unwrap(), "# notes\n");
 }
 
+/// The lean-ctx MCP entry the Grep/Glob deny depends on.
+fn with_lean_ctx_mcp(home: &std::path::Path) {
+    std::fs::write(
+        home.join(".claude.json"),
+        r#"{"mcpServers":{"lean-ctx":{"command":"lean-ctx"}}}"#,
+    )
+    .unwrap();
+}
+
 #[test]
 fn replace_mode_adds_permissions_deny() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
     std::fs::create_dir_all(home.join(".claude")).unwrap();
+    with_lean_ctx_mcp(home);
 
     // Start with existing settings
     let settings = home.join(".claude").join("settings.json");
@@ -428,6 +438,42 @@ fn replace_mode_adds_permissions_deny() {
     assert!(!deny.contains(&serde_json::json!("Bash")));
     // Original content preserved
     assert!(json.get("hooks").is_some());
+
+    // Without the lean-ctx MCP entry nothing replaces native search: the deny
+    // goes (3.12.1: sessions had neither Grep/Glob nor ctx_search), and a
+    // refresh never adds it back until the entry returns.
+    std::fs::remove_file(home.join(".claude.json")).unwrap();
+    install_claude_permissions_deny_replace(home);
+    install_claude_permissions_deny_replace(home);
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+    let deny = json["permissions"]["deny"].as_array().unwrap();
+    assert!(
+        !deny.contains(&serde_json::json!("Grep")) && !deny.contains(&serde_json::json!("Glob")),
+        "{deny:?}"
+    );
+    with_lean_ctx_mcp(home);
+    install_claude_permissions_deny_replace(home);
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+    assert!(
+        json["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("Grep"))
+    );
+    // Claude Code mid-rewrite (the MCP config does not parse): unknown, so
+    // the deny stays as it is.
+    std::fs::write(home.join(".claude.json"), "{ \"mcpServers\": {").unwrap();
+    install_claude_permissions_deny_replace(home);
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+    assert!(
+        json["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("Grep"))
+    );
 }
 
 // The permission writers replaced settings.json with a plain `fs::write`:
@@ -437,6 +483,7 @@ fn permission_writes_keep_a_backup_of_the_previous_settings() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
     std::fs::create_dir_all(home.join(".claude")).unwrap();
+    with_lean_ctx_mcp(home);
     let settings = home.join(".claude").join("settings.json");
     let original = r#"{"hooks": {}, "model": "kept"}"#;
     std::fs::write(&settings, original).unwrap();
@@ -510,6 +557,7 @@ fn replace_mode_permissions_idempotent() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
     std::fs::create_dir_all(home.join(".claude")).unwrap();
+    with_lean_ctx_mcp(home);
 
     let settings = home.join(".claude").join("settings.json");
     std::fs::write(&settings, r"{}").unwrap();
@@ -539,6 +587,7 @@ fn replace_mode_removes_stale_read_and_bash_deny() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
     std::fs::create_dir_all(home.join(".claude")).unwrap();
+    with_lean_ctx_mcp(home);
 
     // Simulate a settings.json left by an older lean-ctx version
     let settings = home.join(".claude").join("settings.json");

@@ -289,12 +289,15 @@ pub fn root_authorized(root: &Path) -> bool {
 }
 
 /// Confine a model-supplied path that a handler takes straight from its
-/// arguments. Without a Workspace it is returned unchanged (the handler's
-/// existing rules apply); under one it must resolve inside the snapshot —
+/// arguments. Under a Workspace it must resolve inside the snapshot —
 /// relative paths against `project_root` — and, for `write`, inside a
-/// read-write root.
+/// read-write root. Without a Workspace a read keeps the handler's own rules
+/// (the path comes back unchanged), but a write destination is still put
+/// through the project's path jail: those handlers write exactly where the
+/// path points (GHSA-483j-9vcj-2gxx).
 pub fn confine(raw: &str, project_root: &str, write: bool) -> Result<String, String> {
-    if !current().is_active() {
+    let workspace = current().is_active();
+    if !workspace && !write {
         return Ok(raw.to_string());
     }
     let root = if project_root.is_empty() {
@@ -993,6 +996,7 @@ mod tests {
 
     #[test]
     fn broad_and_own_roots_are_refused() {
+        let _home = crate::core::data_dir::test_env_lock();
         let store = private_dir();
         let file = store.path().join("ws.json");
         assert!(create(&file, "w", Path::new("/")).is_err());

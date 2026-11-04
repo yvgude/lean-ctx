@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub mod agents;
 pub mod governor_default;
 pub mod project_pins;
+pub mod setup_writer;
 mod support;
 pub(crate) use project_pins::strip_project_scoped_env_toml;
 
@@ -101,7 +102,14 @@ pub fn refresh_installed_hooks() {
     let Some(home) = lean_ctx::core::home::resolve_home_dir() else {
         return;
     };
-    // A switch to the governor interrupted mid-way is finished first.
+    // A newer lean-ctx wrote this setup (an update replaced the binary under a
+    // still-running server or daemon): its setup stands.
+    if let Some(newer) = setup_writer::newer_writer() {
+        tracing::debug!("hook refresh skipped: setup written by newer lean-ctx {newer}");
+        return;
+    }
+    setup_writer::record_if_newest();
+    // An interrupted rule-mode update is finished first.
     governor_default::complete_pending(&home);
     // OpenCode is refreshed by `setup`, not here — except its native-tool
     // gates: "ask" refuses calls like a deny hook, and an update through a

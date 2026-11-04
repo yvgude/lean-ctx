@@ -581,6 +581,7 @@ fn should_passthrough_rules_files() {
 
 #[test]
 fn should_passthrough_claude_auto_memory() {
+    let _home = lean_ctx::core::data_dir::test_env_lock();
     // The exception is anchored to the harness under this user's home.
     let projects = dirs::home_dir()
         .expect("home dir")

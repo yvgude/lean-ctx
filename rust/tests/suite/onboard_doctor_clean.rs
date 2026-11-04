@@ -94,10 +94,11 @@ fn onboard_yes_leaves_doctor_fully_green() {
 
     // The two checks that historically dead-looped ("run: lean-ctx setup"
     // right after onboard already ran): Claude plan mode + CLAUDE.md block.
-    // Onboard gives Claude Code the governor (no MCP tools to allow in plan
-    // mode); the standard setup wires the plan-mode permissions instead.
+    // Onboard gives a new Claude Code install governor-mcp (its deferred tools
+    // are auto-approved in the MCP entry, no plan-mode allow-list); the
+    // standard setup wires the plan-mode permissions instead.
     assert!(
-        stdout.contains("permissions present") || stdout.contains("governor setup"),
+        stdout.contains("permissions present") || stdout.contains("governor-mcp setup"),
         "Claude plan mode must be settled by onboard; doctor said:\n{stdout}"
     );
     assert!(

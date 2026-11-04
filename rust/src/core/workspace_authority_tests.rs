@@ -163,8 +163,39 @@ fn writes_need_a_read_write_root() {
         assert!(confine(&f.lib.join("b.rs").to_string_lossy(), &app, false).is_ok());
         assert!(confine(&f.other.join("c.rs").to_string_lossy(), &app, false).is_err());
     });
-    // Without a Workspace a handler's raw path is returned unchanged.
-    assert_eq!(confine("x/y.json", "/p", true).unwrap(), "x/y.json");
+    // Without a Workspace a read path comes back as given.
+    assert_eq!(confine("x/y.json", "/p", false).unwrap(), "x/y.json");
+}
+
+/// GHSA-483j-9vcj-2gxx: without a Workspace, `ctx_package save`, `ctx_pack
+/// export` and the edit backups wrote wherever the model pointed them. A
+/// write destination now stays inside the project's path jail; reads keep
+/// the handler's own rules. (A `no-jail` build has no jail to enforce.)
+#[cfg(not(feature = "no-jail"))]
+#[test]
+fn write_destinations_without_a_workspace_stay_in_the_project() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let (f, _) = fixture(Access::ReadWrite);
+    let project = f.app.to_string_lossy().into_owned();
+    let outside = f.other.join("stolen.json").to_string_lossy().into_owned();
+    let other_name = f.other.file_name().unwrap().to_string_lossy().into_owned();
+    sync_scope(Authority::Legacy, || {
+        assert!(
+            confine(&outside, &project, true).is_err(),
+            "absolute path outside"
+        );
+        assert!(
+            confine(&format!("../{other_name}/stolen.json"), &project, true).is_err(),
+            "climbing out with ../"
+        );
+        let kept = confine("pack.json", &project, true).expect("inside the project");
+        assert!(Path::new(&kept).starts_with(&f.app), "{kept}");
+        assert_eq!(
+            confine(&outside, &project, false).unwrap(),
+            outside,
+            "reads unchanged"
+        );
+    });
 }
 
 /// Two Workspaces with the same primary root, served concurrently: each

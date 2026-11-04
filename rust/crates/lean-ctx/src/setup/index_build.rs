@@ -81,6 +81,7 @@ mod tests {
     // pops the macOS privacy prompt. Projects elsewhere index normally.
     #[test]
     fn may_autoindex_cwd_skips_tcc_protected_dirs() {
+        let _home = lean_ctx::core::data_dir::test_env_lock();
         let Some(home) = dirs::home_dir() else {
             return;
         };
