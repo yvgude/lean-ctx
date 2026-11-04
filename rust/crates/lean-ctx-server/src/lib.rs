@@ -12,6 +12,23 @@ pub mod engine;
 pub mod server;
 pub mod tools;
 
+/// The Engine's production guard must hold for this crate's unit tests too:
+/// they see the Engine without `cfg(test)` and run as package
+/// `lean-ctx-server`, and once sent telemetry to production from CI.
+#[cfg(test)]
+mod production_endpoint_tests {
+    #[test]
+    fn unit_tests_of_this_crate_are_refused_a_remote_endpoint() {
+        assert!(lean_ctx::core::data_dir::sandboxed());
+        let _url =
+            lean_ctx::test_env::EnvVarGuard::set("LEAN_CTX_API_URL", "https://api.leanctx.com");
+        assert_eq!(
+            lean_ctx::telemetry_transport::api_url(),
+            "http://127.0.0.1:9"
+        );
+    }
+}
+
 /// The containment helper test of this crate's unit-test harness, at the path
 /// the Engine starts its helpers and guards on (`shell::containment::tests`).
 #[cfg(all(test, unix))]

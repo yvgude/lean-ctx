@@ -3,7 +3,7 @@
 //! the test-process loopback guard), the telemetry-v2 batch send, remote
 //! telemetry deletion and anonymous product feedback.
 
-/// Base URL of the lean-ctx cloud API. Unit tests and cargo-launched binaries
+/// Base URL of the lean-ctx cloud API. Test processes of every workspace crate
 /// get the discard port instead of any non-loopback endpoint, so test fixtures
 /// (telemetry probes, feedback, stats, wrapped cards) can never reach
 /// production; their requests fail fast with "connection refused".
@@ -11,7 +11,7 @@ pub fn api_url() -> String {
     const LOOPBACK_SINK: &str = "http://127.0.0.1:9";
     let configured =
         std::env::var("LEAN_CTX_API_URL").unwrap_or_else(|_| "https://api.leanctx.com".to_string());
-    if cloud_endpoint_allowed(&configured, launched_by_cargo()) {
+    if cloud_endpoint_allowed(&configured, test_process()) {
         configured
     } else {
         LOOPBACK_SINK.to_string()
@@ -48,21 +48,33 @@ pub fn submit_product_feedback(payload: &serde_json::Value) -> Result<String, St
     Ok(json["message"].as_str().unwrap_or("Thanks").to_string())
 }
 
-/// Cargo exports `CARGO_PKG_NAME` to `cargo test` / `cargo run` processes and
-/// every child they spawn, so integration tests driving the binary carry it too.
-/// Those run from the Engine package or from the `lean-ctx` binary package.
-fn launched_by_cargo() -> bool {
-    std::env::var("CARGO_PKG_NAME")
-        .is_ok_and(|name| name == env!("CARGO_PKG_NAME") || name == BINARY_PACKAGE)
+/// Whether this process is a test (or `cargo run`) of a workspace crate: the
+/// unit-test harness of the Engine or of any crate above it (the data-dir
+/// sandbox, GL #512), or a process cargo launched for a workspace package —
+/// which includes the binaries those tests spawn.
+fn test_process() -> bool {
+    crate::core::data_dir::sandboxed() || launched_by_cargo()
 }
 
-/// The package that builds the `lean-ctx` binary on top of this library.
-const BINARY_PACKAGE: &str = "lean-ctx";
+/// Cargo exports `CARGO_PKG_NAME` to `cargo test` / `cargo run` processes and
+/// every child they spawn, so integration tests driving the binary carry it too.
+/// They run from any workspace package, not only the Engine and the binary.
+fn launched_by_cargo() -> bool {
+    std::env::var("CARGO_PKG_NAME").is_ok_and(|name| workspace_package(&name))
+}
 
-/// Unit tests and cargo-launched binaries may only talk to a loopback
-/// endpoint; otherwise test fixtures would pollute production data.
-fn cloud_endpoint_allowed(base_url: &str, launched_by_cargo: bool) -> bool {
-    if !cfg!(test) && !launched_by_cargo {
+/// Every package of this workspace is named `lean-ctx…` (the Engine, the
+/// binary and every crate split out of them) or `leanctx…` (native storage).
+fn workspace_package(name: &str) -> bool {
+    const PREFIXES: [&str; 2] = ["lean-ctx", "leanctx"];
+    PREFIXES.iter().any(|prefix| name.starts_with(prefix))
+}
+
+/// Test processes may only talk to a loopback endpoint; otherwise test
+/// fixtures would pollute production data. A real installed binary (no cargo
+/// environment, no test sandbox) keeps its configured endpoint.
+fn cloud_endpoint_allowed(base_url: &str, test_process: bool) -> bool {
+    if !test_process {
         return true;
     }
     let Some(authority) = base_url

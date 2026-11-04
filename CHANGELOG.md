@@ -6,6 +6,16 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+### Fixed
+
+- **Test processes of every LeanCTX crate stay off production endpoints.** The guard that
+  sends test traffic to a loopback sink recognised only the Engine's own unit tests and
+  processes cargo launched for the Engine or `lean-ctx` package. Since the crate split, the
+  unit tests of the server, Hive, hooks and proxy crates, and the binaries they spawn, sent
+  telemetry to production, each as a new installation. Any process of a `lean-ctx…` or
+  `leanctx…` package, and every sandboxed unit-test harness, now gets the loopback sink; an
+  installed binary keeps its configured endpoint.
+
 ## [3.12.1] — 2026-11-03
 
 ### Security

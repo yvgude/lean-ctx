@@ -4,32 +4,82 @@ use super::*;
 
 #[test]
 fn test_processes_never_reach_a_remote_cloud_endpoint() {
-    for launched_by_cargo in [false, true] {
-        for remote in [
-            "https://api.leanctx.com",
-            "http://10.0.0.1:8080",
-            "http://localhost.evil.com",
-            "http://127.0.0.1@api.leanctx.com",
-            "ftp://127.0.0.1",
-            "127.0.0.1:9",
-        ] {
-            assert!(
-                !cloud_endpoint_allowed(remote, launched_by_cargo),
-                "{remote}"
-            );
-        }
-        for loopback in [
-            "http://127.0.0.1:9",
-            "http://127.3.2.1",
-            "http://localhost:8088/prefix",
-            "https://LOCALHOST",
-            "http://[::1]:9",
-        ] {
-            assert!(
-                cloud_endpoint_allowed(loopback, launched_by_cargo),
-                "{loopback}"
-            );
-        }
+    for remote in [
+        "https://api.leanctx.com",
+        "http://10.0.0.1:8080",
+        "http://localhost.evil.com",
+        "http://127.0.0.1@api.leanctx.com",
+        "ftp://127.0.0.1",
+        "127.0.0.1:9",
+    ] {
+        assert!(!cloud_endpoint_allowed(remote, true), "{remote}");
+    }
+    for loopback in [
+        "http://127.0.0.1:9",
+        "http://127.3.2.1",
+        "http://localhost:8088/prefix",
+        "https://LOCALHOST",
+        "http://[::1]:9",
+    ] {
+        assert!(cloud_endpoint_allowed(loopback, true), "{loopback}");
+    }
+}
+
+#[test]
+fn an_installed_binary_keeps_its_configured_endpoint() {
+    for configured in ["https://api.leanctx.com", "http://10.0.0.1:8080"] {
+        assert!(cloud_endpoint_allowed(configured, false), "{configured}");
+    }
+}
+
+#[test]
+fn this_unit_test_harness_is_a_test_process() {
+    assert!(crate::core::data_dir::sandboxed());
+    assert!(test_process());
+}
+
+#[test]
+fn every_workspace_package_counts_as_cargo_launched() {
+    // Read the members from the manifests, so a crate split out later is
+    // covered too, or fails here instead of reaching production.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workspace = std::fs::read_to_string(root.join("Cargo.toml")).unwrap();
+    let members = workspace
+        .split_once("members = [")
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .map(|(list, _)| list)
+        .unwrap();
+    let names: Vec<String> = members
+        .split(',')
+        .map(|member| member.trim().trim_matches('"'))
+        .filter(|member| !member.is_empty())
+        .map(|member| {
+            let manifest = std::fs::read_to_string(root.join(member).join("Cargo.toml")).unwrap();
+            let package = manifest.split_once("[package]").unwrap().1;
+            package
+                .lines()
+                .find_map(|line| line.trim().strip_prefix("name = "))
+                .unwrap()
+                .trim_matches('"')
+                .to_string()
+        })
+        .collect();
+    for expected in [
+        "lean-ctx-engine",
+        "lean-ctx",
+        "lean-ctx-server",
+        "lean-ctx-hive",
+        "lean-ctx-hooks",
+        "lean-ctx-proxy",
+        "leanctx-native-storage",
+    ] {
+        assert!(names.iter().any(|name| name == expected), "{names:?}");
+    }
+    for name in &names {
+        assert!(workspace_package(name), "{name}");
+    }
+    for foreign in ["", "serde", "my-lean-ctx", "lean_ctx", "cargo"] {
+        assert!(!workspace_package(foreign), "{foreign}");
     }
 }
 

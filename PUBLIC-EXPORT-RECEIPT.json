@@ -331,11 +331,11 @@
    "size": 1033
   },
   {
-   "blob": "2281734f7c2e3cd1ff31aa9529355ff055e1b641",
+   "blob": "c9fdc270931bba41b4f402eeaa7b475a6af46e95",
    "mode": "100644",
    "path": "CHANGELOG.md",
-   "sha256": "f1c611f875fc949bf1dc19620911d0ba9ae44386f991c1be9ffd74c539dfd465",
-   "size": 1215768
+   "sha256": "833539f2b2c576a24b204486f654759223865e3f51bd6c6d55f3905b76178268",
+   "size": 1216375
   },
   {
    "blob": "77a7c7a520af8fc8b4df372eb5bd5fddcefbfecf",
@@ -13071,11 +13071,11 @@
    "size": 1929
   },
   {
-   "blob": "9ec2c522d2a2648186e876e8aa5f910d19cf2d55",
+   "blob": "6ba5abcbb287e2c73aae7fa1ca543b688fdf9689",
    "mode": "100644",
    "path": "rust/crates/lean-ctx-server/src/lib.rs",
-   "sha256": "171d382cd98ea7e542e744c91724a95868d23ad69945dece0f4260d2bb2cb278",
-   "size": 956
+   "sha256": "3186da74173f5205d93fbd775ea061cada91037aab00acf033cb88ef9550dba1",
+   "size": 1588
   },
   {
    "blob": "1a186eea8b60ab587ee6d38452173214cf3cc5af",
@@ -16697,11 +16697,11 @@
    "size": 8373
   },
   {
-   "blob": "209ae5ba9167b4924c07322dc75cf003b126f35d",
+   "blob": "8821266d99d8d0a535c83c6a0df34f86417b1fad",
    "mode": "100644",
    "path": "rust/crates/lean-ctx/src/cli/telemetry_cmd.rs",
-   "sha256": "de22223b8be3f48d153d7e31f398834e3ba8eb9ba90b1b96e49250cbeaf98012",
-   "size": 17840
+   "sha256": "6c56300933a2a8bd0bc85281b3801df2d18c9900120e5a58ec46f5f7d3987f3d",
+   "size": 17827
   },
   {
    "blob": "f51edcff400ab1c8c336aced0a85891c27e045a6",
@@ -28891,18 +28891,18 @@
    "size": 50720
   },
   {
-   "blob": "a497399448ce1717046a6e53d34978a8fe118bac",
+   "blob": "c3354bed47c90a9375a6fa03c9f8040b93676495",
    "mode": "100644",
    "path": "rust/src/telemetry_transport.rs",
-   "sha256": "1fdf9d081207ae2d7b54262a03c4c0dcd8500dcd215ae53efe16b5d175cefc7e",
-   "size": 7331
+   "sha256": "2d11a8ebc66df82619ea5fe5d7de1397f8c039e9fb852021518ad835b6265481",
+   "size": 7914
   },
   {
-   "blob": "93921968d2fb56e00939a41e8ecc127a9e36b575",
+   "blob": "6b4bc2f7b0489efd73ba7a866b3b711652bf0bc9",
    "mode": "100644",
    "path": "rust/src/telemetry_transport_tests.rs",
-   "sha256": "6b3390b78cfb16ad390a9af16ef2304c6a2cc393620efc38df74553ce54775d1",
-   "size": 11042
+   "sha256": "98b255e9d5895475e6b3e1dd0adab518ca8fef66b43fe81e8fb8792c53d56876",
+   "size": 12776
   },
   {
    "blob": "efd3007a6c3a1caa66461170c3e810b4aee15ffc",
@@ -32921,7 +32921,7 @@
  ],
  "manifest_sha256": "e9e923ead0330e9ebe42cf73ab0f6f9bbbed81099953cdf17e8ce112ef426083",
  "schema": 1,
- "source_commit": "577582b13c4bb9f56e6a9223f227b9138c4c6565",
+ "source_commit": "e87e97f470024eeb93b72fae60b8c57dacd9a83c",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "c1ead656164eedcbdbae34b3483c4408ac3bd46348bcd674ea1dc9dff7384f5c"
+ "tree_sha256": "e260cee0d75851dd58e0598301a625e3a9d91afbe9af77ab49443b56e48197e3"
 }
