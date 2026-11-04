@@ -6,6 +6,8 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+## [3.12.2] — 2026-11-04
+
 ### Added
 
 - **LeanCTX | Hive is open.** `lean-ctx hive connect` and `hive link` connect an instance to
