@@ -16053,11 +16053,11 @@
    "size": 40782
   },
   {
-   "blob": "c440fc9d82daa9fe5cbedf1fed65addff2e30f96",
+   "blob": "5ef642bd2f0523c8d7159261a13ac469cb89061f",
    "mode": "100644",
    "path": "rust/crates/lean-ctx/src/cli/dispatch/mcp_instances.rs",
-   "sha256": "4ff365c946497e49113c6adf5503e6cae7248e948924ee4fbdccfb446eeb658f",
-   "size": 10672
+   "sha256": "b54bd886e82d52f41a39b5ef28e1ad3c8584d198bb2cf55478c6ad3392693cb9",
+   "size": 11365
   },
   {
    "blob": "010c46be112355a7adb704ba6ab65de240686cbe",
@@ -32928,7 +32928,7 @@
  ],
  "manifest_sha256": "805b64f589b49fadc68295fb26f3f302e36899b147a8b13266470b46b7ad1323",
  "schema": 1,
- "source_commit": "de76ec3a1f76b05db847441ee41395ae9db5027c",
+ "source_commit": "f54099a9db2f3460181fef1be8b08ea82de36f72",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "3abbe732f8ebf5751ae835881bd9e3d4ef63d8033e31268a9cf59da0d111d4e1"
+ "tree_sha256": "71077f17e087a40cfeb974357dd7b9a495183ea2bc4c793c4ebddb73444eece2"
 }

@@ -167,13 +167,25 @@ mod tests {
     }
 
     fn long_running(program: &str, arguments: &[&str]) -> Child {
-        Command::new(program)
+        let child = Command::new(program)
             .args(arguments)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .expect("process starts")
+            .expect("process starts");
+        // `spawn` returns after fork; until the child has exec'd, its identity
+        // is still this test binary, and a record taken then never matches the
+        // live process again (release prebuild, 3.12.2). Wait for the exec.
+        let own = process::identity(std::process::id()).map(|identity| identity.executable);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            match process::identity(child.id()) {
+                Some(identity) if Some(&identity.executable) != own.as_ref() => break,
+                _ => std::thread::sleep(Duration::from_millis(10)),
+            }
+        }
+        child
     }
 
     fn record(directory: &Path, child: &Child, change: impl FnOnce(&mut Instance)) -> PathBuf {
