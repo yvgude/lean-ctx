@@ -661,8 +661,10 @@ pub fn safe_project_data_dir(project_root: &Path) -> Result<PathBuf, String> {
 ///
 /// Replaces spawning `where`/`which`: on Windows every spawn from the
 /// console-less daemon allocates a `conhost.exe`, and detection runs often.
-/// Windows tries each `PATHEXT` extension (plus the bare name); Unix requires
-/// an execute bit, like `which`.
+/// Windows tries each `PATHEXT` extension before the bare name, as `cmd`
+/// does when it runs a command, so an npm install yields `lean-ctx.cmd` rather
+/// than the extensionless shell shim beside it. Unix requires an execute bit,
+/// like `which`.
 pub fn find_on_path(name: &str) -> Option<PathBuf> {
     if name.is_empty() {
         return None;
@@ -677,7 +679,7 @@ pub fn find_on_path(name: &str) -> Option<PathBuf> {
 
 #[cfg(windows)]
 fn path_candidates(name: &str) -> Vec<String> {
-    let mut out = vec![name.to_string()];
+    let mut out = Vec::new();
     if Path::new(name).extension().is_none() {
         let exts = std::env::var("PATHEXT").unwrap_or_default();
         let exts = if exts.trim().is_empty() {
@@ -692,6 +694,7 @@ fn path_candidates(name: &str) -> Vec<String> {
                 .map(|e| format!("{name}{e}")),
         );
     }
+    out.push(name.to_string());
     out
 }
 
@@ -725,6 +728,10 @@ mod tests {
         let file_name = "leanctx-fop-probe";
         let file = tmp.path().join(file_name);
         std::fs::write(&file, "x").unwrap();
+        // An npm install puts an extensionless shell shim beside the `.cmd`;
+        // Windows must resolve to the runnable `.cmd`, not the shim.
+        #[cfg(windows)]
+        std::fs::write(tmp.path().join("leanctx-fop-probe"), "#!/bin/sh").unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
