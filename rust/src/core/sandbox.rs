@@ -800,21 +800,7 @@ fn find_binary(candidates: &[&str]) -> Option<String> {
 }
 
 fn which_exists(name: &str) -> bool {
-    #[cfg(target_os = "windows")]
-    let check_cmd = Command::new("where")
-        .arg(name)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-
-    #[cfg(not(target_os = "windows"))]
-    let check_cmd = Command::new("which")
-        .arg(name)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-
-    check_cmd.is_ok_and(|s| s.success())
+    crate::core::pathutil::find_on_path(name).is_some()
 }
 
 fn truncate_output(output: &str) -> String {
