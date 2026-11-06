@@ -71,19 +71,7 @@ pub(super) fn is_tool_detected(target: &RulesTarget, home: &std::path::Path) -> 
 }
 
 pub(super) fn command_exists(name: &str) -> bool {
-    #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("where")
-        .arg(name)
-        .output()
-        .is_ok_and(|o| o.status.success());
-
-    #[cfg(not(target_os = "windows"))]
-    let result = std::process::Command::new("which")
-        .arg(name)
-        .output()
-        .is_ok_and(|o| o.status.success());
-
-    result
+    crate::core::pathutil::find_on_path(name).is_some()
 }
 
 fn detect_vscode_installed(_home: &std::path::Path) -> bool {

@@ -657,9 +657,101 @@ pub fn safe_project_data_dir(project_root: &Path) -> Result<PathBuf, String> {
     Ok(project_root.join(".lean-ctx"))
 }
 
+/// First executable named `name` on `PATH`, resolved in-process.
+///
+/// Replaces spawning `where`/`which`: on Windows every spawn from the
+/// console-less daemon allocates a `conhost.exe`, and detection runs often.
+/// Windows tries each `PATHEXT` extension (plus the bare name); Unix requires
+/// an execute bit, like `which`.
+pub fn find_on_path(name: &str) -> Option<PathBuf> {
+    if name.is_empty() {
+        return None;
+    }
+    let path_var = std::env::var_os("PATH")?;
+    let candidates = path_candidates(name);
+    std::env::split_paths(&path_var)
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .flat_map(|dir| candidates.iter().map(move |c| dir.join(c)))
+        .find(|p| is_executable_file(p))
+}
+
+#[cfg(windows)]
+fn path_candidates(name: &str) -> Vec<String> {
+    let mut out = vec![name.to_string()];
+    if Path::new(name).extension().is_none() {
+        let exts = std::env::var("PATHEXT").unwrap_or_default();
+        let exts = if exts.trim().is_empty() {
+            ".COM;.EXE;.BAT;.CMD".to_string()
+        } else {
+            exts
+        };
+        out.extend(
+            exts.split(';')
+                .map(str::trim)
+                .filter(|e| !e.is_empty())
+                .map(|e| format!("{name}{e}")),
+        );
+    }
+    out
+}
+
+#[cfg(not(windows))]
+fn path_candidates(name: &str) -> Vec<String> {
+    vec![name.to_string()]
+}
+
+#[cfg(unix)]
+fn is_executable_file(p: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(p: &Path) -> bool {
+    p.is_file()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn find_on_path_resolves_extensionless_name_and_misses_unknown() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let file_name = "leanctx-fop-probe.cmd";
+        #[cfg(not(windows))]
+        let file_name = "leanctx-fop-probe";
+        let file = tmp.path().join(file_name);
+        std::fs::write(&file, "x").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let old = std::env::var_os("PATH");
+        let mut dirs = vec![tmp.path().to_path_buf()];
+        dirs.extend(old.iter().flat_map(std::env::split_paths));
+        // SAFETY: serialized by test_env_lock; restored below.
+        unsafe { std::env::set_var("PATH", std::env::join_paths(dirs).unwrap()) };
+        let found = find_on_path("leanctx-fop-probe");
+        let missing = find_on_path("leanctx-fop-definitely-missing");
+        match old {
+            Some(v) => unsafe { std::env::set_var("PATH", v) },
+            None => unsafe { std::env::remove_var("PATH") },
+        }
+
+        let found = found.expect("probe on PATH");
+        assert!(
+            found
+                .to_string_lossy()
+                .eq_ignore_ascii_case(&file.to_string_lossy()),
+            "{found:?} vs {file:?}"
+        );
+        assert!(missing.is_none());
+    }
 
     /// AP04 review I1: project-scoped records compare roots by project, not
     /// by spelling — a symlinked root, a trailing slash and Windows

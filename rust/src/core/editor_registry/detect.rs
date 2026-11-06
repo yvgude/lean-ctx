@@ -349,14 +349,8 @@ pub fn detect_omp_path(home: &Path) -> PathBuf {
         return state_dir;
     }
 
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(output) = std::process::Command::new(which_cmd).arg("omp").output()
-        && output.status.success()
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Some(path) = stdout.lines().map(str::trim).find(|line| !line.is_empty()) {
-            return PathBuf::from(path);
-        }
+    if let Some(path) = crate::core::pathutil::find_on_path("omp") {
+        return path;
     }
 
     PathBuf::from("/nonexistent")
@@ -404,13 +398,8 @@ fn detect_qoderwork_path(home: &Path) -> PathBuf {
 }
 
 fn detect_qodercli_path(home: &Path) -> PathBuf {
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(output) = std::process::Command::new(which_cmd)
-        .arg("qodercli")
-        .output()
-        && output.status.success()
-    {
-        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    if let Some(path) = crate::core::pathutil::find_on_path("qodercli") {
+        return path;
     }
 
     let settings_path = qodercli_settings_path(home);
@@ -457,11 +446,7 @@ fn detect_sublime_mcp_path(home: &Path) -> PathBuf {
 }
 
 pub fn detect_claude_path() -> PathBuf {
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(output) = std::process::Command::new(which_cmd).arg("claude").output()
-        && output.status.success()
-        && let Some(path) = first_existing_command_path(&output.stdout)
-    {
+    if let Some(path) = crate::core::pathutil::find_on_path("claude") {
         return path;
     }
     if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
@@ -491,23 +476,9 @@ pub fn detect_claude_path() -> PathBuf {
     PathBuf::from("/nonexistent")
 }
 
-fn first_existing_command_path(stdout: &[u8]) -> Option<PathBuf> {
-    String::from_utf8_lossy(stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(PathBuf::from)
-        .find(|path| path.exists())
-}
-
 pub fn detect_codebuddy_path() -> PathBuf {
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(output) = std::process::Command::new(which_cmd)
-        .arg("codebuddy")
-        .output()
-        && output.status.success()
-    {
-        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    if let Some(path) = crate::core::pathutil::find_on_path("codebuddy") {
+        return path;
     }
     if let Ok(dir) = std::env::var("CODEBUDDY_CONFIG_DIR") {
         let dir = dir.trim();
@@ -534,11 +505,8 @@ pub fn detect_codebuddy_path() -> PathBuf {
 }
 
 pub fn detect_augment_path(home: &Path) -> PathBuf {
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(output) = std::process::Command::new(which_cmd).arg("auggie").output()
-        && output.status.success()
-    {
-        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    if let Some(path) = crate::core::pathutil::find_on_path("auggie") {
+        return path;
     }
     let augment_dir = home.join(".augment");
     if augment_dir.exists() {
@@ -643,10 +611,7 @@ pub fn detect_codex_path(home: &Path) -> PathBuf {
     if codex_dir.exists() {
         return codex_dir;
     }
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(output) = std::process::Command::new(which_cmd).arg("codex").output()
-        && output.status.success()
-    {
+    if crate::core::pathutil::find_on_path("codex").is_some() {
         return codex_dir;
     }
     PathBuf::from("/nonexistent")
@@ -686,11 +651,8 @@ pub fn detect_vscode_path() -> PathBuf {
             }
         }
     }
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    if let Ok(output) = std::process::Command::new(which_cmd).arg("code").output()
-        && output.status.success()
-    {
-        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    if let Some(path) = crate::core::pathutil::find_on_path("code") {
+        return path;
     }
     PathBuf::from("/nonexistent")
 }
@@ -999,35 +961,6 @@ mod augment_tests {
             serde_json::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
         assert!(json["mcpServers"].get("lean-ctx").is_none());
         assert_eq!(json["mcpServers"]["other"]["command"], "other-bin");
-    }
-
-    #[test]
-    fn command_locator_uses_first_existing_crlf_path() {
-        let tmp = tempfile::tempdir().unwrap();
-        let first = tmp.path().join("Claude Code").join("claude.cmd");
-        let second = tmp.path().join("claude.exe");
-        std::fs::create_dir_all(first.parent().unwrap()).unwrap();
-        std::fs::write(&first, "").unwrap();
-        std::fs::write(&second, "").unwrap();
-        let output = format!("\r\n{}\r\n{}\r\n", first.display(), second.display());
-
-        assert_eq!(
-            first_existing_command_path(output.as_bytes()),
-            Some(first),
-            "Windows 'where' output must be parsed one path per line"
-        );
-    }
-
-    #[test]
-    fn command_locator_skips_unusable_paths() {
-        let tmp = tempfile::tempdir().unwrap();
-        let missing = tmp.path().join("missing.cmd");
-        let valid = tmp.path().join("claude.cmd");
-        std::fs::write(&valid, "").unwrap();
-        let output = format!("{}\n{}\n", missing.display(), valid.display());
-
-        assert_eq!(first_existing_command_path(output.as_bytes()), Some(valid));
-        assert_eq!(first_existing_command_path(b"\r\n  \r\n"), None);
     }
 }
 

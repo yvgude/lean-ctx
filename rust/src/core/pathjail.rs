@@ -387,13 +387,38 @@ pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
 /// this module, so the legacy-path firewall (tests/legacy_path_firewall) has
 /// nothing to flag.
 fn home_allow_dirs(home: &Path, ide_dirs_allowed: bool) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    if ide_dirs_allowed {
-        let targets = crate::core::editor_registry::build_targets(home);
-        collect_ide_allow_dirs(home, &targets, &mut out);
+    if !ide_dirs_allowed {
+        return Vec::new();
     }
+    // The editor registry probes the filesystem and PATH for ~40 editors; the
+    // jail runs on every path check, so resolve once per process and refresh
+    // on a TTL (#2195).
+    type Entry = Option<(PathBuf, std::time::Instant, Vec<PathBuf>)>;
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<Entry>> = std::sync::OnceLock::new();
+    const TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+    let mut guard = CACHE
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((cached_home, at, dirs)) = guard.as_ref()
+        && cached_home == home
+        && at.elapsed() < TTL
+    {
+        return dirs.clone();
+    }
+    #[cfg(test)]
+    HOME_ALLOW_DIRS_BUILDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let mut out = Vec::new();
+    let targets = crate::core::editor_registry::build_targets(home);
+    collect_ide_allow_dirs(home, &targets, &mut out);
+    *guard = Some((home.to_path_buf(), std::time::Instant::now(), out.clone()));
     out
 }
+
+#[cfg(test)]
+static HOME_ALLOW_DIRS_BUILDS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 /// Collect the in-home config/detect directories of every supported editor.
 ///

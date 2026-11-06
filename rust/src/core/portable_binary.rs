@@ -54,14 +54,8 @@ pub fn resolve_portable_binary() -> String {
         .ok()
         .map(|p| p.to_string_lossy().into_owned());
 
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    let which_raw = std::process::Command::new(which_cmd)
-        .arg("lean-ctx")
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    let which_raw = crate::core::pathutil::find_on_path("lean-ctx")
+        .map(|p| p.to_string_lossy().into_owned())
         .filter(|s| !s.is_empty());
 
     choose_binary_path(current.as_deref(), which_raw.as_deref())
