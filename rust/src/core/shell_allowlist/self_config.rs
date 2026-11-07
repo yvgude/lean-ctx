@@ -458,8 +458,9 @@ enum LineCwd {
     Process,
     /// Moved by a literal `cd`.
     At(std::path::PathBuf),
-    /// Moved somewhere this check cannot tell (`cd "$d"`, `cd -`, `popd`).
-    Unknown,
+    /// Moved somewhere this check cannot tell (`cd "$d"`, `cd -`, `popd`);
+    /// holds that directory change as written, for the refusal.
+    Unknown(String),
 }
 
 thread_local! {
@@ -507,7 +508,16 @@ fn line_cwd() -> Option<std::path::PathBuf> {
             .with(|c| c.borrow().clone())
             .or_else(|| std::env::current_dir().ok()),
         LineCwd::At(dir) => Some(dir),
-        LineCwd::Unknown => None,
+        LineCwd::Unknown(_) => None,
+    }
+}
+
+/// Why relative words cannot be placed, when [`line_cwd`] is `None`: the
+/// directory change this check could not follow, as written.
+fn unknown_cwd_cause() -> String {
+    match LINE_CWD.with(|c| c.borrow().clone()) {
+        LineCwd::Unknown(change) => format!("the earlier `{change}`"),
+        LineCwd::Process | LineCwd::At(_) => "the unreadable working directory".to_string(),
     }
 }
 
@@ -516,17 +526,18 @@ fn follow_directory_change(tokens: &[String], homes: &[std::path::PathBuf]) {
     let target = tokens[1..]
         .iter()
         .find(|t| !t.starts_with('-') || t.as_str() == "-");
+    let unknown = || LineCwd::Unknown(tokens.join(" "));
     let next = match (tokens[0].as_str(), target) {
-        ("popd", _) => LineCwd::Unknown,
+        ("popd", _) => unknown(),
         (_, None) => homes
             .first()
-            .map_or(LineCwd::Unknown, |h| LineCwd::At(h.clone())),
+            .map_or_else(unknown, |h| LineCwd::At(h.clone())),
         (_, Some(word)) if word == "-" || word.contains(['$', '`', '*', '?', '[', '{']) => {
-            LineCwd::Unknown
+            unknown()
         }
         (_, Some(word)) => as_paths(word, homes)
             .pop()
-            .map_or(LineCwd::Unknown, LineCwd::At),
+            .map_or_else(unknown, LineCwd::At),
     };
     LINE_CWD.with(|c| *c.borrow_mut() = next);
 }
@@ -761,6 +772,173 @@ struct Tampering {
     /// `false`: a program whose effect cannot be told from its arguments
     /// (an interpreter, an unknown tool) — it may write.
     writes: bool,
+    /// Set when the command writes a relative path that cannot be placed
+    /// because of a directory change this check cannot follow: names that
+    /// cause (``the earlier `cd $D` ``) so the refusal points at it.
+    unplaced: Option<String>,
+}
+
+impl Tampering {
+    fn new(what: String, writes: bool) -> Self {
+        Self {
+            what,
+            writes,
+            unplaced: None,
+        }
+    }
+}
+
+/// A word that names a path relative to the working directory: not an
+/// option, not absolute or home/variable-anchored, not an assignment, and
+/// never a URL (`http://127.0.0.1:9/` is not a file in the directory).
+fn is_relative_operand(word: &str) -> bool {
+    !word.starts_with(['-', '/', '~', '$']) && !word.contains('=') && !word.contains("://")
+}
+
+/// curl short options that take a value; the first one in a cluster takes
+/// the rest of the token, or the next token when nothing follows it.
+const CURL_VALUE_SHORTS: &str = "AbcCdDeEFHKmoPQrTtuUwxXyYz";
+
+/// wget short options that take a value, read the same way.
+const WGET_VALUE_SHORTS: &str = "aABDeiIlOoPQRtTUwX";
+
+/// The files a curl or wget call writes, relative or not: curl's output
+/// options (`-o`, `-D`, `-c`, `--trace`, …, and `-O`/`--remote-name`
+/// into `--output-dir` or the working directory, written `.`), wget's
+/// document (`-O`, else `-P` or the working directory) and logs (`-o`,
+/// `-a`). The URL and the values of other options are never targets.
+fn download_targets(base: &str, args: &[String]) -> Vec<String> {
+    if base == "wget" {
+        return wget_targets(args);
+    }
+    const CURL_OUTPUT_LONGS: &[&str] = &[
+        "--output",
+        "--dump-header",
+        "--cookie-jar",
+        "--trace",
+        "--trace-ascii",
+        "--stderr",
+        "--libcurl",
+        "--etag-save",
+    ];
+    let mut targets = Vec::new();
+    let mut output_dir: Option<String> = None;
+    let mut remote_name = false;
+    let mut i = 0;
+    while i < args.len() {
+        let tok = args[i].as_str();
+        let next = args.get(i + 1).cloned();
+        let mut takes_next = false;
+        if tok == "--" {
+            break;
+        } else if matches!(tok, "--remote-name" | "--remote-name-all") {
+            remote_name = true;
+        } else if let Some((flag, value)) = tok.split_once('=').filter(|_| tok.starts_with("--")) {
+            if flag == "--output-dir" {
+                output_dir = Some(value.to_string());
+            } else if CURL_OUTPUT_LONGS.contains(&flag) {
+                targets.push(value.to_string());
+            }
+        } else if tok == "--output-dir" {
+            takes_next = true;
+            output_dir = next;
+        } else if CURL_OUTPUT_LONGS.contains(&tok) {
+            takes_next = true;
+            targets.extend(next);
+        } else if let Some(cluster) = tok.strip_prefix('-').filter(|c| !c.starts_with('-')) {
+            for (pos, letter) in cluster.char_indices() {
+                if letter == 'O' {
+                    remote_name = true;
+                    continue;
+                }
+                if !CURL_VALUE_SHORTS.contains(letter) {
+                    continue;
+                }
+                let rest = &cluster[pos + 1..];
+                let value = if rest.is_empty() {
+                    takes_next = true;
+                    next.clone()
+                } else {
+                    Some(rest.to_string())
+                };
+                if matches!(letter, 'o' | 'D' | 'c') {
+                    targets.extend(value);
+                }
+                break;
+            }
+        }
+        i += if takes_next { 2 } else { 1 };
+    }
+    if remote_name {
+        targets.push(output_dir.unwrap_or_else(|| ".".to_string()));
+    }
+    targets.retain(|t| t != "-");
+    targets
+}
+
+/// Every file a wget call writes: the document (`-O`/`--output-document`,
+/// else the URL's name in `-P`/`--directory-prefix` or the working
+/// directory, written `.`) and a log (`-o`/`-a`). `-O -` and `--spider`
+/// write no document.
+fn wget_targets(args: &[String]) -> Vec<String> {
+    let mut document: Option<String> = None;
+    let mut prefix: Option<String> = None;
+    let mut logs = Vec::new();
+    let mut spider = false;
+    let mut i = 0;
+    while i < args.len() {
+        let tok = args[i].as_str();
+        let next = || args.get(i + 1).cloned();
+        let mut takes_next = false;
+        if tok == "--spider" {
+            spider = true;
+        } else if let Some((flag, value)) = tok.split_once('=').filter(|_| tok.starts_with("--")) {
+            match flag {
+                "--output-document" => document = Some(value.to_string()),
+                "--directory-prefix" => prefix = Some(value.to_string()),
+                "--output-file" | "--append-output" => logs.push(value.to_string()),
+                _ => {}
+            }
+        } else if matches!(
+            tok,
+            "--output-document" | "--directory-prefix" | "--output-file" | "--append-output"
+        ) {
+            takes_next = true;
+            let value = next();
+            match tok {
+                "--output-document" => document = value,
+                "--directory-prefix" => prefix = value,
+                _ => logs.extend(value),
+            }
+        } else if let Some(cluster) = tok.strip_prefix('-').filter(|c| !c.starts_with('-')) {
+            // The first value-taking letter takes the rest of the token, or
+            // the next token when nothing follows it (`-qO-`, `-U foo`).
+            if let Some(pos) = cluster.find(|c: char| WGET_VALUE_SHORTS.contains(c)) {
+                let rest = &cluster[pos + 1..];
+                let value = if rest.is_empty() {
+                    takes_next = true;
+                    next()
+                } else {
+                    Some(rest.to_string())
+                };
+                match &cluster[pos..=pos] {
+                    "O" => document = value,
+                    "P" => prefix = value,
+                    "o" | "a" => logs.extend(value),
+                    _ => {}
+                }
+            }
+        }
+        i += if takes_next { 2 } else { 1 };
+    }
+    let mut targets = logs;
+    match document.as_deref() {
+        Some("-") => {}
+        Some(file) => targets.push(file.to_string()),
+        None if !spider => targets.push(prefix.unwrap_or_else(|| ".".to_string())),
+        None => {}
+    }
+    targets
 }
 
 /// The target of a `>`, `>>`, `>|`, `&>`, `N>`, `<>` or `>&FILE` redirect at
@@ -1289,7 +1467,7 @@ fn touches_protected(
             .map_or_else(|| token.to_string(), |p| p.display().to_string());
         format!("{base} {path}")
     };
-    let writes = |what: String| Some(Tampering { what, writes: true });
+    let writes = |what: String| Some(Tampering::new(what, true));
     // A redirect into lean-ctx's state writes it, whatever the program.
     if let Some(target) = (1..tokens.len())
         .filter_map(|i| redirect_target(tokens, i))
@@ -1299,10 +1477,7 @@ fn touches_protected(
     }
     if DIRECTORY_CHANGERS.contains(&base) {
         let named = tokens[1..].iter().find(|t| inside(t))?;
-        return Some(Tampering {
-            what: shown(named),
-            writes: false,
-        });
+        return Some(Tampering::new(shown(named), false));
     }
     if READ_ONLY_COMMANDS.contains(&base) {
         return None;
@@ -1332,24 +1507,37 @@ fn touches_protected(
                 && let Some(word) = args.iter().skip(1).find(|t| !t.starts_with('-'))
             {
                 return Some(Tampering {
-                    what: format!("{base} {word} (after a cd that cannot be followed)"),
-                    writes: false,
+                    unplaced: Some(unknown_cwd_cause()),
+                    ..Tampering::new(format!("{base} {word}"), false)
                 });
             }
             let named = args.iter().find(|t| inside(t))?;
             return writes(shown(named));
         }
     }
-    // After a `cd` this check cannot follow, a relative operand of a
-    // writing program may be anywhere.
+    // After a `cd` this check cannot follow, a relative path a writing
+    // program writes may be anywhere. For curl and wget only the files they
+    // write count (`-o`, `-O`, wget's document directory) — never the URL or
+    // another option's value (#2201).
     if WRITE_PROGRAMS.contains(&base) && line_cwd().is_none() {
-        let relative = tokens[1..]
-            .iter()
-            .find(|t| !t.starts_with(['-', '/', '~', '$']) && !t.contains('='));
+        let relative = if matches!(base, "curl" | "wget") {
+            download_targets(base, &tokens[1..])
+                .into_iter()
+                .find(|t| is_relative_operand(t))
+                .map(|t| {
+                    if t == "." {
+                        "(a download into the working directory)".to_string()
+                    } else {
+                        t
+                    }
+                })
+        } else {
+            tokens[1..].iter().find(|t| is_relative_operand(t)).cloned()
+        };
         if let Some(word) = relative {
             return Some(Tampering {
-                what: format!("{base} {word} (after a cd that cannot be followed)"),
-                writes: false,
+                unplaced: Some(unknown_cwd_cause()),
+                ..Tampering::new(format!("{base} {word}"), false)
             });
         }
     }
@@ -1378,18 +1566,12 @@ fn touches_protected(
     // Scripts and `find` are judged by what they do: `sed -n` reads.
     if SCRIPT_PROGRAMS.contains(&base) || base == "find" {
         let named = tokens[1..].iter().find(|t| mentions(t) || reaches(t))?;
-        return program_effect(tokens).map(|writes| Tampering {
-            what: shown(named),
-            writes,
-        });
+        return program_effect(tokens).map(|writes| Tampering::new(shown(named), writes));
     }
     // Every other program naming the state or a directory above it may
     // write there.
     let named = tokens[1..].iter().find(|t| reaches(t))?;
-    Some(Tampering {
-        what: shown(named),
-        writes: WRITE_PROGRAMS.contains(&base),
-    })
+    Some(Tampering::new(shown(named), WRITE_PROGRAMS.contains(&base)))
 }
 
 /// Rejects a command that would change lean-ctx's own state from an agent
@@ -1407,7 +1589,20 @@ pub(super) fn check_state_tampering(tokens: &[String]) -> Result<(), ShellError>
         follow_directory_change(tokens, &homes);
     }
     match verdict {
-        Some(Tampering { what, writes: true }) => Err(format!(
+        Some(Tampering {
+            what,
+            unplaced: Some(cause),
+            ..
+        }) => Err(format!(
+            "[BLOCKED — DO NOT RETRY] `{what}` writes a relative path, and {cause} could not \
+             be resolved, so this check cannot tell whether it lands in lean-ctx's own state \
+             (pause, claims, keys). Use a literal directory in the `cd`, or give the path \
+             absolute."
+        )
+        .into()),
+        Some(Tampering {
+            what, writes: true, ..
+        }) => Err(format!(
             "[BLOCKED — DO NOT RETRY] `{what}` changes lean-ctx's own state (pause, claims, \
              keys) and cannot run from an agent shell. Ask the user to run it in their own \
              terminal if they want it."
@@ -1416,6 +1611,7 @@ pub(super) fn check_state_tampering(tokens: &[String]) -> Result<(), ShellError>
         Some(Tampering {
             what,
             writes: false,
+            unplaced: None,
         }) => Err(format!(
             "[BLOCKED — DO NOT RETRY] `{what}` runs a program on lean-ctx's own state (pause, \
              claims, keys) whose effect cannot be told from the command, so it may change \

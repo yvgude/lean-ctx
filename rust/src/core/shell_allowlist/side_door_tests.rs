@@ -714,6 +714,60 @@ fn writers_options_and_extractions_reach_state_only_where_they_land() {
     );
 }
 
+/// #2201: after a `cd` the check cannot follow, only the files curl and wget
+/// write count as relative paths — the URL and the values of other options
+/// (`-m 1`, `-X POST`) are not files in the directory. The refusal names the
+/// unresolvable `cd` instead of a file-reading remedy.
+#[test]
+fn downloads_after_an_unfollowable_cd_judge_only_their_output_files() {
+    assert_all_pass(
+        WRITER_ALLOWLIST,
+        &[
+            "S=/tmp; cd $S && curl -s http://127.0.0.1:9/",
+            "S=/tmp/x; cd $S && curl -s -m 1 -X POST http://127.0.0.1:9/ -d x",
+            "cd \"$D\" && curl -sSL -o /tmp/out.json https://x/config.toml",
+            "cd \"$D\" && curl -o - https://x/config.toml",
+            "cd \"$D\" && curl -H 'Accept: o' -d out https://x",
+            "cd \"$D\" && wget -qO- https://x/config.toml",
+            "cd \"$D\" && wget -O /tmp/y https://x/config.toml",
+            "cd \"$D\" && wget --spider https://x/config.toml",
+        ],
+    );
+    assert_all_block(
+        WRITER_ALLOWLIST,
+        &[
+            "cd \"$D\" && curl -o config.toml https://x",
+            "cd \"$D\" && curl --output config.toml https://x",
+            "cd \"$D\" && curl --output=config.toml https://x",
+            "cd \"$D\" && curl -sSLoconfig.toml https://x",
+            "cd \"$D\" && curl -O https://x/config.toml",
+            "cd \"$D\" && curl -D headers.txt https://x",
+            "cd \"$D\" && wget https://x/config.toml",
+            "cd \"$D\" && wget -P lean-ctx https://x/config.toml",
+            "cd \"$D\" && wget --output-document=config.toml https://x",
+            "cd \"$D\" && wget -qOconfig.toml https://x",
+        ],
+    );
+    let (_, verdict) = verdicts(
+        WRITER_ALLOWLIST,
+        &["S=/tmp; cd $S && curl -s -m 1 -o out.json http://127.0.0.1:9/"],
+    )
+    .remove(0);
+    let message = verdict
+        .expect_err("relative output after cd $S")
+        .message()
+        .to_string();
+    assert!(message.contains("`cd $S`"), "names the cd: {message}");
+    assert!(
+        message.contains("curl out.json"),
+        "names the output: {message}"
+    );
+    assert!(
+        !message.contains("sed -n"),
+        "no file-reading remedy: {message}"
+    );
+}
+
 /// Relative paths resolve in the directory the command runs in (ctx_shell's
 /// `cwd`, a hook payload's `cwd`), not where the gate's process runs.
 #[test]
