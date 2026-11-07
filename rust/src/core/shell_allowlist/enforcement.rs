@@ -1233,25 +1233,58 @@ fn entry_matches(entry: &str, tokens: &[String]) -> bool {
 /// a top-level segment at the start of the line or after `;`/newline, not part
 /// of a pipeline or sent to the background (both run in a subshell, so the
 /// function never reaches the calling shell). A definition after `&&`/`||`,
-/// or inside an `if`/`while`/`{ … }` body, may not run — a call of its name
-/// then still reaches the real command and stays gated.
+/// or inside an `if`/`while` body, may not run — a call of its name then
+/// still reaches the real command and stays gated.
+///
+/// GH #2202: a `{ … }` brace group in such a position runs in the calling
+/// shell, so the definitions that always run inside it count too. The shell
+/// hook gates Claude Code's Bash calls as `{ <command>\n} && pwd -P >| …`
+/// (see `agent_wrapper::Unwrapped::rebuild`); without this, a function
+/// defined and called in the agent's command passed `ctx_shell` but was
+/// refused on the hook path.
 fn unconditional_function_defs(command: &str) -> Vec<String> {
-    use super::tokenizer::Separator;
-    let segments = super::tokenizer::segments_with_separators(command);
     let mut names = Vec::new();
+    collect_unconditional_function_defs(command, 0, &mut names);
+    names
+}
+
+fn collect_unconditional_function_defs(command: &str, depth: usize, names: &mut Vec<String>) {
+    use super::tokenizer::Separator;
+    // Same nesting bound as the leaf walk, which refuses anything deeper.
+    if depth > 4 {
+        return;
+    }
+    let segments = super::tokenizer::segments_with_separators(command);
     let mut previous: Option<Separator> = None;
     for (segment, separator) in &segments {
         let starts_line = matches!(previous, None | Some(Separator::Sequence));
         let stays_in_shell = !matches!(separator, Some(Separator::Pipe | Separator::Background));
-        if starts_line
-            && stays_in_shell
-            && let Some(name) = super::tokenizer::detect_function_def(segment)
-        {
-            names.push(name);
+        if starts_line && stays_in_shell {
+            if let Some(name) = super::tokenizer::detect_function_def(segment) {
+                names.push(name);
+            } else if let Some(inner) = super::compound::balanced_brace_inner(segment) {
+                collect_unconditional_function_defs(inner, depth + 1, names);
+            }
         }
         previous = *separator;
     }
-    names
+}
+
+/// The refusal for a call of a name that this command defines as a function,
+/// but only where the definition may not run (after `&&`/`||`, in an `if`
+/// body, a pipeline or the background). The program of that name may run
+/// instead, so the call stays gated — but `lean-ctx allow <name>` is no fix
+/// for a function (GH #2202), so the message never suggests it.
+fn conditional_function_call_message(name: &str) -> String {
+    format!(
+        "[BLOCKED — DO NOT RETRY] '{name}' is defined as a shell function in this command, \
+         but only where the definition may not run (after `&&`/`||`, inside an `if`/`while` \
+         body, in a pipeline or in the background), so the call may reach a program named \
+         '{name}', which is not in the shell allowlist.\n\
+         Fix: define the function unconditionally — at the start of the command or after \
+         `;`/a newline, e.g. `{name}() {{ …; }}; {name} …` — and call it afterwards. \
+         Do NOT run `lean-ctx allow {name}`: it would allowlist a program name, not your function."
+    )
 }
 
 pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result<(), ShellError> {
@@ -1287,6 +1320,12 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
 
     let total = segments.len();
     let unconditional = unconditional_function_defs(command);
+    // Every name this command defines as a function, wherever the definition
+    // sits: a refused call of one never suggests `lean-ctx allow <name>`.
+    let defined_functions: Vec<String> = segments
+        .iter()
+        .filter_map(|seg| super::tokenizer::detect_function_def(seg))
+        .collect();
     let mut local_functions: Vec<String> = Vec::new();
     for (idx, seg) in segments.iter().enumerate() {
         check_inline_env_block(seg)?;
@@ -1428,7 +1467,11 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             // #815: for compound commands, tell the user which segment was
             // blocked and that nothing ran (the pipeline is rejected as a
             // whole before execution, so no prefix commands executed).
-            let mut msg = allowlist_block_message(&base, &tokens, &allowlist.entries);
+            let mut msg = if defined_functions.contains(&base) {
+                conditional_function_call_message(&base)
+            } else {
+                allowlist_block_message(&base, &tokens, &allowlist.entries)
+            };
             if total > 1 {
                 msg.push_str(&format!(
                     "\n\n[pipeline: segment {}/{total} blocked — \

@@ -203,6 +203,84 @@ fn conditional_function_definition_does_not_shadow_the_command() {
 }
 
 // ---------------------------------------------------------------------------
+// GH #2202: the shell hook gates Claude Code's Bash call as
+// `{ <command>\n} && pwd -P >| …`; a function defined and called in the
+// command must pass there exactly as it passes `ctx_shell`.
+// ---------------------------------------------------------------------------
+
+/// What the shell hook gates for a Claude Code Bash call of `command`: the
+/// host's scaffolding, looked through as `lean-ctx -c` does it.
+fn gh2202_hook_gated(command: &str) -> String {
+    let quoted = command.replace('\'', r#"'"'"'"#);
+    let wrapped = format!(
+        "shopt -u extglob 2>/dev/null || true && eval '{quoted}' < /dev/null && pwd -P >| /tmp/claude-2202-cwd"
+    );
+    crate::shell::agent_wrapper::unwrap_agent_wrapper(&wrapped)
+        .expect("Claude Code scaffolding is recognised")
+        .rebuild()
+}
+
+#[test]
+fn gh2202_function_call_passes_on_the_hook_path_like_ctx_shell() {
+    let allowlist = allow(&["echo", "pwd"]);
+    for command in [
+        r#"reply() { echo "got $1"; }; reply hi"#,
+        "reply() { echo \"got $1\"; }\nreply hi",
+        "{ reply() { echo hi; }; }; reply",
+    ] {
+        let direct = check_all_segments(command, &allowlist);
+        assert!(direct.is_ok(), "ctx_shell form {command:?}: {direct:?}");
+        let gated = gh2202_hook_gated(command);
+        let hook = check_all_segments(&gated, &allowlist);
+        assert!(hook.is_ok(), "hook form {gated:?} must pass: {hook:?}");
+    }
+}
+
+#[test]
+fn gh2202_brace_group_definition_shadows_only_when_it_always_runs() {
+    let allowlist = allow(&["echo", "true", "false", "pwd"]);
+    for command in [
+        "false && { evil_command() { :; }; }; evil_command",
+        "{ evil_command() { :; }; } | echo; evil_command",
+        "{ false && evil_command() { :; }; }; evil_command",
+        "{ evil_command() { curl x; }; }; evil_command",
+    ] {
+        for line in [command.to_string(), gh2202_hook_gated(command)] {
+            let err = check_all_segments(&line, &allowlist)
+                .expect_err("a definition that may not run must not open its name")
+                .to_string();
+            assert!(
+                err.contains("evil_command") || err.contains("curl"),
+                "{line:?}: {err}"
+            );
+        }
+    }
+}
+
+#[test]
+fn gh2202_refused_function_call_never_suggests_allowing_the_function() {
+    let allowlist = allow(&["echo", "true", "false"]);
+    for command in [
+        "false && reply() { echo hi; }; reply hi",
+        "if false; then reply() { echo hi; }; fi; reply hi",
+        "reply() { echo hi; } | echo; reply hi",
+    ] {
+        let err = check_all_segments(command, &allowlist)
+            .expect_err("a call of a conditionally defined function stays gated")
+            .to_string();
+        assert!(err.contains("'reply'"), "{command:?}: {err}");
+        assert!(
+            err.contains("Do NOT run `lean-ctx allow reply`"),
+            "{command:?}: {err}"
+        );
+        assert!(
+            !err.contains("run  lean-ctx allow reply"),
+            "must not suggest allowlisting a function name: {err}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // #1489: inline env override error must mention the `env` parameter.
 // ---------------------------------------------------------------------------
 
