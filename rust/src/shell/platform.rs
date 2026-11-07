@@ -392,17 +392,8 @@ fn find_real_shell() -> String {
 fn find_real_shell() -> String {
     if is_running_in_msys_or_gitbash() {
         for candidate in &["bash.exe", "sh.exe"] {
-            if let Ok(output) = std::process::Command::new("where").arg(candidate).output() {
-                if output.status.success() {
-                    if let Ok(path) = String::from_utf8(output.stdout) {
-                        if let Some(first_line) = path.lines().next() {
-                            let trimmed = first_line.trim();
-                            if !trimmed.is_empty() {
-                                return trimmed.to_string();
-                            }
-                        }
-                    }
-                }
+            if let Some(path) = crate::core::pathutil::find_on_path(candidate) {
+                return path.to_string_lossy().into_owned();
             }
         }
     }
@@ -423,17 +414,8 @@ fn is_running_in_msys_or_gitbash() -> bool {
 #[cfg(windows)]
 fn which_powershell() -> Result<String, ()> {
     for candidate in &["pwsh.exe", "powershell.exe"] {
-        if let Ok(output) = std::process::Command::new("where").arg(candidate).output() {
-            if output.status.success() {
-                if let Ok(path) = String::from_utf8(output.stdout) {
-                    if let Some(first_line) = path.lines().next() {
-                        let trimmed = first_line.trim();
-                        if !trimmed.is_empty() {
-                            return Ok(trimmed.to_string());
-                        }
-                    }
-                }
-            }
+        if let Some(path) = crate::core::pathutil::find_on_path(candidate) {
+            return Ok(path.to_string_lossy().into_owned());
         }
     }
     Err(())

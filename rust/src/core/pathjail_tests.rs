@@ -1061,3 +1061,28 @@ fn cursor_agent_output_opens_only_for_the_own_workspace() {
     assert!(jail_path_with_roots(&app_log, &app, &[]).is_ok());
     assert!(is_read_only_path(&app_log), "writes stay denied");
 }
+
+#[test]
+fn home_allow_dirs_is_cached_per_home() {
+    let _env = crate::core::data_dir::test_env_lock();
+    let home_a = tempfile::tempdir().unwrap();
+    let home_b = tempfile::tempdir().unwrap();
+    let builds = || HOME_ALLOW_DIRS_BUILDS.load(std::sync::atomic::Ordering::SeqCst);
+
+    let before = builds();
+    assert!(home_allow_dirs(home_a.path(), false).is_empty());
+    assert_eq!(
+        builds(),
+        before,
+        "disabled flag must not build the registry"
+    );
+
+    let first = home_allow_dirs(home_a.path(), true);
+    assert_eq!(builds(), before + 1);
+    let second = home_allow_dirs(home_a.path(), true);
+    assert_eq!(builds(), before + 1, "same home is served from the cache");
+    assert_eq!(first, second);
+
+    home_allow_dirs(home_b.path(), true);
+    assert_eq!(builds(), before + 2, "a different home is recomputed");
+}

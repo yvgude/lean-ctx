@@ -6,6 +6,12 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+### Fixed
+
+- **Path jail no longer spawns `where`/`which` on every check (#2195).** The IDE allow-dir list is cached
+  per process (5 min TTL) and editor/PATH detection resolves executables in-process, so a console-less
+  Windows daemon stops creating `where.exe` + `conhost.exe` processes.
+
 ## [3.12.2] — 2026-11-04
 
 ### Added
