@@ -56,38 +56,19 @@ pub(crate) fn atomic_create_without_overwrite(path: &Path, bytes: &[u8]) -> Resu
     Ok(())
 }
 
+/// Publication must fail when another writer already owns the destination.
+/// A source Defender still scans, or a destination name whose deletion is
+/// pending behind such a handle, is retried briefly instead of pausing the
+/// config migration (#2184).
 #[cfg(windows)]
 fn publish_windows_noreplace(source: &Path, destination: &Path) -> Result<(), String> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};
-
-    let source_wide: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let destination_wide: Vec<u16> = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-    // Deliberately omit MOVEFILE_REPLACE_EXISTING: publication must fail when
-    // another writer already owns the destination.
-    // SAFETY: both vectors own the UTF-16 buffers, include a terminating NUL,
-    // and remain alive for the duration of the call.
-    let moved = unsafe {
-        MoveFileExW(
-            source_wide.as_ptr(),
-            destination_wide.as_ptr(),
-            MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if moved == 0 {
-        let error = std::io::Error::last_os_error();
+    crate::core::atomic_fs::move_file_without_overwrite(source, destination).map_err(|error| {
         let _ = std::fs::remove_file(source);
-        Err(format!(
+        format!(
             "publish {} without overwrite: {error}",
             destination.display()
-        ))
-    } else {
-        Ok(())
-    }
+        )
+    })
 }
 
 impl Drop for MigrationLock {

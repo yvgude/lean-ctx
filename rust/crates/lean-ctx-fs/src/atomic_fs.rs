@@ -179,8 +179,32 @@ pub fn replace_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
 /// — the Windows equivalent of POSIX `rename(2)`'s implicit replace-if-exists.
 #[cfg(windows)]
 fn windows_replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::MOVEFILE_REPLACE_EXISTING;
+    windows_move(tmp, path, MOVEFILE_REPLACE_EXISTING)
+}
+
+/// Move a fully written `source` to `destination` only if no file of that
+/// name exists — publication that must never overwrite another writer's file
+/// (the config migration journal). Fails with `AlreadyExists` when the
+/// destination exists; retries a briefly held source or a delete-pending
+/// destination like [`replace_file`] does (#2184). `source` is left in place
+/// on failure; the caller removes it.
+#[cfg(windows)]
+pub fn move_file_without_overwrite(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::MOVEFILE_WRITE_THROUGH;
+    // Deliberately without MOVEFILE_REPLACE_EXISTING.
+    windows_move(source, destination, MOVEFILE_WRITE_THROUGH)
+}
+
+/// `MoveFileExW(tmp, path, flags)` with a bounded retry of transient holds.
+#[cfg(windows)]
+fn windows_move(
+    tmp: &Path,
+    path: &Path,
+    flags: windows_sys::Win32::Storage::FileSystem::MOVE_FILE_FLAGS,
+) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_REPLACE_EXISTING, MoveFileExW};
+    use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
 
     fn to_wide(p: &Path) -> Vec<u16> {
         p.as_os_str()
@@ -192,10 +216,13 @@ fn windows_replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
     let tmp_w = to_wide(tmp);
     let path_w = to_wide(path);
 
-    // A reader, Defender or the search indexer briefly holding `path` open
-    // without FILE_SHARE_DELETE makes the replace fail with ACCESS_DENIED (5)
-    // or SHARING_VIOLATION (32) until the handle closes. Those are transient:
-    // retry with backoff for about a second before reporting the error.
+    // A reader, Defender or the search indexer briefly holding either file
+    // open without FILE_SHARE_DELETE makes the move fail with ACCESS_DENIED
+    // (5) or SHARING_VIOLATION (32) until the handle closes; so does a
+    // destination name whose deletion is still pending behind such a handle.
+    // Those are transient: retry with backoff for about a second before
+    // reporting the error. The window stays short on purpose — a caller of
+    // `try_atomic_write_if` decides admission right before this move.
     const ACCESS_DENIED: i32 = 5;
     const SHARING_VIOLATION: i32 = 32;
     let mut delay = std::time::Duration::from_millis(5);
@@ -203,7 +230,7 @@ fn windows_replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
     loop {
         // SAFETY: both vectors own NUL-terminated UTF-16 buffers and remain
         // alive for the duration of the call.
-        let ok = unsafe { MoveFileExW(tmp_w.as_ptr(), path_w.as_ptr(), MOVEFILE_REPLACE_EXISTING) };
+        let ok = unsafe { MoveFileExW(tmp_w.as_ptr(), path_w.as_ptr(), flags) };
         if ok != 0 {
             return Ok(());
         }
@@ -596,5 +623,72 @@ mod tests {
         let _ = std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700));
         res.expect("read-only-dir fallback must succeed");
         assert_eq!(std::fs::read(&path).unwrap(), b"updated");
+    }
+
+    /// Opens `path` the way Defender or an indexer does — without
+    /// FILE_SHARE_DELETE — and closes it after `hold` on another thread.
+    #[cfg(windows)]
+    fn hold_without_share_delete(
+        path: &Path,
+        hold: std::time::Duration,
+    ) -> std::thread::JoinHandle<()> {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_SHARE_READ;
+        let handle = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(path)
+            .expect("hold");
+        std::thread::spawn(move || {
+            std::thread::sleep(hold);
+            drop(handle);
+        })
+    }
+
+    /// #2184: a freshly written journal file still held by a scanner is
+    /// published once the handle closes, instead of pausing the migration.
+    #[cfg(windows)]
+    #[test]
+    fn publish_without_overwrite_waits_out_a_held_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join(".journal.tmp");
+        let destination = dir.path().join("journal");
+        std::fs::write(&source, b"journal").unwrap();
+        let held = hold_without_share_delete(&source, std::time::Duration::from_millis(300));
+        move_file_without_overwrite(&source, &destination).expect("published after the hold");
+        held.join().unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), b"journal");
+        assert!(!source.exists());
+    }
+
+    /// The retry never turns into an overwrite: an existing destination is
+    /// refused at once with `AlreadyExists`, held or not.
+    #[cfg(windows)]
+    #[test]
+    fn publish_without_overwrite_refuses_an_existing_destination_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join(".journal.tmp");
+        let destination = dir.path().join("journal");
+        std::fs::write(&source, b"new").unwrap();
+        std::fs::write(&destination, b"owned").unwrap();
+        let started = std::time::Instant::now();
+        let error = move_file_without_overwrite(&source, &destination).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists, "{error}");
+        assert!(started.elapsed() < std::time::Duration::from_millis(500));
+        assert_eq!(std::fs::read(&destination).unwrap(), b"owned");
+        assert!(source.exists(), "the caller removes the source");
+    }
+
+    /// The replace keeps its bounded retry of a held target.
+    #[cfg(windows)]
+    #[test]
+    fn replace_waits_out_a_held_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, b"old").unwrap();
+        let held = hold_without_share_delete(&path, std::time::Duration::from_millis(300));
+        try_atomic_write(&path, b"new", None).expect("replaced after the hold");
+        held.join().unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
     }
 }
