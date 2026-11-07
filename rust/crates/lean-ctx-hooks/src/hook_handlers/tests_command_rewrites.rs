@@ -856,3 +856,31 @@ fn every_rewrite_output_passes_the_gate() {
     });
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+/// #2194: `excluded_commands` keeps a command out of the rewrite, so an
+/// isolation guard that refuses anything not plainly git sees `git …` as
+/// typed. Other commands are still rewritten.
+#[test]
+fn excluded_commands_are_not_rewritten() {
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("config.toml"),
+        "excluded_commands = [\"git\"]\n",
+    )
+    .expect("write config");
+    let _config = lean_ctx::test_env::VarGuard::set("LEAN_CTX_CONFIG_DIR", dir.path());
+    for cmd in [
+        "git rev-parse HEAD",
+        "git status",
+        "GIT_PAGER=cat git log -1",
+        "cd /tmp && git status",
+    ] {
+        assert_eq!(rewrite_candidate(cmd, "lean-ctx"), None, "{cmd}");
+    }
+    assert_eq!(
+        rewrite_skip_reason("git status", "lean-ctx"),
+        "listed in excluded_commands"
+    );
+    assert!(rewrite_candidate("cat notes.md", "lean-ctx").is_some());
+}

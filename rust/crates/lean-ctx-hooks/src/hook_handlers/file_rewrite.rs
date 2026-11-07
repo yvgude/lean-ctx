@@ -243,11 +243,38 @@ pub(super) fn rewrite_skip_reason(cmd: &str, binary: &str) -> &'static str {
         "already a lean-ctx command"
     } else if cmd.contains("<<") {
         "heredoc cannot be rewritten safely"
+    } else if names_excluded_command(cmd) {
+        "listed in excluded_commands"
     } else if is_compound(cmd) && !lean_ctx::core::shell_allowlist::passes_enforced(cmd) {
         "compound pipes/chains into a non-allowlisted or interpreter sink — left raw for the agent shell"
     } else {
         "not a known read/search/list command"
     }
+}
+
+/// `cmd`, or one of its top-level segments (`cd x && git status`), starts
+/// with a prefix from the user's `excluded_commands`, after any `VAR=value`
+/// prefix. Wrapping a compound wraps every segment, so one excluded segment
+/// keeps the whole line as typed (#2194).
+pub(super) fn names_excluded_command(cmd: &str) -> bool {
+    let excluded = lean_ctx::core::config::Config::load_arc();
+    excluded_by(cmd, &excluded.excluded_commands)
+}
+
+fn excluded_by(cmd: &str, excluded: &[String]) -> bool {
+    if excluded.is_empty() {
+        return false;
+    }
+    compound_lexer::split_compound(cmd)
+        .iter()
+        .filter_map(|s| match s {
+            compound_lexer::Segment::Command(c) => Some(c.trim()),
+            compound_lexer::Segment::Operator(_) => None,
+        })
+        .any(|c| {
+            let c = rewrite_registry::strip_env_prefix(c);
+            lean_ctx::shell::compress::is_user_excluded(c, excluded)
+        })
 }
 
 pub(super) fn is_rewritable(cmd: &str) -> bool {
@@ -452,6 +479,13 @@ pub(super) fn rewrite_candidate(cmd: &str, binary: &str) -> Option<String> {
 /// whether hosts that only accept a rewrite as an approval may receive it.
 pub(super) fn classify_rewrite(cmd: &str, binary: &str) -> Option<Rewrite> {
     if !passes_rewrite_guards(cmd, binary) {
+        return None;
+    }
+
+    // #2194: a command the user listed in `excluded_commands` runs as typed.
+    // The enforcement wrap and the allowlist check of a native run are not
+    // rewrites and still apply (see `handle_rewrite`).
+    if names_excluded_command(cmd) {
         return None;
     }
 
