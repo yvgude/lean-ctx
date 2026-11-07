@@ -40,6 +40,7 @@ import { loadPiConfig, resolvePiShellPath, resolveSuppressedBuiltins } from "./c
 import { posixSafeEnv } from "./env.js";
 import { classifySearchExit, innerTimeoutEnv, sanitizeExtraEnv } from "./exec-result.js";
 import { withFooter } from "./footer.js";
+import { notifyLensRead } from "./lens-read-bridge.js";
 import { boundReadOutput, READ_OUTPUT_MAX_BYTES, READ_OUTPUT_MAX_LINES } from "./read-output.js";
 
 const BRIDGE_STARTUP_TIMEOUT_MS = 10_000;
@@ -609,6 +610,7 @@ export default async function (pi: ExtensionAPI) {
             const bridgedText = bridged.content.map((block) => block.text).join("");
             const originalSlice = await readSlice(absolutePath, startOffset, params.limit);
             const decorated = withFooter(bridgedText, { originalText: originalSlice.text, always: true, preferEstimate: true, suppressIfNoSaving: true });
+            notifyLensRead(absolutePath, startOffset, params.limit);
             return boundedReadResult(decorated.text, { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx-bridge", mode, compression: decorated.stats });
           } catch (err) {
             console.error(`[pi-lean-ctx] ctx_read(${mode}) bridge call failed, falling back to CLI: ${err}`);
@@ -619,9 +621,11 @@ export default async function (pi: ExtensionAPI) {
           const output = await execLeanCtx(pi, args, { signal });
           const originalSlice = await readSlice(absolutePath, startOffset, params.limit);
           const decorated = withFooter(output, { originalText: originalSlice.text, always: true, preferEstimate: true, suppressIfNoSaving: true });
+          notifyLensRead(absolutePath, startOffset, params.limit);
           return boundedReadResult(decorated.text, { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx", mode, compression: decorated.stats });
         } catch {
           const sliced = await readSlice(absolutePath, startOffset, params.limit);
+          notifyLensRead(absolutePath, startOffset, params.limit);
           return {
             content: [{ type: "text", text: sliced.text }],
             details: { path: absolutePath, lines: sliced.lines, source: "local-slice-fallback", truncated: sliced.truncated },
@@ -656,6 +660,7 @@ export default async function (pi: ExtensionAPI) {
           const bridgedText = bridged.content.map((block) => block.text).join("");
           const originalText = await readFile(absolutePath, "utf8");
           const decorated = withFooter(bridgedText, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
+          notifyLensRead(absolutePath);
           return boundedReadResult(
             decorated.text,
             { path: absolutePath, source: "lean-ctx-bridge", mode, compression: decorated.stats },
@@ -670,6 +675,7 @@ export default async function (pi: ExtensionAPI) {
       const output = await execLeanCtx(pi, args, { signal });
       const originalText = await readFile(absolutePath, "utf8");
       const decorated = withFooter(output, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
+      notifyLensRead(absolutePath);
 
       return boundedReadResult(
         decorated.text,

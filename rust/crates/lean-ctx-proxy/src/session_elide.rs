@@ -164,18 +164,70 @@ fn elide_block(block: &mut Value) -> bool {
 }
 
 /// How the stub names the archive without the account name: `cat ~/…` under
-/// the home directory (Bash expands it), else the store-relative name that
-/// `ctx_expand` resolves. A pure function of the path, so byte-stable.
+/// the home directory, else the store-relative name that `ctx_expand`
+/// resolves. A pure function of the path and the home, so byte-stable.
 fn locator(path: &std::path::Path) -> String {
-    if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty())
-        && let Ok(rest) = path.strip_prefix(&home)
+    let home = shell_home(|key| std::env::var_os(key), cfg!(windows));
+    locator_in(path, home.as_deref())
+}
+
+/// The home directory the host shell expands `~` to: `HOME`, and on Windows,
+/// where `HOME` is usually unset, `USERPROFILE` (#2180). `var` is injected so
+/// tests never touch the process environment.
+fn shell_home(
+    var: impl Fn(&str) -> Option<std::ffi::OsString>,
+    windows: bool,
+) -> Option<std::ffi::OsString> {
+    let set = |key: &str| var(key).filter(|value| !value.is_empty());
+    set("HOME").or_else(|| if windows { set("USERPROFILE") } else { None })
+}
+
+/// The locator for `path` against `home`. The part after `~/` is joined with
+/// `/` (Windows paths included) and double-quoted when it holds a character a
+/// shell would split or glob on, such as a space (#2180): `cat ~/"My State/…"`
+/// reads the same file in Bash (Claude Code's shell, Git Bash on Windows) and
+/// in PowerShell, where `cat` is `Get-Content` and `~` is the home. A path a
+/// double quote cannot carry literally falls back to the `ctx_expand` name.
+fn locator_in(path: &std::path::Path, home: Option<&std::ffi::OsStr>) -> String {
+    if let Some(home) = home
+        && let Ok(rest) = path.strip_prefix(home)
+        && let Some(rest) = home_relative(rest)
     {
-        return format!("cat ~/{}", rest.display());
+        return format!("cat ~/{rest}");
     }
     let name = path
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
     format!("ctx_expand(id=\"{name}\") (LeanCTX state directory, tee/{name})")
+}
+
+/// `rest` as the shell-ready text after `~/`, or `None` when it cannot be
+/// written there unambiguously.
+fn home_relative(rest: &std::path::Path) -> Option<String> {
+    let mut parts = Vec::new();
+    for component in rest.components() {
+        match component {
+            std::path::Component::Normal(part) => parts.push(part.to_str()?),
+            _ => return None,
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let joined = parts.join("/");
+    let plain = |c: char| c.is_ascii_alphanumeric() || "._-/+@%,:=".contains(c);
+    if joined.chars().all(plain) {
+        return Some(joined);
+    }
+    // Inside double quotes Bash still expands `$`, `` ` ``, `\` and `"`, and
+    // PowerShell `$` and `` ` ``; `!` can trigger history expansion.
+    if joined
+        .chars()
+        .any(|c| "\"$`\\!".contains(c) || c.is_control())
+    {
+        return None;
+    }
+    Some(format!("\"{joined}\""))
 }
 
 /// Whether `message` carries a tool result that left as an elision stub.
@@ -267,8 +319,10 @@ mod tests {
         let stub = messages[6]["content"][0]["content"].as_str().unwrap();
         assert!(stub.starts_with(STUB_OPEN), "{stub}");
         let path = if let Some(rest) = stub.split("cat ~/").nth(1) {
-            std::path::PathBuf::from(std::env::var_os("HOME").unwrap())
-                .join(rest.trim_end_matches(']'))
+            std::path::PathBuf::from(
+                shell_home(|key| std::env::var_os(key), cfg!(windows)).unwrap(),
+            )
+            .join(rest.trim_end_matches(']').trim_matches('"'))
         } else {
             let id = stub
                 .split("id=\"")
@@ -305,6 +359,86 @@ mod tests {
         elide(&mut again, 100_000);
         assert_eq!(again, once, "content-deterministic stub (#498)");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+    }
+
+    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<std::ffi::OsString> {
+        let pairs: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect();
+        move |key| {
+            pairs
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| std::ffi::OsString::from(v))
+        }
+    }
+
+    #[test]
+    fn windows_falls_back_to_userprofile_when_home_is_unset() {
+        let profile = env(&[("USERPROFILE", "/Users/me")]);
+        assert_eq!(shell_home(&profile, true), Some("/Users/me".into()));
+        assert_eq!(
+            shell_home(&profile, false),
+            None,
+            "only Windows reads USERPROFILE"
+        );
+        let both = env(&[("HOME", "/home/me"), ("USERPROFILE", "/Users/me")]);
+        assert_eq!(
+            shell_home(&both, true),
+            Some("/home/me".into()),
+            "HOME wins"
+        );
+        let empty = env(&[("HOME", ""), ("USERPROFILE", "/Users/me")]);
+        assert_eq!(shell_home(&empty, true), Some("/Users/me".into()));
+        assert_eq!(shell_home(env(&[]), true), None);
+
+        let home = shell_home(&profile, true);
+        let path = std::path::Path::new("/Users/me/AppData/Local/lean-ctx/tee/proxy_ab12.log");
+        assert_eq!(
+            locator_in(path, home.as_deref()),
+            "cat ~/AppData/Local/lean-ctx/tee/proxy_ab12.log"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_paths_use_forward_slashes_after_the_tilde() {
+        let path = std::path::Path::new(r"C:\Users\me\AppData\Local\lean-ctx\tee\proxy_ab12.log");
+        assert_eq!(
+            locator_in(path, Some(std::ffi::OsStr::new(r"C:\Users\me"))),
+            "cat ~/AppData/Local/lean-ctx/tee/proxy_ab12.log"
+        );
+    }
+
+    #[test]
+    fn a_path_with_spaces_is_quoted_after_the_tilde() {
+        let home = Some(std::ffi::OsStr::new("/Users/me"));
+        let path = std::path::Path::new("/Users/me/My State/lean-ctx/tee/proxy_ab12.log");
+        let once = locator_in(path, home);
+        assert_eq!(once, "cat ~/\"My State/lean-ctx/tee/proxy_ab12.log\"");
+        assert_eq!(locator_in(path, home), once, "byte-stable (#498)");
+
+        let plain = std::path::Path::new("/Users/me/.local/state/lean-ctx/tee/proxy_ab12.log");
+        assert_eq!(
+            locator_in(plain, home),
+            "cat ~/.local/state/lean-ctx/tee/proxy_ab12.log",
+            "plain paths stay unquoted"
+        );
+
+        // A name a double quote cannot carry literally falls back to ctx_expand.
+        let dollar = std::path::Path::new("/Users/me/$state/lean-ctx/tee/proxy_ab12.log");
+        assert!(
+            locator_in(dollar, home).starts_with("ctx_expand(id=\"proxy_ab12.log\")"),
+            "{}",
+            locator_in(dollar, home)
+        );
+        // Outside the home: the store-relative name, no account path.
+        let outside = std::path::Path::new("/var/state/lean-ctx/tee/proxy_ab12.log");
+        assert_eq!(
+            locator_in(outside, home),
+            "ctx_expand(id=\"proxy_ab12.log\") (LeanCTX state directory, tee/proxy_ab12.log)"
+        );
     }
 
     #[test]

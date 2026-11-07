@@ -97,7 +97,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "bool",
             serde_json::json!(cfg.proxy.live_compresses()),
-            "Live-compress non-protected tool_result content on the wire (#481). Default true. Set false for a meter-only proxy — real billed/cache token metering with zero request rewriting (combine with history_mode = \"off\" and no role_aggressiveness for a byte-unchanged body)",
+            "Live-compress non-protected tool_result content on the wire (#481). Default true. Set false for a meter-only proxy — real billed/cache token metering with zero request rewriting (combine with history_mode = \"off\", long_session_elide = false (env LEAN_CTX_PROXY_LONG_SESSION_ELIDE=off, the default) and no role_aggressiveness for a byte-unchanged body)",
             "LEAN_CTX_PROXY_LIVE_COMPRESS",
         ),
     );
