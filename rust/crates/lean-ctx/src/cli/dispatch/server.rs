@@ -106,6 +106,9 @@ pub(super) fn run_mcp_server() -> Result<()> {
     let result = rt.block_on(async {
         core::logging::init_mcp_logging();
         core::protocol::set_mcp_context(true);
+        // Observations never block dispatch; the request ledger publishes
+        // for `lean-ctx doctor` (#2196, #2197).
+        core::request_ledger::start_serving("mcp-stdio");
 
         tracing::info!(
             "lean-ctx v{} MCP server starting",

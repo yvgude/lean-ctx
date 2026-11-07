@@ -300,10 +300,20 @@ async fn rate_limit_middleware(
     req: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
+    if is_diagnostic_path(req.uri().path()) {
+        return next.run(req).await;
+    }
     if !state.rate.allow().await {
+        lean_ctx::core::request_ledger::refused();
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
     next.run(req).await
+}
+
+/// Health routes answer from counters, never from the work queue: they must
+/// stay reachable exactly when every request slot is taken (#2197).
+fn is_diagnostic_path(path: &str) -> bool {
+    matches!(path, "/health" | "/v1/health")
 }
 
 async fn concurrency_middleware(
@@ -311,7 +321,11 @@ async fn concurrency_middleware(
     mut req: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
+    if is_diagnostic_path(req.uri().path()) {
+        return next.run(req).await;
+    }
     let Ok(permit) = state.concurrency.clone().try_acquire_owned() else {
+        lean_ctx::core::request_ledger::refused();
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     };
     let permit = Arc::new(permit);
@@ -323,6 +337,15 @@ async fn concurrency_middleware(
 
 async fn health() -> impl IntoResponse {
     (StatusCode::OK, "ok\n")
+}
+
+/// `GET /v1/health`: liveness plus the request ledger (#2197) — counters,
+/// the oldest pending request's method, stage and age, and the last tool
+/// completion. Method names only; no arguments, paths or content.
+async fn v1_health() -> impl IntoResponse {
+    let snapshot = lean_ctx::core::request_ledger::snapshot()
+        .with_ages(lean_ctx::core::request_ledger::epoch_ms());
+    Json(serde_json::json!({ "status": "ok", "requests": snapshot }))
 }
 
 async fn v1_shutdown() -> impl IntoResponse {
@@ -1096,6 +1119,7 @@ fn build_router(
 
     Router::new()
         .route("/health", get(health))
+        .route("/v1/health", get(v1_health))
         .route(
             "/ocla/v1/delivery/scoped",
             axum::routing::post(scoped_delivery::execute),
@@ -1175,6 +1199,9 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     let receipt_authority =
         lean_ctx_server::server::native_receipts::load_configured_host_authority()
             .map_err(anyhow::Error::msg)?;
+    // Observations never block dispatch; the request ledger publishes for
+    // `lean-ctx doctor` and `/v1/health` (#2196, #2197).
+    lean_ctx::core::request_ledger::start_serving("http");
     // Apply the `LEAN_CTX_KERNEL_*` switches once, so kernel health
     // (`/v1/kernel/health`) reports the configuration this server runs with.
     lean_ctx::core::context_kernel::startup::initialize();
@@ -1214,13 +1241,14 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
         cfg.project_root.display()
     );
 
-    axum::serve(listener, app)
+    let served = axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             let _ = tokio::signal::ctrl_c().await;
         })
         .await
-        .context("http server")?;
-    Ok(())
+        .context("http server");
+    lean_ctx::core::events::flush_detached_observations(std::time::Duration::from_secs(5));
+    served
 }
 
 /// Serve the daemon over a platform-independent IPC channel (UDS on Unix,
@@ -1230,6 +1258,9 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: lean_ctx::ipc::DaemonAddr) -
     let receipt_authority =
         lean_ctx_server::server::native_receipts::load_configured_host_authority()
             .map_err(anyhow::Error::msg)?;
+    // Observations never block dispatch; the request ledger publishes for
+    // `lean-ctx doctor` (#2196, #2197).
+    lean_ctx::core::request_ledger::start_serving("daemon");
     lean_ctx::core::context_kernel::startup::initialize();
 
     lean_ctx::core::telemetry_send::spawn_daemon_telemetry();
@@ -1251,13 +1282,14 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: lean_ctx::ipc::DaemonAddr) -
                 cfg.project_root.display()
             );
 
-            axum::serve(listener, app.into_make_service())
+            let served = axum::serve(listener, app.into_make_service())
                 .with_graceful_shutdown(async move {
                     let _ = tokio::signal::ctrl_c().await;
                 })
                 .await
-                .context("ipc server")?;
-            Ok(())
+                .context("ipc server");
+            lean_ctx::core::events::flush_detached_observations(std::time::Duration::from_secs(5));
+            served
         }
         #[cfg(windows)]
         lean_ctx::ipc::DaemonAddr::NamedPipe(ref name) => {
@@ -1270,13 +1302,14 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: lean_ctx::ipc::DaemonAddr) -
                 cfg.project_root.display()
             );
 
-            axum::serve(listener, app.into_make_service())
+            let served = axum::serve(listener, app.into_make_service())
                 .with_graceful_shutdown(async move {
                     let _ = tokio::signal::ctrl_c().await;
                 })
                 .await
-                .context("ipc server")?;
-            Ok(())
+                .context("ipc server");
+            lean_ctx::core::events::flush_detached_observations(std::time::Duration::from_secs(5));
+            served
         }
     }
 }

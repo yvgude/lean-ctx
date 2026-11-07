@@ -245,6 +245,147 @@ impl FileUnifiedLedger {
     }
 }
 
+/// The prefix of a ledger file this process already validated record by
+/// record (#2196): appending used to parse the whole file under the exclusive
+/// lock on every tool call, which on a 166 MiB ledger stalled each read.
+///
+/// The prefix is trusted only while the file is the same file (device and
+/// inode on Unix), has not shrunk, and still ends its validated part with the
+/// exact bytes this process last validated or wrote there. Otherwise — a
+/// rotation, truncation, rewrite or another process changing the tip — the
+/// whole file is scanned again. Records appended by other processes after the
+/// validated prefix are always parsed, so corruption there is still refused.
+/// `verify_chain` keeps validating the full file.
+#[derive(Clone, Debug)]
+struct ValidatedTip {
+    path: PathBuf,
+    file_id: Option<(u64, u64)>,
+    len: u64,
+    last_hash: Option<String>,
+    /// The last validated record's bytes, including its newline.
+    last_line: Vec<u8>,
+}
+
+/// Ledgers whose tip this process tracks; a few paths at most (the data-dir
+/// ledger, plus test ledgers), bounded anyway.
+const MAX_VALIDATED_TIPS: usize = 8;
+
+static VALIDATED_TIPS: std::sync::Mutex<Vec<ValidatedTip>> = std::sync::Mutex::new(Vec::new());
+
+fn validated_tips() -> std::sync::MutexGuard<'static, Vec<ValidatedTip>> {
+    VALIDATED_TIPS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn remember_validated_tip(tip: ValidatedTip) {
+    let mut tips = validated_tips();
+    tips.retain(|known| known.path != tip.path);
+    if tips.len() >= MAX_VALIDATED_TIPS {
+        tips.remove(0);
+    }
+    tips.push(tip);
+}
+
+fn forget_validated_tip(path: &std::path::Path) {
+    validated_tips().retain(|known| known.path != path);
+}
+
+#[cfg(unix)]
+fn file_id(file: &File) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    file.metadata().ok().map(|m| (m.dev(), m.ino()))
+}
+
+#[cfg(not(unix))]
+fn file_id(_file: &File) -> Option<(u64, u64)> {
+    None
+}
+
+/// The chain tip found by a scan: the last record's hash, the scanned length,
+/// and whether the file ends with a newline.
+struct ScannedTip {
+    last_hash: Option<String>,
+    len: u64,
+    terminated: bool,
+}
+
+#[cfg(test)]
+thread_local! {
+    static RECORDS_PARSED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+impl FileUnifiedLedger {
+    /// The chain tip of the locked ledger `file`, parsing only what this
+    /// process has not validated yet. Fails on any malformed record parsed.
+    fn validated_tip(&self, file: &File) -> OclaResult<ScannedTip> {
+        let len = file.metadata().map_err(Self::io_error)?.len();
+        let known = validated_tips()
+            .iter()
+            .find(|known| known.path == self.path)
+            .cloned();
+        if let Some(known) = known
+            && known.file_id == file_id(file)
+            && known.len <= len
+            && Self::tail_matches(file, &known)?
+        {
+            return Self::scan_from(file, known.len, known.last_hash, true);
+        }
+        forget_validated_tip(&self.path);
+        Self::scan_from(file, 0, None, true)
+    }
+
+    fn tail_matches(mut file: &File, known: &ValidatedTip) -> OclaResult<bool> {
+        let Some(start) = known.len.checked_sub(known.last_line.len() as u64) else {
+            return Ok(false);
+        };
+        let mut tail = vec![0u8; known.last_line.len()];
+        file.seek(SeekFrom::Start(start)).map_err(Self::io_error)?;
+        match std::io::Read::read_exact(&mut file, &mut tail) {
+            Ok(()) => Ok(tail == known.last_line),
+            Err(error) if error.kind() == ErrorKind::UnexpectedEof => Ok(false),
+            Err(error) => Err(Self::io_error(error)),
+        }
+    }
+
+    /// Parse every record from byte `start` to the end of `file`.
+    fn scan_from(
+        mut file: &File,
+        start: u64,
+        mut last_hash: Option<String>,
+        mut terminated: bool,
+    ) -> OclaResult<ScannedTip> {
+        file.seek(SeekFrom::Start(start)).map_err(Self::io_error)?;
+        let mut reader = BufReader::new(&mut file);
+        let mut len = start;
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            let read = reader
+                .read_until(b'\n', &mut line)
+                .map_err(Self::io_error)?;
+            if read == 0 {
+                break;
+            }
+            len += read as u64;
+            terminated = line.ends_with(b"\n");
+            let mut record = line.as_slice();
+            record = record.strip_suffix(b"\n").unwrap_or(record);
+            record = record.strip_suffix(b"\r").unwrap_or(record);
+            let previous: UnifiedSavingsEventV2 =
+                serde_json::from_slice(record).map_err(Self::io_error)?;
+            #[cfg(test)]
+            RECORDS_PARSED.with(|parsed| parsed.set(parsed.get() + 1));
+            last_hash = Some(previous.event_hash);
+        }
+        Ok(ScannedTip {
+            last_hash,
+            len,
+            terminated,
+        })
+    }
+}
+
 impl UnifiedLedger for FileUnifiedLedger {
     fn record_unified(&self, event: UnifiedSavingsEventV2) -> OclaResult<String> {
         if let Some(parent) = self.path.parent() {
@@ -258,32 +399,34 @@ impl UnifiedLedger for FileUnifiedLedger {
             .map_err(Self::io_error)?;
         file.lock_exclusive().map_err(Self::io_error)?;
         let result = (|| {
-            file.seek(SeekFrom::Start(0)).map_err(Self::io_error)?;
-            let mut last_hash = None;
-            for line in BufReader::new(&file).lines() {
-                let line = line.map_err(Self::io_error)?;
-                let previous: UnifiedSavingsEventV2 =
-                    serde_json::from_str(&line).map_err(Self::io_error)?;
-                last_hash = Some(previous.event_hash);
-            }
-            if event.prev_hash != last_hash.as_deref().unwrap_or("genesis") {
+            let tip = self.validated_tip(&file)?;
+            let last_hash = tip.last_hash.as_deref().unwrap_or("genesis");
+            let mut record = event;
+            if record.prev_hash != last_hash {
                 // Self-heal: when the unified ledger is empty or its tip
                 // diverged from the savings chain (file deleted, reset, or
                 // concurrent truncation), re-anchor the incoming event as a
                 // new genesis rather than permanently rejecting all future
                 // writes. The per-session ledger remains the source of truth;
                 // the unified ledger is a best-effort mirror for OCLA.
-                let mut healed = event.clone();
-                healed.prev_hash = last_hash.as_deref().unwrap_or("genesis").to_string();
-                let line = serde_json::to_string(&healed).map_err(Self::io_error)?;
-                file.seek(SeekFrom::End(0)).map_err(Self::io_error)?;
-                writeln!(file, "{line}").map_err(Self::io_error)?;
-                return Ok(healed.event_hash.clone());
+                record.prev_hash = last_hash.to_string();
             }
-            let line = serde_json::to_string(&event).map_err(Self::io_error)?;
+            let mut line = serde_json::to_vec(&record).map_err(Self::io_error)?;
+            line.push(b'\n');
+            // A last record without its newline still counts (it parsed);
+            // terminate it so the new record starts on its own line.
+            let separator: &[u8] = if tip.terminated { b"" } else { b"\n" };
             file.seek(SeekFrom::End(0)).map_err(Self::io_error)?;
-            writeln!(file, "{line}").map_err(Self::io_error)?;
-            Ok(event.event_hash.clone())
+            file.write_all(&[separator, &line].concat())
+                .map_err(Self::io_error)?;
+            remember_validated_tip(ValidatedTip {
+                path: self.path.clone(),
+                file_id: file_id(&file),
+                len: tip.len + (separator.len() + line.len()) as u64,
+                last_hash: Some(record.event_hash.clone()),
+                last_line: line,
+            });
+            Ok(record.event_hash)
         })();
         let _ = file.unlock();
         result
@@ -525,6 +668,116 @@ mod tests {
             60
         );
         let _ = fs::remove_file(path);
+    }
+
+    fn chained(event_hash: &str, prev_hash: &str) -> UnifiedSavingsEventV2 {
+        UnifiedSavingsEventV2 {
+            tool_name: "ctx_read".into(),
+            mode: "compression".into(),
+            original_tokens: 100,
+            compressed_tokens: 40,
+            saved_tokens: 60,
+            content_hash: "repo".into(),
+            timestamp_epoch_ms: 1,
+            prev_hash: prev_hash.into(),
+            event_hash: event_hash.into(),
+            intent: None,
+            outcome: None,
+            routing_decision: None,
+            agent_id: None,
+            efficiency_etpao: None,
+            attribution_id: event_hash.into(),
+            trace_id: None,
+            request_id: None,
+            session_id: None,
+            quality_ref: None,
+        }
+    }
+
+    fn records_parsed_by(record: impl FnOnce()) -> u64 {
+        let before = RECORDS_PARSED.with(std::cell::Cell::get);
+        record();
+        RECORDS_PARSED.with(std::cell::Cell::get) - before
+    }
+
+    fn append_raw(path: &std::path::Path, bytes: &[u8]) {
+        let mut file = OpenOptions::new().append(true).open(path).unwrap();
+        file.write_all(bytes).unwrap();
+    }
+
+    /// #2196: appending parses only the records this process has not
+    /// validated yet, instead of the whole ledger on every tool call, while
+    /// records other writers append — and malformed ones among them — are
+    /// still parsed, and a replaced or shrunk file is scanned in full again.
+    #[test]
+    fn append_parses_only_records_past_the_validated_tip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unified_ledger.jsonl");
+        let ledger = FileUnifiedLedger::new(path.clone());
+
+        let mut prev = "genesis".to_string();
+        for index in 0..50 {
+            let hash = format!("event-{index}");
+            ledger.record_unified(chained(&hash, &prev)).unwrap();
+            prev = hash;
+        }
+        // Every append after the first scan parses nothing old.
+        let parsed = records_parsed_by(|| {
+            ledger.record_unified(chained("event-50", &prev)).unwrap();
+        });
+        assert_eq!(parsed, 0, "the validated prefix was parsed again");
+
+        // Another process appends a record: it is parsed and chained onto.
+        let mut foreign = serde_json::to_vec(&chained("foreign", "event-50")).unwrap();
+        foreign.push(b'\n');
+        append_raw(&path, &foreign);
+        let parsed = records_parsed_by(|| {
+            assert_eq!(
+                ledger
+                    .record_unified(chained("event-51", "foreign"))
+                    .unwrap(),
+                "event-51"
+            );
+        });
+        assert_eq!(parsed, 1);
+        assert!(ledger.verify_chain().unwrap());
+
+        // A malformed record past the tip is still refused.
+        append_raw(&path, b"{not json\n");
+        assert!(
+            ledger
+                .record_unified(chained("event-52", "event-51"))
+                .is_err()
+        );
+
+        // A replaced, shorter file is scanned in full and re-anchored onto.
+        let replacement = path.with_extension("new");
+        let mut first = serde_json::to_vec(&chained("fresh", "genesis")).unwrap();
+        first.push(b'\n');
+        fs::write(&replacement, &first).unwrap();
+        fs::rename(&replacement, &path).unwrap();
+        let parsed = records_parsed_by(|| {
+            ledger.record_unified(chained("after", "event-51")).unwrap();
+        });
+        assert_eq!(parsed, 1);
+        let events = ledger.read_events().unwrap();
+        assert_eq!(events.last().unwrap().prev_hash, "fresh");
+        assert!(ledger.verify_chain().unwrap());
+    }
+
+    #[test]
+    fn a_malformed_earlier_record_is_refused_on_the_first_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unified_ledger.jsonl");
+        let mut good = serde_json::to_vec(&chained("event-0", "genesis")).unwrap();
+        good.push(b'\n');
+        fs::write(&path, [b"{broken\n".as_slice(), &good].concat()).unwrap();
+        let ledger = FileUnifiedLedger::new(path);
+        assert!(
+            ledger
+                .record_unified(chained("event-1", "event-0"))
+                .is_err()
+        );
     }
 
     fn legacy_event(saved_tokens: u64) -> SavingsEvent {

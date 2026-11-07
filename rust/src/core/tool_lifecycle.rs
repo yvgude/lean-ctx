@@ -419,6 +419,8 @@ pub fn flush_all() {
 pub fn flush_all_at_exit() {
     crate::core::bounce_tracker::flush_pending();
     flush_all();
+    // Observations a serving process handed to the detached writer (#2196).
+    crate::core::events::flush_detached_observations(std::time::Duration::from_secs(5));
 }
 
 /// The caller's own session id, if this runs inside an agent's request.

@@ -441,6 +441,9 @@ pub mod read_stub_index;
 pub mod recovery;
 pub mod redaction;
 pub mod reference_docs;
+/// Request ledger of a serving process: counters, oldest pending request and
+/// last completions for doctor and health (#2197).
+pub mod request_ledger;
 pub mod response_optimizer;
 pub mod roles;
 pub mod root_selection;

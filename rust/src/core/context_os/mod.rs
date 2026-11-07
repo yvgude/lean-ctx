@@ -6,6 +6,7 @@ pub use shared_sessions::{SharedSessionKey, SharedSessionStore};
 
 mod context_bus;
 pub mod observation;
+pub(crate) use context_bus::AdmittedLegacyObservation;
 pub use context_bus::{
     ConsistencyLevel, ContextBus, ContextEventKindV1, ContextEventV1, FilteredSubscription,
     TopicFilter,

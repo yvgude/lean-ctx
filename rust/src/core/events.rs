@@ -398,37 +398,238 @@ fn append_jsonl_at(path: &std::path::Path, event: &LeanCtxEvent) -> std::io::Res
 ///
 /// This compatibility adapter deliberately never appends to `events.jsonl`;
 /// that journal remains an immutable historical read source.
+///
+/// In a serving process (after [`enable_detached_observations`]) the write is
+/// handed to a dedicated writer thread: a tool handler never waits on the
+/// observation lock or SQLite (#2196), and when the bounded queue is full the
+/// observation is dropped and counted instead of blocking dispatch. Storage
+/// admission still runs here, on the producer's thread and policy view.
 pub fn emit_compatibility(kind: EventKind) -> u64 {
-    match try_emit(kind) {
+    let result = if DETACHED_ENABLED.load(Ordering::Acquire) {
+        emit_detached(kind)
+    } else {
+        try_emit(kind)
+    };
+    match result {
         Ok(id) => id,
         Err(error) => {
-            tracing::warn!("canonical legacy observation persistence failed: {error}");
+            log_persistence_failure(&error);
             0
         }
     }
 }
 
 /// [`emit_compatibility`] that reports why persistence failed instead of
-/// collapsing the failure into id `0`.
+/// collapsing the failure into id `0`. Always synchronous.
 pub(crate) fn try_emit(
     kind: EventKind,
 ) -> Result<u64, crate::core::context_os::ObservationPersistenceError> {
-    let id = next_event_id();
+    persist_admitted(&admit(kind)?)
+}
+
+fn admit(
+    kind: EventKind,
+) -> Result<
+    crate::core::context_os::AdmittedLegacyObservation,
+    crate::core::context_os::ObservationPersistenceError,
+> {
     let event = LeanCtxEvent {
-        id,
+        id: next_event_id(),
         timestamp: chrono::Local::now()
             .format("%Y-%m-%dT%H:%M:%S%.3f")
             .to_string(),
         kind,
     };
+    crate::core::context_os::ContextBus::admit_legacy_observation(&event)
+}
+
+fn persist_admitted(
+    admitted: &crate::core::context_os::AdmittedLegacyObservation,
+) -> Result<u64, crate::core::context_os::ObservationPersistenceError> {
     crate::core::context_os::try_runtime().and_then(|runtime| {
-        runtime.bus.append_legacy_observation(
+        runtime.bus.append_admitted_legacy_observation(
             crate::core::context_os::observation::producer_instance(),
-            &event,
+            admitted,
         )
     })?;
-    bus().record(event);
-    Ok(id)
+    bus().record(admitted.event.clone());
+    Ok(admitted.event.id)
+}
+
+/// A withheld observation is the gateway working as configured, not a fault:
+/// at warn level it flooded the worker log (765 lines in 5 minutes, #2196).
+fn log_persistence_failure(error: &crate::core::context_os::ObservationPersistenceError) {
+    if matches!(
+        error,
+        crate::core::context_os::ObservationPersistenceError::Withheld
+    ) {
+        tracing::debug!("canonical legacy observation persistence skipped: {error}");
+    } else {
+        tracing::warn!("canonical legacy observation persistence failed: {error}");
+    }
+}
+
+// --- Detached persistence for serving processes (#2196) ---
+
+/// Observations a serving process may have waiting for the writer thread.
+const DETACHED_QUEUE_CAPACITY: usize = 4_096;
+
+static DETACHED_ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static DETACHED_QUEUED: AtomicU64 = AtomicU64::new(0);
+static DETACHED_PERSISTED: AtomicU64 = AtomicU64::new(0);
+static DETACHED_FAILED: AtomicU64 = AtomicU64::new(0);
+static DETACHED_DROPPED: AtomicU64 = AtomicU64::new(0);
+
+enum DetachedMessage {
+    Persist(crate::core::context_os::AdmittedLegacyObservation),
+    Flush(std::sync::mpsc::SyncSender<()>),
+}
+
+/// Counters of the detached observation writer, for doctor and health.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DetachedObservationStats {
+    pub enabled: bool,
+    pub queued: u64,
+    pub persisted: u64,
+    pub failed: u64,
+    pub dropped: u64,
+}
+
+pub fn detached_observation_stats() -> DetachedObservationStats {
+    DetachedObservationStats {
+        enabled: DETACHED_ENABLED.load(Ordering::Acquire),
+        queued: DETACHED_QUEUED.load(Ordering::Relaxed),
+        persisted: DETACHED_PERSISTED.load(Ordering::Relaxed),
+        failed: DETACHED_FAILED.load(Ordering::Relaxed),
+        dropped: DETACHED_DROPPED.load(Ordering::Relaxed),
+    }
+}
+
+/// Route [`emit_compatibility`] through the detached writer for the rest of
+/// this process. Called once by a serving process before it accepts requests;
+/// one-shot CLI commands keep synchronous persistence.
+pub fn enable_detached_observations() {
+    if detached_sender().is_some() {
+        DETACHED_ENABLED.store(true, Ordering::Release);
+    }
+}
+
+fn detached_sender() -> Option<&'static std::sync::mpsc::SyncSender<DetachedMessage>> {
+    static SENDER: OnceLock<Option<std::sync::mpsc::SyncSender<DetachedMessage>>> = OnceLock::new();
+    SENDER
+        .get_or_init(|| {
+            let (sender, receiver) =
+                std::sync::mpsc::sync_channel::<DetachedMessage>(DETACHED_QUEUE_CAPACITY);
+            std::thread::Builder::new()
+                .name("lean-ctx-observations".to_string())
+                .spawn(move || run_detached_writer(&receiver))
+                .map_err(|error| {
+                    tracing::warn!("detached observation writer unavailable: {error}");
+                })
+                .ok()
+                .map(|_| sender)
+        })
+        .as_ref()
+}
+
+fn run_detached_writer(receiver: &std::sync::mpsc::Receiver<DetachedMessage>) {
+    while let Ok(message) = receiver.recv() {
+        match message {
+            DetachedMessage::Persist(admitted) => match persist_with_retry(&admitted) {
+                Ok(_) => {
+                    DETACHED_PERSISTED.fetch_add(1, Ordering::Relaxed);
+                }
+                Err(error) => {
+                    DETACHED_FAILED.fetch_add(1, Ordering::Relaxed);
+                    log_persistence_failure(&error);
+                }
+            },
+            DetachedMessage::Flush(done) => {
+                let _ = done.send(());
+            }
+        }
+    }
+}
+
+/// The writer thread may wait where a request may not: a lock timeout there
+/// (another process holding the store) is retried a few times before the
+/// observation is counted as failed.
+fn persist_with_retry(
+    admitted: &crate::core::context_os::AdmittedLegacyObservation,
+) -> Result<u64, crate::core::context_os::ObservationPersistenceError> {
+    const ATTEMPTS: u32 = 3;
+    let mut attempt = 1;
+    loop {
+        match persist_admitted(admitted) {
+            Err(crate::core::context_os::ObservationPersistenceError::LockTimeout)
+                if attempt < ATTEMPTS =>
+            {
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+fn emit_detached(
+    kind: EventKind,
+) -> Result<u64, crate::core::context_os::ObservationPersistenceError> {
+    let admitted = admit(kind)?;
+    let id = admitted.event.id;
+    let Some(sender) = detached_sender() else {
+        return persist_admitted(&admitted);
+    };
+    match sender.try_send(DetachedMessage::Persist(admitted)) {
+        Ok(()) => {
+            DETACHED_QUEUED.fetch_add(1, Ordering::Relaxed);
+            Ok(id)
+        }
+        Err(std::sync::mpsc::TrySendError::Full(_)) => {
+            // Dropping one observation is the price of never stalling a
+            // request on a saturated store; the counter keeps it visible.
+            let dropped = DETACHED_DROPPED.fetch_add(1, Ordering::Relaxed) + 1;
+            if dropped.is_power_of_two() {
+                tracing::warn!(
+                    "observation writer saturated; {dropped} observations dropped so far"
+                );
+            }
+            Ok(0)
+        }
+        Err(std::sync::mpsc::TrySendError::Disconnected(DetachedMessage::Persist(admitted))) => {
+            persist_admitted(&admitted)
+        }
+        Err(std::sync::mpsc::TrySendError::Disconnected(DetachedMessage::Flush(_))) => Ok(0),
+    }
+}
+
+/// Wait until every observation queued before this call is persisted, or
+/// `timeout` passes. Returns whether the queue drained. Used at shutdown so a
+/// serving process does not lose its last observations.
+pub fn flush_detached_observations(timeout: std::time::Duration) -> bool {
+    if !DETACHED_ENABLED.load(Ordering::Acquire) {
+        return true;
+    }
+    let Some(sender) = detached_sender() else {
+        return true;
+    };
+    let deadline = std::time::Instant::now() + timeout;
+    let (done, drained) = std::sync::mpsc::sync_channel(1);
+    let mut message = DetachedMessage::Flush(done);
+    loop {
+        match sender.try_send(message) {
+            Ok(()) => break,
+            Err(std::sync::mpsc::TrySendError::Full(returned)) => {
+                if std::time::Instant::now() >= deadline {
+                    return false;
+                }
+                message = returned;
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => return true,
+        }
+    }
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    drained.recv_timeout(remaining).is_ok()
 }
 
 /// Backward-compatible spelling for the explicit legacy compatibility adapter.
@@ -707,6 +908,63 @@ mod tests {
         assert!(id > 0);
         let events = latest_events(100);
         assert!(events.iter().any(|e| e.id == id));
+    }
+
+    /// #2196: a tool handler emitting an observation must not wait on the
+    /// observation writer. With the writer held (a long transaction or a
+    /// contended store), the synchronous path blocks for the full lock bound
+    /// and fails; a serving process returns at once and persists the
+    /// observation after the writer is released.
+    #[test]
+    fn serving_emit_does_not_wait_for_a_held_observation_lock() {
+        if crate::test_env::run_in_own_process(
+            "core::events::tests::serving_emit_does_not_wait_for_a_held_observation_lock",
+            &[],
+        ) {
+            return;
+        }
+        let kind = || EventKind::ToolCall {
+            tool: "ctx_read".to_string(),
+            tokens_original: 10,
+            tokens_saved: 5,
+            mode: Some("full".to_string()),
+            duration_ms: 1,
+            path: None,
+        };
+        let runtime = crate::core::context_os::try_runtime().expect("runtime");
+        let writer = runtime.bus.hold_observation_writer();
+
+        // The pre-#2196 dispatch path: the caller sleeps out the lock bound.
+        let started = std::time::Instant::now();
+        let blocked = try_emit(kind());
+        let synchronous_wait = started.elapsed();
+        assert!(
+            matches!(
+                blocked,
+                Err(crate::core::context_os::ObservationPersistenceError::LockTimeout)
+            ),
+            "synchronous emit with the writer held: {blocked:?}"
+        );
+        assert!(synchronous_wait >= std::time::Duration::from_secs(4));
+
+        enable_detached_observations();
+        let started = std::time::Instant::now();
+        let id = emit_compatibility(kind());
+        let detached_wait = started.elapsed();
+        assert!(id > 0, "the observation was admitted and queued");
+        assert!(
+            detached_wait < std::time::Duration::from_secs(1),
+            "dispatch waited {detached_wait:?} on a held observation lock"
+        );
+        assert!(!latest_events(1_000).iter().any(|e| e.id == id));
+
+        drop(writer);
+        assert!(flush_detached_observations(std::time::Duration::from_secs(
+            30
+        )));
+        assert!(latest_events(1_000).iter().any(|e| e.id == id));
+        let stats = detached_observation_stats();
+        assert_eq!((stats.queued, stats.persisted, stats.dropped), (1, 1, 0));
     }
 
     /// Project an event into the in-memory ring only. The filter tests are

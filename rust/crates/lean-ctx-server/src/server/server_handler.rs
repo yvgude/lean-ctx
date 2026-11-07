@@ -85,6 +85,9 @@ impl ServerHandler for LeanCtxServer {
         request: InitializeRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, ErrorData> {
+        // #2197: kept apart from tool completions in the request ledger.
+        let ledger_entry = lean_ctx::core::request_ledger::begin("initialize");
+        ledger_entry.stage(lean_ctx::core::request_ledger::Stage::Handler);
         let name = request.client_info.name.clone();
         tracing::info!("MCP client connected: {:?}", name);
         *self.client_name.write().await = name.clone();
@@ -401,16 +404,18 @@ impl ServerHandler for LeanCtxServer {
         // The initialize `instructions` field is that same steering block
         // delivered over a different channel, so the central policy predicate
         // must govern this surface too.
-        if suppress_initialize_instructions(client_caps.client_id.as_str()) {
-            Ok(result)
+        let result = if suppress_initialize_instructions(client_caps.client_id.as_str()) {
+            result
         } else {
             let instructions = lean_ctx::instructions::build_instructions_with_client_and_session(
                 CrpMode::effective(),
                 &name,
                 &session,
             );
-            Ok(result.with_instructions(instructions))
-        }
+            result.with_instructions(instructions)
+        };
+        ledger_entry.finish(lean_ctx::core::request_ledger::Outcome::Completed);
+        Ok(result)
     }
 
     async fn list_tools(
@@ -739,6 +744,10 @@ impl ServerHandler for LeanCtxServer {
         // In flight until this call returns — the idle policy never releases
         // or exits under a running call.
         let _activity = crate::server::mcp_idle::begin_call();
+        // #2197: admitted until exactly one outcome is recorded; a future the
+        // client cancels drops this guard and counts as abandoned.
+        let ledger_entry =
+            lean_ctx::core::request_ledger::begin(&format!("tools/call:{}", request.name.as_ref()));
         restore_tool_meta(&mut request, &context.meta);
 
         let progress_token = request
@@ -771,6 +780,7 @@ impl ServerHandler for LeanCtxServer {
         // delivery so the proxy can tell which call these bytes answered.
         let host_call_id = crate::server::call_identity::host_call_id(request.meta.as_ref());
 
+        ledger_entry.stage(lean_ctx::core::request_ledger::Stage::Handler);
         // #1781: scope the request's cancellation token for the whole dispatch
         // so a tool that waits on a child process can observe an abandoned call
         // instead of holding its blocking-pool slot until its own soft cap.
@@ -788,6 +798,7 @@ impl ServerHandler for LeanCtxServer {
             // boundary inside a string, a parse error): the log line names
             // the event only (AP10-R4).
             tracing::error!("call_tool panicked (tool_panic)");
+            ledger_entry.stage(lean_ctx::core::request_ledger::Stage::Finalizing);
 
             if let Ok(mut detector) =
                 tokio::time::timeout(std::time::Duration::from_secs(1), loop_detector.write()).await
@@ -795,23 +806,32 @@ impl ServerHandler for LeanCtxServer {
                 detector.record_error_outcome(&tool_name_for_panic, &args_fp_for_panic);
             }
 
+            ledger_entry.finish(lean_ctx::core::request_ledger::Outcome::Errored);
             return Ok(CallToolResult::error(vec![ContentBlock::text(
                 "ERROR: lean-ctx internal error. The MCP server is still running. \
                  Please retry or use a different approach."
                     .to_string(),
             )]));
         };
+        ledger_entry.stage(lean_ctx::core::request_ledger::Stage::Finalizing);
         // #1265: If the client cancelled this request while the tool was
         // executing, drop the result instead of replying to a stale ID.
         if ct.is_cancelled() {
             tracing::warn!(
                 "tool '{tool_name_for_panic}' completed after client cancellation — dropping result"
             );
+            ledger_entry.finish(lean_ctx::core::request_ledger::Outcome::Abandoned);
             return Err(ErrorData::internal_error(
                 "request was cancelled by client",
                 None,
             ));
         }
+        ledger_entry.finish(match &result {
+            Ok(done) if done.is_error != Some(true) => {
+                lean_ctx::core::request_ledger::Outcome::Completed
+            }
+            _ => lean_ctx::core::request_ledger::Outcome::Errored,
+        });
         result
     }
 
