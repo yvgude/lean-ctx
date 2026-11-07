@@ -243,7 +243,22 @@ pub(super) fn prepare_binary(
         command.env("XDG_RUNTIME_DIR", format!("/run/user/{uid}"));
     }
     #[cfg(windows)]
-    command.env("TEMP", &directory).env("TMP", &directory);
+    {
+        use std::os::windows::process::CommandExt as _;
+        // Winsock resolves its service providers under %SystemRoot%: with a
+        // cleared environment a runtime cannot open any socket (WSAStartup
+        // fails with WSAEPROVIDERFAILEDINIT), so the Cockpit never binds its
+        // loopback port (#2203). The value comes from the OS, not from the
+        // caller's environment.
+        command
+            .env("TEMP", &directory)
+            .env("TMP", &directory)
+            .env("SystemRoot", windows_directory()?);
+        // The runtimes are console programs. Started from a process without a
+        // console (the detached Cockpit server), each start would otherwise
+        // open, and on exit close, a console window of its own (#2203).
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
     Ok((
         Prepared {
             workspace: temporary,
@@ -252,6 +267,25 @@ pub(super) fn prepare_binary(
         },
         command,
     ))
+}
+
+/// `CreateProcessW` flag: the child gets no console window.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+/// The Windows directory as the OS reports it (the value of `%SystemRoot%`).
+#[cfg(windows)]
+fn windows_directory() -> std::io::Result<std::ffi::OsString> {
+    use std::os::windows::ffi::OsStringExt as _;
+    use windows_sys::Win32::System::SystemInformation::GetSystemWindowsDirectoryW;
+    let mut buffer = vec![0_u16; 32_768];
+    // SAFETY: buffer is writable for the exact advertised WCHAR capacity.
+    let length =
+        unsafe { GetSystemWindowsDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
+    if length == 0 || length >= buffer.len() {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(std::ffi::OsString::from_wide(&buffer[..length]))
 }
 
 /// Exact supported descriptions only; unknown capability sets never execute.
@@ -493,6 +527,36 @@ pub(super) fn supports_protection(package: &VerifiedPackage) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #2203: a runtime started with a cleared environment and no
+    /// `SystemRoot` cannot open a socket on Windows, so the Cockpit never
+    /// named its port. The OS value is set, nothing else is inherited.
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_runtime_gets_the_system_root_and_nothing_inherited() {
+        let root = tempfile::tempdir().unwrap();
+        let (prepared, command) =
+            prepare_binary(b"not executed", root.path(), "leanctx-cockpit.exe").unwrap();
+        let envs: std::collections::BTreeMap<String, Option<String>> = command
+            .get_envs()
+            .map(|(name, value)| {
+                (
+                    name.to_string_lossy().to_ascii_uppercase(),
+                    value.map(|value| value.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        let system_root = windows_directory().unwrap().to_string_lossy().into_owned();
+        assert_eq!(
+            envs.get("SYSTEMROOT"),
+            Some(&Some(system_root.clone())),
+            "{envs:?}"
+        );
+        assert!(std::path::Path::new(&system_root).join("System32").is_dir());
+        let names: Vec<&str> = envs.keys().map(String::as_str).collect();
+        assert_eq!(names, ["HOME", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR"]);
+        prepared.close().unwrap();
+    }
 
     fn described(capabilities: &serde_json::Value) -> VerifiedPackage {
         VerifiedPackage {

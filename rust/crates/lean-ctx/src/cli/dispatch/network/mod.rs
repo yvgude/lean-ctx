@@ -426,7 +426,7 @@ pub(crate) fn cmd_cockpit(rest: &[String], view: Option<&str>) {
             }
             cockpit_start::Outcome::Unavailable(reason) => {
                 eprintln!("{}", cockpit_start::unavailable_line(reason));
-                eprintln!("\x1b[2mIn the terminal: lean-ctx gain --terminal\x1b[0m");
+                eprintln!("\x1b[2m{}\x1b[0m", cockpit_start::TERMINAL_HINT);
                 std::process::exit(1);
             }
             cockpit_start::Outcome::Failed(message) => {
