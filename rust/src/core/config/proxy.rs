@@ -72,8 +72,10 @@ pub struct ProxyConfig {
     /// keeps today's behaviour: the proxy compresses non-protected `tool_result`
     /// content on every request. `false` turns it off so the proxy can run
     /// **meter-only** — real billed/cache token metering with zero request
-    /// rewriting (combine with `history_mode = "off"` and no `role_aggressiveness`
-    /// for a fully byte-unchanged body). Env `LEAN_CTX_PROXY_LIVE_COMPRESS`.
+    /// rewriting (combine with `history_mode = "off"`, `long_session_elide =
+    /// false` — env `LEAN_CTX_PROXY_LONG_SESSION_ELIDE=off`, the default — and
+    /// no `role_aggressiveness` for a fully byte-unchanged body).
+    /// Env `LEAN_CTX_PROXY_LIVE_COMPRESS`.
     /// See [`ProxyConfig::live_compresses`].
     pub live_compress: Option<bool>,
     /// Per-tool exclusion list for live tool-result compression (#481). Tool
