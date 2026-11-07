@@ -38,6 +38,18 @@ fn pause_marker() -> std::path::PathBuf {
     super::loader::config_migration_pause_marker(&path).expect("isolated state dir")
 }
 
+/// Asserts that the last migration was persisted; a refusal names its pause
+/// state instead of failing on a bare `!marker.exists()` (#2184).
+fn assert_migration_persisted(path: &std::path::Path) {
+    if let Some(pause) = super::config_migration_pause_status(path) {
+        panic!(
+            "the migration was refused ({}): {}",
+            pause.label,
+            pause.message()
+        );
+    }
+}
+
 /// The exact 3.11.0 → 3.12 sequence from the issue: 3.11.0 migrated a legacy
 /// contributor and left its journal; 3.12 retires the `[cloud]` table that
 /// migration wrote and was refused on every command.
@@ -112,6 +124,7 @@ fn refused_persist_keeps_the_saved_opt_out_and_reports_once() {
     std::fs::remove_file(&backup).unwrap();
     std::fs::remove_file(&receipt).unwrap();
     let cfg = load_and_migrate(raw);
+    assert_migration_persisted(&path);
     assert!(cfg.telemetry.enabled, "the persisted reset applies");
     assert!(!crate::core::telemetry_consent::legacy_opt_out_reset_pending());
     assert!(!pause_marker().exists());
@@ -235,6 +248,7 @@ fn pause_marker_is_keyed_by_config_path() {
 
     // The real config migrates; only its marker goes.
     load_and_migrate("terse_agent = \"full\"\n");
+    assert_migration_persisted(&path);
     assert!(!marker.exists());
     assert!(other_marker.exists());
     assert!(super::config_migration_pause_status(&path).is_none());

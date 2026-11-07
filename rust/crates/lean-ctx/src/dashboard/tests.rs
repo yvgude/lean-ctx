@@ -1177,10 +1177,8 @@ async fn ledger_figures_follow_the_requested_project() {
 #[test]
 fn map_routes_answer_building_without_waiting_for_an_index() {
     let _data = lean_ctx::core::data_dir::isolated_data_dir();
-    let project = tempdir().expect("project");
-    std::fs::create_dir_all(project.path().join(".git")).unwrap();
-    std::fs::write(project.path().join("main.rs"), "fn main() {}\n").unwrap();
-    let root = project.path().to_string_lossy().into_owned();
+    // The builds started below outlive their answers; keep their trees.
+    let mut projects = Vec::new();
     for route in [
         "/api/graph",
         "/api/graph-files",
@@ -1191,6 +1189,15 @@ fn map_routes_answer_building_without_waiting_for_an_index() {
         "/api/symbols",
         "/api/call-graph",
     ] {
+        // Each route gets a project nobody has indexed yet: the first answer
+        // starts the shared background build, and on a one-file project that
+        // build can finish before the next route is asked (scheduled CI
+        // 2026-11-07 saw `/api/symbols` answer 200 from it).
+        let project = tempdir().expect("project");
+        std::fs::create_dir_all(project.path().join(".git")).unwrap();
+        std::fs::write(project.path().join("main.rs"), "fn main() {}\n").unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        projects.push(project);
         let started = std::time::Instant::now();
         let (status, _, body) = super::project_binding::in_request_project(Some(&root), || {
             routes::route_response(route, "", None, None, true, "GET", "")
