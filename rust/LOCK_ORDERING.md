@@ -169,6 +169,7 @@ All `std::sync::Mutex` unless noted otherwise.
 | L142 | `RUNNING` | `core/phase_timing.rs:19` | `Mutex<BTreeMap<u64, (&'static str, Instant)>>` | Phase timers still running, one entry per guard, so `current()` names the newest; held only to insert, remove or read one entry; independent leaf lock, never nested |
 | L143 | `LEDGER` | `core/request_ledger.rs:134` | `Mutex<Ledger>` | Request ledger of a serving process (#2197): pending requests by id with method and stage, last tool completion, last initialize; held only to insert, update, remove or copy entries, released before `phase_timing::current()` (L142) or any I/O; independent leaf lock, never nested |
 | L144 | `VALIDATED_TIPS` | `core/ocla/unified_ledger.rs:273` | `Mutex<Vec<ValidatedTip>>` | Per ledger path, the prefix of the unified savings ledger this process already validated (#2196), so an append parses only newer records; taken only while the ledger's OS file lock is held, to copy, replace or drop one entry, never across I/O; independent leaf lock, never nested |
+| L145 | `CACHE` (in `home_allow_dirs`) | `core/pathjail.rs:399` | `OnceLock<Mutex<Option<(PathBuf, Instant, Vec<PathBuf>)>>>` | IDE allow-dirs of one home with a 300 s TTL (#2195); held only to copy the cached list out or store a fresh one, never across the editor-registry probe (filesystem and PATH I/O); independent leaf lock, never nested |
 
 ### CLI cache transaction file lock
 
