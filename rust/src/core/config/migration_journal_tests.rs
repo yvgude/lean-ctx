@@ -73,6 +73,7 @@ fn journal_left_by_3_11_0_no_longer_blocks_the_next_migration() {
         "the legacy 3.11 lock file is left alone (deleting it could split the lock)"
     );
     assert!(cfg.telemetry.enabled, "3.11.0 recorded an explicit opt-in");
+    assert_migration_persisted(&path);
     assert!(!pause_marker().exists(), "nothing was refused");
     assert_eq!(std::fs::read_to_string(&backup).unwrap(), PRE_V4);
 
