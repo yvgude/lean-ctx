@@ -299,9 +299,9 @@ fn validate_judges_files_named_in_values_and_config_files() {
     ] {
         let reason = download_to_file_reason(command);
         assert!(
-            reason
-                .as_deref()
-                .is_some_and(|r| r.contains(lean_ctx::core::shell_allowlist::UNKNOWN_DOWNLOAD_TARGET)),
+            reason.as_deref().is_some_and(
+                |r| r.contains(lean_ctx::core::shell_allowlist::UNKNOWN_DOWNLOAD_TARGET)
+            ),
             "{command}: {reason:?}"
         );
     }
