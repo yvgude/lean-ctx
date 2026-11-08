@@ -212,6 +212,34 @@ impl Scoreboard {
     }
 }
 
+/// A pending request older than this is flagged in doctor's request lines.
+const STUCK_REQUEST_AFTER: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Doctor's request-ledger lines (#2197), one per running server process:
+/// counters, the oldest pending request with its age and stage, and the last
+/// tool completion. Pure; advisory (never scored).
+fn request_ledger_outcomes(
+    snapshots: &[lean_ctx::core::request_ledger::RequestLedgerSnapshot],
+    now_ms: u64,
+) -> Vec<Outcome> {
+    snapshots
+        .iter()
+        .map(|snapshot| {
+            let stuck = snapshot
+                .oldest_pending_age(now_ms)
+                .is_some_and(|age| age >= STUCK_REQUEST_AFTER);
+            let colour = if stuck { YELLOW } else { DIM };
+            Outcome {
+                ok: !stuck,
+                line: format!(
+                    "{BOLD}Requests{RST}  {colour}{}{RST}",
+                    snapshot.render(now_ms)
+                ),
+            }
+        })
+        .collect()
+}
+
 /// Daemon diagnostics that are not checks of their own: the systemd unit
 /// state and linger (Linux) and a crash-looping MCP server. Returned rather
 /// than printed, so the caller decides between text and JSON.
@@ -677,6 +705,15 @@ fn run_inner(json: bool) -> u32 {
         board.note(&note);
     }
 
+    // Request ledgers of running servers (#2197): read from the files their
+    // publisher threads keep, so a saturated worker still answers here.
+    for outcome in request_ledger_outcomes(
+        &lean_ctx::core::request_ledger::published_snapshots(),
+        lean_ctx::core::request_ledger::epoch_ms(),
+    ) {
+        board.info(&outcome);
+    }
+
     // Providers (advisory — presence/health varies per environment, not scored)
     let provider_outcome = provider_outcome();
     board.info(&provider_outcome);
@@ -1109,6 +1146,78 @@ fn config_migration_pause_outcome(config: &std::path::Path) -> Option<Outcome> {
 mod tests {
     use super::is_active_shell_impl;
     use super::{DaemonAutostart, daemon_outcome, unrecorded_services_outcome};
+    use super::{request_ledger_outcomes, strip_ansi};
+
+    /// #2197: doctor names each running server's counters, its oldest
+    /// pending request with age and stage, and its last tool completion, and
+    /// flags a request pending past the stuck threshold.
+    #[test]
+    fn request_ledger_lines_show_counters_oldest_pending_and_last_completion() {
+        use lean_ctx::core::request_ledger::{
+            CompletionRecord, Outcome as RequestOutcome, PendingRequest, RequestLedgerSnapshot,
+            Stage,
+        };
+        let now = 1_000_000_000;
+        let snapshot = RequestLedgerSnapshot {
+            pid: 4242,
+            kind: "http".into(),
+            generation: "gen".into(),
+            started_at_ms: now - 600_000,
+            snapshot_at_ms: now - 1_000,
+            admitted: 40,
+            completed: 36,
+            errored: 1,
+            refused: 2,
+            abandoned: 1,
+            pending: 2,
+            untracked_pending: 0,
+            oldest_pending: Some(PendingRequest {
+                method: "tools/call:ctx_read".into(),
+                stage: Stage::Handler,
+                admitted_at_ms: now - 74_000,
+                age_ms: None,
+            }),
+            last_tool_completion: Some(CompletionRecord {
+                method: "tools/call:ctx_search".into(),
+                outcome: RequestOutcome::Completed,
+                finished_at_ms: now - 3_000,
+                duration_ms: 12,
+                age_ms: None,
+            }),
+            last_initialize: None,
+            current_phase: None,
+            observations: lean_ctx::core::events::DetachedObservationStats::default(),
+        };
+        let lines = request_ledger_outcomes(std::slice::from_ref(&snapshot), now);
+        assert_eq!(lines.len(), 1);
+        let line = strip_ansi(&lines[0].line);
+        assert!(!lines[0].ok, "a 74 s pending request is flagged: {line}");
+        assert!(line.contains("pid 4242 (http), up 10m"), "{line}");
+        assert!(
+            line.contains(
+                "admitted 40 · completed 36 · errored 1 · refused 2 · abandoned 1 · pending 2"
+            ),
+            "{line}"
+        );
+        assert!(
+            line.contains("oldest pending tools/call:ctx_read 74s in handler"),
+            "{line}"
+        );
+        assert!(
+            line.contains("last tool completion 3s ago (completed, 12ms)"),
+            "{line}"
+        );
+        assert!(line.contains("last initialize none yet"), "{line}");
+
+        let idle = RequestLedgerSnapshot {
+            pending: 0,
+            oldest_pending: None,
+            ..snapshot
+        };
+        let lines = request_ledger_outcomes(&[idle], now);
+        assert!(lines[0].ok);
+        assert!(strip_ansi(&lines[0].line).contains("oldest pending none"));
+    }
 
     /// Owner decision 02.11.: services this instance did not record are
     /// listed with PID and the exact stop command; nothing when none run.

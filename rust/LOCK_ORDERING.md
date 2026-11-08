@@ -167,6 +167,8 @@ All `std::sync::Mutex` unless noted otherwise.
 | L140 | `REFRESHING` | `core/bm25_cache.rs:104` | `Mutex<Vec<PathBuf>>` | Roots whose background BM25 reload is running, so a stale entry starts at most one reload per root; held only to check, push or remove a root, never across the reload; independent leaf lock, never nested |
 | L141 | `QUEUE` | `core/hive/background.rs:36` | `Mutex<Option<Queue>>` (with `WAKE: Condvar`) | Hive background request queue (pending lease, renew, release and task calls) and the answers waiting per caller; the worker takes a job and releases the lock before running it, so no Hive request runs under it; independent leaf lock, never nested |
 | L142 | `RUNNING` | `core/phase_timing.rs:19` | `Mutex<BTreeMap<u64, (&'static str, Instant)>>` | Phase timers still running, one entry per guard, so `current()` names the newest; held only to insert, remove or read one entry; independent leaf lock, never nested |
+| L143 | `LEDGER` | `core/request_ledger.rs:134` | `Mutex<Ledger>` | Request ledger of a serving process (#2197): pending requests by id with method and stage, last tool completion, last initialize; held only to insert, update, remove or copy entries, released before `phase_timing::current()` (L142) or any I/O; independent leaf lock, never nested |
+| L144 | `VALIDATED_TIPS` | `core/ocla/unified_ledger.rs:273` | `Mutex<Vec<ValidatedTip>>` | Per ledger path, the prefix of the unified savings ledger this process already validated (#2196), so an append parses only newer records; taken only while the ledger's OS file lock is held, to copy, replace or drop one entry, never across I/O; independent leaf lock, never nested |
 
 ### CLI cache transaction file lock
 

@@ -267,6 +267,14 @@ pub struct ContextBus {
     inner: Arc<Inner>,
 }
 
+/// A legacy event that passed storage admission, with the exact payload it is
+/// stored as. Built by [`ContextBus::admit_legacy_observation`].
+#[derive(Clone, Debug)]
+pub(crate) struct AdmittedLegacyObservation {
+    pub(crate) event: LeanCtxEvent,
+    pub(crate) payload_json: String,
+}
+
 const STREAM_CHANNEL_SIZE: usize = 256;
 const MAX_SUBSCRIBERS_PER_CHANNEL: usize = 64;
 /// Bound the write-side version cache. Each entry is re-derivable from the DB via
@@ -539,16 +547,51 @@ impl ContextBus {
         producer_instance: &str,
         event: &LeanCtxEvent,
     ) -> Result<i64, ObservationPersistenceError> {
+        let payload = Self::admit_legacy_observation(event)?;
+        self.append_admitted_legacy_observation(producer_instance, &payload)
+    }
+
+    /// The storage admission half of [`Self::append_legacy_observation`]: the
+    /// payload a legacy event is stored as, once admission keeps it verbatim.
+    /// Runs on the producer's thread, under the producer's policy view, so a
+    /// detached writer (`events::emit_compatibility` in a serving process)
+    /// persists exactly what the producer admitted.
+    pub(crate) fn admit_legacy_observation(
+        event: &LeanCtxEvent,
+    ) -> Result<AdmittedLegacyObservation, ObservationPersistenceError> {
         let payload_json = serde_json::to_string(event)?;
         let _: LeanCtxEvent = serde_json::from_str(&payload_json)?;
         super::observation::admit_payload(&payload_json)?;
+        Ok(AdmittedLegacyObservation {
+            event: event.clone(),
+            payload_json,
+        })
+    }
+
+    /// The write half of [`Self::append_legacy_observation`] for a payload
+    /// [`Self::admit_legacy_observation`] already admitted.
+    pub(crate) fn append_admitted_legacy_observation(
+        &self,
+        producer_instance: &str,
+        admitted: &AdmittedLegacyObservation,
+    ) -> Result<i64, ObservationPersistenceError> {
         self.insert_local_observation(
             LocalObservationSource::Legacy,
             producer_instance,
-            event.id,
-            &event.timestamp,
-            &payload_json,
+            admitted.event.id,
+            &admitted.event.timestamp,
+            &admitted.payload_json,
         )
+    }
+
+    /// Holds the observation writer as a long transaction would, so a test can
+    /// show that a producer does not wait for it.
+    #[cfg(test)]
+    pub(crate) fn hold_observation_writer(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.inner
+            .write_conn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn insert_local_observation(
