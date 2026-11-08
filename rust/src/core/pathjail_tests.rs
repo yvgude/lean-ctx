@@ -1065,97 +1065,176 @@ fn cursor_agent_output_opens_only_for_the_own_workspace() {
     assert!(is_read_only_path(&app_log), "writes stay denied");
 }
 
+/// Holds `test_env_lock` and an empty home-allow-dirs cache for one test, and
+/// empties the cache again on drop (also when the test panics), so no test
+/// inherits another's entry or refresh claim.
+struct FreshHomeAllowDirsCache {
+    _env: crate::core::data_dir::TestEnvGuard,
+}
+
+impl FreshHomeAllowDirsCache {
+    fn new() -> Self {
+        let env = crate::core::data_dir::test_env_lock();
+        *lock_home_allow_dirs() = HomeAllowDirsCache::default();
+        Self { _env: env }
+    }
+}
+
+impl Drop for FreshHomeAllowDirsCache {
+    fn drop(&mut self) {
+        *lock_home_allow_dirs() = HomeAllowDirsCache::default();
+    }
+}
+
+fn home_allow_dirs_builds() -> usize {
+    HOME_ALLOW_DIRS_BUILDS.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// An instant one TTL (plus a second) ago.
+fn past_ttl() -> std::time::Instant {
+    std::time::Instant::now()
+        .checked_sub(HOME_ALLOW_DIRS_TTL + std::time::Duration::from_secs(1))
+        .expect("monotonic clock far enough from boot")
+}
+
+/// Ages the cached entry for `home` past the TTL.
+fn expire_home_allow_dirs(home: &std::path::Path) {
+    let mut cache = lock_home_allow_dirs();
+    let entry = cache.entry.as_mut().expect("entry cached");
+    assert_eq!(entry.home, home);
+    entry.stored_at = past_ttl();
+}
+
 #[test]
 fn home_allow_dirs_is_cached_per_home() {
-    let _env = crate::core::data_dir::test_env_lock();
-    *lock_home_allow_dirs() = HomeAllowDirsCache::default();
+    let _fresh = FreshHomeAllowDirsCache::new();
     let home_a = tempfile::tempdir().unwrap();
     let home_b = tempfile::tempdir().unwrap();
-    let builds = || HOME_ALLOW_DIRS_BUILDS.load(std::sync::atomic::Ordering::SeqCst);
 
-    let before = builds();
+    let before = home_allow_dirs_builds();
     assert!(home_allow_dirs(home_a.path(), false).is_empty());
     assert_eq!(
-        builds(),
+        home_allow_dirs_builds(),
         before,
         "disabled flag must not build the registry"
     );
 
     let first = home_allow_dirs(home_a.path(), true);
-    assert_eq!(builds(), before + 1);
+    assert_eq!(home_allow_dirs_builds(), before + 1);
     let second = home_allow_dirs(home_a.path(), true);
-    assert_eq!(builds(), before + 1, "same home is served from the cache");
+    assert_eq!(
+        home_allow_dirs_builds(),
+        before + 1,
+        "same home is served from the cache"
+    );
     assert_eq!(first, second);
 
     home_allow_dirs(home_b.path(), true);
-    assert_eq!(builds(), before + 2, "a different home is recomputed");
-}
-
-/// Ages the cached entry for `home` past the TTL (the probe start moves back).
-fn expire_home_allow_dirs(home: &std::path::Path) {
-    let mut cache = lock_home_allow_dirs();
-    let entry = cache.entry.as_mut().expect("entry cached");
-    assert_eq!(entry.home, home);
-    entry.probed_at = std::time::Instant::now()
-        .checked_sub(HOME_ALLOW_DIRS_TTL + std::time::Duration::from_secs(1))
-        .expect("monotonic clock far enough from boot");
+    assert_eq!(
+        home_allow_dirs_builds(),
+        before + 2,
+        "a different home is recomputed"
+    );
+    home_allow_dirs(home_b.path(), true);
+    assert_eq!(
+        home_allow_dirs_builds(),
+        before + 2,
+        "the other home's probe is stored and served"
+    );
 }
 
 #[test]
 fn expired_home_allow_dirs_are_served_stale_while_one_caller_refreshes() {
-    let _env = crate::core::data_dir::test_env_lock();
-    *lock_home_allow_dirs() = HomeAllowDirsCache::default();
+    let _fresh = FreshHomeAllowDirsCache::new();
     let home = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(home.path().join(".cursor")).unwrap();
-    let builds = || HOME_ALLOW_DIRS_BUILDS.load(std::sync::atomic::Ordering::SeqCst);
 
     let first = home_allow_dirs(home.path(), true);
     expire_home_allow_dirs(home.path());
 
     // Another caller is already refreshing (its slow probe is in flight):
     // this check must not probe again nor wait, but serve the previous list.
-    lock_home_allow_dirs().refreshing = true;
-    let before = builds();
+    let claim = std::time::Instant::now();
+    lock_home_allow_dirs().refreshing = Some((home.path().to_path_buf(), claim));
+    let before = home_allow_dirs_builds();
     let served = home_allow_dirs(home.path(), true);
-    lock_home_allow_dirs().refreshing = false;
-    assert_eq!(builds(), before, "no second probe while one is in flight");
+    assert_eq!(
+        home_allow_dirs_builds(),
+        before,
+        "no second probe while one is in flight"
+    );
     assert_eq!(served, first, "the stale list is served meanwhile");
+    lock_home_allow_dirs().release_refresh(claim);
 
     // With no refresh in flight, an expired entry is refreshed exactly once
     // and the refresh claim is released afterwards.
     let refreshed = home_allow_dirs(home.path(), true);
-    assert_eq!(builds(), before + 1);
+    assert_eq!(home_allow_dirs_builds(), before + 1);
     assert_eq!(refreshed, first);
-    assert!(!lock_home_allow_dirs().refreshing, "refresh claim released");
+    assert!(
+        lock_home_allow_dirs().refreshing.is_none(),
+        "refresh claim released"
+    );
     home_allow_dirs(home.path(), true);
-    assert_eq!(builds(), before + 1, "the refreshed entry is fresh again");
+    assert_eq!(
+        home_allow_dirs_builds(),
+        before + 1,
+        "the refreshed entry is fresh again"
+    );
 }
 
 #[test]
-fn an_older_probe_never_overwrites_a_newer_home_allow_dirs_entry() {
-    let _env = crate::core::data_dir::test_env_lock();
-    *lock_home_allow_dirs() = HomeAllowDirsCache::default();
-    let home_a = tempfile::tempdir().unwrap();
-    let home_b = tempfile::tempdir().unwrap();
+fn a_hung_home_allow_dirs_refresh_is_taken_over_after_the_ttl() {
+    let _fresh = FreshHomeAllowDirsCache::new();
+    let home = tempfile::tempdir().unwrap();
 
-    home_allow_dirs(home_a.path(), true);
-    // Simulate a newer probe for another home that finished first: its entry
-    // carries a probe start later than any probe starting now.
+    home_allow_dirs(home.path(), true);
+    expire_home_allow_dirs(home.path());
+    // A refresher claimed the entry a TTL ago and never came back.
+    let hung = past_ttl();
+    lock_home_allow_dirs().refreshing = Some((home.path().to_path_buf(), hung));
+
+    let before = home_allow_dirs_builds();
+    home_allow_dirs(home.path(), true);
+    assert_eq!(
+        home_allow_dirs_builds(),
+        before + 1,
+        "a hung claim must not pin the stale list"
+    );
+    let cache = lock_home_allow_dirs();
+    assert!(
+        cache.refreshing.is_none(),
+        "the takeover's claim is released"
+    );
+    assert!(
+        cache
+            .entry
+            .as_ref()
+            .is_some_and(|e| e.stored_at.elapsed() < HOME_ALLOW_DIRS_TTL),
+        "the entry is fresh again"
+    );
+}
+
+#[test]
+fn an_older_probe_never_overwrites_a_newer_entry_of_the_same_home() {
+    let _fresh = FreshHomeAllowDirsCache::new();
+    let home = tempfile::tempdir().unwrap();
+
+    home_allow_dirs(home.path(), true);
+    // A newer probe of the same home finished first: mark its entry with a
+    // probe start later than any probe starting now, and expire it so the
+    // next call probes.
+    let newer = std::time::Instant::now() + std::time::Duration::from_secs(60);
     {
         let mut cache = lock_home_allow_dirs();
         let entry = cache.entry.as_mut().expect("entry cached");
-        entry.home = home_b.path().to_path_buf();
-        entry.probed_at = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        entry.started = newer;
+        entry.stored_at = past_ttl();
     }
-    home_allow_dirs(home_a.path(), true);
-    let mut cache = lock_home_allow_dirs();
-    let kept = cache.entry.as_ref().map(|e| e.home.clone());
-    // Drop the future-dated entry so no later test inherits it.
-    *cache = HomeAllowDirsCache::default();
-    drop(cache);
+    home_allow_dirs(home.path(), true);
     assert_eq!(
-        kept,
-        Some(home_b.path().to_path_buf()),
+        lock_home_allow_dirs().entry.as_ref().map(|e| e.started),
+        Some(newer),
         "a probe that started earlier must not replace the newer entry"
     );
 }
