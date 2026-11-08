@@ -228,12 +228,27 @@ pub(super) fn prepare_binary(
     // Execute bytes authenticated above, not the separately mutable installed
     // inode. This is private process hygiene, not a hostile same-UID sandbox.
     install::write_new(&executable, binary, true)?;
-    let mut command = Command::new(&executable);
+    let command = runtime_command(&executable, &directory)?;
+    Ok((
+        Prepared {
+            workspace: temporary,
+            #[cfg(target_os = "linux")]
+            executable: executable_directory,
+        },
+        command,
+    ))
+}
+
+/// The runtime's process: its private directory as working directory, home
+/// and temporary directory, and a cleared environment with only what the OS
+/// itself needs.
+fn runtime_command(executable: &Path, directory: &Path) -> Result<Command> {
+    let mut command = Command::new(executable);
     command
-        .current_dir(&directory)
+        .current_dir(directory)
         .env_clear()
-        .env("HOME", &directory)
-        .env("TMPDIR", &directory);
+        .env("HOME", directory)
+        .env("TMPDIR", directory);
     // libdbus discovers the logged-in user's Secret Service through this
     // standard location. Never inherit a caller-selected remote D-Bus address.
     #[cfg(target_os = "linux")]
@@ -251,22 +266,15 @@ pub(super) fn prepare_binary(
         // loopback port (#2203). The value comes from the OS, not from the
         // caller's environment.
         command
-            .env("TEMP", &directory)
-            .env("TMP", &directory)
+            .env("TEMP", directory)
+            .env("TMP", directory)
             .env("SystemRoot", windows_directory()?);
         // The runtimes are console programs. Started from a process without a
         // console (the detached Cockpit server), each start would otherwise
         // open, and on exit close, a console window of its own (#2203).
         command.creation_flags(CREATE_NO_WINDOW);
     }
-    Ok((
-        Prepared {
-            workspace: temporary,
-            #[cfg(target_os = "linux")]
-            executable: executable_directory,
-        },
-        command,
-    ))
+    Ok(command)
 }
 
 /// `CreateProcessW` flag: the child gets no console window.
@@ -534,9 +542,14 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_windows_runtime_gets_the_system_root_and_nothing_inherited() {
-        let root = tempfile::tempdir().unwrap();
-        let (prepared, command) =
-            prepare_binary(b"not executed", root.path(), "leanctx-cockpit.exe").unwrap();
+        // The environment alone: the private workspace beside %TEMP% has its
+        // own owner checks, which a CI runner's TEMP does not satisfy.
+        let directory = tempfile::tempdir().unwrap();
+        let command = runtime_command(
+            &directory.path().join("leanctx-cockpit.exe"),
+            directory.path(),
+        )
+        .unwrap();
         let envs: std::collections::BTreeMap<String, Option<String>> = command
             .get_envs()
             .map(|(name, value)| {
@@ -555,7 +568,6 @@ mod tests {
         assert!(std::path::Path::new(&system_root).join("System32").is_dir());
         let names: Vec<&str> = envs.keys().map(String::as_str).collect();
         assert_eq!(names, ["HOME", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR"]);
-        prepared.close().unwrap();
     }
 
     fn described(capabilities: &serde_json::Value) -> VerifiedPackage {
