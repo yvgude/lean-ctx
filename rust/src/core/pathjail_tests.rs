@@ -239,8 +239,8 @@ fn ide_allow_dirs_are_registry_derived_and_skip_home() {
 #[test]
 fn ide_config_dirs_are_excluded_by_default() {
     // home_allow_dirs shares one process-wide cache and build counter with
-    // home_allow_dirs_is_cached_per_home; serialize against it.
-    let _env = crate::core::data_dir::test_env_lock();
+    // home_allow_dirs_is_cached_per_home: serialize and start/leave it empty.
+    let _fresh = FreshHomeAllowDirsCache::new();
     let home = tempfile::tempdir().unwrap();
     for d in [".lean-ctx", ".cursor", ".codex"] {
         std::fs::create_dir_all(home.path().join(d)).unwrap();
