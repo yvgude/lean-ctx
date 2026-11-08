@@ -47,6 +47,12 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str, data_dir: &st
         .and_then(|m| m.get("lean-ctx"))
         .cloned()
         .or_else(|| v.get("servers").and_then(|m| m.get("lean-ctx")).cloned())
+        // Muse Code's legacy `settings.json` root (#2198).
+        .or_else(|| {
+            v.get("mcp_servers")
+                .and_then(|m| m.get("lean-ctx"))
+                .cloned()
+        })
         .or_else(|| {
             v.get("mcp")
                 .and_then(|m| m.get("servers"))

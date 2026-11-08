@@ -56,4 +56,12 @@ pub enum ConfigType {
     /// user's file already uses instead of adding a competing second one
     /// (GH #1402).
     CodeWhale,
+    /// Meta Muse Code user settings (`$XDG_CONFIG_HOME/muse/settings.json`,
+    /// default `~/.config/muse/settings.json`). The file requires
+    /// `"schema_version": 1`; MCP servers live under canonical `mcpServers`
+    /// (`type`/`command`/`args`) or the legacy `mcp_servers`
+    /// (`transport`/`command`/`args`) spelling. Mixing the two disables MCP for
+    /// the session, so the writer keeps whichever root the file already uses
+    /// and never adds the other one (GH #2198).
+    MuseSettings,
 }

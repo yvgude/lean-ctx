@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use super::paths::{
     augment_cli_settings_path, augment_vscode_mcp_path, claude_mcp_json_path,
     cline_cli_mcp_settings_path, cline_mcp_path, codebuddy_mcp_json_path, codewhale_detect_path,
-    codewhale_mcp_json_path, detect_vibe_path, omp_agent_dir, omp_mcp_path, qoder_all_mcp_paths,
-    qodercli_settings_path, qoderwork_mcp_path, roo_mcp_path, vibe_config_path,
-    vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
+    codewhale_mcp_json_path, detect_vibe_path, muse_config_dir, muse_settings_path, omp_agent_dir,
+    omp_mcp_path, qoder_all_mcp_paths, qodercli_settings_path, qoderwork_mcp_path, roo_mcp_path,
+    vibe_config_path, vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
 };
 use super::types::{ConfigType, EditorTarget};
 
@@ -91,6 +91,15 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             config_path: codewhale_mcp_json_path(home),
             detect_path: codewhale_detect_path(home),
             config_type: ConfigType::CodeWhale,
+        },
+        EditorTarget {
+            name: "Muse Code",
+            agent_key: "muse".to_string(),
+            // #2198: Meta Muse Code user settings,
+            // `$XDG_CONFIG_HOME/muse/settings.json` (default `~/.config/muse`).
+            config_path: muse_settings_path(home),
+            detect_path: detect_muse_path(home),
+            config_type: ConfigType::MuseSettings,
         },
         EditorTarget {
             name: "Grok",
@@ -408,6 +417,17 @@ fn detect_qodercli_path(home: &Path) -> PathBuf {
     }
 
     PathBuf::from("/nonexistent")
+}
+
+/// Muse Code counts as installed when its config dir exists or the `muse`
+/// CLI is on `PATH` (a fresh install has no settings file yet — Muse runs on
+/// defaults when it is missing).
+fn detect_muse_path(home: &Path) -> PathBuf {
+    let dir = muse_config_dir(home);
+    if dir.exists() {
+        return dir;
+    }
+    crate::core::pathutil::find_on_path("muse").unwrap_or(dir)
 }
 
 fn detect_sublime_path(home: &Path) -> PathBuf {
@@ -837,6 +857,23 @@ mod augment_tests {
         assert_eq!(codewhale[0].name, "CodeWhale");
         assert_eq!(codewhale[0].config_path, home.join(".codewhale/mcp.json"));
         assert!(matches!(codewhale[0].config_type, ConfigType::CodeWhale));
+    }
+
+    #[test]
+    fn build_targets_registers_muse_code_with_its_settings_writer() {
+        // #2198: Muse Code is its own agent key backed by the settings.json
+        // writer that understands `schema_version` and the legacy root.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        let muse: Vec<_> = build_targets(home)
+            .into_iter()
+            .filter(|t| t.agent_key == "muse")
+            .collect();
+        assert_eq!(muse.len(), 1, "exactly one Muse Code target");
+        assert_eq!(muse[0].name, "Muse Code");
+        assert_eq!(muse[0].config_path, muse_settings_path(home));
+        assert!(muse[0].config_path.ends_with("muse/settings.json"));
+        assert!(matches!(muse[0].config_type, ConfigType::MuseSettings));
     }
 
     #[test]

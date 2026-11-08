@@ -160,6 +160,7 @@ const AGENT_KEYS: &[&str] = &[
     "hermes",
     "jetbrains",
     "kiro",
+    "muse",
     "neovim",
     "omp",
     "openclaw",
@@ -217,6 +218,14 @@ mod agent_key_tests {
         let completions = filter(resolve_dynamic(DynamicKind::Agents), "code");
         let values: Vec<&str> = completions.iter().map(|c| c.value.as_str()).collect();
         assert!(values.contains(&"codewhale"), "got {values:?}");
+    }
+
+    #[test]
+    fn muse_is_offered_for_agent_completion() {
+        // #2198: `lean-ctx init --agent mu<TAB>` must offer muse.
+        let completions = filter(resolve_dynamic(DynamicKind::Agents), "mu");
+        let values: Vec<&str> = completions.iter().map(|c| c.value.as_str()).collect();
+        assert!(values.contains(&"muse"), "got {values:?}");
     }
 
     #[test]

@@ -32,7 +32,7 @@ no-decision output.
 | Mistral Vibe (`vibe`) | C (unverified) | Today's `pre_tool` hook | — | Vibe's hook is MCP-gated in the installer; no post-tool replacement |
 | Antigravity IDE / CLI (`antigravity`, `antigravity-cli`) | C (unverified) | Today's Gemini-format hooks / `agy` plugin | — | Shares Gemini's dialect but its tool names and plugin contract are not verified for enforcement |
 | OpenCode (`opencode`), Pi (`pi`), Hermes (`hermes`), OpenClaw (`openclaw`), Crush (`crush`) | C | Plugin or extension integrations | — | In-process plugin APIs, not command hooks; a governor would be a plugin change |
-| Aider, Amazon Q, Amp, Augment, Cline, Roo, CodeWhale, Command Code, Continue, Emacs, Grok, JetBrains, Kiro, Neovim, Oh My Pi, QoderWork, Qwen, Sublime, Trae, Verdent, VS Code, VS Code Insiders, Zed | C | none | — | No tool hooks LeanCTX drives (MCP registration only) |
+| Aider, Amazon Q, Amp, Augment, Cline, Roo, CodeWhale, Command Code, Continue, Emacs, Grok, JetBrains, Kiro, Muse Code, Neovim, Oh My Pi, QoderWork, Qwen, Sublime, Trae, Verdent, VS Code, VS Code Insiders, Zed | C | none | — | No tool hooks LeanCTX drives (MCP registration only) |
 
 ## Switching
 

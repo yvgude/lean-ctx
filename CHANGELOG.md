@@ -6,6 +6,18 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+### Added
+
+- **Meta Muse Code agent target (#2198).** `lean-ctx init --agent muse` and `setup` register the
+  lean-ctx MCP server in `$XDG_CONFIG_HOME/muse/settings.json` (default
+  `~/.config/muse/settings.json`). The writer adds the mandatory `"schema_version": 1` when it is
+  missing, keeps every other key and server, and merges into the root the file already uses —
+  canonical `mcpServers` or legacy `mcp_servers` — because Muse disables MCP when both appear;
+  a file that already mixes them is left untouched with an error. Re-runs are no-ops, `uninstall`
+  removes only the `lean-ctx` entry, and `doctor` checks the entry. Muse Code is MCP-only: its
+  PreToolUse output schema is closed and an `allow` never skips approval, so shell rewrites would
+  add prompts. Guidance reaches it through the project `AGENTS.md` it auto-loads.
+
 ### Fixed
 
 - **Path jail no longer spawns `where`/`which` on every check (#2195).** The IDE allow-dir list is cached

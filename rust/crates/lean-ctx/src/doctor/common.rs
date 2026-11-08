@@ -358,6 +358,20 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
             path,
         });
     }
+    // #2198: Muse Code user settings (`$XDG_CONFIG_HOME/muse/settings.json`).
+    {
+        let path = lean_ctx::core::editor_registry::muse_settings_path(home);
+        let display = if path == home.join(".config").join("muse").join("settings.json") {
+            "~/.config/muse/settings.json".to_string()
+        } else {
+            path.display().to_string()
+        };
+        locations.push(McpLocation {
+            name: "Muse Code",
+            display,
+            path,
+        });
+    }
     locations.push(McpLocation {
         name: "Amazon Q",
         display: "~/.aws/amazonq/default.json".into(),
@@ -518,7 +532,8 @@ pub(super) fn has_lean_ctx_mcp_entry(content: &str) -> bool {
         //   mcpServers       — most agents (Cursor, Claude, Windsurf, …)
         //   servers          — VS Code mcp.json
         //   context_servers  — Zed settings.json
-        for key in ["mcpServers", "servers", "context_servers"] {
+        //   mcp_servers      — Muse Code settings.json, legacy spelling (#2198)
+        for key in ["mcpServers", "servers", "context_servers", "mcp_servers"] {
             if let Some(servers) = json.get(key).and_then(|v| v.as_object())
                 && servers.contains_key("lean-ctx")
             {

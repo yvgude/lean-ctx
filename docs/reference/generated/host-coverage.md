@@ -37,6 +37,7 @@ What the context gateway can see and stop for each host when fully set up.
 | hermes | shell rewrite | no | partial | host-native file tools reach the model without gateway admission |
 | jetbrains | MCP only | no | not_observable | only ctx_* calls are admitted; the host's own tools are invisible |
 | kiro | shell rewrite | no | partial | host-native file tools reach the model without gateway admission |
+| muse | MCP only | no | not_observable | only ctx_* calls are admitted; the host's own tools are invisible |
 | neovim | MCP only | no | not_observable | only ctx_* calls are admitted; the host's own tools are invisible |
 | omp | shell rewrite | no | partial | host-native file tools reach the model without gateway admission |
 | openclaw | shell rewrite | no | partial | host-native file tools reach the model without gateway admission |

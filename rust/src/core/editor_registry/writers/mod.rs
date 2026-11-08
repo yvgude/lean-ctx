@@ -90,6 +90,7 @@ pub fn write_config_with_options_and_rule_steering(
         ConfigType::ClineCli => write_cline_cli_config(target, binary, opts),
         ConfigType::OmpMcp => write_omp_mcp(target, binary, opts),
         ConfigType::CodeWhale => write_codewhale_config(target, binary, opts),
+        ConfigType::MuseSettings => write_muse_settings(target, binary, opts),
     }
 }
 
@@ -134,6 +135,21 @@ pub fn remove_lean_ctx_server(
                 servers
             } else {
                 mcp_servers
+            })
+        }
+        // #2198: Muse Code accepts the canonical `mcpServers` or the legacy
+        // `mcp_servers` root and the writer keeps whichever the file uses, so
+        // removal visits both. Only the `lean-ctx` entry is removed; the file,
+        // `schema_version` and every other server stay.
+        ConfigType::MuseSettings => {
+            let canonical =
+                remove_lean_ctx_named_json_server(&target.config_path, MUSE_MCP_ROOT, opts)?;
+            let legacy =
+                remove_lean_ctx_named_json_server(&target.config_path, MUSE_LEGACY_MCP_ROOT, opts)?;
+            Ok(if canonical.action == WriteAction::Updated {
+                canonical
+            } else {
+                legacy
             })
         }
     }

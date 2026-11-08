@@ -914,7 +914,14 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
         // which honours the `servers` / `mcpServers` root the user already has
         // — `install_mcp_json_agent` would hardcode `mcpServers` and could add
         // a competing second root.
-        "vscode-insiders" | "commandcode" | "codewhale" | "omp" => {}
+        // Muse Code (#2198) is MCP-only for the same reason class: its
+        // PreToolUse output schema is closed (our generic outputs carry keys it
+        // rejects), `permissionDecision: "allow"` never skips its approval, and
+        // a `lean-ctx -c` rewrite would be re-approved as a new wrapper command
+        // — adding prompts. Its settings.json MCP entry (canonical or legacy
+        // root, plus the mandatory `schema_version`) is written by the
+        // editor-registry `MuseSettings` writer via `configure_agent_mcp`.
+        "vscode-insiders" | "commandcode" | "codewhale" | "muse" | "omp" => {}
         "pi" => install_pi_hook_with_mode(global, mode),
         "qoder" | "qodercli" => install_qoder_hook_with_mode(mode),
         "qoderwork" => install_mcp_json_agent(
@@ -982,7 +989,7 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
                 "    claude, cline, codebuddy, codewhale, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini, grok,"
             );
             eprintln!(
-                "    grok-build, hermes, jetbrains, kiro, neovim, omp, openclaw, opencode, pi, qoder,"
+                "    grok-build, hermes, jetbrains, kiro, muse, neovim, omp, openclaw, opencode, pi, qoder,"
             );
             eprintln!(
                 "    qodercli, qoderwork, qwen, roo, sublime, trae, verdent, vibe, vscode, windsurf, zed"

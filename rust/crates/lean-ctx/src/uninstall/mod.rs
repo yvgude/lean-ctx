@@ -490,6 +490,7 @@ fn scan_dirs(home: &Path) -> Vec<PathBuf> {
         home.join(".trae"),
         home.join(".codewhale"),
         home.join(".deepseek"),
+        lean_ctx::core::editor_registry::muse_config_dir(home),
         home.join(".aws/amazonq"),
         home.join(".kiro"),
         home.join(".kiro/settings"),

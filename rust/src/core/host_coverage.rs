@@ -107,6 +107,7 @@ pub const HOSTS: &[&str] = &[
     "hermes",
     "jetbrains",
     "kiro",
+    "muse",
     "neovim",
     "omp",
     "openclaw",

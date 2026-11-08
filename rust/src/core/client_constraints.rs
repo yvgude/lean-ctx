@@ -147,6 +147,16 @@ pub const ALL_CLIENTS: &[ClientConstraints] = &[
         supports_auto_approve: false,
         supports_config_instructions: false,
     },
+    // #2198: Muse Code warns on and ignores unknown per-server fields; neither
+    // `instructions` nor `autoApprove` is part of its documented `mcpServers`
+    // schema, so lean-ctx writes the plain stdio entry only.
+    ClientConstraints {
+        id: "muse",
+        display_name: "Muse Code",
+        mcp_instructions_max_chars: None,
+        supports_auto_approve: false,
+        supports_config_instructions: false,
+    },
     ClientConstraints {
         id: "trae",
         display_name: "Trae",
@@ -216,6 +226,7 @@ pub(crate) fn by_editor_name(name: &str) -> Option<&'static ClientConstraints> {
         "Codex CLI" => by_client_id("codex"),
         "Grok" => by_client_id("grok"),
         "CodeWhale" => by_client_id("codewhale"),
+        "Muse Code" => by_client_id("muse"),
         "Trae" => by_client_id("trae"),
         "Qwen Code" => by_client_id("qwen-code"),
         "Verdent" => by_client_id("verdent"),

@@ -510,6 +510,14 @@ fn remove_lean_ctx_from_json_serde(content: &str) -> Option<String> {
         modified |= servers.remove("lean-ctx").is_some();
     }
 
+    // Muse Code's legacy settings.json root (#2198).
+    if let Some(servers) = parsed
+        .get_mut("mcp_servers")
+        .and_then(|s| s.as_object_mut())
+    {
+        modified |= servers.remove("lean-ctx").is_some();
+    }
+
     if let Some(servers) = parsed.get_mut("servers").and_then(|s| s.as_object_mut()) {
         modified |= servers.remove("lean-ctx").is_some();
     }

@@ -117,9 +117,12 @@ pub const HYBRID_AGENTS: &[&str] = &[
 /// observer/steering semantics rather than the pre-tool rewrite/deny contract
 /// every `HYBRID_AGENTS` entry relies on, so installing lean-ctx's shell hooks
 /// there would ship a script whose behaviour we cannot honestly predict.
+/// Muse Code (#2198): its PreToolUse output schema is closed and an `allow`
+/// never skips approval, so a rewrite would add prompts instead of saving
+/// tokens; it gets the settings.json MCP entry only.
 /// Membership here does not enable any hook install — it only marks the agent
 /// as genuinely supported by `init --agent` / `setup` so `wrap` can say so.
-pub const MCP_ONLY_AGENTS: &[&str] = &["codewhale"];
+pub const MCP_ONLY_AGENTS: &[&str] = &["codewhale", "muse"];
 
 /// True when `agent` is integrated via `init --agent` / `setup` (hooks, rules,
 /// MCP registration). GH #1520: used by `wrap`'s error path to point users of
