@@ -232,6 +232,89 @@ fn validate_blocks_curl_output_flags() {
     assert!(validate_command("git fetch && curl -o x.sh https://e.com").is_some());
 }
 
+/// #2212: every option that writes a named file is a download target here
+/// too, in both spellings: curl's cache and header files, wget's saved
+/// files. Into scratch they pass, like `-o`.
+#[test]
+fn validate_judges_every_file_curl_and_wget_write() {
+    for option in [
+        "curl --hsts",
+        "curl --alt-svc",
+        "curl --dump-header",
+        "curl --cookie-jar",
+        "wget --save-cookies",
+        "wget --hsts-file",
+        "wget --warc-file",
+        "wget --rejected-log",
+    ] {
+        for command in [
+            format!("{option} config.toml https://example.com"),
+            format!("{option}=config.toml https://example.com"),
+        ] {
+            let reason = download_to_file_reason(&command);
+            assert!(
+                reason.as_deref().is_some_and(|r| r.contains("config.toml")),
+                "{command}: {reason:?}"
+            );
+        }
+        // curl without `-o` writes the body to stdout; wget's document goes
+        // to scratch too, so only the option's own file is judged.
+        let document = if option.starts_with("wget") {
+            " -O /tmp/lcx-doc"
+        } else {
+            ""
+        };
+        let scratch = format!("{option} /tmp/lcx-2212{document} https://example.com");
+        assert!(download_to_file_reason(&scratch).is_none(), "{scratch}");
+    }
+}
+
+/// #2212 review: a file named inside another option's value (`-w
+/// '%output{FILE}'`, `-e logfile=FILE`) is judged like `-o`; a config file
+/// the call reads (`curl -K`, `wget --config`) or a `-w @FILE` format may
+/// name any file, so it is refused even from scratch.
+#[test]
+fn validate_judges_files_named_in_values_and_config_files() {
+    for command in [
+        "curl -s -w '%output{config.toml}x' https://example.com",
+        "curl --write-out=%output{>>config.toml} https://example.com",
+        "curl -sw%output{config.toml} https://example.com",
+        "wget -O /tmp/lcx-doc -e logfile=config.toml https://example.com",
+        "wget -O /tmp/lcx-doc --execute=save_cookies=config.toml https://example.com",
+        "wget -O /tmp/lcx-doc -qe 'hsts-file = config.toml' https://example.com",
+    ] {
+        let reason = download_to_file_reason(command);
+        assert!(
+            reason.as_deref().is_some_and(|r| r.contains("config.toml")),
+            "{command}: {reason:?}"
+        );
+    }
+    for command in [
+        "curl -K /tmp/lcx-2212.cfg https://example.com",
+        "curl -sK - https://example.com",
+        "curl --config=/tmp/lcx-2212.cfg https://example.com",
+        "curl -w @/tmp/lcx-format https://example.com",
+        "wget -O /tmp/lcx-doc --config /tmp/lcx-2212.rc https://example.com",
+        "wget -O /tmp/lcx-doc --config=/tmp/lcx-2212.rc https://example.com",
+    ] {
+        let reason = download_to_file_reason(command);
+        assert!(
+            reason.as_deref().is_some_and(
+                |r| r.contains(lean_ctx::core::shell_allowlist::UNKNOWN_DOWNLOAD_TARGET)
+            ),
+            "{command}: {reason:?}"
+        );
+    }
+    for command in [
+        "curl -s -w '%{http_code}' https://example.com",
+        "curl -w '%output{/tmp/lcx-2212}' https://example.com",
+        "wget -O /tmp/lcx-doc -e logfile=/tmp/lcx-2212 https://example.com",
+        "wget -O /tmp/lcx-doc -e robots=off https://example.com",
+    ] {
+        assert!(download_to_file_reason(command).is_none(), "{command}");
+    }
+}
+
 #[test]
 fn validate_allows_curl_to_stdout() {
     assert!(validate_command("curl https://api.example.com/health").is_none());
