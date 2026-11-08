@@ -772,6 +772,38 @@ fn downloads_after_an_unfollowable_cd_judge_only_their_output_files() {
     );
 }
 
+/// #2212: the options that write a named file besides the output — curl's
+/// HSTS and Alt-Svc caches, wget's cookies, HSTS, WARC and rejected-URL log
+/// — are write targets after an unfollowable `cd`, in both spellings. Into
+/// an absolute scratch path they pass.
+#[test]
+fn downloads_after_an_unfollowable_cd_judge_every_saved_file() {
+    let mut blocked = Vec::new();
+    let mut passed = Vec::new();
+    for option in [
+        "curl --hsts",
+        "curl --alt-svc",
+        "wget -O- --save-cookies",
+        "wget -O- --hsts-file",
+        "wget -O- --warc-file",
+        "wget -O- --rejected-log",
+    ] {
+        blocked.push(format!(
+            "cd \"$D\" && {option} config.toml https://example.com"
+        ));
+        blocked.push(format!(
+            "cd \"$D\" && {option}=config.toml https://example.com"
+        ));
+        passed.push(format!(
+            "cd \"$D\" && {option} /tmp/lcx-2212 https://example.com"
+        ));
+    }
+    let blocked: Vec<&str> = blocked.iter().map(String::as_str).collect();
+    let passed: Vec<&str> = passed.iter().map(String::as_str).collect();
+    assert_all_block(WRITER_ALLOWLIST, &blocked);
+    assert_all_pass(WRITER_ALLOWLIST, &passed);
+}
+
 /// Relative paths resolve in the directory the command runs in (ctx_shell's
 /// `cwd`, a hook payload's `cwd`), not where the gate's process runs.
 #[test]

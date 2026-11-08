@@ -16,14 +16,18 @@ const CURL_VALUE_SHORTS: &str = "AbcCdDeEFHKmoPQrTtuUwxXyYz";
 const WGET_VALUE_SHORTS: &str = "aABDeiIlOoPQRtTUwX";
 
 /// The files a curl or wget call writes, relative or not: curl's output
-/// options (`-o`, `-D`, `-c`, `--trace`, …, and `-O`/`--remote-name`
-/// into `--output-dir` or the working directory, written `.`), wget's
-/// document (`-O`, else `-P` or the working directory) and logs (`-o`,
-/// `-a`). The URL and the values of other options are never targets.
-pub(super) fn download_targets(base: &str, args: &[String]) -> Vec<String> {
+/// options (`-o`, `-D`, `-c`, `--trace`, `--hsts`, …, and
+/// `-O`/`--remote-name` into `--output-dir` or the working directory,
+/// written `.`), wget's document (`-O`, else `-P` or the working directory),
+/// logs (`-o`, `-a`) and the other files it saves (`--save-cookies`, …).
+/// The URL and the values of other options are never targets. One list for
+/// the shell gate and for ctx_shell's download guard.
+pub fn download_targets(base: &str, args: &[String]) -> Vec<String> {
     if base == "wget" {
         return wget_targets(args);
     }
+    // `--hsts` and `--alt-svc` read their cache file and write it back
+    // (#2212).
     const CURL_OUTPUT_LONGS: &[&str] = &[
         "--dump-header",
         "--cookie-jar",
@@ -32,6 +36,8 @@ pub(super) fn download_targets(base: &str, args: &[String]) -> Vec<String> {
         "--stderr",
         "--libcurl",
         "--etag-save",
+        "--hsts",
+        "--alt-svc",
     ];
     let mut targets = Vec::new();
     let mut outputs = Vec::new();
@@ -107,10 +113,20 @@ pub(super) fn download_targets(base: &str, args: &[String]) -> Vec<String> {
     targets
 }
 
+/// wget long options that name a file it writes besides the document and
+/// the log (#2212). `--warc-file` names the stem of `<file>.warc[.gz]`; the
+/// stem is judged, which lands in the same directory.
+const WGET_SAVED_FILES: &[&str] = &[
+    "--save-cookies",
+    "--hsts-file",
+    "--warc-file",
+    "--rejected-log",
+];
+
 /// Every file a wget call writes: the document (`-O`/`--output-document`,
 /// else the URL's name in `-P`/`--directory-prefix` or the working
-/// directory, written `.`) and a log (`-o`/`-a`). `-O -` and `--spider`
-/// write no document.
+/// directory, written `.`), a log (`-o`/`-a`) and the files of
+/// `WGET_SAVED_FILES`. `-O -` and `--spider` write no document.
 fn wget_targets(args: &[String]) -> Vec<String> {
     let mut document: Option<String> = None;
     let mut prefix: Option<String> = None;
@@ -128,12 +144,14 @@ fn wget_targets(args: &[String]) -> Vec<String> {
                 "--output-document" => document = Some(value.to_string()),
                 "--directory-prefix" => prefix = Some(value.to_string()),
                 "--output-file" | "--append-output" => logs.push(value.to_string()),
+                _ if WGET_SAVED_FILES.contains(&flag) => logs.push(value.to_string()),
                 _ => {}
             }
         } else if matches!(
             tok,
             "--output-document" | "--directory-prefix" | "--output-file" | "--append-output"
-        ) {
+        ) || WGET_SAVED_FILES.contains(&tok)
+        {
             takes_next = true;
             let value = next();
             match tok {

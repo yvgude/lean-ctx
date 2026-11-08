@@ -232,6 +232,43 @@ fn validate_blocks_curl_output_flags() {
     assert!(validate_command("git fetch && curl -o x.sh https://e.com").is_some());
 }
 
+/// #2212: every option that writes a named file is a download target here
+/// too, in both spellings: curl's cache and header files, wget's saved
+/// files. Into scratch they pass, like `-o`.
+#[test]
+fn validate_judges_every_file_curl_and_wget_write() {
+    for option in [
+        "curl --hsts",
+        "curl --alt-svc",
+        "curl --dump-header",
+        "curl --cookie-jar",
+        "wget --save-cookies",
+        "wget --hsts-file",
+        "wget --warc-file",
+        "wget --rejected-log",
+    ] {
+        for command in [
+            format!("{option} config.toml https://example.com"),
+            format!("{option}=config.toml https://example.com"),
+        ] {
+            let reason = download_to_file_reason(&command);
+            assert!(
+                reason.as_deref().is_some_and(|r| r.contains("config.toml")),
+                "{command}: {reason:?}"
+            );
+        }
+        // curl without `-o` writes the body to stdout; wget's document goes
+        // to scratch too, so only the option's own file is judged.
+        let document = if option.starts_with("wget") {
+            " -O /tmp/lcx-doc"
+        } else {
+            ""
+        };
+        let scratch = format!("{option} /tmp/lcx-2212{document} https://example.com");
+        assert!(download_to_file_reason(&scratch).is_none(), "{scratch}");
+    }
+}
+
 #[test]
 fn validate_allows_curl_to_stdout() {
     assert!(validate_command("curl https://api.example.com/health").is_none());

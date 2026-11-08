@@ -26,7 +26,8 @@ use crate::core::error::ShellError;
 
 #[path = "download_targets.rs"]
 mod download_targets;
-use download_targets::{download_targets, is_relative_operand};
+pub use download_targets::download_targets;
+use download_targets::is_relative_operand;
 
 /// Subcommands that only read or show, whatever their arguments; only the
 /// subcommand word itself must be literal.
