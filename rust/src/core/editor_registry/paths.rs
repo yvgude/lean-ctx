@@ -433,6 +433,82 @@ pub fn codewhale_detect_path(home: &Path) -> PathBuf {
     current
 }
 
+/// Meta Muse Code's user config dir (GH #2198): `$XDG_CONFIG_HOME/muse`, or
+/// `~/.config/muse` when the variable is unset. It holds `settings.json` and
+/// the user `skills/` dir.
+///
+/// Source: <https://meta-models.github.io/muse-code-sdk/1.4/guides/extend/mcp-servers/>
+/// ("`$XDG_CONFIG_HOME/muse/settings.json`, or `~/.config/muse/settings.json`
+/// when the variable is unset"). No per-OS variant is documented.
+///
+/// `XDG_CONFIG_HOME` belongs to the current user's own home: it is applied
+/// only when `home` is that home, so a caller that passes another home (a
+/// test fixture, a sandboxed setup) never reaches the user's real file.
+pub fn muse_config_dir(home: &Path) -> PathBuf {
+    let own_home = crate::core::pathutil::home_dirs()
+        .iter()
+        .any(|own| own == home);
+    let xdg = own_home
+        .then(|| std::env::var("XDG_CONFIG_HOME").ok())
+        .flatten();
+    resolve_muse_config_dir(home, xdg.as_deref())
+}
+
+/// `<muse_config_dir>/settings.json` — the user settings file Muse Code reads
+/// MCP servers from (`mcpServers`, `schema_version: 1` required).
+pub fn muse_settings_path(home: &Path) -> PathBuf {
+    muse_config_dir(home).join("settings.json")
+}
+
+/// Pure resolver behind [`muse_config_dir`]; the env lookup is lifted to the
+/// caller so tests cover `XDG_CONFIG_HOME` without mutating process env.
+/// Per the XDG base-directory spec a relative or empty value is ignored.
+fn resolve_muse_config_dir(home: &Path, xdg_config_home: Option<&str>) -> PathBuf {
+    if let Some(xdg) = xdg_config_home {
+        let xdg = xdg.trim();
+        if !xdg.is_empty() && Path::new(xdg).is_absolute() {
+            return PathBuf::from(xdg).join("muse");
+        }
+    }
+    home.join(".config").join("muse")
+}
+
+#[cfg(test)]
+mod muse_tests {
+    use super::*;
+
+    #[test]
+    fn muse_config_dir_defaults_to_dot_config_muse() {
+        let home = Path::new("/home/u");
+        assert_eq!(
+            resolve_muse_config_dir(home, None),
+            PathBuf::from("/home/u/.config/muse")
+        );
+    }
+
+    #[test]
+    fn muse_config_dir_honours_absolute_xdg_config_home() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let xdg = tmp.path().join("xdg");
+        assert_eq!(
+            resolve_muse_config_dir(Path::new("/home/u"), Some(&xdg.to_string_lossy())),
+            xdg.join("muse")
+        );
+    }
+
+    #[test]
+    fn muse_config_dir_ignores_blank_or_relative_xdg_config_home() {
+        let home = Path::new("/home/u");
+        for value in ["", "   ", "relative/xdg"] {
+            assert_eq!(
+                resolve_muse_config_dir(home, Some(value)),
+                PathBuf::from("/home/u/.config/muse"),
+                "XDG_CONFIG_HOME={value:?} must fall back to ~/.config"
+            );
+        }
+    }
+}
+
 pub fn augment_cli_settings_path(home: &Path) -> PathBuf {
     home.join(".augment/settings.json")
 }

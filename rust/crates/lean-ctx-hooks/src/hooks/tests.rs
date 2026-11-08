@@ -1048,6 +1048,8 @@ fn mcp_only_agents_are_supported_but_claim_no_hook_surface() {
     // (so `wrap` points at the working command instead of "unsupported"),
     // while staying out of the two lists that promise shell hooks.
     assert!(MCP_ONLY_AGENTS.contains(&"codewhale"));
+    // #2198: Muse Code is MCP-only too.
+    assert!(MCP_ONLY_AGENTS.contains(&"muse"));
     for agent in MCP_ONLY_AGENTS {
         assert!(is_supported_agent(agent), "`{agent}` must be supported");
         assert!(

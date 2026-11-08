@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use super::paths::{
     augment_cli_settings_path, augment_vscode_mcp_path, claude_mcp_json_path,
     cline_cli_mcp_settings_path, cline_mcp_path, codebuddy_mcp_json_path, codewhale_detect_path,
-    codewhale_mcp_json_path, detect_vibe_path, omp_agent_dir, omp_mcp_path, qoder_all_mcp_paths,
-    qodercli_settings_path, qoderwork_mcp_path, roo_mcp_path, vibe_config_path,
-    vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
+    codewhale_mcp_json_path, detect_vibe_path, muse_config_dir, muse_settings_path, omp_agent_dir,
+    omp_mcp_path, qoder_all_mcp_paths, qodercli_settings_path, qoderwork_mcp_path, roo_mcp_path,
+    vibe_config_path, vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
 };
 use super::types::{ConfigType, EditorTarget};
 
@@ -91,6 +91,15 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             config_path: codewhale_mcp_json_path(home),
             detect_path: codewhale_detect_path(home),
             config_type: ConfigType::CodeWhale,
+        },
+        EditorTarget {
+            name: "Muse Code",
+            agent_key: "muse".to_string(),
+            // #2198: Meta Muse Code user settings,
+            // `$XDG_CONFIG_HOME/muse/settings.json` (default `~/.config/muse`).
+            config_path: muse_settings_path(home),
+            detect_path: detect_muse_path(home),
+            config_type: ConfigType::MuseSettings,
         },
         EditorTarget {
             name: "Grok",
@@ -407,6 +416,25 @@ fn detect_qodercli_path(home: &Path) -> PathBuf {
         return settings_path;
     }
 
+    PathBuf::from("/nonexistent")
+}
+
+/// Muse Code counts as installed when its config dir holds a file Muse Code
+/// itself owns: `settings.json` or the user `skills/` dir. A bare `muse`
+/// binary or dir is no evidence — the MusE MIDI sequencer ships a `muse`
+/// binary and `~/.config/MusE`, which a case-insensitive macOS volume also
+/// resolves as `~/.config/muse`. A fresh Muse Code without either is wired
+/// with `lean-ctx init --agent muse`.
+fn detect_muse_path(home: &Path) -> PathBuf {
+    let dir = muse_config_dir(home);
+    let settings = dir.join("settings.json");
+    if settings.is_file() {
+        return settings;
+    }
+    let skills = dir.join("skills");
+    if skills.is_dir() {
+        return skills;
+    }
     PathBuf::from("/nonexistent")
 }
 
@@ -837,6 +865,38 @@ mod augment_tests {
         assert_eq!(codewhale[0].name, "CodeWhale");
         assert_eq!(codewhale[0].config_path, home.join(".codewhale/mcp.json"));
         assert!(matches!(codewhale[0].config_type, ConfigType::CodeWhale));
+    }
+
+    #[test]
+    fn build_targets_registers_muse_code_with_its_settings_writer() {
+        // #2198: Muse Code is its own agent key backed by the settings.json
+        // writer that understands `schema_version` and the legacy root.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        let muse: Vec<_> = build_targets(home)
+            .into_iter()
+            .filter(|t| t.agent_key == "muse")
+            .collect();
+        assert_eq!(muse.len(), 1, "exactly one Muse Code target");
+        assert_eq!(muse[0].name, "Muse Code");
+        assert_eq!(muse[0].config_path, muse_settings_path(home));
+        assert!(muse[0].config_path.ends_with("muse/settings.json"));
+        assert!(matches!(muse[0].config_type, ConfigType::MuseSettings));
+    }
+
+    #[test]
+    fn muse_code_is_detected_only_by_files_it_owns() {
+        // A bare `muse` config dir (MusE sequencer on a case-insensitive
+        // volume) is no evidence; Muse Code's own settings file is.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        let dir = home.join(".config").join("muse");
+        std::fs::create_dir_all(&dir).expect("muse dir");
+        std::fs::write(dir.join("MusE.cfg"), "<muse/>").expect("sequencer config");
+        assert!(!detect_muse_path(home).exists(), "bare dir must not detect");
+
+        std::fs::write(dir.join("settings.json"), "{\"schema_version\":1}").expect("settings");
+        assert_eq!(detect_muse_path(home), dir.join("settings.json"));
     }
 
     #[test]

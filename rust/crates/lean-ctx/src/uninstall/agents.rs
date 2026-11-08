@@ -359,6 +359,12 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         // active one at install time.
         ("CodeWhale", home.join(".codewhale/mcp.json")),
         ("CodeWhale (legacy)", home.join(".deepseek/mcp.json")),
+        // #2198: Muse Code user settings; only the `lean-ctx` server entry is
+        // removed — `schema_version` and the user's servers stay.
+        (
+            "Muse Code",
+            lean_ctx::core::editor_registry::muse_settings_path(home),
+        ),
         // #1585: OpenCode accepts either name. Uninstall visits both so a
         // lean-ctx entry is never left behind in the file we did not install to.
         ("OpenCode", home.join(".config/opencode/opencode.json")),

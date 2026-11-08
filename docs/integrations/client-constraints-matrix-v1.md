@@ -196,6 +196,15 @@ It is used by:
       "sources": ["https://github.com/Hmbown/CodeWhale/blob/main/docs/MCP.md", "https://github.com/Hmbown/CodeWhale/blob/main/docs/CONFIGURATION.md"]
     },
     {
+      "id": "muse",
+      "displayName": "Muse Code",
+      "config": { "paths": ["$XDG_CONFIG_HOME/muse/settings.json", "~/.config/muse/settings.json"], "rootKey": "mcpServers|mcp_servers" },
+      "hooks": { "supported": false, "paths": [], "events": [] },
+      "toolApproval": { "model": "prompted_or_policy", "key": null },
+      "instructionLimits": { "mcpServerInstructionsMaxChars": null },
+      "sources": ["https://meta-models.github.io/muse-code-sdk/1.4/guides/extend/mcp-servers/", "https://dev.meta.ai/docs/muse-code/configuration", "https://meta-models.github.io/muse-code-sdk/1.4/guides/extend/hooks/"]
+    },
+    {
       "id": "trae",
       "displayName": "Trae",
       "config": { "paths": ["~/.trae/mcp.json", ".trae/mcp.json"], "rootKey": "mcpServers" },
@@ -263,3 +272,14 @@ It is used by:
   Likewise `instructions = [...]` in `~/.codewhale/config.toml` is user-owned
   upstream (project-local config is ignored for that key by design) and is
   never written by lean-ctx.
+- **Muse Code** (#2198): `settings.json` requires `"schema_version": 1`
+  (added when missing, never rewritten when present). MCP servers go under the
+  canonical `mcpServers` (`type`/`command`/`args`) or the legacy `mcp_servers`
+  (`transport`/`command`/`args`); mixing the two disables MCP for the session,
+  so lean-ctx merges into whichever root the file already uses and refuses a
+  file that already carries both. `hooks.supported: false` again records a
+  lean-ctx choice: Muse's PreToolUse output schema is closed, an `allow`
+  decision never skips approval, and a rewritten `lean-ctx -c` command would be
+  re-approved as a new wrapper — adding prompts instead of saving tokens.
+  Guidance reaches Muse through the project `AGENTS.md` it auto-loads; no user
+  rules path is documented, so none is written.

@@ -26,6 +26,7 @@ pub(crate) fn integration_generic(
         lean_ctx::core::editor_registry::types::ConfigType::McpJson
         | lean_ctx::core::editor_registry::types::ConfigType::OmpMcp
         | lean_ctx::core::editor_registry::types::ConfigType::CodeWhale
+        | lean_ctx::core::editor_registry::types::ConfigType::MuseSettings
         | lean_ctx::core::editor_registry::types::ConfigType::CommandCode
         | lean_ctx::core::editor_registry::types::ConfigType::QoderSettings => {
             checks.push(check_mcp_json(&target.config_path, binary, data_dir));

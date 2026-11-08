@@ -268,7 +268,7 @@ pub fn cmd_init(args: &[String]) {
     qprintln!(
         "    claude, cline, codewhale, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini,"
     );
-    qprintln!("    grok, hermes, jetbrains, kiro, neovim, omp, openclaw, opencode, pi,");
+    qprintln!("    grok, hermes, jetbrains, kiro, muse, neovim, omp, openclaw, opencode, pi,");
     qprintln!("    qoder, qodercli, qoderwork, qwen, roo, sublime, trae, verdent, vscode,");
     qprintln!("    windsurf, zed");
     qprintln!("  Modes: mcp, hybrid, replace  (auto-detected per agent, override with --mode)");

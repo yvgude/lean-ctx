@@ -333,6 +333,13 @@ pub(crate) fn agent_mcp_targets(
             lean_ctx::core::editor_registry::codewhale_mcp_json_path(home),
             ConfigType::CodeWhale,
         ),
+        // #2198: `$XDG_CONFIG_HOME/muse/settings.json` (default ~/.config/muse).
+        "muse" => push(
+            &mut targets,
+            "Muse Code",
+            lean_ctx::core::editor_registry::muse_settings_path(home),
+            ConfigType::MuseSettings,
+        ),
         "amazonq" => push(
             &mut targets,
             "Amazon Q Developer",
@@ -613,6 +620,12 @@ pub fn disable_agent_mcp(agent: &str, overwrite_invalid: bool) -> Result<(), Str
             lean_ctx::core::editor_registry::codewhale_mcp_json_path(home.as_ref()),
             ConfigType::CodeWhale,
         ),
+        "muse" => push(
+            &mut targets,
+            "Muse Code",
+            lean_ctx::core::editor_registry::muse_settings_path(home.as_ref()),
+            ConfigType::MuseSettings,
+        ),
         "amazonq" => push(
             &mut targets,
             "Amazon Q Developer",
@@ -776,6 +789,21 @@ mod qodercli_tests {
 
         let targets = agent_mcp_targets("codewhale", home).unwrap();
         assert_eq!(targets[0].config_path, home.join(".deepseek/mcp.json"));
+    }
+
+    #[test]
+    fn muse_agent_target_uses_muse_settings_schema_and_path() {
+        let home = std::path::Path::new("/home/tester");
+        let targets = agent_mcp_targets("muse", home).unwrap();
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].name, "Muse Code");
+        assert_eq!(targets[0].agent_key, "muse");
+        assert_eq!(targets[0].config_type, ConfigType::MuseSettings);
+        assert_eq!(
+            targets[0].config_path,
+            lean_ctx::core::editor_registry::muse_settings_path(home)
+        );
     }
 
     #[test]
