@@ -348,9 +348,20 @@ async fn v1_health() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok", "requests": snapshot }))
 }
 
+/// Persist queued observations and remove the published request snapshot
+/// (#2196, #2197). Blocking work, so it runs off the async workers.
+async fn finish_serving() {
+    let _ = tokio::task::spawn_blocking(|| {
+        lean_ctx::core::request_ledger::finish_serving(Duration::from_secs(5));
+    })
+    .await;
+}
+
 async fn v1_shutdown() -> impl IntoResponse {
     tokio::spawn(async {
         tokio::time::sleep(Duration::from_millis(100)).await;
+        // `process::exit` runs no destructors or exit hooks.
+        finish_serving().await;
         std::process::exit(0);
     });
     (StatusCode::OK, "shutting down\n")
@@ -1247,7 +1258,7 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
         })
         .await
         .context("http server");
-    lean_ctx::core::events::flush_detached_observations(std::time::Duration::from_secs(5));
+    finish_serving().await;
     served
 }
 
@@ -1288,7 +1299,7 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: lean_ctx::ipc::DaemonAddr) -
                 })
                 .await
                 .context("ipc server");
-            lean_ctx::core::events::flush_detached_observations(std::time::Duration::from_secs(5));
+            finish_serving().await;
             served
         }
         #[cfg(windows)]
@@ -1308,7 +1319,7 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: lean_ctx::ipc::DaemonAddr) -
                 })
                 .await
                 .context("ipc server");
-            lean_ctx::core::events::flush_detached_observations(std::time::Duration::from_secs(5));
+            finish_serving().await;
             served
         }
     }

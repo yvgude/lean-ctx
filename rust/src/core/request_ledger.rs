@@ -144,6 +144,7 @@ static REFUSED: AtomicU64 = AtomicU64::new(0);
 static ABANDONED: AtomicU64 = AtomicU64::new(0);
 static STARTED_AT_MS: AtomicU64 = AtomicU64::new(0);
 static SERVING: AtomicBool = AtomicBool::new(false);
+static FINISHED: AtomicBool = AtomicBool::new(false);
 static DIRTY: AtomicBool = AtomicBool::new(false);
 static KIND: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
 
@@ -188,6 +189,23 @@ pub fn start_serving(kind: &'static str) {
 
 pub fn serving() -> bool {
     SERVING.load(Ordering::Acquire)
+}
+
+/// Shutdown of a serving process: persist the observations still queued for
+/// the detached writer (bounded by `timeout`) and withdraw this process's
+/// published snapshot, so `lean-ctx doctor` does not list a stopped server.
+/// Runs once; later calls return at once. Blocking — call it from a plain
+/// thread or `spawn_blocking`, never directly on an async worker.
+pub fn finish_serving(timeout: Duration) {
+    if FINISHED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    crate::core::events::flush_detached_observations(timeout);
+    if SERVING.load(Ordering::Acquire)
+        && let Some(dir) = snapshot_dir()
+    {
+        let _ = std::fs::remove_file(dir.join(format!("{}.json", std::process::id())));
+    }
 }
 
 /// Count a request turned away before admission (rate or concurrency limit).
@@ -288,11 +306,12 @@ impl Drop for RequestGuard {
 pub fn snapshot() -> RequestLedgerSnapshot {
     let (oldest_pending, tracked, last_tool_completion, last_initialize) = {
         let ledger = ledger();
+        // Ids are handed out in admission order, so the first key is the
+        // oldest pending request.
         let oldest = ledger
             .pending
-            .values()
-            .min_by_key(|t| t.admitted_at_ms)
-            .map(|t| PendingRequest {
+            .first_key_value()
+            .map(|(_, t)| PendingRequest {
                 method: t.method.clone(),
                 stage: t.stage,
                 admitted_at_ms: t.admitted_at_ms,
@@ -324,7 +343,14 @@ pub fn snapshot() -> RequestLedgerSnapshot {
         refused: REFUSED.load(Ordering::Relaxed),
         abandoned,
         pending,
-        untracked_pending: pending.saturating_sub(tracked),
+        // A request stops being tracked only when the map is full. Below that
+        // bound a gap between the counters and the map is a request admitted
+        // between the two reads, not an untracked one.
+        untracked_pending: if tracked < MAX_TRACKED_PENDING as u64 {
+            0
+        } else {
+            pending.saturating_sub(tracked)
+        },
         oldest_pending,
         last_tool_completion,
         last_initialize,
@@ -368,7 +394,8 @@ impl RequestLedgerSnapshot {
                     age(p.admitted_at_ms),
                     p.stage.label()
                 ),
-                None => "unknown (untracked)".to_string(),
+                None if self.untracked_pending > 0 => "unknown (untracked)".to_string(),
+                None => "none".to_string(),
             }
         };
         let last = |record: &Option<CompletionRecord>| match record {
@@ -459,11 +486,21 @@ fn publish_loop(dir: &std::path::Path) {
     let path = dir.join(format!("{}.json", std::process::id()));
     let mut last_write_ms = 0u64;
     loop {
+        // Shutdown withdrew the snapshot; never write it back.
+        if FINISHED.load(Ordering::Acquire) {
+            return;
+        }
         let now = now_ms();
         let heartbeat_due = now.saturating_sub(last_write_ms) >= HEARTBEAT.as_millis() as u64;
         if DIRTY.swap(false, Ordering::AcqRel) || heartbeat_due {
             if let Ok(bytes) = serde_json::to_vec(&snapshot()) {
                 let _ = crate::core::atomic_fs::try_atomic_write(&path, &bytes, None);
+            }
+            // Shutdown may have withdrawn the snapshot while this write was
+            // in flight: withdraw it again, after the write.
+            if FINISHED.load(Ordering::Acquire) {
+                let _ = std::fs::remove_file(&path);
+                return;
             }
             last_write_ms = now;
         }
@@ -593,6 +630,35 @@ mod tests {
         stuck.finish(Outcome::Completed);
         assert_eq!(counts(), (5, 3, 1, 1));
         assert_eq!(snapshot().pending, 0);
+    }
+
+    /// A stopped server withdraws its snapshot and the publisher never
+    /// writes it back, so `lean-ctx doctor` does not list it (#2197).
+    #[test]
+    fn finish_serving_withdraws_the_published_snapshot() {
+        let data = tempfile::tempdir().expect("tempdir");
+        let data_dir = data.path().to_str().expect("utf-8 temp path");
+        if crate::test_env::run_in_own_process(
+            "core::request_ledger::tests::finish_serving_withdraws_the_published_snapshot",
+            &[("LEAN_CTX_DATA_DIR", data_dir)],
+        ) {
+            return;
+        }
+        let path = snapshot_dir()
+            .expect("data dir")
+            .join(format!("{}.json", std::process::id()));
+        start_serving("test");
+        let deadline = std::time::Instant::now() + PUBLISH_INTERVAL * 3;
+        while !path.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(path.exists(), "snapshot published at {}", path.display());
+
+        finish_serving(Duration::from_secs(5));
+        assert!(!path.exists(), "snapshot withdrawn");
+        refused();
+        std::thread::sleep(PUBLISH_INTERVAL * 2);
+        assert!(!path.exists(), "publisher wrote the snapshot back");
     }
 
     #[test]

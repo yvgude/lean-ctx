@@ -535,15 +535,27 @@ fn detached_sender() -> Option<&'static std::sync::mpsc::SyncSender<DetachedMess
 fn run_detached_writer(receiver: &std::sync::mpsc::Receiver<DetachedMessage>) {
     while let Ok(message) = receiver.recv() {
         match message {
-            DetachedMessage::Persist(admitted) => match persist_with_retry(&admitted) {
-                Ok(_) => {
-                    DETACHED_PERSISTED.fetch_add(1, Ordering::Relaxed);
+            DetachedMessage::Persist(admitted) => {
+                // A panic in one write must not end the writer: the queue
+                // behind it would be lost and every later flush would wait
+                // for nothing.
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    persist_with_retry(&admitted)
+                }));
+                match outcome {
+                    Ok(Ok(_)) => {
+                        DETACHED_PERSISTED.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Ok(Err(error)) => {
+                        DETACHED_FAILED.fetch_add(1, Ordering::Relaxed);
+                        log_persistence_failure(&error);
+                    }
+                    Err(_) => {
+                        DETACHED_FAILED.fetch_add(1, Ordering::Relaxed);
+                        tracing::warn!("canonical legacy observation persistence panicked");
+                    }
                 }
-                Err(error) => {
-                    DETACHED_FAILED.fetch_add(1, Ordering::Relaxed);
-                    log_persistence_failure(&error);
-                }
-            },
+            }
             DetachedMessage::Flush(done) => {
                 let _ = done.send(());
             }
@@ -551,23 +563,19 @@ fn run_detached_writer(receiver: &std::sync::mpsc::Receiver<DetachedMessage>) {
     }
 }
 
-/// The writer thread may wait where a request may not: a lock timeout there
-/// (another process holding the store) is retried a few times before the
-/// observation is counted as failed.
+/// The writer thread may wait where a request may not: one lock timeout
+/// there (another process holding the store) is retried once after a short
+/// pause before the observation is counted as failed. Each attempt already
+/// waits the full lock bound, so more retries would only stall the queue.
 fn persist_with_retry(
     admitted: &crate::core::context_os::AdmittedLegacyObservation,
 ) -> Result<u64, crate::core::context_os::ObservationPersistenceError> {
-    const ATTEMPTS: u32 = 3;
-    let mut attempt = 1;
-    loop {
-        match persist_admitted(admitted) {
-            Err(crate::core::context_os::ObservationPersistenceError::LockTimeout)
-                if attempt < ATTEMPTS =>
-            {
-                attempt += 1;
-            }
-            result => return result,
+    match persist_admitted(admitted) {
+        Err(crate::core::context_os::ObservationPersistenceError::LockTimeout) => {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            persist_admitted(admitted)
         }
+        result => result,
     }
 }
 
@@ -625,7 +633,8 @@ pub fn flush_detached_observations(timeout: std::time::Duration) -> bool {
                 message = returned;
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
-            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => return true,
+            // The writer is gone: whatever it still held is lost.
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => return false,
         }
     }
     let remaining = deadline.saturating_duration_since(std::time::Instant::now());
