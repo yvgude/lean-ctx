@@ -392,122 +392,39 @@ fn home_allow_dirs(home: &Path, ide_dirs_allowed: bool) -> Vec<PathBuf> {
     }
     // The editor registry probes the filesystem and PATH for ~40 editors; the
     // jail runs on every path check, so resolve once per process and refresh
-    // on a TTL (#2195). The probe never runs under the lock. Once this home
-    // has an entry, one caller refreshes it while the others keep the
-    // previous list (stale-while-revalidate), so a slow probe (network home,
-    // stalled mount) neither blocks their path checks nor multiplies the
-    // probe I/O. A refresh claim older than the TTL counts as hung and may be
-    // taken over, so a stuck probe cannot pin the stale list. Lock ordering:
-    // L145.
-    let mut refresher = {
-        let mut cache = lock_home_allow_dirs();
-        let claim_live = cache
-            .refreshing
-            .as_ref()
-            .is_some_and(|(h, since)| h == home && since.elapsed() < HOME_ALLOW_DIRS_TTL);
-        match cache.entry.as_ref().filter(|e| e.home == home) {
-            Some(e) if claim_live || e.stored_at.elapsed() < HOME_ALLOW_DIRS_TTL => {
-                return e.dirs.clone();
-            }
-            Some(_) => {
-                let since = std::time::Instant::now();
-                cache.refreshing = Some((home.to_path_buf(), since));
-                Some(RefreshGuard { since, armed: true })
-            }
-            // No entry for this home yet: nothing to serve, so probe.
-            None => None,
-        }
-    };
-
-    let started = std::time::Instant::now();
+    // on a TTL (#2195). The lock is held across the probe on purpose: it is
+    // the single flight. Every caller that reaches it has IDE dirs enabled
+    // (opt-in) and needs this list, so waiting for one probe costs no more
+    // than probing itself, never multiplies the probe I/O, and never serves
+    // an expired allow-list. The TTL runs from when the list is stored.
+    // Lock ordering: L145.
+    let mut cache = lock_home_allow_dirs();
+    if let Some((cached_home, stored_at, dirs)) = cache.as_ref()
+        && cached_home == home
+        && stored_at.elapsed() < HOME_ALLOW_DIRS_TTL
+    {
+        return dirs.clone();
+    }
     #[cfg(test)]
     HOME_ALLOW_DIRS_BUILDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let mut out = Vec::new();
     let targets = crate::core::editor_registry::build_targets(home);
     collect_ide_allow_dirs(home, &targets, &mut out);
-
-    let mut cache = lock_home_allow_dirs();
-    // For the same home, a probe that started earlier than the stored one
-    // must not overwrite it. Another home simply replaces the entry: the
-    // cache holds one home.
-    let newer_kept = cache
-        .entry
-        .as_ref()
-        .is_some_and(|e| e.home == home && e.started > started);
-    if !newer_kept {
-        cache.entry = Some(HomeAllowDirs {
-            home: home.to_path_buf(),
-            started,
-            // The TTL runs from when the list became available, so a probe
-            // slower than the TTL does not store an already expired entry.
-            stored_at: std::time::Instant::now(),
-            dirs: out.clone(),
-        });
-    }
-    // Release the claim in this same critical section; the guard only acts
-    // if the probe unwinds before reaching here.
-    if let Some(guard) = refresher.as_mut() {
-        guard.armed = false;
-        cache.release_refresh(guard.since);
-    }
+    *cache = Some((home.to_path_buf(), std::time::Instant::now(), out.clone()));
     out
 }
 
 const HOME_ALLOW_DIRS_TTL: std::time::Duration = std::time::Duration::from_secs(300);
 
-struct HomeAllowDirs {
-    home: PathBuf,
-    /// When the probe behind `dirs` started, to order racing probes.
-    started: std::time::Instant,
-    /// When `dirs` was stored; the TTL runs from here.
-    stored_at: std::time::Instant,
-    dirs: Vec<PathBuf>,
-}
+/// The IDE allow-dirs of one home: (home, stored at, dirs).
+type HomeAllowDirsCache = Option<(PathBuf, std::time::Instant, Vec<PathBuf>)>;
 
-#[derive(Default)]
-struct HomeAllowDirsCache {
-    entry: Option<HomeAllowDirs>,
-    /// The home being refreshed and when the claim was taken. Others serve
-    /// the stale list meanwhile, at most for one TTL past the claim.
-    refreshing: Option<(PathBuf, std::time::Instant)>,
-}
-
-impl HomeAllowDirsCache {
-    /// Drops the refresh claim taken at `since`, unless a later caller has
-    /// already taken over a hung claim.
-    fn release_refresh(&mut self, since: std::time::Instant) {
-        if self.refreshing.as_ref().is_some_and(|(_, s)| *s == since) {
-            self.refreshing = None;
-        }
-    }
-}
-
-static HOME_ALLOW_DIRS_CACHE: std::sync::Mutex<HomeAllowDirsCache> =
-    std::sync::Mutex::new(HomeAllowDirsCache {
-        entry: None,
-        refreshing: None,
-    });
+static HOME_ALLOW_DIRS_CACHE: std::sync::Mutex<HomeAllowDirsCache> = std::sync::Mutex::new(None);
 
 fn lock_home_allow_dirs() -> std::sync::MutexGuard<'static, HomeAllowDirsCache> {
     HOME_ALLOW_DIRS_CACHE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// Releases the refresh claim if the probe panics, so a failed refresh never
-/// pins the stale list. Disarmed on the normal path, where the claim is
-/// released while the store already holds the lock (never re-entered).
-struct RefreshGuard {
-    since: std::time::Instant,
-    armed: bool,
-}
-
-impl Drop for RefreshGuard {
-    fn drop(&mut self) {
-        if self.armed {
-            lock_home_allow_dirs().release_refresh(self.since);
-        }
-    }
 }
 
 #[cfg(test)]
