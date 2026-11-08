@@ -1693,6 +1693,8 @@ new_paths = [
   "rust/src/core/hook_mode.rs",
   "rust/src/core/host_state.rs",
   "rust/.config/nextest-data-dir.sh",
+  # Windows counterpart of the nextest wrapper above: Apache-2.0, own work.
+  "rust/.config/nextest-data-dir.cmd",
   "rust/crates/lean-ctx-proxy/Cargo.toml",
   "rust/crates/lean-ctx-proxy/src/admitted.rs",
   "rust/crates/lean-ctx-proxy/src/admitted_horizon_tests.rs",
