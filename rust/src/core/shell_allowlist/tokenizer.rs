@@ -267,6 +267,39 @@ pub fn segments_with_separators(command: &str) -> Vec<(String, Option<Separator>
         .collect()
 }
 
+/// Every segment together with the separator that ends the segment before
+/// it; the first segment has none. A leading `&` with nothing before it still
+/// counts, so a PowerShell call operator (`& 'x'`, which this scanner splits
+/// like a background `&`) can be told from a command.
+pub(super) fn segments_after_separators(command: &str) -> Vec<(String, Option<Separator>)> {
+    let mut previous = None;
+    let mut out = Vec::new();
+    for (segment, sep) in split_with_separators(command) {
+        let segment = segment.trim();
+        if !segment.is_empty() {
+            out.push((segment.to_string(), previous));
+        }
+        previous = sep;
+    }
+    out
+}
+
+/// Does an `&` that starts a statement (nothing before it in its segment)
+/// meet a line break or `;` before any target? Read as a PowerShell call
+/// operator, the text after the break would otherwise pass as a statement of
+/// its own.
+pub(super) fn has_call_operator_before_break(command: &str) -> bool {
+    split_with_separators(command).windows(2).any(|pair| {
+        let [(before, amp), (target, after)] = pair else {
+            return false;
+        };
+        before.trim().is_empty()
+            && *amp == Some(Separator::Background)
+            && target.trim().is_empty()
+            && *after == Some(Separator::Sequence)
+    })
+}
+
 /// The top-level statements of a command line: the original text between
 /// `;`/newline separators, each still holding its `&&`, `||`, `|` and `&`
 /// verbatim. Same scanner as [`segments_with_separators`].

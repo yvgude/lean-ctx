@@ -1,6 +1,6 @@
 use super::heredoc::strip_for_analysis;
 use super::lexer::{Expansion, lex};
-use super::{ShellError, effective_allowlist, extract_all_commands, extract_base_from_segment};
+use super::{ShellError, effective_allowlist, extract_base_from_segment};
 
 /// $(), backticks, <() in arguments: a substituted command runs like any other,
 /// so it is gated like one (GHSA-rxv5-4c3x-g4q6 E, owner decision 26.10.;
@@ -91,9 +91,16 @@ fn extract_substitution_commands(command: &str) -> Result<Vec<String>, ShellErro
             if trimmed.is_empty() {
                 continue;
             }
-            results.extend(extract_all_commands(&strip_for_analysis(
-                trimmed, false, true,
-            )));
+            // Split like a top-level line, so a PowerShell call operator
+            // keeps its target a command (`$(& 'x')`), never an inert string.
+            let stripped = strip_for_analysis(trimmed, false, true);
+            for (segment, call) in super::compound::call_operator_segments(&stripped)? {
+                results.push(if call {
+                    format!("& {segment}")
+                } else {
+                    segment
+                });
+            }
             results.extend(extract_substitution_commands(trimmed)?);
         }
     }

@@ -437,11 +437,17 @@ fn local_assignment_value(statement: &str) -> Option<&str> {
 
 /// Is every top-level segment of `command` a PowerShell statement or
 /// expression this module reads? Then an empty leaf list means the line runs
-/// no command, not that the walker found nothing to check.
+/// no command, not that the walker found nothing to check. The target of a
+/// call operator (`& 'x'`) is a command, never inert.
 pub(super) fn is_inert_powershell(command: &str) -> bool {
-    let segments = super::extract_all_commands(command);
+    let Ok(segments) = super::compound::call_operator_segments(command) else {
+        return false;
+    };
     !segments.is_empty()
-        && segments.iter().all(|segment| {
+        && segments.iter().all(|(segment, call_target)| {
+            if *call_target {
+                return false;
+            }
             let statement = super::skip_powershell_assignment(segment);
             matches!(statement_commands(statement), Some(Ok(_)))
                 || expression_commands(statement).is_some()

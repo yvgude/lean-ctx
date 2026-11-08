@@ -41,9 +41,7 @@ pub(super) fn expand_to_leaf_segments(command: &str) -> Result<Vec<String>, Shel
         .into());
     }
     let mut leaves = Vec::new();
-    for seg in extract_all_commands(&command) {
-        resolve_segment_leaves(&seg, 0, &mut leaves)?;
-    }
+    resolve_commands(&command, 0, &mut leaves)?;
     Ok(leaves)
 }
 
@@ -73,9 +71,7 @@ fn resolve_segment_leaves(
     // neither walk below can claim it.
     if let Some(expr) = arithmetic_command_expr(strip_body_intro_keywords(s)) {
         for inner in arithmetic_substitutions(expr, segment)? {
-            for inner_seg in extract_all_commands(inner) {
-                resolve_segment_leaves(&inner_seg, depth + 1, out)?;
-            }
+            resolve_commands(inner, depth + 1, out)?;
         }
         return Ok(());
     }
@@ -121,20 +117,14 @@ fn resolve_segment_leaves(
         return resolve_segment_leaves(assignment_rhs, depth + 1, out);
     }
     if let Some(inner) = balanced_paren_inner(s) {
-        for inner_seg in extract_all_commands(inner) {
-            resolve_segment_leaves(&inner_seg, depth + 1, out)?;
-        }
-        return Ok(());
+        return resolve_commands(inner, depth + 1, out);
     }
     // #1514: PowerShell commonly wraps a read-only cmdlet before selecting a
     // property: `(Get-Item 'x').VersionInfo`. Validate the inner command and
     // accept only a conservative property chain. Method calls, indexers and
     // operators fall through to deny-by-default as an unrecognized command.
     if let Some(inner) = powershell_property_expression_inner(s) {
-        for inner_seg in extract_all_commands(inner) {
-            resolve_segment_leaves(&inner_seg, depth + 1, out)?;
-        }
-        return Ok(());
+        return resolve_commands(inner, depth + 1, out);
     }
     // #968: a `{ cmd1; cmd2; }` brace group must be recursed into exactly like
     // a `( … )` subshell above — otherwise every command after the first
@@ -156,10 +146,7 @@ fn resolve_segment_leaves(
         if !suffix.trim().is_empty() && !is_redirect_only_suffix(suffix) {
             return Err(zsh_only_form(segment));
         }
-        for inner_seg in extract_all_commands(inner) {
-            resolve_segment_leaves(&inner_seg, depth + 1, out)?;
-        }
-        return Ok(());
+        return resolve_commands(inner, depth + 1, out);
     }
     // #855: a segment that is *entirely* env-var assignments (`VAR=$(cmd …)`,
     // nothing left over — `out=$(gh pr view …)` is a common, legitimate idiom
@@ -171,9 +158,7 @@ fn resolve_segment_leaves(
     // as its own leaf so `gh`, not the assignment wrapper, is what actually
     // gets checked against the allowlist.
     for inner in assignment_substitution_leaves(s) {
-        for inner_seg in extract_all_commands(inner) {
-            resolve_segment_leaves(&inner_seg, depth + 1, out)?;
-        }
+        resolve_commands(inner, depth + 1, out)?;
     }
     // Anything else (incl. `( … ) trailing`, leftover delimiters) is pushed
     // verbatim: base-extraction below sees a first token like `(ls)` that
@@ -186,11 +171,24 @@ fn resolve_segment_leaves(
     // the real base command inside — no recursion needed like subshells get,
     // since `cd`/env changes inside `{ }` must persist to the caller (#939,
     // agent_wrapper::rebuild's cwd-tracking wrapper).
-    //
-    // #1930: a cmdlet runs the script blocks it is handed
-    // (`ForEach-Object { Remove-Item $_ }`), so each block body is resolved
-    // into leaves of its own, after the cmdlet itself so its verdict comes
-    // first.
+    resolve_command_leaf(s, segment, depth, out)
+}
+
+/// Push the simple command `s` as a leaf, then resolve the script blocks it
+/// runs. Shared by an ordinary segment and the literal target of a call
+/// operator (`& ForEach-Object { … }`), so neither skips these checks.
+/// `segment` is the text an error shows.
+///
+/// #1930: a cmdlet runs the script blocks it is handed
+/// (`ForEach-Object { Remove-Item $_ }`), so each block body is resolved
+/// into leaves of its own, after the cmdlet itself so its verdict comes
+/// first.
+fn resolve_command_leaf(
+    s: &str,
+    segment: &str,
+    depth: usize,
+    out: &mut Vec<String>,
+) -> Result<(), ShellError> {
     let base = extract_base_from_segment(s);
     let bodies = super::ps_statements::script_block_bodies(s, &base);
     // zsh runs brace bodies without `do`/`then`: `while true { cmd }`,
@@ -236,12 +234,115 @@ fn zsh_only_form(segment: &str) -> ShellError {
     .into()
 }
 
-/// Resolve every segment of a command text found inside PowerShell syntax.
+/// Resolve every segment of a command text.
 fn resolve_commands(text: &str, depth: usize, out: &mut Vec<String>) -> Result<(), ShellError> {
-    for segment in extract_all_commands(text) {
-        resolve_segment_leaves(&segment, depth, out)?;
+    for (segment, call_target) in call_operator_segments(text)? {
+        if call_target {
+            resolve_call_target(&segment, depth, out)?;
+        } else {
+            resolve_segment_leaves(&segment, depth, out)?;
+        }
     }
     Ok(())
+}
+
+/// The segments of `text`, each with whether PowerShell's call operator runs
+/// it. Under the PowerShell host a single `&` is no background operator:
+/// `& <target> <args>` runs whatever program, path, variable or expression
+/// result `<target>` names, with those arguments. An `&` that starts a
+/// statement and meets a line break or `;` before any target is refused:
+/// PowerShell reports a missing expression there, so this is conservative,
+/// but the text after the break must never pass as a statement of its own.
+pub(super) fn call_operator_segments(text: &str) -> Result<Vec<(String, bool)>, ShellError> {
+    let powershell = super::ps_statements::host_is_powershell();
+    if powershell && super::tokenizer::has_call_operator_before_break(text) {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] PowerShell's call operator `&` is followed by a line \
+             break, so the command it runs cannot be checked against the allowlist.\n\
+             Put the program on the same line as `&`.\nCommand: {text}"
+        )
+        .into());
+    }
+    Ok(super::tokenizer::segments_after_separators(text)
+        .into_iter()
+        .map(|(segment, previous)| {
+            let call_target =
+                powershell && previous == Some(super::tokenizer::Separator::Background);
+            (segment, call_target)
+        })
+        .collect())
+}
+
+/// `& <target> <args>` is a command, never an expression to read as inert.
+/// A literal target is resolved like any simple command: base extraction
+/// strips its quotes, so `& 'git' status` is checked as `git status`, and
+/// the script blocks a cmdlet target runs (`& ForEach-Object { … }`) are
+/// walked. A path target (`& 'C:/x/git.exe' status`) is judged by its base
+/// name exactly as the plain `C:/x/git.exe status` is, so it is refused
+/// unless that name itself is allowlisted. A target that names its program
+/// only at run time (`$c`, `$env:ComSpec`, `"$env:TEMP/git"`,
+/// `(Get-Command x)`) is refused. A script block (`& { … }`, `&{…}`) runs
+/// its statements, resolved like any block body; a trailing redirection
+/// binds its output as for a plain brace group. One followed by arguments
+/// or not closed is refused, never read as a command. Every target counts
+/// against the walker's depth bound, so a literal target that runs a block
+/// (`& % { & % { … } }`) is bounded like the plain `% { % { … } }`.
+fn resolve_call_target(
+    target: &str,
+    depth: usize,
+    out: &mut Vec<String>,
+) -> Result<(), ShellError> {
+    if depth > 4 {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] PowerShell's call operator `&` is nested too deeply \
+             to validate safely: a call target is resolved at most four deep.\n\
+             Run the commands directly instead.\nCommand: & {target}"
+        )
+        .into());
+    }
+    if let Some(rest) = target.strip_prefix('{') {
+        // PowerShell needs no blank after `{` (`&{git status}`); brace_group
+        // wants one so that bash's `{a,b}` expansion is never peeled open.
+        let spaced = format!("{{ {rest}");
+        if let Some((body, suffix)) = brace_group(&spaced)
+            && (suffix.trim().is_empty() || is_redirect_only_suffix(suffix))
+        {
+            return resolve_block_body(body, depth, out);
+        }
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] PowerShell's call operator `&` runs a script block \
+             this gate cannot check: only a closed `& {{ … }}` followed by nothing or a \
+             redirection is resolved into its commands.\n\
+             Run the commands directly instead.\nCommand: & {target}"
+        )
+        .into());
+    }
+    if target.starts_with(['$', '(', '@', '[']) || first_word_expands(target) {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] PowerShell's call operator `&` runs whatever its target \
+             names. Only a literal program name or path can be checked against the allowlist, \
+             not a variable, an expansion or an expression.\n\
+             Call the program by its name or path instead.\nCommand: & {target}"
+        )
+        .into());
+    }
+    resolve_command_leaf(target, target, depth, out)
+}
+
+/// Does the first word of a call target hold a `$` that PowerShell expands
+/// (one outside single quotes)? Then the word names its program at run time.
+fn first_word_expands(target: &str) -> bool {
+    let word = &target[..quote_aware_token_end(target)];
+    let (mut single, mut double) = (false, false);
+    for ch in word.chars() {
+        match ch {
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            '$' if !single => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// #1930: resolve the body of a PowerShell `{ … }` block. Only PowerShell runs
@@ -249,7 +350,11 @@ fn resolve_commands(text: &str, depth: usize, out: &mut Vec<String>) -> Result<(
 /// `$n = $n + 1`) contributes just the commands inside it; anything else is a
 /// pipeline, resolved as usual.
 fn resolve_block_body(body: &str, depth: usize, out: &mut Vec<String>) -> Result<(), ShellError> {
-    for statement in extract_all_commands(body) {
+    for (statement, call_target) in call_operator_segments(body)? {
+        if call_target {
+            resolve_call_target(&statement, depth + 1, out)?;
+            continue;
+        }
         match super::ps_statements::block_statement_commands(&statement) {
             Some(commands) => {
                 for command in commands {

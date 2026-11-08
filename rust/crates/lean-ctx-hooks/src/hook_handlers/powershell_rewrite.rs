@@ -495,6 +495,39 @@ mod tests {
         ]);
     }
 
+    /// The call operator `&` runs its target: only a literal name or path
+    /// that the allowlist accepts may pass.
+    #[test]
+    fn call_operator_targets_meet_the_allowlist() {
+        assert_decisions_under_any_hook_shell(&[
+            ("& git status", false),
+            ("& 'evil_binary'", true),
+            ("& 'cmd' ,'/c','evil_binary'", true),
+            ("& $env:ComSpec", true),
+            ("& (Get-Command evil_binary)", true),
+            ("&{git status}", false),
+            ("& {git status}", false),
+            ("& { & { & { & { git status } } } }", false),
+            ("&'evil_binary'", true),
+            ("git status | & evil_binary", true),
+            ("git status && & evil_binary", true),
+            ("& git status & 'evil_binary'", true),
+            ("1 | & % { evil_binary }", true),
+            ("& ForEach-Object { evil_binary }", true),
+            ("& Select-Object @{e={evil_binary}}", true),
+            ("Write-Output $(& 'evil_binary')", true),
+            ("echo \"$(& 'evil_binary')\"", true),
+            (
+                "& { & { & { & { & { & { echo x; evil_binary } } } } } }",
+                true,
+            ),
+            // Conservative: PowerShell itself rejects a bare `&` at the end
+            // of a line, but the next line must not pass as inert.
+            ("&\n'evil_binary'", true),
+            ("& \"$env:TEMP/git\" status", true),
+        ]);
+    }
+
     #[test]
     fn safe_compound_passes_through_unchanged() {
         let decision = with_security("enforce", || decide("Set-Location src; git status", BIN));

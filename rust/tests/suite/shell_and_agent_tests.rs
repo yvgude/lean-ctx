@@ -390,29 +390,45 @@ fn hook_rewrite_not_rewritten_destructive_command_grants_nothing() {
 /// A host that launches its hooks through Git Bash (Claude Code on Windows
 /// does) hands the hook `SHELL=/usr/bin/bash` and `MSYSTEM=MINGW64`. A
 /// PowerShell tool call is still read as PowerShell: the environment's bash
-/// is not the shell that runs it.
+/// is not the shell that runs it, and the call operator `&` runs its target.
 #[test]
 fn hook_rewrite_powershell_tool_ignores_git_bash_environment() {
-    let payload = serde_json::json!({
-        "session_id": "s",
-        "transcript_path": "/tmp/t.jsonl",
-        "cwd": "/tmp",
-        "hook_event_name": "PreToolUse",
-        "tool_name": "PowerShell",
-        "tool_input": {
-            "command": "Get-ChildItem | Select-Object @{n='kb'; e={ $_.Length / 1kb }}"
-        }
-    })
-    .to_string();
     let git_bash = [
         ("LEAN_CTX_SHELL_SECURITY", "enforce"),
         ("SHELL", "/usr/bin/bash"),
         ("MSYSTEM", "MINGW64"),
         ("MINGW_PREFIX", "/mingw64"),
     ];
-    let (stdout, stderr, code) = run_hook_test(&["hook", "rewrite"], &git_bash, Some(&payload));
-    assert_eq!(code, 0, "{stderr}");
-    assert_eq!(stdout.trim(), "{}", "{stderr}");
+    for (command, denied) in [
+        (
+            "Get-ChildItem | Select-Object @{n='kb'; e={ $_.Length / 1kb }}",
+            false,
+        ),
+        ("& 'calc'", true),
+        ("Write-Output $(& 'calc')", true),
+    ] {
+        let payload = serde_json::json!({
+            "session_id": "s",
+            "transcript_path": "/tmp/t.jsonl",
+            "cwd": "/tmp",
+            "hook_event_name": "PreToolUse",
+            "tool_name": "PowerShell",
+            "tool_input": { "command": command }
+        })
+        .to_string();
+        let (stdout, stderr, code) = run_hook_test(&["hook", "rewrite"], &git_bash, Some(&payload));
+        assert_eq!(code, 0, "{command}: {stderr}");
+        if denied {
+            let v: serde_json::Value = serde_json::from_str(stdout.trim())
+                .unwrap_or_else(|e| panic!("{command}: {e}: {stdout:?}"));
+            assert_eq!(
+                v["hookSpecificOutput"]["permissionDecision"], "deny",
+                "{command}: {stdout}"
+            );
+        } else {
+            assert_eq!(stdout.trim(), "{}", "{command}: {stderr}");
+        }
+    }
 }
 
 /// Malformed input and non-shell tools fail open without a decision.
