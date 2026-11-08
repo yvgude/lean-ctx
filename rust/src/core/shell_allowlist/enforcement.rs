@@ -66,13 +66,10 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
     decided
 }
 
-/// [`check_shell_allowlist`] for a line PowerShell runs: a host's PowerShell
-/// tool call (`PowerShell`, or Copilot CLI's `powershell` and `pwsh`), which
-/// the hook checks but does not wrap. The shell lean-ctx detects for itself
-/// is the wrong one there: a host that launches its hooks through Git Bash
-/// (Claude Code on Windows does) hands the hook `SHELL=/usr/bin/bash` and
-/// `MSYSTEM=MINGW64`, and PowerShell statements read under POSIX rules are
-/// refused.
+/// [`check_shell_allowlist`] for a host's PowerShell tool call, which the hook
+/// checks but does not wrap. Not the detected shell: a host that runs hooks
+/// through Git Bash (Claude Code on Windows) passes `SHELL=/usr/bin/bash` and
+/// `MSYSTEM=MINGW64`, and PowerShell read under POSIX rules is refused.
 pub fn check_shell_allowlist_in_powershell(command: &str) -> Result<(), ShellError> {
     let _host = super::ps_statements::HostGuard::powershell(true);
     check_shell_allowlist(command)
