@@ -285,6 +285,12 @@ fn host_mode() -> Mode {
     }
 }
 
+/// Does PowerShell run the checked line? For the lexer, which otherwise reads
+/// only POSIX shells.
+pub(super) fn host_is_powershell() -> bool {
+    host_mode() == Mode::PowerShell
+}
+
 /// Commands a PowerShell control-flow statement runs — its conditions, loop
 /// sources and block bodies — as text for the walker to validate.
 ///

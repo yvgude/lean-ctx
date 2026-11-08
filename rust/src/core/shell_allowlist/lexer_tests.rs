@@ -195,3 +195,46 @@ fn ordinary_commands_keep_passing() {
         ],
     );
 }
+
+/// A `(` attached to a member name is a .NET call, not a glob qualifier, only
+/// when PowerShell runs the line; which members are inert is decided by the
+/// PowerShell reader, and a bare word keeps the refusal on every host.
+#[test]
+fn attached_paren_of_a_member_call_passes_only_under_powershell() {
+    use crate::core::shell_allowlist::ps_statements::HostGuard;
+    let member_calls = [
+        "[Math]::Max(1,2)",
+        "[Environment]::GetEnvironmentVariable('Path','User') -split ';'",
+        "$s.Substring(1)",
+        "$p = [Environment]::GetEnvironmentVariable('Path','User')",
+        "if ($x) { $n += $s.IndexOf('x') }",
+    ];
+    {
+        let _host = HostGuard::powershell(true);
+        assert_all_pass("echo", &member_calls);
+        assert_all_block(
+            "echo",
+            &[
+                "[IO.File]::Delete('x')",
+                "[Diagnostics.Process]::Start('calc')",
+                "$p.Kill(1)",
+                "echo x.y(evil_binary)",
+                "echo $x.ToString((evil_binary))",
+                "$n = $x.ToString((evil_binary))",
+                "$env:X = $x.ToString((evil_binary))",
+                "ForEach-Object { $x.ToString((evil_binary)) }",
+                // An `=` inside an argument is no assignment: PowerShell
+                // runs the `( … )` there as another argument.
+                "echo =$x.y(evil_binary)",
+                "git log --format=$x.y(evil_binary)",
+                "Get-ChildItem a=[Math]::Max(evil_binary)",
+                "[Math]::Max((evil_binary), 1)",
+                "echo *(e:evil_binary:)",
+                "echo x(+evil_binary)",
+            ],
+        );
+    }
+    let _host = HostGuard::powershell(false);
+    assert_all_block("echo", &member_calls);
+    assert_all_block("echo", &["echo x(+evil_binary)"]);
+}

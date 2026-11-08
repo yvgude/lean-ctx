@@ -473,6 +473,28 @@ mod tests {
         ]);
     }
 
+    /// A .NET member call at statement start or as a local assignment's
+    /// value is read by the PowerShell reader; one inside an argument is not.
+    #[test]
+    fn member_calls_pass_only_where_the_powershell_reader_sees_them() {
+        assert_decisions_under_any_hook_shell(&[
+            ("[Math]::Max(1,2)", false),
+            (
+                "[Environment]::GetEnvironmentVariable('Path','User') -split ';'",
+                false,
+            ),
+            (
+                "$p = [Environment]::GetEnvironmentVariable('Path','User')",
+                false,
+            ),
+            ("$env:X = $x.ToString((calc))", true),
+            ("ForEach-Object { $x.ToString((calc)) }", true),
+            ("echo =$x.y(calc)", true),
+            ("git log --format=$x.y(calc)", true),
+            ("Get-ChildItem a=[Math]::Max(calc)", true),
+        ]);
+    }
+
     #[test]
     fn safe_compound_passes_through_unchanged() {
         let decision = with_security("enforce", || decide("Set-Location src; git status", BIN));
