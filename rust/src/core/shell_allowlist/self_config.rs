@@ -26,7 +26,8 @@ use crate::core::error::ShellError;
 
 #[path = "download_targets.rs"]
 mod download_targets;
-use download_targets::{download_targets, is_relative_operand};
+use download_targets::is_relative_operand;
+pub use download_targets::{UNKNOWN_DOWNLOAD_TARGET, download_targets};
 
 /// Subcommands that only read or show, whatever their arguments; only the
 /// subcommand word itself must be literal.
@@ -1406,17 +1407,20 @@ fn touches_protected(
     // `--stderr`, a log file) inside the state writes it; a download
     // directory above it (`wget -P ~`) only creates a file there. A file
     // curl joins onto `--output-dir` is judged where it lands
-    // (`--output-dir ~/.config -o lean-ctx/config.toml`).
+    // (`--output-dir ~/.config -o lean-ctx/config.toml`). A config file the
+    // call reads (`curl -K`, `-w @FILE`, `wget --config`) may name the state
+    // in a way no token shows, so it counts as writing it wherever the call
+    // runs (#2212, the #2165 write-anywhere path).
     if matches!(base, "curl" | "wget") {
+        let targets = download_targets(base, &tokens[1..]);
+        if targets.iter().any(|t| t == UNKNOWN_DOWNLOAD_TARGET) {
+            return writes(format!("{base} {UNKNOWN_DOWNLOAD_TARGET}"));
+        }
         return tokens[1..]
             .iter()
             .find(|t| inside(t))
             .cloned()
-            .or_else(|| {
-                download_targets(base, &tokens[1..])
-                    .into_iter()
-                    .find(|t| inside(t))
-            })
+            .or_else(|| targets.into_iter().find(|t| inside(t)))
             .and_then(|t| writes(shown(&t)));
     }
     if let Some(verdict) = plain_copy_effect(tokens, &inside, &reaches, &target_hits, homes) {

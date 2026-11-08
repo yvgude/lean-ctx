@@ -51,7 +51,7 @@ pub use heredoc::strip_all_heredoc_bodies;
 pub(crate) use heredoc::{strip_comments, strip_quoted_heredoc_bodies};
 pub use mode::ShellSecurity;
 pub use partial::{PartialRun, partial_run};
-pub use self_config::with_run_cwd;
+pub use self_config::{UNKNOWN_DOWNLOAD_TARGET, download_targets, with_run_cwd};
 pub use side_doors::LEAN_CTX_RUN_CONTROL_ENV;
 pub(crate) use substitution::check_substitution_in_args;
 #[cfg(test)]

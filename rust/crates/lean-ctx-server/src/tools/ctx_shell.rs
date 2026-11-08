@@ -357,47 +357,22 @@ fn disallowed_download(
         };
         let base = first.rsplit('/').next().unwrap_or(first);
         match base {
-            "curl" => {
-                let tokens_slice = &tokens[1..];
-                for (i, tok) in tokens_slice.iter().enumerate() {
-                    let target: Option<&str> = if tok == "--output" {
-                        tokens_slice.get(i + 1).map(String::as_str)
-                    } else if let Some(val) = tok.strip_prefix("--output=") {
-                        Some(val)
-                    } else if tok == "--output-dir" {
-                        tokens_slice.get(i + 1).map(String::as_str)
-                    } else if let Some(val) = tok.strip_prefix("--output-dir=") {
-                        Some(val)
-                    } else if tok.starts_with('-')
-                        && !tok.starts_with("--")
-                        && tok[1..].contains('o')
-                    {
-                        // -o <file>: next token is the path
-                        tokens_slice.get(i + 1).map(String::as_str)
-                    } else if tok == "--remote-name"
-                        || tok == "--remote-name-all"
-                        || (tok.starts_with('-')
-                            && !tok.starts_with("--")
-                            && tok[1..].contains('O'))
-                    {
-                        Some(".")
-                    } else {
-                        None
-                    };
-                    if let Some(path) = target {
-                        if allowed(path) {
-                            continue;
-                        }
-                        return Some(format!("curl {tok} {path}"));
-                    }
-                }
-            }
-            "wget" => {
-                if let Some(target) = wget_targets(&tokens[1..])
-                    .into_iter()
-                    .find(|target| !allowed(target))
+            // The same list of written files as the shell gate (#2212): every
+            // curl output option (`-o`, `-O`, `-D`, `-c`, `--trace`, `--hsts`,
+            // `-w '%output{…}'`, …) and every wget file (document, logs,
+            // `--save-cookies`, `-e logfile=…`, …). A config file the call
+            // reads (`curl -K`, `wget --config`) may name any file: refused
+            // wherever the call runs.
+            "curl" | "wget" => {
+                if let Some(target) =
+                    lean_ctx::core::shell_allowlist::download_targets(base, &tokens[1..])
+                        .into_iter()
+                        .find(|target| {
+                            target == lean_ctx::core::shell_allowlist::UNKNOWN_DOWNLOAD_TARGET
+                                || !allowed(target)
+                        })
                 {
-                    return Some(format!("wget writes {target}"));
+                    return Some(format!("{base} writes {target}"));
                 }
             }
             "dd" => {
@@ -414,69 +389,6 @@ fn disallowed_download(
         }
     }
     None
-}
-
-/// Every file a wget call writes: the document (`-O`/`--output-document`,
-/// else the URL's name in `-P`/`--directory-prefix` or the current directory)
-/// and a log (`-o`/`-a`). `-O -` and `--spider` write no document.
-fn wget_targets(args: &[String]) -> Vec<String> {
-    let mut document: Option<String> = None;
-    let mut prefix: Option<String> = None;
-    let mut logs = Vec::new();
-    let mut spider = false;
-    let mut i = 0;
-    while i < args.len() {
-        let tok = args[i].as_str();
-        let next = || args.get(i + 1).cloned();
-        let mut takes_next = false;
-        if tok == "--spider" {
-            spider = true;
-        } else if let Some((flag, value)) = tok.split_once('=').filter(|_| tok.starts_with("--")) {
-            match flag {
-                "--output-document" => document = Some(value.to_string()),
-                "--directory-prefix" => prefix = Some(value.to_string()),
-                "--output-file" | "--append-output" => logs.push(value.to_string()),
-                _ => {}
-            }
-        } else if matches!(
-            tok,
-            "--output-document" | "--directory-prefix" | "--output-file" | "--append-output"
-        ) {
-            takes_next = true;
-            let value = next();
-            match tok {
-                "--output-document" => document = value,
-                "--directory-prefix" => prefix = value,
-                _ => logs.extend(value),
-            }
-        } else if let Some(cluster) = tok.strip_prefix('-').filter(|c| !c.starts_with('-')) {
-            // A short-option cluster: the first value-taking letter takes the
-            // rest of the token, or the next token when nothing follows it.
-            if let Some(pos) = cluster.find(['O', 'P', 'o', 'a']) {
-                let rest = &cluster[pos + 1..];
-                let value = if rest.is_empty() {
-                    takes_next = true;
-                    next()
-                } else {
-                    Some(rest.to_string())
-                };
-                match &cluster[pos..=pos] {
-                    "O" => document = value,
-                    "P" => prefix = value,
-                    _ => logs.extend(value),
-                }
-            }
-        }
-        i += if takes_next { 2 } else { 1 };
-    }
-    let mut targets = logs;
-    match document.as_deref() {
-        Some("-") => {}
-        Some(file) => targets.push(file.to_string()),
-        None if !spider => targets.push(prefix.unwrap_or_else(|| ".".to_string())),
-        None => {}
-    }
-    targets
 }
 
 /// Returns true only for heredocs that redirect to files (the dangerous pattern).
