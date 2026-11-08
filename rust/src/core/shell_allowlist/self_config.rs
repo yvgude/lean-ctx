@@ -24,6 +24,10 @@ use std::cell::Cell;
 
 use crate::core::error::ShellError;
 
+#[path = "download_targets.rs"]
+mod download_targets;
+use download_targets::{download_targets, is_relative_operand};
+
 /// Subcommands that only read or show, whatever their arguments; only the
 /// subcommand word itself must be literal.
 const VIEW_SUBCOMMANDS: &[&str] = &[
@@ -458,8 +462,9 @@ enum LineCwd {
     Process,
     /// Moved by a literal `cd`.
     At(std::path::PathBuf),
-    /// Moved somewhere this check cannot tell (`cd "$d"`, `cd -`, `popd`).
-    Unknown,
+    /// Moved somewhere this check cannot tell (`cd "$d"`, `cd -`, `popd`);
+    /// holds that directory change as written, for the refusal.
+    Unknown(String),
 }
 
 thread_local! {
@@ -507,7 +512,16 @@ fn line_cwd() -> Option<std::path::PathBuf> {
             .with(|c| c.borrow().clone())
             .or_else(|| std::env::current_dir().ok()),
         LineCwd::At(dir) => Some(dir),
-        LineCwd::Unknown => None,
+        LineCwd::Unknown(_) => None,
+    }
+}
+
+/// Why relative words cannot be placed, when [`line_cwd`] is `None`: the
+/// directory change this check could not follow, as written.
+fn unknown_cwd_cause() -> String {
+    match LINE_CWD.with(|c| c.borrow().clone()) {
+        LineCwd::Unknown(change) => format!("the earlier `{change}`"),
+        LineCwd::Process | LineCwd::At(_) => "the unreadable working directory".to_string(),
     }
 }
 
@@ -516,17 +530,18 @@ fn follow_directory_change(tokens: &[String], homes: &[std::path::PathBuf]) {
     let target = tokens[1..]
         .iter()
         .find(|t| !t.starts_with('-') || t.as_str() == "-");
+    let unknown = || LineCwd::Unknown(tokens.join(" "));
     let next = match (tokens[0].as_str(), target) {
-        ("popd", _) => LineCwd::Unknown,
+        ("popd", _) => unknown(),
         (_, None) => homes
             .first()
-            .map_or(LineCwd::Unknown, |h| LineCwd::At(h.clone())),
+            .map_or_else(unknown, |h| LineCwd::At(h.clone())),
         (_, Some(word)) if word == "-" || word.contains(['$', '`', '*', '?', '[', '{']) => {
-            LineCwd::Unknown
+            unknown()
         }
         (_, Some(word)) => as_paths(word, homes)
             .pop()
-            .map_or(LineCwd::Unknown, LineCwd::At),
+            .map_or_else(unknown, LineCwd::At),
     };
     LINE_CWD.with(|c| *c.borrow_mut() = next);
 }
@@ -761,6 +776,20 @@ struct Tampering {
     /// `false`: a program whose effect cannot be told from its arguments
     /// (an interpreter, an unknown tool) — it may write.
     writes: bool,
+    /// Set when the command writes a relative path that cannot be placed
+    /// because of a directory change this check cannot follow: names that
+    /// cause (``the earlier `cd $D` ``) so the refusal points at it.
+    unplaced: Option<String>,
+}
+
+impl Tampering {
+    fn new(what: String, writes: bool) -> Self {
+        Self {
+            what,
+            writes,
+            unplaced: None,
+        }
+    }
 }
 
 /// The target of a `>`, `>>`, `>|`, `&>`, `N>`, `<>` or `>&FILE` redirect at
@@ -1289,7 +1318,7 @@ fn touches_protected(
             .map_or_else(|| token.to_string(), |p| p.display().to_string());
         format!("{base} {path}")
     };
-    let writes = |what: String| Some(Tampering { what, writes: true });
+    let writes = |what: String| Some(Tampering::new(what, true));
     // A redirect into lean-ctx's state writes it, whatever the program.
     if let Some(target) = (1..tokens.len())
         .filter_map(|i| redirect_target(tokens, i))
@@ -1299,10 +1328,7 @@ fn touches_protected(
     }
     if DIRECTORY_CHANGERS.contains(&base) {
         let named = tokens[1..].iter().find(|t| inside(t))?;
-        return Some(Tampering {
-            what: shown(named),
-            writes: false,
-        });
+        return Some(Tampering::new(shown(named), false));
     }
     if READ_ONLY_COMMANDS.contains(&base) {
         return None;
@@ -1332,24 +1358,37 @@ fn touches_protected(
                 && let Some(word) = args.iter().skip(1).find(|t| !t.starts_with('-'))
             {
                 return Some(Tampering {
-                    what: format!("{base} {word} (after a cd that cannot be followed)"),
-                    writes: false,
+                    unplaced: Some(unknown_cwd_cause()),
+                    ..Tampering::new(format!("{base} {word}"), false)
                 });
             }
             let named = args.iter().find(|t| inside(t))?;
             return writes(shown(named));
         }
     }
-    // After a `cd` this check cannot follow, a relative operand of a
-    // writing program may be anywhere.
+    // After a `cd` this check cannot follow, a relative path a writing
+    // program writes may be anywhere. For curl and wget only the files they
+    // write count (`-o`, `-O`, wget's document directory) — never the URL or
+    // another option's value (#2201).
     if WRITE_PROGRAMS.contains(&base) && line_cwd().is_none() {
-        let relative = tokens[1..]
-            .iter()
-            .find(|t| !t.starts_with(['-', '/', '~', '$']) && !t.contains('='));
+        let relative = if matches!(base, "curl" | "wget") {
+            download_targets(base, &tokens[1..])
+                .into_iter()
+                .find(|t| is_relative_operand(t))
+                .map(|t| {
+                    if t == "." {
+                        "(a download into the working directory)".to_string()
+                    } else {
+                        t
+                    }
+                })
+        } else {
+            tokens[1..].iter().find(|t| is_relative_operand(t)).cloned()
+        };
         if let Some(word) = relative {
             return Some(Tampering {
-                what: format!("{base} {word} (after a cd that cannot be followed)"),
-                writes: false,
+                unplaced: Some(unknown_cwd_cause()),
+                ..Tampering::new(format!("{base} {word}"), false)
             });
         }
     }
@@ -1365,12 +1404,20 @@ fn touches_protected(
     }
     // curl/wget: any output option (`-o`, `-O`, `-D`, `-c`, `--trace`,
     // `--stderr`, a log file) inside the state writes it; a download
-    // directory above it (`wget -P ~`) only creates a file there.
+    // directory above it (`wget -P ~`) only creates a file there. A file
+    // curl joins onto `--output-dir` is judged where it lands
+    // (`--output-dir ~/.config -o lean-ctx/config.toml`).
     if matches!(base, "curl" | "wget") {
         return tokens[1..]
             .iter()
             .find(|t| inside(t))
-            .and_then(|t| writes(shown(t)));
+            .cloned()
+            .or_else(|| {
+                download_targets(base, &tokens[1..])
+                    .into_iter()
+                    .find(|t| inside(t))
+            })
+            .and_then(|t| writes(shown(&t)));
     }
     if let Some(verdict) = plain_copy_effect(tokens, &inside, &reaches, &target_hits, homes) {
         return verdict.err().and_then(|word| writes(shown(&word)));
@@ -1378,18 +1425,12 @@ fn touches_protected(
     // Scripts and `find` are judged by what they do: `sed -n` reads.
     if SCRIPT_PROGRAMS.contains(&base) || base == "find" {
         let named = tokens[1..].iter().find(|t| mentions(t) || reaches(t))?;
-        return program_effect(tokens).map(|writes| Tampering {
-            what: shown(named),
-            writes,
-        });
+        return program_effect(tokens).map(|writes| Tampering::new(shown(named), writes));
     }
     // Every other program naming the state or a directory above it may
     // write there.
     let named = tokens[1..].iter().find(|t| reaches(t))?;
-    Some(Tampering {
-        what: shown(named),
-        writes: WRITE_PROGRAMS.contains(&base),
-    })
+    Some(Tampering::new(shown(named), WRITE_PROGRAMS.contains(&base)))
 }
 
 /// Rejects a command that would change lean-ctx's own state from an agent
@@ -1407,7 +1448,20 @@ pub(super) fn check_state_tampering(tokens: &[String]) -> Result<(), ShellError>
         follow_directory_change(tokens, &homes);
     }
     match verdict {
-        Some(Tampering { what, writes: true }) => Err(format!(
+        Some(Tampering {
+            what,
+            unplaced: Some(cause),
+            ..
+        }) => Err(format!(
+            "[BLOCKED — DO NOT RETRY] `{what}` writes a relative path, and {cause} could not \
+             be resolved, so this check cannot tell whether it lands in lean-ctx's own state \
+             (pause, claims, keys). Use a literal directory in the `cd`, or give the path \
+             absolute."
+        )
+        .into()),
+        Some(Tampering {
+            what, writes: true, ..
+        }) => Err(format!(
             "[BLOCKED — DO NOT RETRY] `{what}` changes lean-ctx's own state (pause, claims, \
              keys) and cannot run from an agent shell. Ask the user to run it in their own \
              terminal if they want it."
@@ -1416,6 +1470,7 @@ pub(super) fn check_state_tampering(tokens: &[String]) -> Result<(), ShellError>
         Some(Tampering {
             what,
             writes: false,
+            unplaced: None,
         }) => Err(format!(
             "[BLOCKED — DO NOT RETRY] `{what}` runs a program on lean-ctx's own state (pause, \
              claims, keys) whose effect cannot be told from the command, so it may change \
