@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! The files a curl or wget call writes, split out of `self_config`.
 
 /// A word that names a path relative to the working directory: not an
