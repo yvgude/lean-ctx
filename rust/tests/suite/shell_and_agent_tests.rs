@@ -387,6 +387,34 @@ fn hook_rewrite_not_rewritten_destructive_command_grants_nothing() {
     }
 }
 
+/// A host that launches its hooks through Git Bash (Claude Code on Windows
+/// does) hands the hook `SHELL=/usr/bin/bash` and `MSYSTEM=MINGW64`. A
+/// PowerShell tool call is still read as PowerShell: the environment's bash
+/// is not the shell that runs it.
+#[test]
+fn hook_rewrite_powershell_tool_ignores_git_bash_environment() {
+    let payload = serde_json::json!({
+        "session_id": "s",
+        "transcript_path": "/tmp/t.jsonl",
+        "cwd": "/tmp",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "PowerShell",
+        "tool_input": {
+            "command": "Get-ChildItem | Select-Object @{n='kb'; e={ $_.Length / 1kb }}"
+        }
+    })
+    .to_string();
+    let git_bash = [
+        ("LEAN_CTX_SHELL_SECURITY", "enforce"),
+        ("SHELL", "/usr/bin/bash"),
+        ("MSYSTEM", "MINGW64"),
+        ("MINGW_PREFIX", "/mingw64"),
+    ];
+    let (stdout, stderr, code) = run_hook_test(&["hook", "rewrite"], &git_bash, Some(&payload));
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout.trim(), "{}", "{stderr}");
+}
+
 /// Malformed input and non-shell tools fail open without a decision.
 #[test]
 fn hook_rewrite_malformed_and_foreign_tools_grant_nothing() {
