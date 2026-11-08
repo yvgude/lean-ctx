@@ -846,6 +846,31 @@ fn downloads_after_an_unfollowable_cd_judge_files_named_in_values_and_configs() 
     assert_all_pass(WRITER_ALLOWLIST, &passed);
 }
 
+/// #2212 re-review: a config file curl or wget reads may name lean-ctx's
+/// state (`output = ~/.config/lean-ctx/worker.json`) in a way no token shows,
+/// so it is refused without any `cd` too — the #2165 write-anywhere path.
+#[test]
+fn downloads_reading_a_config_file_are_refused_without_a_cd() {
+    assert_all_block(
+        WRITER_ALLOWLIST,
+        &[
+            "curl -K /tmp/c.cfg https://example.com",
+            "curl -sK - https://example.com",
+            "curl --config=/tmp/c.cfg https://example.com",
+            "curl -w @/tmp/fmt https://example.com",
+            "wget -O- --config=/tmp/w.rc https://example.com",
+            "wget -O- --config /tmp/w.rc https://example.com",
+        ],
+    );
+    assert_all_pass(
+        WRITER_ALLOWLIST,
+        &[
+            "curl -s -w '%{http_code}' -o /tmp/lcx-2212 https://example.com",
+            "wget -O- -e robots=off https://example.com",
+        ],
+    );
+}
+
 /// Relative paths resolve in the directory the command runs in (ctx_shell's
 /// `cwd`, a hook payload's `cwd`), not where the gate's process runs.
 #[test]
