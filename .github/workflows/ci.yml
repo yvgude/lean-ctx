@@ -307,6 +307,17 @@ jobs:
                      /etc/apt/sources.list.d/*microsoft*
           sudo apt-get update
           sudo apt-get install -y mold
+      # Every feature except no-jail (and what enables it): no-jail compiles
+      # PathJail and its tests out, so `--all-features` never tested the jail.
+      # Same set as GitLab's mr_quick.py --print-test-features.
+      - name: Select test features
+        working-directory: rust
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then PY=python; else PY=python3; fi
+          features=$("$PY" ../.github/scripts/test_features.py)
+          [[ -n "$features" ]]
+          echo "TEST_FEATURES=$features" >> "$GITHUB_ENV"
       - name: Run tests
         working-directory: rust
         shell: bash
@@ -329,14 +340,14 @@ jobs:
             fi
             JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
             CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
-            "$CARGO" test --target x86_64-pc-windows-gnu --all-features "${SELECT[@]}"
+            "$CARGO" test --target x86_64-pc-windows-gnu --features "$TEST_FEATURES" "${SELECT[@]}"
           elif [[ "${{ runner.os }}" == "Linux" ]]; then
             # `mold -run` redirects child linker invocations to mold without
             # touching RUSTFLAGS (which is pinned to `-Dwarnings` job-wide and
             # would override any .cargo/config.toml rustflags).
-            mold -run "$CARGO" test --all-features
+            mold -run "$CARGO" test --features "$TEST_FEATURES"
           else
-            "$CARGO" test --all-features
+            "$CARGO" test --features "$TEST_FEATURES"
           fi
 
       # Wall-clock gates: #581's parallel BM25 rebuild win, the context-kernel
@@ -372,9 +383,10 @@ jobs:
             (( idle * 10 >= (busy + idle) * 9 )) && break
           done
           ps -eo pid,pcpu,etime,args --sort=-pcpu | head -4
-          cargo test --all-features --lib -- --test-threads=1 parallel_incremental_rebuild_perf_gate --nocapture
-          cargo test --all-features --lib -- --test-threads=1 context_kernel::perf_benchmark
-          cargo test --all-features --test main -- --test-threads=1 performance_stress
+          cargo test --features "$TEST_FEATURES" --lib -- --test-threads=1 parallel_incremental_rebuild_perf_gate --nocapture
+          cargo test --features "$TEST_FEATURES" --lib -- --test-threads=1 context_kernel::perf_benchmark
+          cargo test --features "$TEST_FEATURES" --test main -- --test-threads=1 performance_stress
+          cargo test --features "$TEST_FEATURES" --test main -- --test-threads=1 context_radar_perf
 
   clippy:
     name: Clippy

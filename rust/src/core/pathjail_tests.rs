@@ -585,6 +585,10 @@ fn harness_auto_memory_path_is_allowed_without_extra_roots() {
     let old_home = std::env::var_os("HOME");
     crate::test_env::set_var("HOME", tmp.path());
     crate::test_env::remove_var("CLAUDE_CONFIG_DIR");
+    // `dirs::home_dir()` ignores HOME on Windows (it asks the shell for the
+    // profile folder), so name the harness config dir there instead.
+    #[cfg(windows)]
+    crate::test_env::set_var("CLAUDE_CONFIG_DIR", tmp.path().join(".claude"));
     let root = tmp.path().join("project");
     let memory = tmp
         .path()
@@ -633,6 +637,8 @@ fn harness_auto_memory_path_is_allowed_without_extra_roots() {
         Some(h) => crate::test_env::set_var("HOME", h),
         None => crate::test_env::remove_var("HOME"),
     }
+    #[cfg(windows)]
+    crate::test_env::remove_var("CLAUDE_CONFIG_DIR");
 }
 
 /// #820: lean-ctx state dir (tee files) is implicitly allowed by the jail.

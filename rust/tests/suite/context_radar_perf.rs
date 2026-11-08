@@ -3,6 +3,15 @@ use std::time::Instant;
 
 use lean_ctx::core::context_radar::{ContextRadar, RadarEvent, default_window_for_client};
 
+/// The timing half of each perf test is opt-in, as in `performance_stress`:
+/// under the multi-threaded suite, CPU contention alone pushed a 150 ms bound
+/// to 409 ms on a green ubuntu runner. CI's perf-gate step sets
+/// `LEAN_CTX_PERF_GATE=1` and runs these serialized; the functional
+/// assertions run always.
+fn timing_enforced() -> bool {
+    std::env::var("LEAN_CTX_PERF_GATE").as_deref() == Ok("1")
+}
+
 fn make_event(event_type: &str, tokens: usize, tool_name: Option<&str>) -> RadarEvent {
     RadarEvent {
         ts: 1700000000,
@@ -44,7 +53,9 @@ fn perf_radar_load_100_events() {
     assert_eq!(radar.events.len(), 100);
     let b = radar.budget_breakdown();
     assert!(b.lean_ctx_tool_tokens > 0);
-    assert!(elapsed.as_millis() < 100, "100 events took {elapsed:?}");
+    if timing_enforced() {
+        assert!(elapsed.as_millis() < 100, "100 events took {elapsed:?}");
+    }
 }
 
 #[test]
@@ -71,10 +82,12 @@ fn perf_radar_load_10k_events() {
     assert_eq!(radar.events.len(), 10_000);
     let b = radar.budget_breakdown();
     assert!(b.tracked_total > 0);
-    assert!(
-        elapsed.as_millis() < 500,
-        "10k events took {elapsed:?} — should be <500ms"
-    );
+    if timing_enforced() {
+        assert!(
+            elapsed.as_millis() < 500,
+            "10k events took {elapsed:?} — should be <500ms"
+        );
+    }
 }
 
 #[test]
@@ -90,10 +103,12 @@ fn perf_radar_load_50k_events() {
     let elapsed = start.elapsed();
 
     assert_eq!(radar.events.len(), 50_000);
-    assert!(
-        elapsed.as_millis() < 2000,
-        "50k events took {elapsed:?} — should be <2s"
-    );
+    if timing_enforced() {
+        assert!(
+            elapsed.as_millis() < 2000,
+            "50k events took {elapsed:?} — should be <2s"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -278,7 +293,9 @@ fn introspect_anthropic_large_request() {
     assert_eq!(b.tool_definition_count, 60);
     assert!(b.tool_definition_tokens > 0);
     assert!(b.total_input_tokens > 7000);
-    assert!(elapsed.as_millis() < 150, "introspect took {elapsed:?}");
+    if timing_enforced() {
+        assert!(elapsed.as_millis() < 150, "introspect took {elapsed:?}");
+    }
 }
 
 #[test]
@@ -487,8 +504,10 @@ fn perf_budget_breakdown_100k_events() {
     let elapsed = start.elapsed();
 
     assert!(b.tracked_total > 0);
-    assert!(
-        elapsed.as_millis() < 150,
-        "budget_breakdown on 100k events took {elapsed:?}"
-    );
+    if timing_enforced() {
+        assert!(
+            elapsed.as_millis() < 150,
+            "budget_breakdown on 100k events took {elapsed:?}"
+        );
+    }
 }
