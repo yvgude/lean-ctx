@@ -440,8 +440,18 @@ pub fn codewhale_detect_path(home: &Path) -> PathBuf {
 /// Source: <https://meta-models.github.io/muse-code-sdk/1.4/guides/extend/mcp-servers/>
 /// ("`$XDG_CONFIG_HOME/muse/settings.json`, or `~/.config/muse/settings.json`
 /// when the variable is unset"). No per-OS variant is documented.
+///
+/// `XDG_CONFIG_HOME` belongs to the current user's own home: it is applied
+/// only when `home` is that home, so a caller that passes another home (a
+/// test fixture, a sandboxed setup) never reaches the user's real file.
 pub fn muse_config_dir(home: &Path) -> PathBuf {
-    resolve_muse_config_dir(home, std::env::var("XDG_CONFIG_HOME").ok().as_deref())
+    let own_home = crate::core::pathutil::home_dirs()
+        .iter()
+        .any(|own| own == home);
+    let xdg = own_home
+        .then(|| std::env::var("XDG_CONFIG_HOME").ok())
+        .flatten();
+    resolve_muse_config_dir(home, xdg.as_deref())
 }
 
 /// `<muse_config_dir>/settings.json` — the user settings file Muse Code reads

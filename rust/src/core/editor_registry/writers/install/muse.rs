@@ -76,27 +76,24 @@ fn muse_root_for(obj: &Map<String, Value>, path: &std::path::Path) -> Result<&'s
 pub(crate) fn write_muse_settings(
     target: &EditorTarget,
     binary: &str,
-    opts: WriteOptions,
+    // `overwrite_invalid` does not apply: a malformed file is never patched.
+    _opts: WriteOptions,
 ) -> Result<WriteResult, String> {
     let path = &target.config_path;
 
     if path.exists() {
         let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) else {
-            let legacy_only = content.contains(&format!("\"{MUSE_LEGACY_MCP_ROOT}\""))
-                && !content.contains(&format!("\"{MUSE_MCP_ROOT}\""));
-            let (root, desired) = if legacy_only {
-                (MUSE_LEGACY_MCP_ROOT, muse_legacy_server_entry(binary))
-            } else {
-                (MUSE_MCP_ROOT, muse_server_entry(binary))
-            };
+            // Never text-inject here: Muse rejects a malformed file anyway,
+            // and an injection could neither add the mandatory
+            // `schema_version` nor tell which root the file means to use.
             return handle_invalid_json_write(
                 path,
                 &content,
-                root,
+                MUSE_MCP_ROOT,
                 "lean-ctx",
-                &desired,
-                opts.overwrite_invalid,
+                &muse_server_entry(binary),
+                false,
             );
         };
         let obj = json
@@ -128,13 +125,31 @@ pub(crate) fn write_muse_settings(
             .as_object_mut()
             .ok_or_else(|| format!("\"{root}\" must be an object"))?;
 
-        if servers_obj.get("lean-ctx") == Some(&desired) && !schema_added {
+        // Merge into an existing entry so the user's own fields (`env`,
+        // `cwd`, timeouts, …) survive; drop only the other spelling's
+        // transport key, because mixing them inside one entry disables MCP.
+        let competing = if root == MUSE_LEGACY_MCP_ROOT {
+            "type"
+        } else {
+            "transport"
+        };
+        let entry = servers_obj
+            .entry("lean-ctx")
+            .or_insert_with(|| Value::Object(Map::new()));
+        let before = entry.clone();
+        match (entry.as_object_mut(), desired) {
+            (Some(fields), Value::Object(wanted)) => {
+                fields.remove(competing);
+                fields.extend(wanted);
+            }
+            (_, wanted) => *entry = wanted,
+        }
+        if *entry == before && !schema_added {
             return Ok(WriteResult {
                 action: WriteAction::Already,
                 note: None,
             });
         }
-        servers_obj.insert("lean-ctx".to_string(), desired);
 
         let formatted = serde_json::to_string_pretty(&json).map_err(|e| e.to_string())?;
         crate::config_io::write_atomic_with_backup(path, &formatted)?;
@@ -247,6 +262,44 @@ mod tests {
         assert_eq!(json["mcpServers"]["docs"]["args"][0], "/opt/docs.py");
         assert_eq!(json["mcpServers"]["docs"]["env"]["T"], "${T}");
         assert_eq!(json["mcpServers"]["lean-ctx"]["command"], BIN);
+    }
+
+    #[test]
+    fn muse_rewrite_keeps_user_fields_on_the_lean_ctx_entry() {
+        let home = tempfile::tempdir().unwrap();
+        let path = settings_in(home.path());
+        seed(
+            &path,
+            r#"{ "schema_version": 1, "mcpServers": { "lean-ctx": {
+  "type": "stdio", "command": "/old/lean-ctx", "args": [],
+  "env": { "LEAN_CTX_X": "1" }, "startup_timeout_sec": 30, "transport": "stdio" } } }"#,
+        );
+        let t = muse_target(path.clone());
+
+        assert_eq!(write_config(&t, BIN).unwrap().action, WriteAction::Updated);
+        let entry = &read(&path)["mcpServers"]["lean-ctx"];
+        assert_eq!(entry["command"], BIN);
+        assert_eq!(entry["env"]["LEAN_CTX_X"], "1");
+        assert_eq!(entry["startup_timeout_sec"], 30);
+        // The legacy transport key would make the canonical entry ambiguous.
+        assert!(entry.get("transport").is_none(), "{entry}");
+        assert_eq!(write_config(&t, BIN).unwrap().action, WriteAction::Already);
+    }
+
+    #[test]
+    fn muse_never_patches_a_malformed_settings_file() {
+        let home = tempfile::tempdir().unwrap();
+        let path = settings_in(home.path());
+        let broken = r#"{ "model": "x", "mcpServers": { "docs": "#;
+        seed(&path, broken);
+        let opts = WriteOptions {
+            overwrite_invalid: true,
+        };
+
+        let err = super::write_muse_settings(&muse_target(path.clone()), BIN, opts)
+            .expect_err("malformed file must be reported");
+        assert!(err.contains("invalid JSON"), "{err}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
     }
 
     #[test]

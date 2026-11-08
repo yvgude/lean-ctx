@@ -419,15 +419,23 @@ fn detect_qodercli_path(home: &Path) -> PathBuf {
     PathBuf::from("/nonexistent")
 }
 
-/// Muse Code counts as installed when its config dir exists or the `muse`
-/// CLI is on `PATH` (a fresh install has no settings file yet — Muse runs on
-/// defaults when it is missing).
+/// Muse Code counts as installed when its config dir holds a file Muse Code
+/// itself owns: `settings.json` or the user `skills/` dir. A bare `muse`
+/// binary or dir is no evidence — the MusE MIDI sequencer ships a `muse`
+/// binary and `~/.config/MusE`, which a case-insensitive macOS volume also
+/// resolves as `~/.config/muse`. A fresh Muse Code without either is wired
+/// with `lean-ctx init --agent muse`.
 fn detect_muse_path(home: &Path) -> PathBuf {
     let dir = muse_config_dir(home);
-    if dir.exists() {
-        return dir;
+    let settings = dir.join("settings.json");
+    if settings.is_file() {
+        return settings;
     }
-    crate::core::pathutil::find_on_path("muse").unwrap_or(dir)
+    let skills = dir.join("skills");
+    if skills.is_dir() {
+        return skills;
+    }
+    PathBuf::from("/nonexistent")
 }
 
 fn detect_sublime_path(home: &Path) -> PathBuf {
@@ -874,6 +882,21 @@ mod augment_tests {
         assert_eq!(muse[0].config_path, muse_settings_path(home));
         assert!(muse[0].config_path.ends_with("muse/settings.json"));
         assert!(matches!(muse[0].config_type, ConfigType::MuseSettings));
+    }
+
+    #[test]
+    fn muse_code_is_detected_only_by_files_it_owns() {
+        // A bare `muse` config dir (MusE sequencer on a case-insensitive
+        // volume) is no evidence; Muse Code's own settings file is.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let home = tmp.path();
+        let dir = home.join(".config").join("muse");
+        std::fs::create_dir_all(&dir).expect("muse dir");
+        std::fs::write(dir.join("MusE.cfg"), "<muse/>").expect("sequencer config");
+        assert!(!detect_muse_path(home).exists(), "bare dir must not detect");
+
+        std::fs::write(dir.join("settings.json"), "{\"schema_version\":1}").expect("settings");
+        assert_eq!(detect_muse_path(home), dir.join("settings.json"));
     }
 
     #[test]

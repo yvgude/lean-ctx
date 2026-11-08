@@ -210,6 +210,13 @@ fn identify_client(lower: &str) -> String {
         // shows up in unrelated clients' identifiers, so it is not a client
         // discriminator here.
         "codewhale"
+    } else if lower == "muse"
+        || lower.starts_with("muse/")
+        || has(&["muse code", "muse-code", "muse_code"])
+    {
+        // #2198. Meta documents no MCP clientInfo name, so only the product
+        // name matches: "muse" as a substring would also hit e.g. "museum".
+        "muse"
     } else if has(&["claude-ai", "claude desktop", "claude-desktop"]) {
         "claude-desktop"
     } else if lower.contains("claude") {
@@ -494,6 +501,22 @@ mod tests {
         assert_eq!(identify_client("codewhale/0.9.9"), "codewhale");
         // "deepseek" alone is a model family, not the CodeWhale client (#1402).
         assert_eq!(identify_client("deepseek-v3"), "unknown");
+    }
+
+    #[test]
+    fn muse_code_is_identified_by_its_product_name_only() {
+        for name in [
+            "muse",
+            "muse/1.4.0",
+            "muse code",
+            "muse-code-cli",
+            "meta muse_code",
+        ] {
+            assert_eq!(identify_client(name), "muse", "{name}");
+        }
+        for name in ["museum-client", "amuser"] {
+            assert_eq!(identify_client(name), "unknown", "{name}");
+        }
     }
 
     #[test]

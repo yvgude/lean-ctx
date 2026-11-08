@@ -145,14 +145,15 @@ pub fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileCost> {
         push_rules_file(out.as_mut(), &d.join(".cursorrules"), vec!["cursor"]);
         scan_mdc_dir(out.as_mut(), &d.join(".cursor/rules"), &["cursor"]);
         scan_claude_rules_dir(out.as_mut(), &d.join(".claude/rules"));
-        // AGENTS.md is the shared instruction file: Cursor, Codex and several
-        // other agents auto-load it.
+        // AGENTS.md is the shared instruction file: Cursor, Codex, Muse Code
+        // (#2198, walks up to the `.git` boundary) and several other agents
+        // auto-load it.
         // Claude Code reads AGENTS.md only through an `@AGENTS.md` import in
         // the sibling CLAUDE.md — then the block rides every Claude session too.
         let agents_readers = if claude_md_imports_agents_md(&d) {
-            vec!["cursor", "codex", "claude"]
+            vec!["cursor", "codex", "muse", "claude"]
         } else {
-            vec!["cursor", "codex"]
+            vec!["cursor", "codex", "muse"]
         };
         push_rules_file(out.as_mut(), &d.join("AGENTS.md"), agents_readers);
         push_rules_file(out.as_mut(), &d.join("CLAUDE.md"), vec!["claude"]);
