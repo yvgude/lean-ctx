@@ -100,6 +100,10 @@ pub(crate) fn open(view: Option<&str>, rest: &[String]) -> Outcome {
             .and_then(|p| p.trim().parse().ok())
     });
     let (plan, record) = launch::plan_now(requested);
+    let started = matches!(
+        plan,
+        launch::Plan::Replace { .. } | launch::Plan::Start { .. }
+    );
     let (port, base_path) = match plan {
         launch::Plan::Reuse {
             port,
@@ -147,6 +151,14 @@ pub(crate) fn open(view: Option<&str>, rest: &[String]) -> Outcome {
         }
     };
     if let Some(reason) = warm(port, &base_path) {
+        // Nothing is opened, so a server started for this request is not
+        // left behind: hidden, it would retry the Cockpit on every later
+        // request it receives (#2203).
+        if started
+            && let Some(record) = launch::read_record().filter(|r| r.port == port && r.detached)
+        {
+            launch::stop_instance(&record);
+        }
         return Outcome::Unavailable(reason);
     }
     let token = dashboard::load_saved_token();
@@ -256,15 +268,21 @@ pub(crate) fn opened_line(view: Option<&str>, port: u16, base_path: &str) -> Str
     }
 }
 
-/// The one line when the Cockpit runtime cannot be served.
+/// The one line when the Cockpit runtime cannot be served: the reason and
+/// the action for it. The terminal alternative is [`TERMINAL_HINT`], added
+/// once by the caller.
 pub(crate) fn unavailable_line(reason: CockpitUnavailable) -> &'static str {
     match reason {
-        CockpitUnavailable::NotInstalled | CockpitUnavailable::SourceBuild => {
+        CockpitUnavailable::NotInstalled => {
             "Cockpit not installed \u{2014} lean-ctx cockpit install"
         }
         other => other.message(),
     }
 }
+
+/// The terminal alternative after a Cockpit that could not be opened. Plain
+/// `lean-ctx gain` would try to open the Cockpit again first.
+pub(crate) const TERMINAL_HINT: &str = "In the terminal: lean-ctx gain --terminal";
 
 /// `lean-ctx cockpit stop`: end this data dir's background server by its
 /// recorded PID. The exit code.
@@ -371,9 +389,50 @@ mod tests {
             "Opened the Cockpit \u{2192} http://localhost:3334/c/"
         );
         assert_eq!(
-            unavailable_line(CockpitUnavailable::SourceBuild),
+            unavailable_line(CockpitUnavailable::NotInstalled),
             "Cockpit not installed \u{2014} lean-ctx cockpit install"
         );
         assert!(unavailable_line(CockpitUnavailable::Disabled).contains("cockpit install"));
+    }
+
+    const ALL: [CockpitUnavailable; 5] = [
+        CockpitUnavailable::NotInstalled,
+        CockpitUnavailable::VerificationFailed,
+        CockpitUnavailable::StartFailed,
+        CockpitUnavailable::Disabled,
+        CockpitUnavailable::SourceBuild,
+    ];
+
+    /// #2203: `lean-ctx cockpit` printed "…; in the terminal: lean-ctx gain"
+    /// and then "In the terminal: lean-ctx gain --terminal". The reason line
+    /// names no terminal command; the hint follows exactly once.
+    #[test]
+    fn the_terminal_alternative_is_named_once() {
+        for reason in ALL {
+            let line = unavailable_line(reason);
+            assert!(!line.contains("lean-ctx gain"), "{reason:?}: {line}");
+            let output = format!("{line}\n{TERMINAL_HINT}");
+            assert_eq!(output.matches("lean-ctx gain").count(), 1, "{output}");
+        }
+        assert_eq!(TERMINAL_HINT, "In the terminal: lean-ctx gain --terminal");
+    }
+
+    /// #2203: a Cockpit that did not start was reported as "retried
+    /// automatically" with no way to see why. The line says what happened
+    /// and names a command that shows the cause; a source build is not told
+    /// to run an install it cannot do.
+    #[test]
+    fn each_reason_names_what_happened_and_an_action_that_works() {
+        let start = unavailable_line(CockpitUnavailable::StartFailed);
+        assert!(start.contains("installed but did not start"), "{start}");
+        assert!(start.contains("lean-ctx cockpit --foreground"), "{start}");
+        assert!(!start.contains("retried"), "{start}");
+        let source = unavailable_line(CockpitUnavailable::SourceBuild);
+        assert!(source.starts_with("Source build"), "{source}");
+        assert!(!source.contains("cockpit install"), "{source}");
+        for reason in ALL {
+            let line = unavailable_line(reason);
+            assert!(line.contains("lean-ctx ") || reason == CockpitUnavailable::SourceBuild);
+        }
     }
 }

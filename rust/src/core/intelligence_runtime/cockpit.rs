@@ -106,7 +106,9 @@ impl CockpitUnavailable {
         }
     }
 
-    /// One line for a user who opens the Cockpit while it cannot be served.
+    /// One line for a user who opens the Cockpit while it cannot be served:
+    /// the reason and the one action that helps. The terminal alternative is
+    /// added once by the caller (CLI line, unavailable page), never here.
     pub const fn message(self) -> &'static str {
         match self {
             Self::NotInstalled => {
@@ -116,13 +118,13 @@ impl CockpitUnavailable {
                 "The installed Cockpit did not verify and was not started. Reinstall it with: lean-ctx cockpit install"
             }
             Self::StartFailed => {
-                "The Cockpit did not start. It is retried automatically; in the terminal: lean-ctx gain"
+                "The Cockpit is installed but did not start. See why: lean-ctx cockpit --foreground (it logs the cause)"
             }
             Self::Disabled => {
                 "The Cockpit is deactivated. Activate it again with: lean-ctx cockpit install"
             }
             Self::SourceBuild => {
-                "Source build: the Cockpit ships with official installs (install.sh, Homebrew, npm, AUR); in the terminal: lean-ctx gain"
+                "Source build: the Cockpit ships with official installs (install.sh, Homebrew, npm, AUR)"
             }
         }
     }
@@ -665,9 +667,10 @@ pub(super) fn handshake(
         .stdout(Stdio::piped())
         // Nothing the Cockpit writes there is shown; it could repeat a token.
         .stderr(Stdio::null());
-    let child = command
-        .spawn()
-        .map_err(|_| CockpitUnavailable::StartFailed)?;
+    let child = command.spawn().map_err(|error| {
+        tracing::warn!("cockpit not started: the process could not be spawned: {error}");
+        CockpitUnavailable::StartFailed
+    })?;
     let mut process = Process {
         child,
         stdin: None,
@@ -704,7 +707,18 @@ pub(super) fn handshake(
         process.port = port;
         Ok(process)
     } else {
+        let exited = process.child.try_wait().ok().flatten();
         process.stop(Duration::ZERO);
+        if let Some(status) = exited {
+            tracing::warn!(
+                "cockpit not started: it exited ({status}) before naming its loopback port"
+            );
+        } else {
+            tracing::warn!(
+                "cockpit not started: it did not name its loopback port within {} s",
+                deadline.as_secs()
+            );
+        }
         Err(CockpitUnavailable::StartFailed)
     }
 }
@@ -856,7 +870,10 @@ fn start(
     let cockpit_token = hex::encode(token);
     let start_line = start_line(launch, &cockpit_token).ok_or(CockpitUnavailable::StartFailed)?;
     let (prepared, command) = super::health::prepare_binary(&package.binary, &root, EXECUTABLE)
-        .map_err(|_| CockpitUnavailable::StartFailed)?;
+        .map_err(|error| {
+            tracing::warn!("cockpit not started: its private copy was not prepared ({error:?})");
+            CockpitUnavailable::StartFailed
+        })?;
     match handshake(command, &start_line, HANDSHAKE) {
         Ok(process) => Ok(Running {
             process,

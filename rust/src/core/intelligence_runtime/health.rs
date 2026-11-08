@@ -228,12 +228,27 @@ pub(super) fn prepare_binary(
     // Execute bytes authenticated above, not the separately mutable installed
     // inode. This is private process hygiene, not a hostile same-UID sandbox.
     install::write_new(&executable, binary, true)?;
-    let mut command = Command::new(&executable);
+    let command = runtime_command(&executable, &directory)?;
+    Ok((
+        Prepared {
+            workspace: temporary,
+            #[cfg(target_os = "linux")]
+            executable: executable_directory,
+        },
+        command,
+    ))
+}
+
+/// The runtime's process: its private directory as working directory, home
+/// and temporary directory, and a cleared environment with only what the OS
+/// itself needs.
+fn runtime_command(executable: &Path, directory: &Path) -> Result<Command> {
+    let mut command = Command::new(executable);
     command
-        .current_dir(&directory)
+        .current_dir(directory)
         .env_clear()
-        .env("HOME", &directory)
-        .env("TMPDIR", &directory);
+        .env("HOME", directory)
+        .env("TMPDIR", directory);
     // libdbus discovers the logged-in user's Secret Service through this
     // standard location. Never inherit a caller-selected remote D-Bus address.
     #[cfg(target_os = "linux")]
@@ -243,15 +258,42 @@ pub(super) fn prepare_binary(
         command.env("XDG_RUNTIME_DIR", format!("/run/user/{uid}"));
     }
     #[cfg(windows)]
-    command.env("TEMP", &directory).env("TMP", &directory);
-    Ok((
-        Prepared {
-            workspace: temporary,
-            #[cfg(target_os = "linux")]
-            executable: executable_directory,
-        },
-        command,
-    ))
+    {
+        use std::os::windows::process::CommandExt as _;
+        // Winsock resolves its service providers under %SystemRoot%: with a
+        // cleared environment a runtime cannot open any socket (WSAStartup
+        // fails with WSAEPROVIDERFAILEDINIT), so the Cockpit never binds its
+        // loopback port (#2203). The value comes from the OS, not from the
+        // caller's environment.
+        command
+            .env("TEMP", directory)
+            .env("TMP", directory)
+            .env("SystemRoot", windows_directory()?);
+        // The runtimes are console programs. Started from a process without a
+        // console (the detached Cockpit server), each start would otherwise
+        // open, and on exit close, a console window of its own (#2203).
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    Ok(command)
+}
+
+/// `CreateProcessW` flag: the child gets no console window.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+
+/// The Windows directory as the OS reports it (the value of `%SystemRoot%`).
+#[cfg(windows)]
+fn windows_directory() -> std::io::Result<std::ffi::OsString> {
+    use std::os::windows::ffi::OsStringExt as _;
+    use windows_sys::Win32::System::SystemInformation::GetSystemWindowsDirectoryW;
+    let mut buffer = vec![0_u16; 32_768];
+    // SAFETY: buffer is writable for the exact advertised WCHAR capacity.
+    let length =
+        unsafe { GetSystemWindowsDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
+    if length == 0 || length >= buffer.len() {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(std::ffi::OsString::from_wide(&buffer[..length]))
 }
 
 /// Exact supported descriptions only; unknown capability sets never execute.
@@ -493,6 +535,40 @@ pub(super) fn supports_protection(package: &VerifiedPackage) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #2203: a runtime started with a cleared environment and no
+    /// `SystemRoot` cannot open a socket on Windows, so the Cockpit never
+    /// named its port. The OS value is set, nothing else is inherited.
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_runtime_gets_the_system_root_and_nothing_inherited() {
+        // The environment alone: the private workspace beside %TEMP% has its
+        // own owner checks, which a CI runner's TEMP does not satisfy.
+        let directory = tempfile::tempdir().unwrap();
+        let command = runtime_command(
+            &directory.path().join("leanctx-cockpit.exe"),
+            directory.path(),
+        )
+        .unwrap();
+        let envs: std::collections::BTreeMap<String, Option<String>> = command
+            .get_envs()
+            .map(|(name, value)| {
+                (
+                    name.to_string_lossy().to_ascii_uppercase(),
+                    value.map(|value| value.to_string_lossy().into_owned()),
+                )
+            })
+            .collect();
+        let system_root = windows_directory().unwrap().to_string_lossy().into_owned();
+        assert_eq!(
+            envs.get("SYSTEMROOT"),
+            Some(&Some(system_root.clone())),
+            "{envs:?}"
+        );
+        assert!(std::path::Path::new(&system_root).join("System32").is_dir());
+        let names: Vec<&str> = envs.keys().map(String::as_str).collect();
+        assert_eq!(names, ["HOME", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR"]);
+    }
 
     fn described(capabilities: &serde_json::Value) -> VerifiedPackage {
         VerifiedPackage {
