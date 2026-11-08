@@ -35,6 +35,15 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `-e`/`--execute`, are judged as write targets in every spelling. A config file the call reads
   (`curl -K`, `curl -w @FILE`, `wget --config`) may name any file and is refused wherever the call
   runs. ctx_shell's download guard uses the same list instead of its own copy.
+- **A PowerShell tool call is checked as PowerShell (#2215).** A host that launches its hooks through
+  Git Bash (Claude Code on Windows does) hands the hook a POSIX `SHELL`/`MSYSTEM`, so ordinary
+  PowerShell lines such as `$f = "C:\x"; Test-Path $f` were denied as POSIX. The PowerShell tool
+  hook now reads its line under the PowerShell host whatever the environment says. Under that host
+  a .NET member call's attached `(` (`[Math]::Max(1,2)`) is accepted at statement start or as a
+  local assignment value, and the reader still decides whether the member is safe. The call
+  operator `&` no longer hides its target: a literal is checked against the allowlist, a run-time
+  target is refused, a script block is walked, a trailing redirect is allowed, and nesting is
+  depth-bounded. A quoted call-operator target used to pass unchecked under the PowerShell host.
 
 ## [3.12.2] — 2026-11-04
 

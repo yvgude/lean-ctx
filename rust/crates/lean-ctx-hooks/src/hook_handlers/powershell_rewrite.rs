@@ -80,7 +80,9 @@ pub(super) fn allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
     {
         return Some(msg);
     }
-    shell_allowlist::check_shell_allowlist(&as_read)
+    // Read as PowerShell, not as the shell lean-ctx detects: the hook may
+    // run under Git Bash (`SHELL=/usr/bin/bash`, `MSYSTEM`).
+    shell_allowlist::check_shell_allowlist_in_powershell(&as_read)
         .err()
         .map(|msg| msg.to_string())
 }
@@ -398,6 +400,132 @@ mod tests {
                 "{cmd}: {decision:?}"
             );
         }
+    }
+
+    /// Asserts each `(command, denied)` decision, with the allowlist `git`,
+    /// both under Git Bash's environment and with no shell named at all.
+    ///
+    /// A host that launches its hooks through Git Bash (Claude Code on
+    /// Windows does) hands the hook `SHELL=/usr/bin/bash` and
+    /// `MSYSTEM=MINGW64`. A PowerShell tool call still runs in PowerShell and
+    /// is read as PowerShell, whatever the environment names.
+    fn assert_decisions_under_any_hook_shell(cases: &[(&str, bool)]) {
+        const SHELL_VARS: [&str; 4] = ["LEAN_CTX_SHELL", "SHELL", "MSYSTEM", "MINGW_PREFIX"];
+        let git_bash = [
+            ("SHELL", "/usr/bin/bash"),
+            ("MSYSTEM", "MINGW64"),
+            ("MINGW_PREFIX", "/mingw64"),
+        ];
+        for env in [&git_bash[..], &[]] {
+            let decisions: Vec<_> = with_security("enforce", || {
+                // Each guard restores its variable on drop, inside the lock.
+                let _allowlist =
+                    lean_ctx::test_env::VarGuard::set("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "git");
+                let _guards: Vec<_> = SHELL_VARS
+                    .iter()
+                    .map(|key| {
+                        let guard = lean_ctx::test_env::VarGuard::set(key, "");
+                        match env.iter().find(|(k, _)| k == key) {
+                            Some((_, value)) => lean_ctx::test_env::set_var(key, value),
+                            None => lean_ctx::test_env::remove_var(key),
+                        }
+                        guard
+                    })
+                    .collect();
+                cases
+                    .iter()
+                    .map(|&(cmd, denied)| (cmd, denied, decide(cmd, BIN)))
+                    .collect()
+            });
+            for (cmd, denied, decision) in decisions {
+                assert_eq!(
+                    matches!(decision, PowerShellDecision::Deny(_)),
+                    denied,
+                    "env {env:?}: {cmd}: {decision:?}"
+                );
+                if !denied {
+                    assert_eq!(decision, PowerShellDecision::Passthrough, "{cmd}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn powershell_lines_are_read_as_powershell_under_any_hook_shell() {
+        assert_decisions_under_any_hook_shell(&[
+            (
+                "Get-ChildItem | Select-Object @{n='kb'; e={ $_.Length / 1kb }}",
+                false,
+            ),
+            ("$f = \"C:\\x\\y\"; Test-Path $f", false),
+            ("foreach ($c in 'a','b') { Write-Output $c }", false),
+            ("$env:PATH = \"x\"; calc", true),
+            ("Invoke-Expression 'calc'", true),
+            ("iex 'calc'", true),
+            (". ./x.ps1", true),
+            ("Start-Process calc", true),
+            ("[IO.File]::Delete('x')", true),
+            ("[Diagnostics.Process]::Start('calc')", true),
+            ("$p.Kill(1)", true),
+            ("Write-Output x.y(calc)", true),
+            ("Write-Output $x.ToString((calc))", true),
+            ("$n = $x.ToString((calc))", true),
+        ]);
+    }
+
+    /// A .NET member call at statement start or as a local assignment's
+    /// value is read by the PowerShell reader; one inside an argument is not.
+    #[test]
+    fn member_calls_pass_only_where_the_powershell_reader_sees_them() {
+        assert_decisions_under_any_hook_shell(&[
+            ("[Math]::Max(1,2)", false),
+            (
+                "[Environment]::GetEnvironmentVariable('Path','User') -split ';'",
+                false,
+            ),
+            (
+                "$p = [Environment]::GetEnvironmentVariable('Path','User')",
+                false,
+            ),
+            ("$env:X = $x.ToString((calc))", true),
+            ("ForEach-Object { $x.ToString((calc)) }", true),
+            ("echo =$x.y(calc)", true),
+            ("git log --format=$x.y(calc)", true),
+            ("Get-ChildItem a=[Math]::Max(calc)", true),
+        ]);
+    }
+
+    /// The call operator `&` runs its target: only a literal name or path
+    /// that the allowlist accepts may pass.
+    #[test]
+    fn call_operator_targets_meet_the_allowlist() {
+        assert_decisions_under_any_hook_shell(&[
+            ("& git status", false),
+            ("& 'evil_binary'", true),
+            ("& 'cmd' ,'/c','evil_binary'", true),
+            ("& $env:ComSpec", true),
+            ("& (Get-Command evil_binary)", true),
+            ("&{git status}", false),
+            ("& {git status}", false),
+            ("& { & { & { & { git status } } } }", false),
+            ("&'evil_binary'", true),
+            ("git status | & evil_binary", true),
+            ("git status && & evil_binary", true),
+            ("& git status & 'evil_binary'", true),
+            ("1 | & % { evil_binary }", true),
+            ("& ForEach-Object { evil_binary }", true),
+            ("& Select-Object @{e={evil_binary}}", true),
+            ("Write-Output $(& 'evil_binary')", true),
+            ("echo \"$(& 'evil_binary')\"", true),
+            (
+                "& { & { & { & { & { & { echo x; evil_binary } } } } } }",
+                true,
+            ),
+            // Conservative: PowerShell itself rejects a bare `&` at the end
+            // of a line, but the next line must not pass as inert.
+            ("&\n'evil_binary'", true),
+            ("& \"$env:TEMP/git\" status", true),
+        ]);
     }
 
     #[test]

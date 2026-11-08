@@ -352,6 +352,8 @@ impl<'a> Lexer<'a> {
                         && !starts_word(bytes, i, start, bare_close_at)
                         && bytes[i - 1] != b'='
                         && bytes.get(i + 1) != Some(&b')')
+                        && !(powershell_member_call(bytes, i, start)
+                            && super::ps_statements::host_is_powershell())
                     {
                         // `*(e:…:)`, `x(+cmd)`, `@(a|b)`: only a function
                         // head `f()` or an array `a=(…)` may touch a word.
@@ -520,6 +522,67 @@ fn starts_word(bytes: &[u8], i: usize, start: usize, bare_close_at: usize) -> bo
         b')' => bare_close_at == i - 1,
         _ => false,
     }
+}
+
+/// Is the `(` at `i` the argument list of a PowerShell member call —
+/// `[Math]::Max(`, `$p.WaitForExit(`, `(Get-Date).ToString(` — on a word that
+/// opens an expression (`$`, `[`, `(`) at the start of a statement or as the
+/// value of a local assignment (`$n = …`, `$n += …`)? No shell glob runs in
+/// PowerShell, and `ps_statements` reads such a statement and decides which
+/// members are inert. Not one: a bare word (`x.y(` — in argument mode its `(`
+/// starts another argument), a call in a command's arguments
+/// (`echo $x.ToString((cmd))`, `git log --format=$x.y((cmd))`) and the value
+/// of a scoped assignment (`$env:X = …`), none of which a reader looks into.
+fn powershell_member_call(bytes: &[u8], i: usize, start: usize) -> bool {
+    let mut j = i;
+    while j > start && (bytes[j - 1].is_ascii_alphanumeric() || bytes[j - 1] == b'_') {
+        j -= 1;
+    }
+    let accessed = j < i
+        && j > start
+        && (bytes[j - 1] == b'.' && (j - 1 == start || bytes[j - 2] != b'.')
+            || bytes[j - 1] == b':' && j - 1 > start && bytes[j - 2] == b':');
+    if !accessed {
+        return false;
+    }
+    while j > start
+        && !matches!(
+            bytes[j - 1],
+            b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'{' | b'}' | b'=' | b','
+        )
+    {
+        j -= 1;
+    }
+    if !matches!(bytes[j], b'$' | b'[' | b'(') {
+        return false;
+    }
+    j = skip_blanks_back(bytes, j, start);
+    if j > start && bytes[j - 1] == b'=' {
+        // Only `$name =` or `$name <op>=` at statement start: an `=` inside
+        // an argument (`--format=`, `a=`) belongs to that argument.
+        let mut k = j - 1;
+        if k > start && matches!(bytes[k - 1], b'+' | b'-' | b'*' | b'/' | b'%') {
+            k -= 1;
+        }
+        k = skip_blanks_back(bytes, k, start);
+        let name_end = k;
+        while k > start && (bytes[k - 1].is_ascii_alphanumeric() || bytes[k - 1] == b'_') {
+            k -= 1;
+        }
+        if k == name_end || k == start || bytes[k - 1] != b'$' {
+            return false;
+        }
+        j = skip_blanks_back(bytes, k - 1, start);
+    }
+    j == start || matches!(bytes[j - 1], b'\n' | b';' | b'{')
+}
+
+/// `at` moved back over the spaces and tabs before it, not past `start`.
+fn skip_blanks_back(bytes: &[u8], mut at: usize, start: usize) -> usize {
+    while at > start && matches!(bytes[at - 1], b' ' | b'\t') {
+        at -= 1;
+    }
+    at
 }
 
 /// Index of the backtick closing a substitution opened before `from`,

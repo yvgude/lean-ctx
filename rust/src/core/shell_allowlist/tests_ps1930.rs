@@ -157,6 +157,156 @@ fn executing_dotnet_members_stay_blocked() {
     }
 }
 
+/// PowerShell's call operator `&` runs its target with the arguments after
+/// it. Only a literal program name or path meets the allowlist; the target
+/// was read as an inert expression before, so any program ran.
+#[test]
+fn call_operator_target_meets_the_allowlist() {
+    for cmd in [
+        "& git status",
+        "& 'C:/Program Files/Git/cmd/git' status",
+        "& { git status }",
+        // PowerShell needs no blank inside a script block's braces.
+        "&{git status}",
+        "& {git status}",
+        "& { & { & { & { git status } } } }",
+        "git status 2>&1",
+        "git fetch & git status",
+    ] {
+        passes(cmd, POWERSHELL);
+    }
+    for cmd in [
+        "& 'evil_binary'",
+        "&'evil_binary'",
+        "git status | & evil_binary",
+        "git status && & evil_binary",
+        "& git status & 'evil_binary'",
+        // A cmdlet target runs its script blocks like the plain cmdlet does.
+        "1 | & % { evil_binary }",
+        "& ForEach-Object { evil_binary }",
+        "& Where-Object { evil_binary }",
+        "& Select-Object @{e={evil_binary}}",
+        // The nesting bound refuses a block; it never reads it as a command.
+        // Five levels already reach the bound every compound form shares
+        // (five nested `if` blocks are refused the same way).
+        "& { & { & { & { & { git status } } } } }",
+        "if ($a) { if ($b) { if ($c) { if ($d) { if ($e) { git status } } } } }",
+        "& { & { & { & { & { & { echo x; evil_binary } } } } } }",
+        // Conservative: PowerShell reports a missing expression after a bare
+        // `&` at the end of a line, but the next line must not pass as inert.
+        "&\n'evil_binary'",
+        "&\r\n'evil_binary'",
+        // A `$` outside single quotes names the program at run time.
+        "& \"$env:TEMP/git\" status",
+        "& 'cmd' ,'/c','evil_binary'",
+        "& $c",
+        "& $env:ComSpec",
+        "& (Get-Command evil_binary)",
+        "& @('evil_binary')",
+        "& { git status; evil_binary }",
+        "& { git status } evil_binary",
+        "git status & 'evil_binary'",
+        "(& 'evil_binary')",
+        "if ($x) { & 'evil_binary' }",
+        "Get-Command evil_binary | ForEach-Object { & $_ }",
+        "$p = & 'evil_binary'",
+        // Dot-sourcing is refused before any reader sees it.
+        ". ./evil.ps1",
+        ". 'evil.ps1'",
+    ] {
+        blocked(cmd, POWERSHELL);
+    }
+    // POSIX: `&` stays a background operator; the next command is checked.
+    blocked("sleep 1 & evil_binary", POSIX);
+    passes("sleep 1 & git status", POSIX);
+}
+
+/// A call operator inside a substitution keeps its target a command: the
+/// substitution body used to be split without it, and the quoted target
+/// then read as an inert string.
+#[test]
+fn call_operator_inside_substitution_meets_the_allowlist() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let _allowlist = crate::test_env::VarGuard::set(
+        "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+        "git,echo,Write-Output",
+    );
+    let _host = HostGuard::powershell(POWERSHELL);
+    for cmd in [
+        "Write-Output $(& 'evil_binary')",
+        "echo \"$(& 'evil_binary')\"",
+        "git log --format=$(& 'cmd' ,'/c','evil_binary')",
+    ] {
+        assert!(
+            super::check_substitution_in_args(cmd).is_err(),
+            "must be blocked: {cmd:?}"
+        );
+    }
+    let allowed = "Write-Output $(& git rev-parse HEAD)";
+    let result = super::check_substitution_in_args(allowed);
+    assert!(result.is_ok(), "{allowed:?}: {result:?}");
+    // A bare `&` before `;` inside a substitution is refused like one
+    // before a line break.
+    assert!(super::check_substitution_in_args("Write-Output $(& ;evil_binary)").is_err());
+    // `$(&)` names no target; PowerShell rejects it as a parse error, so
+    // nothing runs and there is nothing to check.
+    let empty = "Write-Output $(&)";
+    assert!(
+        super::check_substitution_in_args(empty).is_ok(),
+        "{empty:?}"
+    );
+    passes(empty, POWERSHELL);
+}
+
+/// A literal call target that runs a script block (`& % { … }`) counts
+/// against the same depth bound as the plain `% { … }`, so the walk cannot
+/// recurse without limit through nested targets.
+#[test]
+fn call_operator_targets_share_the_depth_bound() {
+    passes("& % { & % { & % { & % { git status } } } }", POWERSHELL);
+    let six = "& % { & % { & % { & % { & % { & % { git status } } } } } }";
+    blocked(six, POWERSHELL);
+    let deep = format!("{}git status{}", "& % { ".repeat(2000), " }".repeat(2000));
+    blocked(&deep, POWERSHELL);
+}
+
+/// A trailing redirection binds a `& { … }` block's output, as it does for
+/// a plain brace group; anything else after the `}` stays refused.
+#[test]
+fn call_operator_block_accepts_a_redirection() {
+    for cmd in ["& { git status } > out", "&{git status} 2>&1"] {
+        passes(cmd, POWERSHELL);
+    }
+    for cmd in [
+        "& { git status } evil_binary",
+        "& { git status } > out evil_binary",
+        "& { evil_binary } > out",
+    ] {
+        blocked(cmd, POWERSHELL);
+    }
+}
+
+/// Call-operator forms the walker refuses conservatively or reads loosely.
+#[test]
+fn call_operator_edge_forms() {
+    for cmd in [
+        // A bare `&` before a line break, after a pipe, with a lone CR or a
+        // block comment between.
+        "git status | &\n'evil_binary'",
+        "&\r'evil_binary'",
+        "git status | &\r'evil_binary'",
+        "& <# #>\n'evil_binary'",
+        // A `$` outside single quotes anywhere in the first word.
+        "& 'git'$x",
+        "& \"a`\"$x\"",
+    ] {
+        blocked(cmd, POWERSHELL);
+    }
+    // Tokenizing folds `'g''it'` to `git`; PowerShell would run a program
+    // named `g'it`, so one of that name on PATH is the only exposure.
+    passes("& 'g''it' status", POWERSHELL);
+}
+
 /// A PowerShell statement lean-ctx cannot read is blocked, never skipped.
 #[test]
 fn unreadable_powershell_statements_are_blocked() {

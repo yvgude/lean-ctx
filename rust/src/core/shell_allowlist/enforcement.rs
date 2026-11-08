@@ -66,6 +66,15 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
     decided
 }
 
+/// [`check_shell_allowlist`] for a host's PowerShell tool call, which the hook
+/// checks but does not wrap. Not the detected shell: a host that runs hooks
+/// through Git Bash (Claude Code on Windows) passes `SHELL=/usr/bin/bash` and
+/// `MSYSTEM=MINGW64`, and PowerShell read under POSIX rules is refused.
+pub fn check_shell_allowlist_in_powershell(command: &str) -> Result<(), ShellError> {
+    let _host = super::ps_statements::HostGuard::powershell(true);
+    check_shell_allowlist(command)
+}
+
 /// Refuses code that contains a redaction marker such as
 /// `[REDACTED:Database credentials]`. Redaction applies only to what an agent
 /// is shown, never to what runs; an agent that copies a marker out of a

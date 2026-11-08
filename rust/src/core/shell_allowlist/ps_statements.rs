@@ -237,18 +237,21 @@ pub(crate) enum Mode {
     PowerShell,
 }
 
-#[cfg(test)]
 thread_local! {
     static FORCED_HOST: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
-/// Test-only override of the executing shell for this thread.
-#[cfg(test)]
+/// Overrides the executing shell for checks on this thread until dropped.
+///
+/// A host's PowerShell tool runs its line in PowerShell whatever shell
+/// lean-ctx would detect for itself: a host that launches its hooks through
+/// Git Bash (Claude Code on Windows does) hands the hook
+/// `SHELL=/usr/bin/bash` and `MSYSTEM=MINGW64` (see
+/// [`super::check_shell_allowlist_in_powershell`]).
 pub(super) struct HostGuard {
     prev: Option<bool>,
 }
 
-#[cfg(test)]
 impl HostGuard {
     pub(super) fn powershell(on: bool) -> Self {
         Self {
@@ -257,7 +260,6 @@ impl HostGuard {
     }
 }
 
-#[cfg(test)]
 impl Drop for HostGuard {
     fn drop(&mut self) {
         FORCED_HOST.with(|host| host.set(self.prev));
@@ -265,9 +267,9 @@ impl Drop for HostGuard {
 }
 
 /// The mode for the shell that runs the checked line: the one `ctx_shell`,
-/// `ctx_execute` and the shell aliases execute with.
+/// `ctx_execute` and the shell aliases execute with, unless a [`HostGuard`]
+/// names it.
 fn host_mode() -> Mode {
-    #[cfg(test)]
     if let Some(forced) = FORCED_HOST.with(std::cell::Cell::get) {
         return if forced {
             Mode::PowerShell
@@ -281,6 +283,12 @@ fn host_mode() -> Mode {
     } else {
         Mode::Strict
     }
+}
+
+/// Does PowerShell run the checked line? For the lexer, which otherwise reads
+/// only POSIX shells.
+pub(super) fn host_is_powershell() -> bool {
+    host_mode() == Mode::PowerShell
 }
 
 /// Commands a PowerShell control-flow statement runs — its conditions, loop
@@ -429,11 +437,17 @@ fn local_assignment_value(statement: &str) -> Option<&str> {
 
 /// Is every top-level segment of `command` a PowerShell statement or
 /// expression this module reads? Then an empty leaf list means the line runs
-/// no command, not that the walker found nothing to check.
+/// no command, not that the walker found nothing to check. The target of a
+/// call operator (`& 'x'`) is a command, never inert.
 pub(super) fn is_inert_powershell(command: &str) -> bool {
-    let segments = super::extract_all_commands(command);
+    let Ok(segments) = super::compound::call_operator_segments(command) else {
+        return false;
+    };
     !segments.is_empty()
-        && segments.iter().all(|segment| {
+        && segments.iter().all(|(segment, call_target)| {
+            if *call_target {
+                return false;
+            }
             let statement = super::skip_powershell_assignment(segment);
             matches!(statement_commands(statement), Some(Ok(_)))
                 || expression_commands(statement).is_some()
