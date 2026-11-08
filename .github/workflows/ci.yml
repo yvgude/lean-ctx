@@ -183,14 +183,9 @@ jobs:
     # source instead: every env-mutating test serializes on the reentrant
     # `data_dir::test_env_lock()`, and the one test with a real-time window
     # (`hebbian_eviction_bonus_is_wired`) takes an injected window rather than
-    # depending on scheduling. cargo-nextest was tried for everything first
-    # (#1206) and reverted: 33-80% slower, since its process-per-test model
-    # re-pays the integration binaries' heavy startup for every test. Unit
-    # tests now run on nextest's `ci` profile (rust/.config/nextest.toml),
-    # which gives each test its own data dir, because the lib binary is one
-    # process tree and libtest's serialized env tests made the Windows lib
-    # part the critical path (424 s for the engine lib alone). Integration
-    # binaries and doctests stay on libtest.
+    # depending on scheduling. cargo-nextest was tried first (#1206) and
+    # reverted — 33-80% slower here, since its process-per-test model re-pays
+    # this crate's heavy static-link cost for every test.
     timeout-minutes: 180
     env:
       # ~50 integration-test binaries each statically link the full lib
@@ -218,10 +213,34 @@ jobs:
           rustup default stable
           cargo --version
           echo "$CARGO_HOME/bin" >> $GITHUB_PATH
+      # Windows: Defender scans every file the build writes, and the ~50
+      # linked test binaries write a lot of them. A trusted ReFS Dev Drive
+      # runs Defender in performance mode, so the target dir goes there.
+      # It is mounted next to the checkout, not at rust/target: rust-cache
+      # reads the target dir's root, and a volume root holds System Volume
+      # Information, which it cannot read (EPERM), so the cache would be
+      # dropped silently. The VHDX is dynamic and sits on the workspace disk,
+      # so it takes the space the target dir took there before.
+      - name: Set up Dev Drive
+        if: runner.os == 'Windows'
+        uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
+        with:
+          drive-size: 80GB
+          drive-format: ReFS
+          drive-type: Dynamic
+          drive-path: ${{ runner.temp }}/dev_drive.vhdx
+          mount-path: ${{ github.workspace }}/../dev-drive
+          trusted-dev-drive: true
+          env-mapping: |
+            CARGO_TARGET_DIR,{{ DEV_DRIVE }}/target
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          workspaces: rust -> target
+          # TEMPORARY (#2214 measurement): the Dev Drive moves the Windows
+          # cache paths, so this branch saves its own warm cache once.
+          # Back to main-only before merge.
+          save-if: ${{ github.ref == 'refs/heads/main' || github.head_ref == 'ci/github-nextest' }}
+          # The path is relative to rust/: rust-cache joins it onto the root.
+          workspaces: ${{ runner.os == 'Windows' && 'rust -> ../../dev-drive/target' || 'rust -> target' }}
 
       - name: Verify build-script freshness and source guard
         if: runner.os == 'Linux'
@@ -312,9 +331,6 @@ jobs:
                      /etc/apt/sources.list.d/*microsoft*
           sudo apt-get update
           sudo apt-get install -y mold
-      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
-        with:
-          tool: cargo-nextest
       # Every feature except no-jail (and what enables it): no-jail compiles
       # PathJail and its tests out, so `--all-features` never tested the jail.
       # Same set as GitLab's mr_quick.py --print-test-features.
@@ -341,33 +357,26 @@ jobs:
             # The two parts together select what a bare `cargo test` builds
             # here, minus the doctest pass: the crate has no doctests (0 run
             # on every OS), and ubuntu/macOS still run that pass.
-            export JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}"
-            export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}"
-            WIN=(--target x86_64-pc-windows-gnu --features "$TEST_FEATURES")
             if [[ "${{ matrix.part }}" == "lib" ]]; then
-              "$CARGO" nextest run --profile ci "${WIN[@]}" --lib
+              SELECT=(--lib)
             else
-              "$CARGO" test "${WIN[@]}" --bins --test '*' --examples
+              SELECT=(--bins --test '*' --examples)
             fi
-          else
+            JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
+            CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
+            "$CARGO" test --target x86_64-pc-windows-gnu --features "$TEST_FEATURES" "${SELECT[@]}"
+          elif [[ "${{ runner.os }}" == "Linux" ]]; then
             # `mold -run` redirects child linker invocations to mold without
             # touching RUSTFLAGS (which is pinned to `-Dwarnings` job-wide and
-            # would override any .cargo/config.toml rustflags). mold is
-            # Linux/ELF only.
-            LINK=()
-            if [[ "${{ runner.os }}" == "Linux" ]]; then LINK=(mold -run); fi
-            "${LINK[@]}" "$CARGO" nextest run --profile ci --features "$TEST_FEATURES" --lib
-            "${LINK[@]}" "$CARGO" test --features "$TEST_FEATURES" --bins --test '*' --examples
-            # nextest does not run doctests.
-            "$CARGO" test --features "$TEST_FEATURES" --doc
+            # would override any .cargo/config.toml rustflags).
+            mold -run "$CARGO" test --features "$TEST_FEATURES"
+          else
+            "$CARGO" test --features "$TEST_FEATURES"
           fi
-      - name: Upload nextest JUnit report
-        if: always() && matrix.part != 'integration'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: nextest-junit-${{ matrix.os }}-${{ matrix.part }}
-          path: rust/target/nextest/ci/junit.xml
-          if-no-files-found: ignore
+      - name: Dev Drive usage
+        if: always() && runner.os == 'Windows'
+        shell: bash
+        run: df -h "$DEV_DRIVE" /d /c || true
 
       # Wall-clock gates: #581's parallel BM25 rebuild win, the context-kernel
       # micro-benchmarks and the performance-stress suite. Timing is only
