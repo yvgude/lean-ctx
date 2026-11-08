@@ -359,11 +359,16 @@ fn disallowed_download(
         match base {
             // The same list of written files as the shell gate (#2212): every
             // curl output option (`-o`, `-O`, `-D`, `-c`, `--trace`, `--hsts`,
-            // …) and every wget file (document, logs, `--save-cookies`, …).
+            // `-w '%output{…}'`, …) and every wget file (document, logs,
+            // `--save-cookies`, `-e logfile=…`, …). A config file the call
+            // reads (`curl -K`, `wget --config`) may name any file: refused
+            // wherever the call runs.
             "curl" | "wget" => {
                 if let Some(target) = lean_ctx::core::shell_allowlist::download_targets(base, &tokens[1..])
                     .into_iter()
-                    .find(|target| !allowed(target))
+                    .find(|target| {
+                        target == lean_ctx::core::shell_allowlist::UNKNOWN_DOWNLOAD_TARGET || !allowed(target)
+                    })
                 {
                     return Some(format!("{base} writes {target}"));
                 }

@@ -804,6 +804,48 @@ fn downloads_after_an_unfollowable_cd_judge_every_saved_file() {
     assert_all_pass(WRITER_ALLOWLIST, &passed);
 }
 
+/// #2212 review: files named inside another option's value — curl's
+/// `-w '%output{FILE}'`, wget's `-e logfile=FILE` — and the config files a
+/// call reads (`curl -K`, `wget --config`, whose contents the gate cannot
+/// see) are write targets after an unfollowable `cd`, in every spelling and
+/// cluster. A format without `%output` and scratch targets pass.
+#[test]
+fn downloads_after_an_unfollowable_cd_judge_files_named_in_values_and_configs() {
+    let blocked = [
+        "cd \"$X\" && curl -s -w '%output{gate_probe.txt}x' file:///dev/null",
+        "cd \"$D\" && curl -w '%output{config.toml}' https://example.com",
+        "cd \"$D\" && curl --write-out '%output{>>config.toml}' https://example.com",
+        "cd \"$D\" && curl --write-out=%output{config.toml} https://example.com",
+        "cd \"$D\" && curl -sw%output{config.toml} https://example.com",
+        "cd \"$D\" && curl -w @format.txt https://example.com",
+        "cd \"$D\" && curl -K curl.cfg https://example.com",
+        "cd \"$D\" && curl -sK curl.cfg https://example.com",
+        "cd \"$D\" && curl -K - https://example.com",
+        "cd \"$D\" && curl -K /tmp/lcx-2212.cfg https://example.com",
+        "cd \"$D\" && curl --config curl.cfg https://example.com",
+        "cd \"$D\" && curl --config=curl.cfg https://example.com",
+        "cd \"$D\" && wget -O- -e logfile=config.toml https://example.com",
+        "cd \"$D\" && wget -O- -e 'log_file = config.toml' https://example.com",
+        "cd \"$D\" && wget -O- -qe save_cookies=config.toml https://example.com",
+        "cd \"$D\" && wget -O- -eHSTS_FILE=config.toml https://example.com",
+        "cd \"$D\" && wget -O- --execute warc-file=config.toml https://example.com",
+        "cd \"$D\" && wget -O- --execute=rejected_log=config.toml https://example.com",
+        "cd \"$D\" && wget -e output_document=config.toml https://example.com",
+        "cd \"$D\" && wget -e dir_prefix=sub https://example.com",
+        "cd \"$D\" && wget -O- --config wget.rc https://example.com",
+        "cd \"$D\" && wget -O- --config=wget.rc https://example.com",
+    ];
+    let passed = [
+        "cd \"$D\" && curl -s -w '%{http_code}' -o /dev/null https://example.com",
+        "cd \"$D\" && curl -w '%output{/tmp/lcx-2212}x' https://example.com",
+        "cd \"$D\" && wget -O- -e logfile=/tmp/lcx-2212 https://example.com",
+        "cd \"$D\" && wget -O- -e robots=off https://example.com",
+        "cd \"$D\" && wget -e output_document=- https://example.com",
+    ];
+    assert_all_block(WRITER_ALLOWLIST, &blocked);
+    assert_all_pass(WRITER_ALLOWLIST, &passed);
+}
+
 /// Relative paths resolve in the directory the command runs in (ctx_shell's
 /// `cwd`, a hook payload's `cwd`), not where the gate's process runs.
 #[test]
