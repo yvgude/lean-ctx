@@ -25,7 +25,6 @@ pub(super) fn download_targets(base: &str, args: &[String]) -> Vec<String> {
         return wget_targets(args);
     }
     const CURL_OUTPUT_LONGS: &[&str] = &[
-        "--output",
         "--dump-header",
         "--cookie-jar",
         "--trace",
@@ -35,6 +34,7 @@ pub(super) fn download_targets(base: &str, args: &[String]) -> Vec<String> {
         "--etag-save",
     ];
     let mut targets = Vec::new();
+    let mut outputs = Vec::new();
     let mut output_dir: Option<String> = None;
     let mut remote_name = false;
     let mut i = 0;
@@ -49,12 +49,17 @@ pub(super) fn download_targets(base: &str, args: &[String]) -> Vec<String> {
         } else if let Some((flag, value)) = tok.split_once('=').filter(|_| tok.starts_with("--")) {
             if flag == "--output-dir" {
                 output_dir = Some(value.to_string());
+            } else if flag == "--output" {
+                outputs.push(value.to_string());
             } else if CURL_OUTPUT_LONGS.contains(&flag) {
                 targets.push(value.to_string());
             }
         } else if tok == "--output-dir" {
             takes_next = true;
             output_dir = next;
+        } else if tok == "--output" {
+            takes_next = true;
+            outputs.extend(next);
         } else if CURL_OUTPUT_LONGS.contains(&tok) {
             takes_next = true;
             targets.extend(next);
@@ -74,14 +79,27 @@ pub(super) fn download_targets(base: &str, args: &[String]) -> Vec<String> {
                 } else {
                     Some(rest.to_string())
                 };
-                if matches!(letter, 'o' | 'D' | 'c') {
-                    targets.extend(value);
+                match letter {
+                    'o' => outputs.extend(value),
+                    'D' | 'c' => targets.extend(value),
+                    _ => {}
                 }
                 break;
             }
         }
         i += if takes_next { 2 } else { 1 };
     }
+    outputs.retain(|t| t != "-");
+    // curl writes `-o`/`--output` files inside `--output-dir` too: it joins
+    // the two unconditionally (`--output-dir lean-ctx -o config.toml`
+    // writes `lean-ctx/config.toml`).
+    if let Some(dir) = output_dir.as_deref() {
+        let dir = dir.trim_end_matches('/');
+        for file in &mut outputs {
+            *file = format!("{dir}/{file}");
+        }
+    }
+    targets.extend(outputs);
     if remote_name {
         targets.push(output_dir.unwrap_or_else(|| ".".to_string()));
     }

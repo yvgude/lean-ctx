@@ -1404,12 +1404,20 @@ fn touches_protected(
     }
     // curl/wget: any output option (`-o`, `-O`, `-D`, `-c`, `--trace`,
     // `--stderr`, a log file) inside the state writes it; a download
-    // directory above it (`wget -P ~`) only creates a file there.
+    // directory above it (`wget -P ~`) only creates a file there. A file
+    // curl joins onto `--output-dir` is judged where it lands
+    // (`--output-dir ~/.config -o lean-ctx/config.toml`).
     if matches!(base, "curl" | "wget") {
         return tokens[1..]
             .iter()
             .find(|t| inside(t))
-            .and_then(|t| writes(shown(t)));
+            .cloned()
+            .or_else(|| {
+                download_targets(base, &tokens[1..])
+                    .into_iter()
+                    .find(|t| inside(t))
+            })
+            .and_then(|t| writes(shown(&t)));
     }
     if let Some(verdict) = plain_copy_effect(tokens, &inside, &reaches, &target_hits, homes) {
         return verdict.err().and_then(|word| writes(shown(&word)));
