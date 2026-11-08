@@ -392,32 +392,85 @@ fn home_allow_dirs(home: &Path, ide_dirs_allowed: bool) -> Vec<PathBuf> {
     }
     // The editor registry probes the filesystem and PATH for ~40 editors; the
     // jail runs on every path check, so resolve once per process and refresh
-    // on a TTL (#2195). The lock only guards the copy in and out: the probe
-    // runs unlocked, so a slow probe (network home, stalled mount) never
-    // blocks concurrent path checks behind it. Lock ordering: L145.
-    type Entry = Option<(PathBuf, std::time::Instant, Vec<PathBuf>)>;
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<Entry>> = std::sync::OnceLock::new();
-    const TTL: std::time::Duration = std::time::Duration::from_secs(300);
-
-    let cache = CACHE.get_or_init(|| std::sync::Mutex::new(None));
-    let lock = || {
-        cache
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    // on a TTL (#2195). The probe never runs under the lock, and once this
+    // home has an entry, only one caller refreshes it while the others keep
+    // the previous list (stale-while-revalidate). So a slow probe (network
+    // home, stalled mount) neither blocks concurrent path checks nor
+    // multiplies the probe I/O. Lock ordering: L145.
+    let started = std::time::Instant::now();
+    let refresher = {
+        let mut cache = lock_home_allow_dirs();
+        match cache.entry.as_ref() {
+            Some(e) if e.home == home && e.probed_at.elapsed() < HOME_ALLOW_DIRS_TTL => {
+                return e.dirs.clone();
+            }
+            Some(e) if e.home == home && cache.refreshing => return e.dirs.clone(),
+            Some(e) if e.home == home => {
+                cache.refreshing = true;
+                Some(RefreshGuard)
+            }
+            // No entry for this home yet: nothing to serve, so probe.
+            _ => None,
+        }
     };
-    if let Some((cached_home, at, dirs)) = lock().as_ref()
-        && cached_home == home
-        && at.elapsed() < TTL
-    {
-        return dirs.clone();
-    }
+
     #[cfg(test)]
     HOME_ALLOW_DIRS_BUILDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let mut out = Vec::new();
     let targets = crate::core::editor_registry::build_targets(home);
     collect_ide_allow_dirs(home, &targets, &mut out);
-    *lock() = Some((home.to_path_buf(), std::time::Instant::now(), out.clone()));
+
+    let mut cache = lock_home_allow_dirs();
+    // A probe that started earlier than the stored one must not overwrite it,
+    // or a slow, older result would replace a newer one and outlive the TTL.
+    if cache.entry.as_ref().is_none_or(|e| e.probed_at <= started) {
+        cache.entry = Some(HomeAllowDirs {
+            home: home.to_path_buf(),
+            probed_at: started,
+            dirs: out.clone(),
+        });
+    }
+    drop(cache);
+    drop(refresher);
     out
+}
+
+const HOME_ALLOW_DIRS_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+struct HomeAllowDirs {
+    home: PathBuf,
+    /// When the probe behind `dirs` started (not finished).
+    probed_at: std::time::Instant,
+    dirs: Vec<PathBuf>,
+}
+
+#[derive(Default)]
+struct HomeAllowDirsCache {
+    entry: Option<HomeAllowDirs>,
+    /// A caller is refreshing `entry`; others serve the stale list meanwhile.
+    refreshing: bool,
+}
+
+static HOME_ALLOW_DIRS_CACHE: std::sync::Mutex<HomeAllowDirsCache> =
+    std::sync::Mutex::new(HomeAllowDirsCache {
+        entry: None,
+        refreshing: false,
+    });
+
+fn lock_home_allow_dirs() -> std::sync::MutexGuard<'static, HomeAllowDirsCache> {
+    HOME_ALLOW_DIRS_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Clears `refreshing` when the refresher finishes, also if the probe panics,
+/// so a failed refresh never pins the stale list forever.
+struct RefreshGuard;
+
+impl Drop for RefreshGuard {
+    fn drop(&mut self) {
+        lock_home_allow_dirs().refreshing = false;
+    }
 }
 
 #[cfg(test)]
