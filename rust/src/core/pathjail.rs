@@ -392,18 +392,16 @@ fn home_allow_dirs(home: &Path, ide_dirs_allowed: bool) -> Vec<PathBuf> {
     }
     // The editor registry probes the filesystem and PATH for ~40 editors; the
     // jail runs on every path check, so resolve once per process and refresh
-    // on a TTL (#2195).
-    type Entry = Option<(PathBuf, std::time::Instant, Vec<PathBuf>)>;
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<Entry>> = std::sync::OnceLock::new();
-    const TTL: std::time::Duration = std::time::Duration::from_secs(300);
-
-    let mut guard = CACHE
-        .get_or_init(|| std::sync::Mutex::new(None))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some((cached_home, at, dirs)) = guard.as_ref()
+    // on a TTL (#2195). The lock is held across the probe on purpose: it is
+    // the single flight. Every caller that reaches it has IDE dirs enabled
+    // (opt-in) and needs this list, so waiting for one probe costs no more
+    // than probing itself, never multiplies the probe I/O, and never serves
+    // an expired allow-list. The TTL runs from when the list is stored.
+    // Lock ordering: L145.
+    let mut cache = lock_home_allow_dirs();
+    if let Some((cached_home, stored_at, dirs)) = cache.as_ref()
         && cached_home == home
-        && at.elapsed() < TTL
+        && stored_at.elapsed() < HOME_ALLOW_DIRS_TTL
     {
         return dirs.clone();
     }
@@ -412,8 +410,21 @@ fn home_allow_dirs(home: &Path, ide_dirs_allowed: bool) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let targets = crate::core::editor_registry::build_targets(home);
     collect_ide_allow_dirs(home, &targets, &mut out);
-    *guard = Some((home.to_path_buf(), std::time::Instant::now(), out.clone()));
+    *cache = Some((home.to_path_buf(), std::time::Instant::now(), out.clone()));
     out
+}
+
+const HOME_ALLOW_DIRS_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// The IDE allow-dirs of one home: (home, stored at, dirs).
+type HomeAllowDirsCache = Option<(PathBuf, std::time::Instant, Vec<PathBuf>)>;
+
+static HOME_ALLOW_DIRS_CACHE: std::sync::Mutex<HomeAllowDirsCache> = std::sync::Mutex::new(None);
+
+fn lock_home_allow_dirs() -> std::sync::MutexGuard<'static, HomeAllowDirsCache> {
+    HOME_ALLOW_DIRS_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

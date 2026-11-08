@@ -238,6 +238,9 @@ fn ide_allow_dirs_are_registry_derived_and_skip_home() {
 // never appears here.
 #[test]
 fn ide_config_dirs_are_excluded_by_default() {
+    // home_allow_dirs shares one process-wide cache and build counter with
+    // home_allow_dirs_is_cached_per_home: serialize and start/leave it empty.
+    let _fresh = FreshHomeAllowDirsCache::new();
     let home = tempfile::tempdir().unwrap();
     for d in [".lean-ctx", ".cursor", ".codex"] {
         std::fs::create_dir_all(home.path().join(d)).unwrap();
@@ -1062,9 +1065,30 @@ fn cursor_agent_output_opens_only_for_the_own_workspace() {
     assert!(is_read_only_path(&app_log), "writes stay denied");
 }
 
+/// Holds `test_env_lock` and an empty home-allow-dirs cache for one test, and
+/// empties the cache again on drop (also when the test panics), so no test
+/// inherits another's entry.
+struct FreshHomeAllowDirsCache {
+    _env: crate::core::data_dir::TestEnvGuard,
+}
+
+impl FreshHomeAllowDirsCache {
+    fn new() -> Self {
+        let env = crate::core::data_dir::test_env_lock();
+        *lock_home_allow_dirs() = None;
+        Self { _env: env }
+    }
+}
+
+impl Drop for FreshHomeAllowDirsCache {
+    fn drop(&mut self) {
+        *lock_home_allow_dirs() = None;
+    }
+}
+
 #[test]
 fn home_allow_dirs_is_cached_per_home() {
-    let _env = crate::core::data_dir::test_env_lock();
+    let _fresh = FreshHomeAllowDirsCache::new();
     let home_a = tempfile::tempdir().unwrap();
     let home_b = tempfile::tempdir().unwrap();
     let builds = || HOME_ALLOW_DIRS_BUILDS.load(std::sync::atomic::Ordering::SeqCst);
@@ -1085,4 +1109,6 @@ fn home_allow_dirs_is_cached_per_home() {
 
     home_allow_dirs(home_b.path(), true);
     assert_eq!(builds(), before + 2, "a different home is recomputed");
+    home_allow_dirs(home_b.path(), true);
+    assert_eq!(builds(), before + 2, "the other home is stored and served");
 }
