@@ -23,6 +23,18 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - **Path jail no longer spawns `where`/`which` on every check (#2195).** The IDE allow-dir list is cached
   per process (5 min TTL) and editor/PATH detection resolves executables in-process, so a console-less
   Windows daemon stops creating `where.exe` + `conhost.exe` processes.
+- **The Cockpit starts on Windows (#2203).** It was started with a cleared environment, which also
+  removed `SystemRoot`; Winsock could not load (os error 10106), so it never opened its port and the
+  dashboard answered `503 start_failed`. `SystemRoot` is now passed and the Cockpit starts without a
+  console window, so the hidden background server no longer flashes one on every retry. The official
+  `x86_64-pc-windows-gnu` build looked for a Cockpit package target no channel publishes and reported
+  every Cockpit as `verification_failed`; it now runs the MSVC package like every x86_64 Windows host.
+- **The shell gate judges every file curl and wget write (#2212).** After a `cd` the gate cannot
+  follow, curl `--hsts`/`--alt-svc`/`--ssl-sessions` and `-w '%output{FILE}'`, and wget
+  `--save-cookies`/`--hsts-file`/`--warc-file`/`--rejected-log` and the same settings through
+  `-e`/`--execute`, are judged as write targets in every spelling. A config file the call reads
+  (`curl -K`, `curl -w @FILE`, `wget --config`) may name any file and is refused wherever the call
+  runs. ctx_shell's download guard uses the same list instead of its own copy.
 
 ## [3.12.2] — 2026-11-04
 

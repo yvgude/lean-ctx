@@ -64,15 +64,34 @@ pub(crate) struct Bundle {
 }
 
 fn host_target() -> Result<&'static str> {
-    match (std::env::consts::ARCH, std::env::consts::OS) {
-        ("aarch64", "macos") => Ok("aarch64-apple-darwin"),
-        ("x86_64", "macos") => Ok("x86_64-apple-darwin"),
-        ("aarch64", "linux") if cfg!(target_env = "gnu") => Ok("aarch64-unknown-linux-gnu"),
-        ("x86_64", "linux") if cfg!(target_env = "gnu") => Ok("x86_64-unknown-linux-gnu"),
-        ("aarch64", "linux") if cfg!(target_env = "musl") => Ok("aarch64-unknown-linux-musl"),
-        ("x86_64", "linux") if cfg!(target_env = "musl") => Ok("x86_64-unknown-linux-musl"),
-        ("x86_64", "windows") if cfg!(target_env = "msvc") => Ok("x86_64-pc-windows-msvc"),
-        _ => Err(InstallError::Archive),
+    let env = if cfg!(target_env = "gnu") {
+        "gnu"
+    } else if cfg!(target_env = "musl") {
+        "musl"
+    } else if cfg!(target_env = "msvc") {
+        "msvc"
+    } else {
+        ""
+    };
+    package_target(std::env::consts::ARCH, std::env::consts::OS, env).ok_or(InstallError::Archive)
+}
+
+/// The package target a host of this architecture, OS and C environment
+/// runs. A runtime is a separate executable spoken to over stdin/stdout, so
+/// only the OS has to run it: on Linux the C library decides (a glibc binary
+/// does not run on musl), on Windows any x86_64 host runs the MSVC package.
+/// The official `x86_64-pc-windows-gnu` build has no package of its own and
+/// would otherwise report every Cockpit as `verification_failed` (#2203).
+fn package_target(arch: &str, os: &str, env: &str) -> Option<&'static str> {
+    match (arch, os, env) {
+        ("aarch64", "macos", _) => Some("aarch64-apple-darwin"),
+        ("x86_64", "macos", _) => Some("x86_64-apple-darwin"),
+        ("aarch64", "linux", "gnu") => Some("aarch64-unknown-linux-gnu"),
+        ("x86_64", "linux", "gnu") => Some("x86_64-unknown-linux-gnu"),
+        ("aarch64", "linux", "musl") => Some("aarch64-unknown-linux-musl"),
+        ("x86_64", "linux", "musl") => Some("x86_64-unknown-linux-musl"),
+        ("x86_64", "windows", "msvc" | "gnu") => Some("x86_64-pc-windows-msvc"),
+        _ => None,
     }
 }
 
@@ -398,4 +417,36 @@ pub(super) fn import_kind(
     result["channel"] = serde_json::to_value(&receipt).map_err(|_| InstallError::State)?;
     result["artifact_key_hex"] = release.artifact_key_hex.clone().into();
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::package_target;
+
+    #[test]
+    fn a_windows_gnu_host_runs_the_msvc_package() {
+        // #2203: the official windows-gnu build looked for a package target
+        // no channel publishes, so every Cockpit failed verification.
+        for env in ["msvc", "gnu"] {
+            assert_eq!(
+                package_target("x86_64", "windows", env),
+                Some("x86_64-pc-windows-msvc"),
+                "{env}"
+            );
+        }
+    }
+
+    #[test]
+    fn linux_keeps_the_c_library_of_the_host() {
+        assert_eq!(
+            package_target("x86_64", "linux", "gnu"),
+            Some("x86_64-unknown-linux-gnu")
+        );
+        assert_eq!(
+            package_target("aarch64", "linux", "musl"),
+            Some("aarch64-unknown-linux-musl")
+        );
+        assert_eq!(package_target("x86_64", "linux", ""), None);
+        assert_eq!(package_target("aarch64", "windows", "msvc"), None);
+    }
 }
