@@ -23,6 +23,15 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - **Path jail no longer spawns `where`/`which` on every check (#2195).** The IDE allow-dir list is cached
   per process (5 min TTL) and editor/PATH detection resolves executables in-process, so a console-less
   Windows daemon stops creating `where.exe` + `conhost.exe` processes.
+- **A PowerShell tool call is checked as PowerShell (#2215).** A host that launches its hooks through
+  Git Bash (Claude Code on Windows does) hands the hook a POSIX `SHELL`/`MSYSTEM`, so ordinary
+  PowerShell lines such as `$f = "C:\x"; Test-Path $f` were denied as POSIX. The PowerShell tool
+  hook now reads its line under the PowerShell host whatever the environment says. Under that host
+  a .NET member call's attached `(` (`[Math]::Max(1,2)`) is accepted at statement start or as a
+  local assignment value, and the reader still decides whether the member is safe. The call
+  operator `&` no longer hides its target: a literal is checked against the allowlist, a run-time
+  target is refused, a script block is walked, a trailing redirect is allowed, and nesting is
+  depth-bounded. A quoted call-operator target used to pass unchecked under the PowerShell host.
 
 ## [3.12.2] — 2026-11-04
 
