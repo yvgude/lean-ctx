@@ -229,12 +229,14 @@ mod tests {
         std::fs::create_dir_all(&vault).unwrap();
         std::fs::write(vault.join("note.md"), "# Vault note\nrotation policy").unwrap();
 
+        // serde_json escapes the path: a Windows path's backslashes are not
+        // valid JSON escapes when formatted into the string verbatim.
         write_registry(
             project.path(),
-            &format!(
-                r#"{{"artifacts":[{{"name":"vault","path":"{}","description":"notes"}}]}}"#,
-                vault.display()
-            ),
+            &serde_json::json!({
+                "artifacts": [{"name": "vault", "path": vault, "description": "notes"}]
+            })
+            .to_string(),
         );
 
         // Without an allow-list entry the external path is rejected by the jail.

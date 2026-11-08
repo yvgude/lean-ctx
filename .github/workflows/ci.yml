@@ -213,34 +213,10 @@ jobs:
           rustup default stable
           cargo --version
           echo "$CARGO_HOME/bin" >> $GITHUB_PATH
-      # Windows: Defender scans every file the build writes, and the ~50
-      # linked test binaries write a lot of them. A trusted ReFS Dev Drive
-      # runs Defender in performance mode, so the target dir goes there.
-      # It is mounted next to the checkout, not at rust/target: rust-cache
-      # reads the target dir's root, and a volume root holds System Volume
-      # Information, which it cannot read (EPERM), so the cache would be
-      # dropped silently. The VHDX is dynamic and sits on the workspace disk,
-      # so it takes the space the target dir took there before.
-      - name: Set up Dev Drive
-        if: runner.os == 'Windows'
-        uses: samypr100/setup-dev-drive@562171fe8df7401fdf582d766cd3b6ab80d5b1a0 # v4.1.0
-        with:
-          drive-size: 80GB
-          drive-format: ReFS
-          drive-type: Dynamic
-          drive-path: ${{ runner.temp }}/dev_drive.vhdx
-          mount-path: ${{ github.workspace }}/../dev-drive
-          trusted-dev-drive: true
-          env-mapping: |
-            CARGO_TARGET_DIR,{{ DEV_DRIVE }}/target
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          # TEMPORARY (#2214 measurement): the Dev Drive moves the Windows
-          # cache paths, so this branch saves its own warm cache once.
-          # Back to main-only before merge.
-          save-if: ${{ github.ref == 'refs/heads/main' || github.head_ref == 'ci/github-nextest' }}
-          # The path is relative to rust/: rust-cache joins it onto the root.
-          workspaces: ${{ runner.os == 'Windows' && 'rust -> ../../dev-drive/target' || 'rust -> target' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: rust -> target
 
       - name: Verify build-script freshness and source guard
         if: runner.os == 'Linux'
@@ -373,10 +349,6 @@ jobs:
           else
             "$CARGO" test --features "$TEST_FEATURES"
           fi
-      - name: Dev Drive usage
-        if: always() && runner.os == 'Windows'
-        shell: bash
-        run: df -h "$DEV_DRIVE" /d /c || true
 
       # Wall-clock gates: #581's parallel BM25 rebuild win, the context-kernel
       # micro-benchmarks and the performance-stress suite. Timing is only
@@ -414,6 +386,7 @@ jobs:
           cargo test --features "$TEST_FEATURES" --lib -- --test-threads=1 parallel_incremental_rebuild_perf_gate --nocapture
           cargo test --features "$TEST_FEATURES" --lib -- --test-threads=1 context_kernel::perf_benchmark
           cargo test --features "$TEST_FEATURES" --test main -- --test-threads=1 performance_stress
+          cargo test --features "$TEST_FEATURES" --test main -- --test-threads=1 context_radar_perf
 
   clippy:
     name: Clippy
