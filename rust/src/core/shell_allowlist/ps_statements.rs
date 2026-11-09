@@ -269,7 +269,7 @@ impl Drop for HostGuard {
 /// The mode for the shell that runs the checked line: the one `ctx_shell`,
 /// `ctx_execute` and the shell aliases execute with, unless a [`HostGuard`]
 /// names it.
-fn host_mode() -> Mode {
+pub(super) fn host_mode() -> Mode {
     if let Some(forced) = FORCED_HOST.with(std::cell::Cell::get) {
         return if forced {
             Mode::PowerShell
@@ -854,6 +854,180 @@ fn string_end(s: &str, i: usize) -> Option<usize> {
     None
 }
 
+/// The bodies of the `( … )` groups in a PowerShell command line, outside
+/// strings and script blocks.
+///
+/// In argument mode PowerShell runs a group as a pipeline and passes its
+/// output: `echo (cmd)` and `git log --format=(cmd)` run `cmd`. The bodies are
+/// commands for the walker to check. A `$( … )`/`@( … )` group is returned
+/// too. A `{ … }` block is skipped: the walker reads the blocks a command runs
+/// itself. Empty when the host is not PowerShell, whose shells refuse such a
+/// group. `None` when a string, group or block does not close.
+pub(super) fn argument_subexpressions(segment: &str) -> Option<Vec<&str>> {
+    if host_mode() != Mode::PowerShell {
+        return Some(Vec::new());
+    }
+    let bytes = segment.as_bytes();
+    let mut groups = Vec::new();
+    let mut j = 0;
+    while j < bytes.len() {
+        match bytes[j] {
+            b'\'' | b'"' => {
+                j = string_end(segment, j)?;
+                continue;
+            }
+            b'`' => j += 1,
+            b'{' => {
+                j = balanced_brace_at(segment, j)?.1;
+                continue;
+            }
+            // `$( … )` is a substitution: the substitution scan checks its
+            // body. An escaped `` `$ `` is no substitution, so its group is.
+            b'(' if j > 0 && bytes[j - 1] == b'$' && (j < 2 || bytes[j - 2] != b'`') => {
+                j = matching_paren(segment, j)? + 1;
+                continue;
+            }
+            b'(' => {
+                let close = matching_paren(segment, j)?;
+                groups.push(&segment[j + 1..close]);
+                j = close + 1;
+                continue;
+            }
+            b')' | b'}' => return None,
+            _ => {}
+        }
+        j += 1;
+    }
+    Some(groups)
+}
+
+/// Index of the `)` closing the `(` at `open`, skipping strings and escapes.
+fn matching_paren(s: &str, open: usize) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0usize;
+    let mut j = open;
+    while j < bytes.len() {
+        match bytes[j] {
+            b'\'' | b'"' => {
+                j = string_end(s, j)?;
+                continue;
+            }
+            b'`' => j += 1,
+            b'(' => depth += 1,
+            b')' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(j);
+                }
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    None
+}
+
+/// The values of the hashtable literals `@{ key = value; … }` in a PowerShell
+/// command line, outside strings, `( … )` groups and script blocks.
+///
+/// A value is a statement: `@{a=cmd}` runs `cmd`. The values are returned for
+/// the walker to check as an assignment's right-hand side, which is what they
+/// are. Groups and blocks are skipped: the walker reads those itself, and a
+/// hashtable inside them meets this scan there. Empty when the host is not
+/// PowerShell. `None` when a string, group or block does not close.
+pub(super) fn hashtable_values(segment: &str) -> Option<Vec<&str>> {
+    if host_mode() != Mode::PowerShell {
+        return Some(Vec::new());
+    }
+    let bytes = segment.as_bytes();
+    let mut values = Vec::new();
+    let mut j = 0;
+    while j < bytes.len() {
+        match bytes[j] {
+            b'\'' | b'"' => {
+                j = string_end(segment, j)?;
+                continue;
+            }
+            b'`' => j += 1,
+            b'(' => {
+                j = matching_paren(segment, j)? + 1;
+                continue;
+            }
+            b'{' => {
+                let (body, after) = balanced_brace_at(segment, j)?;
+                let literal = j > 0 && bytes[j - 1] == b'@' && (j < 2 || bytes[j - 2] != b'`');
+                if literal {
+                    values.extend(entry_values(body)?);
+                }
+                j = after;
+                continue;
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    Some(values)
+}
+
+/// The value of every `key = value` entry in a hashtable body, and every key
+/// that is an expression rather than a bare word. Entries end at a top-level
+/// `;` or line break; a value runs from the entry's first top-level `=` to its
+/// end. A key is an expression too: `@{ (cmd) = 1 }` and `@{ $(cmd) = 1 }` run
+/// `cmd`, while a bare key (`a`, `Name`, `1`) is a string.
+fn entry_values(body: &str) -> Option<Vec<&str>> {
+    let bytes = body.as_bytes();
+    let mut values = Vec::new();
+    let mut entry = 0;
+    let mut eq: Option<usize> = None;
+    let mut j = 0;
+    let bare = |key: &str| {
+        key.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
+    };
+    // `None` for an entry without `=`: no hashtable PowerShell accepts.
+    let value = |entry: usize, eq: Option<usize>, end: usize| match eq {
+        Some(e) => {
+            let key = body[entry..e].trim();
+            let key = (!bare(key)).then_some(key);
+            Some([key, Some(body[e + 1..end].trim())])
+        }
+        None if body[entry..end].trim().is_empty() => Some([None, None]),
+        None => None,
+    };
+    while j < bytes.len() {
+        match bytes[j] {
+            b'\'' | b'"' => {
+                j = string_end(body, j)?;
+                continue;
+            }
+            b'`' => j += 1,
+            b'(' => {
+                j = matching_paren(body, j)? + 1;
+                continue;
+            }
+            b'{' => {
+                j = balanced_brace_at(body, j)?.1;
+                continue;
+            }
+            b'[' => {
+                j = matching_bracket(body, j)? + 1;
+                continue;
+            }
+            b'=' if eq.is_none() => eq = Some(j),
+            b';' | b'\n' => {
+                values.extend(value(entry, eq, j)?.into_iter().flatten());
+                entry = j + 1;
+                eq = None;
+            }
+            _ => {}
+        }
+        j += 1;
+    }
+    values.extend(value(entry, eq, bytes.len())?.into_iter().flatten());
+    values.retain(|v| !v.is_empty());
+    Some(values)
+}
+
 fn matching_bracket(s: &str, open: usize) -> Option<usize> {
     let bytes = s.as_bytes();
     let mut depth = 0usize;
@@ -876,6 +1050,17 @@ fn matching_bracket(s: &str, open: usize) -> Option<usize> {
         j += 1;
     }
     None
+}
+
+/// The body of `s` when all of it is one `{ … }` script block (`{ a }`, not
+/// `{ a } + { b }`), quote-aware.
+pub(super) fn whole_script_block(s: &str) -> Option<&str> {
+    let s = s.trim();
+    if !s.starts_with('{') {
+        return None;
+    }
+    let (body, after) = balanced_brace_at(s, 0)?;
+    (after == s.len()).then_some(body)
 }
 
 /// Inner text of the `{ … }` opening at `open`, quote-aware, and the index

@@ -193,6 +193,36 @@ pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
     enforce_with(command, &[], None)
 }
 
+/// `command` as the checks must read it when the host shell is PowerShell.
+///
+/// PowerShell reads the typographic quotes `‘ ’ ‚ ‛` like `'` and `“ ” „`
+/// like `"`; to the POSIX-based checks they were word characters, so
+/// `'a’; cmd; ‘b'` looked like one quoted word while PowerShell ran `cmd`.
+/// A backslash is an ordinary character to PowerShell, not an escape: `"a\"`
+/// is a closed string there. The checks read it as an escape, so they get `/`
+/// (still a path separator). On any other host the line is unchanged.
+#[must_use]
+pub fn as_powershell_reads(command: &str) -> std::borrow::Cow<'_, str> {
+    use super::ps_statements::{Mode, host_mode};
+    const REMAPPED: &[char] = &[
+        '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}', '\u{201C}', '\u{201D}', '\u{201E}', '\\',
+    ];
+    if host_mode() != Mode::PowerShell || !command.contains(REMAPPED) {
+        return std::borrow::Cow::Borrowed(command);
+    }
+    std::borrow::Cow::Owned(
+        command
+            .chars()
+            .map(|c| match c {
+                '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}' => '\'',
+                '\u{201C}' | '\u{201D}' | '\u{201E}' => '"',
+                '\\' => '/',
+                other => other,
+            })
+            .collect(),
+    )
+}
+
 /// [`enforce_shell_allowlist`] with `granted` programs counted as listed (a
 /// user's approval, see [`super::approval`]) and, when `misses` is set,
 /// programs missing from the list recorded instead of refused. Every other
@@ -223,7 +253,10 @@ pub(super) fn enforce_with(
     if let Some(reason) = unvalidatable_line_break(command) {
         return Err(unvalidatable(reason, command));
     }
-    let normalized = normalize_line_continuations(command);
+    // A PowerShell host reads typographic quotes as quotes and a backslash as
+    // an ordinary character; every check below reads the line that way too.
+    let read = as_powershell_reads(command);
+    let normalized = normalize_line_continuations(&read);
     // The one lexer pass behind every strip below (GHSA-rxv5-4c3x-g4q6 E):
     // where the shells disagree on a construct, or a heredoc never ends, no
     // strip can be trusted, so the command is refused.
@@ -316,9 +349,9 @@ fn unvalidatable_line_break(command: &str) -> Option<&'static str> {
 
 /// The refusal for nesting past what the lexer follows; see `lexer::MAX_NESTING`.
 fn too_deep() -> ShellError {
-    "[BLOCKED — DO NOT RETRY] Command nests substitutions, backticks or `${…}` more than \
-     64 levels deep, which the shell gate cannot validate. Split it into separate commands, \
-     or put the logic in a script file and run that."
+    "[BLOCKED — DO NOT RETRY] Command nests substitutions, backticks, `${…}` or PowerShell \
+     `( … )` groups more than 64 levels deep, which the shell gate cannot validate. Split it \
+     into separate commands, or put the logic in a script file and run that."
         .into()
 }
 
@@ -1296,6 +1329,72 @@ fn conditional_function_call_message(name: &str) -> String {
     )
 }
 
+/// Nesting of PowerShell argument groups the walker follows; deeper groups
+/// are refused, so `echo (echo (echo (…)))` cannot exhaust the stack.
+const MAX_ARGUMENT_GROUP_DEPTH: usize = 4;
+
+/// PowerShell runs a `( … )` group in a command's arguments as a pipeline
+/// (`echo (cmd)`, `git log --format=(cmd)`), so each group's commands meet
+/// the allowlist like the line's own. They used to read as inert arguments.
+/// A hashtable literal's values are statements too (`@{a=cmd}` runs `cmd`);
+/// each is checked as the right-hand side of an assignment.
+fn check_powershell_argument_groups(
+    segment: &str,
+    allowlist: &Allowlist,
+) -> Result<(), ShellError> {
+    use std::cell::Cell;
+    thread_local! {
+        static DEPTH: Cell<usize> = const { Cell::new(0) };
+    }
+    let (Some(groups), Some(values)) = (
+        super::ps_statements::argument_subexpressions(segment),
+        super::ps_statements::hashtable_values(segment),
+    ) else {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] A string, `( … )` group, `{{ … }}` block or `@{{ … }}` \
+             hashtable in this PowerShell command does not close or cannot be read, so the \
+             commands inside it cannot be checked against the allowlist.\nCommand: {segment}"
+        )
+        .into());
+    };
+    if groups.is_empty() && values.is_empty() {
+        return Ok(());
+    }
+    let depth = DEPTH.with(Cell::get);
+    if depth >= MAX_ARGUMENT_GROUP_DEPTH {
+        return Err(format!(
+            "[BLOCKED — DO NOT RETRY] `( … )` groups or `@{{ … }}` hashtables in PowerShell \
+             arguments are nested more than {MAX_ARGUMENT_GROUP_DEPTH} levels deep; split \
+             the command.\nCommand: {segment}"
+        )
+        .into());
+    }
+    DEPTH.with(|d| d.set(depth + 1));
+    let checked = groups
+        .iter()
+        .try_for_each(|group| check_all_segments(group, allowlist))
+        .and_then(|()| {
+            values.iter().try_for_each(|value| {
+                // A script-block value (`@{e={ $_.Length }}`) runs where the
+                // command calls it: its body meets the allowlist like a line.
+                match super::ps_statements::whole_script_block(value) {
+                    Some(body) if body.trim().is_empty() => Ok(()),
+                    Some(body) => check_all_segments(body, allowlist),
+                    None => check_all_segments(&format!("$lean_ctx_value = {value}"), allowlist),
+                }
+            })
+        });
+    DEPTH.with(|d| d.set(depth));
+    checked.map_err(|err| {
+        ShellError::from(format!(
+            "[BLOCKED — DO NOT RETRY] PowerShell runs the `( … )` group or `@{{ … }}` value in \
+             this command's arguments as a command: {}\nCommand: {segment}",
+            err.message()
+                .trim_start_matches("[BLOCKED — DO NOT RETRY] ")
+        ))
+    })
+}
+
 pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result<(), ShellError> {
     if allowlist.is_empty() {
         return Ok(());
@@ -1356,6 +1455,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             };
             for body_seg in &body_cmds {
                 check_inline_env_block(body_seg)?;
+                check_powershell_argument_groups(body_seg, allowlist)?;
                 let body_tokens = extract_command_tokens_from_segment(body_seg);
                 let Some(body_base) = body_tokens.first().cloned() else {
                     continue;
@@ -1382,6 +1482,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             continue;
         }
 
+        check_powershell_argument_groups(seg, allowlist)?;
         let tokens = extract_command_tokens_from_segment(seg);
         let Some(base) = tokens.first().cloned() else {
             continue;

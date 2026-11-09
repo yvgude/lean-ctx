@@ -117,7 +117,11 @@ const PROMPT_TRANSFORM: &str =
     "a `${…@P}` prompt expansion, which runs the substitutions in the value";
 const ATTACHED_PAREN: &str = "a `(` attached to a word, which zsh reads as glob qualifiers that can \
      run code (`*(e:…:)`, `*(+cmd)`) and bash as an extended glob";
-const TOO_DEEP: &str = "substitutions, backticks or `${…}` nested more than 64 levels deep";
+const TOO_DEEP: &str = "substitutions, backticks, `${…}` or PowerShell `( … )` groups nested \
+     more than 64 levels deep";
+const ATTACHED_BLOCK_COMMENT: &str =
+    "a PowerShell block comment `<#` attached to a word, where it may not start a comment";
+const UNTERMINATED_BLOCK_COMMENT: &str = "a PowerShell block comment `<#` without its closing `#>`";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Mode {
@@ -306,6 +310,25 @@ impl<'a> Lexer<'a> {
                     i = line_end;
                     continue;
                 }
+                // PowerShell block comment `<# … #>`: it may span lines and
+                // ends at `#>`, so the `#` rule above would read its closing
+                // `#>` as a line comment and hide what follows it.
+                b'<' if !param
+                    && bytes.get(i + 1) == Some(&b'#')
+                    && super::ps_statements::host_is_powershell() =>
+                {
+                    if !starts_word(bytes, i, start, bare_close_at) {
+                        self.flag(ATTACHED_BLOCK_COMMENT);
+                    }
+                    if let Some(k) = s[i + 2..end].find("#>") {
+                        self.out.comments.push(i..i + 2 + k + 2);
+                        i += 2 + k + 2;
+                        continue;
+                    }
+                    self.flag(UNTERMINATED_BLOCK_COMMENT);
+                    self.out.comments.push(i..end);
+                    return unterminated;
+                }
                 b'<' if !param && bytes.get(i + 1) == Some(&b'<') => {
                     if bytes.get(i + 2) == Some(&b'<') {
                         // `<<<` is a here-string: its word is scanned normally.
@@ -370,6 +393,16 @@ impl<'a> Lexer<'a> {
                         arithmetic_until = after + 1;
                     }
                     depth += 1;
+                    // PowerShell reads each `(` as a nested expression or
+                    // pipeline, one recursive scan per level: bound it like a
+                    // substitution, or a crashed hook fails open.
+                    if self.nesting + depth as usize > MAX_NESTING
+                        && !self.out.too_deep
+                        && super::ps_statements::host_is_powershell()
+                    {
+                        self.out.too_deep = true;
+                        self.flag(TOO_DEEP);
+                    }
                 }
                 b')' => {
                     if close == Close::Paren && depth == 0 {
