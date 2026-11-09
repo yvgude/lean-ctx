@@ -1101,6 +1101,9 @@ fn project_root_binary_rejects_nonexistent_path() {
 /// the project root (the test binary `cargo test` itself qualifies).
 #[test]
 fn project_root_binary_accepts_existing_project_file() {
+    // `./Cargo.toml` resolves against the process cwd, which a side-door test
+    // moves to the home directory while holding this lock.
+    let _lock = crate::core::data_dir::test_env_lock();
     // Use Cargo.toml as a known file in the project root — it's not executable,
     // but is_project_root_binary only checks path + existence + project-root,
     // not execute permission (that's the OS's job at runtime).

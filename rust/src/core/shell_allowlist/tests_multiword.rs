@@ -229,6 +229,9 @@ fn propagation_powershell_override() {
 /// in tests.rs) standing in for a scoped binary.
 #[test]
 fn propagation_project_root_fallthrough_bypass_closed() {
+    // `./Cargo.toml` resolves against the process cwd, which a side-door test
+    // moves to the home directory while holding this lock.
+    let _lock = crate::core::data_dir::test_env_lock();
     // An entry names "Cargo.toml" explicitly (scoped to "lint") — a scoping
     // denial for a different subcommand must NOT fall through into the
     // project-root auto-allow, even though ./Cargo.toml genuinely exists
