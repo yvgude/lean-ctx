@@ -2,7 +2,7 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED - PENDING APPROVAL
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:919d813c3233a60c735c96603dfe9cb70add553a60c75e42491f5645bd8501bc
+Content-Digest: sha256:b3e5cef170a34f935618b55e0b632790de2e5dcc4249909a91f2f8c729772ece
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
@@ -10,7 +10,7 @@ Cargo.lock SHA-256: 7bbc281faa671a94f0b05b3181d794494f888094ca31076bd93c380e5afa
 Cargo metadata inventory SHA-256: 09ca13e838cb12ddf104379bdebbc45fbcf5042d1fe83725f8c47022c4e11a23
 SBOM.cdx.json SHA-256: b84b10bfe50387d185aabd64a3a599c66b0395d6f6a88b7f0eae6c7ab9f927e3
 SBOM components: 558
-Asset manifest SHA-256: 258faf6b86e52a619df58af2b6a43bbbe8a423b30fc1f694d4a20e3b392a5d39
+Asset manifest SHA-256: 417d97705e8aa548fec629cba4aea470e77ad256960fdae18530e8ad2cba4cb1
 npm package-lock.json SHA-256: b2a68b872d11463d637f84367557712e8f79442ccd9e6cfd5af28140b4eb10d9
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
 Cargo graph packages: 618
@@ -4835,15 +4835,15 @@ Modified: no
 
 ### vendored-rmcp
 Path: rust/crates/vendor/rmcp
-Digest: sha256:cd27823e530e77eecc17a273e0ebd67976c63bd812dd24b52248b93b079f629b
+Digest: sha256:083999c4e663cc3ad89a8a93851302ba9bf0278a3afdf7dbac3b9fff2a519a83
 Version: 3.9.0
 Source: https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v3.9.0
 SPDX-License-Identifier: Apache-2.0
 License text path: LICENSES/Apache-2.0.txt
-Evidence paths: rust/Cargo.toml, rust/crates/vendor/rmcp/Cargo.toml, rust/crates/vendor/rmcp/src/transport.rs, rust/crates/vendor/rmcp/src/transport/auth.rs
+Evidence paths: rust/Cargo.toml, rust/crates/vendor/rmcp/Cargo.toml, rust/crates/vendor/rmcp/src/service/server.rs, rust/crates/vendor/rmcp/src/transport.rs, rust/crates/vendor/rmcp/src/transport/auth.rs, rust/crates/vendor/rmcp/tests/test_stateless_server_requests.rs
 Copyright: as declared by upstream
 Modified: yes
-Modification summary: LeanCTX carries one local patch described in rust/Cargo.toml: a one-shot transport releases its service even when the caller has disconnected (src/transport.rs). It adds a regression test for the OAuth discovery status-page case (#1391, src/transport/auth.rs) and SPDX NOASSERTION header lines on the source files that are new since the provenance cut; upstream rmcp 3.9.0 is retained as the provenance base.
+Modification summary: LeanCTX carries two local patches described in rust/Cargo.toml: a one-shot transport releases its service even when the caller has disconnected (src/transport.rs), and a request without inline lifecycle metadata before initialize is handed back to the caller, which answers -32601 (#1454, src/service/server.rs). It adds regression tests for #1454 (tests/test_stateless_server_requests.rs) and the OAuth discovery status-page case (#1391, src/transport/auth.rs), and SPDX NOASSERTION header lines on the source files that are new since the provenance cut; upstream rmcp 3.9.0 is retained as the provenance base.
 
 ### vendored-rmcp-macros
 Path: rust/crates/vendor/rmcp-macros

@@ -517,6 +517,13 @@ fn newest_version_with_initialize(versions: &[ProtocolVersion]) -> Option<Protoc
         .cloned()
 }
 
+/// lean-ctx patch (#1454): whether a request carries any inline lifecycle
+/// metadata (`io.modelcontextprotocol/*` keys in `_meta`).
+fn has_inline_lifecycle_metadata(meta: &crate::model::RequestMetaObject) -> bool {
+    meta.keys()
+        .any(|key| key.starts_with("io.modelcontextprotocol/"))
+}
+
 fn missing_request_metadata_error(missing: &[&str]) -> ErrorData {
     ErrorData::invalid_params(
         format!(
@@ -567,6 +574,9 @@ where
     // a bootstrap probe: respond to it, but remain open to either lifecycle.
     // The MCP spec also permits ping before initialize.
     // See: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle#initialization
+    // lean-ctx patch (#1454): set once a discover request with complete inline
+    // metadata was answered, i.e. the client speaks the inline lifecycle.
+    let mut inline_client = false;
     let (initialize_request, id) = loop {
         let msg = expect_next_message(&mut transport, "initialize request").await?;
         match msg {
@@ -597,6 +607,17 @@ where
                     .missing_required_keys(&ProtocolVersion::V_2026_07_28);
                 let requested_version = match request.get_meta().protocol_version() {
                     Some(version) if missing_metadata.is_empty() => version,
+                    _ if !inline_client && !has_inline_lifecycle_metadata(request.get_meta()) => {
+                        // lean-ctx patch (#1454): a request without any inline
+                        // lifecycle metadata comes from a client of the
+                        // initialize handshake (MCP Go SDK >= 1.7 probes with
+                        // `server/discover` first). Hand it to the caller as
+                        // before 3.x, which answers -32601 so the client falls
+                        // back to `initialize`; -32602 would end its startup.
+                        return Err(ServerInitializeError::ExpectedInitializeRequest(Some(
+                            ClientJsonRpcMessage::request(request, id),
+                        )));
+                    }
                     _ => {
                         transport
                             .send(ServerJsonRpcMessage::error(
@@ -615,6 +636,7 @@ where
                 };
 
                 if matches!(request, ClientRequest::DiscoverRequest(_)) {
+                    inline_client = true;
                     // No lifecycle exists yet, so the handler gets a peer that
                     // cannot reach the client.
                     let (bootstrap_peer, _) = Peer::new(id_provider.clone(), None);

@@ -36,17 +36,19 @@ SOFTWARE.
 [[assets]]
 id = "vendored-rmcp"
 path = "rust/crates/vendor/rmcp"
-sha256 = "cd27823e530e77eecc17a273e0ebd67976c63bd812dd24b52248b93b079f629b"
+sha256 = "083999c4e663cc3ad89a8a93851302ba9bf0278a3afdf7dbac3b9fff2a519a83"
 version = "3.9.0"
 source = "https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v3.9.0"
 spdx = "Apache-2.0"
 license_text_path = "LICENSES/Apache-2.0.txt"
 modified = true
-modification_summary = "LeanCTX carries one local patch described in rust/Cargo.toml: a one-shot transport releases its service even when the caller has disconnected (src/transport.rs). It adds a regression test for the OAuth discovery status-page case (#1391, src/transport/auth.rs) and SPDX NOASSERTION header lines on the source files that are new since the provenance cut; upstream rmcp 3.9.0 is retained as the provenance base."
+modification_summary = "LeanCTX carries two local patches described in rust/Cargo.toml: a one-shot transport releases its service even when the caller has disconnected (src/transport.rs), and a request without inline lifecycle metadata before initialize is handed back to the caller, which answers -32601 (#1454, src/service/server.rs). It adds regression tests for #1454 (tests/test_stateless_server_requests.rs) and the OAuth discovery status-page case (#1391, src/transport/auth.rs), and SPDX NOASSERTION header lines on the source files that are new since the provenance cut; upstream rmcp 3.9.0 is retained as the provenance base."
 evidence_paths = [
   "rust/crates/vendor/rmcp/Cargo.toml",
+  "rust/crates/vendor/rmcp/src/service/server.rs",
   "rust/crates/vendor/rmcp/src/transport.rs",
   "rust/crates/vendor/rmcp/src/transport/auth.rs",
+  "rust/crates/vendor/rmcp/tests/test_stateless_server_requests.rs",
   "rust/Cargo.toml",
 ]
 

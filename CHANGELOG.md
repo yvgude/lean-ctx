@@ -67,8 +67,10 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   from 2.0 to 3.9, which bounds HTTP response bodies an MCP server sends to `lean-ctx`
   (RUSTSEC-2026-0462) and stops OAuth discovery for HTTP MCP servers from following metadata
   URLs to private or loopback addresses (RUSTSEC-2026-0457). The lean-ctx patches on top of
-  `rmcp` shrink to one, since 3.9 contains the other fixes; `lean-ctx-embed` now declares the
-  Rust 1.89 its dependencies need.
+  `rmcp` shrink to two, since 3.9 contains the other fixes; one keeps the #1454 answer, so a
+  client that probes with `server/discover` before `initialize` (MCP Go SDK, Antigravity) still
+  gets -32601 and falls back to `initialize`. `lean-ctx-embed` now declares the Rust 1.89 its
+  dependencies need.
 
 ## [3.12.2] — 2026-11-04
 

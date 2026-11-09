@@ -326,3 +326,80 @@ async fn stateless_server_first_request_handler_can_send_notifications() {
         .await
         .expect("cancel server");
 }
+
+/// lean-ctx regression test (#1454): a pre-init request without any inline
+/// lifecycle metadata is handed back to the caller (which answers -32601 and
+/// restarts the handshake) instead of being answered with -32602.
+#[tokio::test]
+async fn pre_init_request_without_inline_metadata_is_returned_to_the_caller() {
+    let (server_transport, client_transport) = tokio::io::duplex(4096);
+    let server_task = tokio::spawn(async move { StatelessServer.serve(server_transport).await });
+    let mut client = IntoTransport::<rmcp::RoleClient, _, _>::into_transport(client_transport);
+
+    client
+        .send(ClientJsonRpcMessage::request(
+            ClientRequest::DiscoverRequest(DiscoverRequest::new(DiscoverRequestParams {})),
+            RequestId::Number(7),
+        ))
+        .await
+        .expect("send discover without metadata");
+
+    let error = server_task
+        .await
+        .expect("server task")
+        .err()
+        .expect("the handshake must hand the request back");
+    let rmcp::service::ServerInitializeError::ExpectedInitializeRequest(Some(
+        ClientJsonRpcMessage::Request(request),
+    )) = error
+    else {
+        panic!("expected ExpectedInitializeRequest with the request, got {error:?}");
+    };
+    assert_eq!(request.id, RequestId::Number(7));
+    assert_eq!(request.request.method(), "server/discover");
+}
+
+/// lean-ctx regression test (#1454): partial inline metadata still means an
+/// inline-lifecycle client, so it keeps the upstream -32602 answer.
+#[tokio::test]
+async fn pre_init_request_with_partial_inline_metadata_keeps_invalid_params() {
+    let (server_transport, client_transport) = tokio::io::duplex(4096);
+    let server_task = tokio::spawn(async move { StatelessServer.serve(server_transport).await });
+    let mut client = IntoTransport::<rmcp::RoleClient, _, _>::into_transport(client_transport);
+
+    let mut meta = RequestMetaObject::new();
+    meta.set_protocol_version(ProtocolVersion::V_2026_07_28);
+    let mut discover = DiscoverRequest::new(DiscoverRequestParams {});
+    discover.extensions.insert(meta);
+    client
+        .send(ClientJsonRpcMessage::request(
+            ClientRequest::DiscoverRequest(discover),
+            RequestId::Number(1),
+        ))
+        .await
+        .expect("send discover with partial metadata");
+    let Some(ServerJsonRpcMessage::Error(error)) = client.receive().await else {
+        panic!("expected invalid params");
+    };
+    assert_eq!(error.error.code, ErrorCode::INVALID_PARAMS);
+
+    let mut valid_request = list_tools_request(complete_meta());
+    if let ClientJsonRpcMessage::Request(request) = &mut valid_request {
+        request.id = RequestId::Number(2);
+    }
+    client
+        .send(valid_request)
+        .await
+        .expect("send valid list tools");
+    assert!(matches!(
+        client.receive().await,
+        Some(ServerJsonRpcMessage::Response(_))
+    ));
+    server_task
+        .await
+        .expect("server task")
+        .expect("valid inline request should start the server")
+        .cancel()
+        .await
+        .expect("cancel server");
+}
