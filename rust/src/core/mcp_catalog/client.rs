@@ -98,14 +98,16 @@ async fn open_oauth(
         .map_err(|e| format!("MCP handshake failed (http, OAuth): {e}"))
 }
 
+/// Without `http-server` there is no OAuth client: an already-resolved future,
+/// so the caller awaits both builds alike.
 #[cfg(not(feature = "http-server"))]
-async fn open_oauth(
+fn open_oauth(
     url: &str,
     _cfg: StreamableHttpClientTransportConfig,
-) -> Result<ClientService, String> {
-    Err(format!(
+) -> std::future::Ready<Result<ClientService, String>> {
+    std::future::ready(Err(format!(
         "{url} needs OAuth, which this lean-ctx build omits (built without `http-server`)"
-    ))
+    )))
 }
 
 /// The configured name of the gateway server at `url`, for messages that tell

@@ -7,7 +7,7 @@ use super::super::{
 use lean_ctx::core::ocla::response_cache::{
     CachedResponse, ResponseCache, ResponseCacheKey, global_response_cache,
 };
-use rmcp::model::{ContentBlock, Meta};
+use rmcp::model::{ContentBlock, MetaObject};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::{
@@ -114,7 +114,7 @@ struct CachedCallToolResult {
     #[serde(default)]
     is_error: Option<bool>,
     #[serde(default, rename = "_meta")]
-    meta: Option<Meta>,
+    meta: Option<MetaObject>,
 }
 
 pub(super) fn response_cache_key(
@@ -1280,7 +1280,7 @@ impl lean_ctx::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
             processed
                 .result
                 .meta
-                .get_or_insert_with(Meta::new)
+                .get_or_insert_with(MetaObject::new)
                 .0
                 .insert("canonical_receipt".into(), receipt);
         }

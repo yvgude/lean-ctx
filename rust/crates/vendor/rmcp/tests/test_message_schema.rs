@@ -61,12 +61,73 @@ mod tests {
         );
     }
 
+    /// The three metadata definitions must expose the MCP 2026-07-28
+    /// vocabulary: `MetaObject` is an open map, `RequestMetaObject` reserves
+    /// `progressToken` plus the SEP-2575 keys, and `NotificationMetaObject`
+    /// reserves `io.modelcontextprotocol/subscriptionId`. Version-specific
+    /// required keys stay optional because rmcp generates one schema shared
+    /// by every supported protocol version; current-version validation is
+    /// a runtime concern (`RequestMetaObject::missing_required_keys`).
+    #[test]
+    fn test_metadata_definitions_match_2026_07_28_schema() {
+        let settings = SchemaSettings::draft07();
+        let schema = settings
+            .into_generator()
+            .into_root_schema_for::<ClientJsonRpcMessage>();
+        let schema = serde_json::to_value(&schema).expect("Failed to serialize schema");
+        let definitions = &schema["definitions"];
+
+        assert_eq!(
+            definitions["MetaObject"],
+            serde_json::json!({
+                "description": "See [MCP general fields](https://modelcontextprotocol.io/specification/2026-07-28/basic#general-fields) for notes on _meta usage.",
+                "type": "object",
+                "additionalProperties": true,
+            })
+        );
+
+        assert_eq!(
+            definitions["RequestMetaObject"],
+            serde_json::json!({
+                "description": "Metadata reserved by MCP on requests. Extension keys are also allowed.",
+                "type": "object",
+                "properties": {
+                    "progressToken": { "$ref": "#/definitions/ProgressToken" },
+                    "io.modelcontextprotocol/protocolVersion": { "type": "string" },
+                    "io.modelcontextprotocol/clientInfo": { "$ref": "#/definitions/Implementation" },
+                    "io.modelcontextprotocol/clientCapabilities": { "$ref": "#/definitions/ClientCapabilities" },
+                    "io.modelcontextprotocol/logLevel": { "$ref": "#/definitions/LoggingLevel" },
+                },
+                "additionalProperties": true,
+            })
+        );
+
+        assert_eq!(
+            definitions["NotificationMetaObject"],
+            serde_json::json!({
+                "description": "Metadata reserved by MCP on notifications. Extension keys are also allowed.",
+                "type": "object",
+                "properties": {
+                    "io.modelcontextprotocol/subscriptionId": { "$ref": "#/definitions/NumberOrString" },
+                },
+                "additionalProperties": true,
+            })
+        );
+    }
+
     #[test]
     fn test_server_json_rpc_message_schema() {
         let settings = SchemaSettings::draft07();
         let schema = settings
             .into_generator()
             .into_root_schema_for::<ServerJsonRpcMessage>();
+        let schema_value =
+            serde_json::to_value(&schema).expect("Failed to serialize server schema");
+        let discover_result = &schema_value["definitions"]["DiscoverResult"];
+        assert!(
+            discover_result["properties"].get("serverInfo").is_none(),
+            "DiscoverResult serverInfo belongs in namespaced _meta"
+        );
         let schema_str = serde_json::to_string_pretty(&schema).expect("Failed to serialize schema");
 
         compare_schemas(

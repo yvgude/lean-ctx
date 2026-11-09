@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    CallToolResult, ContentBlock, Duration, Meta, PreparedCallResult, ResponseCache, Value,
+    CallToolResult, ContentBlock, Duration, MetaObject, PreparedCallResult, ResponseCache, Value,
     cache_call_result, cached_call_result, response_cache_key,
 };
 
@@ -227,7 +227,7 @@ fn cached_result_preserves_meta() {
     let cache = ResponseCache::new(8, Duration::from_mins(1));
     let key = response_cache_key("ctx_search", None, "/project").expect("cacheable tool");
     let mut result = CallToolResult::success(vec![ContentBlock::text("cached")]);
-    let mut meta = Meta::new();
+    let mut meta = MetaObject::new();
     meta.0
         .insert("cache_hint".to_owned(), Value::String("stable".to_owned()));
     result.meta = Some(meta);

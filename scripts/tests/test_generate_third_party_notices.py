@@ -156,7 +156,7 @@ class GeneratorUnitTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(first_approved, second_approved)
         self.assertIn(b"vendored-rmcp", first)
-        self.assertIn(b"Modification summary: LeanCTX carries the local JoinSet", first)
+        self.assertIn(b"Modification summary: LeanCTX carries two local patches", first)
         self.assertIn(b"mcp-sdk-bundle", first)
         self.assertNotIn(str(ROOT).encode(), first)
 

@@ -54,8 +54,7 @@
           "type": [
             "string",
             "null"
-          ],
-          "format": "date-time"
+          ]
         },
         "priority": {
           "type": [
@@ -87,11 +86,14 @@
       "properties": {
         "_meta": {
           "description": "Optional protocol-level metadata for this content block.",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "annotations": {
           "description": "Optional annotations describing how the client should use this content.",
@@ -124,19 +126,30 @@
       "const": "tools/call"
     },
     "CallToolRequestParams": {
-      "description": "Parameters for calling a tool provided by an MCP server.\n\nContains the tool name and optional arguments needed to execute\nthe tool operation.\n\nThis implements `TaskAugmentedRequestParamsMeta` as tool calls can be\nlong-running and may benefit from task-based execution.",
+      "description": "Parameters for calling a tool provided by an MCP server.\n\nContains the tool name and optional arguments needed to execute\nthe tool operation.",
       "type": "object",
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "arguments": {
+          "description": "Arguments to pass to the tool (must match the tool's input schema)",
           "type": [
             "object",
             "null"
           ],
           "additionalProperties": true
         },
-        "arguments": {
-          "description": "Arguments to pass to the tool (must match the tool's input schema)",
+        "inputResponses": {
+          "description": "Client responses to server-initiated input requests from a previous\n[`InputRequiredResult`]. Present only when retrying after an incomplete result.",
           "type": [
             "object",
             "null"
@@ -147,15 +160,11 @@
           "description": "The name of the tool to call",
           "type": "string"
         },
-        "task": {
-          "description": "Task metadata for async task management (SEP-1319)",
-          "anyOf": [
-            {
-              "$ref": "#/definitions/TaskMetadata"
-            },
-            {
-              "type": "null"
-            }
+        "requestState": {
+          "description": "Opaque request state echoed back from a previous [`InputRequiredResult`].\nClients MUST return this value exactly as received.",
+          "type": [
+            "string",
+            "null"
           ]
         }
       },
@@ -173,11 +182,14 @@
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "taskId": {
           "type": "string"
@@ -196,11 +208,14 @@
       "type": "object",
       "properties": {
         "_meta": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/NotificationMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "reason": {
           "type": [
@@ -278,16 +293,6 @@
               "type": "null"
             }
           ]
-        },
-        "tasks": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/TasksCapability"
-            },
-            {
-              "type": "null"
-            }
-          ]
         }
       }
     },
@@ -320,11 +325,14 @@
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "argument": {
           "$ref": "#/definitions/ArgumentInfo"
@@ -460,11 +468,14 @@
       "type": "object",
       "properties": {
         "_meta": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "content": {
           "description": "The actual content of the message (text, image, audio, tool use, or tool result)",
@@ -530,17 +541,36 @@
     "CustomResult": {
       "description": "A catch-all response either side can use for custom requests."
     },
+    "DiscoverRequestMethod": {
+      "type": "string",
+      "format": "const",
+      "const": "server/discover"
+    },
+    "DiscoverRequestParams": {
+      "type": "object",
+      "properties": {
+        "_meta": {
+          "$ref": "#/definitions/RequestMetaObject"
+        }
+      },
+      "required": [
+        "_meta"
+      ]
+    },
     "ElicitResult": {
       "description": "The result returned by a client in response to an elicitation request.\n\nContains the user's decision (accept/decline/cancel) and optionally their input data\nif they chose to accept the request.",
       "type": "object",
       "properties": {
         "_meta": {
           "description": "Optional protocol-level metadata for this result.",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "action": {
           "description": "The user's decision on how to handle the elicitation request",
@@ -606,29 +636,20 @@
         }
       }
     },
-    "ElicitationTaskCapability": {
-      "type": "object",
-      "properties": {
-        "create": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
-        }
-      }
-    },
     "EmbeddedResource": {
       "description": "Embedded resource content (spec `EmbeddedResource`).",
       "type": "object",
       "properties": {
         "_meta": {
           "description": "Optional protocol-level metadata for this content block.",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "annotations": {
           "description": "Optional annotations describing how the client should use this content.",
@@ -713,11 +734,14 @@
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "arguments": {
           "type": [
@@ -726,12 +750,55 @@
           ],
           "additionalProperties": true
         },
+        "inputResponses": {
+          "description": "Client responses to server-initiated input requests from a previous\n[`InputRequiredResult`].",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true
+        },
         "name": {
           "type": "string"
+        },
+        "requestState": {
+          "description": "Opaque request state echoed back from a previous [`InputRequiredResult`].",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "name"
+      ]
+    },
+    "GetSkillRequestMethod": {
+      "type": "string",
+      "format": "const",
+      "const": "skills/get"
+    },
+    "GetSkillRequestParams": {
+      "description": "Parameters for fetching one skill by the URI of its `SKILL.md`.",
+      "type": "object",
+      "properties": {
+        "_meta": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uri": {
+          "description": "URI of the skill's `SKILL.md`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
       ]
     },
     "GetTaskMethod": {
@@ -743,38 +810,17 @@
       "type": "object",
       "properties": {
         "_meta": {
-          "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "taskId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "taskId"
-      ]
-    },
-    "GetTaskPayloadMethod": {
-      "type": "string",
-      "format": "const",
-      "const": "tasks/result"
-    },
-    "GetTaskPayloadParams": {
-      "type": "object",
-      "properties": {
-        "_meta": {
-          "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
-        },
-        "taskId": {
+          "description": "Identifier of the task to query.",
           "type": "string"
         }
       },
@@ -844,11 +890,14 @@
       "properties": {
         "_meta": {
           "description": "Optional protocol-level metadata for this content block.",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "annotations": {
           "description": "Optional annotations describing how the client should use this content.",
@@ -923,11 +972,14 @@
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "capabilities": {
           "description": "The capabilities this client supports (sampling, roots, etc.)",
@@ -1016,9 +1068,6 @@
           "$ref": "#/definitions/NotificationNoParam2"
         },
         {
-          "$ref": "#/definitions/Notification3"
-        },
-        {
           "$ref": "#/definitions/CustomNotification"
         }
       ],
@@ -1053,6 +1102,9 @@
           "$ref": "#/definitions/Request4"
         },
         {
+          "$ref": "#/definitions/Request5"
+        },
+        {
           "$ref": "#/definitions/RequestOptionalParam"
         },
         {
@@ -1060,9 +1112,6 @@
         },
         {
           "$ref": "#/definitions/RequestOptionalParam3"
-        },
-        {
-          "$ref": "#/definitions/Request5"
         },
         {
           "$ref": "#/definitions/Request6"
@@ -1074,19 +1123,31 @@
           "$ref": "#/definitions/Request8"
         },
         {
-          "$ref": "#/definitions/RequestOptionalParam4"
-        },
-        {
           "$ref": "#/definitions/Request9"
-        },
-        {
-          "$ref": "#/definitions/RequestOptionalParam5"
         },
         {
           "$ref": "#/definitions/Request10"
         },
         {
+          "$ref": "#/definitions/RequestOptionalParam4"
+        },
+        {
           "$ref": "#/definitions/Request11"
+        },
+        {
+          "$ref": "#/definitions/Request12"
+        },
+        {
+          "$ref": "#/definitions/Request13"
+        },
+        {
+          "$ref": "#/definitions/RequestOptionalParam5"
+        },
+        {
+          "$ref": "#/definitions/Request14"
+        },
+        {
+          "$ref": "#/definitions/Request15"
         },
         {
           "$ref": "#/definitions/CustomRequest"
@@ -1140,11 +1201,14 @@
       "type": "object",
       "properties": {
         "_meta": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "roots": {
           "type": "array",
@@ -1158,10 +1222,10 @@
         "roots"
       ]
     },
-    "ListTasksMethod": {
+    "ListSkillsRequestMethod": {
       "type": "string",
       "format": "const",
-      "const": "tasks/list"
+      "const": "skills/list"
     },
     "ListToolsRequestMethod": {
       "type": "string",
@@ -1182,6 +1246,11 @@
         "alert",
         "emergency"
       ]
+    },
+    "MetaObject": {
+      "description": "See [MCP general fields](https://modelcontextprotocol.io/specification/2026-07-28/basic#general-fields) for notes on _meta usage.",
+      "type": "object",
+      "additionalProperties": true
     },
     "Notification": {
       "type": "object",
@@ -1213,20 +1282,15 @@
         "params"
       ]
     },
-    "Notification3": {
+    "NotificationMetaObject": {
+      "description": "Metadata reserved by MCP on notifications. Extension keys are also allowed.",
       "type": "object",
       "properties": {
-        "method": {
-          "$ref": "#/definitions/TaskStatusNotificationMethod"
-        },
-        "params": {
-          "$ref": "#/definitions/TaskStatusNotificationParam"
+        "io.modelcontextprotocol/subscriptionId": {
+          "$ref": "#/definitions/NumberOrString"
         }
       },
-      "required": [
-        "method",
-        "params"
-      ]
+      "additionalProperties": true
     },
     "NotificationNoParam": {
       "type": "object",
@@ -1265,11 +1329,14 @@
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "cursor": {
           "type": [
@@ -1293,11 +1360,14 @@
       "type": "object",
       "properties": {
         "_meta": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/NotificationMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "message": {
           "description": "An optional message describing the current progress.",
@@ -1357,6 +1427,40 @@
       "description": "Represents the MCP protocol version used for communication.\n\nThis ensures compatibility between clients and servers by specifying\nwhich version of the Model Context Protocol is being used.",
       "type": "string"
     },
+    "ReadResourceDirectoryRequestMethod": {
+      "type": "string",
+      "format": "const",
+      "const": "resources/directory/read"
+    },
+    "ReadResourceDirectoryRequestParams": {
+      "description": "Parameters for listing the direct children of a directory resource.",
+      "type": "object",
+      "properties": {
+        "_meta": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "uri": {
+          "description": "URI of the directory resource.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
+      ]
+    },
     "ReadResourceRequestMethod": {
       "type": "string",
       "format": "const",
@@ -1368,11 +1472,29 @@
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputResponses": {
+          "description": "Client responses to server-initiated input requests from a previous\n[`InputRequiredResult`].",
           "type": [
             "object",
             "null"
           ],
           "additionalProperties": true
+        },
+        "requestState": {
+          "description": "Opaque request state echoed back from a previous [`InputRequiredResult`].",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "uri": {
           "description": "The URI of the resource to read",
@@ -1442,10 +1564,10 @@
       "type": "object",
       "properties": {
         "method": {
-          "$ref": "#/definitions/GetTaskPayloadMethod"
+          "$ref": "#/definitions/CallToolRequestMethod"
         },
         "params": {
-          "$ref": "#/definitions/GetTaskPayloadParams"
+          "$ref": "#/definitions/CallToolRequestParams"
         }
       },
       "required": [
@@ -1454,6 +1576,38 @@
       ]
     },
     "Request11": {
+      "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/definitions/GetTaskMethod"
+        },
+        "params": {
+          "$ref": "#/definitions/GetTaskParams"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ]
+    },
+    "Request12": {
+      "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/definitions/UpdateTaskMethod"
+        },
+        "params": {
+          "$ref": "#/definitions/UpdateTaskParams"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ]
+    },
+    "Request13": {
       "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
       "type": "object",
       "properties": {
@@ -1469,7 +1623,55 @@
         "params"
       ]
     },
+    "Request14": {
+      "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/definitions/GetSkillRequestMethod"
+        },
+        "params": {
+          "$ref": "#/definitions/GetSkillRequestParams"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ]
+    },
+    "Request15": {
+      "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/definitions/ReadResourceDirectoryRequestMethod"
+        },
+        "params": {
+          "$ref": "#/definitions/ReadResourceDirectoryRequestParams"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ]
+    },
     "Request2": {
+      "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/definitions/DiscoverRequestMethod"
+        },
+        "params": {
+          "$ref": "#/definitions/DiscoverRequestParams"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ]
+    },
+    "Request3": {
       "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
       "type": "object",
       "properties": {
@@ -1485,7 +1687,7 @@
         "params"
       ]
     },
-    "Request3": {
+    "Request4": {
       "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
       "type": "object",
       "properties": {
@@ -1501,7 +1703,7 @@
         "params"
       ]
     },
-    "Request4": {
+    "Request5": {
       "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
       "type": "object",
       "properties": {
@@ -1517,7 +1719,7 @@
         "params"
       ]
     },
-    "Request5": {
+    "Request6": {
       "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
       "type": "object",
       "properties": {
@@ -1533,7 +1735,23 @@
         "params"
       ]
     },
-    "Request6": {
+    "Request7": {
+      "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
+      "type": "object",
+      "properties": {
+        "method": {
+          "$ref": "#/definitions/SubscriptionsListenRequestMethod"
+        },
+        "params": {
+          "$ref": "#/definitions/SubscriptionsListenRequestParams"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ]
+    },
+    "Request8": {
       "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
       "type": "object",
       "properties": {
@@ -1549,7 +1767,7 @@
         "params"
       ]
     },
-    "Request7": {
+    "Request9": {
       "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
       "type": "object",
       "properties": {
@@ -1565,37 +1783,27 @@
         "params"
       ]
     },
-    "Request8": {
-      "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
+    "RequestMetaObject": {
+      "description": "Metadata reserved by MCP on requests. Extension keys are also allowed.",
       "type": "object",
       "properties": {
-        "method": {
-          "$ref": "#/definitions/CallToolRequestMethod"
+        "io.modelcontextprotocol/clientCapabilities": {
+          "$ref": "#/definitions/ClientCapabilities"
         },
-        "params": {
-          "$ref": "#/definitions/CallToolRequestParams"
+        "io.modelcontextprotocol/clientInfo": {
+          "$ref": "#/definitions/Implementation"
+        },
+        "io.modelcontextprotocol/logLevel": {
+          "$ref": "#/definitions/LoggingLevel"
+        },
+        "io.modelcontextprotocol/protocolVersion": {
+          "type": "string"
+        },
+        "progressToken": {
+          "$ref": "#/definitions/ProgressToken"
         }
       },
-      "required": [
-        "method",
-        "params"
-      ]
-    },
-    "Request9": {
-      "description": "Represents a JSON-RPC request with method, parameters, and extensions.\n\nThis is the core structure for all MCP requests, containing:\n- `method`: The name of the method being called\n- `params`: The parameters for the method\n- `extensions`: Additional context data (similar to HTTP headers)",
-      "type": "object",
-      "properties": {
-        "method": {
-          "$ref": "#/definitions/GetTaskMethod"
-        },
-        "params": {
-          "$ref": "#/definitions/GetTaskParams"
-        }
-      },
-      "required": [
-        "method",
-        "params"
-      ]
+      "additionalProperties": true
     },
     "RequestNoParam": {
       "type": "object",
@@ -1696,7 +1904,7 @@
       "type": "object",
       "properties": {
         "method": {
-          "$ref": "#/definitions/ListTasksMethod"
+          "$ref": "#/definitions/ListSkillsRequestMethod"
         },
         "params": {
           "anyOf": [
@@ -1719,11 +1927,14 @@
       "properties": {
         "_meta": {
           "description": "Optional protocol-level metadata for this resource.",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "annotations": {
           "description": "Optional annotations describing how the client should use this resource.",
@@ -1797,11 +2008,14 @@
           "type": "object",
           "properties": {
             "_meta": {
-              "type": [
-                "object",
-                "null"
-              ],
-              "additionalProperties": true
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/MetaObject"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "mimeType": {
               "type": [
@@ -1825,11 +2039,14 @@
           "type": "object",
           "properties": {
             "_meta": {
-              "type": [
-                "object",
-                "null"
-              ],
-              "additionalProperties": true
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/MetaObject"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "blob": {
               "type": "string"
@@ -1881,11 +2098,14 @@
       "type": "object",
       "properties": {
         "_meta": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
           "type": [
@@ -2048,19 +2268,6 @@
         }
       ]
     },
-    "SamplingTaskCapability": {
-      "description": "Sampling task capability. Deprecated by SEP-2577; remains functional and\nwill be removed in a future release.\nSee <https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2577>.",
-      "type": "object",
-      "properties": {
-        "createMessage": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
-        }
-      }
-    },
     "SetLevelRequestMethod": {
       "type": "string",
       "format": "const",
@@ -2072,11 +2279,14 @@
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "level": {
           "description": "The desired logging level",
@@ -2103,11 +2313,14 @@
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "uri": {
           "description": "The URI of the resource to subscribe to",
@@ -2118,184 +2331,75 @@
         "uri"
       ]
     },
-    "TaskMetadata": {
-      "description": "Metadata for augmenting a request with task execution (spec `TaskMetadata`).",
+    "SubscriptionFilter": {
+      "description": "Notification categories a client opts in to on a `subscriptions/listen` stream.",
       "type": "object",
       "properties": {
-        "ttl": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint64",
-          "minimum": 0
+        "promptsListChanged": {
+          "type": "boolean"
+        },
+        "resourceSubscriptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resourcesListChanged": {
+          "type": "boolean"
+        },
+        "toolsListChanged": {
+          "type": "boolean"
         }
       }
     },
-    "TaskRequestsCapability": {
-      "description": "Request types that support task-augmented execution.",
-      "type": "object",
-      "properties": {
-        "elicitation": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/ElicitationTaskCapability"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "sampling": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/SamplingTaskCapability"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "tools": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/ToolsTaskCapability"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
-    },
-    "TaskStatus": {
-      "description": "Canonical task lifecycle status as defined by SEP-1686.",
-      "oneOf": [
-        {
-          "description": "The receiver accepted the request and is currently working on it.",
-          "type": "string",
-          "const": "working"
-        },
-        {
-          "description": "The receiver requires additional input before work can continue.",
-          "type": "string",
-          "const": "input_required"
-        },
-        {
-          "description": "The underlying operation completed successfully and the result is ready.",
-          "type": "string",
-          "const": "completed"
-        },
-        {
-          "description": "The underlying operation failed and will not continue.",
-          "type": "string",
-          "const": "failed"
-        },
-        {
-          "description": "The task was cancelled and will not continue processing.",
-          "type": "string",
-          "const": "cancelled"
-        }
-      ]
-    },
-    "TaskStatusNotificationMethod": {
+    "SubscriptionsListenRequestMethod": {
       "type": "string",
       "format": "const",
-      "const": "notifications/tasks/status"
+      "const": "subscriptions/listen"
     },
-    "TaskStatusNotificationParam": {
-      "description": "Parameters for a task status notification (spec `TaskStatusNotificationParams`).\n\nThe task fields are flattened at the top level: `NotificationParams & Task`.",
+    "SubscriptionsListenRequestParams": {
+      "description": "Parameters for opening a long-lived notification subscription.",
       "type": "object",
       "properties": {
         "_meta": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "description": "Protocol-level metadata. Required by the 2026-07-28 wire schema.",
+          "type": "object",
+          "properties": {
+            "io.modelcontextprotocol/clientCapabilities": {
+              "$ref": "#/definitions/ClientCapabilities"
+            },
+            "io.modelcontextprotocol/clientInfo": {
+              "$ref": "#/definitions/Implementation"
+            },
+            "io.modelcontextprotocol/logLevel": {
+              "$ref": "#/definitions/LoggingLevel"
+            },
+            "io.modelcontextprotocol/protocolVersion": {
+              "type": "string"
+            },
+            "progressToken": {
+              "$ref": "#/definitions/ProgressToken"
+            }
+          },
+          "additionalProperties": true,
+          "required": [
+            "io.modelcontextprotocol/protocolVersion",
+            "io.modelcontextprotocol/clientCapabilities"
+          ]
         },
-        "createdAt": {
-          "description": "ISO-8601 creation timestamp.",
-          "type": "string"
-        },
-        "lastUpdatedAt": {
-          "description": "ISO-8601 timestamp for the most recent status change.",
-          "type": "string"
-        },
-        "pollInterval": {
-          "description": "Suggested polling interval (milliseconds).",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint64",
-          "minimum": 0
-        },
-        "status": {
-          "description": "Current lifecycle status (see [`TaskStatus`]).",
+        "notifications": {
+          "description": "Notification categories requested for this stream.",
           "allOf": [
             {
-              "$ref": "#/definitions/TaskStatus"
+              "$ref": "#/definitions/SubscriptionFilter"
             }
           ]
-        },
-        "statusMessage": {
-          "description": "Optional human-readable status message for UI surfaces.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "taskId": {
-          "description": "Unique task identifier generated by the receiver.",
-          "type": "string"
-        },
-        "ttl": {
-          "description": "Retention window in milliseconds that the receiver agreed to honor.\n`None` (serialized as `null`) means unlimited retention.",
-          "type": [
-            "integer",
-            "null"
-          ],
-          "format": "uint64",
-          "minimum": 0
         }
       },
       "required": [
-        "taskId",
-        "status",
-        "createdAt",
-        "lastUpdatedAt"
+        "_meta",
+        "notifications"
       ]
-    },
-    "TasksCapability": {
-      "description": "Task capabilities shared by client and server.",
-      "type": "object",
-      "properties": {
-        "cancel": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
-        },
-        "list": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
-        },
-        "requests": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/TaskRequestsCapability"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      }
     },
     "TextContent": {
       "description": "Text content block (spec `TextContent`).",
@@ -2303,11 +2407,14 @@
       "properties": {
         "_meta": {
           "description": "Optional protocol-level metadata for this content block.",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "annotations": {
           "description": "Optional annotations describing how the client should use this content.",
@@ -2334,11 +2441,14 @@
       "type": "object",
       "properties": {
         "_meta": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "content": {
           "type": "array",
@@ -2352,13 +2462,7 @@
             "null"
           ]
         },
-        "structuredContent": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
-        },
+        "structuredContent": true,
         "toolUseId": {
           "type": "string"
         }
@@ -2374,11 +2478,14 @@
       "type": "object",
       "properties": {
         "_meta": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "id": {
           "type": "string"
@@ -2398,18 +2505,6 @@
         "input"
       ]
     },
-    "ToolsTaskCapability": {
-      "type": "object",
-      "properties": {
-        "call": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
-        }
-      }
-    },
     "UnsubscribeRequestMethod": {
       "type": "string",
       "format": "const",
@@ -2421,11 +2516,14 @@
       "properties": {
         "_meta": {
           "description": "Protocol-level metadata for this request (SEP-1319)",
-          "type": [
-            "object",
-            "null"
-          ],
-          "additionalProperties": true
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "uri": {
           "description": "The URI of the resource to unsubscribe from",
@@ -2434,6 +2532,40 @@
       },
       "required": [
         "uri"
+      ]
+    },
+    "UpdateTaskMethod": {
+      "type": "string",
+      "format": "const",
+      "const": "tasks/update"
+    },
+    "UpdateTaskParams": {
+      "description": "Parameters for `tasks/update` (SEP-2663): deliver responses to outstanding\nin-task server-to-client requests surfaced via `tasks/get` `inputRequests`.",
+      "type": "object",
+      "properties": {
+        "_meta": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RequestMetaObject"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputResponses": {
+          "description": "Responses to outstanding `inputRequests` previously surfaced by the\nserver. Each key MUST correspond to a currently-outstanding\n`inputRequests` key.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "taskId": {
+          "description": "Identifier of the task to update.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId",
+        "inputResponses"
       ]
     },
     "UrlElicitationCapability": {

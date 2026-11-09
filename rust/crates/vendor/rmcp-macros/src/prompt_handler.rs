@@ -35,7 +35,7 @@ pub fn prompt_handler(attr: TokenStream, input: TokenStream) -> syn::Result<Toke
             &self,
             request: rmcp::model::GetPromptRequestParams,
             context: rmcp::service::RequestContext<rmcp::RoleServer>,
-        ) -> Result<rmcp::model::GetPromptResult, rmcp::ErrorData> {
+        ) -> Result<rmcp::model::GetPromptResponse, rmcp::ErrorData> {
             let prompt_context = rmcp::handler::server::prompt::PromptContext::new(
                 self,
                 request.name,
@@ -57,13 +57,20 @@ pub fn prompt_handler(attr: TokenStream, input: TokenStream) -> syn::Result<Toke
         async fn list_prompts(
             &self,
             _request: Option<rmcp::model::PaginatedRequestParams>,
-            _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+            context: rmcp::service::RequestContext<rmcp::RoleServer>,
         ) -> Result<rmcp::model::ListPromptsResult, rmcp::ErrorData> {
             let prompts = #router_expr.list_all();
+            let supports_cache_hints = context.protocol_version().is_some_and(|version| {
+                version >= rmcp::model::ProtocolVersion::V_2026_07_28
+            });
             Ok(rmcp::model::ListPromptsResult {
+                result_type: Some(rmcp::model::ResultType::COMPLETE),
                 prompts,
                 meta: #meta,
                 next_cursor: None,
+                ttl_ms: supports_cache_hints.then_some(0),
+                cache_scope: supports_cache_hints
+                    .then_some(rmcp::model::CacheScope::Public),
             })
         }
     };

@@ -67,7 +67,7 @@ lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.2", default-featur
 lean-ctx-ocla = { path = "../lean-ctx-ocla", version = "5.0.0" }
 lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
 lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.1.0" }
-rmcp = { version = "2", features = [
+rmcp = { version = "3", features = [
   "server",
   "client",
   "transport-io",
@@ -106,7 +106,7 @@ dirs = "6.0"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "1.1"
 similar = "3.1"
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 tree-sitter = { version = "0.26", optional = true }
 base64 = "0.22"
 sha2 = "0.11"

@@ -1316,7 +1316,7 @@ pub(in crate::server) async fn reversible_post_process(
         &delivered_blocks,
     );
     let has_dynamic = had_auto_context || had_throttle_warning;
-    let mut meta = rmcp::model::Meta::new();
+    let mut meta = rmcp::model::MetaObject::new();
     meta.0.insert(
         "cache_hint".to_owned(),
         serde_json::Value::String(if has_dynamic { "ephemeral" } else { "stable" }.to_owned()),

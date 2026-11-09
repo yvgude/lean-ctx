@@ -448,7 +448,7 @@ mod over_mcp {
 
     use rmcp::ServiceExt;
     use rmcp::model::{
-        CallToolRequestParams, ClientCapabilities, ClientInfo, ElicitRequestParams, ElicitResult,
+        CallToolRequestParams, ClientCapabilities, ClientConfig, ElicitRequestParams, ElicitResult,
         ElicitationAction, Implementation,
     };
 
@@ -475,7 +475,7 @@ mod over_mcp {
     }
 
     impl rmcp::ClientHandler for Host {
-        fn get_info(&self) -> ClientInfo {
+        fn get_info(&self) -> ClientConfig {
             let capabilities = if self.elicitation {
                 ClientCapabilities::builder().enable_elicitation().build()
             } else {
@@ -486,7 +486,7 @@ mod over_mcp {
             } else {
                 "test-host"
             };
-            ClientInfo::new(capabilities, Implementation::new(name, "1.0.0"))
+            ClientConfig::new(capabilities, Implementation::new(name, "1.0.0"))
         }
 
         fn create_elicitation(

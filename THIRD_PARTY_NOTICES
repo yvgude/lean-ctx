@@ -2,15 +2,15 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED - PENDING APPROVAL
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:4b7f77870a5b8b05c77b2fcb4303c278452f0008f143db7ec894a2d0fbcf03e3
+Content-Digest: sha256:b3e5cef170a34f935618b55e0b632790de2e5dcc4249909a91f2f8c729772ece
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
-Cargo.lock SHA-256: f6f1ffbfb6268065c7da0f50461fe3d8da6cd4532aaf53697bce002a9c3e0775
-Cargo metadata inventory SHA-256: ecf8f62963d7200572a0d8925e71534384c3a8d18ca26cf96ecd4147ba383123
-SBOM.cdx.json SHA-256: f81caf6a3fc7ca4afea4e7a9cf9dd9218351054aa26b880b1dce469ac6456795
+Cargo.lock SHA-256: 7bbc281faa671a94f0b05b3181d794494f888094ca31076bd93c380e5afa19ee
+Cargo metadata inventory SHA-256: 09ca13e838cb12ddf104379bdebbc45fbcf5042d1fe83725f8c47022c4e11a23
+SBOM.cdx.json SHA-256: b84b10bfe50387d185aabd64a3a599c66b0395d6f6a88b7f0eae6c7ab9f927e3
 SBOM components: 558
-Asset manifest SHA-256: ea4985235b3b3bd0c84235c4e2edf7168686c52b2e6f231429eb0a909ed195dc
+Asset manifest SHA-256: 417d97705e8aa548fec629cba4aea470e77ad256960fdae18530e8ad2cba4cb1
 npm package-lock.json SHA-256: b2a68b872d11463d637f84367557712e8f79442ccd9e6cfd5af28140b4eb10d9
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
 Cargo graph packages: 618
@@ -801,15 +801,15 @@ Targets: curve25519_dalek_derive[proc-macro], tests[test]
 Features: (none)
 Dependencies: proc-macro2, quote, syn
 
-### darling 0.23.0
+### darling 0.24.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/TedDriggs/darling
 SPDX-License-Identifier: MIT
-Targets: accrue_errors[test], attrs_with[test], automatic_bounds[example], compiletests[test], computed_bound[test], consume_fields[example], custom_bound[test], darling[lib], data_with[test], defaults[test], enum_of_struct_variants[example], enums_default[test], enums_newtype[test], enums_struct[test], enums_unit[test], error[test], expr_with[example], fallible_read[example], flatten[test], flatten_error_accumulation[test], flatten_from_field[test], forward_attrs_to_from_attributes[test], from_generics[test], from_meta[test], from_type_param[test], from_type_param_default[test], from_variant[test], from_word_and_expr[example], generics[test], generics_with[test], happy_path[test], hash_map[test], heterogeneous_enum_and_word[example], meta_with[test], multiple[test], newtype[test], override_callable[test], shorthand_or_long_field[example], skip[test], spanned_value[test], split_declaration[test], suggestions[test], supports[test], supports_struct[example], unsupported_attributes[test]
+Targets: accrue_errors[test], attrs_with[test], automatic_bounds[example], compiletests[test], computed_bound[test], consume_fields[example], custom_bound[test], custom_crate[test], darling[lib], data_with[test], defaults[test], derive[example], enum_of_struct_variants[example], enums_default[test], enums_newtype[test], enums_struct[test], enums_unit[test], error[test], expr_with[example], fallible_read[example], flatten[test], flatten_error_accumulation[test], flatten_from_field[test], forward_attrs_to_from_attributes[test], from_generics[test], from_invalid_expr[test], from_meta[test], from_type_param[test], from_type_param_default[test], from_variant[test], from_word_and_expr[example], generics[test], generics_with[test], happy_path[test], hash_map[test], heterogeneous_enum_and_word[example], html[example], ident_with[test], lints[test], meta_with[test], multiple[test], override_callable[test], serde[example], shorthand_or_long_field[example], skip[test], spanned_value[test], split_declaration[test], suggestions[test], supports[test], supports_struct[example], transparent[test], unsupported_attributes[test], with_invalid_expr[test], with_no_impl_from_meta[test]
 Features: default, diagnostics, serde, suggestions
 Dependencies: darling_core, darling_macro
 
-### darling_core 0.23.0
+### darling_core 0.24.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/TedDriggs/darling
 SPDX-License-Identifier: MIT
@@ -817,7 +817,7 @@ Targets: darling_core[lib]
 Features: diagnostics, serde, strsim, suggestions
 Dependencies: ident_case, proc-macro2, quote, strsim, syn
 
-### darling_macro 0.23.0
+### darling_macro 0.24.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/TedDriggs/darling
 SPDX-License-Identifier: MIT
@@ -1417,7 +1417,7 @@ Targets: bench[bench], equivalent_trait[test], hashbrown[lib], hasher[test], has
 Features: alloc, allocator-api2, core, default, default-hasher, equivalent, inline-more, nightly, raw-entry, rayon, rustc-dep-of-std, rustc-internal-api, serde
 Dependencies: allocator-api2, equivalent, foldhash
 
-### hashlink 0.11.1
+### hashlink 0.12.2
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/djc/hashlink
 SPDX-License-Identifier: MIT OR Apache-2.0
@@ -1647,7 +1647,7 @@ Package source: https://github.com/indexmap-rs/indexmap
 SPDX-License-Identifier: Apache-2.0 OR MIT
 Targets: bench[bench], equivalent_trait[test], faststring[bench], indexmap[lib], macros_full_path[test], quick[test], tests[test]
 Features: arbitrary, borsh, default, quickcheck, rayon, serde, std, sval, test_debug
-Dependencies: equivalent, hashbrown
+Dependencies: equivalent, hashbrown, serde, serde_core
 
 ### inout 0.1.4
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -1849,12 +1849,12 @@ Targets: libredox[lib]
 Features: base, bitflags, call, default, ioslice, libc, mkns, plain, protocol, redox_syscall, std
 Dependencies: libc
 
-### libsqlite3-sys 0.37.0
+### libsqlite3-sys 0.39.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/rusqlite/rusqlite
 SPDX-License-Identifier: MIT
 Targets: build-script-build[custom-build], libsqlite3_sys[lib]
-Features: bindgen, buildtime_bindgen, bundled, bundled-sqlcipher, bundled-sqlcipher-vendored-openssl, bundled-windows, bundled_bindings, cc, column_metadata, default, in_gecko, loadable_extension, min_sqlite_version_3_34_1, openssl-sys, pkg-config, prettyplease, preupdate_hook, quote, session, sqlcipher, syn, unlock_notify, vcpkg, wasm32-wasi-vfs, with-asan
+Features: bindgen, buildtime_bindgen, bundled, bundled-sqlcipher, bundled-sqlcipher-vendored-openssl, bundled-windows, bundled_bindings, cc, column_metadata, default, in_gecko, loadable_extension, min_sqlite_version_3_45_3, openssl-sys, pkg-config, prettyplease, preupdate_hook, quote, session, sqlcipher, syn, unlock_notify, vcpkg, wasm32-wasi-vfs, with-asan
 Dependencies: cc, pkg-config, vcpkg
 
 ### libyaml-rs 0.3.0
@@ -2481,11 +2481,11 @@ Targets: build-script-build[custom-build], comments[test], features[test], marke
 Features: default, nightly, proc-macro, span-locations
 Dependencies: unicode-ident
 
-### process-wrap 9.1.0
+### process-wrap 10.0.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/watchexec/process-wrap
 SPDX-License-Identifier: Apache-2.0 OR MIT
-Targets: multiproc_helper[test], process_wrap[lib], std_unix[test], std_windows[test], tokio_unix[test], tokio_windows[test]
+Targets: child_wrapper_contract[test], multiproc_helper[test], process_wrap[lib], spawn_with_child[test], std_unix[test], std_windows[test], tokio_unix[test], tokio_windows[test], wrapper_hooks[test], wrapper_lookup[test]
 Features: creation-flags, default, job-object, kill-on-drop, process-group, process-session, reset-sigmask, std, tokio1, tracing
 Dependencies: futures, indexmap, nix, tokio, tracing, windows
 
@@ -2793,12 +2793,12 @@ Targets: rtoolbox[lib]
 Features: serde
 Dependencies: libc, windows-sys
 
-### rusqlite 0.39.0
+### rusqlite 0.41.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/rusqlite/rusqlite
 SPDX-License-Identifier: MIT
 Targets: auto_ext[test], cache[bench], config_log[test], deny_single_threaded_sqlite_config[test], exec[bench], load_extension[example], loadable_extension[example], owning_rows[example], owning_statement[example], persons[example], rusqlite[lib], vtab[test]
-Features: array, backup, blob, buildtime_bindgen, bundled, bundled-full, bundled-sqlcipher, bundled-sqlcipher-vendored-openssl, bundled-windows, cache, chrono, collation, column_decltype, column_metadata, csv, csvtab, default, extra_check, fallible_uint, functions, hashlink, hooks, i128_blob, in_gecko, jiff, limits, load_extension, loadable_extension, modern-full, modern_sqlite, pointer, preupdate_hook, rusqlite-macros, serde_json, serialize, series, session, sqlcipher, time, trace, unlock_notify, url, uuid, vtab, wasm32-wasi-vfs, window, with-asan
+Features: array, backup, blob, buildtime_bindgen, bundled, bundled-full, bundled-sqlcipher, bundled-sqlcipher-vendored-openssl, bundled-windows, cache, chrono, collation, column_decltype, column_metadata, csv, csvtab, default, extra_check, fallible_uint, ffi-sqlite-wasm-rs, functions, hashlink, hooks, i128_blob, in_gecko, jiff, libsqlite3-sys, limits, load_extension, loadable_extension, modern-full, modern_sqlite, pointer, preupdate_hook, rusqlite-macros, serde_json, serialize, series, session, sqlcipher, time, trace, unlock_notify, url, uuid, vtab, wal, wasm32-wasi-vfs, window, with-asan
 Dependencies: bitflags, fallible-iterator, fallible-streaming-iterator, hashlink, libsqlite3-sys, smallvec, sqlite-wasm-rs
 
 ### rustc-hash 2.1.3
@@ -4835,21 +4835,21 @@ Modified: no
 
 ### vendored-rmcp
 Path: rust/crates/vendor/rmcp
-Digest: sha256:c516ce111faf9d175add0877b5535208e4e7f4df4f48f9012727da7e865f85fa
-Version: 2.0.0
-Source: https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v2.0.0
+Digest: sha256:083999c4e663cc3ad89a8a93851302ba9bf0278a3afdf7dbac3b9fff2a519a83
+Version: 3.9.0
+Source: https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v3.9.0
 SPDX-License-Identifier: Apache-2.0
 License text path: LICENSES/Apache-2.0.txt
-Evidence paths: rust/Cargo.toml, rust/crates/vendor/rmcp/Cargo.toml, rust/crates/vendor/rmcp/src/transport/auth.rs
+Evidence paths: rust/Cargo.toml, rust/crates/vendor/rmcp/Cargo.toml, rust/crates/vendor/rmcp/src/service/server.rs, rust/crates/vendor/rmcp/src/transport.rs, rust/crates/vendor/rmcp/src/transport/auth.rs, rust/crates/vendor/rmcp/tests/test_stateless_server_requests.rs
 Copyright: as declared by upstream
 Modified: yes
-Modification summary: LeanCTX carries the local JoinSet response-send drain patch described in rust/Cargo.toml, and an OAuth discovery patch in src/transport/auth.rs (#1391: a 200 status page on the MCP endpoint is not taken as RFC 9728 resource metadata); upstream rmcp 2.0.0 is retained as the provenance base.
+Modification summary: LeanCTX carries two local patches described in rust/Cargo.toml: a one-shot transport releases its service even when the caller has disconnected (src/transport.rs), and a request without inline lifecycle metadata before initialize is handed back to the caller, which answers -32601 (#1454, src/service/server.rs). It adds regression tests for #1454 (tests/test_stateless_server_requests.rs) and the OAuth discovery status-page case (#1391, src/transport/auth.rs), and SPDX NOASSERTION header lines on the source files that are new since the provenance cut; upstream rmcp 3.9.0 is retained as the provenance base.
 
 ### vendored-rmcp-macros
 Path: rust/crates/vendor/rmcp-macros
-Digest: sha256:35b53c95f9645c7b1e9add853a88213ec1aab59cb42abbd67a83634ff8504ca9
-Version: 2.0.0
-Source: https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v2.0.0
+Digest: sha256:bacb37eabbd4087453300dffde0d26c1e4801a9199199c0f5af114bee2080ae7
+Version: 3.9.0
+Source: https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v3.9.0
 SPDX-License-Identifier: Apache-2.0
 License text path: LICENSES/Apache-2.0.txt
 Evidence paths: rust/Cargo.toml, rust/crates/vendor/rmcp-macros/Cargo.toml

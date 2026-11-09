@@ -1,8 +1,8 @@
 // Sampling/Roots/Logging are SEP-2577-deprecated; internal references are expected.
 #![expect(deprecated)]
-use std::borrow::Cow;
 #[cfg(feature = "elicitation")]
 use std::collections::HashSet;
+use std::{borrow::Cow, sync::Arc};
 
 use thiserror::Error;
 #[cfg(feature = "elicitation")]
@@ -10,20 +10,19 @@ use url::Url;
 
 use super::*;
 #[cfg(feature = "elicitation")]
-use crate::model::{
-    ElicitRequest, ElicitRequestParams, ElicitResult, ElicitationAction,
-    ElicitationCompleteNotification, ElicitationResponseNotificationParam,
-};
+use crate::model::{ElicitRequest, ElicitRequestParams, ElicitResult, ElicitationAction};
 use crate::{
     model::{
-        CancelledNotification, CancelledNotificationParam, ClientInfo, ClientJsonRpcMessage,
+        CancelledNotification, CancelledNotificationParam, ClientJsonRpcMessage,
         ClientNotification, ClientRequest, ClientResult, CreateMessageRequest,
-        CreateMessageRequestParams, CreateMessageResult, EmptyResult, ErrorData, ListRootsRequest,
-        ListRootsResult, LoggingMessageNotification, LoggingMessageNotificationParam,
-        ProgressNotification, ProgressNotificationParam, PromptListChangedNotification,
-        ProtocolVersion, ResourceListChangedNotification, ResourceUpdatedNotification,
-        ResourceUpdatedNotificationParam, ServerInfo, ServerNotification, ServerRequest,
-        ServerResult, ToolListChangedNotification,
+        CreateMessageRequestParams, CreateMessageResult, EmptyResult, ErrorData,
+        InitializeRequestParams, ListRootsRequest, ListRootsResult, LoggingMessageNotification,
+        LoggingMessageNotificationParam, ProgressNotification, ProgressNotificationParam,
+        PromptListChangedNotification, ProtocolVersion, ResourceListChangedNotification,
+        ResourceUpdatedNotification, ResourceUpdatedNotificationParam, ServerConfig,
+        ServerNotification, ServerRequest, ServerResult, SubscriptionFilter,
+        SubscriptionsAcknowledgedNotification, SubscriptionsAcknowledgedNotificationParams,
+        ToolListChangedNotification,
     },
     transport::DynamicTransportError,
 };
@@ -39,11 +38,35 @@ impl ServiceRole for RoleServer {
     type PeerReq = ClientRequest;
     type PeerResp = ClientResult;
     type PeerNot = ClientNotification;
-    type Info = ServerInfo;
-    type PeerInfo = ClientInfo;
+    type Info = ServerConfig;
+    type PeerInfo = InitializeRequestParams;
 
     type InitializeError = ServerInitializeError;
     const IS_CLIENT: bool = false;
+
+    fn peer_cancelled_params(notification: &Self::PeerNot) -> Option<&CancelledNotificationParam> {
+        match notification {
+            ClientNotification::CancelledNotification(notification) => Some(&notification.params),
+            _ => None,
+        }
+    }
+
+    fn enforce_outbound_request(peer: &Peer<Self>) -> Result<(), ServiceError> {
+        // Same order as `RequestContext::protocol_version`: the version the
+        // current request names wins. Outside a handler, fall back to the version
+        // an inline session (e.g. discover on stdio) opened on, since it never
+        // stores peer info, then to peer info.
+        let version = originating_protocol_version()
+            .or_else(|| peer.inline_protocol_version().cloned())
+            .or_else(|| peer.peer_info().map(|info| info.protocol_version.clone()));
+        if version.is_some_and(|version| version >= ProtocolVersion::V_2026_07_28) {
+            return Err(ServiceError::McpError(ErrorData::invalid_request(
+                "server-to-client requests are not allowed on protocol 2026-07-28 or later; return InputRequiredResult instead",
+                None,
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// It represents the error that may occur when serving the server.
@@ -55,13 +78,6 @@ pub enum ServerInitializeError {
     #[error("expect initialized request, but received: {0:?}")]
     ExpectedInitializeRequest(Option<ClientJsonRpcMessage>),
 
-    #[deprecated(
-        since = "1.4.0",
-        note = "The server no longer gates on the initialized notification. This variant is never constructed and will be removed in a future major release."
-    )]
-    #[error("expect initialized notification, but received: {0:?}")]
-    ExpectedInitializedNotification(Option<ClientJsonRpcMessage>),
-
     #[error("connection closed: {0}")]
     ConnectionClosed(String),
 
@@ -70,13 +86,6 @@ pub enum ServerInitializeError {
 
     #[error("initialize failed: {0}")]
     InitializeFailed(ErrorData),
-
-    #[deprecated(
-        since = "1.8.0",
-        note = "Negotiation now falls back to the server-configured version. This variant is never constructed and will be removed in a future major release."
-    )]
-    #[error("unsupported protocol version: {0}")]
-    UnsupportedProtocolVersion(ProtocolVersion),
 
     #[error("Send message error {error}, when {context}")]
     TransportError {
@@ -100,6 +109,289 @@ impl ServerInitializeError {
     }
 }
 pub type ClientSink = Peer<RoleServer>;
+
+/// Failure to send a notification through a [`SubscriptionSink`].
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum SubscriptionSendError {
+    #[error("subscription is no longer active")]
+    SubscriptionClosed,
+    #[error("notification is not allowed on a subscription stream: {0}")]
+    UnsupportedNotification(&'static str),
+    #[error("notification was not accepted for this subscription: {0}")]
+    NotificationNotAccepted(&'static str),
+    #[error(transparent)]
+    Service(#[from] ServiceError),
+}
+
+/// A server-side notification sink scoped to one `subscriptions/listen` request.
+///
+/// The sink applies the accepted filter and adds the subscription request ID to
+/// every notification it sends.
+#[derive(Debug, Clone)]
+pub struct SubscriptionSink {
+    peer: Peer<RoleServer>,
+    id: RequestId,
+    accepted: Arc<SubscriptionFilter>,
+    active: CancellationToken,
+}
+
+impl SubscriptionSink {
+    fn new(
+        peer: Peer<RoleServer>,
+        id: RequestId,
+        accepted: Arc<SubscriptionFilter>,
+        active: CancellationToken,
+    ) -> Self {
+        Self {
+            peer,
+            id,
+            accepted,
+            active,
+        }
+    }
+
+    /// Return the JSON-RPC ID of the originating listen request.
+    pub fn id(&self) -> &RequestId {
+        &self.id
+    }
+
+    /// Return the filter accepted for this subscription.
+    pub fn accepted(&self) -> &SubscriptionFilter {
+        self.accepted.as_ref()
+    }
+
+    /// Send an allowed change notification with subscription metadata attached.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SubscriptionSendError::SubscriptionClosed`] after the request
+    /// ends, a filter error for disallowed notifications, or a transport error.
+    pub async fn send(
+        &self,
+        mut notification: ServerNotification,
+    ) -> Result<(), SubscriptionSendError> {
+        if self.active.is_cancelled() {
+            return Err(SubscriptionSendError::SubscriptionClosed);
+        }
+        match &notification {
+            ServerNotification::ToolListChangedNotification(_) => {
+                if self.accepted.tools_list_changed != Some(true) {
+                    return Err(SubscriptionSendError::NotificationNotAccepted(
+                        "notifications/tools/list_changed",
+                    ));
+                }
+            }
+            ServerNotification::PromptListChangedNotification(_) => {
+                if self.accepted.prompts_list_changed != Some(true) {
+                    return Err(SubscriptionSendError::NotificationNotAccepted(
+                        "notifications/prompts/list_changed",
+                    ));
+                }
+            }
+            ServerNotification::ResourceListChangedNotification(_) => {
+                if self.accepted.resources_list_changed != Some(true) {
+                    return Err(SubscriptionSendError::NotificationNotAccepted(
+                        "notifications/resources/list_changed",
+                    ));
+                }
+            }
+            ServerNotification::ResourceUpdatedNotification(update) => {
+                let accepted = self
+                    .accepted
+                    .resource_subscriptions
+                    .as_ref()
+                    .is_some_and(|uris| uris.contains(&update.params.uri));
+                if !accepted {
+                    return Err(SubscriptionSendError::NotificationNotAccepted(
+                        "notifications/resources/updated",
+                    ));
+                }
+            }
+            ServerNotification::SubscriptionsAcknowledgedNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/subscriptions/acknowledged",
+                ));
+            }
+            ServerNotification::CancelledNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/cancelled",
+                ));
+            }
+            ServerNotification::ProgressNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/progress",
+                ));
+            }
+            ServerNotification::LoggingMessageNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/message",
+                ));
+            }
+            // SEP-2663 task status notifications are not yet routable through
+            // `subscriptions/listen`: `SubscriptionFilter` has no `taskIds`
+            // field yet (the upstream conformance check for this flow is also
+            // still skipped, pending the subscriptions/listen rewrite).
+            // Clients currently observe task state by polling `tasks/get`.
+            ServerNotification::TaskStatusNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "notifications/tasks",
+                ));
+            }
+            ServerNotification::CustomNotification(_) => {
+                return Err(SubscriptionSendError::UnsupportedNotification(
+                    "custom notification",
+                ));
+            }
+        }
+
+        notification
+            .get_meta_mut()
+            .set_subscription_id(self.id.clone());
+        self.peer.send_notification(notification).await?;
+        Ok(())
+    }
+
+    /// Send `notifications/tools/list_changed`.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::send`].
+    pub async fn notify_tool_list_changed(&self) -> Result<(), SubscriptionSendError> {
+        self.send(ServerNotification::ToolListChangedNotification(
+            ToolListChangedNotification {
+                method: Default::default(),
+                extensions: Default::default(),
+            },
+        ))
+        .await
+    }
+
+    /// Send `notifications/prompts/list_changed`.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::send`].
+    pub async fn notify_prompt_list_changed(&self) -> Result<(), SubscriptionSendError> {
+        self.send(ServerNotification::PromptListChangedNotification(
+            PromptListChangedNotification {
+                method: Default::default(),
+                extensions: Default::default(),
+            },
+        ))
+        .await
+    }
+
+    /// Send `notifications/resources/list_changed`.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::send`].
+    pub async fn notify_resource_list_changed(&self) -> Result<(), SubscriptionSendError> {
+        self.send(ServerNotification::ResourceListChangedNotification(
+            ResourceListChangedNotification {
+                method: Default::default(),
+                extensions: Default::default(),
+            },
+        ))
+        .await
+    }
+
+    /// Send `notifications/resources/updated` for an accepted URI.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::send`].
+    pub async fn notify_resource_updated(
+        &self,
+        uri: impl Into<String>,
+    ) -> Result<(), SubscriptionSendError> {
+        self.send(ServerNotification::ResourceUpdatedNotification(
+            ResourceUpdatedNotification::new(ResourceUpdatedNotificationParam::new(uri)),
+        ))
+        .await
+    }
+}
+
+/// Context for one established server-side notification subscription.
+///
+/// The acknowledgment has already been sent before this context is handed to
+/// [`ServerHandler::listen`](crate::ServerHandler::listen).
+#[derive(Debug)]
+pub struct SubscriptionContext {
+    request: RequestContext<RoleServer>,
+    requested: SubscriptionFilter,
+    accepted: Arc<SubscriptionFilter>,
+    sink: SubscriptionSink,
+    _active_guard: DropGuard,
+}
+
+impl SubscriptionContext {
+    pub(crate) async fn establish(
+        request: RequestContext<RoleServer>,
+        requested: SubscriptionFilter,
+        accepted: SubscriptionFilter,
+    ) -> Result<Self, ErrorData> {
+        let active = request.ct.child_token();
+        let accepted = Arc::new(accepted);
+        let sink = SubscriptionSink::new(
+            request.peer.clone(),
+            request.id.clone(),
+            accepted.clone(),
+            active.clone(),
+        );
+        let mut acknowledgment = SubscriptionsAcknowledgedNotification::new(
+            SubscriptionsAcknowledgedNotificationParams::new(accepted.as_ref().clone()),
+        );
+        let mut meta = NotificationMetaObject::new();
+        meta.set_subscription_id(request.id.clone());
+        acknowledgment.extensions.insert(meta);
+        request
+            .peer
+            .send_notification(ServerNotification::SubscriptionsAcknowledgedNotification(
+                acknowledgment,
+            ))
+            .await
+            .map_err(|error| {
+                ErrorData::internal_error(
+                    format!("failed to acknowledge subscription: {error}"),
+                    None,
+                )
+            })?;
+        Ok(Self {
+            request,
+            requested,
+            accepted,
+            sink,
+            _active_guard: active.drop_guard(),
+        })
+    }
+
+    /// Return the filter requested by the client.
+    pub fn requested(&self) -> &SubscriptionFilter {
+        &self.requested
+    }
+
+    /// Return the subset accepted by the server.
+    pub fn accepted(&self) -> &SubscriptionFilter {
+        self.accepted.as_ref()
+    }
+
+    /// Return a cloneable, filter-enforcing notification sink.
+    pub fn sink(&self) -> &SubscriptionSink {
+        &self.sink
+    }
+
+    /// Wait until the subscription request is cancelled.
+    pub async fn cancelled(&self) {
+        self.request.ct.cancelled().await;
+    }
+
+    /// Access the underlying request context.
+    pub fn request_context(&self) -> &RequestContext<RoleServer> {
+        &self.request
+    }
+}
 
 impl<S: Service<RoleServer>> ServiceExt<RoleServer> for S {
     fn serve_with_ct<T, E, A>(
@@ -161,20 +453,105 @@ where
     }
 }
 
-/// Echoes the client-requested version if known; otherwise returns `server_fallback`.
-fn negotiate_protocol_version(
+/// Echoes the client-requested version if the server can serve it over the
+/// `initialize` handshake; otherwise returns a legacy version the server does
+/// support.
+///
+/// `server_supported` comes from [`Service::supported_protocol_versions`], so a
+/// server that narrows that list is never made to answer `initialize` with a
+/// version it cannot serve. [`ProtocolVersion::NO_INITIALIZE`] replaced the
+/// handshake with per-request metadata, so a client naming that revision or
+/// later is answered with the server's newest handshake version instead.
+///
+/// `preferred_fallback` is a *preference*, not a guarantee: it is honored only
+/// when it has an `initialize` handshake of its own. A server that pins itself
+/// past [`ProtocolVersion::NO_INITIALIZE`] still has to answer the handshake
+/// with something, so the newest handshake version in `server_supported` is
+/// substituted.
+///
+/// # Errors
+///
+/// Returns [`ErrorCode::UNSUPPORTED_PROTOCOL_VERSION`] when the server supports
+/// no version that still has an `initialize` handshake.
+///
+/// [`ErrorCode::UNSUPPORTED_PROTOCOL_VERSION`]: crate::model::ErrorCode::UNSUPPORTED_PROTOCOL_VERSION
+pub(crate) fn negotiate_protocol_version(
     client_requested: &ProtocolVersion,
-    server_fallback: ProtocolVersion,
-) -> ProtocolVersion {
-    if ProtocolVersion::KNOWN_VERSIONS.contains(client_requested) {
-        client_requested.clone()
+    preferred_fallback: ProtocolVersion,
+    server_supported: &[ProtocolVersion],
+) -> Result<ProtocolVersion, ErrorData> {
+    if client_requested.has_initialize() && server_supported.contains(client_requested) {
+        return Ok(client_requested.clone());
+    }
+    let fallback = if preferred_fallback.has_initialize() {
+        Some(preferred_fallback)
     } else {
+        newest_version_with_initialize(server_supported)
+    };
+    let Some(negotiated) = fallback else {
         tracing::warn!(
             client_requested = %client_requested,
-            server_fallback = %server_fallback,
-            "client requested unsupported protocol version; falling back to server default"
+            "server supports no protocol version with an initialize handshake; rejecting"
         );
-        server_fallback
+        return Err(ErrorData::unsupported_protocol_version(
+            client_requested.clone(),
+            server_supported,
+        ));
+    };
+    // Falling back is the designed answer for a pinned client, and stateless
+    // HTTP re-runs it on every request, so this is not a warning.
+    tracing::debug!(
+        client_requested = %client_requested,
+        negotiated = %negotiated,
+        "client requested a protocol version unavailable over initialize; falling back to a supported version"
+    );
+    Ok(negotiated)
+}
+
+/// The newest of `versions` that still has an `initialize` handshake.
+fn newest_version_with_initialize(versions: &[ProtocolVersion]) -> Option<ProtocolVersion> {
+    versions
+        .iter()
+        .filter(|version| version.has_initialize())
+        .max_by(|left, right| left.as_str().cmp(right.as_str()))
+        .cloned()
+}
+
+/// lean-ctx patch (#1454): whether a request carries any inline lifecycle
+/// metadata (`io.modelcontextprotocol/*` keys in `_meta`).
+fn has_inline_lifecycle_metadata(meta: &crate::model::RequestMetaObject) -> bool {
+    meta.keys()
+        .any(|key| key.starts_with("io.modelcontextprotocol/"))
+}
+
+fn missing_request_metadata_error(missing: &[&str]) -> ErrorData {
+    ErrorData::invalid_params(
+        format!(
+            "request _meta is missing or has malformed required fields: {}",
+            missing.join(", ")
+        ),
+        None,
+    )
+}
+
+/// Sends `error` as the response to the `initialize` request and reports it as
+/// the reason the handshake failed.
+async fn report_initialize_failure<T>(
+    transport: &mut T,
+    error: ErrorData,
+    id: RequestId,
+) -> ServerInitializeError
+where
+    T: Transport<RoleServer> + 'static,
+{
+    match transport
+        .send(ServerJsonRpcMessage::error(error.clone(), Some(id)))
+        .await
+    {
+        Ok(()) => ServerInitializeError::InitializeFailed(error),
+        Err(send_error) => {
+            ServerInitializeError::transport::<T>(send_error, "sending error response")
+        }
     }
 }
 
@@ -190,9 +567,17 @@ where
     let mut transport = transport.into_transport();
     let id_provider = <Arc<AtomicU32RequestIdProvider>>::default();
 
-    // Get initialize request; the MCP spec permits ping before initialize.
+    let (peer, peer_rx) = Peer::new(id_provider.clone(), None);
+
+    // Select the lifecycle only after an initialize request or the first valid
+    // non-discover request with complete inline metadata. A discover request is
+    // a bootstrap probe: respond to it, but remain open to either lifecycle.
+    // The MCP spec also permits ping before initialize.
     // See: https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle#initialization
-    let (request, id) = loop {
+    // lean-ctx patch (#1454): set once a discover request with complete inline
+    // metadata was answered, i.e. the client speaks the inline lifecycle.
+    let mut inline_client = false;
+    let (initialize_request, id) = loop {
         let msg = expect_next_message(&mut transport, "initialize request").await?;
         match msg {
             ClientJsonRpcMessage::Request(req)
@@ -211,7 +596,102 @@ where
                         )
                     })?;
             }
-            ClientJsonRpcMessage::Request(req) => break (req.request, req.id),
+            ClientJsonRpcMessage::Request(req) => {
+                let id = req.id;
+                let mut request = match req.request {
+                    ClientRequest::InitializeRequest(request) => break (request, id),
+                    request => request,
+                };
+                let missing_metadata = request
+                    .get_meta()
+                    .missing_required_keys(&ProtocolVersion::V_2026_07_28);
+                let requested_version = match request.get_meta().protocol_version() {
+                    Some(version) if missing_metadata.is_empty() => version,
+                    _ if !inline_client && !has_inline_lifecycle_metadata(request.get_meta()) => {
+                        // lean-ctx patch (#1454): a request without any inline
+                        // lifecycle metadata comes from a client of the
+                        // initialize handshake (MCP Go SDK >= 1.7 probes with
+                        // `server/discover` first). Hand it to the caller as
+                        // before 3.x, which answers -32601 so the client falls
+                        // back to `initialize`; -32602 would end its startup.
+                        return Err(ServerInitializeError::ExpectedInitializeRequest(Some(
+                            ClientJsonRpcMessage::request(request, id),
+                        )));
+                    }
+                    _ => {
+                        transport
+                            .send(ServerJsonRpcMessage::error(
+                                missing_request_metadata_error(&missing_metadata),
+                                Some(id),
+                            ))
+                            .await
+                            .map_err(|error| {
+                                ServerInitializeError::transport::<T>(
+                                    error,
+                                    "sending pre-init metadata error response",
+                                )
+                            })?;
+                        continue;
+                    }
+                };
+
+                if matches!(request, ClientRequest::DiscoverRequest(_)) {
+                    inline_client = true;
+                    // No lifecycle exists yet, so the handler gets a peer that
+                    // cannot reach the client.
+                    let (bootstrap_peer, _) = Peer::new(id_provider.clone(), None);
+                    let context = RequestContext {
+                        ct: ct.child_token(),
+                        id: id.clone(),
+                        meta: std::mem::take(request.get_meta_mut()),
+                        extensions: std::mem::take(request.extensions_mut()),
+                        peer: bootstrap_peer,
+                    };
+                    let response = match service.handle_request(request, context).await {
+                        Ok(result) => ServerJsonRpcMessage::response(result, id),
+                        Err(error) => ServerJsonRpcMessage::error(error, Some(id)),
+                    };
+                    transport.send(response).await.map_err(|error| {
+                        ServerInitializeError::transport::<T>(
+                            error,
+                            "sending bootstrap request response",
+                        )
+                    })?;
+                    continue;
+                }
+
+                let supported_versions = service.supported_protocol_versions();
+                if !supported_versions.contains(&requested_version) {
+                    transport
+                        .send(ServerJsonRpcMessage::error(
+                            ErrorData::unsupported_protocol_version(
+                                requested_version,
+                                &supported_versions,
+                            ),
+                            Some(id),
+                        ))
+                        .await
+                        .map_err(|error| {
+                            ServerInitializeError::transport::<T>(
+                                error,
+                                "sending unsupported inline version response",
+                            )
+                        })?;
+                    continue;
+                }
+                peer.set_inline_protocol_version(requested_version);
+                // Dispatch the request from inside the service loop rather than
+                // inline: its handler may send notifications through `peer`, which
+                // only complete once the loop drains `peer_rx`.
+                return Ok(serve_inner(
+                    service,
+                    transport,
+                    peer,
+                    peer_rx,
+                    VecDeque::from([ClientJsonRpcMessage::request(request, id)]),
+                    ct,
+                ));
+            }
             other => {
                 return Err(ServerInitializeError::ExpectedInitializeRequest(Some(
                     other,
@@ -219,13 +699,10 @@ where
             }
         }
     };
-
-    let ClientRequest::InitializeRequest(peer_info) = &request else {
-        return Err(ServerInitializeError::ExpectedInitializeRequest(Some(
-            ClientJsonRpcMessage::request(request, id),
-        )));
-    };
-    let (peer, peer_rx) = Peer::new(id_provider, Some(peer_info.params.clone()));
+    let requested_protocol_version = initialize_request.params.protocol_version.clone();
+    let mut negotiated_peer_info = initialize_request.params.clone();
+    peer.set_peer_info(negotiated_peer_info.clone());
+    let request = ClientRequest::InitializeRequest(initialize_request);
     let context = RequestContext {
         ct: ct.child_token(),
         id: id.clone(),
@@ -234,26 +711,25 @@ where
         peer: peer.clone(),
     };
     // Send initialize response
-    let init_response = service.handle_request(request.clone(), context).await;
-    let mut init_response = match init_response {
+    let mut init_response = match service.handle_request(request, context).await {
         Ok(ServerResult::InitializeResult(init_response)) => init_response,
         Ok(result) => {
             return Err(ServerInitializeError::UnexpectedInitializeResponse(result));
         }
-        Err(e) => {
-            transport
-                .send(ServerJsonRpcMessage::error(e.clone(), Some(id)))
-                .await
-                .map_err(|error| {
-                    ServerInitializeError::transport::<T>(error, "sending error response")
-                })?;
-            return Err(ServerInitializeError::InitializeFailed(e));
-        }
+        Err(e) => return Err(report_initialize_failure(&mut transport, e, id).await),
     };
-    init_response.protocol_version = negotiate_protocol_version(
-        &peer_info.params.protocol_version,
+    init_response.protocol_version = match negotiate_protocol_version(
+        &requested_protocol_version,
         init_response.protocol_version,
-    );
+        &service.supported_protocol_versions(),
+    ) {
+        Ok(version) => version,
+        Err(e) => return Err(report_initialize_failure(&mut transport, e, id).await),
+    };
+    // Update peer_info so context.protocol_version() reflects the negotiated
+    // version in all subsequent request handlers.
+    negotiated_peer_info.protocol_version = init_response.protocol_version.clone();
+    peer.set_peer_info(negotiated_peer_info);
     transport
         .send(ServerJsonRpcMessage::response(
             ServerResult::InitializeResult(init_response),
@@ -270,7 +746,14 @@ where
     // Streamable HTTP has no ordering guarantee between POSTs, and the MCP spec uses
     // SHOULD NOT (not MUST NOT) for pre-initialized messages, so any request arriving
     // before initialized is processed normally.
-    Ok(serve_inner(service, transport, peer, peer_rx, ct))
+    Ok(serve_inner(
+        service,
+        transport,
+        peer,
+        peer_rx,
+        VecDeque::new(),
+        ct,
+    ))
 }
 
 macro_rules! method {
@@ -425,6 +908,8 @@ impl Peer<RoleServer> {
         }
     }
 
+    /// Errors on protocol `2026-07-28` or later, which forbids server-to-client
+    /// requests; return an [`InputRequiredResult`](crate::model::InputRequiredResult) instead.
     #[deprecated(
         since = "1.8.0",
         note = "Sampling is deprecated by SEP-2577 and will be removed in a future release. See https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2577"
@@ -459,6 +944,8 @@ impl Peer<RoleServer> {
         }
     }
     method!(
+        /// Errors on protocol `2026-07-28` or later, which forbids server-to-client
+        /// requests; return an [`InputRequiredResult`](crate::model::InputRequiredResult) instead.
         #[deprecated(
             since = "1.8.0",
             note = "Roots is deprecated by SEP-2577 and will be removed in a future release. See https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2577"
@@ -466,11 +953,17 @@ impl Peer<RoleServer> {
         peer_req list_roots ListRootsRequest() => ListRootsResult
     );
     #[cfg(feature = "elicitation")]
-    method!(peer_req create_elicitation ElicitRequest(ElicitRequestParams) => ElicitResult);
+    method!(
+        /// Errors on protocol `2026-07-28` or later, which forbids server-to-client
+        /// requests; return an [`InputRequiredResult`](crate::model::InputRequiredResult) instead.
+        peer_req create_elicitation ElicitRequest(ElicitRequestParams) => ElicitResult
+    );
     #[cfg(feature = "elicitation")]
-    method!(peer_req_with_timeout create_elicitation_with_timeout ElicitRequest(ElicitRequestParams) => ElicitResult);
-    #[cfg(feature = "elicitation")]
-    method!(peer_not notify_url_elicitation_completed ElicitationCompleteNotification(ElicitationResponseNotificationParam));
+    method!(
+        /// Errors on protocol `2026-07-28` or later, which forbids server-to-client
+        /// requests; return an [`InputRequiredResult`](crate::model::InputRequiredResult) instead.
+        peer_req_with_timeout create_elicitation_with_timeout ElicitRequest(ElicitRequestParams) => ElicitResult
+    );
 
     method!(peer_not notify_cancelled CancelledNotification(CancelledNotificationParam));
     method!(peer_not notify_progress ProgressNotification(ProgressNotificationParam));
@@ -697,6 +1190,9 @@ impl Peer<RoleServer> {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// Errors on protocol `2026-07-28` or later, which forbids server-to-client
+    /// requests; return an [`InputRequiredResult`](crate::model::InputRequiredResult) instead.
     #[cfg(all(feature = "schemars", feature = "elicitation"))]
     pub async fn elicit<T>(&self, message: impl Into<String>) -> Result<Option<T>, ElicitationError>
     where
@@ -758,6 +1254,9 @@ impl Peer<RoleServer> {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// Errors on protocol `2026-07-28` or later, which forbids server-to-client
+    /// requests; return an [`InputRequiredResult`](crate::model::InputRequiredResult) instead.
     #[cfg(all(feature = "schemars", feature = "elicitation"))]
     pub async fn elicit_with_timeout<T>(
         &self,
@@ -767,6 +1266,10 @@ impl Peer<RoleServer> {
     where
         T: ElicitationSafe + for<'de> serde::Deserialize<'de>,
     {
+        // Reject on 2026-07-28 before the capability check, which would
+        // otherwise answer `CapabilityNotSupported` first.
+        RoleServer::enforce_outbound_request(self)?;
+
         // Check if client supports form elicitation capability
         if !self
             .supported_elicitation_modes()
@@ -853,6 +1356,9 @@ impl Peer<RoleServer> {
     ///  Ok(())
     /// }
     /// ```
+    ///
+    /// Errors on protocol `2026-07-28` or later, which forbids server-to-client
+    /// requests; return an [`InputRequiredResult`](crate::model::InputRequiredResult) instead.
     #[cfg(feature = "elicitation")]
     pub async fn elicit_url(
         &self,
@@ -904,6 +1410,9 @@ impl Peer<RoleServer> {
     ///  Ok(())
     /// }
     /// ```
+    ///
+    /// Errors on protocol `2026-07-28` or later, which forbids server-to-client
+    /// requests; return an [`InputRequiredResult`](crate::model::InputRequiredResult) instead.
     #[cfg(feature = "elicitation")]
     pub async fn elicit_url_with_timeout(
         &self,
@@ -912,6 +1421,10 @@ impl Peer<RoleServer> {
         elicitation_id: impl Into<String>,
         timeout: Option<std::time::Duration>,
     ) -> Result<ElicitationAction, ElicitationError> {
+        // Reject on 2026-07-28 before the capability check, which would
+        // otherwise answer `CapabilityNotSupported` first.
+        RoleServer::enforce_outbound_request(self)?;
+
         // Check if client supports url elicitation
         if !self
             .supported_elicitation_modes()

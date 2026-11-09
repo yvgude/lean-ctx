@@ -1976,8 +1976,8 @@ mod request_binding_tests {
     async fn claude_and_codex_at_once_each_see_only_their_own_project_and_task() {
         use rmcp::ServiceExt;
         use rmcp::model::{
-            CallToolRequestParams, ClientCapabilities, ClientInfo, Implementation, ListRootsResult,
-            Root,
+            CallToolRequestParams, ClientCapabilities, ClientConfig, Implementation,
+            ListRootsResult, Root,
         };
 
         struct Host {
@@ -1985,8 +1985,8 @@ mod request_binding_tests {
             root: String,
         }
         impl rmcp::ClientHandler for Host {
-            fn get_info(&self) -> ClientInfo {
-                ClientInfo::new(
+            fn get_info(&self) -> ClientConfig {
+                ClientConfig::new(
                     ClientCapabilities::builder().enable_roots().build(),
                     Implementation::new(self.name, "1.0.0"),
                 )

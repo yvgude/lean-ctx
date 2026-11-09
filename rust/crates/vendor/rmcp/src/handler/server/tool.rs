@@ -16,7 +16,10 @@ pub use super::{
 use crate::{
     RoleServer,
     handler::server::wrapper::Parameters,
-    model::{CallToolRequestParams, CallToolResult, IntoContents, JsonObject},
+    model::{
+        CallToolRequestParams, CallToolResponse, CallToolResult, InputRequiredResult, IntoContents,
+        JsonObject,
+    },
     service::{MaybeBoxFuture, MaybeSend, MaybeSendFuture, RequestContext},
 };
 
@@ -31,11 +34,18 @@ pub fn parse_json_object<T: DeserializeOwned>(input: JsonObject) -> Result<T, cr
 }
 #[non_exhaustive]
 pub struct ToolCallContext<'s, S> {
+    /// The request-specific context for this tool call.
     pub request_context: RequestContext<RoleServer>,
+    /// The server handling this tool call.
     pub service: &'s S,
+    /// The name of the tool being called.
     pub name: Cow<'static, str>,
+    /// The arguments supplied for the tool call.
     pub arguments: Option<JsonObject>,
-    pub task: Option<crate::model::TaskMetadata>,
+    /// Client responses to input requests from the previous MRTR round.
+    pub input_responses: Option<crate::model::InputResponses>,
+    /// Opaque state returned by the server during the previous MRTR round.
+    pub request_state: Option<String>,
 }
 
 impl<'s, S> ToolCallContext<'s, S> {
@@ -45,7 +55,9 @@ impl<'s, S> ToolCallContext<'s, S> {
             meta: _,
             name,
             arguments,
-            task,
+            input_responses,
+            request_state,
+            ..
         }: CallToolRequestParams,
         request_context: RequestContext<RoleServer>,
     ) -> Self {
@@ -54,7 +66,8 @@ impl<'s, S> ToolCallContext<'s, S> {
             service,
             name,
             arguments,
-            task,
+            input_responses,
+            request_state,
         }
     }
     pub fn name(&self) -> &str {
@@ -76,36 +89,56 @@ impl<S> AsRequestContext for ToolCallContext<'_, S> {
 }
 
 pub trait IntoCallToolResult {
-    fn into_call_tool_result(self) -> Result<CallToolResult, crate::ErrorData>;
+    fn into_call_tool_result(self) -> Result<CallToolResponse, crate::ErrorData>;
 }
 
 impl<T: IntoContents> IntoCallToolResult for T {
-    fn into_call_tool_result(self) -> Result<CallToolResult, crate::ErrorData> {
-        Ok(CallToolResult::success(self.into_contents()))
+    fn into_call_tool_result(self) -> Result<CallToolResponse, crate::ErrorData> {
+        Ok(CallToolResult::success(self.into_contents()).into())
     }
 }
 
 impl IntoCallToolResult for CallToolResult {
-    fn into_call_tool_result(self) -> Result<CallToolResult, crate::ErrorData> {
+    fn into_call_tool_result(self) -> Result<CallToolResponse, crate::ErrorData> {
+        Ok(self.into())
+    }
+}
+
+impl IntoCallToolResult for InputRequiredResult {
+    fn into_call_tool_result(self) -> Result<CallToolResponse, crate::ErrorData> {
+        Ok(self.into())
+    }
+}
+
+impl IntoCallToolResult for CallToolResponse {
+    fn into_call_tool_result(self) -> Result<CallToolResponse, crate::ErrorData> {
         Ok(self)
     }
 }
 
 impl IntoCallToolResult for crate::ErrorData {
-    fn into_call_tool_result(self) -> Result<CallToolResult, crate::ErrorData> {
+    fn into_call_tool_result(self) -> Result<CallToolResponse, crate::ErrorData> {
         Err(self)
     }
 }
 
 impl<T: IntoCallToolResult, E: IntoCallToolResult> IntoCallToolResult for Result<T, E> {
-    fn into_call_tool_result(self) -> Result<CallToolResult, crate::ErrorData> {
+    fn into_call_tool_result(self) -> Result<CallToolResponse, crate::ErrorData> {
         match self {
             Ok(value) => value.into_call_tool_result(),
             Err(error) => match error.into_call_tool_result() {
-                Ok(mut result) => {
+                Ok(CallToolResponse::Complete(mut result)) => {
                     result.is_error = Some(true);
-                    Ok(result)
+                    Ok(result.into())
                 }
+                Ok(CallToolResponse::InputRequired(_)) => Err(crate::ErrorData::internal_error(
+                    "InputRequiredResult cannot be returned from a tool error branch",
+                    None,
+                )),
+                Ok(CallToolResponse::Task(_)) => Err(crate::ErrorData::internal_error(
+                    "CreateTaskResult cannot be returned from a tool error branch",
+                    None,
+                )),
                 Err(e) => Err(e),
             },
         }
@@ -123,7 +156,7 @@ pin_project_lite::pin_project! {
         },
         Ready {
             #[pin]
-            result: Ready<Result<CallToolResult, crate::ErrorData>>,
+            result: Ready<Result<CallToolResponse, crate::ErrorData>>,
         }
     }
 }
@@ -133,7 +166,7 @@ where
     F: Future<Output = R>,
     R: IntoCallToolResult,
 {
-    type Output = Result<CallToolResult, crate::ErrorData>;
+    type Output = Result<CallToolResponse, crate::ErrorData>;
 
     fn poll(
         self: std::pin::Pin<&mut Self>,
@@ -152,20 +185,21 @@ pub trait CallToolHandler<S, A> {
     fn call(
         self,
         context: ToolCallContext<'_, S>,
-    ) -> MaybeBoxFuture<'_, Result<CallToolResult, crate::ErrorData>>;
+    ) -> MaybeBoxFuture<'_, Result<CallToolResponse, crate::ErrorData>>;
 }
 
 #[cfg(not(feature = "local"))]
-pub type DynCallToolHandler<S> = dyn for<'s> Fn(ToolCallContext<'s, S>) -> BoxFuture<'s, Result<CallToolResult, crate::ErrorData>>
+pub type DynCallToolHandler<S> = dyn for<'s> Fn(ToolCallContext<'s, S>) -> BoxFuture<'s, Result<CallToolResponse, crate::ErrorData>>
     + Send
     + Sync;
 
 #[cfg(feature = "local")]
-pub type DynCallToolHandler<S> =
-    dyn for<'s> Fn(
-        ToolCallContext<'s, S>,
-    )
-        -> futures::future::LocalBoxFuture<'s, Result<CallToolResult, crate::ErrorData>>;
+pub type DynCallToolHandler<S> = dyn for<'s> Fn(
+    ToolCallContext<'s, S>,
+) -> futures::future::LocalBoxFuture<
+    's,
+    Result<CallToolResponse, crate::ErrorData>,
+>;
 
 // Tool-specific extractor for tool name
 #[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
@@ -174,6 +208,26 @@ pub struct ToolName(pub Cow<'static, str>);
 impl<S> FromContextPart<ToolCallContext<'_, S>> for ToolName {
     fn from_context_part(context: &mut ToolCallContext<S>) -> Result<Self, crate::ErrorData> {
         Ok(Self(context.name.clone()))
+    }
+}
+
+/// Extracts the opaque state returned by the server during the previous MRTR round.
+#[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
+pub struct RequestState(pub Option<String>);
+
+impl<S> FromContextPart<ToolCallContext<'_, S>> for RequestState {
+    fn from_context_part(context: &mut ToolCallContext<S>) -> Result<Self, crate::ErrorData> {
+        Ok(Self(context.request_state.take()))
+    }
+}
+
+/// Extracts client responses to input requests from the previous MRTR round.
+#[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
+pub struct InputResponses(pub Option<crate::model::InputResponses>);
+
+impl<S> FromContextPart<ToolCallContext<'_, S>> for InputResponses {
+    fn from_context_part(context: &mut ToolCallContext<S>) -> Result<Self, crate::ErrorData> {
+        Ok(Self(context.input_responses.take()))
     }
 }
 
@@ -204,7 +258,10 @@ impl<S> FromContextPart<ToolCallContext<'_, S>> for JsonObject {
 }
 
 impl<'s, S> ToolCallContext<'s, S> {
-    pub fn invoke<H, A>(self, h: H) -> MaybeBoxFuture<'s, Result<CallToolResult, crate::ErrorData>>
+    pub fn invoke<H, A>(
+        self,
+        h: H,
+    ) -> MaybeBoxFuture<'s, Result<CallToolResponse, crate::ErrorData>>
     where
         H: CallToolHandler<S, A>,
     {
@@ -247,7 +304,7 @@ macro_rules! impl_for {
             fn call(
                 self,
                 mut context: ToolCallContext<'_, S>,
-            ) -> MaybeBoxFuture<'_, Result<CallToolResult, crate::ErrorData>>{
+            ) -> MaybeBoxFuture<'_, Result<CallToolResponse, crate::ErrorData>>{
                 $(
                     let result = $Tn::from_context_part(&mut context);
                     let $Tn = match result {
@@ -278,7 +335,7 @@ macro_rules! impl_for {
             fn call(
                 self,
                 mut context: ToolCallContext<S>,
-            ) -> MaybeBoxFuture<'static, Result<CallToolResult, crate::ErrorData>>{
+            ) -> MaybeBoxFuture<'static, Result<CallToolResponse, crate::ErrorData>>{
                 $(
                     let result = $Tn::from_context_part(&mut context);
                     let $Tn = match result {
@@ -307,7 +364,7 @@ macro_rules! impl_for {
             fn call(
                 self,
                 mut context: ToolCallContext<S>,
-            ) -> MaybeBoxFuture<'static, Result<CallToolResult, crate::ErrorData>> {
+            ) -> MaybeBoxFuture<'static, Result<CallToolResponse, crate::ErrorData>> {
                 $(
                     let result = $Tn::from_context_part(&mut context);
                     let $Tn = match result {
@@ -332,7 +389,7 @@ macro_rules! impl_for {
             fn call(
                 self,
                 mut context: ToolCallContext<S>,
-            ) -> MaybeBoxFuture<'static, Result<CallToolResult, crate::ErrorData>>  {
+            ) -> MaybeBoxFuture<'static, Result<CallToolResponse, crate::ErrorData>>  {
                 $(
                     let result = $Tn::from_context_part(&mut context);
                     let $Tn = match result {

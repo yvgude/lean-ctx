@@ -36,7 +36,7 @@ tokio::task_local! {
 ///
 /// The same read takes the presenter capability the host showed, if any
 /// ([`HOST_PRESENTER_META_KEY`]); see [`HostCall`].
-pub(super) fn host_call_id(meta: Option<&rmcp::model::Meta>) -> HostCall {
+pub(super) fn host_call_id(meta: Option<&rmcp::model::RequestMetaObject>) -> HostCall {
     HostCall {
         call_id: meta_text(meta, HOST_CALL_ID_META_KEY)
             .filter(|call_id| delivered::valid_call_id(call_id))
@@ -46,7 +46,10 @@ pub(super) fn host_call_id(meta: Option<&rmcp::model::Meta>) -> HostCall {
 }
 
 /// The string under exactly `key`; no other key, no other value form.
-fn meta_text<'meta>(meta: Option<&'meta rmcp::model::Meta>, key: &str) -> Option<&'meta str> {
+fn meta_text<'meta>(
+    meta: Option<&'meta rmcp::model::RequestMetaObject>,
+    key: &str,
+) -> Option<&'meta str> {
     meta?.0.get(key)?.as_str()
 }
 
@@ -108,8 +111,8 @@ pub(super) fn record_delivery(
 mod tests {
     use super::{HOST_CALL_ID_META_KEY, delivered, host_call_id, scoped};
 
-    fn meta(value: &serde_json::Value) -> rmcp::model::Meta {
-        let mut meta = rmcp::model::Meta::new();
+    fn meta(value: &serde_json::Value) -> rmcp::model::RequestMetaObject {
+        let mut meta = rmcp::model::RequestMetaObject::new();
         meta.0
             .insert(HOST_CALL_ID_META_KEY.to_owned(), value.clone());
         meta
@@ -121,13 +124,17 @@ mod tests {
     fn only_a_well_formed_string_under_the_one_key_is_an_id() {
         let id = serde_json::json!("toolu_01AbC-9");
         // The call id is one part of what the host says about a call.
-        let host_call_id = |meta: Option<&rmcp::model::Meta>| super::host_call_id(meta).call_id;
+        let host_call_id =
+            |meta: Option<&rmcp::model::RequestMetaObject>| super::host_call_id(meta).call_id;
         assert_eq!(
             host_call_id(Some(&meta(&id))).as_deref(),
             Some("toolu_01AbC-9")
         );
         assert_eq!(host_call_id(None), None);
-        assert_eq!(host_call_id(Some(&rmcp::model::Meta::new())), None);
+        assert_eq!(
+            host_call_id(Some(&rmcp::model::RequestMetaObject::new())),
+            None
+        );
         for refused in [
             serde_json::json!(""),
             serde_json::json!("has space"),
@@ -138,14 +145,14 @@ mod tests {
         ] {
             assert_eq!(host_call_id(Some(&meta(&refused))), None, "{refused}");
         }
-        let mut other_key = rmcp::model::Meta::new();
+        let mut other_key = rmcp::model::RequestMetaObject::new();
         other_key.0.insert("toolUseId".to_owned(), id);
         assert_eq!(host_call_id(Some(&other_key)), None);
 
         // The presenter capability: its own key, a well-formed value, and
         // never visible in what the read formats to.
         let wire = format!("lcp1_{}", "5a".repeat(32));
-        let mut shown = rmcp::model::Meta::new();
+        let mut shown = rmcp::model::RequestMetaObject::new();
         shown.0.insert(
             super::HOST_PRESENTER_META_KEY.to_owned(),
             serde_json::json!(wire),
@@ -191,12 +198,15 @@ mod tests {
         let wire: rmcp::model::CallToolRequest =
             serde_json::from_value(serde_json::json!({"method": "tools/call", "params": params}))
                 .expect("a tools/call request");
-        let transported = wire.extensions.get::<rmcp::model::Meta>().cloned();
+        let transported = wire
+            .extensions
+            .get::<rmcp::model::RequestMetaObject>()
+            .cloned();
         let mut request = wire.params;
         if let Some(transported) = transported {
             request
                 .meta
-                .get_or_insert_with(rmcp::model::Meta::new)
+                .get_or_insert_with(rmcp::model::RequestMetaObject::new)
                 .extend(transported);
         }
         let call_id = host_call_id(request.meta.as_ref());

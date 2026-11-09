@@ -274,7 +274,7 @@ async fn auth_token_blocks_requests_without_bearer_header() {
         ))
     };
     let cfg = StreamableHttpServerConfig::default()
-        .with_stateful_mode(false)
+        .with_legacy_session_mode(false)
         .with_json_response(true);
 
     let mcp_http = StreamableHttpService::new(

@@ -13,12 +13,14 @@
 //!
 //! * [`local::LocalSessionManager`] — in-memory session store (default).
 //! * [`never::NeverSessionManager`] — rejects all session operations, used
-//!   when stateful mode is disabled.
+//!   when legacy session mode is disabled.
 //!
 //! # Custom session managers
 //!
 //! Implement the [`SessionManager`] trait to back sessions with a database,
 //! Redis, or any other external store.
+
+use std::sync::Arc;
 
 use futures::Stream;
 
@@ -32,7 +34,10 @@ pub mod local;
 pub mod never;
 pub mod store;
 
-pub use store::{SessionState, SessionStore, SessionStoreError};
+pub use store::{
+    EventId, EventStore, EventStoreError, EventStream, SessionState, SessionStore,
+    SessionStoreError, StreamId,
+};
 
 /// Extension marker inserted into the `initialize` request extensions during a
 /// session restore replay. Handlers can check for its presence to distinguish a
@@ -72,6 +77,16 @@ pub enum RestoreOutcome<T> {
 /// trait for every HTTP request that carries (or should carry) a session ID.
 ///
 /// See the [module-level docs](self) for background on sessions.
+///
+/// # SEP-2260 request association
+///
+/// Server-initiated requests issued while handling a client request carry an
+/// [`OriginatingRequestId`](crate::service::OriginatingRequestId) marker in
+/// their non-serialized `Extensions`; the bundled local session manager uses
+/// it to deliver such requests on the originating request's SSE stream.
+/// Implementations that serialize messages between processes lose the marker
+/// and fall back to the standalone stream, violating SEP-2260 for 2026-07-28+
+/// clients; they need their own association mechanism.
 pub trait SessionManager: Send + Sync + 'static {
     type Error: std::error::Error + Send + 'static;
     type Transport: crate::transport::Transport<RoleServer>;
@@ -150,5 +165,10 @@ pub trait SessionManager: Send + Sync + 'static {
         _id: SessionId,
     ) -> impl Future<Output = Result<RestoreOutcome<Self::Transport>, Self::Error>> + Send {
         futures::future::ready(Ok(RestoreOutcome::NotSupported))
+    }
+
+    /// Return the shared event store used for resumable SSE streams.
+    fn event_store(&self) -> Option<Arc<dyn EventStore>> {
+        None
     }
 }

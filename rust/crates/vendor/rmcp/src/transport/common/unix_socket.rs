@@ -1,20 +1,26 @@
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use bytes::Bytes;
-use futures::{StreamExt, stream::BoxStream};
+use futures::{TryStreamExt, stream::BoxStream};
 use http::{HeaderName, HeaderValue, Method, Request, StatusCode, header::WWW_AUTHENTICATE};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper_util::rt::TokioIo;
-use sse_stream::{Sse, SseStream};
+use sse_stream::Sse;
 use tokio::net::UnixStream;
 
 use crate::{
     model::{ClientJsonRpcMessage, ServerJsonRpcMessage},
     transport::{
-        common::http_header::{
-            EVENT_STREAM_MIME_TYPE, HEADER_LAST_EVENT_ID, HEADER_SESSION_ID, JSON_MIME_TYPE,
-            extract_scope_from_header, validate_custom_header,
+        common::{
+            client_side_http::{
+                MAX_ERROR_RESPONSE_SIZE, MAX_JSON_RESPONSE_SIZE, read_bounded_body,
+            },
+            client_side_sse::{DEFAULT_MAX_SSE_EVENT_SIZE, bounded_sse_stream},
+            http_header::{
+                EVENT_STREAM_MIME_TYPE, HEADER_LAST_EVENT_ID, HEADER_SESSION_ID, JSON_MIME_TYPE,
+                extract_scope_from_header, validate_custom_header,
+            },
         },
         streamable_http_client::*,
     },
@@ -169,6 +175,26 @@ impl StreamableHttpClient for UnixSocketHttpClient {
         auth_token: Option<String>,
         custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
+        self.post_message_with_max_sse_event_size(
+            uri,
+            message,
+            session_id,
+            auth_token,
+            custom_headers,
+            DEFAULT_MAX_SSE_EVENT_SIZE,
+        )
+        .await
+    }
+
+    async fn post_message_with_max_sse_event_size(
+        &self,
+        uri: Arc<str>,
+        message: ClientJsonRpcMessage,
+        session_id: Option<Arc<str>>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+        max_sse_event_size: usize,
+    ) -> Result<StreamableHttpPostResponse, StreamableHttpError<Self::Error>> {
         let json_body = serde_json::to_string(&message)
             .map_err(|e| StreamableHttpError::Client(UnixSocketError::Json(e)))?;
 
@@ -203,37 +229,37 @@ impl StreamableHttpClient for UnixSocketHttpClient {
 
         let status = response.status();
 
-        if status == StatusCode::UNAUTHORIZED {
-            if let Some(header) = response.headers().get(WWW_AUTHENTICATE) {
-                let www_authenticate_header = header
-                    .to_str()
-                    .map_err(|_| {
-                        StreamableHttpError::UnexpectedServerResponse(Cow::from(
-                            "invalid www-authenticate header value",
-                        ))
-                    })?
-                    .to_string();
-                return Err(StreamableHttpError::AuthRequired(AuthRequiredError {
-                    www_authenticate_header,
-                }));
-            }
-        }
-
-        if status == StatusCode::FORBIDDEN {
-            if let Some(header) = response.headers().get(WWW_AUTHENTICATE) {
-                let header_str = header.to_str().map_err(|_| {
+        if status == StatusCode::UNAUTHORIZED
+            && let Some(header) = response.headers().get(WWW_AUTHENTICATE)
+        {
+            let www_authenticate_header = header
+                .to_str()
+                .map_err(|_| {
                     StreamableHttpError::UnexpectedServerResponse(Cow::from(
                         "invalid www-authenticate header value",
                     ))
-                })?;
-                let scope = extract_scope_from_header(header_str);
-                return Err(StreamableHttpError::InsufficientScope(
-                    InsufficientScopeError {
-                        www_authenticate_header: header_str.to_string(),
-                        required_scope: scope,
-                    },
-                ));
-            }
+                })?
+                .to_string();
+            return Err(StreamableHttpError::AuthRequired(AuthRequiredError {
+                www_authenticate_header,
+            }));
+        }
+
+        if status == StatusCode::FORBIDDEN
+            && let Some(header) = response.headers().get(WWW_AUTHENTICATE)
+        {
+            let header_str = header.to_str().map_err(|_| {
+                StreamableHttpError::UnexpectedServerResponse(Cow::from(
+                    "invalid www-authenticate header value",
+                ))
+            })?;
+            let scope = extract_scope_from_header(header_str);
+            return Err(StreamableHttpError::InsufficientScope(
+                InsufficientScopeError {
+                    www_authenticate_header: header_str.to_string(),
+                    required_scope: scope,
+                },
+            ));
         }
 
         if matches!(status, StatusCode::ACCEPTED | StatusCode::NO_CONTENT) {
@@ -244,24 +270,37 @@ impl StreamableHttpClient for UnixSocketHttpClient {
             return Err(StreamableHttpError::SessionExpired);
         }
 
+        let content_length = response
+            .headers()
+            .get(http::header::CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
         if !status.is_success() {
-            let body = response
-                .into_body()
-                .collect()
-                .await
-                .map(|c| String::from_utf8_lossy(&c.to_bytes()).into_owned())
-                .unwrap_or_else(|_| "<failed to read response body>".to_owned());
+            let body = match read_bounded_body(
+                response
+                    .into_body()
+                    .into_data_stream()
+                    .map_err(UnixSocketError::Hyper),
+                content_length,
+                MAX_ERROR_RESPONSE_SIZE,
+            )
+            .await
+            {
+                Ok(body) => String::from_utf8_lossy(&body).into_owned(),
+                Err(error @ StreamableHttpError::ResponseBodyTooLarge { .. }) => return Err(error),
+                Err(_) => "<failed to read response body>".to_owned(),
+            };
+            if let Some(response) =
+                legacy_discover_response(&message, session_was_attached, status, &body)
+            {
+                return Ok(response);
+            }
             return Err(StreamableHttpError::UnexpectedServerResponse(Cow::Owned(
                 format!("HTTP {status}: {body}"),
             )));
         }
 
         let content_type = response.headers().get(http::header::CONTENT_TYPE).cloned();
-        let content_length = response
-            .headers()
-            .get(http::header::CONTENT_LENGTH)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<u64>().ok());
         let session_id = response
             .headers()
             .get(HEADER_SESSION_ID)
@@ -282,24 +321,38 @@ impl StreamableHttpClient for UnixSocketHttpClient {
 
         match content_type {
             Some(ref ct) if ct.as_bytes().starts_with(EVENT_STREAM_MIME_TYPE.as_bytes()) => {
-                let sse_stream = SseStream::new(response.into_body()).boxed();
+                let sse_stream =
+                    bounded_sse_stream(response.into_body().into_data_stream(), max_sse_event_size);
                 Ok(StreamableHttpPostResponse::Sse(sse_stream, session_id))
             }
             Some(ref ct) if ct.as_bytes().starts_with(JSON_MIME_TYPE.as_bytes()) => {
-                let body = response
-                    .into_body()
-                    .collect()
-                    .await
-                    .map_err(|e| StreamableHttpError::Client(UnixSocketError::Hyper(e)))?
-                    .to_bytes();
+                let body = read_bounded_body(
+                    response
+                        .into_body()
+                        .into_data_stream()
+                        .map_err(UnixSocketError::Hyper),
+                    content_length,
+                    MAX_JSON_RESPONSE_SIZE,
+                )
+                .await?;
                 match serde_json::from_slice::<ServerJsonRpcMessage>(&body) {
-                    Ok(message) => Ok(StreamableHttpPostResponse::Json(message, session_id)),
-                    Err(e) => {
+                    Ok(parsed) => Ok(StreamableHttpPostResponse::Json(parsed, session_id)),
+                    Err(e)
+                        if matches!(
+                            message,
+                            ClientJsonRpcMessage::Notification(_)
+                                | ClientJsonRpcMessage::Response(_)
+                                | ClientJsonRpcMessage::Error(_)
+                        ) =>
+                    {
                         tracing::warn!(
                             "could not parse JSON response as ServerJsonRpcMessage, treating as accepted: {e}"
                         );
                         Ok(StreamableHttpPostResponse::Accepted)
                     }
+                    Err(e) => Err(StreamableHttpError::UnexpectedServerResponse(Cow::Owned(
+                        json_rpc_parse_error_message(&e, &body),
+                    ))),
                 }
             }
             _ => Err(StreamableHttpError::UnexpectedContentType(
@@ -352,10 +405,31 @@ impl StreamableHttpClient for UnixSocketHttpClient {
     async fn get_stream(
         &self,
         uri: Arc<str>,
-        session_id: Arc<str>,
+        session_id: Option<Arc<str>>,
         last_event_id: Option<String>,
         auth_token: Option<String>,
         custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<BoxStream<'static, Result<Sse, sse_stream::Error>>, StreamableHttpError<Self::Error>>
+    {
+        self.get_stream_with_max_sse_event_size(
+            uri,
+            session_id,
+            last_event_id,
+            auth_token,
+            custom_headers,
+            DEFAULT_MAX_SSE_EVENT_SIZE,
+        )
+        .await
+    }
+
+    async fn get_stream_with_max_sse_event_size(
+        &self,
+        uri: Arc<str>,
+        session_id: Option<Arc<str>>,
+        last_event_id: Option<String>,
+        auth_token: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+        max_sse_event_size: usize,
     ) -> Result<BoxStream<'static, Result<Sse, sse_stream::Error>>, StreamableHttpError<Self::Error>>
     {
         let mut builder = Request::builder()
@@ -365,8 +439,11 @@ impl StreamableHttpClient for UnixSocketHttpClient {
             .header(
                 http::header::ACCEPT,
                 format!("{EVENT_STREAM_MIME_TYPE}, {JSON_MIME_TYPE}"),
-            )
-            .header(HEADER_SESSION_ID, session_id.as_ref());
+            );
+
+        if let Some(session_id) = session_id {
+            builder = builder.header(HEADER_SESSION_ID, session_id.as_ref());
+        }
 
         if let Some(last_id) = last_event_id {
             builder = builder.header(HEADER_LAST_EVENT_ID, last_id);
@@ -390,37 +467,37 @@ impl StreamableHttpClient for UnixSocketHttpClient {
             return Err(StreamableHttpError::ServerDoesNotSupportSse);
         }
 
-        if response.status() == StatusCode::UNAUTHORIZED {
-            if let Some(header) = response.headers().get(WWW_AUTHENTICATE) {
-                let www_authenticate_header = header
-                    .to_str()
-                    .map_err(|_| {
-                        StreamableHttpError::UnexpectedServerResponse(Cow::from(
-                            "invalid www-authenticate header value",
-                        ))
-                    })?
-                    .to_string();
-                return Err(StreamableHttpError::AuthRequired(AuthRequiredError {
-                    www_authenticate_header,
-                }));
-            }
-        }
-
-        if response.status() == StatusCode::FORBIDDEN {
-            if let Some(header) = response.headers().get(WWW_AUTHENTICATE) {
-                let header_str = header.to_str().map_err(|_| {
+        if response.status() == StatusCode::UNAUTHORIZED
+            && let Some(header) = response.headers().get(WWW_AUTHENTICATE)
+        {
+            let www_authenticate_header = header
+                .to_str()
+                .map_err(|_| {
                     StreamableHttpError::UnexpectedServerResponse(Cow::from(
                         "invalid www-authenticate header value",
                     ))
-                })?;
-                let scope = extract_scope_from_header(header_str);
-                return Err(StreamableHttpError::InsufficientScope(
-                    InsufficientScopeError {
-                        www_authenticate_header: header_str.to_string(),
-                        required_scope: scope,
-                    },
-                ));
-            }
+                })?
+                .to_string();
+            return Err(StreamableHttpError::AuthRequired(AuthRequiredError {
+                www_authenticate_header,
+            }));
+        }
+
+        if response.status() == StatusCode::FORBIDDEN
+            && let Some(header) = response.headers().get(WWW_AUTHENTICATE)
+        {
+            let header_str = header.to_str().map_err(|_| {
+                StreamableHttpError::UnexpectedServerResponse(Cow::from(
+                    "invalid www-authenticate header value",
+                ))
+            })?;
+            let scope = extract_scope_from_header(header_str);
+            return Err(StreamableHttpError::InsufficientScope(
+                InsufficientScopeError {
+                    www_authenticate_header: header_str.to_string(),
+                    required_scope: scope,
+                },
+            ));
         }
 
         if !response.status().is_success() {
@@ -444,7 +521,10 @@ impl StreamableHttpClient for UnixSocketHttpClient {
             }
         }
 
-        Ok(SseStream::new(response.into_body()).boxed())
+        Ok(bounded_sse_stream(
+            response.into_body().into_data_stream(),
+            max_sse_event_size,
+        ))
     }
 }
 

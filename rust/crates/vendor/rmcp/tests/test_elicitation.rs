@@ -90,7 +90,7 @@ async fn test_elicitation_request_param_serialization() {
             assert_eq!(msg1, msg2);
             assert_eq!(schema1, schema2);
         }
-        _ => panic!("Expected FormElicitationParam variant"),
+        _ => panic!("Expected FormElicitationParams variant"),
     }
 }
 
@@ -125,7 +125,7 @@ async fn test_elicitation_result_serialization() {
     assert_eq!(deserialized.meta, None);
 
     // Test protocol-level metadata round-trips as _meta.
-    let meta_result = ElicitResult::new(ElicitationAction::Accept).with_meta(Meta(object!({
+    let meta_result = ElicitResult::new(ElicitationAction::Accept).with_meta(MetaObject(object!({
         "traceId": "elicitation-123"
     })));
 
@@ -139,7 +139,7 @@ async fn test_elicitation_result_serialization() {
     let deserialized: ElicitResult = serde_json::from_value(expected).unwrap();
     assert_eq!(
         deserialized.meta,
-        Some(Meta(object!({ "traceId": "elicitation-123" })))
+        Some(MetaObject(object!({ "traceId": "elicitation-123" })))
     );
 }
 
@@ -179,7 +179,7 @@ async fn test_elicitation_json_rpc_protocol() {
         ElicitRequestParams::FormElicitationParams { message, .. } => {
             assert_eq!(message, "Do you want to continue?");
         }
-        _ => panic!("Expected FormElicitationParam variant"),
+        _ => panic!("Expected FormElicitationParams variant"),
     }
 }
 
@@ -496,7 +496,7 @@ async fn test_elicitation_structured_schemas() {
                 ])
             );
         }
-        _ => panic!("Expected FormElicitationParam variant"),
+        _ => panic!("Expected FormElicitationParams variant"),
     }
 }
 
@@ -738,7 +738,7 @@ async fn test_elicitation_multi_select_enum() {
                 )
             }
         }
-        _ => panic!("Expected FormElicitationParam variant"),
+        _ => panic!("Expected FormElicitationParams variant"),
     }
 }
 
@@ -799,7 +799,7 @@ async fn test_elicitation_single_select_enum() {
                 )
             }
         }
-        _ => panic!("Expected FormElicitationParam variant"),
+        _ => panic!("Expected FormElicitationParams variant"),
     }
 }
 
@@ -1056,10 +1056,8 @@ async fn test_client_capabilities_with_elicitation() {
     assert!(capabilities_without.elicitation.is_none());
 }
 
-/// Test InitializeRequestParam with elicitation capability
 #[tokio::test]
 async fn test_initialize_request_with_elicitation() {
-    // Test InitializeRequestParam with elicitation capability
     let init_param = InitializeRequestParams::new(
         ClientCapabilities::builder()
             .enable_elicitation_with(
@@ -1829,7 +1827,7 @@ async fn test_url_elicitation_request_param_serialization() {
             assert_eq!(url, "https://example.com/verify");
             assert_eq!(elicitation_id, "elicit-123");
         }
-        _ => panic!("Expected UrlElicitationParam variant"),
+        _ => panic!("Expected UrlElicitationParams variant"),
     }
 }
 
@@ -1878,33 +1876,8 @@ async fn test_url_elicitation_json_rpc_protocol() {
             assert_eq!(url, "https://auth.example.com/authorize/abc123");
             assert_eq!(elicitation_id, "auth-request-456");
         }
-        _ => panic!("Expected UrlElicitationParam variant"),
+        _ => panic!("Expected UrlElicitationParams variant"),
     }
-}
-
-/// Test ElicitationCompleteNotification serialization/deserialization
-#[tokio::test]
-async fn test_elicitation_completion_notification() {
-    let notification_params = ElicitationResponseNotificationParam::new("elicit-789");
-
-    // Test serialization
-    let json = serde_json::to_value(&notification_params).unwrap();
-    let expected = json!({
-        "elicitationId": "elicit-789"
-    });
-    assert_eq!(json, expected);
-
-    // Test deserialization
-    let deserialized: ElicitationResponseNotificationParam =
-        serde_json::from_value(expected).unwrap();
-    assert_eq!(deserialized.elicitation_id, "elicit-789");
-
-    // Test complete notification structure
-    let notification = ElicitationCompleteNotification::new(notification_params);
-
-    let json = serde_json::to_value(&notification).unwrap();
-    assert_eq!(json["method"], "notifications/elicitation/complete");
-    assert_eq!(json["params"]["elicitationId"], "elicit-789");
 }
 
 /// Test UrlElicitationCapability structure and serialization
@@ -1952,7 +1925,6 @@ async fn test_url_elicitation_capability() {
 /// Test backward compatibility: ElicitRequestParams without mode tag
 #[tokio::test]
 async fn test_elicitation_backward_compatibility_no_mode() {
-    // JSON without "mode" field should deserialize as FormElicitationParam
     let json_without_mode = json!({
         "message": "Please enter your details",
         "requestedSchema": {
@@ -1978,7 +1950,7 @@ async fn test_elicitation_backward_compatibility_no_mode() {
             assert_eq!(requested_schema.properties.len(), 1);
             assert!(requested_schema.properties.contains_key("name"));
         }
-        _ => panic!("Expected FormElicitationParam for backward compatibility"),
+        _ => panic!("Expected FormElicitationParams for backward compatibility"),
     }
 }
 
@@ -2018,39 +1990,6 @@ async fn test_elicitation_both_modes() {
     assert!(url_json.get("url").is_some());
     assert!(url_json.get("elicitationId").is_some());
     assert!(url_json.get("requestedSchema").is_none());
-}
-
-/// Test URL_ELICITATION_REQUIRED error code
-#[tokio::test]
-async fn test_url_elicitation_required_error_code() {
-    // Test the error code constant
-    assert_eq!(ErrorCode::URL_ELICITATION_REQUIRED.0, -32042);
-
-    // Test creating error data with URL_ELICITATION_REQUIRED
-    let error_data = ErrorData::url_elicitation_required(
-        "URL elicitation is required for this operation",
-        Some(json!({
-            "url": "https://example.com/complete",
-            "elicitationId": "elicit-999"
-        })),
-    );
-
-    assert_eq!(error_data.code, ErrorCode::URL_ELICITATION_REQUIRED);
-    assert_eq!(
-        error_data.message,
-        "URL elicitation is required for this operation"
-    );
-    assert!(error_data.data.is_some());
-
-    // Test serialization
-    let json = serde_json::to_value(&error_data).unwrap();
-    assert_eq!(json["code"], -32042);
-    assert_eq!(
-        json["message"],
-        "URL elicitation is required for this operation"
-    );
-    assert_eq!(json["data"]["url"], "https://example.com/complete");
-    assert_eq!(json["data"]["elicitationId"], "elicit-999");
 }
 
 /// Test ClientCapabilities with different elicitation mode combinations
@@ -2102,32 +2041,6 @@ async fn test_client_capabilities_elicitation_modes() {
     assert!(json["elicitation"]["url"].is_object());
 }
 
-/// Test ElicitationCompleteNotification in ServerNotification enum
-#[tokio::test]
-async fn test_elicitation_completion_in_server_notification() {
-    let notification_param = ElicitationResponseNotificationParam::new("notify-123");
-
-    let completion_notification = ElicitationCompleteNotification::new(notification_param.clone());
-
-    // Test that it's part of ServerNotification
-    let server_notification =
-        ServerNotification::ElicitationCompleteNotification(completion_notification);
-
-    // Test serialization
-    let json = serde_json::to_value(&server_notification).unwrap();
-    assert_eq!(json["method"], "notifications/elicitation/complete");
-    assert_eq!(json["params"]["elicitationId"], "notify-123");
-
-    // Test deserialization
-    let deserialized: ServerNotification = serde_json::from_value(json).unwrap();
-    match deserialized {
-        ServerNotification::ElicitationCompleteNotification(notif) => {
-            assert_eq!(notif.params.elicitation_id, "notify-123");
-        }
-        _ => panic!("Expected ElicitationCompleteNotification variant"),
-    }
-}
-
 /// Test ElicitationAction with URL elicitation workflow
 #[tokio::test]
 async fn test_url_elicitation_action_workflow() {
@@ -2160,11 +2073,5 @@ async fn test_elicitation_method_constants() {
     assert_eq!(
         ElicitationResponseNotificationMethod::VALUE,
         "notifications/elicitation/response"
-    );
-
-    // Test new completion notification method
-    assert_eq!(
-        ElicitationCompletionNotificationMethod::VALUE,
-        "notifications/elicitation/complete"
     );
 }

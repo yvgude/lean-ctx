@@ -1,12 +1,13 @@
 // Sampling/Roots/Logging are SEP-2577-deprecated; internal references are expected.
 #![expect(deprecated)]
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use crate::{
     error::ErrorData as McpError,
-    model::{TaskSupport, *},
+    model::*,
     service::{
         MaybeSendFuture, NotificationContext, RequestContext, RoleServer, Service, ServiceRole,
+        SubscriptionContext, negotiate_protocol_version, uses_legacy_lifecycle,
     },
 };
 
@@ -18,6 +19,63 @@ pub mod tool;
 pub mod tool_name_validation;
 pub mod wrapper;
 
+/// SEP-2663: gate `tasks/*` methods on the client's declared tasks-extension
+/// capability.
+///
+/// - If the server does not advertise the tasks extension, the methods are
+///   simply unimplemented: `-32601` Method not found.
+/// - If the server advertises it but the client did not declare it (either in
+///   the request's `_meta` per-request capabilities or, for session-mode
+///   peers, at `initialize` time), the spec requires `-32021` Missing
+///   Required Client Capability with the required capability in `data`.
+fn validate_tasks_capability<M: ConstString, H: ServerHandler>(
+    handler: &H,
+    context: &RequestContext<RoleServer>,
+) -> Result<(), McpError> {
+    if !handler.get_info().capabilities.supports_tasks() {
+        return Err(McpError::method_not_found::<M>());
+    }
+    let client_declared = context
+        .client_capabilities()
+        .is_some_and(|caps| caps.supports_tasks());
+    if client_declared {
+        Ok(())
+    } else {
+        Err(McpError::missing_required_client_capability(
+            ClientCapabilities::builder().enable_tasks().build(),
+        ))
+    }
+}
+
+/// SEP-2640: `skills/*` are unimplemented (`-32601`) unless the server
+/// declares the skills extension; `resources/directory/read` also needs
+/// `directoryRead`.
+fn validate_skills_capability<M: ConstString, H: ServerHandler>(
+    handler: &H,
+    directory_read: bool,
+) -> Result<(), McpError> {
+    let capabilities = handler.get_info().capabilities;
+    let declared = if directory_read {
+        capabilities.supports_directory_read()
+    } else {
+        capabilities.supports_skills()
+    };
+    if !declared {
+        return Err(McpError::method_not_found::<M>());
+    }
+    if capabilities.resources.is_none() {
+        return Err(McpError::internal_error(
+            "the skills extension requires the resources capability",
+            None,
+        ));
+    }
+    Ok(())
+}
+
+fn invalid_handler_result(error: impl std::fmt::Display) -> McpError {
+    McpError::internal_error(format!("handler returned an invalid result: {error}"), None)
+}
+
 impl<H: ServerHandler> Service<RoleServer> for H {
     async fn handle_request(
         &self,
@@ -26,13 +84,66 @@ impl<H: ServerHandler> Service<RoleServer> for H {
     ) -> Result<<RoleServer as ServiceRole>::Resp, McpError> {
         // `context` is moved into the dispatch below, so read the negotiated version first.
         let protocol_version = context.protocol_version();
+        // ISO `YYYY-MM-DD` versions compare lexically the same as chronologically.
+        let is_2026_07_28_or_later = protocol_version
+            .as_ref()
+            .is_some_and(|v| v.as_str() >= ProtocolVersion::V_2026_07_28.as_str());
+        let requested_version = context.meta.protocol_version();
+        let uses_inline_negotiation = !matches!(&request, ClientRequest::InitializeRequest(_));
+        if uses_inline_negotiation && let Some(requested_version) = requested_version.as_ref() {
+            let supported_versions = self.supported_protocol_versions();
+            if !supported_versions.contains(requested_version) {
+                return Err(McpError::unsupported_protocol_version(
+                    requested_version.clone(),
+                    &supported_versions,
+                ));
+            }
+        }
+        // Self-contained metadata is required only when the request itself uses
+        // the inline lifecycle: a discover opener, a session that started without
+        // `initialize`, or a request that declares 2026-07-28+ in its own _meta.
+        // Sessions that negotiated via `initialize` (or `serve_directly`) keep the
+        // session model and may omit per-request metadata.
+        let requires_request_metadata = uses_inline_negotiation
+            && (matches!(&request, ClientRequest::DiscoverRequest(_))
+                || context.peer.request_metadata_required()
+                || requested_version.as_ref().is_some_and(|version| {
+                    version.as_str() >= ProtocolVersion::V_2026_07_28.as_str()
+                }));
+        if requires_request_metadata {
+            // Inline lifecycle requests are defined by the 2026-07-28 protocol.
+            // Validate that lifecycle contract even when a request selects an
+            // older application protocol version.
+            let missing = context
+                .meta
+                .missing_required_keys(&ProtocolVersion::V_2026_07_28);
+            if !missing.is_empty() {
+                return Err(McpError::invalid_params(
+                    format!(
+                        "request _meta is missing or has malformed required fields: {}",
+                        missing.join(", ")
+                    ),
+                    None,
+                ));
+            }
+        }
+        let legacy_request =
+            uses_legacy_lifecycle(protocol_version.as_ref(), requires_request_metadata);
         let result = match request {
             ClientRequest::InitializeRequest(request) => self
                 .initialize(request.params, context)
                 .await
                 .map(ServerResult::InitializeResult),
+            ClientRequest::DiscoverRequest(_request) => self
+                .discover(context)
+                .await
+                .map(ServerResult::DiscoverResult),
             ClientRequest::PingRequest(_request) => {
-                self.ping(context).await.map(ServerResult::empty)
+                if !legacy_request {
+                    Err(McpError::method_not_found::<PingRequestMethod>())
+                } else {
+                    self.ping(context).await.map(ServerResult::empty)
+                }
             }
             ClientRequest::CompleteRequest(request) => self
                 .complete(request.params, context)
@@ -45,7 +156,7 @@ impl<H: ServerHandler> Service<RoleServer> for H {
             ClientRequest::GetPromptRequest(request) => self
                 .get_prompt(request.params, context)
                 .await
-                .map(ServerResult::GetPromptResult),
+                .map(ServerResult::from),
             ClientRequest::ListPromptsRequest(request) => self
                 .list_prompts(request.params, context)
                 .await
@@ -61,51 +172,78 @@ impl<H: ServerHandler> Service<RoleServer> for H {
             ClientRequest::ReadResourceRequest(request) => self
                 .read_resource(request.params, context)
                 .await
-                .map(ServerResult::ReadResourceResult),
-            ClientRequest::SubscribeRequest(request) => self
-                .subscribe(request.params, context)
-                .await
-                .map(ServerResult::empty),
-            ClientRequest::UnsubscribeRequest(request) => self
-                .unsubscribe(request.params, context)
-                .await
-                .map(ServerResult::empty),
-            ClientRequest::CallToolRequest(request) => {
-                let is_task = request.params.task.is_some();
-
-                // Validate task support mode per MCP specification
-                if let Some(tool) = self.get_tool(&request.params.name) {
-                    match (tool.task_support(), is_task) {
-                        // If taskSupport is "required", clients MUST invoke the tool as a task.
-                        // Servers MUST return a -32601 (Method not found) error if they don't.
-                        (TaskSupport::Required, false) => {
-                            return Err(McpError::new(
-                                ErrorCode::METHOD_NOT_FOUND,
-                                "Tool requires task-based invocation",
-                                None,
-                            ));
-                        }
-                        // If taskSupport is "forbidden" (default), clients MUST NOT invoke as a task.
-                        (TaskSupport::Forbidden, true) => {
-                            return Err(McpError::invalid_params(
-                                "Tool does not support task-based invocation",
-                                None,
-                            ));
-                        }
-                        _ => {}
-                    }
-                }
-
-                if is_task {
-                    tracing::info!("Enqueueing task for tool call: {}", request.params.name);
-                    self.enqueue_task(request.params, context.clone())
-                        .await
-                        .map(ServerResult::CreateTaskResult)
+                .map(ServerResult::from),
+            ClientRequest::SubscriptionsListenRequest(request) => {
+                if legacy_request {
+                    Err(McpError::method_not_found::<SubscriptionsListenRequestMethod>())
                 } else {
-                    self.call_tool(request.params, context)
-                        .await
-                        .map(ServerResult::CallToolResult)
+                    let requested = request.params.notifications;
+                    let Some(candidate) = self.accepted_subscription_filter(&requested) else {
+                        return Err(
+                            McpError::method_not_found::<SubscriptionsListenRequestMethod>(),
+                        );
+                    };
+                    let server_info = self.get_info();
+                    let advertised = requested.supported_by(&server_info.capabilities);
+                    let handler_accepted = requested.intersection(&candidate);
+                    let accepted = handler_accepted.intersection(&advertised);
+                    if accepted != handler_accepted {
+                        tracing::debug!(
+                            requested_resource_count = requested
+                                .resource_subscriptions
+                                .as_ref()
+                                .map_or(0, Vec::len),
+                            accepted_resource_count =
+                                accepted.resource_subscriptions.as_ref().map_or(0, Vec::len),
+                            "subscription filter reduced to advertised server capabilities"
+                        );
+                    }
+                    let server_implementation = server_info.server_info;
+                    let subscription_id = context.id.clone();
+                    let subscription =
+                        SubscriptionContext::establish(context, requested, accepted).await?;
+                    // The 2026-07-28 schema defines a final result for graceful
+                    // server teardown; explicit stdio cancellation remains a notification.
+                    self.listen(subscription).await.map(|()| {
+                        let mut result = SubscriptionsListenResult::complete(subscription_id);
+                        result.meta.set_server_info(server_implementation);
+                        ServerResult::SubscriptionsListenResult(result)
+                    })
                 }
+            }
+            ClientRequest::SubscribeRequest(request) => {
+                if !legacy_request {
+                    Err(McpError::method_not_found::<SubscribeRequestMethod>())
+                } else {
+                    self.subscribe(request.params, context)
+                        .await
+                        .map(ServerResult::empty)
+                }
+            }
+            ClientRequest::UnsubscribeRequest(request) => {
+                if !legacy_request {
+                    Err(McpError::method_not_found::<UnsubscribeRequestMethod>())
+                } else {
+                    self.unsubscribe(request.params, context)
+                        .await
+                        .map(ServerResult::empty)
+                }
+            }
+            ClientRequest::CallToolRequest(request) => {
+                let client_declared_tasks = context
+                    .client_capabilities()
+                    .is_some_and(|caps| caps.supports_tasks());
+                let response = self.call_tool(request.params, context).await?;
+                // SEP-2663: the server MUST NOT return CreateTaskResult unless
+                // the request declared the tasks extension capability. Guard
+                // against handlers that fail to check before materializing a
+                // task; such clients cannot parse a task handle.
+                if matches!(response, CallToolResponse::Task(_)) && !client_declared_tasks {
+                    return Err(McpError::missing_required_client_capability(
+                        ClientCapabilities::builder().enable_tasks().build(),
+                    ));
+                }
+                Ok(ServerResult::from(response))
             }
             ClientRequest::ListToolsRequest(request) => self
                 .list_tools(request.params, context)
@@ -115,30 +253,78 @@ impl<H: ServerHandler> Service<RoleServer> for H {
                 .on_custom_request(request, context)
                 .await
                 .map(ServerResult::CustomResult),
-            ClientRequest::ListTasksRequest(request) => self
-                .list_tasks(request.params, context)
-                .await
-                .map(ServerResult::ListTasksResult),
-            ClientRequest::GetTaskRequest(request) => self
-                .get_task_info(request.params, context)
-                .await
-                .map(ServerResult::GetTaskResult),
-            ClientRequest::GetTaskPayloadRequest(request) => self
-                .get_task_result(request.params, context)
-                .await
-                .map(ServerResult::GetTaskPayloadResult),
-            ClientRequest::CancelTaskRequest(request) => self
-                .cancel_task(request.params, context)
-                .await
-                .map(ServerResult::CancelTaskResult),
+            ClientRequest::GetTaskRequest(request) => {
+                validate_tasks_capability::<GetTaskMethod, _>(self, &context)?;
+                self.get_task(request.params, context)
+                    .await
+                    .map(ServerResult::GetTaskResult)
+            }
+            ClientRequest::UpdateTaskRequest(request) => {
+                validate_tasks_capability::<UpdateTaskMethod, _>(self, &context)?;
+                self.update_task(request.params, context)
+                    .await
+                    .map(ServerResult::task_ack)
+            }
+            ClientRequest::CancelTaskRequest(request) => {
+                validate_tasks_capability::<CancelTaskMethod, _>(self, &context)?;
+                self.cancel_task(request.params, context)
+                    .await
+                    .map(ServerResult::task_ack)
+            }
+            ClientRequest::ListSkillsRequest(request) => {
+                validate_skills_capability::<ListSkillsRequestMethod, _>(self, false)?;
+                let result = self.list_skills(request.params, context).await?;
+                validate_skills(&result.skills).map_err(invalid_handler_result)?;
+                Ok(ServerResult::ListSkillsResult(result))
+            }
+            ClientRequest::GetSkillRequest(request) => {
+                validate_skills_capability::<GetSkillRequestMethod, _>(self, false)?;
+                if skill_name_from_uri(&request.params.uri).is_none() {
+                    return Err(McpError::invalid_params(
+                        format!("{} is not the uri of a SKILL.md", request.params.uri),
+                        None,
+                    ));
+                }
+                let uri = request.params.uri.clone();
+                let result = self.get_skill(request.params, context).await?;
+                if result.skill.uri != uri {
+                    return Err(invalid_handler_result(format_args!(
+                        "skill uri {} does not match the request {uri}",
+                        result.skill.uri
+                    )));
+                }
+                result.skill.validate().map_err(invalid_handler_result)?;
+                Ok(ServerResult::GetSkillResult(result))
+            }
+            ClientRequest::ReadResourceDirectoryRequest(request) => {
+                validate_skills_capability::<ReadResourceDirectoryRequestMethod, _>(self, true)?;
+                self.read_resource_directory(request.params, context)
+                    .await
+                    .map(ServerResult::ListResourcesResult)
+            }
         };
-        // SEP-2164: peers negotiating 2026-07-28+ get the standard INVALID_PARAMS code for
-        // resource-not-found; older peers keep RESOURCE_NOT_FOUND. ISO `YYYY-MM-DD` versions
-        // compare lexically the same as chronologically.
-        let use_invalid_params =
-            protocol_version.is_some_and(|v| v.as_str() >= ProtocolVersion::V_2026_07_28.as_str());
+        let result = result.and_then(|mut result| {
+            if matches!(result, ServerResult::InputRequiredResult(_)) && !is_2026_07_28_or_later {
+                Err(McpError::invalid_request(
+                    "InputRequiredResult requires negotiated protocol version 2026-07-28 or newer",
+                    None,
+                ))
+            } else {
+                // 2026-07-28 requires caching hints on cacheable results; older
+                // peers keep the legacy shape without `resultType: "complete"`.
+                if is_2026_07_28_or_later {
+                    result.fill_missing_cache_hints();
+                } else {
+                    result.strip_result_type_for_legacy_peer();
+                }
+                Ok(result)
+            }
+        });
+
+        // Peers on 2026-07-28+ get the standard INVALID_PARAMS code for
+        // resource-not-found; older peers keep RESOURCE_NOT_FOUND.
         result.map_err(|mut error| {
-            if use_invalid_params && error.code == ErrorCode::RESOURCE_NOT_FOUND {
+            if is_2026_07_28_or_later && error.code == ErrorCode::RESOURCE_NOT_FOUND {
                 error.code = ErrorCode::INVALID_PARAMS;
             }
             error
@@ -163,9 +349,6 @@ impl<H: ServerHandler> Service<RoleServer> for H {
             ClientNotification::RootsListChangedNotification(_notification) => {
                 self.on_roots_list_changed(context).await
             }
-            ClientNotification::TaskStatusNotification(notification) => {
-                self.on_task_status(notification.params, context).await
-            }
             ClientNotification::CustomNotification(notification) => {
                 self.on_custom_notification(notification, context).await
             }
@@ -176,20 +359,14 @@ impl<H: ServerHandler> Service<RoleServer> for H {
     fn get_info(&self) -> <RoleServer as ServiceRole>::Info {
         self.get_info()
     }
+
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        ServerHandler::supported_protocol_versions(self)
+    }
 }
 
 macro_rules! server_handler_methods {
     () => {
-        fn enqueue_task(
-            &self,
-            _request: CallToolRequestParams,
-            _context: RequestContext<RoleServer>,
-        ) -> impl Future<Output = Result<CreateTaskResult, McpError>> + MaybeSendFuture + '_ {
-            std::future::ready(Err(McpError::internal_error(
-                "Task processing not implemented".to_string(),
-                None,
-            )))
-        }
         fn ping(
             &self,
             context: RequestContext<RoleServer>,
@@ -202,8 +379,84 @@ macro_rules! server_handler_methods {
             request: InitializeRequestParams,
             context: RequestContext<RoleServer>,
         ) -> impl Future<Output = Result<InitializeResult, McpError>> + MaybeSendFuture + '_ {
-            context.peer.set_peer_info(request);
-            std::future::ready(Ok(self.get_info()))
+            context.peer.set_peer_info(request.clone());
+            std::future::ready(self.negotiate_initialize(&request))
+        }
+        /// Build the `initialize` response for `request`, negotiating the
+        /// protocol version against [`Self::supported_protocol_versions`].
+        ///
+        /// This is the whole body of the default [`Self::initialize`] minus its
+        /// `set_peer_info` side effect, so a server that overrides `initialize`
+        /// to add its own can call this instead of restating the negotiation
+        /// rule:
+        ///
+        /// ```
+        /// use rmcp::{
+        ///     ErrorData as McpError, RoleServer, ServerHandler,
+        ///     model::{InitializeRequestParams, InitializeResult, ServerConfig},
+        ///     service::RequestContext,
+        /// };
+        ///
+        /// struct MyServer;
+        ///
+        /// impl ServerHandler for MyServer {
+        ///     fn get_info(&self) -> ServerConfig {
+        ///         ServerConfig::default()
+        ///     }
+        ///
+        ///     async fn initialize(
+        ///         &self,
+        ///         request: InitializeRequestParams,
+        ///         context: RequestContext<RoleServer>,
+        ///     ) -> Result<InitializeResult, McpError> {
+        ///         // ... record telemetry, register the peer, etc.
+        ///         context.peer.set_peer_info(request.clone());
+        ///         self.negotiate_initialize(&request)
+        ///     }
+        /// }
+        /// ```
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ErrorCode::UNSUPPORTED_PROTOCOL_VERSION`] when this server
+        /// supports no version that still has an `initialize` handshake.
+        ///
+        /// [`ErrorCode::UNSUPPORTED_PROTOCOL_VERSION`]: crate::model::ErrorCode::UNSUPPORTED_PROTOCOL_VERSION
+        fn negotiate_initialize(
+            &self,
+            request: &InitializeRequestParams,
+        ) -> Result<InitializeResult, McpError> {
+            let mut info = self.get_info();
+            info.protocol_version = negotiate_protocol_version(
+                &request.protocol_version,
+                std::mem::take(&mut info.protocol_version),
+                &self.supported_protocol_versions(),
+            )?;
+            Ok(info)
+        }
+        /// Return the protocol versions supported by this server.
+        ///
+        /// Defaults to every version this SDK knows. Override it to narrow the
+        /// set to the revisions the server actually implements: the returned
+        /// list is advertised by [`Self::discover`], bounds what `initialize`
+        /// negotiation may agree to, and is what per-request versions are
+        /// validated against.
+        ///
+        /// To support everything up to some ceiling, use
+        /// [`ProtocolVersion::known_up_to`] rather than filtering
+        /// [`ProtocolVersion::KNOWN_VERSIONS`] by hand.
+        fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+            Cow::Borrowed(ProtocolVersion::KNOWN_VERSIONS)
+        }
+        /// Return this server's discovery information.
+        fn discover(
+            &self,
+            context: RequestContext<RoleServer>,
+        ) -> impl Future<Output = Result<DiscoverResult, McpError>> + MaybeSendFuture + '_ {
+            std::future::ready(Ok(DiscoverResult::from_server_info(
+                self.supported_protocol_versions().into_owned(),
+                self.get_info(),
+            )))
         }
         fn complete(
             &self,
@@ -223,7 +476,7 @@ macro_rules! server_handler_methods {
             &self,
             request: GetPromptRequestParams,
             context: RequestContext<RoleServer>,
-        ) -> impl Future<Output = Result<GetPromptResult, McpError>> + MaybeSendFuture + '_ {
+        ) -> impl Future<Output = Result<GetPromptResponse, McpError>> + MaybeSendFuture + '_ {
             std::future::ready(Err(McpError::method_not_found::<GetPromptRequestMethod>()))
         }
         fn list_prompts(
@@ -253,11 +506,41 @@ macro_rules! server_handler_methods {
             &self,
             request: ReadResourceRequestParams,
             context: RequestContext<RoleServer>,
-        ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + MaybeSendFuture + '_ {
+        ) -> impl Future<Output = Result<ReadResourceResponse, McpError>> + MaybeSendFuture + '_ {
             std::future::ready(Err(
                 McpError::method_not_found::<ReadResourceRequestMethod>(),
             ))
         }
+        /// Return the subset of a requested notification filter this server accepts.
+        ///
+        /// Returning `None` leaves `subscriptions/listen` unimplemented. The SDK
+        /// intersects the returned filter with both `requested` and the notification
+        /// capabilities advertised by [`Self::get_info`] before acknowledging it.
+        /// Categories that were not requested or advertised are always removed.
+        fn accepted_subscription_filter(
+            &self,
+            requested: &SubscriptionFilter,
+        ) -> Option<SubscriptionFilter> {
+            None
+        }
+        /// Run one established subscription until it is cancelled or closed gracefully.
+        ///
+        /// The SDK sends the acknowledgment before invoking this method. Returning
+        /// `Ok(())` sends the final [`SubscriptionsListenResult`] defined by the
+        /// 2026-07-28 schema, marking graceful server teardown. Explicit
+        /// stdio cancellation uses `notifications/cancelled` instead.
+        fn listen(
+            &self,
+            context: SubscriptionContext,
+        ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_ {
+            async move {
+                context.cancelled().await;
+                Ok(())
+            }
+        }
+        #[deprecated(
+            note = "resources/subscribe is legacy-only; implement accepted_subscription_filter and listen for protocol version 2026-07-28"
+        )]
         fn subscribe(
             &self,
             request: SubscribeRequestParams,
@@ -265,6 +548,9 @@ macro_rules! server_handler_methods {
         ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_ {
             std::future::ready(Err(McpError::method_not_found::<SubscribeRequestMethod>()))
         }
+        #[deprecated(
+            note = "resources/unsubscribe is legacy-only; subscriptions/listen is cancelled through its request lifecycle"
+        )]
         fn unsubscribe(
             &self,
             request: UnsubscribeRequestParams,
@@ -306,7 +592,7 @@ macro_rules! server_handler_methods {
             &self,
             request: CallToolRequestParams,
             context: RequestContext<RoleServer>,
-        ) -> impl Future<Output = Result<CallToolResult, McpError>> + MaybeSendFuture + '_ {
+        ) -> impl Future<Output = Result<CallToolResponse, McpError>> + MaybeSendFuture + '_ {
             std::future::ready(Err(McpError::method_not_found::<CallToolRequestMethod>()))
         }
         fn list_tools(
@@ -364,13 +650,6 @@ macro_rules! server_handler_methods {
         ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
             std::future::ready(())
         }
-        fn on_task_status(
-            &self,
-            params: TaskStatusNotificationParam,
-            context: NotificationContext<RoleServer>,
-        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-            std::future::ready(())
-        }
         fn on_custom_notification(
             &self,
             notification: CustomNotification,
@@ -380,19 +659,12 @@ macro_rules! server_handler_methods {
             std::future::ready(())
         }
 
-        fn get_info(&self) -> ServerInfo {
-            ServerInfo::default()
+        fn get_info(&self) -> ServerConfig {
+            ServerConfig::default()
         }
 
-        fn list_tasks(
-            &self,
-            request: Option<PaginatedRequestParams>,
-            context: RequestContext<RoleServer>,
-        ) -> impl Future<Output = Result<ListTasksResult, McpError>> + MaybeSendFuture + '_ {
-            std::future::ready(Err(McpError::method_not_found::<ListTasksMethod>()))
-        }
-
-        fn get_task_info(
+        /// SEP-2663 `tasks/get`: return the current [`DetailedTask`] state.
+        fn get_task(
             &self,
             request: GetTaskParams,
             context: RequestContext<RoleServer>,
@@ -401,22 +673,61 @@ macro_rules! server_handler_methods {
             std::future::ready(Err(McpError::method_not_found::<GetTaskMethod>()))
         }
 
-        fn get_task_result(
+        /// SEP-2663 `tasks/update`: accept responses to outstanding in-task
+        /// input requests. Returns an empty acknowledgement on success.
+        fn update_task(
             &self,
-            request: GetTaskPayloadParams,
+            request: UpdateTaskParams,
             context: RequestContext<RoleServer>,
-        ) -> impl Future<Output = Result<GetTaskPayloadResult, McpError>> + MaybeSendFuture + '_ {
+        ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_ {
             let _ = (request, context);
-            std::future::ready(Err(McpError::method_not_found::<GetTaskPayloadMethod>()))
+            std::future::ready(Err(McpError::method_not_found::<UpdateTaskMethod>()))
         }
 
+        /// SEP-2663 `tasks/cancel`: cooperative cancellation. Returns an empty
+        /// acknowledgement; the task's observable status may lag.
         fn cancel_task(
             &self,
             request: CancelTaskParams,
             context: RequestContext<RoleServer>,
-        ) -> impl Future<Output = Result<CancelTaskResult, McpError>> + MaybeSendFuture + '_ {
+        ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_ {
             let _ = (request, context);
             std::future::ready(Err(McpError::method_not_found::<CancelTaskMethod>()))
+        }
+
+        /// SEP-2640 `skills/list`: one page of the skills this server serves.
+        fn list_skills(
+            &self,
+            request: Option<PaginatedRequestParams>,
+            context: RequestContext<RoleServer>,
+        ) -> impl Future<Output = Result<ListSkillsResult, McpError>> + MaybeSendFuture + '_ {
+            let _ = (request, context);
+            std::future::ready(Err(McpError::method_not_found::<ListSkillsRequestMethod>()))
+        }
+
+        /// SEP-2640 `skills/get`: the entry for one skill, or `-32602` when the
+        /// server does not serve a skill at that URI.
+        fn get_skill(
+            &self,
+            request: GetSkillRequestParams,
+            context: RequestContext<RoleServer>,
+        ) -> impl Future<Output = Result<GetSkillResult, McpError>> + MaybeSendFuture + '_ {
+            let _ = (request, context);
+            std::future::ready(Err(McpError::method_not_found::<GetSkillRequestMethod>()))
+        }
+
+        /// SEP-2640 `resources/directory/read`: the direct children of a
+        /// directory resource, or `-32602` when the URI is not a directory.
+        fn read_resource_directory(
+            &self,
+            request: ReadResourceDirectoryRequestParams,
+            context: RequestContext<RoleServer>,
+        ) -> impl Future<Output = Result<ReadResourceDirectoryResult, McpError>> + MaybeSendFuture + '_
+        {
+            let _ = (request, context);
+            std::future::ready(Err(McpError::method_not_found::<
+                ReadResourceDirectoryRequestMethod,
+            >()))
         }
     };
 }
@@ -436,14 +747,6 @@ pub trait ServerHandler: Sized + 'static {
 macro_rules! impl_server_handler_for_wrapper {
     ($wrapper:ident) => {
         impl<T: ServerHandler> ServerHandler for $wrapper<T> {
-            fn enqueue_task(
-                &self,
-                request: CallToolRequestParams,
-                context: RequestContext<RoleServer>,
-            ) -> impl Future<Output = Result<CreateTaskResult, McpError>> + MaybeSendFuture + '_ {
-                (**self).enqueue_task(request, context)
-            }
-
             fn ping(
                 &self,
                 context: RequestContext<RoleServer>,
@@ -457,6 +760,24 @@ macro_rules! impl_server_handler_for_wrapper {
                 context: RequestContext<RoleServer>,
             ) -> impl Future<Output = Result<InitializeResult, McpError>> + MaybeSendFuture + '_ {
                 (**self).initialize(request, context)
+            }
+
+            fn negotiate_initialize(
+                &self,
+                request: &InitializeRequestParams,
+            ) -> Result<InitializeResult, McpError> {
+                (**self).negotiate_initialize(request)
+            }
+
+            fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+                (**self).supported_protocol_versions()
+            }
+
+            fn discover(
+                &self,
+                context: RequestContext<RoleServer>,
+            ) -> impl Future<Output = Result<DiscoverResult, McpError>> + MaybeSendFuture + '_ {
+                (**self).discover(context)
             }
 
             fn complete(
@@ -479,7 +800,7 @@ macro_rules! impl_server_handler_for_wrapper {
                 &self,
                 request: GetPromptRequestParams,
                 context: RequestContext<RoleServer>,
-            ) -> impl Future<Output = Result<GetPromptResult, McpError>> + MaybeSendFuture + '_ {
+            ) -> impl Future<Output = Result<GetPromptResponse, McpError>> + MaybeSendFuture + '_ {
                 (**self).get_prompt(request, context)
             }
 
@@ -512,8 +833,22 @@ macro_rules! impl_server_handler_for_wrapper {
                 &self,
                 request: ReadResourceRequestParams,
                 context: RequestContext<RoleServer>,
-            ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + MaybeSendFuture + '_ {
+            ) -> impl Future<Output = Result<ReadResourceResponse, McpError>> + MaybeSendFuture + '_ {
                 (**self).read_resource(request, context)
+            }
+
+            fn accepted_subscription_filter(
+                &self,
+                requested: &SubscriptionFilter,
+            ) -> Option<SubscriptionFilter> {
+                (**self).accepted_subscription_filter(requested)
+            }
+
+            fn listen(
+                &self,
+                context: SubscriptionContext,
+            ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_ {
+                (**self).listen(context)
             }
 
             fn subscribe(
@@ -536,7 +871,7 @@ macro_rules! impl_server_handler_for_wrapper {
                 &self,
                 request: CallToolRequestParams,
                 context: RequestContext<RoleServer>,
-            ) -> impl Future<Output = Result<CallToolResult, McpError>> + MaybeSendFuture + '_ {
+            ) -> impl Future<Output = Result<CallToolResponse, McpError>> + MaybeSendFuture + '_ {
                 (**self).call_tool(request, context)
             }
 
@@ -590,14 +925,6 @@ macro_rules! impl_server_handler_for_wrapper {
                 (**self).on_roots_list_changed(context)
             }
 
-            fn on_task_status(
-                &self,
-                params: TaskStatusNotificationParam,
-                context: NotificationContext<RoleServer>,
-            ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-                (**self).on_task_status(params, context)
-            }
-
             fn on_custom_notification(
                 &self,
                 notification: CustomNotification,
@@ -606,40 +933,59 @@ macro_rules! impl_server_handler_for_wrapper {
                 (**self).on_custom_notification(notification, context)
             }
 
-            fn get_info(&self) -> ServerInfo {
+            fn get_info(&self) -> ServerConfig {
                 (**self).get_info()
             }
 
-            fn list_tasks(
-                &self,
-                request: Option<PaginatedRequestParams>,
-                context: RequestContext<RoleServer>,
-            ) -> impl Future<Output = Result<ListTasksResult, McpError>> + MaybeSendFuture + '_ {
-                (**self).list_tasks(request, context)
-            }
-
-            fn get_task_info(
+            fn get_task(
                 &self,
                 request: GetTaskParams,
                 context: RequestContext<RoleServer>,
             ) -> impl Future<Output = Result<GetTaskResult, McpError>> + MaybeSendFuture + '_ {
-                (**self).get_task_info(request, context)
+                (**self).get_task(request, context)
             }
 
-            fn get_task_result(
+            fn update_task(
                 &self,
-                request: GetTaskPayloadParams,
+                request: UpdateTaskParams,
                 context: RequestContext<RoleServer>,
-            ) -> impl Future<Output = Result<GetTaskPayloadResult, McpError>> + MaybeSendFuture + '_ {
-                (**self).get_task_result(request, context)
+            ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_ {
+                (**self).update_task(request, context)
             }
 
             fn cancel_task(
                 &self,
                 request: CancelTaskParams,
                 context: RequestContext<RoleServer>,
-            ) -> impl Future<Output = Result<CancelTaskResult, McpError>> + MaybeSendFuture + '_ {
+            ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_ {
                 (**self).cancel_task(request, context)
+            }
+
+            fn list_skills(
+                &self,
+                request: Option<PaginatedRequestParams>,
+                context: RequestContext<RoleServer>,
+            ) -> impl Future<Output = Result<ListSkillsResult, McpError>> + MaybeSendFuture + '_
+            {
+                (**self).list_skills(request, context)
+            }
+
+            fn get_skill(
+                &self,
+                request: GetSkillRequestParams,
+                context: RequestContext<RoleServer>,
+            ) -> impl Future<Output = Result<GetSkillResult, McpError>> + MaybeSendFuture + '_ {
+                (**self).get_skill(request, context)
+            }
+
+            fn read_resource_directory(
+                &self,
+                request: ReadResourceDirectoryRequestParams,
+                context: RequestContext<RoleServer>,
+            ) -> impl Future<Output = Result<ReadResourceDirectoryResult, McpError>>
+            + MaybeSendFuture
+            + '_ {
+                (**self).read_resource_directory(request, context)
             }
         }
     };

@@ -3,7 +3,7 @@
 use rmcp::{
     Json, ServerHandler,
     handler::server::{router::tool::ToolRouter, tool::IntoCallToolResult, wrapper::Parameters},
-    model::{CallToolResult, ContentBlock, ServerResult, Tool},
+    model::{CallToolResponse, CallToolResult, ContentBlock, ServerResult, Tool},
     tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
@@ -92,6 +92,27 @@ impl TestServer {
         } else {
             Err("User not found".to_string())
         }
+    }
+
+    /// Tool that returns a list of calculation results
+    #[tool(
+        name = "calculate-list",
+        description = "Return a list of calculation results"
+    )]
+    pub async fn calculate_list(
+        &self,
+        params: Parameters<CalculationRequest>,
+    ) -> Result<Json<Vec<CalculationResult>>, String> {
+        Ok(Json(vec![CalculationResult {
+            sum: params.0.a + params.0.b,
+            product: params.0.a * params.0.b,
+        }]))
+    }
+
+    /// Tool that returns a count
+    #[tool(name = "get-count", description = "Return a count")]
+    pub async fn get_count(&self) -> Result<Json<i32>, String> {
+        Ok(Json(42))
     }
 }
 
@@ -224,11 +245,13 @@ async fn test_structured_return_conversion() {
     };
 
     let structured = Json(calc_result);
-    let result: Result<CallToolResult, rmcp::ErrorData> =
+    let result: Result<CallToolResponse, rmcp::ErrorData> =
         rmcp::handler::server::tool::IntoCallToolResult::into_call_tool_result(structured);
 
     assert!(result.is_ok());
-    let call_result = result.unwrap();
+    let CallToolResponse::Complete(call_result) = result.unwrap() else {
+        panic!("expected complete CallToolResult");
+    };
 
     // Tools which return structured content should also return a serialized version as
     // Content::text for backwards compatibility.
@@ -285,11 +308,13 @@ async fn test_output_schema_requires_structured_content() {
     let result = server.calculate(params).await.unwrap();
 
     // Convert the Json<CalculationResult> to CallToolResult
-    let call_result: Result<CallToolResult, rmcp::ErrorData> =
+    let call_result: Result<CallToolResponse, rmcp::ErrorData> =
         IntoCallToolResult::into_call_tool_result(result);
 
     assert!(call_result.is_ok());
-    let call_result = call_result.unwrap();
+    let CallToolResponse::Complete(call_result) = call_result.unwrap() else {
+        panic!("expected complete CallToolResult");
+    };
 
     // Verify it has structured_content and content
     assert!(call_result.structured_content.is_some());
@@ -359,4 +384,88 @@ fn test_call_tool_result_deserialize_without_content() {
     let result: CallToolResult = serde_json::from_value(json).unwrap();
     assert!(result.content.is_empty());
     assert!(result.structured_content.is_some());
+}
+
+/// Per the 2026-07-28 spec, `structuredContent` can be any JSON value,
+/// including `null`. A present `null` must stay distinct from an absent field.
+#[test]
+fn test_explicit_null_structured_content_is_preserved() {
+    let json = json!({
+        "resultType": "complete",
+        "content": [],
+        "structuredContent": null
+    });
+    let result: CallToolResult = serde_json::from_value(json).unwrap();
+    assert_eq!(result.structured_content, Some(Value::Null));
+}
+
+#[test]
+fn test_explicit_null_structured_content_without_content_deserializes() {
+    let json = json!({
+        "resultType": "complete",
+        "structuredContent": null
+    });
+    let result: CallToolResult = serde_json::from_value(json).unwrap();
+    assert!(result.content.is_empty());
+    assert_eq!(result.structured_content, Some(Value::Null));
+}
+
+#[test]
+fn test_absent_structured_content_is_none() {
+    let json = json!({
+        "resultType": "complete",
+        "content": []
+    });
+    let result: CallToolResult = serde_json::from_value(json).unwrap();
+    assert_eq!(result.structured_content, None);
+}
+
+#[test]
+fn test_null_structured_content_serialization_roundtrip() {
+    let with_null = CallToolResult::structured(Value::Null);
+    let v = serde_json::to_value(&with_null).unwrap();
+    assert_eq!(v.get("structuredContent"), Some(&Value::Null));
+    let deserialized: CallToolResult = serde_json::from_value(v).unwrap();
+    assert_eq!(deserialized, with_null);
+
+    let absent = CallToolResult::success(vec![]);
+    let v = serde_json::to_value(&absent).unwrap();
+    assert!(v.get("structuredContent").is_none());
+    let deserialized: CallToolResult = serde_json::from_value(v).unwrap();
+    assert_eq!(deserialized.structured_content, None);
+}
+
+#[tokio::test]
+async fn test_tool_with_array_output_schema() {
+    let server = TestServer::new();
+    let tools = server.tool_router.list_all();
+
+    // Find the calculate-list tool
+    let calculate_list_tool = tools.iter().find(|t| t.name == "calculate-list").unwrap();
+
+    // Verify it has an output schema
+    assert!(calculate_list_tool.output_schema.is_some());
+
+    let schema = calculate_list_tool.output_schema.as_ref().unwrap();
+
+    // Check that the schema contains array type
+    let schema_str = serde_json::to_string(schema).unwrap();
+    assert!(schema_str.contains("array"));
+}
+
+#[tokio::test]
+async fn test_tool_with_primitive_output_schema() {
+    let server = TestServer::new();
+    let tools = server.tool_router.list_all();
+
+    // Find the get-count tool
+    let get_count_tool = tools.iter().find(|t| t.name == "get-count").unwrap();
+
+    // Verify it has an output schema
+    assert!(get_count_tool.output_schema.is_some());
+
+    let schema = get_count_tool.output_schema.as_ref().unwrap();
+
+    // Check that the schema contains integer type
+    assert_eq!(schema.get("type"), Some(&serde_json::json!("integer")));
 }
