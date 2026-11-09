@@ -66,15 +66,6 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
     decided
 }
 
-/// [`check_shell_allowlist`] for a host's PowerShell tool call, which the hook
-/// checks but does not wrap. Not the detected shell: a host that runs hooks
-/// through Git Bash (Claude Code on Windows) passes `SHELL=/usr/bin/bash` and
-/// `MSYSTEM=MINGW64`, and PowerShell read under POSIX rules is refused.
-pub fn check_shell_allowlist_in_powershell(command: &str) -> Result<(), ShellError> {
-    let _host = super::ps_statements::HostGuard::powershell(true);
-    check_shell_allowlist(command)
-}
-
 /// Refuses code that contains a redaction marker such as
 /// `[REDACTED:Database credentials]`. Redaction applies only to what an agent
 /// is shown, never to what runs; an agent that copies a marker out of a
@@ -223,7 +214,10 @@ pub(super) fn enforce_with(
     if let Some(reason) = unvalidatable_line_break(command) {
         return Err(unvalidatable(reason, command));
     }
-    let normalized = normalize_line_continuations(command);
+    // A PowerShell host reads typographic quotes as quotes and a backslash as
+    // an ordinary character; every check below reads the line that way too.
+    let read = as_powershell_reads(command);
+    let normalized = normalize_line_continuations(&read);
     // The one lexer pass behind every strip below (GHSA-rxv5-4c3x-g4q6 E):
     // where the shells disagree on a construct, or a heredoc never ends, no
     // strip can be trusted, so the command is refused.
@@ -316,9 +310,9 @@ fn unvalidatable_line_break(command: &str) -> Option<&'static str> {
 
 /// The refusal for nesting past what the lexer follows; see `lexer::MAX_NESTING`.
 fn too_deep() -> ShellError {
-    "[BLOCKED — DO NOT RETRY] Command nests substitutions, backticks or `${…}` more than \
-     64 levels deep, which the shell gate cannot validate. Split it into separate commands, \
-     or put the logic in a script file and run that."
+    "[BLOCKED — DO NOT RETRY] Command nests substitutions, backticks, `${…}` or PowerShell \
+     `( … )` groups more than 64 levels deep, which the shell gate cannot validate. Split it \
+     into separate commands, or put the logic in a script file and run that."
         .into()
 }
 
@@ -1356,6 +1350,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             };
             for body_seg in &body_cmds {
                 check_inline_env_block(body_seg)?;
+                check_powershell_argument_groups(body_seg, allowlist)?;
                 let body_tokens = extract_command_tokens_from_segment(body_seg);
                 let Some(body_base) = body_tokens.first().cloned() else {
                     continue;
@@ -1382,6 +1377,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             continue;
         }
 
+        check_powershell_argument_groups(seg, allowlist)?;
         let tokens = extract_command_tokens_from_segment(seg);
         let Some(base) = tokens.first().cloned() else {
             continue;
@@ -1494,6 +1490,10 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
     }
     Ok(())
 }
+
+#[path = "enforcement_powershell.rs"]
+mod powershell;
+pub use powershell::*;
 
 #[path = "enforcement_patterns.rs"]
 mod patterns;

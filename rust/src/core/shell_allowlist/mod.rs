@@ -73,7 +73,11 @@ mod tests_pipe_target;
 #[cfg(test)]
 mod tests_ps1930;
 #[cfg(test)]
+mod tests_ps_quotes;
+#[cfg(test)]
 mod tests_redaction_marker;
+#[cfg(test)]
+mod tests_scoped_extra;
 #[cfg(test)]
 mod tests_tokenizer;
 #[cfg(test)]

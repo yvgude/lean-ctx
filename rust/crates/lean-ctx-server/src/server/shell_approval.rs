@@ -72,6 +72,8 @@ pub(crate) enum Decision {
     Deny,
     /// The prompt was closed without an answer.
     Dismissed,
+    /// An automatic reviewer, not a person, accepted the prompt.
+    Unattended,
 }
 
 impl Decision {
@@ -82,6 +84,7 @@ impl Decision {
             Self::Always => "always",
             Self::Deny => "deny",
             Self::Dismissed => "dismissed",
+            Self::Unattended => "unattended",
         }
     }
 }
@@ -166,9 +169,21 @@ impl ShellApprovals {
                  did not run. Ask the user before trying it again.",
                 subject(request)
             )),
+            Decision::Unattended => Outcome::Refused(format!(
+                "[NOT RUN] {} needs a person's approval, and an automatic reviewer answered \
+                 the prompt, so it did not run. A person can add it with \
+                 `lean-ctx allow <command>`.",
+                subject(request)
+            )),
         }
     }
 }
+
+/// Appended to a decline from Codex, whose `approval_policy = "never"`
+/// declines the approval form without asking anyone.
+const CODEX_DECLINE_HINT: &str = " Codex declines this prompt on its own under \
+     `approval_policy = \"never\"`; a person can allow the program with \
+     `lean-ctx allow <command>`.";
 
 fn declined_message(request: &ApprovalRequest, earlier: bool) -> String {
     let when = if earlier {
@@ -209,15 +224,12 @@ fn subject(request: &ApprovalRequest) -> String {
     }
 }
 
-/// The user's answer from an elicitation result. `confirm_only` is a client
-/// with its own approve/deny dialog (Codex), where accepting is the approval.
-pub(crate) fn decision_from(
-    result: &ElicitResult,
-    lasting_allowed: bool,
-    confirm_only: bool,
-) -> Decision {
+/// The user's answer from an elicitation result. Only an explicit choice from
+/// the form approves anything.
+pub(crate) fn decision_from(result: &ElicitResult, lasting_allowed: bool) -> Decision {
     match result.action {
         ElicitationAction::Decline => Decision::Deny,
+        ElicitationAction::Accept if reviewed_automatically(result) => Decision::Unattended,
         ElicitationAction::Accept => {
             match result
                 .content
@@ -229,19 +241,29 @@ pub(crate) fn decision_from(
                 Some("session") if lasting_allowed => Decision::Session,
                 Some("always") if lasting_allowed => Decision::Always,
                 // "once", or a lasting answer the form did not offer: this
-                // one command, never more. On a confirm-only client accepting
-                // is the approval.
-                choice if confirm_only || matches!(choice, Some("once" | "session" | "always")) => {
-                    Decision::Once
-                }
+                // one command, never more.
+                Some("once" | "session" | "always") => Decision::Once,
                 // The form requires a choice, so an accept without one comes
                 // from a client that accepts on its own: it approves nothing.
+                // Codex sends `{}` both for a person's accept of a form without
+                // fields and for its own (`approval_policy = "never"`), so it
+                // gets this form too, never an empty one.
                 _ => Decision::Dismissed,
             }
         }
         // Cancel, or an action this build does not know: nothing approved.
         _ => Decision::Dismissed,
     }
+}
+
+/// Codex's automatic reviewer marks its answers `approvals_reviewer:
+/// auto_review`; a reviewer that is not the user approves nothing.
+fn reviewed_automatically(result: &ElicitResult) -> bool {
+    result
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.0.get("approvals_reviewer"))
+        .is_some_and(|reviewer| reviewer.as_str() != Some("user"))
 }
 
 /// True for characters a prompt must not pass through raw: controls (ANSI
@@ -392,8 +414,9 @@ pub(crate) fn prompt_schema(
         .ok()
 }
 
-/// Codex renders its own approve/deny dialog for requests carrying these
-/// fields; accepting there approves this one command.
+/// Codex shows its approval context for requests carrying these fields. With
+/// a form that has fields, its approval policy and its automatic reviewer
+/// decline instead of accepting on their own.
 fn codex_meta(tool: &str, params: Value) -> Meta {
     let mut meta = Meta::new();
     for (key, value) in [
@@ -555,23 +578,19 @@ impl LeanCtxServer {
         {
             return Outcome::NotNeeded;
         }
-        let is_codex = peer
+        let client = peer
             .peer_info()
-            .is_some_and(|info| info.client_info.name.to_lowercase().contains("codex"));
+            .map(|info| info.client_info.name.clone())
+            .unwrap_or_default();
+        // Codex gets the same form as every client, so its approval policy
+        // cannot accept the request on its own (it does so only for a form
+        // without fields) and a person's accept carries a choice.
+        let is_codex = client.to_lowercase().contains("codex");
         let lasting = !is_codex && lasting;
         let execute = execute_languages(&request).is_some();
         let tool = if execute { "ctx_execute" } else { "ctx_shell" };
-        let (meta, schema) = if is_codex {
-            (
-                Some(codex_meta(tool, params)),
-                ElicitationSchema::builder().build().ok(),
-            )
-        } else {
-            let preselect = peer
-                .peer_info()
-                .is_some_and(|info| preselects_decision(&info.client_info.name));
-            (None, prompt_schema(&request, lasting, preselect))
-        };
+        let meta = is_codex.then(|| codex_meta(tool, params));
+        let schema = prompt_schema(&request, lasting, preselects_decision(&client));
         let Some(requested_schema) = schema else {
             return Outcome::NotNeeded;
         };
@@ -584,7 +603,7 @@ impl LeanCtxServer {
             .create_elicitation_with_timeout(params, Some(PROMPT_TIMEOUT))
             .await
         {
-            Ok(result) => decision_from(&result, lasting, is_codex),
+            Ok(result) => decision_from(&result, lasting),
             Err(error) => {
                 tracing::warn!(%error, "shell approval prompt failed; refusing as before");
                 return Outcome::NotNeeded;
@@ -615,6 +634,14 @@ impl LeanCtxServer {
             .lock()
             .await
             .apply(answer, &request);
+        // Under `approval_policy = "never"` Codex declines the form itself, so
+        // the decline may come from no person: name the lasting way.
+        let outcome = match outcome {
+            Outcome::Refused(message) if is_codex && answer == Decision::Deny => {
+                Outcome::Refused(format!("{message}{CODEX_DECLINE_HINT}"))
+            }
+            other => other,
+        };
         self.audit_shell_approval(answer.as_str(), &request, &digest)
             .await;
         outcome

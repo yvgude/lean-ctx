@@ -307,6 +307,121 @@ fn call_operator_edge_forms() {
     passes("& 'g''it' status", POWERSHELL);
 }
 
+/// The whole gate under a PowerShell host, as `ctx_shell` and the hooks run
+/// it: comment stripping and the substitution scan happen before the walk.
+fn gate(cmd: &str) -> Result<(), String> {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let _allowlist = crate::test_env::VarGuard::set(
+        "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+        "git,echo,sleep,true,ls",
+    );
+    let _host = HostGuard::powershell(POWERSHELL);
+    super::enforce_shell_allowlist(cmd).map_err(|err| err.to_string())
+}
+
+/// In argument mode PowerShell runs a `( … )` group as a pipeline and passes
+/// its output: `echo (cmd)` runs `cmd`. The group's commands used to read as
+/// inert arguments, so any program ran.
+#[test]
+fn argument_groups_meet_the_allowlist() {
+    for cmd in [
+        "Write-Output (evil_binary)",
+        "echo (evil_binary)",
+        "echo x (evil_binary)",
+        "echo x# (evil_binary)",
+        "git status (evil_binary)",
+        "& git status (evil_binary)",
+        "git log --format=(evil_binary)",
+        "echo ('x' + (evil_binary))",
+        "echo (git status; evil_binary)",
+        "echo (git status | evil_binary)",
+        "echo \"a`\"b\" (evil_binary)",
+        "if ($x) { echo (evil_binary) }",
+        "Get-ChildItem | ForEach-Object { echo (evil_binary) }",
+        // Unclosed: the rest cannot be read.
+        "echo (git status",
+        "echo 'x (evil_binary)",
+    ] {
+        assert!(gate(cmd).is_err(), "must be blocked: {cmd:?}");
+    }
+    let deep = format!("echo {}git status{}", "(echo ".repeat(6), ")".repeat(6));
+    assert!(gate(&deep).is_err(), "nesting bound");
+    let huge = format!("echo {}git status{}", "(".repeat(5000), ")".repeat(5000));
+    assert!(gate(&huge).is_err(), "nesting bound");
+    for cmd in [
+        "echo (git rev-parse HEAD)",
+        "echo x (git status) y",
+        "echo (echo (git status))",
+        "if ($x -eq 1) { echo (git rev-parse HEAD) }",
+        "foreach ($f in (Get-ChildItem *.log)) { Get-Content $f }",
+        "$n = ($items | Measure-Object).Count",
+        "echo '(not a command)'",
+        "echo \"(still text)\"",
+        "git log --format='%h (%s)'",
+    ] {
+        if let Err(err) = gate(cmd) {
+            panic!("should pass: {cmd:?}\n{err}");
+        }
+    }
+    // POSIX shells refuse `echo (x)` as a syntax error; nothing to check there.
+    passes("echo x", POSIX);
+}
+
+/// A function body's commands run when the function is called, so a `( … )`
+/// group in their arguments meets the allowlist like a top-level one.
+#[test]
+fn argument_groups_in_function_bodies_meet_the_allowlist() {
+    for cmd in [
+        "function f { echo (evil_binary) }; f",
+        "function f { git log --format=(evil_binary) }",
+        "f() { echo (evil_binary); }; f",
+    ] {
+        assert!(gate(cmd).is_err(), "must be blocked: {cmd:?}");
+    }
+    for cmd in [
+        "function f { echo (git rev-parse HEAD) }; f",
+        "function f { echo '(evil_binary)' }; f",
+    ] {
+        if let Err(err) = gate(cmd) {
+            panic!("should pass: {cmd:?}\n{err}");
+        }
+    }
+}
+
+/// PowerShell's block comment `<# … #>` ends at `#>` and may span lines. Read
+/// as a POSIX `#` comment, its closing `#>` hid the rest of the line, so a
+/// command after `; ` or a substitution after it went unchecked.
+#[test]
+fn block_comments_hide_no_commands() {
+    for cmd in [
+        "echo x <# c #> ; evil_binary",
+        "echo <# a #> <# b #>; evil_binary",
+        "echo x <# c #>\nevil_binary",
+        "echo <# #> $(evil_binary)",
+        "echo <# #> (evil_binary)",
+        "echo <# multi\nline #>; evil_binary",
+        // `<#>` opens a comment; it does not close one.
+        "echo <#> ; evil_binary #>; evil_binary",
+        // Unterminated, or attached to a word: refused.
+        "echo <# c ; evil_binary",
+        "echo x<# c #> ; git status",
+    ] {
+        assert!(gate(cmd).is_err(), "must be blocked: {cmd:?}");
+    }
+    for cmd in [
+        "echo x <# c #>",
+        "echo x <# c #> ; git status",
+        "<# note #> git status",
+        // The comment is a blank: the line break inside it ends no statement.
+        "echo <#\n#> evil_binary",
+        "echo '<# not a comment' ; git status",
+    ] {
+        if let Err(err) = gate(cmd) {
+            panic!("should pass: {cmd:?}\n{err}");
+        }
+    }
+}
+
 /// A PowerShell statement lean-ctx cannot read is blocked, never skipped.
 #[test]
 fn unreadable_powershell_statements_are_blocked() {
@@ -368,5 +483,24 @@ fn posix_forms_are_unchanged() {
         "$cmd --flag",
     ] {
         blocked(cmd, POSIX);
+    }
+}
+
+/// Each `(` is one recursive read of an expression or pipeline under
+/// PowerShell. Thousands of them overflowed the stack, and a crashed hook
+/// fails open; past the lexer's nesting bound the line is refused.
+#[test]
+fn deeply_nested_groups_are_refused_not_crashed() {
+    for line in [
+        format!("$n = {}1{}", "(".repeat(5000), ")".repeat(5000)),
+        format!("{}git status{}", "(".repeat(5000), ")".repeat(5000)),
+        format!("echo {}git status{}", "(".repeat(5000), ")".repeat(5000)),
+    ] {
+        let err = gate(&line).expect_err("must be refused");
+        assert!(err.contains("levels deep"), "{err}");
+    }
+    let shallow = format!("$n = {}1{}", "(".repeat(8), ")".repeat(8));
+    if let Err(err) = gate(&shallow) {
+        panic!("should pass: {shallow:?}\n{err}");
     }
 }

@@ -45,6 +45,23 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   target is refused, a script block is walked, a trailing redirect is allowed, and nesting is
   depth-bounded. A quoted call-operator target used to pass unchecked under the PowerShell host.
 
+### Security
+
+- **PowerShell argument groups, block comments, hashtables and typographic quotes are checked.**
+  Under the PowerShell host, a program in a `( … )` argument group (`echo (evil_binary)`), behind a
+  `<# … #>` block comment, in a hashtable key or value (`echo @{ a = evil_binary }`,
+  `@{ (evil_binary) = 1 }`), or quoted with `‘ ’` or `“ ” „` (which PowerShell reads as quotes)
+  passed the allowlist unchecked. Each is now read the way PowerShell runs it.
+
+- **A Codex approval nobody gave no longer runs an unlisted program.** Under Codex's
+  `approval_policy = "never"` with full disk access, and with its automatic reviewer, Codex
+  accepted the `ctx_shell` / `ctx_execute` approval prompt itself, and the gate ran the
+  command as approved: with `shell_security = "enforce"` and only `winapp ui list-windows *`
+  listed, `winapp ui status` ran. Codex now gets the same approval form with a choice as every
+  client, and a person answers it with a choice. A decline under its `never` policy and an accept
+  from its automatic reviewer both refuse the command and name `lean-ctx allow`; an accept without
+  a choice runs nothing.
+
 ## [3.12.2] — 2026-11-04
 
 ### Added

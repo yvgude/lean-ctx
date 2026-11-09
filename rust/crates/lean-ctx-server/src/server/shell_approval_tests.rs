@@ -41,7 +41,7 @@ fn choices(schema: &ElicitationSchema) -> Vec<String> {
 
 #[test]
 fn an_answer_maps_to_a_decision_and_never_to_more_than_was_offered() {
-    let form = |r: &ElicitResult, lasting| decision_from(r, lasting, false);
+    let form = |r: &ElicitResult, lasting| decision_from(r, lasting);
     assert_eq!(form(&accepted(Some("once")), true), Decision::Once);
     assert_eq!(form(&accepted(Some("session")), true), Decision::Session);
     assert_eq!(form(&accepted(Some("always")), true), Decision::Always);
@@ -59,10 +59,68 @@ fn an_answer_maps_to_a_decision_and_never_to_more_than_was_offered() {
     assert_eq!(form(&accepted(Some("bogus")), true), Decision::Dismissed);
     assert_eq!(form(&result("decline", None), true), Decision::Deny);
     assert_eq!(form(&result("cancel", None), true), Decision::Dismissed);
-    assert_eq!(
-        decision_from(&accepted(None), false, true),
-        Decision::Once,
-        "Codex's own dialog: accepting approves this command once"
+}
+
+/// Codex 0.164 turns a person's accept without content into `{}`
+/// (`core/src/session/handlers.rs`), the very answer its approval policy
+/// (`never` with full disk access) gives on its own to a form without fields;
+/// its automatic reviewer marks its accept `approvals_reviewer: auto_review`.
+/// Only a choice from the form approves, and no reviewer's choice does.
+#[test]
+fn a_codex_accept_no_person_gave_approves_nothing() {
+    let answer = |wire: serde_json::Value| {
+        let result: ElicitResult = serde_json::from_value(wire).expect("valid result");
+        decision_from(&result, false)
+    };
+    let once = serde_json::json!({ "decision": "once" });
+    for (wire, expected) in [
+        (
+            serde_json::json!({ "action": "accept", "content": {} }),
+            Decision::Dismissed,
+        ),
+        (
+            serde_json::json!({ "action": "accept" }),
+            Decision::Dismissed,
+        ),
+        (
+            serde_json::json!({
+                "action": "accept",
+                "content": once,
+                "_meta": { "approvals_reviewer": "auto_review" }
+            }),
+            Decision::Unattended,
+        ),
+        (
+            serde_json::json!({
+                "action": "accept",
+                "content": {},
+                "_meta": { "approvals_reviewer": "auto_review" }
+            }),
+            Decision::Unattended,
+        ),
+        (
+            serde_json::json!({ "action": "accept", "content": once }),
+            Decision::Once,
+        ),
+        (
+            serde_json::json!({
+                "action": "accept",
+                "content": once,
+                "_meta": { "approvals_reviewer": "user" }
+            }),
+            Decision::Once,
+        ),
+    ] {
+        assert_eq!(answer(wire.clone()), expected, "{wire}");
+    }
+    let Outcome::Refused(message) =
+        ShellApprovals::default().apply(Decision::Unattended, &request(&[("winapp", true)]))
+    else {
+        panic!("an unattended accept must refuse");
+    };
+    assert!(
+        message.contains("winapp") && message.contains("lean-ctx allow"),
+        "{message}"
     );
 }
 
@@ -231,7 +289,7 @@ fn only_claude_code_gets_a_preselected_once() {
                 Decision::Dismissed
             };
             assert_eq!(
-                decision_from(&answer, lasting, false),
+                decision_from(&answer, lasting),
                 expected,
                 "an untouched form grants this command once on Claude Code and nothing elsewhere: {wire}"
             );
@@ -396,10 +454,23 @@ mod over_mcp {
 
     use crate::tools::LeanCtxServer;
 
+    /// How a Codex 0.164 client answers.
+    #[derive(Clone, Copy)]
+    enum Codex {
+        /// `approval_policy = "never"` with full disk access: accepts a form
+        /// without fields on its own with `{}` and declines any other.
+        NeverPolicy,
+        /// A person who accepts: the choice when the form asks for one, else
+        /// the `{}` Codex substitutes for an accept without content.
+        Person,
+    }
+
     /// A host that answers every prompt with `answer` and keeps the messages.
     struct Host {
         elicitation: bool,
         answer: Option<&'static str>,
+        /// Answers as Codex 0.164 does instead.
+        codex: Option<Codex>,
         prompts: Arc<Mutex<Vec<String>>>,
     }
 
@@ -410,7 +481,12 @@ mod over_mcp {
             } else {
                 ClientCapabilities::default()
             };
-            ClientInfo::new(capabilities, Implementation::new("test-host", "1.0.0"))
+            let name = if self.codex.is_some() {
+                "codex-mcp-client"
+            } else {
+                "test-host"
+            };
+            ClientInfo::new(capabilities, Implementation::new(name, "1.0.0"))
         }
 
         fn create_elicitation(
@@ -421,6 +497,25 @@ mod over_mcp {
         {
             if let ElicitRequestParams::FormElicitationParams { message, .. } = &request {
                 self.prompts.lock().unwrap().push(message.clone());
+            }
+            if let Some(codex) = self.codex {
+                let ElicitRequestParams::FormElicitationParams {
+                    requested_schema, ..
+                } = &request
+                else {
+                    return std::future::ready(Ok(ElicitResult::new(ElicitationAction::Cancel)));
+                };
+                let fields = !requested_schema.properties.is_empty();
+                let result = match (codex, fields) {
+                    (Codex::NeverPolicy, false) => ElicitResult::new(ElicitationAction::Accept)
+                        .with_content(serde_json::json!({})),
+                    (Codex::NeverPolicy, true) => ElicitResult::new(ElicitationAction::Decline),
+                    (Codex::Person, false) => ElicitResult::new(ElicitationAction::Accept)
+                        .with_content(serde_json::json!({})),
+                    (Codex::Person, true) => ElicitResult::new(ElicitationAction::Accept)
+                        .with_content(serde_json::json!({ "decision": "once" })),
+                };
+                return std::future::ready(Ok(result));
             }
             let result = match self.answer {
                 Some("decline") => ElicitResult::new(ElicitationAction::Decline),
@@ -438,6 +533,15 @@ mod over_mcp {
     }
 
     async fn connect(elicitation: bool, answer: Option<&'static str>, root: &str) -> Connected {
+        connect_as(elicitation, answer, None, root).await
+    }
+
+    async fn connect_as(
+        elicitation: bool,
+        answer: Option<&'static str>,
+        codex: Option<Codex>,
+        root: &str,
+    ) -> Connected {
         let server = LeanCtxServer::new_with_project_root(Some(root));
         let (server_io, client_io) = tokio::io::duplex(1 << 16);
         tokio::spawn(async move {
@@ -449,6 +553,7 @@ mod over_mcp {
         let host = Host {
             elicitation,
             answer,
+            codex,
             prompts: prompts.clone(),
         };
         let client = host.serve(client_io).await.expect("connect");
@@ -533,6 +638,30 @@ mod over_mcp {
             2,
             "a one-time approval is not remembered"
         );
+        reset_env();
+    }
+
+    /// Codex under `approval_policy = "never"` with full disk access accepted
+    /// the approval request itself, and the unlisted command ran. It must not
+    /// run then; it runs when a person accepts at Codex's prompt.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_codex_accept_no_person_gave_does_not_run_the_command() {
+        let (_data, project) = enforce_echo_only();
+        let root = project.path().to_string_lossy().to_string();
+
+        let host = connect_as(true, None, Some(Codex::NeverPolicy), &root).await;
+        let (_, text) = host.shell("uname").await;
+        assert_eq!(host.prompt_count(), 1);
+        assert!(!ran_uname(&text), "Codex's own accept ran it: {text}");
+        assert!(blocked(&text), "{text}");
+        assert!(
+            text.contains("lean-ctx allow"),
+            "names the lasting way: {text}"
+        );
+
+        let host = connect_as(true, None, Some(Codex::Person), &root).await;
+        let (_, text) = host.shell("uname").await;
+        assert!(ran_uname(&text), "a person's accept runs it: {text}");
         reset_env();
     }
 
