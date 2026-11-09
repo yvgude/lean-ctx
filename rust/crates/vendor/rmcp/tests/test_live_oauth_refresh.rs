@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Live authorization-server checks for the refresh path.
 //!
 //! These are `#[ignore]`d, so they never run in CI. Provision the authorization

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(all(
     unix,
     feature = "transport-streamable-http-client-unix-socket",

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},

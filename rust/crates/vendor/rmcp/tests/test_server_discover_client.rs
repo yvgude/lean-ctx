@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(all(feature = "client", not(feature = "local")))]
 
 use rmcp::{

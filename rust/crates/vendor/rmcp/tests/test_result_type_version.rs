@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! SEP-2322: the `resultType` discriminator follows the negotiated protocol version.
 //!
 //! Peers negotiating `2026-07-28` or newer receive `resultType: "complete"` on

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(all(
     not(feature = "local"),
     feature = "client",

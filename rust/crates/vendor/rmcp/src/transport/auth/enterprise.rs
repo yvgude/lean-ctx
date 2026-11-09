@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Non-interactive enterprise-managed authorization (EMA/XAA) token exchanges.
 //!
 //! Exchanges an enterprise ID token or refresh token for an ID-JAG, then for an MCP access

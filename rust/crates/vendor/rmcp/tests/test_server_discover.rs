@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 use rmcp::model::{
     ClientCapabilities, ClientJsonRpcMessage, ClientRequest, DiscoverResult, ErrorCode, ErrorData,
     JsonRpcRequest, JsonRpcResponse, ProtocolVersion, ServerJsonRpcMessage, ServerResult,

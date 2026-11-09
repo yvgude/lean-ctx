@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 use std::rc::Rc;
 
 use rmcp::ClientHandler;

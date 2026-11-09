@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(not(feature = "local"))]
 
 use std::{collections::BTreeSet, process::Stdio, time::Duration};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Independent http POSTs may overlap. A POST that reports an expired session
 //! is retried at most once.
 #![cfg(not(feature = "local"))]

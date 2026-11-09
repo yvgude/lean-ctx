@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(all(
     feature = "transport-streamable-http-client",
     feature = "transport-streamable-http-client-reqwest",

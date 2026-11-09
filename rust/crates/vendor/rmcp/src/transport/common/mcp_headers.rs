@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! SEP-2243 HTTP header standardization.
 //!
 //! Builds and validates the `Mcp-Method`, `Mcp-Name`, and `Mcp-Param-*` headers

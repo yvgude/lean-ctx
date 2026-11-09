@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(all(feature = "server", not(feature = "local")))]
 
 use std::{

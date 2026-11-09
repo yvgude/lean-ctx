@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 use rmcp::model::{
     CacheScope, ListToolsResult, ReadResourceResult, ResourceContents, ServerResult,
 };

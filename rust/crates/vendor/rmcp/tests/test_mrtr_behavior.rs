@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Behavior and edge-case coverage for SEP-2322 multi round-trip requests (MRTR).
 //!
 //! These tests drive a real client/server pair over an in-memory duplex stream

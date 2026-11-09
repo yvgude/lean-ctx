@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 use rmcp::model::{
     ClientJsonRpcMessage, ClientRequest, GetMeta, Implementation, JsonRpcNotification,
     JsonRpcRequest, NotificationMetaObject, RequestId, RequestMetaObject, ServerJsonRpcMessage,

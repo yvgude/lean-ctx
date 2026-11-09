@@ -4,9 +4,9 @@ authority = "THIRD_PARTY_NOTICES"
 
 [inputs]
 cargo_lock = "rust/Cargo.lock"
-cargo_lock_sha256 = "f6f1ffbfb6268065c7da0f50461fe3d8da6cd4532aaf53697bce002a9c3e0775"
+cargo_lock_sha256 = "7bbc281faa671a94f0b05b3181d794494f888094ca31076bd93c380e5afa19ee"
 sbom = "SBOM.cdx.json"
-sbom_sha256 = "f81caf6a3fc7ca4afea4e7a9cf9dd9218351054aa26b880b1dce469ac6456795"
+sbom_sha256 = "b84b10bfe50387d185aabd64a3a599c66b0395d6f6a88b7f0eae6c7ab9f927e3"
 npm_lock = "packages/pi-lean-ctx/package-lock.json"
 npm_lock_sha256 = "b2a68b872d11463d637f84367557712e8f79442ccd9e6cfd5af28140b4eb10d9"
 
@@ -36,15 +36,16 @@ SOFTWARE.
 [[assets]]
 id = "vendored-rmcp"
 path = "rust/crates/vendor/rmcp"
-sha256 = "c516ce111faf9d175add0877b5535208e4e7f4df4f48f9012727da7e865f85fa"
-version = "2.0.0"
-source = "https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v2.0.0"
+sha256 = "cd27823e530e77eecc17a273e0ebd67976c63bd812dd24b52248b93b079f629b"
+version = "3.9.0"
+source = "https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v3.9.0"
 spdx = "Apache-2.0"
 license_text_path = "LICENSES/Apache-2.0.txt"
 modified = true
-modification_summary = "LeanCTX carries the local JoinSet response-send drain patch described in rust/Cargo.toml, and an OAuth discovery patch in src/transport/auth.rs (#1391: a 200 status page on the MCP endpoint is not taken as RFC 9728 resource metadata); upstream rmcp 2.0.0 is retained as the provenance base."
+modification_summary = "LeanCTX carries one local patch described in rust/Cargo.toml: a one-shot transport releases its service even when the caller has disconnected (src/transport.rs). It adds a regression test for the OAuth discovery status-page case (#1391, src/transport/auth.rs) and SPDX NOASSERTION header lines on the source files that are new since the provenance cut; upstream rmcp 3.9.0 is retained as the provenance base."
 evidence_paths = [
   "rust/crates/vendor/rmcp/Cargo.toml",
+  "rust/crates/vendor/rmcp/src/transport.rs",
   "rust/crates/vendor/rmcp/src/transport/auth.rs",
   "rust/Cargo.toml",
 ]
@@ -52,9 +53,9 @@ evidence_paths = [
 [[assets]]
 id = "vendored-rmcp-macros"
 path = "rust/crates/vendor/rmcp-macros"
-sha256 = "35b53c95f9645c7b1e9add853a88213ec1aab59cb42abbd67a83634ff8504ca9"
-version = "2.0.0"
-source = "https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v2.0.0"
+sha256 = "bacb37eabbd4087453300dffde0d26c1e4801a9199199c0f5af114bee2080ae7"
+version = "3.9.0"
+source = "https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v3.9.0"
 spdx = "Apache-2.0"
 license_text_path = "LICENSES/Apache-2.0.txt"
 modified = false

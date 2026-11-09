@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Multi Round-Trip Request (MRTR) types for SEP-2322.
 //!
 //! Provides [`InputRequiredResult`], [`InputRequests`], and [`InputResponses`]

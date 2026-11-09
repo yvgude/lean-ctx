@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Skill types for the MCP Skills extension (SEP-2640).
 //!
 //! A skill is a directory of files served over the Resources primitive:

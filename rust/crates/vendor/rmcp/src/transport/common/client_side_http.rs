@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Bounded collection of non-streaming HTTP responses.
 
 use bytes::Bytes;

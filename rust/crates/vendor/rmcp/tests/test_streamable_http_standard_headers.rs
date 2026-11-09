@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(not(feature = "local"))]
 //! SEP-2243 server-side validation of `Mcp-Method` / `Mcp-Name` / `Mcp-Param-*` headers.
 use std::sync::{

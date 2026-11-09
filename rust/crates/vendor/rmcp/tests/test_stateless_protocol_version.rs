@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Tests for protocol version negotiation in stateless HTTP mode.
 //!
 //! Supported handshake versions are echoed back; unknown versions, versions

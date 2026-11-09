@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! DNS resolution for OAuth HTTP requests that applies the metadata address
 //! policy to the addresses the client actually connects to.
 //!

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(all(feature = "transport-streamable-http-server", not(feature = "local")))]
 
 use std::{sync::Arc, time::Duration};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Regression tests for the line-length bound on `AsyncRwTransport`.
 //!
 //! The stdio server transport and the `TokioChildProcess` client transport both

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![allow(deprecated)]
 
 use rmcp::model::{

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Integrity protection for SEP-2322 `requestState`.
 //!
 //! In the multi round-trip request (MRTR) flow, a server places an opaque

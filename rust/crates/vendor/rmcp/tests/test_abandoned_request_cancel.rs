@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! A client that stops waiting for a request tells the server with
 //! `notifications/cancelled`.
 //!

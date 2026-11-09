@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Wire-shape regression guards for the SEP-2322 `resultType` discriminator.
 //!
 //! These pin the behavior that keeps older/strict peers working:

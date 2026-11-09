@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(not(feature = "local"))]
 //! SEP-414: the reserved trace-context `_meta` keys survive a client→server round trip unchanged.
 use std::sync::Arc;

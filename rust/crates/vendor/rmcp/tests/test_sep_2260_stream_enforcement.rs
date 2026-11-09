@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! SEP-2260 follow-up (#1033): stream-based receive-side enforcement.
 //!
 //! Scripted streamable HTTP "server": answers a legacy initialize with

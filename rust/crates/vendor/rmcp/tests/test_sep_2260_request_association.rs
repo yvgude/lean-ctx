@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 #![cfg(all(feature = "server", feature = "client", not(feature = "local")))]
 #![expect(deprecated, reason = "This test exercises the deprecated sampling API")]
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! A receiver SHOULD NOT send a response for a request it has already been told
 //! to cancel. This drives a real stdio server with raw JSON-RPC: the tool blocks
 //! until the request is cancelled, so its result is only produced *after* the

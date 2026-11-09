@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: NOASSERTION
 //! Tests for protocol version negotiation in the default ServerHandler::initialize impl.
 //!
 //! Handshake versions are echoed back; every other version falls back to one
