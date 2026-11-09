@@ -31,14 +31,21 @@ env:
   # (~90 MB) in the background. Without this, the #551 auto-activation can
   # load the engine mid-suite and slow tarpaulin past its timeout.
   LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD: "0"
+  # Pull requests read the sccache store but never write it: PR entries would
+  # crowd main's caches out of the repo's 10 GB Actions cache quota.
+  SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
 
 jobs:
-  # Path filter for pull requests: a PR that touches no Rust input (docs,
-  # website, Node/Python packages) skips the engine builds below, which are
-  # most of the run's runner-minutes. Pushes to main, the nightly schedule and
-  # workflow_dispatch always run everything (the step is skipped and the
-  # `rust` output stays empty, which the job conditions treat as "run").
-  # Skipped jobs count as passed in CI Green.
+  # Path filter for pull requests. It is a skip list: a PR whose every changed
+  # file is listed below skips the engine jobs; any other file runs full CI.
+  # Only files no Rust test, build script or engine-job script reads belong
+  # here. Not listed on purpose: docs/** (a Rust test secret-scans every
+  # docs/**/*.md, others read docs/contracts and docs/reference), README.md,
+  # llms.txt, discord-faq.md, ARCHITECTURE.md, CONTRACTS.md, SECURITY.md,
+  # VISION.md, packages/, integrations/, product/. Pushes to main, the nightly
+  # schedule and workflow_dispatch always run everything (the step is skipped
+  # and the `rust` output stays empty, which the job conditions treat as
+  # "run"). Skipped jobs count as passed in CI Green.
   changes:
     name: Changed paths
     runs-on: ubuntu-latest
@@ -53,20 +60,22 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
+          # `rust` is true when some changed file matches every pattern, that
+          # is, when some file is not on the skip list.
+          predicate-quantifier: every
           filters: |
             rust:
-              - 'rust/**'
-              - 'clients/rust/**'
-              - '.github/**'
-              - 'scripts/**'
-              - 'Cargo.*'
-              - 'rust-toolchain*'
-              # Inputs the Rust jobs check outside rust/: the build-script
-              # tests (Test), the proof registry (Gateway Proof) and the
-              # generated references (Documentation).
-              - 'tests/build/**'
-              - 'docs/contracts/gateway-proof-v1/**'
-              - 'docs/reference/generated/**'
+              - '**'
+              - '!BENCHMARKS.md'
+              - '!CHANGELOG.md'
+              - '!CLA.md'
+              - '!CODE_OF_CONDUCT.md'
+              - '!CONTRIBUTING.md'
+              - '!ECOSYSTEM.md'
+              - '!cookbook/**'
+              - '!infra/**'
+              - '!legal/**'
+              - '!specs/**'
 
   narrative-governance:
     name: Narrative governance
@@ -268,34 +277,10 @@ jobs:
           cache-targets: ${{ matrix.os != 'ubuntu-latest' }}
       - name: Engine at opt-level 0 (Linux and Windows)
         if: runner.os != 'macOS'
-        shell: bash
-        run: |
-          # Cargo.toml builds the Engine and the binary package at opt-level 1
-          # for Apple's compact-unwind limit — a macOS linker constraint only.
-          # Elsewhere opt-level 1 roughly triples their compile time (GitLab,
-          # 08.11.: Engine lib 133 s -> 47 s, lean-ctx lib 36 s -> 12 s), and
-          # the test harnesses always recompile. Cargo config profiles take
-          # precedence over Cargo.toml.
-          printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' \
-            '[profile.dev.package.lean-ctx]' 'opt-level = 0' \
-            >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
+        uses: ./.github/actions/engine-opt-level-0
       - name: Set up sccache (Linux)
         if: runner.os == 'Linux'
-        id: sccache
-        # A cache, not a gate: if the download fails, compile uncached.
-        continue-on-error: true
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-      - name: Enable sccache (Linux)
-        if: runner.os == 'Linux' && steps.sccache.outcome == 'success'
-        shell: bash
-        run: |
-          {
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "RUSTC_WRAPPER=sccache"
-            echo "CARGO_INCREMENTAL=0"
-          } >> "$GITHUB_ENV"
+        uses: ./.github/actions/sccache
 
       - name: Verify build-script freshness and source guard
         if: runner.os == 'Linux'
@@ -521,20 +506,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Set up sccache
-        id: sccache
-        # A cache, not a gate: if the download fails, compile uncached.
-        continue-on-error: true
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          {
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "RUSTC_WRAPPER=sccache"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -749,31 +721,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy, rustfmt
-      - name: Set up sccache
-        id: sccache
-        # A cache, not a gate: if the download fails, compile uncached.
-        continue-on-error: true
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          {
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "RUSTC_WRAPPER=sccache"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
           cache-targets: false
-      - name: Engine at opt-level 0
-        # See the step of the same name in Test.
-        run: |
-          printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' \
-            '[profile.dev.package.lean-ctx]' 'opt-level = 0' \
-            >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Format
         working-directory: rust
         run: cargo fmt -p lean-ctx-embed --check
@@ -943,20 +897,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Set up sccache
-        id: sccache
-        # A cache, not a gate: if the download fails, compile uncached.
-        continue-on-error: true
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          {
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "RUSTC_WRAPPER=sccache"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -964,12 +905,7 @@ jobs:
           cache-targets: false
       # The registry script runs `cargo test` itself, so the override goes
       # into CARGO_HOME config rather than onto a command line.
-      - name: Engine at opt-level 0
-        # See the step of the same name in Test.
-        run: |
-          printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' \
-            '[profile.dev.package.lean-ctx]' 'opt-level = 0' \
-            >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
+      - uses: ./.github/actions/engine-opt-level-0
       # Every proven scenario/path names tests that must exist and pass; a
       # release run (`--release`) additionally refuses while any is open.
       - name: Run the gateway proof registry
@@ -988,20 +924,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Set up sccache
-        id: sccache
-        # A cache, not a gate: if the download fails, compile uncached.
-        continue-on-error: true
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          {
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "RUSTC_WRAPPER=sccache"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -1040,31 +963,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Set up sccache
-        id: sccache
-        # A cache, not a gate: if the download fails, compile uncached.
-        continue-on-error: true
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          {
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "RUSTC_WRAPPER=sccache"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
           cache-targets: false
-      - name: Engine at opt-level 0
-        # See the step of the same name in Test.
-        run: |
-          printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' \
-            '[profile.dev.package.lean-ctx]' 'opt-level = 0' \
-            >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Build lean-ctx
         working-directory: rust
         run: cargo build --quiet
@@ -1109,31 +1014,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Set up sccache
-        id: sccache
-        # A cache, not a gate: if the download fails, compile uncached.
-        continue-on-error: true
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          {
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "RUSTC_WRAPPER=sccache"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
           cache-targets: false
-      - name: Engine at opt-level 0
-        # See the step of the same name in Test.
-        run: |
-          printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' \
-            '[profile.dev.package.lean-ctx]' 'opt-level = 0' \
-            >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Check docs compile
         working-directory: rust
         env:
@@ -1156,31 +1043,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Set up sccache
-        id: sccache
-        # A cache, not a gate: if the download fails, compile uncached.
-        continue-on-error: true
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          {
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "RUSTC_WRAPPER=sccache"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
           cache-targets: false
-      - name: Engine at opt-level 0
-        # See the step of the same name in Test.
-        run: |
-          printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' \
-            '[profile.dev.package.lean-ctx]' 'opt-level = 0' \
-            >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Check bundled registry snapshots are canonical
         working-directory: rust
         run: cargo run --example gen_registry --features dev-tools -- --check
@@ -1199,31 +1068,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Set up sccache
-        id: sccache
-        # A cache, not a gate: if the download fails, compile uncached.
-        continue-on-error: true
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-        with:
-          version: v0.19.0
-      - name: Enable sccache
-        if: steps.sccache.outcome == 'success'
-        run: |
-          {
-            echo "SCCACHE_GHA_ENABLED=true"
-            echo "RUSTC_WRAPPER=sccache"
-          } >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
           cache-targets: false
-      - name: Engine at opt-level 0
-        # See the step of the same name in Test.
-        run: |
-          printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' \
-            '[profile.dev.package.lean-ctx]' 'opt-level = 0' \
-            >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Check v4 product capability classification and generated matrix
         working-directory: rust
         run: |
