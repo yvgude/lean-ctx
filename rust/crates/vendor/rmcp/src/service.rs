@@ -1,3 +1,5 @@
+use std::{borrow::Cow, sync::OnceLock};
+
 use futures::FutureExt;
 #[cfg(not(feature = "local"))]
 use futures::future::BoxFuture;
@@ -51,9 +53,10 @@ use crate::model::ServerNotification;
 use crate::{
     error::ErrorData as McpError,
     model::{
-        CancelledNotification, CancelledNotificationParam, Extensions, GetExtensions, GetMeta,
-        JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, Meta,
-        NumberOrString, ProgressToken, RequestId,
+        CancelledNotification, CancelledNotificationParam, ClientCapabilities, Extensions,
+        GetExtensions, GetMeta, Implementation, JsonRpcError, JsonRpcMessage, JsonRpcNotification,
+        JsonRpcRequest, JsonRpcResponse, NotificationMetaObject, NumberOrString, ProgressToken,
+        ProtocolVersion, RequestId, RequestMetaObject,
     },
     transport::{DynamicTransportError, IntoTransport, Transport},
 };
@@ -82,10 +85,15 @@ pub enum ServiceError {
     TransportClosed,
     #[error("Unexpected response type")]
     UnexpectedResponse,
+    #[error("subscription consumer lagged behind its {capacity}-message buffer")]
+    SubscriptionLagged { capacity: usize },
     #[error("task cancelled for reason {}", reason.as_deref().unwrap_or("<unknown>"))]
     Cancelled { reason: Option<String> },
     #[error("request timeout after {}", chrono::Duration::from_std(*timeout).unwrap_or_default())]
     Timeout { timeout: Duration },
+    /// The peer kept returning `input_required` beyond the configured round cap.
+    #[error("input_required did not complete within {max_rounds} MRTR rounds")]
+    InputRequiredRoundsExceeded { max_rounds: usize },
 }
 
 trait TransferObject:
@@ -106,22 +114,159 @@ impl<T> TransferObject for T where
 
 #[allow(private_bounds, reason = "there's no the third implementation")]
 pub trait ServiceRole: std::fmt::Debug + Send + Sync + 'static + Copy + Clone {
-    type Req: TransferObject + GetMeta + GetExtensions;
+    type Req: TransferObject + GetMeta<Metadata = RequestMetaObject> + GetExtensions;
     type Resp: TransferObject;
     type Not: TryInto<CancelledNotification, Error = Self::Not>
         + From<CancelledNotification>
         + TransferObject;
-    type PeerReq: TransferObject + GetMeta + GetExtensions;
+    type PeerReq: TransferObject + GetMeta<Metadata = RequestMetaObject> + GetExtensions;
     type PeerResp: TransferObject;
     type PeerNot: TryInto<CancelledNotification, Error = Self::PeerNot>
         + From<CancelledNotification>
         + TransferObject
-        + GetMeta
+        + GetMeta<Metadata = NotificationMetaObject>
         + GetExtensions;
     type InitializeError;
     const IS_CLIENT: bool;
     type Info: TransferObject;
     type PeerInfo: TransferObject;
+    #[doc(hidden)]
+    fn configure_direct_peer(_peer: &Peer<Self>, _info: &Self::Info) {}
+    #[doc(hidden)]
+    fn peer_cancelled_params(_notification: &Self::PeerNot) -> Option<&CancelledNotificationParam> {
+        None
+    }
+    #[doc(hidden)]
+    fn peer_cancels_subscriptions(_peer: &Peer<Self>) -> bool {
+        false
+    }
+    #[doc(hidden)]
+    fn is_subscription_request(_request: &Self::Req) -> bool {
+        false
+    }
+    /// Invalidate any response cache affected by an inbound peer notification.
+    ///
+    /// The serve loop calls this for every notification *before* subscription
+    /// routing, so cache invalidation still runs when a notification is
+    /// delivered through a `listen` subscription channel rather than the
+    /// [`Service::handle_notification`] callbacks.
+    #[doc(hidden)]
+    fn invalidate_response_cache(
+        _peer: &Peer<Self>,
+        _notification: &Self::PeerNot,
+    ) -> impl Future<Output = ()> + MaybeSendFuture {
+        async {}
+    }
+
+    /// Rejects outbound requests when the negotiated protocol forbids this role
+    /// from sending any.
+    #[doc(hidden)]
+    fn enforce_outbound_request(_peer: &Peer<Self>) -> Result<(), ServiceError> {
+        Ok(())
+    }
+
+    /// SEP-2260 says clients receiving a server-to-client request with no
+    /// associated outbound request should reject it with invalid params. An
+    /// error return is sent back to the peer instead of dispatching to the
+    /// handler.
+    #[doc(hidden)]
+    fn enforce_peer_request_association(
+        _peer_request: &Self::PeerReq,
+        _peer_info: Option<&Self::PeerInfo>,
+        _association: PeerRequestAssociation,
+    ) -> Result<(), McpError> {
+        Ok(())
+    }
+}
+
+/// How an inbound peer request relates to this side's in-flight outbound
+/// requests (SEP-2260).
+///
+/// SEP-2260 defines no wire field for association, so only stream-separating
+/// transports (streamable HTTP) can observe it; other transports yield
+/// [`Self::Unknown`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(clippy::exhaustive_enums, reason = "intentionally exhaustive")]
+pub enum PeerRequestAssociation {
+    /// Arrived on the response stream of an in-flight outbound request.
+    Associated,
+    /// Arrived on a stream tied to no in-flight outbound request (e.g. the
+    /// streamable HTTP standalone GET stream).
+    Unassociated,
+    /// The transport cannot distinguish streams; only the coarse in-flight
+    /// signal is available.
+    Unknown { has_pending_outbound_request: bool },
+}
+
+pub(crate) fn uses_legacy_lifecycle(
+    protocol_version: Option<&ProtocolVersion>,
+    uses_discover_lifecycle: bool,
+) -> bool {
+    !uses_discover_lifecycle && protocol_version.is_none_or(ProtocolVersion::has_initialize)
+}
+
+pub(crate) fn peer_request_association<Req: crate::model::GetExtensions, V>(
+    request: &Req,
+    local_responder_pool: &std::collections::HashMap<RequestId, V>,
+) -> PeerRequestAssociation {
+    match request.extensions().get::<InboundStreamOrigin>() {
+        None => PeerRequestAssociation::Unknown {
+            has_pending_outbound_request: !local_responder_pool.is_empty(),
+        },
+        Some(InboundStreamOrigin::Unassociated) => PeerRequestAssociation::Unassociated,
+        Some(InboundStreamOrigin::OutboundRequest(id)) => {
+            if local_responder_pool.contains_key(id) {
+                PeerRequestAssociation::Associated
+            } else {
+                PeerRequestAssociation::Unassociated
+            }
+        }
+    }
+}
+
+tokio::task_local! {
+    pub(crate) static ORIGINATING_REQUEST: RequestId;
+    /// The protocol version the originating request names in its `_meta`.
+    pub(crate) static ORIGINATING_PROTOCOL_VERSION: Option<ProtocolVersion>;
+}
+
+/// The protocol version named by the request the current handler is serving,
+/// if any. Like [`ORIGINATING_REQUEST`], it does not cross `tokio::spawn`.
+#[cfg(feature = "server")]
+pub(crate) fn originating_protocol_version() -> Option<ProtocolVersion> {
+    ORIGINATING_PROTOCOL_VERSION
+        .try_with(Clone::clone)
+        .ok()
+        .flatten()
+}
+
+/// Marker in an outbound request's non-serialized [`Extensions`] identifying
+/// the in-flight peer request it was issued from (SEP-2260). Attached for both
+/// roles whenever a request is sent from within a request handler; the
+/// streamable HTTP server reads it to deliver server-initiated requests on the
+/// originating request's SSE stream. Never on the wire (SEP-2260 defines no
+/// wire field), so session managers that serialize messages between processes
+/// lose it and such requests fall back to the standalone stream with a warning.
+/// The association is task-local and does not cross `tokio::spawn`, so use the
+/// task manager for long-running work.
+///
+/// The client receive-side mirror is [`InboundStreamOrigin`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
+pub struct OriginatingRequestId(pub RequestId);
+
+/// Marker in an inbound request's non-serialized [`Extensions`] recording
+/// which HTTP response stream it arrived on: the receive-side mirror of
+/// [`OriginatingRequestId`]. Never on the wire (SEP-2260 defines no wire
+/// field); when absent, the coarse in-flight check applies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[expect(clippy::exhaustive_enums, reason = "intentionally exhaustive")]
+pub enum InboundStreamOrigin {
+    /// The standalone GET stream, or a POST response stream not tied to an
+    /// outbound request.
+    Unassociated,
+    /// The SSE response stream of the POST that carried this outbound request.
+    OutboundRequest(RequestId),
 }
 
 pub type TxJsonRpcMessage<R> =
@@ -145,6 +290,19 @@ pub trait Service<R: ServiceRole>: Send + Sync + 'static {
         context: NotificationContext<R>,
     ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_;
     fn get_info(&self) -> R::Info;
+    /// The protocol versions this service can speak, bounding what `initialize`
+    /// negotiation may agree to.
+    ///
+    /// Servers normally override
+    /// [`ServerHandler::supported_protocol_versions`] instead of this method;
+    /// the blanket `Service` impl forwards to it. This method exists so the
+    /// transport and handshake layers, which see only a `Service`, can read the
+    /// list and avoid agreeing to a version the server cannot serve.
+    ///
+    /// [`ServerHandler::supported_protocol_versions`]: crate::handler::server::ServerHandler::supported_protocol_versions
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(ProtocolVersion::KNOWN_VERSIONS)
+    }
 }
 
 #[cfg(feature = "local")]
@@ -160,6 +318,12 @@ pub trait Service<R: ServiceRole>: 'static {
         context: NotificationContext<R>,
     ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_;
     fn get_info(&self) -> R::Info;
+    /// The protocol versions this service can speak.
+    ///
+    /// See the non-`local` variant of this trait for details.
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(ProtocolVersion::KNOWN_VERSIONS)
+    }
 }
 
 pub trait ServiceExt<R: ServiceRole>: Service<R> + Sized {
@@ -211,6 +375,10 @@ impl<R: ServiceRole> Service<R> for Box<dyn DynService<R>> {
     fn get_info(&self) -> R::Info {
         DynService::get_info(self.as_ref())
     }
+
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        DynService::supported_protocol_versions(self.as_ref())
+    }
 }
 
 #[cfg(not(feature = "local"))]
@@ -226,6 +394,10 @@ pub trait DynService<R: ServiceRole>: Send + Sync {
         context: NotificationContext<R>,
     ) -> MaybeBoxFuture<'_, Result<(), McpError>>;
     fn get_info(&self) -> R::Info;
+    /// See [`Service::supported_protocol_versions`].
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(ProtocolVersion::KNOWN_VERSIONS)
+    }
 }
 
 #[cfg(feature = "local")]
@@ -241,6 +413,10 @@ pub trait DynService<R: ServiceRole> {
         context: NotificationContext<R>,
     ) -> MaybeBoxFuture<'_, Result<(), McpError>>;
     fn get_info(&self) -> R::Info;
+    /// See [`Service::supported_protocol_versions`].
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(ProtocolVersion::KNOWN_VERSIONS)
+    }
 }
 
 impl<R: ServiceRole, S: Service<R>> DynService<R> for S {
@@ -260,6 +436,9 @@ impl<R: ServiceRole, S: Service<R>> DynService<R> for S {
     }
     fn get_info(&self) -> R::Info {
         self.get_info()
+    }
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Service::supported_protocol_versions(self)
     }
 }
 
@@ -282,6 +461,17 @@ pub trait ProgressTokenProvider: Send + Sync + 'static {
 
 pub type AtomicU32RequestIdProvider = AtomicU32Provider;
 pub type AtomicU32ProgressTokenProvider = AtomicU32Provider;
+
+pub(crate) fn remove_pending_request<T>(
+    pending_requests: &mut HashMap<RequestId, T>,
+    response_id: &RequestId,
+) -> Option<T> {
+    pending_requests.remove(response_id).or_else(|| {
+        response_id
+            .numeric_string_value()
+            .and_then(|id| pending_requests.remove(&RequestId::Number(id)))
+    })
+}
 
 #[derive(Debug, Default)]
 pub struct AtomicU32Provider {
@@ -333,7 +523,13 @@ impl ProgressNotificationToken for ServerNotification {
 }
 
 type Responder<T> = tokio::sync::oneshot::Sender<T>;
+struct PendingResponse<T> {
+    responder: Responder<T>,
+    is_subscription: bool,
+}
 type ProgressTimeoutWatchers = Arc<tokio::sync::RwLock<HashMap<ProgressToken, mpsc::Sender<()>>>>;
+type SubscriptionChannel<N> = (mpsc::Sender<N>, usize);
+type SubscriptionChannelMap<N> = HashMap<RequestId, SubscriptionChannel<N>>;
 
 /// A handle to a remote request
 ///
@@ -394,10 +590,12 @@ impl<R: ServiceRole> RequestHandle<R> {
             has_progress_reset_rx,
         )
         .await;
+        self.peer.unregister_subscription(&self.id);
         result
     }
 
     async fn send_timeout_cancel_notification(&self, reason: &str) {
+        self.peer.unregister_subscription(&self.id);
         let notification = CancelledNotification {
             params: CancelledNotificationParam {
                 request_id: Some(self.id.clone()),
@@ -454,11 +652,10 @@ impl<R: ServiceRole> RequestHandle<R> {
                         None => None,
                     }
                 }, if reset_timeout_on_progress && idle_sleep.is_some() && self.progress_reset_rx.is_some() => {
-                    if progress.is_some() {
-                        if let Some((timeout, sleep)) = idle_sleep.as_mut() {
+                    if progress.is_some()
+                        && let Some((timeout, sleep)) = idle_sleep.as_mut() {
                             sleep.as_mut().reset(tokio::time::Instant::now() + *timeout);
                         }
-                    }
                 }
             }
         }
@@ -472,6 +669,7 @@ impl<R: ServiceRole> RequestHandle<R> {
             self.progress_reset_rx.is_some(),
         )
         .await;
+        self.peer.unregister_subscription(&self.id);
         let notification = CancelledNotification {
             params: CancelledNotificationParam {
                 request_id: Some(self.id),
@@ -512,18 +710,49 @@ pub(crate) enum PeerSinkMessage<R: ServiceRole> {
     },
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ClientRequestMetadata {
+    pub protocol_version: ProtocolVersion,
+    pub client_info: Implementation,
+    pub client_capabilities: ClientCapabilities,
+}
+
 /// An interface to fetch the remote client or server
 ///
 /// For general purpose, call [`Peer::send_request`] or [`Peer::send_notification`] to send message to remote peer.
 ///
 /// To create a cancellable request, call [`Peer::send_request_with_option`].
-#[derive(Clone)]
 pub struct Peer<R: ServiceRole> {
     tx: mpsc::Sender<PeerSinkMessage<R>>,
     request_id_provider: Arc<dyn RequestIdProvider>,
     progress_token_provider: Arc<dyn ProgressTokenProvider>,
     progress_timeout_watchers: ProgressTimeoutWatchers,
     info: Arc<std::sync::RwLock<Option<Arc<R::PeerInfo>>>>,
+    client_request_metadata: Arc<OnceLock<ClientRequestMetadata>>,
+    inline_protocol_version: Arc<OnceLock<ProtocolVersion>>,
+    subscription_channels: Arc<std::sync::RwLock<SubscriptionChannelMap<R::PeerNot>>>,
+    #[cfg(feature = "client")]
+    response_cache: client::cache::PeerResponseCache<R>,
+}
+
+impl<R: Clone + ServiceRole> Clone for Peer<R>
+where
+    R::PeerInfo: Clone,
+{
+    fn clone(&self) -> Peer<R> {
+        Self {
+            tx: self.tx.clone(),
+            request_id_provider: self.request_id_provider.clone(),
+            progress_token_provider: self.progress_token_provider.clone(),
+            progress_timeout_watchers: self.progress_timeout_watchers.clone(),
+            info: self.info.clone(),
+            client_request_metadata: self.client_request_metadata.clone(),
+            inline_protocol_version: self.inline_protocol_version.clone(),
+            subscription_channels: self.subscription_channels.clone(),
+            #[cfg(feature = "client")]
+            response_cache: self.response_cache.clone(),
+        }
+    }
 }
 
 impl<R: ServiceRole> std::fmt::Debug for Peer<R> {
@@ -541,7 +770,7 @@ type ProxyOutbound<R> = mpsc::Receiver<PeerSinkMessage<R>>;
 #[non_exhaustive]
 pub struct PeerRequestOptions {
     pub timeout: Option<Duration>,
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     /// Reset the request timeout when a matching progress notification is received.
     pub reset_timeout_on_progress: bool,
     /// Maximum total time to wait for the request, regardless of progress notifications.
@@ -558,6 +787,14 @@ impl PeerRequestOptions {
             timeout: Some(timeout),
             ..Self::default()
         }
+    }
+
+    /// Adds request metadata while preserving any other configured options.
+    ///
+    /// Explicit values take precedence over discover-lifecycle metadata defaults.
+    pub fn with_meta(mut self, meta: RequestMetaObject) -> Self {
+        self.meta = Some(meta);
+        self
     }
 
     pub fn reset_timeout_on_progress(mut self) -> Self {
@@ -585,6 +822,11 @@ impl<R: ServiceRole> Peer<R> {
                 progress_token_provider: Arc::new(AtomicU32ProgressTokenProvider::default()),
                 progress_timeout_watchers: Default::default(),
                 info: Arc::new(std::sync::RwLock::new(peer_info.map(Arc::new))),
+                client_request_metadata: Default::default(),
+                inline_protocol_version: Default::default(),
+                subscription_channels: Default::default(),
+                #[cfg(feature = "client")]
+                response_cache: Default::default(),
             },
             rx,
         )
@@ -617,11 +859,33 @@ impl<R: ServiceRole> Peer<R> {
 
     pub async fn send_request_with_option(
         &self,
-        mut request: R::Req,
+        request: R::Req,
         options: PeerRequestOptions,
     ) -> Result<RequestHandle<R>, ServiceError> {
+        self.send_request_with_option_and_subscription(request, options, None)
+            .await
+    }
+
+    async fn send_request_with_option_and_subscription(
+        &self,
+        mut request: R::Req,
+        options: PeerRequestOptions,
+        subscription_sender: Option<SubscriptionChannel<R::PeerNot>>,
+    ) -> Result<RequestHandle<R>, ServiceError> {
+        R::enforce_outbound_request(self)?;
+        if let Ok(originating) = ORIGINATING_REQUEST.try_with(|id| id.clone()) {
+            request
+                .extensions_mut()
+                .insert(OriginatingRequestId(originating));
+        }
         let id = self.request_id_provider.next_request_id();
         let progress_token = self.progress_token_provider.next_progress_token();
+        if let Some(metadata) = self.client_request_metadata.get() {
+            let meta = request.get_meta_mut();
+            meta.set_protocol_version(metadata.protocol_version.clone());
+            meta.set_client_info(metadata.client_info.clone());
+            meta.set_client_capabilities(metadata.client_capabilities.clone());
+        }
         if let Some(meta) = options.meta.clone() {
             request.get_meta_mut().extend(meta);
         }
@@ -639,6 +903,10 @@ impl<R: ServiceRole> Peer<R> {
         } else {
             None
         };
+        if let Some(channel) = subscription_sender {
+            self.subscription_channels_write()
+                .insert(id.clone(), channel);
+        }
         if self
             .tx
             .send(PeerSinkMessage::Request {
@@ -655,6 +923,7 @@ impl<R: ServiceRole> Peer<R> {
                     .await
                     .remove(&progress_token);
             }
+            self.unregister_subscription(&id);
             return Err(ServiceError::TransportClosed);
         }
         Ok(RequestHandle {
@@ -665,6 +934,67 @@ impl<R: ServiceRole> Peer<R> {
             peer: self.clone(),
             progress_reset_rx,
         })
+    }
+
+    #[cfg(feature = "client")]
+    pub(crate) async fn send_subscription_request(
+        &self,
+        request: R::Req,
+        options: PeerRequestOptions,
+        channel_capacity: usize,
+    ) -> Result<(RequestHandle<R>, mpsc::Receiver<R::PeerNot>), ServiceError> {
+        let (sender, receiver) = mpsc::channel(channel_capacity);
+        let handle = self
+            .send_request_with_option_and_subscription(
+                request,
+                options,
+                Some((sender, channel_capacity)),
+            )
+            .await?;
+        Ok((handle, receiver))
+    }
+
+    fn subscription_sender(&self, id: &RequestId) -> Option<SubscriptionChannel<R::PeerNot>> {
+        self.subscription_channels_read().get(id).cloned()
+    }
+
+    pub(crate) fn unregister_subscription(&self, id: &RequestId) {
+        self.subscription_channels_write().remove(id);
+    }
+
+    fn subscription_channels_read(
+        &self,
+    ) -> std::sync::RwLockReadGuard<'_, SubscriptionChannelMap<R::PeerNot>> {
+        match self.subscription_channels.read() {
+            Ok(channels) => channels,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    fn subscription_channels_write(
+        &self,
+    ) -> std::sync::RwLockWriteGuard<'_, SubscriptionChannelMap<R::PeerNot>> {
+        match self.subscription_channels.write() {
+            Ok(channels) => channels,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    pub(crate) fn try_cancel_request(&self, id: RequestId, reason: Option<String>) {
+        let notification = CancelledNotification {
+            params: CancelledNotificationParam {
+                request_id: Some(id),
+                reason,
+                meta: None,
+            },
+            method: crate::model::CancelledNotificationMethod,
+            extensions: Default::default(),
+        };
+        let (responder, _receiver) = tokio::sync::oneshot::channel();
+        let _ = self.tx.try_send(PeerSinkMessage::Notification {
+            notification: notification.into(),
+            responder,
+        });
     }
 
     async fn notify_progress_timeout_watcher(&self, progress_token: &ProgressToken) {
@@ -698,6 +1028,31 @@ impl<R: ServiceRole> Peer<R> {
     /// Stores the peer's handshake info, overwriting any previous value.
     pub fn set_peer_info(&self, info: R::PeerInfo) {
         *self.info.write().expect("peer info lock poisoned") = Some(Arc::new(info));
+    }
+
+    #[cfg(feature = "client")]
+    pub(crate) fn set_client_request_metadata(&self, metadata: ClientRequestMetadata) {
+        let result = self.client_request_metadata.set(metadata);
+        debug_assert!(result.is_ok(), "client request metadata set more than once");
+    }
+
+    /// Marks an inline lifecycle session that opened on `protocol_version`.
+    #[cfg(feature = "server")]
+    pub(crate) fn set_inline_protocol_version(&self, protocol_version: ProtocolVersion) {
+        let result = self.inline_protocol_version.set(protocol_version);
+        debug_assert!(result.is_ok(), "inline protocol version set more than once");
+    }
+
+    /// The version an inline lifecycle session opened on. Such a session never
+    /// stores peer info.
+    #[cfg(feature = "server")]
+    pub(crate) fn inline_protocol_version(&self) -> Option<&ProtocolVersion> {
+        self.inline_protocol_version.get()
+    }
+
+    #[cfg(feature = "server")]
+    pub(crate) fn request_metadata_required(&self) -> bool {
+        self.inline_protocol_version.get().is_some()
     }
 
     pub fn is_transport_closed(&self) -> bool {
@@ -859,7 +1214,7 @@ pub struct RequestContext<R: ServiceRole> {
     /// this token will be cancelled when the [`CancelledNotification`] is received.
     pub ct: CancellationToken,
     pub id: RequestId,
-    pub meta: Meta,
+    pub meta: RequestMetaObject,
     pub extensions: Extensions,
     /// An interface to fetch the remote client or server
     pub peer: Peer<R>,
@@ -871,7 +1226,7 @@ impl<R: ServiceRole> RequestContext<R> {
         Self {
             ct: CancellationToken::new(),
             id,
-            meta: Meta::default(),
+            meta: RequestMetaObject::default(),
             extensions: Extensions::default(),
             peer,
         }
@@ -880,11 +1235,35 @@ impl<R: ServiceRole> RequestContext<R> {
 
 #[cfg(feature = "server")]
 impl RequestContext<RoleServer> {
-    /// The protocol version the client negotiated, or `None` before peer info is recorded.
+    /// The current request's protocol version, falling back to legacy handshake state.
     pub fn protocol_version(&self) -> Option<crate::model::ProtocolVersion> {
-        self.peer
-            .peer_info()
-            .map(|info| info.protocol_version.clone())
+        self.meta.protocol_version().or_else(|| {
+            self.peer
+                .peer_info()
+                .map(|info| info.protocol_version.clone())
+        })
+    }
+
+    /// The current request's client implementation, falling back only for legacy sessions.
+    pub fn client_info(&self) -> Option<Implementation> {
+        if self.peer.request_metadata_required() {
+            self.meta.client_info()
+        } else {
+            self.meta
+                .client_info()
+                .or_else(|| self.peer.peer_info().map(|info| info.client_info.clone()))
+        }
+    }
+
+    /// The current request's client capabilities, falling back only for legacy sessions.
+    pub fn client_capabilities(&self) -> Option<ClientCapabilities> {
+        if self.peer.request_metadata_required() {
+            self.meta.client_capabilities()
+        } else {
+            self.meta
+                .client_capabilities()
+                .or_else(|| self.peer.peer_info().map(|info| info.capabilities.clone()))
+        }
     }
 }
 
@@ -892,7 +1271,7 @@ impl RequestContext<RoleServer> {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct NotificationContext<R: ServiceRole> {
-    pub meta: Meta,
+    pub meta: NotificationMetaObject,
     pub extensions: Extensions,
     /// An interface to fetch the remote client or server
     pub peer: Peer<R>,
@@ -929,7 +1308,15 @@ where
     E: std::error::Error + Send + Sync + 'static,
 {
     let (peer, peer_rx) = Peer::new(Arc::new(AtomicU32RequestIdProvider::default()), peer_info);
-    serve_inner(service, transport.into_transport(), peer, peer_rx, ct)
+    R::configure_direct_peer(&peer, &service.get_info());
+    serve_inner(
+        service,
+        transport.into_transport(),
+        peer,
+        peer_rx,
+        VecDeque::new(),
+        ct,
+    )
 }
 
 /// Spawn a task that may hold `!Send` state when the `local` feature is active.
@@ -954,12 +1341,19 @@ where
     tokio::task::spawn_local(future)
 }
 
+/// Run the service loop over `transport`.
+///
+/// `initial_messages` are messages the caller already read from `transport`
+/// (e.g. the first request of an `initialize`-less session). They are
+/// dispatched by the loop, in order, before anything else is read from the
+/// transport, so that their handlers run with the loop draining `peer_rx`.
 #[instrument(skip_all)]
 fn serve_inner<R, S, T>(
     service: S,
     transport: T,
     peer: Peer<R>,
     mut peer_rx: tokio::sync::mpsc::Receiver<PeerSinkMessage<R>>,
+    initial_messages: VecDeque<RxJsonRpcMessage<R>>,
     ct: CancellationToken,
 ) -> RunningService<R, S>
 where
@@ -979,7 +1373,7 @@ where
     }
 
     let mut local_responder_pool =
-        HashMap::<RequestId, Responder<Result<R::PeerResp, ServiceError>>>::new();
+        HashMap::<RequestId, PendingResponse<Result<R::PeerResp, ServiceError>>>::new();
     let mut local_ct_pool = HashMap::<RequestId, CancellationToken>::new();
     let shared_service = Arc::new(service);
     // for return
@@ -992,7 +1386,7 @@ where
     let current_span = tracing::Span::current();
     let handle = spawn_service_task(async move {
         let mut transport = transport.into_transport();
-        let mut batch_messages = VecDeque::<RxJsonRpcMessage<R>>::new();
+        let mut batch_messages = initial_messages;
         let mut send_task_set = tokio::task::JoinSet::<SendTaskResult>::new();
         let mut response_send_tasks = tokio::task::JoinSet::<()>::new();
         #[derive(Debug)]
@@ -1013,6 +1407,7 @@ where
             PeerMessage(RxJsonRpcMessage<R>),
             ToSink(TxJsonRpcMessage<R>),
             SendTaskResult(SendTaskResult),
+            ResponseSendTaskResult(Result<(), tokio::task::JoinError>),
         }
 
         let quit_reason = loop {
@@ -1058,11 +1453,10 @@ where
                             }
                         }
                     }
-                    m = response_send_tasks.join_next(), if !response_send_tasks.is_empty() => {
-                        if let Some(Err(error)) = m {
-                            tracing::error!(%error, "response send task failed");
-                        }
-                        continue
+                    result = response_send_tasks.join_next(), if !response_send_tasks.is_empty() => {
+                        Event::ResponseSendTaskResult(
+                            result.expect("non-empty response send task set")
+                        )
                     }
                     _ = serve_loop_ct.cancelled() => {
                         tracing::info!("task cancelled");
@@ -1074,11 +1468,10 @@ where
             tracing::trace!(?evt, "new event");
             match evt {
                 Event::SendTaskResult(SendTaskResult::Request { id, result }) => {
-                    if let Err(e) = result {
-                        if let Some(responder) = local_responder_pool.remove(&id) {
-                            let _ = responder.send(Err(ServiceError::TransportSend(e)));
+                    if let Err(e) = result
+                        && let Some(responder) = local_responder_pool.remove(&id) {
+                            let _ = responder.responder.send(Err(ServiceError::TransportSend(e)));
                         }
-                    }
                 }
                 Event::SendTaskResult(SendTaskResult::Notification {
                     responder,
@@ -1091,15 +1484,18 @@ where
                         Ok(())
                     };
                     let _ = responder.send(response);
-                    if let Some(param) = cancellation_param {
-                        if let Some(request_id) = &param.request_id {
-                            if let Some(responder) = local_responder_pool.remove(request_id) {
+                    if let Some(param) = cancellation_param
+                        && let Some(request_id) = &param.request_id
+                            && let Some(responder) = local_responder_pool.remove(request_id) {
                                 tracing::info!(id = %request_id, reason = param.reason, "cancelled");
-                                let _response_result = responder.send(Err(ServiceError::Cancelled {
+                                let _response_result = responder.responder.send(Err(ServiceError::Cancelled {
                                     reason: param.reason.clone(),
                                 }));
                             }
-                        }
+                }
+                Event::ResponseSendTaskResult(result) => {
+                    if let Err(error) = result {
+                        tracing::error!(%error, "response send task failed");
                     }
                 }
                 // response and error
@@ -1109,9 +1505,11 @@ where
                         JsonRpcMessage::Error(error) => error.id.as_ref(),
                         _ => None,
                     } {
-                        if let Some(ct) = local_ct_pool.remove(id) {
-                            ct.cancel();
-                        }
+                        let Some(ct) = local_ct_pool.remove(id) else {
+                            tracing::debug!(%id, "dropping response for cancelled request");
+                            continue;
+                        };
+                        ct.cancel();
                         let send = transport.send(m);
                         let current_span = tracing::Span::current();
                         response_send_tasks.spawn(async move {
@@ -1127,7 +1525,10 @@ where
                     id,
                     responder,
                 }) => {
-                    local_responder_pool.insert(id.clone(), responder);
+                    local_responder_pool.insert(id.clone(), PendingResponse {
+                        responder,
+                        is_subscription: R::is_subscription_request(&request),
+                    });
                     let send = transport.send(JsonRpcMessage::request(request, id.clone()));
                     {
                         let id = id.clone();
@@ -1165,6 +1566,24 @@ where
                     ..
                 })) => {
                     tracing::debug!(%id, ?request, "received request");
+                    if let Err(error) = R::enforce_peer_request_association(
+                        &request,
+                        peer.peer_info().as_deref(),
+                        peer_request_association(&request, &local_responder_pool),
+                    ) {
+                        tracing::warn!(%id, message = %error.message, "rejected peer request");
+                        // send directly: the sink proxy path would drop the
+                        // error since the request was never registered in
+                        // local_ct_pool
+                        let send = transport.send(JsonRpcMessage::error(error, Some(id)));
+                        let current_span = tracing::Span::current();
+                        response_send_tasks.spawn(async move {
+                            if let Err(error) = send.await {
+                                tracing::error!(%error, "fail to send rejection error");
+                            }
+                        }.instrument(current_span));
+                        continue;
+                    }
                     {
                         let service = shared_service.clone();
                         let sink = sink_proxy_tx.clone();
@@ -1172,7 +1591,7 @@ where
                         let context_ct = request_ct.child_token();
                         local_ct_pool.insert(id.clone(), request_ct);
                         let mut extensions = Extensions::new();
-                        let mut meta = Meta::new();
+                        let mut meta = RequestMetaObject::new();
                         // avoid clone
                         // swap meta firstly, otherwise progress token will be lost
                         std::mem::swap(&mut meta, request.get_meta_mut());
@@ -1185,9 +1604,17 @@ where
                             extensions,
                         };
                         let current_span = tracing::Span::current();
+                        let handler_id = id.clone();
+                        let handler_version = context.meta.protocol_version();
                         spawn_service_task(async move {
-                            let result = service
-                                .handle_request(request, context)
+                            let result = ORIGINATING_REQUEST
+                                .scope(
+                                    handler_id,
+                                    ORIGINATING_PROTOCOL_VERSION.scope(
+                                        handler_version,
+                                        service.handle_request(request, context),
+                                    ),
+                                )
                                 .await;
                             let response = match result {
                                 Ok(result) => {
@@ -1208,26 +1635,82 @@ where
                     ..
                 })) => {
                     tracing::info!(?notification, "received notification");
-                    // catch cancelled notification
-                    let mut notification = match notification.try_into() {
-                        Ok::<CancelledNotification, _>(cancelled) => {
-                            if let Some(request_id) = &cancelled.params.request_id {
-                                if let Some(ct) = local_ct_pool.remove(request_id) {
-                                    tracing::info!(id = %request_id, reason = cancelled.params.reason, "cancelled");
+                    R::invalidate_response_cache(&peer, &notification).await;
+                    let subscription_id =
+                        if let Some(cancelled) = R::peer_cancelled_params(&notification) {
+                            let request_id = cancelled.request_id.clone();
+                            // Modern servers cancel listen requests; legacy peers cancel
+                            // requests they originated, even when both directions share an ID.
+                            if R::peer_cancels_subscriptions(&peer) {
+                                if let Some(request_id) = request_id.as_ref() {
+                                    if local_responder_pool.get(request_id)
+                                        .is_some_and(|pending| pending.is_subscription)
+                                        && let Some(pending) = local_responder_pool.remove(request_id)
+                                    {
+                                        let _ = pending.responder.send(Err(ServiceError::Cancelled {
+                                            reason: cancelled.reason.clone(),
+                                        }));
+                                    } else {
+                                        tracing::debug!(%request_id, "ignoring cancellation of unknown subscription");
+                                        continue;
+                                    }
+                                }
+                                request_id
+                            } else {
+                                if let Some(request_id) = request_id.as_ref()
+                                    && let Some(ct) = local_ct_pool.remove(request_id)
+                                {
+                                    tracing::info!(id = %request_id, reason = cancelled.reason, "cancelled");
                                     ct.cancel();
                                 }
+                                None
                             }
-                            cancelled.into()
+                        } else {
+                            notification.get_meta().subscription_id()
+                        };
+                    if let Some(subscription_id) = subscription_id
+                        && let Some((sender, capacity)) =
+                            peer.subscription_sender(&subscription_id)
+                    {
+                        match sender.try_send(notification) {
+                            Ok(()) => {}
+                            Err(mpsc::error::TrySendError::Full(_)) => {
+                                tracing::warn!(
+                                    id = %subscription_id,
+                                    capacity,
+                                    "subscription notification buffer full"
+                                );
+                                if R::IS_CLIENT
+                                    && let Some(responder) =
+                                        local_responder_pool.remove(&subscription_id)
+                                {
+                                    let _ = responder.responder
+                                        .send(Err(ServiceError::SubscriptionLagged { capacity }));
+                                }
+                                peer.unregister_subscription(&subscription_id);
+                                peer.try_cancel_request(
+                                    subscription_id,
+                                    Some("subscription notification buffer full".to_owned()),
+                                );
+                            }
+                            Err(mpsc::error::TrySendError::Closed(_)) => {
+                                peer.unregister_subscription(&subscription_id);
+                                peer.try_cancel_request(
+                                    subscription_id,
+                                    Some("subscription notification receiver closed".to_owned()),
+                                );
+                            }
                         }
-                        Err(notification) => notification,
-                    };
+                        continue;
+                    }
+                    let mut notification = notification;
                     if let Some(progress_token) = notification.progress_token() {
                         peer.notify_progress_timeout_watcher(progress_token).await;
                     }
                     {
                         let service = shared_service.clone();
                         let mut extensions = Extensions::new();
-                        let mut meta = Meta::new();
+                        let mut meta = NotificationMetaObject::new();
                         // avoid clone
                         std::mem::swap(&mut extensions, notification.extensions_mut());
                         std::mem::swap(&mut meta, notification.get_meta_mut());
@@ -1250,8 +1733,10 @@ where
                     id,
                     ..
                 })) => {
-                    if let Some(responder) = local_responder_pool.remove(&id) {
-                        let response_result = responder.send(Ok(result));
+                    if let Some(responder) =
+                        remove_pending_request(&mut local_responder_pool, &id)
+                    {
+                        let response_result = responder.responder.send(Ok(result));
                         if let Err(_error) = response_result {
                             tracing::warn!(%id, "Error sending response");
                         }
@@ -1264,8 +1749,15 @@ where
                         tracing::debug!(?error, "received id-less peer error");
                         continue;
                     };
-                    if let Some(responder) = local_responder_pool.remove(&id) {
-                        let _response_result = responder.send(Err(ServiceError::McpError(error)));
+                    if let Some(responder) =
+                        remove_pending_request(&mut local_responder_pool, &id)
+                    {
+                        let service_error = if error.is_transport_closed() {
+                            ServiceError::TransportClosed
+                        } else {
+                            ServiceError::McpError(error)
+                        };
+                        let _response_result = responder.responder.send(Err(service_error));
                         if let Err(_error) = _response_result {
                             tracing::warn!(%id, "Error sending response");
                         }
@@ -1299,6 +1791,17 @@ where
                 // Then drain any handler responses still in the channel
                 // (handlers that finished after the loop broke).
                 while let Some(m) = sink_proxy_rx.recv().await {
+                    if let Some(id) = match &m {
+                        JsonRpcMessage::Response(response) => Some(&response.id),
+                        JsonRpcMessage::Error(error) => error.id.as_ref(),
+                        _ => None,
+                    } {
+                        let Some(ct) = local_ct_pool.remove(id) else {
+                            tracing::debug!(%id, "dropping response for cancelled request");
+                            continue;
+                        };
+                        ct.cancel();
+                    }
                     if let Err(error) = transport.send(m).await {
                         tracing::error!(%error, "failed to send pending response during drain");
                         break;
@@ -1310,6 +1813,10 @@ where
                 tracing::warn!("timed out draining in-flight responses");
             }
         }
+
+        // Preserve the response drain above, then cancel any handlers still running.
+        // EOF does not cancel the externally supplied service token.
+        serve_loop_ct.cancel();
 
         let sink_close_result = transport.close().await;
         if let Err(e) = sink_close_result {
@@ -1324,5 +1831,121 @@ where
         handle: Some(handle),
         cancellation_token: ct.clone(),
         dg: ct.drop_guard(),
+    }
+}
+
+#[cfg(all(test, feature = "server"))]
+mod sep2260_marker_tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::model::{PingRequest, RequestId, ServerRequest};
+
+    fn ping() -> ServerRequest {
+        ServerRequest::PingRequest(PingRequest {
+            method: Default::default(),
+            extensions: Default::default(),
+        })
+    }
+
+    async fn send_and_capture(scope: Option<RequestId>) -> <RoleServer as ServiceRole>::Req {
+        // peer_info None keeps enforcement non-strict; only the sink message matters.
+        let (peer, mut rx) =
+            Peer::<RoleServer>::new(Arc::new(AtomicU32RequestIdProvider::default()), None);
+        let send = peer.send_request_with_option(ping(), PeerRequestOptions::no_options());
+        let _handle = match scope {
+            Some(id) => ORIGINATING_REQUEST.scope(id, send).await.unwrap(),
+            None => send.await.unwrap(),
+        };
+        let PeerSinkMessage::Request { request, .. } = rx.recv().await.expect("sink message")
+        else {
+            panic!("expected a request sink message");
+        };
+        request
+    }
+
+    #[tokio::test]
+    async fn outbound_request_carries_originating_id_when_in_scope() {
+        let request = send_and_capture(Some(RequestId::Number(7))).await;
+        let marker = request
+            .extensions()
+            .get::<OriginatingRequestId>()
+            .expect("marker attached");
+        assert_eq!(marker.0, RequestId::Number(7));
+    }
+
+    #[tokio::test]
+    async fn outbound_request_has_no_marker_outside_scope() {
+        let request = send_and_capture(None).await;
+        assert!(request.extensions().get::<OriginatingRequestId>().is_none());
+    }
+
+    #[test]
+    #[expect(
+        deprecated,
+        reason = "Sampling is deprecated by SEP-2577 but remains the canonical restricted request"
+    )]
+    fn peer_request_association_maps_stream_origin() {
+        use std::collections::HashMap;
+
+        use crate::model::{
+            CreateMessageRequest, CreateMessageRequestParams, SamplingMessage, ServerRequest,
+        };
+
+        fn sampling(origin: Option<InboundStreamOrigin>) -> ServerRequest {
+            let mut request = CreateMessageRequest::new(CreateMessageRequestParams::new(
+                vec![SamplingMessage::user_text("hi")],
+                16,
+            ));
+            if let Some(origin) = origin {
+                request.extensions.insert(origin);
+            }
+            ServerRequest::CreateMessageRequest(request)
+        }
+
+        let empty: HashMap<RequestId, ()> = HashMap::new();
+        let in_flight: HashMap<RequestId, ()> = HashMap::from([(RequestId::Number(7), ())]);
+
+        // No marker (stdio): coarse signal.
+        assert_eq!(
+            peer_request_association(&sampling(None), &in_flight),
+            PeerRequestAssociation::Unknown {
+                has_pending_outbound_request: true
+            }
+        );
+        assert_eq!(
+            peer_request_association(&sampling(None), &empty),
+            PeerRequestAssociation::Unknown {
+                has_pending_outbound_request: false
+            }
+        );
+        // Standalone GET stream: unassociated even with requests in flight.
+        assert_eq!(
+            peer_request_association(
+                &sampling(Some(InboundStreamOrigin::Unassociated)),
+                &in_flight
+            ),
+            PeerRequestAssociation::Unassociated
+        );
+        // Originating POST stream of an in-flight request: associated.
+        assert_eq!(
+            peer_request_association(
+                &sampling(Some(InboundStreamOrigin::OutboundRequest(
+                    RequestId::Number(7)
+                ))),
+                &in_flight
+            ),
+            PeerRequestAssociation::Associated
+        );
+        // Stream of a request that is no longer in flight: unassociated.
+        assert_eq!(
+            peer_request_association(
+                &sampling(Some(InboundStreamOrigin::OutboundRequest(
+                    RequestId::Number(8)
+                ))),
+                &in_flight
+            ),
+            PeerRequestAssociation::Unassociated
+        );
     }
 }

@@ -7,6 +7,122 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.8.0...rmcp-macros-v3.9.0) - 2026-11-05
+
+### Other
+
+- add Voltip to built with rmcp list ([#1401](https://github.com/modelcontextprotocol/rust-sdk/pull/1401))
+
+## [3.6.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.5.1...rmcp-macros-v3.6.0) - 2026-10-19
+
+### Fixed
+
+- *(transport)* accept nested x-mcp-header annotations ([#1359](https://github.com/modelcontextprotocol/rust-sdk/pull/1359))
+- ship LICENSE in rmcp and rmcp-macros crates ([#1342](https://github.com/modelcontextprotocol/rust-sdk/pull/1342))
+
+### Other
+
+- combine AI issue triage with a maintainer rotation as the responsible reviewer ([#1260](https://github.com/modelcontextprotocol/rust-sdk/pull/1260))
+
+## [3.4.1](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.4.0...rmcp-macros-v3.4.1) - 2026-09-23
+
+### Fixed
+
+- *(macros)* accept const paths and concat! in tool/prompt descriptions ([#1243](https://github.com/modelcontextprotocol/rust-sdk/pull/1243))
+
+## [3.4.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.3.0...rmcp-macros-v3.4.0) - 2026-09-15
+
+### Added
+
+- *(model)* add ServerConfig and ClientConfig ([#1266](https://github.com/modelcontextprotocol/rust-sdk/pull/1266))
+
+### Fixed
+
+- *(model)* deprecate ServerInfo and ClientInfo aliases ([#1156](https://github.com/modelcontextprotocol/rust-sdk/pull/1156))
+
+## [3.3.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.2.0...rmcp-macros-v3.3.0) - 2026-09-10
+
+### Added
+
+- *(macros)* reject empty tool_router ([#1233](https://github.com/modelcontextprotocol/rust-sdk/pull/1233))
+
+## [3.2.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.1.4...rmcp-macros-v3.2.0) - 2026-08-31
+
+### Added
+
+- add request-state key rotation ([#1128](https://github.com/modelcontextprotocol/rust-sdk/pull/1128))
+
+### Fixed
+
+- allow concurrent streamable http requests ([#1186](https://github.com/modelcontextprotocol/rust-sdk/pull/1186))
+
+## [3.1.3](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.1.2...rmcp-macros-v3.1.3) - 2026-08-17
+
+### Fixed
+
+- time out auto discovery probe ([#1149](https://github.com/modelcontextprotocol/rust-sdk/pull/1149))
+
+## [3.1.1](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.1.0...rmcp-macros-v3.1.1) - 2026-08-05
+
+### Fixed
+
+- emit cache hints from handler macros ([#1120](https://github.com/modelcontextprotocol/rust-sdk/pull/1120))
+
+### Other
+
+- upgrade darling and syn ([#1138](https://github.com/modelcontextprotocol/rust-sdk/pull/1138))
+
+## [3.1.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.0.1...rmcp-macros-v3.1.0) - 2026-07-31
+
+### Added
+
+- add strict stateless protocol metadata validation ([#1091](https://github.com/modelcontextprotocol/rust-sdk/pull/1091))
+
+### Other
+
+- document the ping utility with examples ([#1106](https://github.com/modelcontextprotocol/rust-sdk/pull/1106))
+- complete Tier 1 feature docs and finalize roadmap ([#1101](https://github.com/modelcontextprotocol/rust-sdk/pull/1101))
+- *(conformance)* meeting requirements for tier 1 ([#1087](https://github.com/modelcontextprotocol/rust-sdk/pull/1087))
+
+## [3.0.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.0.0-beta.5...rmcp-macros-v3.0.0) - 2026-07-28
+
+### Other
+
+- release stable 3.0.0
+
+## [3.0.0-beta.5](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.0.0-beta.4...rmcp-macros-v3.0.0-beta.5) - 2026-07-28
+
+### Other
+
+- prepare for stable 3.0 release ([#1073](https://github.com/modelcontextprotocol/rust-sdk/pull/1073))
+
+## [3.0.0-beta.2](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v3.0.0-beta.1...rmcp-macros-v3.0.0-beta.2) - 2026-07-24
+
+### Fixed
+
+- [**breaking**] omit resultType for legacy protocol sessions ([#1038](https://github.com/modelcontextprotocol/rust-sdk/pull/1038))
+
+### Other
+
+- declare and check MSRV ([#1034](https://github.com/modelcontextprotocol/rust-sdk/pull/1034))
+
+## [3.0.0-beta.1](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v2.2.0...rmcp-macros-v3.0.0-beta.1) - 2026-07-23
+
+### Added
+
+- add client-side TTL-honoring response cache (SEP-2549) ([#1025](https://github.com/modelcontextprotocol/rust-sdk/pull/1025))
+- [**breaking**] Implement SEP-2663 Tasks Extension ([#1020](https://github.com/modelcontextprotocol/rust-sdk/pull/1020))
+- add subscription listen streams (SEP-2575) ([#1000](https://github.com/modelcontextprotocol/rust-sdk/pull/1000))
+- add modern client lifecycle modes (SEP-2575) ([#995](https://github.com/modelcontextprotocol/rust-sdk/pull/995))
+- [**breaking**] implement SEP-2549 cache hints ([#889](https://github.com/modelcontextprotocol/rust-sdk/pull/889))
+- [**breaking**] add MRTR behavior support (SEP-2322) ([#929](https://github.com/modelcontextprotocol/rust-sdk/pull/929))
+- relax outputSchema to accept non-object JSON Schema types (SEP-2106) ([#895](https://github.com/modelcontextprotocol/rust-sdk/pull/895))
+- [**breaking**] add MRTR model types (SEP-2322) ([#915](https://github.com/modelcontextprotocol/rust-sdk/pull/915))
+
+### Other
+
+- update for 2026-07-28 version ([#1032](https://github.com/modelcontextprotocol/rust-sdk/pull/1032))
+
 ## [2.0.0](https://github.com/modelcontextprotocol/rust-sdk/compare/rmcp-macros-v1.8.0...rmcp-macros-v2.0.0) - 2026-06-27
 
 ### Added

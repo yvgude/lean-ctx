@@ -3,8 +3,9 @@
 [package]
 name = "rmcp-macros"
 license = "Apache-2.0"
-version = "2.0.0"
+version = "3.9.0"
 edition = "2024"
+rust-version = "1.88"
 repository = "https://github.com/modelcontextprotocol/rust-sdk/"
 homepage = "https://github.com/modelcontextprotocol/rust-sdk"
 readme = "README.md"
@@ -15,11 +16,11 @@ documentation = "https://docs.rs/rmcp-macros"
 proc-macro = true
 
 [dependencies]
-syn = {version = "2", features = ["full"]}
+syn = {version = "3", features = ["full"]}
 quote = "1"
 proc-macro2 = "1"
 serde_json = "1.0"
-darling = { version = "0.23" }
+darling = { version = "0.24" }
 
 [features]
 local = []

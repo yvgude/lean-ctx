@@ -47,7 +47,7 @@ pub fn tool_handler(attr: TokenStream, input: TokenStream) -> syn::Result<TokenS
                 &self,
                 request: rmcp::model::CallToolRequestParams,
                 context: rmcp::service::RequestContext<rmcp::RoleServer>,
-            ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+            ) -> Result<rmcp::model::CallToolResponse, rmcp::ErrorData> {
                 let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
                 #router.call(tcc).await
             }
@@ -66,12 +66,19 @@ pub fn tool_handler(attr: TokenStream, input: TokenStream) -> syn::Result<TokenS
             async fn list_tools(
                 &self,
                 _request: Option<rmcp::model::PaginatedRequestParams>,
-                _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+                context: rmcp::service::RequestContext<rmcp::RoleServer>,
             ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+                let supports_cache_hints = context.protocol_version().is_some_and(|version| {
+                    version >= rmcp::model::ProtocolVersion::V_2026_07_28
+                });
                 Ok(rmcp::model::ListToolsResult{
+                    result_type: Some(rmcp::model::ResultType::COMPLETE),
                     tools: #router.list_all(),
                     meta: #result_meta,
                     next_cursor: None,
+                    ttl_ms: supports_cache_hints.then_some(0),
+                    cache_scope: supports_cache_hints
+                        .then_some(rmcp::model::CacheScope::Public),
                 })
             }
         })?;
@@ -107,13 +114,12 @@ pub fn tool_handler(attr: TokenStream, input: TokenStream) -> syn::Result<TokenS
 pub(crate) enum CallerCapability {
     Tools,
     Prompts,
-    Tasks,
 }
 
-/// Build a `get_info()` method that returns `ServerInfo` with the appropriate capabilities.
+/// Build a `get_info()` method that returns `ServerConfig` with the appropriate capabilities.
 ///
 /// The caller declares its own capability via `caller`. Sibling handler attributes
-/// (`prompt_handler`, `task_handler`, `tool_handler`) are detected automatically
+/// (`prompt_handler`, `tool_handler`) are detected automatically
 /// and their capabilities are included.
 pub(crate) fn build_get_info(
     item_impl: &ItemImpl,
@@ -126,8 +132,6 @@ pub(crate) fn build_get_info(
         caller == CallerCapability::Tools || has_sibling_handler(item_impl, "tool_handler");
     let has_prompts =
         caller == CallerCapability::Prompts || has_sibling_handler(item_impl, "prompt_handler");
-    let has_tasks =
-        caller == CallerCapability::Tasks || has_sibling_handler(item_impl, "task_handler");
 
     let mut capability_calls = Vec::new();
     if has_tools {
@@ -136,10 +140,6 @@ pub(crate) fn build_get_info(
     if has_prompts {
         capability_calls.push(quote! { .enable_prompts() });
     }
-    if has_tasks {
-        capability_calls.push(quote! { .enable_tasks() });
-    }
-
     let server_info_expr = match (name, version) {
         (Some(n), Some(v)) => quote! { rmcp::model::Implementation::new(#n, #v) },
         (Some(n), None) => {
@@ -157,8 +157,8 @@ pub(crate) fn build_get_info(
     }
 
     syn::parse2::<ImplItem>(quote! {
-        fn get_info(&self) -> rmcp::model::ServerInfo {
-            rmcp::model::ServerInfo::new(
+        fn get_info(&self) -> rmcp::model::ServerConfig {
+            rmcp::model::ServerConfig::new(
                 rmcp::model::ServerCapabilities::builder()
                     #(#capability_calls)*
                     .build()

@@ -1,0 +1,1070 @@
+//! SEP-2243 HTTP header standardization.
+//!
+//! Builds and validates the `Mcp-Method`, `Mcp-Name`, and `Mcp-Param-*` headers
+//! so middle boxes can route Streamable HTTP traffic without parsing the body.
+//! All emission/validation is gated by the negotiated protocol version
+//! (`>= ProtocolVersion::STANDARD_HEADERS`) at the call sites.
+
+// Which helpers are reachable depends on the client/server feature combination,
+// mirroring `server_side_http`.
+#![allow(dead_code)]
+
+use serde_json::Value;
+
+use super::http_header::{
+    BASE64_HEADER_PREFIX, BASE64_HEADER_SUFFIX, HEADER_MCP_METHOD, HEADER_MCP_NAME,
+    HEADER_MCP_PARAM_PREFIX,
+};
+use crate::model::JsonObject;
+
+/// Methods whose `Mcp-Name` is sourced from `params.name`.
+const NAME_FROM_NAME: &[&str] = &["tools/call", "prompts/get"];
+/// Methods whose `Mcp-Name` is sourced from `params.uri`.
+const NAME_FROM_URI: &[&str] = &[
+    "resources/read",
+    "resources/subscribe",
+    "resources/unsubscribe",
+];
+/// Methods whose `Mcp-Name` is sourced from `params.taskId` (SEP-2663 Tasks
+/// extension): allows intermediaries to route task polling to the server
+/// instance holding the task's state.
+const NAME_FROM_TASK_ID: &[&str] = &["tasks/get", "tasks/update", "tasks/cancel"];
+
+/// Returns the `Mcp-Name` value for a request, if the method carries one.
+fn extract_name(method: &str, params: Option<&Value>) -> Option<String> {
+    let params = params?;
+    let key = if NAME_FROM_NAME.contains(&method) {
+        "name"
+    } else if NAME_FROM_URI.contains(&method) {
+        "uri"
+    } else if NAME_FROM_TASK_ID.contains(&method) {
+        "taskId"
+    } else {
+        return None;
+    };
+    params.get(key)?.as_str().map(str::to_owned)
+}
+
+/// Converts a JSON primitive to its SEP-2243 string form. Non-primitives yield `None`.
+fn primitive_to_string(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.clone()),
+        Value::Bool(b) => Some(b.to_string()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// True if `value` must be Base64-wrapped to survive as an HTTP header value:
+/// leading/trailing space or tab, control/non-ASCII characters, or a value that
+/// already looks like the `=?base64?...?=` sentinel.
+#[cfg(feature = "client-side-sse")]
+fn requires_base64(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    if matches!(bytes.first(), Some(b' ' | b'\t')) || matches!(bytes.last(), Some(b' ' | b'\t')) {
+        return true;
+    }
+    if value
+        .chars()
+        .any(|c| (c as u32) < 0x20 || (c as u32) > 0x7E)
+    {
+        return true;
+    }
+    value.starts_with(BASE64_HEADER_PREFIX) && value.ends_with(BASE64_HEADER_SUFFIX)
+}
+
+/// RFC 9110 §5.6.2 token character.
+#[cfg(feature = "client-side-sse")]
+fn is_tchar(c: char) -> bool {
+    c.is_ascii_alphanumeric()
+        || matches!(
+            c,
+            '!' | '#'
+                | '$'
+                | '%'
+                | '&'
+                | '\''
+                | '*'
+                | '+'
+                | '-'
+                | '.'
+                | '^'
+                | '_'
+                | '`'
+                | '|'
+                | '~'
+        )
+}
+
+/// An `x-mcp-header` annotation on a property reached from the schema root
+/// through `properties` keys alone.
+struct PropertyAnnotation<'a> {
+    /// Property names from the root to the annotated property.
+    path: Vec<&'a str>,
+    schema: &'a Value,
+    header: &'a Value,
+}
+
+/// Every `x-mcp-header` annotation along `properties` chains, nested ones included.
+fn property_annotations(input_schema: &JsonObject) -> Vec<PropertyAnnotation<'_>> {
+    let mut out = Vec::new();
+    collect_property_annotations(input_schema.get("properties"), &mut Vec::new(), &mut out);
+    out
+}
+
+fn collect_property_annotations<'a>(
+    properties: Option<&'a Value>,
+    path: &mut Vec<&'a str>,
+    out: &mut Vec<PropertyAnnotation<'a>>,
+) {
+    let Some(Value::Object(properties)) = properties else {
+        return;
+    };
+    for (name, schema) in properties {
+        path.push(name);
+        if let Some(header) = schema.get("x-mcp-header") {
+            out.push(PropertyAnnotation {
+                path: path.clone(),
+                schema,
+                header,
+            });
+        }
+        collect_property_annotations(schema.get("properties"), path, out);
+        path.pop();
+    }
+}
+
+/// Well-formed annotations as `(path, header)` pairs, for header emission and checks.
+fn param_header_annotations(input_schema: &JsonObject) -> Vec<(Vec<&str>, &str)> {
+    property_annotations(input_schema)
+        .into_iter()
+        .filter_map(|annotation| match annotation.header {
+            Value::String(header) if !header.is_empty() => Some((annotation.path, header.as_str())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The instance value at `path` in `arguments`, if every step is present.
+fn value_at<'a>(arguments: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    path.iter().try_fold(arguments, |value, key| value.get(key))
+}
+
+/// Validates the `x-mcp-header` annotations in a tool input schema.
+///
+/// Annotations must be non-empty RFC 9110 tokens, case-insensitively unique,
+/// applied only to primitive (`string`/`integer`/`boolean`) properties reached
+/// from the root through `properties` keys alone. Returns the offending reason
+/// on the first violation.
+#[cfg(feature = "client-side-sse")]
+pub(crate) fn validate_param_header_annotations(input_schema: &JsonObject) -> Result<(), String> {
+    if input_schema.contains_key("x-mcp-header") {
+        return Err("x-mcp-header must annotate a property, not the schema root".to_owned());
+    }
+    if has_off_chain_annotation(input_schema, true) {
+        return Err("x-mcp-header must sit on a `properties`-only path from the root".to_owned());
+    }
+    let mut seen = std::collections::HashSet::new();
+    for annotation in property_annotations(input_schema) {
+        let prop = annotation.path.join(".");
+        let Value::String(header) = annotation.header else {
+            return Err(format!("property `{prop}`: x-mcp-header must be a string"));
+        };
+        if header.is_empty() {
+            return Err(format!("property `{prop}`: x-mcp-header must not be empty"));
+        }
+        if !header.chars().all(is_tchar) {
+            return Err(format!(
+                "property `{prop}`: x-mcp-header `{header}` is not a valid HTTP token"
+            ));
+        }
+        if !seen.insert(header.to_ascii_lowercase()) {
+            return Err(format!(
+                "property `{prop}`: duplicate x-mcp-header `{header}` (case-insensitive)"
+            ));
+        }
+        match annotation.schema.get("type").and_then(Value::as_str) {
+            Some("string" | "integer" | "boolean") => {}
+            other => {
+                return Err(format!(
+                    "property `{prop}`: x-mcp-header requires a primitive type \
+                     (string/integer/boolean), got {other:?}"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// True if `schema` holds an `x-mcp-header` off the `properties` chain.
+///
+/// `on_chain` says whether `schema` is the root or a property reached from it
+/// through `properties` keys alone.
+#[cfg(feature = "client-side-sse")]
+fn has_off_chain_annotation(schema: &JsonObject, on_chain: bool) -> bool {
+    schema.iter().any(|(key, value)| match key.as_str() {
+        "x-mcp-header" => !on_chain,
+        "properties" => schema_map_has_off_chain_annotation(value, on_chain),
+        "$defs" | "definitions" | "dependentSchemas" | "patternProperties" => {
+            schema_map_has_off_chain_annotation(value, false)
+        }
+        // Instance data, not subschemas.
+        "default" | "const" | "enum" | "examples" => false,
+        _ => subschema_has_off_chain_annotation(value, false),
+    })
+}
+
+/// Like [`has_off_chain_annotation`] for each value of a name-to-schema map.
+#[cfg(feature = "client-side-sse")]
+fn schema_map_has_off_chain_annotation(map: &Value, on_chain: bool) -> bool {
+    map.as_object().is_some_and(|map| {
+        map.values()
+            .any(|schema| subschema_has_off_chain_annotation(schema, on_chain))
+    })
+}
+
+#[cfg(feature = "client-side-sse")]
+fn subschema_has_off_chain_annotation(value: &Value, on_chain: bool) -> bool {
+    match value {
+        Value::Object(schema) => has_off_chain_annotation(schema, on_chain),
+        Value::Array(items) => items
+            .iter()
+            .any(|item| subschema_has_off_chain_annotation(item, false)),
+        _ => false,
+    }
+}
+
+/// Wraps a value as `=?base64?<b64>?=` when it cannot travel as a bare header value.
+#[cfg(feature = "client-side-sse")]
+fn encode_header_value(value: &str) -> String {
+    use base64::{Engine, prelude::BASE64_STANDARD};
+    if requires_base64(value) {
+        format!(
+            "{BASE64_HEADER_PREFIX}{}{BASE64_HEADER_SUFFIX}",
+            BASE64_STANDARD.encode(value)
+        )
+    } else {
+        value.to_owned()
+    }
+}
+
+/// Reverses [`encode_header_value`]. Returns `None` if the sentinel wraps invalid Base64/UTF-8.
+#[cfg(feature = "server-side-http")]
+fn decode_header_value(value: &str) -> Option<String> {
+    use base64::{Engine, prelude::BASE64_STANDARD};
+    match value
+        .strip_prefix(BASE64_HEADER_PREFIX)
+        .and_then(|inner| inner.strip_suffix(BASE64_HEADER_SUFFIX))
+    {
+        Some(inner) => {
+            let bytes = BASE64_STANDARD.decode(inner).ok()?;
+            String::from_utf8(bytes).ok()
+        }
+        None => Some(value.to_owned()),
+    }
+}
+
+/// Builds the SEP-2243 headers for an outgoing request from its JSON form.
+///
+/// `tool_schema` is the cached input schema of the called tool, used to promote
+/// annotated `tools/call` arguments to `Mcp-Param-*` headers.
+#[cfg(feature = "client-side-sse")]
+pub(crate) fn standard_request_headers(
+    request: &Value,
+    tool_schema: Option<&JsonObject>,
+) -> Vec<(http::HeaderName, http::HeaderValue)> {
+    use http::{HeaderName, HeaderValue};
+
+    let mut out = Vec::new();
+    let Some(method) = request.get("method").and_then(Value::as_str) else {
+        return out;
+    };
+    let params = request.get("params");
+
+    let mut push = |name: &str, value: &str| {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(value),
+        ) {
+            out.push((name, value));
+        }
+    };
+
+    push(HEADER_MCP_METHOD, method);
+    if let Some(name) = extract_name(method, params) {
+        push(HEADER_MCP_NAME, &encode_header_value(&name));
+    }
+
+    if method == "tools/call"
+        && let (Some(schema), Some(arguments)) =
+            (tool_schema, params.and_then(|p| p.get("arguments")))
+    {
+        for (path, header) in param_header_annotations(schema) {
+            let Some(arg) = value_at(arguments, &path) else {
+                continue;
+            };
+            let Some(encoded) = primitive_to_string(arg).map(|s| encode_header_value(&s)) else {
+                continue;
+            };
+            push(&format!("{HEADER_MCP_PARAM_PREFIX}{header}"), &encoded);
+        }
+    }
+    out
+}
+
+/// Validates incoming SEP-2243 headers against the request body.
+///
+/// Returns `Err(reason)` when a required header is missing or its value does not
+/// match the body; the caller maps this to a JSON-RPC `-32020` error (HTTP 400).
+#[cfg(feature = "server-side-http")]
+pub(crate) fn validate_request_headers(
+    headers: &http::HeaderMap,
+    request: &Value,
+    tool_schema: Option<&JsonObject>,
+) -> Result<(), String> {
+    let Some(method) = request.get("method").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let params = request.get("params");
+
+    match header_str(headers, HEADER_MCP_METHOD)? {
+        None => return Err("missing required Mcp-Method header".to_owned()),
+        Some(value) if value != method => {
+            return Err(format!(
+                "Mcp-Method header `{value}` does not match body method `{method}`"
+            ));
+        }
+        Some(_) => {}
+    }
+
+    if let Some(expected) = extract_name(method, params) {
+        match header_str(headers, HEADER_MCP_NAME)? {
+            None => return Err(format!("missing required Mcp-Name header for `{method}`")),
+            Some(raw) => {
+                let decoded = decode_header_value(raw)
+                    .ok_or_else(|| "Mcp-Name header is not valid Base64".to_owned())?;
+                if decoded != expected {
+                    return Err(format!(
+                        "Mcp-Name header `{decoded}` does not match body value `{expected}`"
+                    ));
+                }
+            }
+        }
+    }
+
+    if method == "tools/call"
+        && let Some(schema) = tool_schema
+    {
+        let arguments = params.and_then(|p| p.get("arguments"));
+        for (path, header) in param_header_annotations(schema) {
+            let prop = path.join(".");
+            let full = format!("{HEADER_MCP_PARAM_PREFIX}{header}");
+            let header_value = header_str(headers, &full)?;
+            let arg = arguments.and_then(|a| value_at(a, &path));
+            let body_value = arg.filter(|v| !v.is_null()).and_then(primitive_to_string);
+
+            match (header_value, body_value) {
+                (None, None) => {}
+                (Some(_), None) => {
+                    return Err(format!(
+                        "unexpected {full} header for absent or null `{prop}`"
+                    ));
+                }
+                (None, Some(_)) => {
+                    return Err(format!("missing {full} header for `{prop}`"));
+                }
+                (Some(raw), Some(expected)) => {
+                    let decoded = decode_header_value(raw)
+                        .ok_or_else(|| format!("{full} header is not valid Base64"))?;
+                    if decoded != expected {
+                        return Err(format!(
+                            "{full} header `{decoded}` does not match body value `{expected}`"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The sole value for `name` as `&str`, if present.
+///
+/// Errors when `name` appears more than once: these headers are singletons, and
+/// letting one through would let an intermediary that resolves duplicates
+/// differently route on a value this request never dispatches. Also errors when
+/// the value contains characters not allowed by the Value Encoding rules.
+#[cfg(feature = "server-side-http")]
+fn header_str<'a>(headers: &'a http::HeaderMap, name: &str) -> Result<Option<&'a str>, String> {
+    let mut values = headers.get_all(name).iter();
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err(format!("duplicate {name} header"));
+    }
+    value
+        .to_str()
+        .map(Some)
+        .map_err(|_| format!("{name} header contains invalid characters"))
+}
+
+#[cfg(all(test, feature = "client-side-sse", feature = "server-side-http"))]
+mod tests {
+    use std::collections::HashMap;
+
+    use http::{HeaderMap, HeaderName, HeaderValue};
+    use serde_json::json;
+
+    use super::*;
+
+    fn schema_with(properties: serde_json::Value) -> JsonObject {
+        json!({ "type": "object", "properties": properties })
+            .as_object()
+            .unwrap()
+            .clone()
+    }
+
+    fn header_map(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        for (name, value) in pairs {
+            // Append, not insert, so repeated names survive as duplicates.
+            map.append(
+                HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                HeaderValue::from_str(value).unwrap(),
+            );
+        }
+        map
+    }
+
+    #[test]
+    fn rejects_param_header_with_invalid_characters() {
+        let schema =
+            schema_with(json!({ "region": { "type": "string", "x-mcp-header": "Region" } }));
+        let mut headers = header_map(&[("Mcp-Method", "tools/call"), ("Mcp-Name", "t")]);
+        headers.append(
+            HeaderName::from_bytes(b"Mcp-Param-Region").unwrap(),
+            HeaderValue::from_bytes(b"\xff").unwrap(),
+        );
+        let request = json!({
+            "method": "tools/call",
+            "params": { "name": "t", "arguments": {} }
+        });
+        assert!(validate_request_headers(&headers, &request, Some(&schema)).is_err());
+    }
+
+    fn assert_wrapped(value: &str) {
+        let encoded = encode_header_value(value);
+        assert!(
+            encoded.starts_with(BASE64_HEADER_PREFIX),
+            "expected {value:?} to be Base64-wrapped, got {encoded:?}"
+        );
+    }
+
+    mod encode_header_value {
+        use super::*;
+
+        #[test]
+        fn passes_plain_ascii_through() {
+            assert_eq!(encode_header_value("us-west1"), "us-west1");
+        }
+
+        #[test]
+        fn passes_internal_spaces_through() {
+            assert_eq!(encode_header_value("a b c"), "a b c");
+        }
+
+        #[test]
+        fn wraps_non_ascii() {
+            assert_wrapped("café");
+        }
+
+        #[test]
+        fn wraps_leading_whitespace() {
+            assert_wrapped(" padded");
+        }
+
+        #[test]
+        fn wraps_trailing_whitespace() {
+            assert_wrapped("trailing ");
+        }
+
+        #[test]
+        fn wraps_control_characters() {
+            assert_wrapped("line1\nline2");
+        }
+
+        #[test]
+        fn wraps_crlf_injection_attempt() {
+            assert_wrapped("a\r\nEvil: 1");
+        }
+
+        #[test]
+        fn wraps_sentinel_collision() {
+            assert_wrapped(&format!("{BASE64_HEADER_PREFIX}x{BASE64_HEADER_SUFFIX}"));
+        }
+    }
+
+    mod decode_header_value {
+        use super::*;
+
+        #[test]
+        fn round_trips_with_encode() {
+            for value in ["us-west1", "café", " padded ", "line1\nline2", "true", "42"] {
+                let encoded = encode_header_value(value);
+                assert_eq!(
+                    decode_header_value(&encoded).as_deref(),
+                    Some(value),
+                    "round-trip failed for {value:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn rejects_invalid_base64() {
+            let bad = format!("{BASE64_HEADER_PREFIX}!!!not-base64!!!{BASE64_HEADER_SUFFIX}");
+            assert_eq!(decode_header_value(&bad), None);
+        }
+    }
+
+    mod extract_name {
+        use super::*;
+
+        #[test]
+        fn from_name_for_tools_call() {
+            let params = json!({ "name": "my_tool" });
+            assert_eq!(
+                extract_name("tools/call", Some(&params)).as_deref(),
+                Some("my_tool")
+            );
+        }
+
+        #[test]
+        fn from_name_for_prompts_get() {
+            let params = json!({ "name": "my_prompt" });
+            assert_eq!(
+                extract_name("prompts/get", Some(&params)).as_deref(),
+                Some("my_prompt")
+            );
+        }
+
+        #[test]
+        fn from_uri_for_resources_read() {
+            let params = json!({ "uri": "file:///x" });
+            assert_eq!(
+                extract_name("resources/read", Some(&params)).as_deref(),
+                Some("file:///x")
+            );
+        }
+
+        #[test]
+        fn none_for_unrelated_method() {
+            let params = json!({ "name": "my_tool" });
+            assert_eq!(extract_name("ping", Some(&params)), None);
+        }
+
+        #[test]
+        fn none_when_params_absent() {
+            assert_eq!(extract_name("tools/call", None), None);
+        }
+    }
+
+    mod validate_param_header_annotations {
+        use super::*;
+
+        #[test]
+        fn accepts_primitive_types() {
+            let schema = schema_with(json!({
+                "region": { "type": "string", "x-mcp-header": "Region" },
+                "count": { "type": "integer", "x-mcp-header": "Count" },
+                "flag": { "type": "boolean", "x-mcp-header": "Flag" },
+            }));
+            assert!(validate_param_header_annotations(&schema).is_ok());
+        }
+
+        #[test]
+        fn rejects_number_type() {
+            let schema = schema_with(json!({ "n": { "type": "number", "x-mcp-header": "N" } }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_complex_type() {
+            let schema = schema_with(json!({ "a": { "type": "array", "x-mcp-header": "A" } }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_empty_header_name() {
+            let schema = schema_with(json!({ "r": { "type": "string", "x-mcp-header": "" } }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_non_token_header_name() {
+            let schema =
+                schema_with(json!({ "r": { "type": "string", "x-mcp-header": "bad:name" } }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_case_insensitive_duplicate() {
+            let schema = schema_with(json!({
+                "a": { "type": "string", "x-mcp-header": "Region" },
+                "b": { "type": "string", "x-mcp-header": "region" },
+            }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn accepts_nested_annotation() {
+            let schema = schema_with(json!({
+                "outer": {
+                    "type": "object",
+                    "properties": { "inner": { "type": "string", "x-mcp-header": "Inner" } }
+                }
+            }));
+            assert!(validate_param_header_annotations(&schema).is_ok());
+        }
+
+        #[test]
+        fn rejects_nested_number_type() {
+            let schema = schema_with(json!({
+                "outer": {
+                    "type": "object",
+                    "properties": { "inner": { "type": "number", "x-mcp-header": "Inner" } }
+                }
+            }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_duplicate_across_nesting_levels() {
+            let schema = schema_with(json!({
+                "region": { "type": "string", "x-mcp-header": "Region" },
+                "outer": {
+                    "type": "object",
+                    "properties": { "inner": { "type": "string", "x-mcp-header": "region" } }
+                }
+            }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_annotation_under_items() {
+            let schema = schema_with(json!({
+                "list": {
+                    "type": "array",
+                    "items": { "type": "string", "x-mcp-header": "Item" }
+                }
+            }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_annotation_under_properties_of_items() {
+            let schema = schema_with(json!({
+                "list": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": { "id": { "type": "string", "x-mcp-header": "Id" } }
+                    }
+                }
+            }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_annotation_under_composition() {
+            let schema = schema_with(json!({
+                "choice": {
+                    "oneOf": [{ "type": "string", "x-mcp-header": "Choice" }]
+                }
+            }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_annotation_under_conditional() {
+            let schema = schema_with(json!({
+                "value": {
+                    "type": "object",
+                    "then": {
+                        "properties": { "x": { "type": "string", "x-mcp-header": "X" } }
+                    }
+                }
+            }));
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_annotation_in_ref_target() {
+            let schema = json!({
+                "type": "object",
+                "properties": { "region": { "$ref": "#/$defs/region" } },
+                "$defs": { "region": { "type": "string", "x-mcp-header": "Region" } }
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_annotation_in_def_named_like_a_keyword() {
+            let schema = json!({
+                "type": "object",
+                "$defs": { "default": { "type": "string", "x-mcp-header": "Region" } }
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn rejects_annotation_on_root() {
+            let schema = json!({ "type": "object", "x-mcp-header": "Root" })
+                .as_object()
+                .unwrap()
+                .clone();
+            assert!(validate_param_header_annotations(&schema).is_err());
+        }
+
+        #[test]
+        fn ignores_annotation_key_in_default_value() {
+            let schema = schema_with(json!({
+                "config": {
+                    "type": "object",
+                    "default": { "x-mcp-header": "not-a-schema" }
+                }
+            }));
+            assert!(validate_param_header_annotations(&schema).is_ok());
+        }
+    }
+
+    #[cfg(feature = "server")]
+    mod derived_schema {
+        use schemars::JsonSchema;
+
+        use super::*;
+        use crate::handler::server::common::schema_for_type;
+
+        #[derive(JsonSchema)]
+        #[expect(dead_code)]
+        struct RefLocation {
+            #[schemars(extend("x-mcp-header" = "Region"))]
+            region: String,
+        }
+
+        #[derive(JsonSchema)]
+        #[expect(dead_code)]
+        struct RefDeploy {
+            location: RefLocation,
+        }
+
+        #[derive(JsonSchema)]
+        #[schemars(inline)]
+        #[expect(dead_code)]
+        struct InlineLocation {
+            #[schemars(extend("x-mcp-header" = "Region"))]
+            region: String,
+        }
+
+        #[derive(JsonSchema)]
+        #[expect(dead_code)]
+        struct InlineDeploy {
+            location: InlineLocation,
+        }
+
+        #[test]
+        fn rejects_nested_struct_behind_ref() {
+            assert!(validate_param_header_annotations(&schema_for_type::<RefDeploy>()).is_err());
+        }
+
+        #[test]
+        fn accepts_inlined_nested_struct() {
+            assert!(validate_param_header_annotations(&schema_for_type::<InlineDeploy>()).is_ok());
+        }
+    }
+
+    mod standard_request_headers {
+        use super::*;
+
+        fn tools_call_headers() -> HashMap<String, String> {
+            let schema = schema_with(json!({
+                "region": { "type": "string", "x-mcp-header": "Region" },
+            }));
+            let request = json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "region": "us-west1" } }
+            });
+            super::super::standard_request_headers(&request, Some(&schema))
+                .into_iter()
+                .map(|(name, value)| (name.as_str().to_owned(), value.to_str().unwrap().to_owned()))
+                .collect()
+        }
+
+        #[test]
+        fn sets_method_header() {
+            assert_eq!(
+                tools_call_headers().get("mcp-method").map(String::as_str),
+                Some("tools/call")
+            );
+        }
+
+        #[test]
+        fn sets_name_header() {
+            assert_eq!(
+                tools_call_headers().get("mcp-name").map(String::as_str),
+                Some("deploy")
+            );
+        }
+
+        #[test]
+        fn sets_annotated_param_header() {
+            assert_eq!(
+                tools_call_headers()
+                    .get("mcp-param-region")
+                    .map(String::as_str),
+                Some("us-west1")
+            );
+        }
+
+        fn nested_call_headers(arguments: Value) -> HashMap<String, String> {
+            let schema = schema_with(json!({
+                "location": {
+                    "type": "object",
+                    "properties": { "region": { "type": "string", "x-mcp-header": "Region" } }
+                }
+            }));
+            let request = json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": "deploy", "arguments": arguments }
+            });
+            super::super::standard_request_headers(&request, Some(&schema))
+                .into_iter()
+                .map(|(name, value)| (name.as_str().to_owned(), value.to_str().unwrap().to_owned()))
+                .collect()
+        }
+
+        #[test]
+        fn sets_nested_param_header() {
+            let headers = nested_call_headers(json!({ "location": { "region": "eu" } }));
+            assert_eq!(
+                headers.get("mcp-param-region").map(String::as_str),
+                Some("eu")
+            );
+        }
+
+        #[test]
+        fn sets_nested_param_header_after_sibling_property() {
+            let schema = schema_with(json!({
+                "image": { "type": "string" },
+                "location": {
+                    "type": "object",
+                    "properties": { "region": { "type": "string", "x-mcp-header": "Region" } }
+                }
+            }));
+            let request = json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {
+                    "name": "deploy",
+                    "arguments": { "image": "app:1", "location": { "region": "eu" } }
+                }
+            });
+            let headers = super::super::standard_request_headers(&request, Some(&schema));
+            assert_eq!(
+                headers
+                    .iter()
+                    .find(|(name, _)| name == "mcp-param-region")
+                    .map(|(_, value)| value.to_str().unwrap()),
+                Some("eu")
+            );
+        }
+
+        #[test]
+        fn omits_nested_param_header_when_parent_absent() {
+            let headers = nested_call_headers(json!({}));
+            assert_eq!(headers.get("mcp-param-region"), None);
+        }
+
+        #[test]
+        fn omits_param_header_for_same_name_at_wrong_depth() {
+            let headers = nested_call_headers(json!({ "region": "eu" }));
+            assert_eq!(headers.get("mcp-param-region"), None);
+        }
+    }
+
+    mod validate_request_headers {
+        use super::*;
+
+        fn tools_call_request() -> Value {
+            json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": "deploy" }
+            })
+        }
+
+        #[test]
+        fn accepts_matching_method_and_name() {
+            let headers = header_map(&[("Mcp-Method", "tools/call"), ("Mcp-Name", "deploy")]);
+            assert!(validate_request_headers(&headers, &tools_call_request(), None).is_ok());
+        }
+
+        #[test]
+        fn rejects_method_mismatch() {
+            let headers = header_map(&[("Mcp-Method", "tools/list"), ("Mcp-Name", "deploy")]);
+            assert!(validate_request_headers(&headers, &tools_call_request(), None).is_err());
+        }
+
+        #[test]
+        fn rejects_missing_method() {
+            let headers = header_map(&[("Mcp-Name", "deploy")]);
+            assert!(validate_request_headers(&headers, &tools_call_request(), None).is_err());
+        }
+
+        #[test]
+        fn rejects_name_mismatch() {
+            let headers = header_map(&[("Mcp-Method", "tools/call"), ("Mcp-Name", "other")]);
+            assert!(validate_request_headers(&headers, &tools_call_request(), None).is_err());
+        }
+
+        #[test]
+        fn rejects_missing_name() {
+            let headers = header_map(&[("Mcp-Method", "tools/call")]);
+            assert!(validate_request_headers(&headers, &tools_call_request(), None).is_err());
+        }
+
+        #[test]
+        fn rejects_duplicate_method() {
+            let headers = header_map(&[
+                ("Mcp-Method", "tools/call"),
+                ("Mcp-Method", "tools/list"),
+                ("Mcp-Name", "deploy"),
+            ]);
+            assert!(validate_request_headers(&headers, &tools_call_request(), None).is_err());
+        }
+
+        #[test]
+        fn rejects_duplicate_name() {
+            let headers = header_map(&[
+                ("Mcp-Method", "tools/call"),
+                ("Mcp-Name", "deploy"),
+                ("Mcp-Name", "other"),
+            ]);
+            assert!(validate_request_headers(&headers, &tools_call_request(), None).is_err());
+        }
+
+        #[test]
+        fn accepts_matching_param() {
+            let schema = schema_with(json!({
+                "region": { "type": "string", "x-mcp-header": "Region" },
+            }));
+            let request = json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "region": "us-west1" } }
+            });
+            let headers = header_map(&[
+                ("Mcp-Method", "tools/call"),
+                ("Mcp-Name", "deploy"),
+                ("Mcp-Param-Region", "us-west1"),
+            ]);
+            assert!(validate_request_headers(&headers, &request, Some(&schema)).is_ok());
+        }
+
+        #[test]
+        fn rejects_param_mismatch() {
+            let schema = schema_with(json!({
+                "region": { "type": "string", "x-mcp-header": "Region" },
+            }));
+            let request = json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "region": "us-west1" } }
+            });
+            let headers = header_map(&[
+                ("Mcp-Method", "tools/call"),
+                ("Mcp-Name", "deploy"),
+                ("Mcp-Param-Region", "eu-central1"),
+            ]);
+            assert!(validate_request_headers(&headers, &request, Some(&schema)).is_err());
+        }
+
+        #[test]
+        fn rejects_duplicate_param() {
+            let schema = schema_with(json!({
+                "region": { "type": "string", "x-mcp-header": "Region" },
+            }));
+            let request = json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "region": "us-west1" } }
+            });
+            let headers = header_map(&[
+                ("Mcp-Method", "tools/call"),
+                ("Mcp-Name", "deploy"),
+                ("Mcp-Param-Region", "us-west1"),
+                ("Mcp-Param-Region", "eu-central1"),
+            ]);
+            assert!(validate_request_headers(&headers, &request, Some(&schema)).is_err());
+        }
+
+        fn nested_schema() -> JsonObject {
+            schema_with(json!({
+                "location": {
+                    "type": "object",
+                    "properties": { "region": { "type": "string", "x-mcp-header": "Region" } }
+                }
+            }))
+        }
+
+        fn nested_request() -> Value {
+            json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": { "name": "deploy", "arguments": { "location": { "region": "eu" } } }
+            })
+        }
+
+        #[test]
+        fn accepts_matching_nested_param() {
+            let headers = header_map(&[
+                ("Mcp-Method", "tools/call"),
+                ("Mcp-Name", "deploy"),
+                ("Mcp-Param-Region", "eu"),
+            ]);
+            assert!(
+                validate_request_headers(&headers, &nested_request(), Some(&nested_schema()))
+                    .is_ok()
+            );
+        }
+
+        #[test]
+        fn rejects_missing_nested_param() {
+            let headers = header_map(&[("Mcp-Method", "tools/call"), ("Mcp-Name", "deploy")]);
+            assert_eq!(
+                validate_request_headers(&headers, &nested_request(), Some(&nested_schema())),
+                Err("missing Mcp-Param-Region header for `location.region`".to_owned())
+            );
+        }
+
+        #[test]
+        fn rejects_duplicate_param_for_absent_argument() {
+            let schema = schema_with(json!({
+                "region": { "type": "string", "x-mcp-header": "Region" },
+            }));
+            let headers = header_map(&[
+                ("Mcp-Method", "tools/call"),
+                ("Mcp-Name", "deploy"),
+                ("Mcp-Param-Region", "us-west1"),
+                ("Mcp-Param-Region", "eu-central1"),
+            ]);
+            assert_eq!(
+                validate_request_headers(&headers, &tools_call_request(), Some(&schema)),
+                Err("duplicate Mcp-Param-Region header".to_owned())
+            );
+        }
+    }
+}

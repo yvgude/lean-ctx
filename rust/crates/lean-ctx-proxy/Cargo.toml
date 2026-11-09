@@ -27,7 +27,7 @@ shape-xlat = ["lean-ctx-engine/shape-xlat"]
 [dependencies]
 lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false }
 lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
-rmcp = { version = "2", features = [
+rmcp = { version = "3", features = [
   "server",
   "client",
   "transport-io",

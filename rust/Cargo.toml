@@ -147,7 +147,7 @@ lean-ctx-compress = { path = "crates/lean-ctx-compress", version = "0.1.0" }
 lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.1.0" }
 lean-ctx-syntax = { path = "crates/lean-ctx-syntax", version = "0.1.0" }
 lean-ctx-doc = { path = "crates/lean-ctx-doc", version = "0.1.0" }
-rmcp = { version = "2", features = [
+rmcp = { version = "3", features = [
   "server",
   "client",
   "transport-io",
@@ -200,7 +200,7 @@ toml = "1.1"
 toml_edit = "0.25"
 similar = "3.1"
 flate2 = "1.1"
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 tree-sitter = { version = "0.26", optional = true }
 # platform-verifier: validate TLS against the OS trust store (corp proxy CAs),
 # not just compiled-in webpki-roots. Opt-in per-agent via RootCerts::PlatformVerifier.
@@ -503,11 +503,10 @@ harness = false
 # Protocol 0.5.0 is the in-tree migration release; keep workspace/root builds
 # on these exact local bytes until that release is published to crates.io.
 # Remove this entry only after publication and registry-version verification.
-# rmcp 2.0.0 keeps completed response-send tasks in a JoinSet until shutdown,
-# which grows RSS for long-lived MCP sessions. Keep this vendored patch until
-# modelcontextprotocol/rust-sdk ships the continuous drain fix.
-# Also patched: OAuth discovery ignores a 200 status page on the MCP endpoint
-# instead of reading it as resource metadata (#1391, transport/auth.rs).
+# rmcp 3.9.0 with one lean-ctx patch: a one-shot transport releases its service
+# even when the caller has disconnected (transport.rs). The JoinSet drain
+# (#1161) and the status-page fix for OAuth discovery (#1391) are upstream
+# since 3.x; the #1391 regression test stays in transport/auth.rs.
 [patch.crates-io]
 lean-ctx-protocol = { path = "crates/lean-ctx-protocol" }
 rmcp = { path = "crates/vendor/rmcp" }

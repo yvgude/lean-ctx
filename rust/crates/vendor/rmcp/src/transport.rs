@@ -91,7 +91,7 @@ pub use child_process::{ConfigureCommandExt, TokioChildProcess};
 #[cfg(feature = "transport-io")]
 pub mod io;
 #[cfg(feature = "transport-io")]
-pub use io::stdio;
+pub use io::{StdioReader, StdioWriter, stdio, stdio_pipes};
 
 #[cfg(feature = "auth")]
 pub mod auth;
@@ -99,11 +99,12 @@ pub mod auth;
 pub use auth::JwtSigningAlgorithm;
 #[cfg(feature = "auth")]
 pub use auth::{
-    AuthClient, AuthError, AuthorizationManager, AuthorizationSession, AuthorizedHttpClient,
-    ClientCredentialsConfig, CredentialStore, EXTENSION_OAUTH_CLIENT_CREDENTIALS,
-    InMemoryCredentialStore, InMemoryStateStore, OAuthHttpClient, OAuthHttpClientError,
-    OAuthHttpClientFuture, OAuthHttpRedirectPolicy, OAuthHttpRequest, ScopeUpgradeConfig,
-    StateStore, StoredAuthorizationState, StoredCredentials, WWWAuthenticateParams,
+    AuthClient, AuthError, AuthorizationManager, AuthorizationRequest, AuthorizationSession,
+    AuthorizedHttpClient, ClientCredentialsConfig, CredentialRefreshGuard, CredentialStore,
+    EXTENSION_OAUTH_CLIENT_CREDENTIALS, InMemoryCredentialStore, InMemoryStateStore,
+    OAuthHttpClient, OAuthHttpClientError, OAuthHttpClientFuture, OAuthHttpRedirectPolicy,
+    OAuthHttpRequest, ProtectedResourceMetadataInvalidReason, ScopeUpgradeConfig, StateStore,
+    StoredAuthorizationState, StoredCredentials, WWWAuthenticateParams,
 };
 
 // #[cfg(feature = "transport-ws")]
@@ -215,7 +216,7 @@ where
         async move {
             let result = sender.send(item).await;
             if terminate {
-                // A disconnected caller must still release the one-shot service.
+                // lean-ctx patch: a disconnected caller must still release the one-shot service.
                 termination.add_permits(1);
             }
             result
@@ -270,6 +271,28 @@ impl DynamicTransportError {
             transport_type_id,
             error,
         }
+    }
+
+    #[cfg(feature = "client")]
+    pub(crate) fn is_authorization_required(&self) -> bool {
+        let mut error = Some(self.error.as_ref() as &(dyn std::error::Error + 'static));
+        while let Some(current) = error {
+            #[cfg(feature = "auth")]
+            if matches!(
+                current.downcast_ref::<auth::AuthError>(),
+                Some(auth::AuthError::AuthorizationRequired)
+            ) {
+                return true;
+            }
+
+            #[cfg(feature = "transport-streamable-http-client")]
+            if current.is::<streamable_http_client::AuthRequiredError>() {
+                return true;
+            }
+
+            error = current.source();
+        }
+        false
     }
 
     pub fn downcast<T: Transport<R> + 'static, R: ServiceRole>(self) -> Result<T::Error, Self> {

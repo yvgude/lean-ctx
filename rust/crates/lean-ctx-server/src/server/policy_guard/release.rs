@@ -132,7 +132,7 @@ struct Inspection<'a> {
 }
 
 impl Inspection<'_> {
-    fn metadata(&mut self, meta: &rmcp::model::Meta) -> bool {
+    fn metadata(&mut self, meta: &rmcp::model::MetaObject) -> bool {
         meta.0
             .iter()
             .all(|(key, value)| self.text(key) && self.value(value, 0))
@@ -300,7 +300,7 @@ mod tests {
             let mut result = CallToolResult::success(vec![ContentBlock::text("safe")]);
             let extra = serde_json::json!({"nested": [{"record": "line one\nCUS-1234"}]});
             if metadata {
-                let mut meta = rmcp::model::Meta::new();
+                let mut meta = rmcp::model::MetaObject::new();
                 meta.0.insert("fixture".into(), extra);
                 result.meta = Some(meta);
             } else {
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn text_block_metadata_cannot_bypass_release_inspection() {
         let _policy = mask();
-        let mut meta = rmcp::model::Meta::new();
+        let mut meta = rmcp::model::MetaObject::new();
         meta.0
             .insert("customer".into(), serde_json::json!("CUS-1234"));
         let block = ContentBlock::Text(rmcp::model::TextContent::new("safe").with_meta(meta));

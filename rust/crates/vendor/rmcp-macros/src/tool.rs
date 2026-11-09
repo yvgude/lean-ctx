@@ -1,22 +1,19 @@
 use darling::{FromMeta, ast::NestedMeta};
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};
-use syn::{Expr, Ident, ImplItemFn, LitStr, ReturnType, parse_quote};
+use syn::{Expr, Ident, ImplItemFn, ReturnType, parse_quote};
 
 use crate::common::extract_doc_line;
 
 /// Check if a type is Json<T> and extract the inner type T
 fn extract_json_inner_type(ty: &syn::Type) -> Option<&syn::Type> {
-    if let syn::Type::Path(type_path) = ty {
-        if let Some(last_segment) = type_path.path.segments.last() {
-            if last_segment.ident == "Json" {
-                if let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments {
-                    if let Some(syn::GenericArgument::Type(inner_type)) = args.args.first() {
-                        return Some(inner_type);
-                    }
-                }
-            }
-        }
+    if let syn::Type::Path(type_path) = ty
+        && let Some(last_segment) = type_path.path.segments.last()
+        && last_segment.ident == "Json"
+        && let syn::PathArguments::AngleBracketed(args) = &last_segment.arguments
+        && let Some(syn::GenericArgument::Type(inner_type)) = args.args.first()
+    {
+        return Some(inner_type);
     }
     None
 }
@@ -28,13 +25,6 @@ fn extract_schema_from_return_type(ret_type: &syn::Type) -> Option<Expr> {
     if let Some(inner_type) = extract_json_inner_type(ret_type) {
         return syn::parse2::<Expr>(quote! {
             rmcp::handler::server::tool::schema_for_output::<#inner_type>()
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "Invalid output schema for Json<{}>: {}",
-                        std::any::type_name::<#inner_type>(),
-                        e
-                    )
-                })
         })
         .ok();
     }
@@ -65,13 +55,6 @@ fn extract_schema_from_return_type(ret_type: &syn::Type) -> Option<Expr> {
 
     syn::parse2::<Expr>(quote! {
         rmcp::handler::server::tool::schema_for_output::<#inner_type>()
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Invalid output schema for Result<Json<{}>, E>: {}",
-                    std::any::type_name::<#inner_type>(),
-                    e
-                )
-            })
     })
     .ok()
 }
@@ -82,15 +65,13 @@ pub struct ToolAttribute {
     pub name: Option<String>,
     /// Human readable title of tool
     pub title: Option<String>,
-    pub description: Option<String>,
+    pub description: Option<darling::util::PreservedStrExpr>,
     /// A JSON Schema object defining the expected parameters for the tool
     pub input_schema: Option<Expr>,
     /// An optional JSON Schema object defining the structure of the tool's output
     pub output_schema: Option<Expr>,
     /// Optional additional tool information.
     pub annotations: Option<ToolAnnotationsAttribute>,
-    /// Execution-related configuration including task support.
-    pub execution: Option<ToolExecutionAttribute>,
     /// Optional icons for the tool
     pub icons: Option<Expr>,
     /// Optional metadata for the tool
@@ -100,13 +81,6 @@ pub struct ToolAttribute {
     pub local: bool,
 }
 
-#[derive(FromMeta, Debug, Default)]
-#[darling(default)]
-pub struct ToolExecutionAttribute {
-    /// Task support mode: "forbidden", "optional", or "required"
-    pub task_support: Option<String>,
-}
-
 pub struct ResolvedToolAttribute {
     pub name: String,
     pub title: Option<String>,
@@ -114,7 +88,6 @@ pub struct ResolvedToolAttribute {
     pub input_schema: Expr,
     pub output_schema: Option<Expr>,
     pub annotations: Option<Expr>,
-    pub execution: Option<Expr>,
     pub icons: Option<Expr>,
     pub meta: Option<Expr>,
 }
@@ -128,7 +101,6 @@ impl ResolvedToolAttribute {
             input_schema,
             output_schema,
             annotations,
-            execution,
             icons,
             meta,
         } = self;
@@ -145,9 +117,6 @@ impl ResolvedToolAttribute {
             .unwrap_or_default();
         let annotations_call = annotations
             .map(|a| quote! { .with_annotations(#a) })
-            .unwrap_or_default();
-        let execution_call = execution
-            .map(|e| quote! { .with_execution(#e) })
             .unwrap_or_default();
         let icons_call = icons
             .map(|i| quote! { .with_icons(#i) })
@@ -166,7 +135,6 @@ impl ResolvedToolAttribute {
                 #title_call
                 #output_schema_call
                 #annotations_call
-                #execution_call
                 #icons_call
                 #meta_call
             }
@@ -278,38 +246,6 @@ pub fn tool(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
     } else {
         None
     };
-    let execution_expr = if let Some(execution) = attribute.execution {
-        let ToolExecutionAttribute { task_support } = execution;
-
-        let task_support_expr = if let Some(ts) = task_support {
-            let ts_ident = match ts.as_str() {
-                "forbidden" => quote! { rmcp::model::TaskSupport::Forbidden },
-                "optional" => quote! { rmcp::model::TaskSupport::Optional },
-                "required" => quote! { rmcp::model::TaskSupport::Required },
-                _ => {
-                    return Err(syn::Error::new(
-                        Span::call_site(),
-                        format!(
-                            "Invalid task_support value '{}'. Expected 'forbidden', 'optional', or 'required'",
-                            ts
-                        ),
-                    ));
-                }
-            };
-            quote! { Some(#ts_ident) }
-        } else {
-            quote! { None }
-        };
-
-        let token_stream = quote! {
-            rmcp::model::ToolExecution::from_raw(
-                #task_support_expr,
-            )
-        };
-        Some(syn::parse2::<Expr>(token_stream)?)
-    } else {
-        None
-    };
     // Handle output_schema - either explicit or generated from return type
     let output_schema_expr = attribute.output_schema.or_else(|| {
         // Try to generate schema from return type
@@ -319,13 +255,9 @@ pub fn tool(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
         }
     });
 
-    let description_expr = if let Some(s) = attribute.description {
-        Some(Expr::Lit(syn::ExprLit {
-            attrs: Vec::new(),
-            lit: syn::Lit::Str(LitStr::new(&s, Span::call_site())),
-        }))
-    } else {
-        fn_item.attrs.iter().try_fold(None, extract_doc_line)?
+    let description_expr = match attribute.description {
+        Some(description) => Some(description.into()),
+        None => fn_item.attrs.iter().try_fold(None, extract_doc_line)?,
     };
     let resolved_tool_attr = ResolvedToolAttribute {
         name: attribute.name.unwrap_or_else(|| fn_ident.to_string()),
@@ -333,7 +265,6 @@ pub fn tool(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
         input_schema: input_schema_expr,
         output_schema: output_schema_expr,
         annotations: annotations_expr,
-        execution: execution_expr,
         title: attribute.title,
         icons: attribute.icons,
         meta: attribute.meta,
@@ -348,13 +279,13 @@ pub fn tool(attr: TokenStream, input: TokenStream) -> syn::Result<TokenStream> {
         let omit_send = cfg!(feature = "local") || attribute.local;
         let new_output = syn::parse2::<ReturnType>({
             let mut lt = quote! { 'static };
-            if let Some(receiver) = fn_item.sig.receiver() {
-                if let Some((_, receiver_lt)) = receiver.reference.as_ref() {
-                    if let Some(receiver_lt) = receiver_lt {
-                        lt = quote! { #receiver_lt };
-                    } else {
-                        lt = quote! { '_ };
-                    }
+            if let Some(receiver) = fn_item.sig.receiver()
+                && let syn::ReceiverKind::Reference(_, receiver_lt, _) = &receiver.kind
+            {
+                if let Some(receiver_lt) = receiver_lt {
+                    lt = quote! { #receiver_lt };
+                } else {
+                    lt = quote! { '_ };
                 }
             }
             match &fn_item.sig.output {
@@ -404,6 +335,20 @@ mod test {
         };
         let _input = tool(attr, input)?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_async_tool_preserves_receiver_lifetime() -> syn::Result<()> {
+        let attr = quote! {};
+        let input = quote! {
+            async fn test_tool_with_lifetime<'a>(&'a self) -> String {
+                "ok".to_string()
+            }
+        };
+        let result = tool(attr, input)?;
+
+        assert!(result.to_string().contains("+ 'a"));
         Ok(())
     }
 

@@ -1,8 +1,10 @@
 [package]
 name = "rmcp"
+exclude = ["tests/test_package_license.rs"]
 license = "Apache-2.0"
-version = "2.0.0"
+version = "3.9.0"
 edition = "2024"
+rust-version = "1.88"
 repository = "https://github.com/modelcontextprotocol/rust-sdk/"
 homepage = "https://github.com/modelcontextprotocol/rust-sdk"
 readme = "README.md"
@@ -17,11 +19,13 @@ exhaustive_enums = "warn"
 features = [
   "auth",
   "auth-client-credentials-jwt",
+  "auth-enterprise-managed",
   "base64",
   "client",
   "client-side-sse",
   "elicitation",
   "macros",
+  "request-state",
   "reqwest",
   "reqwest-native-tls",
   "reqwest-tls-no-provider",
@@ -43,12 +47,13 @@ features = [
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-async-trait = "0.1.89"
+async-trait = { version = "0.1.89", optional = true }
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 thiserror = "2"
 tokio = { version = "1", features = ["sync", "macros", "rt", "time"] }
 futures = "0.3"
+indexmap = { version = "2", features = ["serde"] }
 tracing = { version = "0.1" }
 tokio-util = { version = "0.7" }
 pin-project-lite = "0.2"
@@ -56,13 +61,20 @@ pastey = { version = "0.2.0", optional = true }
 # oauth2 support
 oauth2 = { version = "5.0", optional = true, default-features = false }
 # JWT signing for client credentials (private_key_jwt)
-jsonwebtoken = { version = "10", optional = true }
+jsonwebtoken = { version = "11", optional = true, features = ["aws_lc_rs"] }
 
 # for auto generate schema
 schemars = { version = "1.0", optional = true, features = ["chrono04"] }
 
 # for image encoding
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.23", optional = true }
+
+# SHA-256 for SEP-2640 skill digests and SEP-2322 requestState sealing
+sha2 = "0.11"
+
+# for SEP-2322 requestState integrity sealing (opt-in via the `request-state` feature)
+hmac = { version = "0.13", optional = true }
+zeroize = { version = "1", optional = true }
 
 # for HTTP client
 reqwest = { version = "0.13.2", default-features = false, features = [
@@ -70,7 +82,7 @@ reqwest = { version = "0.13.2", default-features = false, features = [
   "stream",
 ], optional = true }
 
-sse-stream = { version = "0.2", optional = true }
+sse-stream = { version = "0.2.4", optional = true }
 
 http = { version = "1", optional = true }
 url = { version = "2.4", optional = true }
@@ -79,7 +91,7 @@ url = { version = "2.4", optional = true }
 tower-service = { version = "0.3", optional = true }
 
 # for child process transport
-process-wrap = { version = "9.0", features = ["tokio1"], optional = true }
+process-wrap = { version = "10.0", features = ["tokio1"], optional = true }
 
 # for cross-platform executable path resolution
 which = { version = "8", optional = true }
@@ -100,7 +112,7 @@ hyper = { version = "1", features = ["client", "http1"], optional = true }
 hyper-util = { version = "0.1", features = ["tokio"], optional = true }
 
 # macro
-rmcp-macros = { version = "2.0.0", path = "../rmcp-macros", optional = true }
+rmcp-macros = { version = "3.9.0", path = "../rmcp-macros", optional = true }
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies]
 chrono = { version = "0.4.38", default-features = false, features = ["serde", "now"] }
 
@@ -112,13 +124,21 @@ chrono = { version = "0.4.38", default-features = false, features = [
   "oldtime",
 ] }
 
+# the stdio pipe transport reopens `/proc/self/fd` with `O_NONBLOCK`;
+# the child process transport sends `SIGTERM` during graceful shutdown
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
 default = ["base64", "macros", "server"]
 local = ["rmcp-macros?/local"]
 client = ["dep:tokio-stream"]
-server = ["transport-async-rw", "dep:schemars", "dep:pastey"]
+server = ["transport-async-rw", "schemars", "dep:pastey", "uuid"]
 macros = ["dep:rmcp-macros", "dep:pastey"]
 elicitation = ["dep:url"]
+
+# SEP-2322 requestState integrity helper (HMAC-SHA256 seal/open codec)
+request-state = ["dep:hmac", "dep:zeroize", "base64"]
 
 # reqwest http client
 __reqwest = ["dep:reqwest"]
@@ -139,12 +159,13 @@ server-side-http = [
   "dep:bytes",
   "dep:sse-stream",
   "tower",
+  "base64",
 ]
 
 transport-worker = ["dep:tokio-stream"]
 
 # SSE stream parsing utilities (used by streamable HTTP client for SSE-formatted responses)
-client-side-sse = ["dep:sse-stream", "dep:http"]
+client-side-sse = ["dep:sse-stream", "dep:http", "dep:bytes", "base64"]
 
 # Streamable HTTP client
 transport-streamable-http-client = ["client-side-sse", "transport-worker"]
@@ -160,7 +181,7 @@ transport-streamable-http-client-unix-socket = [
 ]
 
 transport-async-rw = ["tokio/io-util", "tokio-util/codec"]
-transport-io = ["transport-async-rw", "tokio/io-std"]
+transport-io = ["transport-async-rw", "tokio/io-std", "tokio/net"]
 transport-child-process = [
   "transport-async-rw",
   "tokio/process",
@@ -177,16 +198,18 @@ transport-streamable-http-server = [
 ]
 transport-streamable-http-server-session = [
   "transport-async-rw",
+  "dep:async-trait",
   "dep:tokio-stream",
 ]
 # transport-ws = ["transport-io", "dep:tokio-tungstenite"]
 tower = ["dep:tower-service"]
-auth = ["dep:oauth2", "__reqwest", "dep:url"]
+auth = ["dep:async-trait", "dep:oauth2", "__reqwest", "dep:url"]
 auth-client-credentials-jwt = ["auth", "dep:jsonwebtoken", "uuid"]
+auth-enterprise-managed = ["auth", "base64"]
 schemars = ["dep:schemars"]
 
 [dev-dependencies]
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full", "test-util"] }
 schemars = { version = "1.1.0", features = ["chrono04"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 hyper = { version = "1", features = ["server", "http1"] }
@@ -200,7 +223,10 @@ tracing-subscriber = { version = "0.3", features = [
   "fmt",
 ] }
 async-trait = "0.1"
-rstest = "0.26.1"
+rstest = "0.28.0"
+# Cargo unifies this feature into rmcp whenever any crate in a build enables it,
+# so the tests run with it on (see tests/test_deserialization.rs).
+serde_json = { version = "1.0", features = ["arbitrary_precision"] }
 [[test]]
 name = "test_tool_macros"
 required-features = ["server", "client"]
@@ -227,6 +253,11 @@ required-features = [
   "__reqwest",
 ]
 path = "tests/test_with_js.rs"
+
+[[test]]
+name = "test_local_client_handler"
+required-features = ["client", "local"]
+path = "tests/test_local_client_handler.rs"
 
 [[test]]
 name = "test_notification"
@@ -279,20 +310,92 @@ required-features = ["server", "client", "transport-streamable-http-server", "re
 path = "tests/test_streamable_http_json_response.rs"
 
 [[test]]
+name = "test_streamable_http_client_concurrency"
+required-features = ["client", "transport-streamable-http-client"]
+path = "tests/test_streamable_http_client_concurrency.rs"
+
+[[test]]
 name = "test_streamable_http_protocol_version"
 required-features = ["server", "client", "transport-streamable-http-server", "reqwest"]
 path = "tests/test_streamable_http_protocol_version.rs"
+
+[[test]]
+name = "test_stateless_protocol_version"
+required-features = ["server", "transport-streamable-http-server", "reqwest"]
+path = "tests/test_stateless_protocol_version.rs"
+
+[[test]]
+name = "test_protocol_version_negotiation"
+required-features = ["server", "client"]
+path = "tests/test_protocol_version_negotiation.rs"
+
+[[test]]
+name = "test_client_lifecycle_modes"
+required-features = ["client", "server"]
+path = "tests/test_client_lifecycle_modes.rs"
+
+[[test]]
+name = "test_stateless_server_requests"
+required-features = ["client", "server"]
+path = "tests/test_stateless_server_requests.rs"
+
+[[test]]
+name = "test_discover_http_client_startup"
+required-features = [
+  "client",
+  "reqwest",
+  "transport-streamable-http-client-reqwest",
+  "transport-streamable-http-server",
+]
+path = "tests/test_discover_http_client_startup.rs"
+
+[[test]]
+name = "test_streamable_http_standard_headers"
+required-features = ["server", "client", "transport-streamable-http-server", "reqwest"]
+path = "tests/test_streamable_http_standard_headers.rs"
 
 [[test]]
 name = "test_streamable_http_4xx_error_body"
 required-features = ["transport-streamable-http-client", "transport-streamable-http-client-reqwest"]
 path = "tests/test_streamable_http_4xx_error_body.rs"
 
+[[test]]
+name = "test_streamable_http_malformed_json_request"
+required-features = [
+  "client",
+  "transport-streamable-http-client",
+  "transport-streamable-http-client-reqwest",
+]
+path = "tests/test_streamable_http_malformed_json_request.rs"
+
+[[test]]
+name = "test_streamable_http_initialize_error"
+required-features = [
+  "client",
+  "transport-streamable-http-client",
+  "transport-streamable-http-client-reqwest",
+]
+path = "tests/test_streamable_http_initialize_error.rs"
 
 [[test]]
 name = "test_custom_request"
 required-features = ["server", "client"]
 path = "tests/test_custom_request.rs"
+
+[[test]]
+name = "test_trace_context"
+required-features = ["server", "client"]
+path = "tests/test_trace_context.rs"
+
+[[test]]
+name = "test_abandoned_request_cancel"
+required-features = ["server", "client"]
+path = "tests/test_abandoned_request_cancel.rs"
+
+[[test]]
+name = "test_mrtr_behavior"
+required-features = ["server", "client"]
+path = "tests/test_mrtr_behavior.rs"
 
 [[test]]
 name = "test_prompt_macros"
@@ -331,6 +434,11 @@ required-features = ["auth"]
 path = "tests/test_client_credentials.rs"
 
 [[test]]
+name = "test_auth_error_classification"
+required-features = ["auth", "client", "transport-streamable-http-client"]
+path = "tests/test_auth_error_classification.rs"
+
+[[test]]
 name = "test_unix_socket_transport"
 required-features = [
   "client",
@@ -342,10 +450,10 @@ path = "tests/test_unix_socket_transport.rs"
 [[test]]
 name = "test_streamable_http_stale_session"
 required-features = [
-  "server", 
-  "client", 
-  "transport-streamable-http-server", 
-  "transport-streamable-http-client", 
+  "server",
+  "client",
+  "transport-streamable-http-server",
+  "transport-streamable-http-client",
   "transport-streamable-http-client-reqwest"
 ]
 path = "tests/test_streamable_http_stale_session.rs"
@@ -361,6 +469,16 @@ required-features = [
 path = "tests/test_streamable_http_session_store.rs"
 
 [[test]]
+name = "test_streamable_http_event_store"
+required-features = [
+  "client",
+  "server",
+  "transport-streamable-http-client-reqwest",
+  "transport-streamable-http-server",
+]
+path = "tests/test_streamable_http_event_store.rs"
+
+[[test]]
 name = "test_streamable_http_connection_reuse"
 required-features = [
   "server",
@@ -372,3 +490,32 @@ required-features = [
   "transport-streamable-http-client-reqwest",
 ]
 path = "tests/test_streamable_http_connection_reuse.rs"
+
+[[test]]
+name = "test_streamable_http_disconnect_cancel"
+required-features = [
+  "server",
+  "transport-streamable-http-server",
+  "reqwest",
+]
+path = "tests/test_streamable_http_disconnect_cancel.rs"
+
+[[test]]
+name = "test_sep_2260_stream_routing"
+required-features = ["server", "elicitation", "transport-streamable-http-server", "reqwest"]
+path = "tests/test_sep_2260_stream_routing.rs"
+
+[[test]]
+name = "test_streamable_http_status_metadata"
+path = "tests/test_streamable_http_status_metadata.rs"
+required-features = ["transport-streamable-http-client", "transport-streamable-http-client-reqwest"]
+
+[[test]]
+name = "test_streamable_http_response_limits"
+path = "tests/test_streamable_http_response_limits.rs"
+required-features = ["transport-streamable-http-client-reqwest"]
+
+[[test]]
+name = "test_unix_socket_response_limits"
+path = "tests/test_unix_socket_response_limits.rs"
+required-features = ["transport-streamable-http-client-unix-socket"]

@@ -31,7 +31,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rmcp::model::{
-    ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema, EnumSchema, Meta,
+    ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema, EnumSchema,
+    RequestMetaObject,
 };
 use rmcp::service::ElicitationMode;
 use serde_json::Value;
@@ -417,8 +418,8 @@ pub(crate) fn prompt_schema(
 /// Codex shows its approval context for requests carrying these fields. With
 /// a form that has fields, its approval policy and its automatic reviewer
 /// decline instead of accepting on their own.
-fn codex_meta(tool: &str, params: Value) -> Meta {
-    let mut meta = Meta::new();
+fn codex_meta(tool: &str, params: Value) -> RequestMetaObject {
+    let mut meta = RequestMetaObject::new();
     for (key, value) in [
         ("codex_request_type", Value::from("approval_request")),
         ("codex_approval_kind", Value::from("mcp_tool_call")),

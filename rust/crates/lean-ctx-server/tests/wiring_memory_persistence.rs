@@ -60,7 +60,7 @@ async fn retired_episode_and_procedure_actions_write_no_store() {
 
     let service_factory = move || Ok(base.clone());
     let cfg = StreamableHttpServerConfig::default()
-        .with_stateful_mode(false)
+        .with_legacy_session_mode(false)
         .with_json_response(true);
     let svc = StreamableHttpService::new(
         service_factory,

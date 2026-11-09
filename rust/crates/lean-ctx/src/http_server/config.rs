@@ -206,7 +206,7 @@ impl HttpServerConfig {
 
     pub(super) fn mcp_http_config(&self) -> StreamableHttpServerConfig {
         let mut cfg = StreamableHttpServerConfig::default()
-            .with_stateful_mode(self.stateful_mode)
+            .with_legacy_session_mode(self.stateful_mode)
             .with_json_response(self.json_response);
 
         if self.disable_host_check {

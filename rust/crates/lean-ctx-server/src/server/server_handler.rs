@@ -10,11 +10,14 @@ use super::*;
 
 /// rmcp moves wire `_meta` into RequestContext before calling the handler.
 /// Retain the existing guarded dispatcher and progress-token readers as owners.
-fn restore_tool_meta(request: &mut CallToolRequestParams, transport_meta: &rmcp::model::Meta) {
+fn restore_tool_meta(
+    request: &mut CallToolRequestParams,
+    transport_meta: &rmcp::model::RequestMetaObject,
+) {
     if !transport_meta.is_empty() {
         request
             .meta
-            .get_or_insert_with(rmcp::model::Meta::new)
+            .get_or_insert_with(rmcp::model::RequestMetaObject::new)
             .extend(transport_meta.clone());
     }
 }
@@ -70,7 +73,7 @@ fn engine_server_info() -> Implementation {
 }
 
 impl ServerHandler for LeanCtxServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let capabilities = server_capabilities(true, true);
 
         let instructions = lean_ctx::instructions::build_instructions(CrpMode::effective());
@@ -687,10 +690,10 @@ impl ServerHandler for LeanCtxServer {
         &self,
         request: rmcp::model::GetPromptRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::GetPromptResult, ErrorData> {
+    ) -> Result<rmcp::model::GetPromptResponse, ErrorData> {
         let ledger = self.ledger.read().await;
         match prompts::get_prompt(&request, &ledger) {
-            Some(result) => Ok(result),
+            Some(result) => Ok(result.into()),
             None => Err(ErrorData::invalid_params(
                 format!("Unknown prompt: {}", request.name),
                 None,
@@ -712,10 +715,10 @@ impl ServerHandler for LeanCtxServer {
         &self,
         request: rmcp::model::ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
+    ) -> Result<rmcp::model::ReadResourceResponse, rmcp::ErrorData> {
         let ledger = self.ledger.read().await;
         if let Some(contents) = resources::read_resource(&request.uri, &ledger) {
-            return Ok(rmcp::model::ReadResourceResult::new(contents));
+            return Ok(rmcp::model::ReadResourceResult::new(contents).into());
         }
 
         // GH #1418: agents sometimes call resources/read with file:// URIs
@@ -723,7 +726,7 @@ impl ServerHandler for LeanCtxServer {
         let session = self.session.read().await;
         let root = session.project_root.as_deref();
         match file_resource::read_file_resource(&request.uri, root, &session.extra_roots) {
-            Ok(contents) => Ok(rmcp::model::ReadResourceResult::new(contents)),
+            Ok(contents) => Ok(rmcp::model::ReadResourceResult::new(contents).into()),
             Err(file_resource::FileResourceError::NotAFilePath) => {
                 Err(rmcp::ErrorData::resource_not_found(
                     resources::unknown_resource_message(&request.uri),
@@ -738,7 +741,7 @@ impl ServerHandler for LeanCtxServer {
         &self,
         mut request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<rmcp::model::CallToolResponse, ErrorData> {
         use std::panic::AssertUnwindSafe;
 
         // In flight until this call returns — the idle policy never releases
@@ -753,7 +756,7 @@ impl ServerHandler for LeanCtxServer {
         let progress_token = request
             .meta
             .as_ref()
-            .and_then(rmcp::model::Meta::get_progress_token);
+            .and_then(rmcp::model::RequestMetaObject::get_progress_token);
         if let Some(ref token) = progress_token {
             let sender =
                 crate::server::progress::ProgressSender::new(context.peer.clone(), token.clone());
@@ -811,7 +814,8 @@ impl ServerHandler for LeanCtxServer {
                 "ERROR: lean-ctx internal error. The MCP server is still running. \
                  Please retry or use a different approach."
                     .to_string(),
-            )]));
+            )])
+            .into());
         };
         ledger_entry.stage(lean_ctx::core::request_ledger::Stage::Finalizing);
         // #1265: If the client cancelled this request while the tool was
@@ -832,7 +836,7 @@ impl ServerHandler for LeanCtxServer {
             }
             _ => lean_ctx::core::request_ledger::Outcome::Errored,
         });
-        result
+        result.map(Into::into)
     }
 
     async fn on_roots_list_changed(
@@ -1185,14 +1189,14 @@ mod tests {
 
     #[test]
     fn host_task_scope_retains_wire_metadata_for_receipt_replay() {
-        use rmcp::model::{CallToolRequest, Meta};
+        use rmcp::model::{CallToolRequest, RequestMetaObject};
         let mut wire: CallToolRequest = serde_json::from_value(serde_json::json!({
             "method":"tools/call", "params":{"name":"ctx_read", "arguments":{},
                 "_meta":{"requestId":"wire-retry", "progressToken":19}}
         }))
         .unwrap();
         assert!(wire.params.meta.is_none());
-        let transported = wire.extensions.get::<Meta>().unwrap().clone();
+        let transported = wire.extensions.get::<RequestMetaObject>().unwrap().clone();
         restore_tool_meta(&mut wire.params, &transported);
         assert_eq!(
             wire.params.meta.as_ref().unwrap().0["requestId"],
@@ -1226,7 +1230,7 @@ mod tests {
         );
         assert_eq!(wire.params.meta.as_ref().unwrap().0["local-only"], true);
         let before = wire.params.meta.clone();
-        restore_tool_meta(&mut wire.params, &Meta::new());
+        restore_tool_meta(&mut wire.params, &RequestMetaObject::new());
         assert_eq!(wire.params.meta, before);
     }
 

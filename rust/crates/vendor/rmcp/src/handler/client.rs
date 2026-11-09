@@ -66,8 +66,8 @@ impl<H: ClientHandler> Service<RoleClient> for H {
             ServerNotification::PromptListChangedNotification(_notification_no_param) => {
                 self.on_prompt_list_changed(context).await
             }
-            ServerNotification::ElicitationCompleteNotification(notification) => {
-                self.on_url_elicitation_notification_complete(notification.params, context)
+            ServerNotification::SubscriptionsAcknowledgedNotification(notification) => {
+                self.on_subscriptions_acknowledged(notification.params, context)
                     .await
             }
             ServerNotification::TaskStatusNotification(notification) => {
@@ -85,197 +85,250 @@ impl<H: ClientHandler> Service<RoleClient> for H {
     }
 }
 
-#[allow(unused_variables)]
-pub trait ClientHandler: Sized + Send + Sync + 'static {
-    fn ping(
-        &self,
-        context: RequestContext<RoleClient>,
-    ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_ {
-        std::future::ready(Ok(()))
-    }
+macro_rules! client_handler_methods {
+    () => {
+        fn ping(
+            &self,
+            context: RequestContext<RoleClient>,
+        ) -> impl Future<Output = Result<(), McpError>> + MaybeSendFuture + '_ {
+            std::future::ready(Ok(()))
+        }
 
-    fn create_message(
-        &self,
-        params: CreateMessageRequestParams,
-        context: RequestContext<RoleClient>,
-    ) -> impl Future<Output = Result<CreateMessageResult, McpError>> + MaybeSendFuture + '_ {
-        std::future::ready(Err(
-            McpError::method_not_found::<CreateMessageRequestMethod>(),
-        ))
-    }
+        fn create_message(
+            &self,
+            params: CreateMessageRequestParams,
+            context: RequestContext<RoleClient>,
+        ) -> impl Future<Output = Result<CreateMessageResult, McpError>> + MaybeSendFuture + '_ {
+            std::future::ready(Err(
+                McpError::method_not_found::<CreateMessageRequestMethod>(),
+            ))
+        }
 
-    fn list_roots(
-        &self,
-        context: RequestContext<RoleClient>,
-    ) -> impl Future<Output = Result<ListRootsResult, McpError>> + MaybeSendFuture + '_ {
-        std::future::ready(Ok(ListRootsResult::default()))
-    }
+        fn list_roots(
+            &self,
+            context: RequestContext<RoleClient>,
+        ) -> impl Future<Output = Result<ListRootsResult, McpError>> + MaybeSendFuture + '_ {
+            std::future::ready(Ok(ListRootsResult::default()))
+        }
 
-    /// Handle an elicitation request from a server asking for user input.
-    ///
-    /// This method is called when a server needs interactive input from the user
-    /// during tool execution. Implementations should present the message to the user,
-    /// collect their input according to the requested schema, and return the result.
-    ///
-    /// # Arguments
-    /// * `request` - The elicitation request with message and schema
-    /// * `context` - The request context
-    ///
-    /// # Returns
-    /// The user's response including action (accept/decline/cancel) and optional data
-    ///
-    /// # Default Behavior
-    /// The default implementation automatically declines all elicitation requests.
-    /// Real clients should override this to provide user interaction.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// use rmcp::model::ElicitRequestParams;
-    /// use rmcp::{
-    ///     model::ErrorData as McpError,
-    ///     model::*,
-    ///     service::{NotificationContext, RequestContext, RoleClient, Service, ServiceRole},
-    /// };
-    /// use rmcp::ClientHandler;
-    ///
-    /// impl ClientHandler for MyClient {
-    ///  async fn create_elicitation(
-    ///     &self,
-    ///     request: ElicitRequestParams,
-    ///     context: RequestContext<RoleClient>,
-    ///  ) -> Result<ElicitResult, McpError> {
-    ///     match request {
-    ///         ElicitRequestParams::FormElicitationParam {meta, message, requested_schema,} => {
-    ///            // Display message to user and collect input according to requested_schema
-    ///           let user_input = get_user_input(message, requested_schema).await?;
-    ///          Ok(ElicitResult {
-    ///             action: ElicitationAction::Accept,
-    ///              content: Some(user_input),
-    ///              meta: None,
-    ///          })
-    ///         }
-    ///         ElicitRequestParams::UrlElicitationParam {meta, message, url, elicitation_id,} => {
-    ///           // Open URL in browser for user to complete elicitation
-    ///           open_url_in_browser(url).await?;
-    ///          Ok(ElicitResult {
-    ///              action: ElicitationAction::Accept,
-    ///             content: None,
-    ///             meta: None,
-    ///             })
-    ///         }
-    ///     }
-    ///  }
-    /// }
-    /// ```
-    fn create_elicitation(
-        &self,
-        request: ElicitRequestParams,
-        context: RequestContext<RoleClient>,
-    ) -> impl Future<Output = Result<ElicitResult, McpError>> + MaybeSendFuture + '_ {
-        // Default implementation declines all requests - real clients should override this
-        let _ = (request, context);
-        std::future::ready(Ok(ElicitResult {
-            action: ElicitationAction::Decline,
-            content: None,
-            meta: None,
-        }))
-    }
+        /// Handle an elicitation request from a server asking for user input.
+        ///
+        /// This method is called when a server needs interactive input from the user
+        /// during tool execution. Implementations should present the message to the user,
+        /// collect their input according to the requested schema, and return the result.
+        ///
+        /// # Arguments
+        /// * `request` - The elicitation request with message and schema
+        /// * `context` - The request context
+        ///
+        /// # Returns
+        /// The user's response including action (accept/decline/cancel) and optional data
+        ///
+        /// # Default Behavior
+        /// The default implementation automatically declines all elicitation requests.
+        /// Real clients should override this to provide user interaction.
+        ///
+        /// # Example
+        /// ```rust,no_run
+        /// use rmcp::{
+        ///     ClientHandler,
+        ///     model::{
+        ///         ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema,
+        ///         ErrorData as McpError,
+        ///     },
+        ///     service::{RequestContext, RoleClient},
+        /// };
+        ///
+        /// # struct MyClient;
+        /// #
+        /// # async fn get_user_input(
+        /// #     _message: String,
+        /// #     _schema: ElicitationSchema,
+        /// # ) -> Result<serde_json::Value, McpError> {
+        /// #     std::future::pending().await
+        /// # }
+        /// #
+        /// # async fn open_url_in_browser(_url: String) -> Result<(), McpError> {
+        /// #     Ok(())
+        /// # }
+        /// #
+        /// impl ClientHandler for MyClient {
+        ///     async fn create_elicitation(
+        ///         &self,
+        ///         request: ElicitRequestParams,
+        ///         _context: RequestContext<RoleClient>,
+        ///     ) -> Result<ElicitResult, McpError> {
+        ///         match request {
+        ///             ElicitRequestParams::FormElicitationParams {
+        ///                 message,
+        ///                 requested_schema,
+        ///                 ..
+        ///             } => {
+        ///                 let input = get_user_input(message, requested_schema).await?;
+        ///                 Ok(ElicitResult::new(ElicitationAction::Accept).with_content(input))
+        ///             }
+        ///             ElicitRequestParams::UrlElicitationParams { url, .. } => {
+        ///                 open_url_in_browser(url).await?;
+        ///                 Ok(ElicitResult::new(ElicitationAction::Accept))
+        ///             }
+        ///             _ => Ok(ElicitResult::new(ElicitationAction::Decline)),
+        ///         }
+        ///     }
+        /// }
+        /// ```
+        fn create_elicitation(
+            &self,
+            request: ElicitRequestParams,
+            context: RequestContext<RoleClient>,
+        ) -> impl Future<Output = Result<ElicitResult, McpError>> + MaybeSendFuture + '_ {
+            // Default implementation declines all requests - real clients should override this
+            let _ = (request, context);
+            std::future::ready(Ok(ElicitResult {
+                action: ElicitationAction::Decline,
+                content: None,
+                meta: None,
+            }))
+        }
 
-    fn on_custom_request(
-        &self,
-        request: CustomRequest,
-        context: RequestContext<RoleClient>,
-    ) -> impl Future<Output = Result<CustomResult, McpError>> + MaybeSendFuture + '_ {
-        let CustomRequest { method, .. } = request;
-        let _ = context;
-        std::future::ready(Err(McpError::new(
-            ErrorCode::METHOD_NOT_FOUND,
-            method,
-            None,
-        )))
-    }
+        fn on_custom_request(
+            &self,
+            request: CustomRequest,
+            context: RequestContext<RoleClient>,
+        ) -> impl Future<Output = Result<CustomResult, McpError>> + MaybeSendFuture + '_ {
+            let CustomRequest { method, .. } = request;
+            let _ = context;
+            std::future::ready(Err(McpError::new(
+                ErrorCode::METHOD_NOT_FOUND,
+                method,
+                None,
+            )))
+        }
 
-    fn on_cancelled(
-        &self,
-        params: CancelledNotificationParam,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        std::future::ready(())
-    }
-    fn on_progress(
-        &self,
-        params: ProgressNotificationParam,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        std::future::ready(())
-    }
-    fn on_logging_message(
-        &self,
-        params: LoggingMessageNotificationParam,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        std::future::ready(())
-    }
-    fn on_resource_updated(
-        &self,
-        params: ResourceUpdatedNotificationParam,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        std::future::ready(())
-    }
-    fn on_resource_list_changed(
-        &self,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        std::future::ready(())
-    }
-    fn on_tool_list_changed(
-        &self,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        std::future::ready(())
-    }
-    fn on_prompt_list_changed(
-        &self,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        std::future::ready(())
-    }
+        fn on_cancelled(
+            &self,
+            params: CancelledNotificationParam,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            std::future::ready(())
+        }
+        fn on_progress(
+            &self,
+            params: ProgressNotificationParam,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            std::future::ready(())
+        }
+        fn on_logging_message(
+            &self,
+            params: LoggingMessageNotificationParam,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            std::future::ready(())
+        }
+        fn on_resource_updated(
+            &self,
+            params: ResourceUpdatedNotificationParam,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            std::future::ready(())
+        }
+        /// Called for a `notifications/resources/list_changed` notification that
+        /// is not routed to a [`Subscription`](crate::service::Subscription).
+        ///
+        /// See [`Self::on_tool_list_changed`]: on a `2026-07-28` connection,
+        /// request it with [`Peer::listen`](crate::service::Peer::listen) and
+        /// [`SubscriptionFilterBuilder::resources_list_changed`](crate::model::SubscriptionFilterBuilder::resources_list_changed).
+        /// Notifications routed to that subscription are not delivered here. The
+        /// cached resource list is invalidated on either path.
+        fn on_resource_list_changed(
+            &self,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            std::future::ready(())
+        }
+        /// Called for a `notifications/tools/list_changed` notification that is
+        /// not routed to a [`Subscription`](crate::service::Subscription).
+        ///
+        /// On a `2026-07-28` connection, a server sends list-changed
+        /// notifications on a listen stream that requested them. Open one with
+        /// [`Peer::listen`](crate::service::Peer::listen) and a filter built with
+        /// [`SubscriptionFilterBuilder::tools_list_changed`](crate::model::SubscriptionFilterBuilder::tools_list_changed),
+        /// then read the notifications from the returned subscription.
+        /// Notifications routed to a subscription are not delivered to this
+        /// callback, so it mainly sees notifications without a matching
+        /// subscription: from servers on earlier protocol versions, or from
+        /// servers that send them unscoped.
+        ///
+        /// The client's cached `tools/list` response is invalidated on either
+        /// path. See `examples/clients/src/subscriptions_streamhttp.rs`.
+        fn on_tool_list_changed(
+            &self,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            std::future::ready(())
+        }
+        /// Called for a `notifications/prompts/list_changed` notification that is
+        /// not routed to a [`Subscription`](crate::service::Subscription).
+        ///
+        /// See [`Self::on_tool_list_changed`]: on a `2026-07-28` connection,
+        /// request it with [`Peer::listen`](crate::service::Peer::listen) and
+        /// [`SubscriptionFilterBuilder::prompts_list_changed`](crate::model::SubscriptionFilterBuilder::prompts_list_changed).
+        /// Notifications routed to that subscription are not delivered here. The
+        /// cached prompt list is invalidated on either path.
+        fn on_prompt_list_changed(
+            &self,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            std::future::ready(())
+        }
+        fn on_subscriptions_acknowledged(
+            &self,
+            params: SubscriptionsAcknowledgedNotificationParams,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            std::future::ready(())
+        }
 
-    fn on_url_elicitation_notification_complete(
-        &self,
-        params: ElicitationResponseNotificationParam,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        std::future::ready(())
-    }
-    fn on_task_status(
-        &self,
-        params: TaskStatusNotificationParam,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        std::future::ready(())
-    }
-    fn on_custom_notification(
-        &self,
-        notification: CustomNotification,
-        context: NotificationContext<RoleClient>,
-    ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
-        let _ = (notification, context);
-        std::future::ready(())
-    }
+        fn on_task_status(
+            &self,
+            params: TaskStatusNotificationParams,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            std::future::ready(())
+        }
+        fn on_custom_notification(
+            &self,
+            notification: CustomNotification,
+            context: NotificationContext<RoleClient>,
+        ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+            let _ = (notification, context);
+            std::future::ready(())
+        }
 
-    fn get_info(&self) -> ClientInfo {
-        ClientInfo::default()
-    }
+        fn get_info(&self) -> ClientConfig {
+            ClientConfig::default()
+        }
+    };
 }
 
-/// Do nothing, with default client info.
+#[allow(unused_variables)]
+#[cfg(not(feature = "local"))]
+pub trait ClientHandler: Sized + Send + Sync + 'static {
+    client_handler_methods!();
+}
+
+#[allow(unused_variables)]
+#[cfg(feature = "local")]
+pub trait ClientHandler: Sized + 'static {
+    client_handler_methods!();
+}
+
+/// Do nothing, with the default client config.
 impl ClientHandler for () {}
 
-/// Do nothing, with a specific client info.
-impl ClientHandler for ClientInfo {
-    fn get_info(&self) -> ClientInfo {
+/// Do nothing, with a specific client config.
+impl ClientHandler for ClientConfig {
+    fn get_info(&self) -> ClientConfig {
         self.clone()
     }
 }
@@ -376,9 +429,17 @@ macro_rules! impl_client_handler_for_wrapper {
                 (**self).on_prompt_list_changed(context)
             }
 
+            fn on_subscriptions_acknowledged(
+                &self,
+                params: SubscriptionsAcknowledgedNotificationParams,
+                context: NotificationContext<RoleClient>,
+            ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
+                (**self).on_subscriptions_acknowledged(params, context)
+            }
+
             fn on_task_status(
                 &self,
-                params: TaskStatusNotificationParam,
+                params: TaskStatusNotificationParams,
                 context: NotificationContext<RoleClient>,
             ) -> impl Future<Output = ()> + MaybeSendFuture + '_ {
                 (**self).on_task_status(params, context)
@@ -392,7 +453,7 @@ macro_rules! impl_client_handler_for_wrapper {
                 (**self).on_custom_notification(notification, context)
             }
 
-            fn get_info(&self) -> ClientInfo {
+            fn get_info(&self) -> ClientConfig {
                 (**self).get_info()
             }
         }

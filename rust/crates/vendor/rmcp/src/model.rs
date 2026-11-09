@@ -12,9 +12,13 @@ mod content;
 mod elicitation_schema;
 mod extension;
 mod meta;
+mod mrtr;
 mod prompt;
+#[cfg(feature = "request-state")]
+mod request_state;
 mod resource;
 mod serde_impl;
+mod skill;
 mod task;
 mod tool;
 pub use annotated::*;
@@ -23,10 +27,14 @@ pub use content::*;
 pub use elicitation_schema::*;
 pub use extension::*;
 pub use meta::*;
+pub use mrtr::*;
 pub use prompt::*;
+#[cfg(feature = "request-state")]
+pub use request_state::*;
 pub use resource::*;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
+pub use skill::*;
 pub use task::*;
 pub use tool::*;
 
@@ -49,7 +57,6 @@ pub fn object(value: serde_json::Value) -> JsonObject {
 }
 
 /// Use this macro just like [`serde_json::json!`]
-#[cfg(feature = "macros")]
 #[macro_export]
 macro_rules! object {
     ({$($tt:tt)*}) => {
@@ -64,7 +71,7 @@ macro_rules! object {
 /// without returning any specific data.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Copy, Eq)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "server", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
 pub struct EmptyObject {}
 
@@ -164,9 +171,36 @@ impl ProtocolVersion {
     pub const V_2025_06_18: Self = Self(Cow::Borrowed("2025-06-18"));
     pub const V_2025_03_26: Self = Self(Cow::Borrowed("2025-03-26"));
     pub const V_2024_11_05: Self = Self(Cow::Borrowed("2024-11-05"));
-    pub const LATEST: Self = Self::V_2025_11_25;
 
-    /// All protocol versions known to this SDK.
+    /// The newest protocol version known to this SDK.
+    pub const LATEST: Self = Self::V_2026_07_28;
+
+    /// First protocol version that requires SEP-2243 standard HTTP headers.
+    pub const STANDARD_HEADERS: Self = Self::V_2026_07_28;
+
+    /// First protocol version that replaced the `initialize` handshake with
+    /// per-request `_meta` (SEP-2567).
+    pub const NO_INITIALIZE: Self = Self::V_2026_07_28;
+
+    /// The newest protocol version that still has an `initialize` handshake.
+    ///
+    /// From [`Self::NO_INITIALIZE`] onward the lifecycle moved into per-request
+    /// `_meta`, so there is no handshake left to answer. A server replying to
+    /// `initialize` can therefore never name [`Self::LATEST`] once `LATEST`
+    /// reaches that revision — it has to name this one instead.
+    ///
+    /// Use this, not `LATEST`, whenever the subject is the handshake itself:
+    /// the version a server can echo from `initialize`, or the version a test
+    /// needs in order to exercise session-based behavior.
+    ///
+    /// ```
+    /// # use rmcp::model::ProtocolVersion;
+    /// assert!(ProtocolVersion::LATEST_WITH_INITIALIZE.has_initialize());
+    /// assert!(!ProtocolVersion::LATEST.has_initialize());
+    /// ```
+    pub const LATEST_WITH_INITIALIZE: Self = Self::V_2025_11_25;
+
+    /// All protocol versions known to this SDK, oldest first.
     pub const KNOWN_VERSIONS: &[Self] = &[
         Self::V_2024_11_05,
         Self::V_2025_03_26,
@@ -178,6 +212,60 @@ impl ProtocolVersion {
     /// Returns the string representation of this protocol version.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Whether this revision negotiates its lifecycle over the `initialize`
+    /// handshake.
+    ///
+    /// `false` from [`Self::NO_INITIALIZE`] onward, where SEP-2567 moved the
+    /// lifecycle into per-request `_meta`. Unknown versions are compared
+    /// lexically, which orders correctly because every revision is dated
+    /// `YYYY-MM-DD`.
+    ///
+    /// ```
+    /// # use rmcp::model::ProtocolVersion;
+    /// assert!(ProtocolVersion::V_2025_11_25.has_initialize());
+    /// assert!(!ProtocolVersion::V_2026_07_28.has_initialize());
+    /// ```
+    pub fn has_initialize(&self) -> bool {
+        self.as_str() < Self::NO_INITIALIZE.as_str()
+    }
+
+    /// The known versions up to and including `max`, oldest first.
+    ///
+    /// Servers that implement every revision up to some ceiling can return
+    /// this from `supported_protocol_versions` instead of filtering
+    /// [`Self::KNOWN_VERSIONS`] by hand. `max` itself need not be a known
+    /// version; the result is empty when it predates all of them.
+    ///
+    /// The result borrows from [`Self::KNOWN_VERSIONS`], so call it directly
+    /// in the method body — it needs no `static` and no `LazyLock`:
+    ///
+    /// ```rust,ignore
+    /// const MAX_SUPPORTED: ProtocolVersion = ProtocolVersion::V_2025_11_25;
+    ///
+    /// fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+    ///     Cow::Borrowed(ProtocolVersion::known_up_to(&MAX_SUPPORTED))
+    /// }
+    /// ```
+    ///
+    /// ```
+    /// # use rmcp::model::ProtocolVersion;
+    /// assert_eq!(
+    ///     ProtocolVersion::known_up_to(&ProtocolVersion::V_2025_06_18),
+    ///     &[
+    ///         ProtocolVersion::V_2024_11_05,
+    ///         ProtocolVersion::V_2025_03_26,
+    ///         ProtocolVersion::V_2025_06_18,
+    ///     ],
+    /// );
+    /// ```
+    pub fn known_up_to(max: &Self) -> &'static [Self] {
+        let count = Self::KNOWN_VERSIONS
+            .iter()
+            .take_while(|version| version.as_str() <= max.as_str())
+            .count();
+        &Self::KNOWN_VERSIONS[..count]
     }
 }
 
@@ -229,6 +317,24 @@ impl NumberOrString {
             NumberOrString::String(s) => Value::String(s.to_string()),
         }
     }
+
+    #[cfg(any(feature = "client", feature = "server"))]
+    pub(crate) fn numeric_string_value(&self) -> Option<i64> {
+        match self {
+            Self::String(id) => id.parse().ok(),
+            Self::Number(_) => None,
+        }
+    }
+
+    #[cfg(feature = "client")]
+    pub(crate) fn matches_response_id(&self, response_id: &Self) -> bool {
+        self == response_id
+            || matches!(
+                self,
+                Self::Number(request_id)
+                    if response_id.numeric_string_value() == Some(*request_id)
+            )
+    }
 }
 
 impl std::fmt::Display for NumberOrString {
@@ -269,6 +375,9 @@ impl<'de> Deserialize<'de> for NumberOrString {
                     } else {
                         Err(serde::de::Error::custom("Number too large for i64"))
                     }
+                } else if let Some(i) = n.as_f64().and_then(integral_f64_to_i64) {
+                    // `1.0` and `1e2` are integers written in float form
+                    Ok(NumberOrString::Number(i))
                 } else {
                     Err(serde::de::Error::custom("Expected an integer"))
                 }
@@ -277,6 +386,14 @@ impl<'de> Deserialize<'de> for NumberOrString {
             _ => Err(serde::de::Error::custom("Expect number or string")),
         }
     }
+}
+
+/// The integer a JSON number in float form stands for, when it is one that an
+/// `f64` represents exactly. 2^53 itself is excluded: 2^53 + 1 parses to the
+/// same `f64`, so that value cannot say which integer was sent.
+fn integral_f64_to_i64(f: f64) -> Option<i64> {
+    const MAX_EXACT: f64 = 9_007_199_254_740_992.0; // 2^53
+    (f.fract() == 0.0 && f.abs() < MAX_EXACT).then_some(f as i64)
 }
 
 #[cfg(feature = "schemars")]
@@ -330,7 +447,8 @@ pub struct ProgressToken(pub NumberOrString);
 pub struct Request<M = String, P = JsonObject> {
     pub method: M,
     pub params: P,
-    /// extensions will carry anything possible in the context, including [`Meta`]
+    /// extensions will carry anything possible in the context, including the metadata
+    /// ([`RequestMetaObject`] for requests, [`NotificationMetaObject`] for notifications)
     ///
     /// this is similar with the Extensions in `http` crate
     #[cfg_attr(feature = "schemars", schemars(skip))]
@@ -363,7 +481,8 @@ pub struct RequestOptionalParam<M = String, P = JsonObject> {
     pub method: M,
     // #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<P>,
-    /// extensions will carry anything possible in the context, including [`Meta`]
+    /// extensions will carry anything possible in the context, including the metadata
+    /// ([`RequestMetaObject`] for requests, [`NotificationMetaObject`] for notifications)
     ///
     /// this is similar with the Extensions in `http` crate
     #[cfg_attr(feature = "schemars", schemars(skip))]
@@ -385,7 +504,8 @@ impl<M: Default, P> RequestOptionalParam<M, P> {
 #[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
 pub struct RequestNoParam<M = String> {
     pub method: M,
-    /// extensions will carry anything possible in the context, including [`Meta`]
+    /// extensions will carry anything possible in the context, including the metadata
+    /// ([`RequestMetaObject`] for requests, [`NotificationMetaObject`] for notifications)
     ///
     /// this is similar with the Extensions in `http` crate
     #[cfg_attr(feature = "schemars", schemars(skip))]
@@ -406,7 +526,8 @@ impl<M> GetExtensions for RequestNoParam<M> {
 pub struct Notification<M = String, P = JsonObject> {
     pub method: M,
     pub params: P,
-    /// extensions will carry anything possible in the context, including [`Meta`]
+    /// extensions will carry anything possible in the context, including the metadata
+    /// ([`RequestMetaObject`] for requests, [`NotificationMetaObject`] for notifications)
     ///
     /// this is similar with the Extensions in `http` crate
     #[cfg_attr(feature = "schemars", schemars(skip))]
@@ -428,7 +549,8 @@ impl<M: Default, P> Notification<M, P> {
 #[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
 pub struct NotificationNoParam<M = String> {
     pub method: M,
-    /// extensions will carry anything possible in the context, including [`Meta`]
+    /// extensions will carry anything possible in the context, including the metadata
+    /// ([`RequestMetaObject`] for requests, [`NotificationMetaObject`] for notifications)
     ///
     /// this is similar with the Extensions in `http` crate
     #[cfg_attr(feature = "schemars", schemars(skip))]
@@ -471,9 +593,9 @@ pub struct JsonRpcResponse<R = JsonObject> {
 #[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
 pub struct JsonRpcError {
     pub jsonrpc: JsonRpcVersion2_0,
-    // MCP 2025-11-25 §Error Responses: `id` is optional and omitted when the
+    // MCP 2026-07-28 §Error Responses: `id` is optional and omitted when the
     // server cannot read the request id (e.g. parse error / invalid request).
-    // https://modelcontextprotocol.io/specification/2025-11-25/basic#error-responses
+    // https://modelcontextprotocol.io/specification/2026-07-28/basic#error-responses
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<RequestId>,
     pub error: ErrorData,
@@ -510,13 +632,17 @@ pub struct JsonRpcNotification<N = Notification> {
 pub struct ErrorCode(pub i32);
 
 impl ErrorCode {
+    /// The request used a protocol version the server does not support.
+    pub const UNSUPPORTED_PROTOCOL_VERSION: Self = Self(-32022);
+    /// Processing the request requires a client capability that was not declared.
+    pub const MISSING_REQUIRED_CLIENT_CAPABILITY: Self = Self(-32021);
+    pub const HEADER_MISMATCH: Self = Self(-32020);
     pub const RESOURCE_NOT_FOUND: Self = Self(-32002);
     pub const INVALID_REQUEST: Self = Self(-32600);
     pub const METHOD_NOT_FOUND: Self = Self(-32601);
     pub const INVALID_PARAMS: Self = Self(-32602);
     pub const INTERNAL_ERROR: Self = Self(-32603);
     pub const PARSE_ERROR: Self = Self(-32700);
-    pub const URL_ELICITATION_REQUIRED: Self = Self(-32042);
 }
 
 /// Error information for JSON-RPC error responses.
@@ -540,6 +666,9 @@ pub struct ErrorData {
 }
 
 impl ErrorData {
+    #[cfg(any(feature = "client", feature = "server"))]
+    const TRANSPORT_CLOSED_MARKER: &str = "io.modelcontextprotocol/transportClosed";
+
     pub fn new(
         code: ErrorCode,
         message: impl Into<Cow<'static, str>>,
@@ -556,7 +685,33 @@ impl ErrorData {
     pub fn resource_not_found(message: impl Into<Cow<'static, str>>, data: Option<Value>) -> Self {
         Self::new(ErrorCode::RESOURCE_NOT_FOUND, message, data)
     }
-
+    pub fn header_mismatch(message: impl Into<Cow<'static, str>>, data: Option<Value>) -> Self {
+        Self::new(ErrorCode::HEADER_MISMATCH, message, data)
+    }
+    /// Create an unsupported-protocol-version error.
+    pub fn unsupported_protocol_version(
+        requested: ProtocolVersion,
+        supported: &[ProtocolVersion],
+    ) -> Self {
+        Self::new(
+            ErrorCode::UNSUPPORTED_PROTOCOL_VERSION,
+            "Unsupported protocol version",
+            Some(serde_json::json!({
+                "requested": requested,
+                "supported": supported,
+            })),
+        )
+    }
+    /// Create a missing-required-capability error.
+    pub fn missing_required_client_capability(required: ClientCapabilities) -> Self {
+        Self::new(
+            ErrorCode::MISSING_REQUIRED_CLIENT_CAPABILITY,
+            "Missing required client capability",
+            Some(serde_json::json!({
+                "requiredCapabilities": required,
+            })),
+        )
+    }
     pub fn parse_error(message: impl Into<Cow<'static, str>>, data: Option<Value>) -> Self {
         Self::new(ErrorCode::PARSE_ERROR, message, data)
     }
@@ -572,11 +727,40 @@ impl ErrorData {
     pub fn internal_error(message: impl Into<Cow<'static, str>>, data: Option<Value>) -> Self {
         Self::new(ErrorCode::INTERNAL_ERROR, message, data)
     }
-    pub fn url_elicitation_required(
-        message: impl Into<Cow<'static, str>>,
-        data: Option<Value>,
-    ) -> Self {
-        Self::new(ErrorCode::URL_ELICITATION_REQUIRED, message, data)
+
+    #[cfg(all(feature = "transport-streamable-http-client", feature = "client"))]
+    pub(crate) fn transport_closed(message: impl Into<Cow<'static, str>>) -> Self {
+        let mut data = JsonObject::new();
+        data.insert(
+            Self::TRANSPORT_CLOSED_MARKER.to_owned(),
+            Value::from(Self::transport_closed_token()),
+        );
+        Self::internal_error(message, Some(Value::Object(data)))
+    }
+
+    #[cfg(any(feature = "client", feature = "server"))]
+    pub(crate) fn is_transport_closed(&self) -> bool {
+        self.data
+            .as_ref()
+            .and_then(|data| data.get(Self::TRANSPORT_CLOSED_MARKER))
+            .and_then(Value::as_u64)
+            == Some(Self::transport_closed_token())
+    }
+
+    #[cfg(any(feature = "client", feature = "server"))]
+    fn transport_closed_token() -> u64 {
+        use std::{
+            collections::hash_map::RandomState,
+            hash::{BuildHasher, Hasher},
+            sync::OnceLock,
+        };
+
+        static TOKEN: OnceLock<u64> = OnceLock::new();
+        *TOKEN.get_or_init(|| {
+            let mut hasher = RandomState::new().build_hasher();
+            hasher.write(b"rmcp transport-closed marker");
+            hasher.finish()
+        })
     }
 }
 
@@ -585,7 +769,7 @@ impl ErrorData {
 /// This enum covers all possible message types in the JSON-RPC protocol:
 /// individual requests/responses, notifications, and errors.
 /// It serves as the top-level message container for MCP communication.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 #[serde(untagged)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[expect(clippy::exhaustive_enums, reason = "intentionally exhaustive")]
@@ -666,6 +850,149 @@ impl<Req, Resp, Not> JsonRpcMessage<Req, Resp, Not> {
     }
 }
 
+enum JsonRpcMessageShape {
+    Request,
+    Response,
+    Notification,
+    Error,
+}
+
+const UNRECOGNIZED_MESSAGE: &str = "unrecognized JSON-RPC message";
+
+impl<'de> Deserialize<'de> for JsonRpcMessageShape {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ShapeVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for ShapeVisitor {
+            type Value = JsonRpcMessageShape;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a JSON-RPC 2.0 message")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let (mut method, mut id, mut result, mut error) = (false, false, false, false);
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "method" => method = true,
+                        "id" => id = true,
+                        "result" => result = true,
+                        "error" => error = true,
+                        _ => {}
+                    }
+                    map.next_value::<serde::de::IgnoredAny>()?;
+                }
+                JsonRpcMessageShape::classify_object_keys(method, id, result, error)
+            }
+        }
+
+        deserializer.deserialize_map(ShapeVisitor)
+    }
+}
+
+impl JsonRpcMessageShape {
+    fn classify_object_keys<E: serde::de::Error>(
+        method: bool,
+        id: bool,
+        result: bool,
+        error: bool,
+    ) -> Result<Self, E> {
+        match (method, id, result, error) {
+            (true, true, false, false) => Ok(Self::Request),
+            (true, false, false, false) => Ok(Self::Notification),
+            (false, _, true, false) => Ok(Self::Response),
+            (false, _, false, true) => Ok(Self::Error),
+            _ => Err(E::custom(UNRECOGNIZED_MESSAGE)),
+        }
+    }
+}
+
+struct ExpectedMessageShape<const SHAPE: u8>;
+
+impl<'de, const SHAPE: u8> Deserialize<'de> for ExpectedMessageShape<SHAPE> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if JsonRpcMessageShape::deserialize(deserializer)? as u8 == SHAPE {
+            Ok(Self)
+        } else {
+            Err(serde::de::Error::custom(UNRECOGNIZED_MESSAGE))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ShapeCheckedMessage<T, const SHAPE: u8> {
+    // Check field presence without consuming the flattened payload. Serde's
+    // flatten buffer preserves borrows, including inside untagged wrappers.
+    #[serde(flatten)]
+    _shape: ExpectedMessageShape<SHAPE>,
+    #[serde(flatten)]
+    message: T,
+}
+
+impl<'de, Req, Resp, Noti> serde::Deserialize<'de> for JsonRpcMessage<Req, Resp, Noti>
+where
+    Req: Deserialize<'de>,
+    Resp: Deserialize<'de>,
+    Noti: Deserialize<'de>,
+{
+    fn deserialize<__D>(deserializer: __D) -> Result<Self, __D::Error>
+    where
+        __D: serde::Deserializer<'de>,
+    {
+        // A derived untagged enum silently drops a stray `result`/`error`
+        // (#1283). Check field presence before dispatching to a variant.
+        // Serde's buffer preserves borrowed payloads, including through outer
+        // untagged wrappers, without relying on serde_json's private protocol.
+        Self::from_buffered_deserializer(deserializer)
+    }
+}
+
+impl<'de, Req, Resp, Noti> JsonRpcMessage<Req, Resp, Noti>
+where
+    Req: Deserialize<'de>,
+    Resp: Deserialize<'de>,
+    Noti: Deserialize<'de>,
+{
+    fn from_buffered_deserializer<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged, expecting = "unrecognized JSON-RPC message")]
+        enum Message<Req, Resp, Noti> {
+            Request(
+                ShapeCheckedMessage<JsonRpcRequest<Req>, { JsonRpcMessageShape::Request as u8 }>,
+            ),
+            Response(
+                ShapeCheckedMessage<JsonRpcResponse<Resp>, { JsonRpcMessageShape::Response as u8 }>,
+            ),
+            Notification(
+                ShapeCheckedMessage<
+                    JsonRpcNotification<Noti>,
+                    { JsonRpcMessageShape::Notification as u8 },
+                >,
+            ),
+            Error(ShapeCheckedMessage<JsonRpcError, { JsonRpcMessageShape::Error as u8 }>),
+        }
+
+        match Message::deserialize(deserializer)? {
+            Message::Request(checked) => Ok(Self::Request(checked.message)),
+            Message::Response(checked) => Ok(Self::Response(checked.message)),
+            Message::Notification(checked) => Ok(Self::Notification(checked.message)),
+            Message::Error(checked) => Ok(Self::Error(checked.message)),
+        }
+    }
+}
+
 // =============================================================================
 // INITIALIZATION AND CONNECTION SETUP
 // =============================================================================
@@ -682,6 +1009,85 @@ impl From<()> for EmptyResult {
 
 impl From<EmptyResult> for () {
     fn from(_value: EmptyResult) {}
+}
+
+/// Indicates the type of a result object, allowing the client to
+/// determine how to parse the response.
+///
+/// The spec defines this as an open string (`"complete" | "input_required" | string`),
+/// so unknown values are preserved rather than rejected. Servers implementing this
+/// protocol version MUST include `resultType` in every result. For backward
+/// compatibility, clients MUST treat an absent field as `"complete"`.
+///
+/// Ordinary results model the field as `Option<ResultType>`: `None` means the
+/// field is absent on the wire. Constructors default to `Some(COMPLETE)`, and
+/// the server handler strips the `"complete"` discriminator before responding
+/// to peers that negotiated a protocol version older than `2026-07-28`, so
+/// legacy sessions keep their historical wire shape (see
+/// [`ServerResult::strip_result_type_for_legacy_peer`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ResultType(Cow<'static, str>);
+
+impl ResultType {
+    pub const COMPLETE: Self = Self(Cow::Borrowed("complete"));
+    pub const INPUT_REQUIRED: Self = Self(Cow::Borrowed("input_required"));
+    /// SEP-2663 Tasks extension: the result is a task handle ([`CreateTaskResult`]).
+    pub const TASK: Self = Self(Cow::Borrowed("task"));
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Returns `true` if this is `"input_required"`.
+    pub fn is_input_required(&self) -> bool {
+        self.0 == "input_required"
+    }
+
+    /// Returns `true` if this is `"complete"`.
+    pub fn is_complete(&self) -> bool {
+        self.0 == "complete"
+    }
+
+    /// Returns `true` if this is `"task"` (SEP-2663 Tasks extension).
+    pub fn is_task(&self) -> bool {
+        self.0 == "task"
+    }
+}
+
+impl Default for ResultType {
+    fn default() -> Self {
+        Self::COMPLETE
+    }
+}
+
+impl Serialize for ResultType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ResultType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        match s.as_str() {
+            "complete" => Ok(Self::COMPLETE),
+            "input_required" => Ok(Self::INPUT_REQUIRED),
+            _ => Ok(Self(Cow::Owned(s))),
+        }
+    }
+}
+
+impl std::fmt::Display for ResultType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 /// A catch-all response either side can use for custom requests.
@@ -712,7 +1118,7 @@ pub struct CancelledNotificationParam {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<NotificationMetaObject>,
 }
 
 impl CancelledNotificationParam {
@@ -748,7 +1154,8 @@ pub type CancelledNotification =
 pub struct CustomNotification {
     pub method: String,
     pub params: Option<Value>,
-    /// extensions will carry anything possible in the context, including [`Meta`]
+    /// extensions will carry anything possible in the context, including the metadata
+    /// ([`RequestMetaObject`] for requests, [`NotificationMetaObject`] for notifications)
     ///
     /// this is similar with the Extensions in `http` crate
     #[cfg_attr(feature = "schemars", schemars(skip))]
@@ -783,7 +1190,8 @@ impl CustomNotification {
 pub struct CustomRequest {
     pub method: String,
     pub params: Option<Value>,
-    /// extensions will carry anything possible in the context, including [`Meta`]
+    /// extensions will carry anything possible in the context, including the metadata
+    /// ([`RequestMetaObject`] for requests, [`NotificationMetaObject`] for notifications)
     ///
     /// this is similar with the Extensions in `http` crate
     #[cfg_attr(feature = "schemars", schemars(skip))]
@@ -828,7 +1236,7 @@ pub type InitializedNotification = NotificationNoParam<InitializedNotificationMe
 pub struct InitializeRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     /// The MCP protocol version this client supports
     pub protocol_version: ProtocolVersion,
     /// The capabilities this client supports (sampling, roots, etc.)
@@ -855,17 +1263,13 @@ impl InitializeRequestParams {
 }
 
 impl RequestParamsMeta for InitializeRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
-
-/// Deprecated: Use [`InitializeRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use InitializeRequestParams instead")]
-pub type InitializeRequestParam = InitializeRequestParams;
 
 /// The server's response to an initialization request.
 ///
@@ -886,7 +1290,7 @@ pub struct InitializeResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<MetaObject>,
 }
 
 impl InitializeResult {
@@ -920,13 +1324,273 @@ impl InitializeResult {
     }
 }
 
+/// A server's own configuration: the protocol version, capabilities,
+/// implementation identity, and instructions it advertises to clients.
+///
+/// This is what `ServerHandler::get_info` returns. It is an alias for
+/// [`InitializeResult`] because the same value is sent as the `initialize`
+/// response on the wire.
+///
+/// # Examples
+///
+/// ```
+/// use rmcp::model::{ServerCapabilities, ServerConfig};
+///
+/// let config = ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+///     .with_instructions("Call `add` to sum two numbers.");
+/// assert!(config.capabilities.tools.is_some());
+/// ```
+pub type ServerConfig = InitializeResult;
+
+/// A client's own configuration: the protocol version, capabilities, and
+/// implementation identity it advertises to servers.
+///
+/// This is what `ClientHandler::get_info` returns. It is an alias for
+/// [`InitializeRequestParams`] because the same value is sent as the
+/// `initialize` request on the wire.
+///
+/// # Examples
+///
+/// ```
+/// use rmcp::model::{ClientCapabilities, ClientConfig, Implementation};
+///
+/// let config = ClientConfig::new(
+///     ClientCapabilities::builder().enable_elicitation().build(),
+///     Implementation::new("my-client", "1.0.0"),
+/// );
+/// assert!(config.capabilities.elicitation.is_some());
+/// ```
+pub type ClientConfig = InitializeRequestParams;
+
+/// Deprecated alias for [`ServerConfig`].
+///
+/// The name collides with the protocol's `serverInfo` field, which is only the
+/// [`Implementation`] identity, so `server_info.server_info` was easy to
+/// misread (#1082).
+#[deprecated(note = "use `ServerConfig` instead")]
 pub type ServerInfo = InitializeResult;
+
+/// Deprecated alias for [`ClientConfig`].
+///
+/// The name collides with the protocol's `clientInfo` field, which is only the
+/// [`Implementation`] identity, so `client_info.client_info` was easy to
+/// misread (#1082).
+#[deprecated(note = "use `ClientConfig` instead")]
 pub type ClientInfo = InitializeRequestParams;
 
+/// Information negotiated about a server peer.
+///
+/// Unlike [`InitializeResult`], the server implementation identity is optional
+/// because discovery responses are not required to provide it.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct ServerPeerInfo {
+    /// The negotiated MCP protocol version.
+    pub protocol_version: ProtocolVersion,
+    /// The capabilities this server provides.
+    pub capabilities: ServerCapabilities,
+    /// Information about the server implementation, when provided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_info: Option<Implementation>,
+    /// Optional human-readable instructions about using this server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    /// Protocol-level response metadata.
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<MetaObject>,
+}
+
+impl ServerPeerInfo {
+    /// Create peer information without a server implementation identity.
+    pub fn new(protocol_version: ProtocolVersion, capabilities: ServerCapabilities) -> Self {
+        Self {
+            protocol_version,
+            capabilities,
+            server_info: None,
+            instructions: None,
+            meta: None,
+        }
+    }
+
+    /// Set the server implementation identity.
+    pub fn with_server_info(mut self, server_info: Implementation) -> Self {
+        self.server_info = Some(server_info);
+        self
+    }
+
+    /// Set instructions supplied by the server.
+    pub fn with_instructions(mut self, instructions: impl Into<String>) -> Self {
+        self.instructions = Some(instructions.into());
+        self
+    }
+}
+
+impl From<InitializeResult> for ServerPeerInfo {
+    fn from(result: InitializeResult) -> Self {
+        Self {
+            protocol_version: result.protocol_version,
+            capabilities: result.capabilities,
+            server_info: Some(result.server_info),
+            instructions: result.instructions,
+            meta: result.meta,
+        }
+    }
+}
+
+const_string!(DiscoverRequestMethod = "server/discover");
+
+/// Parameters for [`DiscoverRequest`].
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(deny_unknown_fields)]
+#[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
+pub struct DiscoverRequestParams {}
+
+#[cfg(feature = "schemars")]
+#[derive(schemars::JsonSchema)]
+#[expect(dead_code, reason = "schema-only representation of request parameters")]
+struct DiscoverRequestParamsSchema {
+    #[schemars(rename = "_meta")]
+    meta: RequestMetaObject,
+}
+
+#[cfg(feature = "schemars")]
+impl schemars::JsonSchema for DiscoverRequestParams {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("DiscoverRequestParams")
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        DiscoverRequestParamsSchema::json_schema(generator)
+    }
+}
+
+/// A request for the server's supported protocol versions and capabilities.
+pub type DiscoverRequest = Request<DiscoverRequestMethod, DiscoverRequestParams>;
+
+/// The server's response to a [`DiscoverRequest`].
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+#[non_exhaustive]
+pub struct DiscoverResult {
+    /// Identifies how the result should be parsed.
+    pub result_type: ResultType,
+    /// Protocol versions implemented by this server.
+    pub supported_versions: Vec<ProtocolVersion>,
+    /// Capabilities provided by this server.
+    pub capabilities: ServerCapabilities,
+    /// Optional guidance for using the server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    /// How long clients may consider this response fresh, in milliseconds.
+    pub ttl_ms: u64,
+    /// Whether the cached result may be shared across authorization contexts.
+    pub cache_scope: CacheScope,
+    /// Protocol-level response metadata.
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    pub meta: Option<MetaObject>,
+}
+
+const SERVER_INFO_META_KEY: &str = "io.modelcontextprotocol/serverInfo";
+
+fn server_info_from_meta(meta: &MetaObject) -> Option<Implementation> {
+    meta.get(SERVER_INFO_META_KEY)
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+}
+
+fn set_server_info_on_meta(meta: &mut MetaObject, server_info: Implementation) {
+    let server_info =
+        serde_json::to_value(server_info).expect("Implementation serialization cannot fail");
+    meta.insert(SERVER_INFO_META_KEY.to_owned(), server_info);
+}
+
+impl DiscoverResult {
+    /// Create a non-cacheable private discovery result.
+    pub fn new(supported_versions: Vec<ProtocolVersion>, capabilities: ServerCapabilities) -> Self {
+        Self {
+            result_type: ResultType::COMPLETE,
+            supported_versions,
+            capabilities,
+            instructions: None,
+            ttl_ms: 0,
+            cache_scope: CacheScope::Private,
+            meta: None,
+        }
+    }
+
+    /// Return the server implementation information stored in result metadata.
+    pub fn server_info(&self) -> Option<Implementation> {
+        server_info_from_meta(self.meta.as_ref()?)
+    }
+
+    /// Store server implementation information in result metadata.
+    pub fn set_server_info(&mut self, server_info: Implementation) {
+        set_server_info_on_meta(self.meta.get_or_insert_default(), server_info);
+    }
+
+    /// Store server implementation information in result metadata.
+    pub fn with_server_info(mut self, server_info: Implementation) -> Self {
+        self.set_server_info(server_info);
+        self
+    }
+
+    /// Create a discovery result from the server's configuration.
+    pub fn from_server_info(
+        supported_versions: Vec<ProtocolVersion>,
+        server_config: ServerConfig,
+    ) -> Self {
+        let ServerConfig {
+            capabilities,
+            server_info,
+            instructions,
+            meta,
+            ..
+        } = server_config;
+        let mut result = Self {
+            result_type: ResultType::COMPLETE,
+            supported_versions,
+            capabilities,
+            instructions,
+            ttl_ms: 0,
+            cache_scope: CacheScope::Private,
+            meta,
+        };
+        result.set_server_info(server_info);
+        result
+    }
+
+    /// Set the cache lifetime hint in milliseconds.
+    pub fn with_ttl_ms(mut self, ttl_ms: u64) -> Self {
+        self.ttl_ms = ttl_ms;
+        self
+    }
+
+    /// Set the cache scope.
+    pub fn with_cache_scope(mut self, cache_scope: CacheScope) -> Self {
+        self.cache_scope = cache_scope;
+        self
+    }
+}
+
+impl ServerPeerInfo {
+    /// Create peer information from a discovery result and the selected version.
+    pub fn from_discover_result(protocol_version: ProtocolVersion, result: DiscoverResult) -> Self {
+        let server_info = result.server_info();
+        Self {
+            protocol_version,
+            capabilities: result.capabilities,
+            server_info,
+            instructions: result.instructions,
+            meta: result.meta,
+        }
+    }
+}
+
 #[allow(clippy::derivable_impls)]
-impl Default for ServerInfo {
+impl Default for InitializeResult {
     fn default() -> Self {
-        ServerInfo {
+        InitializeResult {
             protocol_version: ProtocolVersion::default(),
             capabilities: ServerCapabilities::default(),
             server_info: Implementation::from_build_env(),
@@ -937,9 +1601,9 @@ impl Default for ServerInfo {
 }
 
 #[allow(clippy::derivable_impls)]
-impl Default for ClientInfo {
+impl Default for InitializeRequestParams {
     fn default() -> Self {
-        ClientInfo {
+        InitializeRequestParams {
             meta: None,
             protocol_version: ProtocolVersion::default(),
             capabilities: ClientCapabilities::default(),
@@ -1097,7 +1761,7 @@ impl Implementation {
 pub struct PaginatedRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
 }
@@ -1110,17 +1774,14 @@ impl PaginatedRequestParams {
 }
 
 impl RequestParamsMeta for PaginatedRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
 
-/// Deprecated: Use [`PaginatedRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use PaginatedRequestParams instead")]
-pub type PaginatedRequestParam = PaginatedRequestParams;
 // =============================================================================
 // PROGRESS AND PAGINATION
 // =============================================================================
@@ -1136,15 +1797,20 @@ const_string!(ProgressNotificationMethod = "notifications/progress");
 pub struct ProgressNotificationParam {
     pub progress_token: ProgressToken,
     /// The progress thus far. This should increase every time progress is made, even if the total is unknown.
+    #[serde(deserialize_with = "serde_impl::json_float::f64")]
     pub progress: f64,
     /// Total number of items to process (or total progress required), if known
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_impl::json_float::option_f64",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub total: Option<f64>,
     /// An optional message describing the current progress.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<NotificationMetaObject>,
 }
 
 impl ProgressNotificationParam {
@@ -1176,31 +1842,129 @@ pub type ProgressNotification = Notification<ProgressNotificationMethod, Progres
 
 pub type Cursor = String;
 
+/// Scope describing who may cache cacheable list/read results (SEP-2549).
+///
+/// Defaults to [`CacheScope::Public`] when absent from the wire.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+pub enum CacheScope {
+    /// Any client or intermediary may cache and serve the response to any user.
+    #[default]
+    Public,
+    /// Only the requesting user's client may cache the response.
+    Private,
+}
+
+/// Normalize a `ttlMs` value during deserialization.
+///
+/// Per SEP-2549, `ttlMs` MUST be `>= 0`; if a server returns a negative value,
+/// clients SHOULD treat it as `0` (immediately stale). This tolerates that case
+/// rather than erroring, while still accepting an absent field as `None`.
+fn deserialize_ttl_ms<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<i64>::deserialize(deserializer)?;
+    Ok(value.map(|ttl_ms| ttl_ms.max(0) as u64))
+}
+
+/// Normalize a `cacheScope` value during deserialization.
+///
+/// Per SEP-2549, `cacheScope` MUST be `"public"`, `"private"`, or absent; some
+/// servers instead send `""`. Because `ServerResult` is `#[serde(untagged)]`,
+/// letting that value hard-error here would silently fall through to
+/// `CustomResult` and drop the entire (otherwise valid) result. Treat an empty
+/// string the same as an absent field rather than erroring.
+fn deserialize_cache_scope<'de, D>(deserializer: D) -> Result<Option<CacheScope>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) if s.is_empty() => Ok(None),
+        Some(value) => CacheScope::deserialize(value)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
 macro_rules! paginated_result {
     ($t:ident {
         $i_item: ident: $t_item: ty
     }) => {
-        #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+        #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
         #[serde(rename_all = "camelCase")]
         #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
         #[expect(clippy::exhaustive_structs, reason = "intentionally exhaustive")]
         pub struct $t {
-            #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-            pub meta: Option<Meta>,
-            #[serde(skip_serializing_if = "Option::is_none")]
+            /// Result type discriminator (SEP-2322). Required by the [spec schema]
+            /// for servers implementing protocol version `2026-07-28`, but optional
+            /// here because this type also models results from older protocol
+            /// versions, which do not carry the field: `None` means absent on the
+            /// wire, and per the spec "the client MUST treat the absent field as
+            /// `"complete"`". Constructors default to `Some(ResultType::COMPLETE)`;
+            /// the server handler clears the field when responding to peers that
+            /// negotiated an older version.
+            ///
+            /// [spec schema]: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/271ecc9accafdd9b83a3c869fa67c22953b2af80/schema/2026-07-28/schema.ts#L219-L235
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub result_type: Option<ResultType>,
+            #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+            pub meta: Option<MetaObject>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
             pub next_cursor: Option<Cursor>,
+            /// Time, in milliseconds, that this result may be treated as fresh (SEP-2549).
+            /// Required by spec version 2026-07-28, but optional here to maintain compatibility
+            /// with older spec versions.
+            #[serde(
+                default,
+                deserialize_with = "deserialize_ttl_ms",
+                skip_serializing_if = "Option::is_none"
+            )]
+            pub ttl_ms: Option<u64>,
+            /// Scope describing who may cache this result (SEP-2549).
+            /// Required by spec version 2026-07-28, but optional here to maintain compatibility
+            /// with older spec versions.
+            #[serde(
+                default,
+                deserialize_with = "deserialize_cache_scope",
+                skip_serializing_if = "Option::is_none"
+            )]
+            pub cache_scope: Option<CacheScope>,
             pub $i_item: $t_item,
         }
 
+        impl Default for $t {
+            fn default() -> Self {
+                Self::with_all_items(Default::default())
+            }
+        }
+
         impl $t {
-            pub fn with_all_items(
-                items: $t_item,
-            ) -> Self {
+            pub fn with_all_items(items: $t_item) -> Self {
                 Self {
+                    result_type: Some(ResultType::COMPLETE),
                     meta: None,
                     next_cursor: None,
+                    ttl_ms: None,
+                    cache_scope: None,
                     $i_item: items,
                 }
+            }
+
+            /// Set the time, in milliseconds, that this result may be treated as fresh.
+            pub fn with_ttl_ms(mut self, ttl_ms: u64) -> Self {
+                self.ttl_ms = Some(ttl_ms);
+                self
+            }
+
+            /// Set the cache scope for this result.
+            pub fn with_cache_scope(mut self, cache_scope: CacheScope) -> Self {
+                self.cache_scope = Some(cache_scope);
+                self
             }
         }
     };
@@ -1237,9 +2001,16 @@ const_string!(ReadResourceRequestMethod = "resources/read");
 pub struct ReadResourceRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     /// The URI of the resource to read
     pub uri: String,
+    /// Client responses to server-initiated input requests from a previous
+    /// [`InputRequiredResult`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_responses: Option<InputResponses>,
+    /// Opaque request state echoed back from a previous [`InputRequiredResult`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_state: Option<String>,
 }
 
 impl ReadResourceRequestParams {
@@ -1248,47 +2019,103 @@ impl ReadResourceRequestParams {
         Self {
             meta: None,
             uri: uri.into(),
+            input_responses: None,
+            request_state: None,
         }
     }
 
     /// Set the metadata for this request.
-    pub fn with_meta(mut self, meta: Meta) -> Self {
+    pub fn with_meta(mut self, meta: RequestMetaObject) -> Self {
         self.meta = Some(meta);
+        self
+    }
+
+    /// Sets the input responses for an MRTR retry.
+    pub fn with_input_responses(mut self, input_responses: InputResponses) -> Self {
+        self.input_responses = Some(input_responses);
+        self
+    }
+
+    /// Sets the request state for an MRTR retry.
+    pub fn with_request_state(mut self, request_state: impl Into<String>) -> Self {
+        self.request_state = Some(request_state.into());
         self
     }
 }
 
 impl RequestParamsMeta for ReadResourceRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
 
-/// Deprecated: Use [`ReadResourceRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use ReadResourceRequestParams instead")]
-pub type ReadResourceRequestParam = ReadResourceRequestParams;
-
 /// Result containing the contents of a read resource
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct ReadResourceResult {
+    /// Result type discriminator (SEP-2322). Required by the [spec schema]
+    /// for servers implementing protocol version `2026-07-28`, but optional
+    /// here because this type also models results from older protocol
+    /// versions, which do not carry the field: `None` means absent on the
+    /// wire, and per the spec "the client MUST treat the absent field as
+    /// `"complete"`". Constructors default to `Some(ResultType::COMPLETE)`;
+    /// the server handler clears the field when responding to peers that
+    /// negotiated an older version.
+    ///
+    /// [spec schema]: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/271ecc9accafdd9b83a3c869fa67c22953b2af80/schema/2026-07-28/schema.ts#L219-L235
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_type: Option<ResultType>,
+    /// Time, in milliseconds, that this result may be treated as fresh (SEP-2549).
+    /// Required by spec version 2026-07-28, but optional here to maintain compatibility
+    /// with older spec versions.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_ttl_ms",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub ttl_ms: Option<u64>,
+    /// Scope describing who may cache this result (SEP-2549).
+    /// Required by spec version 2026-07-28, but optional here to maintain compatibility
+    /// with older spec versions.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_cache_scope",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cache_scope: Option<CacheScope>,
     /// The actual content of the resource
     pub contents: Vec<ResourceContents>,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<MetaObject>,
 }
 
 impl ReadResourceResult {
     /// Create a new ReadResourceResult with the given contents.
     pub fn new(contents: Vec<ResourceContents>) -> Self {
         Self {
+            result_type: Some(ResultType::COMPLETE),
+            ttl_ms: None,
+            cache_scope: None,
             contents,
             meta: None,
         }
+    }
+
+    /// Set the time, in milliseconds, that this result may be treated as fresh.
+    pub fn with_ttl_ms(mut self, ttl_ms: u64) -> Self {
+        self.ttl_ms = Some(ttl_ms);
+        self
+    }
+
+    /// Set the cache scope for this result.
+    pub fn with_cache_scope(mut self, cache_scope: CacheScope) -> Self {
+        self.cache_scope = Some(cache_scope);
+        self
     }
 }
 
@@ -1309,7 +2136,7 @@ const_string!(SubscribeRequestMethod = "resources/subscribe");
 pub struct SubscribeRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     /// The URI of the resource to subscribe to
     pub uri: String,
 }
@@ -1325,19 +2152,18 @@ impl SubscribeRequestParams {
 }
 
 impl RequestParamsMeta for SubscribeRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
 
-/// Deprecated: Use [`SubscribeRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use SubscribeRequestParams instead")]
-pub type SubscribeRequestParam = SubscribeRequestParams;
-
 /// Request to subscribe to resource updates
+#[deprecated(
+    note = "resources/subscribe is legacy-only; use subscriptions/listen for protocol version 2026-07-28"
+)]
 pub type SubscribeRequest = Request<SubscribeRequestMethod, SubscribeRequestParams>;
 
 const_string!(UnsubscribeRequestMethod = "resources/unsubscribe");
@@ -1349,7 +2175,7 @@ const_string!(UnsubscribeRequestMethod = "resources/unsubscribe");
 pub struct UnsubscribeRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     /// The URI of the resource to unsubscribe from
     pub uri: String,
 }
@@ -1365,19 +2191,18 @@ impl UnsubscribeRequestParams {
 }
 
 impl RequestParamsMeta for UnsubscribeRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
 
-/// Deprecated: Use [`UnsubscribeRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use UnsubscribeRequestParams instead")]
-pub type UnsubscribeRequestParam = UnsubscribeRequestParams;
-
 /// Request to unsubscribe from resource updates
+#[deprecated(
+    note = "resources/unsubscribe is legacy-only; cancel the subscriptions/listen request for protocol version 2026-07-28"
+)]
 pub type UnsubscribeRequest = Request<UnsubscribeRequestMethod, UnsubscribeRequestParams>;
 
 const_string!(ResourceUpdatedNotificationMethod = "notifications/resources/updated");
@@ -1390,7 +2215,7 @@ pub struct ResourceUpdatedNotificationParam {
     /// The URI of the resource that was updated
     pub uri: String,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<NotificationMetaObject>,
 }
 
 impl ResourceUpdatedNotificationParam {
@@ -1406,6 +2231,405 @@ impl ResourceUpdatedNotificationParam {
 /// Notification sent when a subscribed resource is updated
 pub type ResourceUpdatedNotification =
     Notification<ResourceUpdatedNotificationMethod, ResourceUpdatedNotificationParam>;
+
+// =============================================================================
+// SUBSCRIPTIONS
+// =============================================================================
+
+/// Notification categories a client opts in to on a `subscriptions/listen` stream.
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[non_exhaustive]
+pub struct SubscriptionFilter {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(with = "bool"))]
+    pub tools_list_changed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(with = "bool"))]
+    pub prompts_list_changed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(with = "bool"))]
+    pub resources_list_changed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(with = "Vec<String>"))]
+    pub resource_subscriptions: Option<Vec<String>>,
+}
+
+impl SubscriptionFilter {
+    /// Create an empty filter that opts in to no notifications.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a builder for a subscription filter.
+    pub fn builder() -> SubscriptionFilterBuilder {
+        SubscriptionFilterBuilder::default()
+    }
+
+    /// Return the subset present in both filters.
+    pub fn intersection(&self, other: &Self) -> Self {
+        let resource_subscriptions = self
+            .resource_subscriptions
+            .as_ref()
+            .and_then(|requested| {
+                other.resource_subscriptions.as_ref().map(|accepted| {
+                    requested
+                        .iter()
+                        .filter(|uri| accepted.contains(uri))
+                        .cloned()
+                        .collect()
+                })
+            })
+            .filter(|uris: &Vec<String>| !uris.is_empty());
+        Self {
+            tools_list_changed: (self.tools_list_changed == Some(true)
+                && other.tools_list_changed == Some(true))
+            .then_some(true),
+            prompts_list_changed: (self.prompts_list_changed == Some(true)
+                && other.prompts_list_changed == Some(true))
+            .then_some(true),
+            resources_list_changed: (self.resources_list_changed == Some(true)
+                && other.resources_list_changed == Some(true))
+            .then_some(true),
+            resource_subscriptions,
+        }
+    }
+
+    /// Return whether this filter accepts only notifications requested by `other`.
+    pub fn is_subset_of(&self, other: &Self) -> bool {
+        let booleans_are_subset = [
+            (self.tools_list_changed, other.tools_list_changed),
+            (self.prompts_list_changed, other.prompts_list_changed),
+            (self.resources_list_changed, other.resources_list_changed),
+        ]
+        .into_iter()
+        .all(|(accepted, requested)| accepted != Some(true) || requested == Some(true));
+        let resources_are_subset = self.resource_subscriptions.as_ref().is_none_or(|accepted| {
+            accepted.iter().all(|uri| {
+                other
+                    .resource_subscriptions
+                    .as_ref()
+                    .is_some_and(|requested| requested.contains(uri))
+            })
+        });
+        booleans_are_subset && resources_are_subset
+    }
+
+    /// Return the requested notification types advertised by server capabilities.
+    pub fn supported_by(&self, capabilities: &ServerCapabilities) -> Self {
+        Self {
+            tools_list_changed: (self.tools_list_changed == Some(true)
+                && capabilities
+                    .tools
+                    .as_ref()
+                    .is_some_and(|tools| tools.list_changed == Some(true)))
+            .then_some(true),
+            prompts_list_changed: (self.prompts_list_changed == Some(true)
+                && capabilities
+                    .prompts
+                    .as_ref()
+                    .is_some_and(|prompts| prompts.list_changed == Some(true)))
+            .then_some(true),
+            resources_list_changed: (self.resources_list_changed == Some(true)
+                && capabilities
+                    .resources
+                    .as_ref()
+                    .is_some_and(|resources| resources.list_changed == Some(true)))
+            .then_some(true),
+            resource_subscriptions: capabilities
+                .resources
+                .as_ref()
+                .is_some_and(|resources| resources.subscribe == Some(true))
+                .then(|| self.resource_subscriptions.clone())
+                .flatten(),
+        }
+    }
+}
+
+/// Builder for [`SubscriptionFilter`].
+#[derive(Debug, Default)]
+#[non_exhaustive]
+pub struct SubscriptionFilterBuilder {
+    filter: SubscriptionFilter,
+}
+
+impl SubscriptionFilterBuilder {
+    /// Opt in to `notifications/tools/list_changed`.
+    pub fn tools_list_changed(mut self) -> Self {
+        self.filter.tools_list_changed = Some(true);
+        self
+    }
+
+    /// Opt in to `notifications/prompts/list_changed`.
+    pub fn prompts_list_changed(mut self) -> Self {
+        self.filter.prompts_list_changed = Some(true);
+        self
+    }
+
+    /// Opt in to `notifications/resources/list_changed`.
+    pub fn resources_list_changed(mut self) -> Self {
+        self.filter.resources_list_changed = Some(true);
+        self
+    }
+
+    /// Opt in to updates for all supplied resource URIs.
+    pub fn resource_subscriptions(
+        mut self,
+        uris: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.filter.resource_subscriptions = Some(uris.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Add one resource URI to the update subscription set.
+    pub fn resource_subscription(mut self, uri: impl Into<String>) -> Self {
+        self.filter
+            .resource_subscriptions
+            .get_or_insert_default()
+            .push(uri.into());
+        self
+    }
+
+    /// Build the filter.
+    pub fn build(self) -> SubscriptionFilter {
+        self.filter
+    }
+}
+
+const_string!(SubscriptionsListenRequestMethod = "subscriptions/listen");
+
+#[cfg(feature = "schemars")]
+fn subscriptions_listen_request_meta_schema(
+    generator: &mut schemars::SchemaGenerator,
+) -> schemars::Schema {
+    let progress_token = generator.subschema_for::<ProgressToken>();
+    let client_info = generator.subschema_for::<Implementation>();
+    let client_capabilities = generator.subschema_for::<ClientCapabilities>();
+    let log_level = generator.subschema_for::<LoggingLevel>();
+    schemars::json_schema!({
+        "type": "object",
+        "properties": {
+            "progressToken": progress_token,
+            "io.modelcontextprotocol/protocolVersion": {
+                "type": "string",
+            },
+            "io.modelcontextprotocol/clientInfo": client_info,
+            "io.modelcontextprotocol/clientCapabilities": client_capabilities,
+            "io.modelcontextprotocol/logLevel": log_level,
+        },
+        "required": RequestMetaObject::DRAFT_REQUIRED_KEYS,
+        "additionalProperties": true,
+    })
+}
+
+/// Parameters for opening a long-lived notification subscription.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[non_exhaustive]
+pub struct SubscriptionsListenRequestParams {
+    /// Protocol-level metadata. Required by the 2026-07-28 wire schema.
+    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(required, schema_with = "subscriptions_listen_request_meta_schema")
+    )]
+    pub meta: Option<RequestMetaObject>,
+    /// Notification categories requested for this stream.
+    pub notifications: SubscriptionFilter,
+}
+
+impl SubscriptionsListenRequestParams {
+    /// Create listen parameters for a notification filter.
+    pub fn new(notifications: SubscriptionFilter) -> Self {
+        Self {
+            meta: None,
+            notifications,
+        }
+    }
+
+    /// Set protocol-level request metadata.
+    pub fn with_meta(mut self, meta: RequestMetaObject) -> Self {
+        self.meta = Some(meta);
+        self
+    }
+}
+
+impl RequestParamsMeta for SubscriptionsListenRequestParams {
+    fn meta(&self) -> Option<&RequestMetaObject> {
+        self.meta.as_ref()
+    }
+
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
+        &mut self.meta
+    }
+}
+
+/// Request that opens a long-lived notification subscription.
+pub type SubscriptionsListenRequest =
+    Request<SubscriptionsListenRequestMethod, SubscriptionsListenRequestParams>;
+
+const SUBSCRIPTION_ID_META_KEY: &str = "io.modelcontextprotocol/subscriptionId";
+
+/// Metadata on the final result of a `subscriptions/listen` request.
+#[derive(Debug, Serialize, Clone, PartialEq)]
+#[serde(transparent)]
+#[non_exhaustive]
+pub struct SubscriptionsListenResultMeta(MetaObject);
+
+impl SubscriptionsListenResultMeta {
+    /// Create result metadata for the originating listen request.
+    pub fn new(subscription_id: RequestId) -> Self {
+        let mut meta = MetaObject::new();
+        meta.insert(
+            SUBSCRIPTION_ID_META_KEY.to_owned(),
+            subscription_id.into_json_value(),
+        );
+        Self(meta)
+    }
+
+    /// Return the originating listen request ID, if the metadata remains valid.
+    pub fn subscription_id(&self) -> Option<RequestId> {
+        self.0
+            .get(SUBSCRIPTION_ID_META_KEY)
+            .and_then(|value| RequestId::deserialize(value).ok())
+    }
+
+    /// Replace the originating listen request ID.
+    pub fn set_subscription_id(&mut self, subscription_id: RequestId) {
+        self.0.insert(
+            SUBSCRIPTION_ID_META_KEY.to_owned(),
+            subscription_id.into_json_value(),
+        );
+    }
+
+    /// Return the server implementation information stored in result metadata.
+    pub fn server_info(&self) -> Option<Implementation> {
+        server_info_from_meta(&self.0)
+    }
+
+    /// Store server implementation information in result metadata.
+    pub fn set_server_info(&mut self, server_info: Implementation) {
+        set_server_info_on_meta(&mut self.0, server_info);
+    }
+}
+
+impl<'de> Deserialize<'de> for SubscriptionsListenResultMeta {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let meta = MetaObject::deserialize(deserializer)?;
+        let Some(value) = meta.get(SUBSCRIPTION_ID_META_KEY) else {
+            return Err(serde::de::Error::missing_field(SUBSCRIPTION_ID_META_KEY));
+        };
+        RequestId::deserialize(value).map_err(serde::de::Error::custom)?;
+        Ok(Self(meta))
+    }
+}
+
+impl std::ops::Deref for SubscriptionsListenResultMeta {
+    type Target = MetaObject;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for SubscriptionsListenResultMeta {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[cfg(feature = "schemars")]
+impl schemars::JsonSchema for SubscriptionsListenResultMeta {
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("SubscriptionsListenResultMeta")
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let subscription_id = generator.subschema_for::<RequestId>();
+        let server_info = generator.subschema_for::<Implementation>();
+        schemars::json_schema!({
+            "type": "object",
+            "properties": {
+                "io.modelcontextprotocol/serverInfo": {
+                    "description": "Identifies the server software producing the response. Servers SHOULD include this field on every response unless specifically configured not to do so.",
+                    "allOf": [server_info],
+                },
+                "io.modelcontextprotocol/subscriptionId": subscription_id,
+            },
+            "required": ["io.modelcontextprotocol/subscriptionId"],
+            "additionalProperties": true,
+        })
+    }
+}
+
+/// Final response indicating that a subscription ended gracefully.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[non_exhaustive]
+pub struct SubscriptionsListenResult {
+    pub result_type: ResultType,
+    #[serde(rename = "_meta")]
+    pub meta: SubscriptionsListenResultMeta,
+}
+
+impl SubscriptionsListenResult {
+    /// Create a completed subscription result.
+    pub fn new(meta: SubscriptionsListenResultMeta) -> Self {
+        Self {
+            result_type: ResultType::COMPLETE,
+            meta,
+        }
+    }
+
+    /// Create a completed result for the originating listen request.
+    pub fn complete(subscription_id: RequestId) -> Self {
+        Self::new(SubscriptionsListenResultMeta::new(subscription_id))
+    }
+}
+
+const_string!(
+    SubscriptionsAcknowledgedNotificationMethod = "notifications/subscriptions/acknowledged"
+);
+
+/// Parameters reporting the accepted subset of a subscription filter.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[non_exhaustive]
+pub struct SubscriptionsAcknowledgedNotificationParams {
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(with = "NotificationMetaObject"))]
+    pub meta: Option<NotificationMetaObject>,
+    pub notifications: SubscriptionFilter,
+}
+
+impl SubscriptionsAcknowledgedNotificationParams {
+    /// Create acknowledgment parameters for the accepted filter.
+    pub fn new(notifications: SubscriptionFilter) -> Self {
+        Self {
+            meta: None,
+            notifications,
+        }
+    }
+
+    /// Set notification metadata.
+    pub fn with_meta(mut self, meta: NotificationMetaObject) -> Self {
+        self.meta = Some(meta);
+        self
+    }
+}
+
+/// First notification sent on an established subscription stream.
+pub type SubscriptionsAcknowledgedNotification = Notification<
+    SubscriptionsAcknowledgedNotificationMethod,
+    SubscriptionsAcknowledgedNotificationParams,
+>;
 
 // =============================================================================
 // PROMPT MANAGEMENT
@@ -1429,10 +2653,17 @@ const_string!(GetPromptRequestMethod = "prompts/get");
 pub struct GetPromptRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arguments: Option<JsonObject>,
+    /// Client responses to server-initiated input requests from a previous
+    /// [`InputRequiredResult`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_responses: Option<InputResponses>,
+    /// Opaque request state echoed back from a previous [`InputRequiredResult`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_state: Option<String>,
 }
 
 impl GetPromptRequestParams {
@@ -1442,6 +2673,8 @@ impl GetPromptRequestParams {
             meta: None,
             name: name.into(),
             arguments: None,
+            input_responses: None,
+            request_state: None,
         }
     }
 
@@ -1452,24 +2685,32 @@ impl GetPromptRequestParams {
     }
 
     /// Set the metadata for this request.
-    pub fn with_meta(mut self, meta: Meta) -> Self {
+    pub fn with_meta(mut self, meta: RequestMetaObject) -> Self {
         self.meta = Some(meta);
+        self
+    }
+
+    /// Sets the input responses for an MRTR retry.
+    pub fn with_input_responses(mut self, input_responses: InputResponses) -> Self {
+        self.input_responses = Some(input_responses);
+        self
+    }
+
+    /// Sets the request state for an MRTR retry.
+    pub fn with_request_state(mut self, request_state: impl Into<String>) -> Self {
+        self.request_state = Some(request_state.into());
         self
     }
 }
 
 impl RequestParamsMeta for GetPromptRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
-
-/// Deprecated: Use [`GetPromptRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use GetPromptRequestParams instead")]
-pub type GetPromptRequestParam = GetPromptRequestParams;
 
 /// Request to get a specific prompt
 pub type GetPromptRequest = Request<GetPromptRequestMethod, GetPromptRequestParams>;
@@ -1519,7 +2760,7 @@ const_string!(SetLevelRequestMethod = "logging/setLevel");
 pub struct SetLevelRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     /// The desired logging level
     pub level: LoggingLevel,
 }
@@ -1532,17 +2773,13 @@ impl SetLevelRequestParams {
 }
 
 impl RequestParamsMeta for SetLevelRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
-
-/// Deprecated: Use [`SetLevelRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use SetLevelRequestParams instead")]
-pub type SetLevelRequestParam = SetLevelRequestParams;
 
 /// Request to set the logging level
 #[deprecated(
@@ -1570,7 +2807,7 @@ pub struct LoggingMessageNotificationParam {
     /// The actual log data
     pub data: Value,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<NotificationMetaObject>,
 }
 
 impl LoggingMessageNotificationParam {
@@ -1791,7 +3028,7 @@ pub struct SamplingMessage {
     /// The actual content of the message (text, image, audio, tool use, or tool result)
     pub content: SamplingContent<SamplingMessageContentBlock>,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<MetaObject>,
 }
 
 /// Content types for sampling messages (SEP-1577).
@@ -1812,9 +3049,6 @@ pub enum SamplingMessageContentBlock {
     /// User only
     ToolResult(ToolResultContent),
 }
-
-#[deprecated(since = "2.0.0", note = "Renamed to SamplingMessageContentBlock")]
-pub type SamplingMessageContent = SamplingMessageContentBlock;
 
 impl SamplingMessageContentBlock {
     /// Create a text content
@@ -1958,10 +3192,7 @@ pub enum ContextInclusion {
 pub struct CreateMessageRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
-    /// Task metadata for async task management (SEP-1319)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub task: Option<TaskMetadata>,
+    pub meta: Option<RequestMetaObject>,
     /// The conversation history and current messages
     pub messages: Vec<SamplingMessage>,
     /// Preferences for model selection and behavior
@@ -1974,7 +3205,11 @@ pub struct CreateMessageRequestParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_context: Option<ContextInclusion>,
     /// Temperature for controlling randomness (0.0 to 1.0)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_impl::json_float::option_f32",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub temperature: Option<f32>,
     /// Maximum number of tokens to generate
     pub max_tokens: u32,
@@ -1993,20 +3228,11 @@ pub struct CreateMessageRequestParams {
 }
 
 impl RequestParamsMeta for CreateMessageRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
-    }
-}
-
-impl TaskAugmentedRequestParamsMeta for CreateMessageRequestParams {
-    fn task(&self) -> Option<&TaskMetadata> {
-        self.task.as_ref()
-    }
-    fn task_mut(&mut self) -> &mut Option<TaskMetadata> {
-        &mut self.task
     }
 }
 
@@ -2015,7 +3241,6 @@ impl CreateMessageRequestParams {
     pub fn new(messages: Vec<SamplingMessage>, max_tokens: u32) -> Self {
         Self {
             meta: None,
-            task: None,
             messages,
             model_preferences: None,
             system_prompt: None,
@@ -2155,10 +3380,6 @@ impl CreateMessageRequestParams {
     }
 }
 
-/// Deprecated: Use [`CreateMessageRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use CreateMessageRequestParams instead")]
-pub type CreateMessageRequestParam = CreateMessageRequestParams;
-
 /// Preferences for model selection and behavior in sampling requests.
 ///
 /// This allows servers to express their preferences for which model to use
@@ -2177,13 +3398,25 @@ pub struct ModelPreferences {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hints: Option<Vec<ModelHint>>,
     /// Priority for cost optimization (0.0 to 1.0, higher = prefer cheaper models)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_impl::json_float::option_f32",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub cost_priority: Option<f32>,
     /// Priority for speed/latency (0.0 to 1.0, higher = prefer faster models)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_impl::json_float::option_f32",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub speed_priority: Option<f32>,
     /// Priority for intelligence/capability (0.0 to 1.0, higher = prefer more capable models)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "serde_impl::json_float::option_f32",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub intelligence_priority: Option<f32>,
 }
 
@@ -2313,7 +3546,7 @@ impl CompletionContext {
 pub struct CompleteRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     pub r#ref: Reference,
     pub argument: ArgumentInfo,
     /// Optional context containing previously resolved argument values
@@ -2340,17 +3573,13 @@ impl CompleteRequestParams {
 }
 
 impl RequestParamsMeta for CompleteRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
-
-/// Deprecated: Use [`CompleteRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use CompleteRequestParams instead")]
-pub type CompleteRequestParam = CompleteRequestParams;
 
 pub type CompleteRequest = Request<CompleteRequestMethod, CompleteRequestParams>;
 
@@ -2433,20 +3662,39 @@ impl CompletionInfo {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct CompleteResult {
+    /// Result type discriminator (SEP-2322). Required by the [spec schema]
+    /// for servers implementing protocol version `2026-07-28`, but optional
+    /// here because this type also models results from older protocol
+    /// versions, which do not carry the field: `None` means absent on the
+    /// wire, and per the spec "the client MUST treat the absent field as
+    /// `"complete"`". Constructors default to `Some(ResultType::COMPLETE)`;
+    /// the server handler clears the field when responding to peers that
+    /// negotiated an older version.
+    ///
+    /// [spec schema]: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/271ecc9accafdd9b83a3c869fa67c22953b2af80/schema/2026-07-28/schema.ts#L219-L235
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_type: Option<ResultType>,
     pub completion: CompletionInfo,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<MetaObject>,
+}
+
+impl Default for CompleteResult {
+    fn default() -> Self {
+        Self::new(CompletionInfo::default())
+    }
 }
 
 impl CompleteResult {
     /// Create a new CompleteResult with the given completion info.
     pub fn new(completion: CompletionInfo) -> Self {
         Self {
+            result_type: Some(ResultType::COMPLETE),
             completion,
             meta: None,
         }
@@ -2519,9 +3767,6 @@ impl ResourceTemplateReference {
     }
 }
 
-#[deprecated(since = "2.0.0", note = "Renamed to ResourceTemplateReference")]
-pub type ResourceReference = ResourceTemplateReference;
-
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
@@ -2582,7 +3827,7 @@ pub struct Root {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<MetaObject>,
 }
 
 impl Root {
@@ -2602,7 +3847,7 @@ impl Root {
     }
 
     /// Sets the protocol-level metadata for this root.
-    pub fn with_meta(mut self, meta: Meta) -> Self {
+    pub fn with_meta(mut self, meta: MetaObject) -> Self {
         self.meta = Some(meta);
         self
     }
@@ -2626,7 +3871,7 @@ pub type ListRootsRequest = RequestNoParam<ListRootsRequestMethod>;
 pub struct ListRootsResult {
     pub roots: Vec<Root>,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<MetaObject>,
 }
 
 impl ListRootsResult {
@@ -2636,7 +3881,7 @@ impl ListRootsResult {
     }
 
     /// Sets the protocol-level metadata for this result.
-    pub fn with_meta(mut self, meta: Meta) -> Self {
+    pub fn with_meta(mut self, meta: MetaObject) -> Self {
         self.meta = Some(meta);
         self
     }
@@ -2653,7 +3898,6 @@ pub type RootsListChangedNotification = NotificationNoParam<RootsListChangedNoti
 // Elicitation allows servers to request interactive input from users during tool execution.
 const_string!(ElicitationCreateRequestMethod = "elicitation/create");
 const_string!(ElicitationResponseNotificationMethod = "notifications/elicitation/response");
-const_string!(ElicitationCompletionNotificationMethod = "notifications/elicitation/complete");
 
 /// Represents the possible actions a user can take in response to an elicitation request.
 ///
@@ -2674,49 +3918,47 @@ pub enum ElicitationAction {
     Cancel,
 }
 
-/// Helper enum for deserializing CreateElicitationRequestParam with backward compatibility.
-/// When mode is missing, it defaults to FormElicitationParam.
+/// Wire representation for tagged elicitation parameters and legacy forms without `mode`.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(tag = "mode")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-enum CreateElicitationRequestParamDeserializeHelper {
+enum ElicitRequestParamsWire {
     #[serde(rename = "form", rename_all = "camelCase")]
-    FormElicitationParam {
+    Form {
         #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-        meta: Option<Meta>,
+        meta: Option<RequestMetaObject>,
         message: String,
         requested_schema: ElicitationSchema,
     },
     #[serde(rename = "url", rename_all = "camelCase")]
-    UrlElicitationParam {
+    Url {
         #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-        meta: Option<Meta>,
+        meta: Option<RequestMetaObject>,
         message: String,
         url: String,
+        #[serde(default)]
         elicitation_id: String,
     },
     #[serde(untagged, rename_all = "camelCase")]
-    FormElicitationParamBackwardsCompat {
+    LegacyForm {
         #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-        meta: Option<Meta>,
+        meta: Option<RequestMetaObject>,
         message: String,
         requested_schema: ElicitationSchema,
     },
 }
 
-impl TryFrom<CreateElicitationRequestParamDeserializeHelper> for ElicitRequestParams {
+impl TryFrom<ElicitRequestParamsWire> for ElicitRequestParams {
     type Error = serde_json::Error;
 
-    fn try_from(
-        value: CreateElicitationRequestParamDeserializeHelper,
-    ) -> Result<Self, Self::Error> {
+    fn try_from(value: ElicitRequestParamsWire) -> Result<Self, Self::Error> {
         match value {
-            CreateElicitationRequestParamDeserializeHelper::FormElicitationParam {
+            ElicitRequestParamsWire::Form {
                 meta,
                 message,
                 requested_schema,
             }
-            | CreateElicitationRequestParamDeserializeHelper::FormElicitationParamBackwardsCompat {
+            | ElicitRequestParamsWire::LegacyForm {
                 meta,
                 message,
                 requested_schema,
@@ -2725,7 +3967,7 @@ impl TryFrom<CreateElicitationRequestParamDeserializeHelper> for ElicitRequestPa
                 message,
                 requested_schema,
             }),
-            CreateElicitationRequestParamDeserializeHelper::UrlElicitationParam {
+            ElicitRequestParamsWire::Url {
                 meta,
                 message,
                 url,
@@ -2771,10 +4013,7 @@ impl TryFrom<CreateElicitationRequestParamDeserializeHelper> for ElicitRequestPa
 /// };
 /// ```
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[serde(
-    tag = "mode",
-    try_from = "CreateElicitationRequestParamDeserializeHelper"
-)]
+#[serde(tag = "mode", try_from = "ElicitRequestParamsWire")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub enum ElicitRequestParams {
@@ -2782,7 +4021,7 @@ pub enum ElicitRequestParams {
     FormElicitationParams {
         /// Protocol-level metadata for this request (SEP-1319)
         #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-        meta: Option<Meta>,
+        meta: Option<RequestMetaObject>,
         /// Human-readable message explaining what input is needed from the user.
         /// This should be clear and provide sufficient context for the user to understand
         /// what information they need to provide.
@@ -2797,7 +4036,7 @@ pub enum ElicitRequestParams {
     UrlElicitationParams {
         /// Protocol-level metadata for this request (SEP-1319)
         #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-        meta: Option<Meta>,
+        meta: Option<RequestMetaObject>,
         /// Human-readable message explaining what input is needed from the user.
         /// This should be clear and provide sufficient context for the user to understand
         /// what information they need to provide.
@@ -2807,31 +4046,25 @@ pub enum ElicitRequestParams {
         /// The client should direct the user to this URL to complete the elicitation.
         url: String,
         /// The unique identifier for this elicitation request.
+        /// Protocol `2026-07-28` removed this field: it is empty when absent.
         elicitation_id: String,
     },
 }
 
 impl RequestParamsMeta for ElicitRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         match self {
             ElicitRequestParams::FormElicitationParams { meta, .. } => meta.as_ref(),
             ElicitRequestParams::UrlElicitationParams { meta, .. } => meta.as_ref(),
         }
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         match self {
             ElicitRequestParams::FormElicitationParams { meta, .. } => meta,
             ElicitRequestParams::UrlElicitationParams { meta, .. } => meta,
         }
     }
 }
-
-/// Deprecated: Use [`ElicitRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use ElicitRequestParams instead")]
-pub type CreateElicitationRequestParam = ElicitRequestParams;
-
-#[deprecated(since = "2.0.0", note = "Renamed to ElicitRequestParams")]
-pub type CreateElicitationRequestParams = ElicitRequestParams;
 
 /// The result returned by a client in response to an elicitation request.
 ///
@@ -2853,7 +4086,7 @@ pub struct ElicitResult {
 
     /// Optional protocol-level metadata for this result.
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<MetaObject>,
 }
 
 impl ElicitResult {
@@ -2873,66 +4106,55 @@ impl ElicitResult {
     }
 
     /// Set the metadata on this result.
-    pub fn with_meta(mut self, meta: Meta) -> Self {
+    pub fn with_meta(mut self, meta: MetaObject) -> Self {
         self.meta = Some(meta);
         self
     }
 }
 
-#[deprecated(since = "2.0.0", note = "Renamed to ElicitResult")]
-pub type CreateElicitationResult = ElicitResult;
-
 /// Request type for creating an elicitation to gather user input
 pub type ElicitRequest = Request<ElicitationCreateRequestMethod, ElicitRequestParams>;
-
-#[deprecated(since = "2.0.0", note = "Renamed to ElicitRequest")]
-pub type CreateElicitationRequest = ElicitRequest;
-
-/// Notification parameters for an url elicitation completion notification.
-#[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-#[non_exhaustive]
-pub struct ElicitationResponseNotificationParam {
-    pub elicitation_id: String,
-    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
-}
-
-impl ElicitationResponseNotificationParam {
-    /// Create a new ElicitationResponseNotificationParam.
-    pub fn new(elicitation_id: impl Into<String>) -> Self {
-        Self {
-            elicitation_id: elicitation_id.into(),
-            meta: None,
-        }
-    }
-}
-
-/// Notification sent when an url elicitation process is completed.
-pub type ElicitationCompleteNotification =
-    Notification<ElicitationCompletionNotificationMethod, ElicitationResponseNotificationParam>;
-
-#[deprecated(since = "2.0.0", note = "Renamed to ElicitationCompleteNotification")]
-pub type ElicitationCompletionNotification = ElicitationCompleteNotification;
 
 // =============================================================================
 // TOOL EXECUTION RESULTS
 // =============================================================================
 
+/// Deserialize a field that is present on the wire as `Some`, even when its
+/// value is `null`. Combined with `#[serde(default)]`, an absent field stays `None`.
+fn deserialize_present_value<'de, D>(deserializer: D) -> Result<Option<Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Value::deserialize(deserializer).map(Some)
+}
+
 /// The result of a tool call operation.
 ///
 /// Contains the content returned by the tool execution and an optional
 /// flag indicating whether the operation resulted in an error.
-#[derive(Default, Debug, Serialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct CallToolResult {
+    /// Result type discriminator (SEP-2322). Required by the [spec schema]
+    /// for servers implementing protocol version `2026-07-28`, but optional
+    /// here because this type also models results from older protocol
+    /// versions, which do not carry the field: `None` means absent on the
+    /// wire, and per the spec "the client MUST treat the absent field as
+    /// `"complete"`". Constructors default to `Some(ResultType::COMPLETE)`;
+    /// the server handler clears the field when responding to peers that
+    /// negotiated an older version.
+    ///
+    /// [spec schema]: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/271ecc9accafdd9b83a3c869fa67c22953b2af80/schema/2026-07-28/schema.ts#L219-L235
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_type: Option<ResultType>,
     /// The content returned by the tool (text, images, etc.)
     #[serde(default)]
     pub content: Vec<ContentBlock>,
-    /// An optional JSON object that represents the structured result of the tool call
+    /// An optional JSON value that represents the structured result of the tool call.
+    /// It can be any JSON value, including `null`; an explicit `null` is kept
+    /// distinct from an absent field.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub structured_content: Option<Value>,
     /// Whether this result represents an error condition
@@ -2940,14 +4162,18 @@ pub struct CallToolResult {
     pub is_error: Option<bool>,
     /// Optional protocol-level metadata for this result
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<MetaObject>,
 }
 
 // Custom Deserialize implementation that:
 // 1. Defaults `content` to `[]` when the field is missing (lenient per Postel's law)
 // 2. Requires at least one known field to be present, so that `CallToolResult` doesn't
 //    greedily match arbitrary JSON objects when used inside `#[serde(untagged)]` enums
-//    (e.g. `ServerResult`), which would shadow `CustomResult`.
+//    (e.g. `ServerResult`), which would shadow `CustomResult`. `_meta` doesn't count,
+//    since any result type may carry it.
+// 3. Rejects non-`complete` result types so other `ServerResult` variants can match.
+// 4. Keeps a present `"structuredContent": null` as `Some(Value::Null)`, distinct
+//    from an absent field, since structured content can be any JSON value.
 impl<'de> Deserialize<'de> for CallToolResult {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -2956,27 +4182,40 @@ impl<'de> Deserialize<'de> for CallToolResult {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Helper {
+            #[serde(default)]
+            result_type: Option<ResultType>,
             content: Option<Vec<ContentBlock>>,
+            #[serde(default, deserialize_with = "deserialize_present_value")]
             structured_content: Option<Value>,
             is_error: Option<bool>,
             #[serde(rename = "_meta")]
-            meta: Option<Meta>,
+            meta: Option<MetaObject>,
         }
 
         let helper = Helper::deserialize(deserializer)?;
 
+        if helper
+            .result_type
+            .as_ref()
+            .is_some_and(|result_type| !result_type.is_complete())
+        {
+            return Err(serde::de::Error::custom(
+                "CallToolResult requires resultType to be \"complete\" when present",
+            ));
+        }
+
         if helper.content.is_none()
             && helper.structured_content.is_none()
             && helper.is_error.is_none()
-            && helper.meta.is_none()
         {
             return Err(serde::de::Error::custom(
                 "expected at least one known CallToolResult field \
-                 (content, structuredContent, isError, or _meta)",
+                 (content, structuredContent, or isError)",
             ));
         }
 
         Ok(CallToolResult {
+            result_type: helper.result_type,
             content: helper.content.unwrap_or_default(),
             structured_content: helper.structured_content,
             is_error: helper.is_error,
@@ -2985,10 +4224,23 @@ impl<'de> Deserialize<'de> for CallToolResult {
     }
 }
 
+impl Default for CallToolResult {
+    fn default() -> Self {
+        CallToolResult {
+            result_type: Some(ResultType::COMPLETE),
+            content: Vec::new(),
+            structured_content: None,
+            is_error: None,
+            meta: None,
+        }
+    }
+}
+
 impl CallToolResult {
     /// Create a successful tool result with unstructured content
     pub fn success(content: Vec<ContentBlock>) -> Self {
         CallToolResult {
+            result_type: Some(ResultType::COMPLETE),
             content,
             structured_content: None,
             is_error: Some(false),
@@ -3046,6 +4298,7 @@ impl CallToolResult {
     /// ```
     pub fn error(content: Vec<ContentBlock>) -> Self {
         CallToolResult {
+            result_type: Some(ResultType::COMPLETE),
             content,
             structured_content: None,
             is_error: Some(true),
@@ -3068,6 +4321,7 @@ impl CallToolResult {
     /// ```
     pub fn structured(value: Value) -> Self {
         CallToolResult {
+            result_type: Some(ResultType::COMPLETE),
             content: vec![ContentBlock::text(value.to_string())],
             structured_content: Some(value),
             is_error: Some(false),
@@ -3094,6 +4348,7 @@ impl CallToolResult {
     /// ```
     pub fn structured_error(value: Value) -> Self {
         CallToolResult {
+            result_type: Some(ResultType::COMPLETE),
             content: vec![ContentBlock::text(value.to_string())],
             structured_content: Some(value),
             is_error: Some(true),
@@ -3102,7 +4357,7 @@ impl CallToolResult {
     }
 
     /// Set the metadata on this result
-    pub fn with_meta(mut self, meta: Option<Meta>) -> Self {
+    pub fn with_meta(mut self, meta: Option<MetaObject>) -> Self {
         self.meta = meta;
         self
     }
@@ -3151,9 +4406,6 @@ const_string!(CallToolRequestMethod = "tools/call");
 ///
 /// Contains the tool name and optional arguments needed to execute
 /// the tool operation.
-///
-/// This implements `TaskAugmentedRequestParamsMeta` as tool calls can be
-/// long-running and may benefit from task-based execution.
 #[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -3161,15 +4413,20 @@ const_string!(CallToolRequestMethod = "tools/call");
 pub struct CallToolRequestParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     /// The name of the tool to call
     pub name: Cow<'static, str>,
     /// Arguments to pass to the tool (must match the tool's input schema)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arguments: Option<JsonObject>,
-    /// Task metadata for async task management (SEP-1319)
+    /// Client responses to server-initiated input requests from a previous
+    /// [`InputRequiredResult`]. Present only when retrying after an incomplete result.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub task: Option<TaskMetadata>,
+    pub input_responses: Option<InputResponses>,
+    /// Opaque request state echoed back from a previous [`InputRequiredResult`].
+    /// Clients MUST return this value exactly as received.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_state: Option<String>,
 }
 
 impl CallToolRequestParams {
@@ -3179,7 +4436,8 @@ impl CallToolRequestParams {
             meta: None,
             name: name.into(),
             arguments: None,
-            task: None,
+            input_responses: None,
+            request_state: None,
         }
     }
 
@@ -3189,34 +4447,27 @@ impl CallToolRequestParams {
         self
     }
 
-    /// Sets the task metadata for this tool call.
-    pub fn with_task(mut self, task: TaskMetadata) -> Self {
-        self.task = Some(task);
+    /// Sets the input responses for an MRTR retry.
+    pub fn with_input_responses(mut self, input_responses: InputResponses) -> Self {
+        self.input_responses = Some(input_responses);
+        self
+    }
+
+    /// Sets the request state for an MRTR retry.
+    pub fn with_request_state(mut self, request_state: impl Into<String>) -> Self {
+        self.request_state = Some(request_state.into());
         self
     }
 }
 
 impl RequestParamsMeta for CallToolRequestParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
-
-impl TaskAugmentedRequestParamsMeta for CallToolRequestParams {
-    fn task(&self) -> Option<&TaskMetadata> {
-        self.task.as_ref()
-    }
-    fn task_mut(&mut self) -> &mut Option<TaskMetadata> {
-        &mut self.task
-    }
-}
-
-/// Deprecated: Use [`CallToolRequestParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use CallToolRequestParams instead")]
-pub type CallToolRequestParam = CallToolRequestParams;
 
 /// Request to call a specific tool
 pub type CallToolRequest = Request<CallToolRequestMethod, CallToolRequestParams>;
@@ -3281,22 +4532,41 @@ impl CreateMessageResult {
     }
 }
 
-#[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct GetPromptResult {
+    /// Result type discriminator (SEP-2322). Required by the [spec schema]
+    /// for servers implementing protocol version `2026-07-28`, but optional
+    /// here because this type also models results from older protocol
+    /// versions, which do not carry the field: `None` means absent on the
+    /// wire, and per the spec "the client MUST treat the absent field as
+    /// `"complete"`". Constructors default to `Some(ResultType::COMPLETE)`;
+    /// the server handler clears the field when responding to peers that
+    /// negotiated an older version.
+    ///
+    /// [spec schema]: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/271ecc9accafdd9b83a3c869fa67c22953b2af80/schema/2026-07-28/schema.ts#L219-L235
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_type: Option<ResultType>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub messages: Vec<PromptMessage>,
     #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<MetaObject>,
+}
+
+impl Default for GetPromptResult {
+    fn default() -> Self {
+        Self::new(Vec::new())
+    }
 }
 
 impl GetPromptResult {
     /// Create a new GetPromptResult with required fields.
     pub fn new(messages: Vec<PromptMessage>) -> Self {
         Self {
+            result_type: Some(ResultType::COMPLETE),
             description: None,
             messages,
             meta: None,
@@ -3311,25 +4581,20 @@ impl GetPromptResult {
 }
 
 // =============================================================================
-// TASK MANAGEMENT
+// TASK MANAGEMENT (SEP-2663 Tasks extension: `io.modelcontextprotocol/tasks`)
 // =============================================================================
 
 const_string!(GetTaskMethod = "tasks/get");
 pub type GetTaskRequest = Request<GetTaskMethod, GetTaskParams>;
-
-#[deprecated(since = "2.0.0", note = "Renamed to GetTaskMethod")]
-pub type GetTaskInfoMethod = GetTaskMethod;
-#[deprecated(since = "2.0.0", note = "Renamed to GetTaskRequest")]
-pub type GetTaskInfoRequest = GetTaskRequest;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct GetTaskParams {
-    /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
+    /// Identifier of the task to query.
     pub task_id: String,
 }
 
@@ -3343,64 +4608,52 @@ impl GetTaskParams {
 }
 
 impl RequestParamsMeta for GetTaskParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
 
-#[deprecated(since = "2.0.0", note = "Renamed to GetTaskParams")]
-pub type GetTaskInfoParams = GetTaskParams;
+const_string!(UpdateTaskMethod = "tasks/update");
+pub type UpdateTaskRequest = Request<UpdateTaskMethod, UpdateTaskParams>;
 
-#[deprecated(since = "0.13.0", note = "Use GetTaskParams instead")]
-pub type GetTaskInfoParam = GetTaskParams;
-
-const_string!(ListTasksMethod = "tasks/list");
-pub type ListTasksRequest = RequestOptionalParam<ListTasksMethod, PaginatedRequestParams>;
-
-const_string!(GetTaskPayloadMethod = "tasks/result");
-pub type GetTaskPayloadRequest = Request<GetTaskPayloadMethod, GetTaskPayloadParams>;
-
-#[deprecated(since = "2.0.0", note = "Renamed to GetTaskPayloadMethod")]
-pub type GetTaskResultMethod = GetTaskPayloadMethod;
-#[deprecated(since = "2.0.0", note = "Renamed to GetTaskPayloadRequest")]
-pub type GetTaskResultRequest = GetTaskPayloadRequest;
-
+/// Parameters for `tasks/update` (SEP-2663): deliver responses to outstanding
+/// in-task server-to-client requests surfaced via `tasks/get` `inputRequests`.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
-pub struct GetTaskPayloadParams {
-    /// Protocol-level metadata for this request (SEP-1319)
+pub struct UpdateTaskParams {
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
+    /// Identifier of the task to update.
     pub task_id: String,
+    /// Responses to outstanding `inputRequests` previously surfaced by the
+    /// server. Each key MUST correspond to a currently-outstanding
+    /// `inputRequests` key.
+    pub input_responses: InputResponses,
 }
 
-impl GetTaskPayloadParams {
-    pub fn new(task_id: impl Into<String>) -> Self {
+impl UpdateTaskParams {
+    pub fn new(task_id: impl Into<String>, input_responses: InputResponses) -> Self {
         Self {
             meta: None,
             task_id: task_id.into(),
+            input_responses,
         }
     }
 }
 
-impl RequestParamsMeta for GetTaskPayloadParams {
-    fn meta(&self) -> Option<&Meta> {
+impl RequestParamsMeta for UpdateTaskParams {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
-
-#[deprecated(since = "2.0.0", note = "Renamed to GetTaskPayloadParams")]
-pub type GetTaskResultParams = GetTaskPayloadParams;
-#[deprecated(since = "2.0.0", note = "Renamed to GetTaskPayloadParams")]
-pub type GetTaskResultParam = GetTaskPayloadParams;
 
 const_string!(CancelTaskMethod = "tasks/cancel");
 pub type CancelTaskRequest = Request<CancelTaskMethod, CancelTaskParams>;
@@ -3412,7 +4665,7 @@ pub type CancelTaskRequest = Request<CancelTaskMethod, CancelTaskParams>;
 pub struct CancelTaskParams {
     /// Protocol-level metadata for this request (SEP-1319)
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<RequestMetaObject>,
     pub task_id: String,
 }
 
@@ -3426,95 +4679,173 @@ impl CancelTaskParams {
 }
 
 impl RequestParamsMeta for CancelTaskParams {
-    fn meta(&self) -> Option<&Meta> {
+    fn meta(&self) -> Option<&RequestMetaObject> {
         self.meta.as_ref()
     }
-    fn meta_mut(&mut self) -> &mut Option<Meta> {
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
         &mut self.meta
     }
 }
 
-/// Deprecated: Use [`CancelTaskParams`] instead (SEP-1319 compliance).
-#[deprecated(since = "0.13.0", note = "Use CancelTaskParams instead")]
-pub type CancelTaskParam = CancelTaskParams;
-
 // ---------------------------------------------------------------------------
-// Task status notification (spec `notifications/tasks/status`)
+// Task status notification (SEP-2663 `notifications/tasks`)
 // ---------------------------------------------------------------------------
-const_string!(TaskStatusNotificationMethod = "notifications/tasks/status");
+const_string!(TaskStatusNotificationMethod = "notifications/tasks");
 
 /// Parameters for a task status notification (spec `TaskStatusNotificationParams`).
 ///
-/// The task fields are flattened at the top level: `NotificationParams & Task`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// Carries a complete [`DetailedTask`] for the current status, identical to
+/// what `tasks/get` would have returned at that moment. The task fields are
+/// flattened at the top level: `NotificationParams & Task`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
-pub struct TaskStatusNotificationParam {
+pub struct TaskStatusNotificationParams {
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+    pub meta: Option<NotificationMetaObject>,
     #[serde(flatten)]
-    pub task: crate::model::Task,
+    pub task: crate::model::DetailedTask,
 }
 
-impl TaskStatusNotificationParam {
-    pub fn new(task: crate::model::Task) -> Self {
+impl TaskStatusNotificationParams {
+    pub fn new(task: crate::model::DetailedTask) -> Self {
         Self { meta: None, task }
     }
 
-    pub fn with_meta(mut self, meta: Meta) -> Self {
+    pub fn with_meta(mut self, meta: NotificationMetaObject) -> Self {
         self.meta = Some(meta);
         self
     }
 }
 
-impl From<crate::model::Task> for TaskStatusNotificationParam {
-    fn from(task: crate::model::Task) -> Self {
+impl From<crate::model::DetailedTask> for TaskStatusNotificationParams {
+    fn from(task: crate::model::DetailedTask) -> Self {
         Self::new(task)
     }
 }
 
-impl Deref for TaskStatusNotificationParam {
-    type Target = crate::model::Task;
+impl Deref for TaskStatusNotificationParams {
+    type Target = crate::model::DetailedTask;
 
     fn deref(&self) -> &Self::Target {
         &self.task
     }
 }
 
-impl DerefMut for TaskStatusNotificationParam {
+impl DerefMut for TaskStatusNotificationParams {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.task
     }
 }
 
 pub type TaskStatusNotification =
-    Notification<TaskStatusNotificationMethod, TaskStatusNotificationParam>;
-/// Deprecated: Use [`GetTaskResult`] instead (spec alignment).
-#[deprecated(since = "0.15.0", note = "Use GetTaskResult instead")]
-pub type GetTaskInfoResult = GetTaskResult;
+    Notification<TaskStatusNotificationMethod, TaskStatusNotificationParams>;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Default)]
+// =============================================================================
+// SKILLS (SEP-2640 Skills extension: `io.modelcontextprotocol/skills`)
+// =============================================================================
+
+const_string!(ListSkillsRequestMethod = "skills/list");
+/// Request to list the skills a server serves.
+pub type ListSkillsRequest = RequestOptionalParam<ListSkillsRequestMethod, PaginatedRequestParams>;
+
+paginated_result!(ListSkillsResult {
+    skills: Vec<Skill>
+});
+
+const_string!(GetSkillRequestMethod = "skills/get");
+/// Parameters for fetching one skill by the URI of its `SKILL.md`.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
-pub struct ListTasksResult {
-    pub tasks: Vec<crate::model::Task>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-    #[serde(rename = "_meta", skip_serializing_if = "Option::is_none")]
-    pub meta: Option<Meta>,
+pub struct GetSkillRequestParams {
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<RequestMetaObject>,
+    /// URI of the skill's `SKILL.md`.
+    pub uri: String,
 }
 
-impl ListTasksResult {
-    pub fn new(tasks: Vec<crate::model::Task>) -> Self {
+impl GetSkillRequestParams {
+    pub fn new(uri: impl Into<String>) -> Self {
         Self {
-            tasks,
-            next_cursor: None,
             meta: None,
+            uri: uri.into(),
         }
     }
+
+    pub fn with_meta(mut self, meta: RequestMetaObject) -> Self {
+        self.meta = Some(meta);
+        self
+    }
 }
+
+impl RequestParamsMeta for GetSkillRequestParams {
+    fn meta(&self) -> Option<&RequestMetaObject> {
+        self.meta.as_ref()
+    }
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
+        &mut self.meta
+    }
+}
+
+/// Request to fetch one skill.
+pub type GetSkillRequest = Request<GetSkillRequestMethod, GetSkillRequestParams>;
+
+const_string!(ReadResourceDirectoryRequestMethod = "resources/directory/read");
+/// Parameters for listing the direct children of a directory resource.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[non_exhaustive]
+pub struct ReadResourceDirectoryRequestParams {
+    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<RequestMetaObject>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<Cursor>,
+    /// URI of the directory resource.
+    pub uri: String,
+}
+
+impl ReadResourceDirectoryRequestParams {
+    pub fn new(uri: impl Into<String>) -> Self {
+        Self {
+            meta: None,
+            cursor: None,
+            uri: uri.into(),
+        }
+    }
+
+    pub fn with_cursor(mut self, cursor: impl Into<Cursor>) -> Self {
+        self.cursor = Some(cursor.into());
+        self
+    }
+
+    pub fn with_meta(mut self, meta: RequestMetaObject) -> Self {
+        self.meta = Some(meta);
+        self
+    }
+}
+
+impl RequestParamsMeta for ReadResourceDirectoryRequestParams {
+    fn meta(&self) -> Option<&RequestMetaObject> {
+        self.meta.as_ref()
+    }
+    fn meta_mut(&mut self) -> &mut Option<RequestMetaObject> {
+        &mut self.meta
+    }
+}
+
+/// Request to list the direct children of a directory resource.
+pub type ReadResourceDirectoryRequest =
+    Request<ReadResourceDirectoryRequestMethod, ReadResourceDirectoryRequestParams>;
+
+/// Result of `resources/directory/read`.
+///
+/// Same shape as `resources/list`, so the untagged [`ServerResult`] carries
+/// it as [`ServerResult::ListResourcesResult`].
+pub type ReadResourceDirectoryResult = ListResourcesResult;
 
 // =============================================================================
 // MESSAGE TYPE UNIONS
@@ -3544,7 +4875,7 @@ macro_rules! ts_union {
         #[derive(Debug, Serialize, Deserialize, Clone)]
         #[serde(untagged)]
         #[allow(clippy::large_enum_variant)]
-        #[expect(clippy::exhaustive_enums, reason = "intentionally exhaustive")]
+        #[non_exhaustive]
         #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
         pub enum $U {
             $($declared)*
@@ -3574,6 +4905,7 @@ ts_union!(
     export type ClientRequest =
     | PingRequest
     | InitializeRequest
+    | DiscoverRequest
     | CompleteRequest
     | SetLevelRequest
     | GetPromptRequest
@@ -3581,14 +4913,17 @@ ts_union!(
     | ListResourcesRequest
     | ListResourceTemplatesRequest
     | ReadResourceRequest
+    | SubscriptionsListenRequest
     | SubscribeRequest
     | UnsubscribeRequest
     | CallToolRequest
     | ListToolsRequest
     | GetTaskRequest
-    | ListTasksRequest
-    | GetTaskPayloadRequest
+    | UpdateTaskRequest
     | CancelTaskRequest
+    | ListSkillsRequest
+    | GetSkillRequest
+    | ReadResourceDirectoryRequest
     | CustomRequest;
 );
 
@@ -3597,6 +4932,7 @@ impl ClientRequest {
         match &self {
             ClientRequest::PingRequest(r) => r.method.as_str(),
             ClientRequest::InitializeRequest(r) => r.method.as_str(),
+            ClientRequest::DiscoverRequest(r) => r.method.as_str(),
             ClientRequest::CompleteRequest(r) => r.method.as_str(),
             ClientRequest::SetLevelRequest(r) => r.method.as_str(),
             ClientRequest::GetPromptRequest(r) => r.method.as_str(),
@@ -3604,14 +4940,17 @@ impl ClientRequest {
             ClientRequest::ListResourcesRequest(r) => r.method.as_str(),
             ClientRequest::ListResourceTemplatesRequest(r) => r.method.as_str(),
             ClientRequest::ReadResourceRequest(r) => r.method.as_str(),
+            ClientRequest::SubscriptionsListenRequest(r) => r.method.as_str(),
             ClientRequest::SubscribeRequest(r) => r.method.as_str(),
             ClientRequest::UnsubscribeRequest(r) => r.method.as_str(),
             ClientRequest::CallToolRequest(r) => r.method.as_str(),
             ClientRequest::ListToolsRequest(r) => r.method.as_str(),
             ClientRequest::GetTaskRequest(r) => r.method.as_str(),
-            ClientRequest::ListTasksRequest(r) => r.method.as_str(),
-            ClientRequest::GetTaskPayloadRequest(r) => r.method.as_str(),
+            ClientRequest::UpdateTaskRequest(r) => r.method.as_str(),
             ClientRequest::CancelTaskRequest(r) => r.method.as_str(),
+            ClientRequest::ListSkillsRequest(r) => r.method.as_str(),
+            ClientRequest::GetSkillRequest(r) => r.method.as_str(),
+            ClientRequest::ReadResourceDirectoryRequest(r) => r.method.as_str(),
             ClientRequest::CustomRequest(r) => r.method.as_str(),
         }
     }
@@ -3623,7 +4962,6 @@ ts_union!(
     | ProgressNotification
     | InitializedNotification
     | RootsListChangedNotification
-    | TaskStatusNotification
     | CustomNotification;
 );
 
@@ -3662,13 +5000,14 @@ ts_union!(
     | ResourceListChangedNotification
     | ToolListChangedNotification
     | PromptListChangedNotification
-    | ElicitationCompleteNotification
+    | SubscriptionsAcknowledgedNotification
     | TaskStatusNotification
     | CustomNotification;
 );
 
 ts_union!(
     export type ServerResult =
+    | DiscoverResult
     | InitializeResult
     | CompleteResult
     | GetPromptResult
@@ -3676,14 +5015,19 @@ ts_union!(
     | ListResourcesResult
     | ListResourceTemplatesResult
     | ReadResourceResult
+    | SubscriptionsListenResult
     | ListToolsResult
+    | ListSkillsResult
+    | GetSkillResult
     | ElicitResult
     | CreateTaskResult
-    | ListTasksResult
     | GetTaskResult
-    | CancelTaskResult
     | CallToolResult
-    | GetTaskPayloadResult
+    | InputRequiredResult
+    // TaskAckResult must come after CallToolResult/InputRequiredResult in this
+    // untagged union: it only carries `resultType`, so it would otherwise
+    // shadow any result that includes `resultType: "complete"`.
+    | TaskAckResult
     | EmptyResult
     | CustomResult
     ;
@@ -3692,6 +5036,107 @@ ts_union!(
 impl ServerResult {
     pub fn empty(_: ()) -> ServerResult {
         ServerResult::EmptyResult(EmptyResult {})
+    }
+
+    /// Empty `tasks/update` / `tasks/cancel` acknowledgement carrying the
+    /// SEP-2322 `resultType: "complete"` discriminator (SEP-2663).
+    pub fn task_ack(_: ()) -> ServerResult {
+        ServerResult::TaskAckResult(TaskAckResult::new())
+    }
+
+    /// Strip the SEP-2322 `resultType: "complete"` discriminator so the result
+    /// keeps the wire shape that predates protocol version `2026-07-28`.
+    ///
+    /// The server handler calls this before responding to a peer that
+    /// negotiated an older protocol version, where the field did not exist and
+    /// strict peers may reject it. Only the `"complete"` value is stripped:
+    /// results whose discriminator carries meaning (`"input_required"`,
+    /// `"task"`) are already gated to `2026-07-28`+ sessions, and custom
+    /// extension values are preserved.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmcp::model::{CallToolResult, ServerResult};
+    ///
+    /// let mut result = ServerResult::CallToolResult(CallToolResult::success(vec![]));
+    /// result.strip_result_type_for_legacy_peer();
+    ///
+    /// let json = serde_json::to_value(&result).unwrap();
+    /// assert!(json.get("resultType").is_none());
+    /// ```
+    pub fn strip_result_type_for_legacy_peer(&mut self) {
+        let result_type = match self {
+            ServerResult::CompleteResult(r) => &mut r.result_type,
+            ServerResult::GetPromptResult(r) => &mut r.result_type,
+            ServerResult::ListPromptsResult(r) => &mut r.result_type,
+            ServerResult::ListResourcesResult(r) => &mut r.result_type,
+            ServerResult::ListResourceTemplatesResult(r) => &mut r.result_type,
+            ServerResult::ReadResourceResult(r) => &mut r.result_type,
+            ServerResult::ListToolsResult(r) => &mut r.result_type,
+            ServerResult::CallToolResult(r) => &mut r.result_type,
+            ServerResult::ListSkillsResult(r) => &mut r.result_type,
+            ServerResult::GetSkillResult(r) => &mut r.result_type,
+            _ => return,
+        };
+        result_type.take_if(|result_type| result_type.is_complete());
+    }
+
+    /// Fill in the SEP-2549 caching hints a cacheable result is missing.
+    ///
+    /// Protocol version `2026-07-28` requires `ttlMs` and `cacheScope` on every
+    /// complete `tools/list`, `prompts/list`, `resources/list`,
+    /// `resources/templates/list`, and `resources/read` result. The server
+    /// handler calls this before responding to a peer on that version, so a
+    /// handler that builds its result with `Default::default()` still sends a
+    /// conformant result.
+    ///
+    /// Missing hints get the most conservative values, `ttlMs: 0` (immediately
+    /// stale) and `cacheScope: "private"`, the same values
+    /// [`DiscoverResult::new`] uses. Hints the handler set are kept.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use rmcp::model::{CacheScope, ListResourcesResult, ServerResult};
+    ///
+    /// let mut result = ServerResult::ListResourcesResult(ListResourcesResult::default());
+    /// result.fill_missing_cache_hints();
+    ///
+    /// let ServerResult::ListResourcesResult(result) = result else {
+    ///     unreachable!()
+    /// };
+    /// assert_eq!(result.ttl_ms, Some(0));
+    /// assert_eq!(result.cache_scope, Some(CacheScope::Private));
+    /// ```
+    pub fn fill_missing_cache_hints(&mut self) {
+        let (result_type, ttl_ms, cache_scope) = match self {
+            ServerResult::ListToolsResult(r) => (&r.result_type, &mut r.ttl_ms, &mut r.cache_scope),
+            ServerResult::ListPromptsResult(r) => {
+                (&r.result_type, &mut r.ttl_ms, &mut r.cache_scope)
+            }
+            ServerResult::ListResourcesResult(r) => {
+                (&r.result_type, &mut r.ttl_ms, &mut r.cache_scope)
+            }
+            ServerResult::ListResourceTemplatesResult(r) => {
+                (&r.result_type, &mut r.ttl_ms, &mut r.cache_scope)
+            }
+            ServerResult::ReadResourceResult(r) => {
+                (&r.result_type, &mut r.ttl_ms, &mut r.cache_scope)
+            }
+            ServerResult::ListSkillsResult(r) => {
+                (&r.result_type, &mut r.ttl_ms, &mut r.cache_scope)
+            }
+            ServerResult::GetSkillResult(r) => (&r.result_type, &mut r.ttl_ms, &mut r.cache_scope),
+            _ => return,
+        };
+        // Only complete results are cacheable; the spec treats an absent
+        // `resultType` as complete.
+        if result_type.as_ref().is_some_and(|t| !t.is_complete()) {
+            return;
+        }
+        ttl_ms.get_or_insert(0);
+        cache_scope.get_or_insert(CacheScope::Private);
     }
 }
 
@@ -3730,12 +5175,89 @@ mod tests {
     use super::*;
 
     #[test]
-    #[allow(deprecated)]
-    fn deprecated_aliases_still_resolve() {
-        // 하위호환: 구 이름이 새 타입으로 여전히 resolve되는지 확인.
-        let _: CreateElicitationResult = ElicitResult::new(ElicitationAction::Accept);
-        let _: GetTaskResultParams = GetTaskPayloadParams::new("task-1");
-        let _: ResourceReference = ResourceTemplateReference::new("res://x");
+    fn known_versions_are_ordered_oldest_first() {
+        // `known_up_to` walks the list as a sorted prefix.
+        assert!(
+            ProtocolVersion::KNOWN_VERSIONS
+                .windows(2)
+                .all(|pair| pair[0].as_str() < pair[1].as_str())
+        );
+    }
+
+    // Guards the pair of constants this SDK's negotiation rests on. `LATEST`
+    // and `LATEST_WITH_INITIALIZE` were the same value until `LATEST` reached
+    // `NO_INITIALIZE`; conflating them is what made bumping `LATEST` expensive.
+    #[test]
+    fn latest_with_initialize_is_the_newest_known_version_that_has_one() {
+        let derived = ProtocolVersion::KNOWN_VERSIONS
+            .iter()
+            .filter(|version| version.has_initialize())
+            .max_by(|left, right| left.as_str().cmp(right.as_str()))
+            .expect("some known version should have an initialize handshake");
+        assert_eq!(
+            derived,
+            &ProtocolVersion::LATEST_WITH_INITIALIZE,
+            "LATEST_WITH_INITIALIZE must track KNOWN_VERSIONS"
+        );
+    }
+
+    #[test]
+    fn has_initialize_splits_known_versions_at_no_initialize() {
+        for version in ProtocolVersion::KNOWN_VERSIONS {
+            assert_eq!(
+                version.has_initialize(),
+                version.as_str() < ProtocolVersion::NO_INITIALIZE.as_str(),
+                "{version} classified inconsistently"
+            );
+        }
+    }
+
+    #[test]
+    fn known_up_to_includes_the_ceiling_itself() {
+        assert_eq!(
+            ProtocolVersion::known_up_to(&ProtocolVersion::V_2024_11_05),
+            &[ProtocolVersion::V_2024_11_05]
+        );
+    }
+
+    #[test]
+    fn known_up_to_the_newest_version_yields_every_known_version() {
+        assert_eq!(
+            ProtocolVersion::known_up_to(&ProtocolVersion::V_2026_07_28),
+            ProtocolVersion::KNOWN_VERSIONS
+        );
+    }
+
+    #[test]
+    fn known_up_to_an_unknown_ceiling_stops_at_the_versions_below_it() {
+        let unknown = ProtocolVersion(Cow::Borrowed("2025-07-01"));
+        assert_eq!(
+            ProtocolVersion::known_up_to(&unknown),
+            &[
+                ProtocolVersion::V_2024_11_05,
+                ProtocolVersion::V_2025_03_26,
+                ProtocolVersion::V_2025_06_18,
+            ]
+        );
+    }
+
+    #[test]
+    fn known_up_to_a_ceiling_below_every_known_version_is_empty() {
+        let ancient = ProtocolVersion(Cow::Borrowed("1999-01-01"));
+        assert!(ProtocolVersion::known_up_to(&ancient).is_empty());
+    }
+
+    #[cfg(all(feature = "transport-streamable-http-client", feature = "client"))]
+    #[test]
+    fn transport_closed_marker_accepts_only_the_process_local_token() {
+        let local = ErrorData::transport_closed("closed");
+        let spoofed = ErrorData::internal_error(
+            "spoofed",
+            Some(json!({ "io.modelcontextprotocol/transportClosed": true })),
+        );
+
+        assert!(local.is_transport_closed());
+        assert!(!spoofed.is_transport_closed());
     }
 
     #[test]
@@ -3834,6 +5356,386 @@ mod tests {
 
         let json = serde_json::to_value(message).expect("valid json");
         assert_eq!(json, raw);
+    }
+
+    #[test]
+    fn test_response_with_result_and_error_is_rejected() {
+        // https://github.com/modelcontextprotocol/rust-sdk/issues/1283
+        let raw = json!( {
+            "jsonrpc": JsonRpcVersion2_0,
+            "id": 1,
+            "result": { "content": [] },
+            "error": { "code": -32603, "message": "injected error" },
+        });
+
+        let result: Result<JsonRpcMessage, _> = serde_json::from_value(raw);
+        assert!(
+            result.is_err(),
+            "a response carrying both `result` and `error` must be rejected"
+        );
+    }
+
+    #[test]
+    fn test_request_with_stray_result_or_error_is_rejected() {
+        let with_result = json!( {
+            "jsonrpc": JsonRpcVersion2_0,
+            "id": 2,
+            "method": "ping",
+            "result": { "injected": true },
+        });
+        assert!(
+            serde_json::from_value::<JsonRpcMessage>(with_result).is_err(),
+            "a request carrying `result` must be rejected"
+        );
+
+        let with_error = json!( {
+            "jsonrpc": JsonRpcVersion2_0,
+            "id": 3,
+            "method": "ping",
+            "error": { "code": -32603, "message": "injected error" },
+        });
+        assert!(
+            serde_json::from_value::<JsonRpcMessage>(with_error).is_err(),
+            "a request carrying `error` must be rejected"
+        );
+
+        let notification_with_result = json!( {
+            "jsonrpc": JsonRpcVersion2_0,
+            "method": "notifications/initialized",
+            "result": {},
+        });
+        assert!(
+            serde_json::from_value::<JsonRpcMessage>(notification_with_result).is_err(),
+            "a notification carrying `result` must be rejected"
+        );
+    }
+
+    #[test]
+    fn generic_borrowed_request_deserializes_from_str() {
+        // Regression: field-presence dispatch must not force owned Value so hard
+        // that generic payload types containing `&str` lose input borrows.
+        #[derive(Debug, Deserialize)]
+        struct BorrowedRequest<'a> {
+            method: &'a str,
+        }
+
+        let input = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
+        let parsed =
+            serde_json::from_str::<JsonRpcMessage<BorrowedRequest<'_>, Value, Value>>(input)
+                .expect("generic Deserialize API accepts borrowed request strings");
+        match parsed {
+            JsonRpcMessage::Request(request) => {
+                assert_eq!(request.request.method, "ping");
+                let start = input.as_ptr() as usize;
+                let borrowed = request.request.method.as_ptr() as usize;
+                assert!(
+                    borrowed >= start && borrowed < start + input.len(),
+                    "method must borrow from the original input"
+                );
+            }
+            other => panic!("expected Request, received {other:?}"),
+        }
+    }
+
+    #[test]
+    fn generic_borrowed_response_deserializes_from_str() {
+        #[derive(Debug, Deserialize)]
+        struct BorrowedResponse<'a> {
+            status: &'a str,
+        }
+
+        let input = r#"{"jsonrpc":"2.0","id":1,"result":{"status":"ok"}}"#;
+        let parsed =
+            serde_json::from_str::<JsonRpcMessage<Value, BorrowedResponse<'_>, Value>>(input)
+                .expect("generic Deserialize API accepts borrowed response strings");
+        match parsed {
+            JsonRpcMessage::Response(response) => {
+                assert_eq!(response.result.status, "ok");
+                let start = input.as_ptr() as usize;
+                let borrowed = response.result.status.as_ptr() as usize;
+                assert!(
+                    borrowed >= start && borrowed < start + input.len(),
+                    "status must borrow from the original input"
+                );
+            }
+            other => panic!("expected Response, received {other:?}"),
+        }
+    }
+
+    #[test]
+    fn json_rpc_message_deserializes_inside_untagged_wrappers() {
+        #[derive(Debug, Deserialize)]
+        #[serde(untagged)]
+        enum Wrapper {
+            One(JsonRpcMessage),
+            Many(Vec<JsonRpcMessage>),
+        }
+
+        for input in [
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"result":{}}"#,
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#,
+            r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"boom"}}"#,
+        ] {
+            let expected: JsonRpcMessage =
+                serde_json::from_str(input).unwrap_or_else(|error| panic!("{input}: {error}"));
+            for parsed in [
+                serde_json::from_str::<Wrapper>(input).unwrap(),
+                serde_json::from_slice::<Wrapper>(input.as_bytes()).unwrap(),
+                serde_json::from_value::<Wrapper>(serde_json::from_str(input).unwrap()).unwrap(),
+            ] {
+                let Wrapper::One(message) = parsed else {
+                    panic!("expected one message")
+                };
+                assert_eq!(
+                    serde_json::to_value(message).unwrap(),
+                    serde_json::to_value(&expected).unwrap()
+                );
+            }
+            let batch = format!("[{input}]");
+            let Wrapper::Many(messages) = serde_json::from_str(&batch).unwrap() else {
+                panic!("expected multiple messages")
+            };
+            assert_eq!(
+                serde_json::to_value(messages).unwrap(),
+                serde_json::json!([expected])
+            );
+        }
+    }
+
+    #[test]
+    fn json_rpc_message_borrows_directly_and_inside_untagged_wrappers() {
+        #[derive(Debug, Deserialize)]
+        struct BorrowedRequest<'a> {
+            method: &'a str,
+        }
+        #[derive(Debug, Deserialize)]
+        struct BorrowedResponse<'a> {
+            status: &'a str,
+        }
+        type BorrowedMessage<'a> =
+            JsonRpcMessage<BorrowedRequest<'a>, BorrowedResponse<'a>, BorrowedRequest<'a>>;
+        #[derive(Debug, Deserialize)]
+        #[serde(untagged)]
+        enum Wrapper<'a> {
+            One(#[serde(borrow)] BorrowedMessage<'a>),
+            Many(#[serde(borrow)] Vec<BorrowedMessage<'a>>),
+        }
+        fn assert_borrowed(input: &str, message: BorrowedMessage<'_>) {
+            let borrowed = match message {
+                JsonRpcMessage::Request(request) => request.request.method,
+                JsonRpcMessage::Response(response) => response.result.status,
+                JsonRpcMessage::Notification(notification) => notification.notification.method,
+                JsonRpcMessage::Error(_) => panic!("expected borrowed payload"),
+            };
+            let start = input.as_ptr() as usize;
+            assert!((start..start + input.len()).contains(&(borrowed.as_ptr() as usize)));
+            assert!(matches!(borrowed, "ping" | "ok"));
+        }
+        for input in [
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
+            r#"{"jsonrpc":"2.0","id":1,"result":{"status":"ok"}}"#,
+            r#"{"jsonrpc":"2.0","method":"ping"}"#,
+        ] {
+            assert_borrowed(input, serde_json::from_str(input).unwrap());
+            assert_borrowed(input, serde_json::from_slice(input.as_bytes()).unwrap());
+            for parsed in [
+                serde_json::from_str::<Wrapper<'_>>(input).unwrap(),
+                serde_json::from_slice::<Wrapper<'_>>(input.as_bytes()).unwrap(),
+            ] {
+                let Wrapper::One(message) = parsed else {
+                    panic!("expected one message")
+                };
+                assert_borrowed(input, message);
+            }
+            let batch = format!("[{input}]");
+            for parsed in [
+                serde_json::from_str::<Wrapper<'_>>(&batch).unwrap(),
+                serde_json::from_slice::<Wrapper<'_>>(batch.as_bytes()).unwrap(),
+            ] {
+                let Wrapper::Many(messages) = parsed else {
+                    panic!("expected multiple messages")
+                };
+                assert_eq!(messages.len(), 1);
+                for message in messages {
+                    assert_borrowed(&batch, message);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn json_rpc_message_classifies_permissive_generic_payloads() {
+        for (input, expected) in [
+            (
+                json!({"jsonrpc": "2.0", "id": 1, "method": "ping"}),
+                "request",
+            ),
+            (
+                json!({"jsonrpc": "2.0", "id": 1, "result": null}),
+                "response",
+            ),
+            (json!({"jsonrpc": "2.0", "method": "ping"}), "notification"),
+            (
+                json!({"jsonrpc": "2.0", "error": {"code": -32603, "message": "boom"}}),
+                "error",
+            ),
+        ] {
+            let parsed: JsonRpcMessage<Value, Value, Value> =
+                serde_json::from_value(input).unwrap();
+            let actual = match parsed {
+                JsonRpcMessage::Request(_) => "request",
+                JsonRpcMessage::Response(_) => "response",
+                JsonRpcMessage::Notification(_) => "notification",
+                JsonRpcMessage::Error(_) => "error",
+            };
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn json_rpc_message_preserves_null_results() {
+        type Message = JsonRpcMessage<Request, Value, Notification>;
+        #[derive(Debug, Deserialize)]
+        #[serde(untagged)]
+        enum Wrapper {
+            One(Message),
+            Many(Vec<Message>),
+        }
+
+        // A null result is still a present result for generic JSON-RPC payloads.
+        let input = r#"{"jsonrpc":"2.0","id":1,"result":null}"#;
+        let assert_null = |message: Message| {
+            let JsonRpcMessage::Response(response) = message else {
+                panic!("expected response");
+            };
+            assert!(response.result.is_null());
+        };
+        for parsed in [
+            serde_json::from_str::<Message>(input).unwrap(),
+            serde_json::from_slice(input.as_bytes()).unwrap(),
+            serde_json::from_value(serde_json::from_str::<Value>(input).unwrap()).unwrap(),
+        ] {
+            assert_null(parsed);
+        }
+        for parsed in [
+            serde_json::from_str::<Wrapper>(input).unwrap(),
+            serde_json::from_slice(input.as_bytes()).unwrap(),
+            serde_json::from_value(serde_json::from_str::<Value>(input).unwrap()).unwrap(),
+        ] {
+            let Wrapper::One(message) = parsed else {
+                panic!("expected one message");
+            };
+            assert_null(message);
+        }
+        let batch = format!("[{input}]");
+        for parsed in [
+            serde_json::from_str::<Wrapper>(&batch).unwrap(),
+            serde_json::from_slice(batch.as_bytes()).unwrap(),
+            serde_json::from_value(serde_json::from_str::<Value>(&batch).unwrap()).unwrap(),
+        ] {
+            let Wrapper::Many(messages) = parsed else {
+                panic!("expected multiple messages");
+            };
+            assert_eq!(messages.len(), 1);
+            for message in messages {
+                assert_null(message);
+            }
+        }
+    }
+
+    #[test]
+    fn json_rpc_message_rejects_conflicting_fields_inside_untagged_wrappers() {
+        type Message = JsonRpcMessage<Request, Value, Notification>;
+        #[derive(Debug, Deserialize)]
+        #[serde(untagged)]
+        enum Wrapper {
+            One(Message),
+            Many(Vec<Message>),
+        }
+        for input in [
+            r#"{"jsonrpc":"2.0","id":1,"result":{},"error":null}"#,
+            r#"{"jsonrpc":"2.0","id":1,"result":null,"error":{"code":-32603,"message":"boom"}}"#,
+            r#"{"jsonrpc":"2.0","id":1,"result":null,"error":null}"#,
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping","result":null}"#,
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized","error":null}"#,
+        ] {
+            assert!(serde_json::from_str::<Message>(input).is_err());
+            for result in [
+                serde_json::from_str::<Wrapper>(input),
+                serde_json::from_slice::<Wrapper>(input.as_bytes()),
+                serde_json::from_value::<Wrapper>(serde_json::from_str(input).unwrap()),
+                serde_json::from_str::<Wrapper>(&format!("[{input}]")),
+            ] {
+                match result {
+                    Err(_) => {}
+                    Ok(Wrapper::One(message)) => panic!("unexpected valid message: {message:?}"),
+                    Ok(Wrapper::Many(messages)) => {
+                        panic!("unexpected valid messages: {messages:?}")
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_clean_shapes_and_extension_fields_still_deserialize() {
+        // The four clean shapes keep working.
+        let request = json!( {
+            "jsonrpc": JsonRpcVersion2_0,
+            "id": 1,
+            "method": "ping",
+            "params": {},
+        });
+        assert!(matches!(
+            serde_json::from_value::<JsonRpcMessage>(request).expect("request"),
+            JsonRpcMessage::Request(_)
+        ));
+
+        let response = json!( {
+            "jsonrpc": JsonRpcVersion2_0,
+            "id": 1,
+            "result": {},
+        });
+        assert!(matches!(
+            serde_json::from_value::<JsonRpcMessage>(response).expect("response"),
+            JsonRpcMessage::Response(_)
+        ));
+
+        let notification = json!( {
+            "jsonrpc": JsonRpcVersion2_0,
+            "method": "notifications/initialized",
+            "params": {},
+        });
+        assert!(matches!(
+            serde_json::from_value::<JsonRpcMessage>(notification).expect("notification"),
+            JsonRpcMessage::Notification(_)
+        ));
+
+        let error = json!( {
+            "jsonrpc": JsonRpcVersion2_0,
+            "id": 1,
+            "error": { "code": -32603, "message": "boom" },
+        });
+        assert!(matches!(
+            serde_json::from_value::<JsonRpcMessage>(error).expect("error"),
+            JsonRpcMessage::Error(_)
+        ));
+
+        // Extension fields stay accepted (no deny_unknown_fields semantics).
+        let extended = json!( {
+            "jsonrpc": JsonRpcVersion2_0,
+            "id": 1,
+            "result": {},
+            "x-vendor-extension": { "any": true },
+        });
+        assert!(matches!(
+            serde_json::from_value::<JsonRpcMessage>(extended).expect("extended response"),
+            JsonRpcMessage::Response(_)
+        ));
+
+        // Unrecognized shapes still fail.
+        assert!(serde_json::from_value::<JsonRpcMessage>(json!({ "id": 1 })).is_err());
     }
 
     #[test]
@@ -3945,12 +5847,11 @@ mod tests {
             serde_json::from_value(request.clone()).expect("invalid request");
         let (request, id) = request.into_request().expect("should be a request");
         assert_eq!(id, RequestId::Number(1));
-        #[allow(deprecated)]
         match request {
             ClientRequest::InitializeRequest(Request {
                 method: _,
                 params:
-                    InitializeRequestParam {
+                    InitializeRequestParams {
                         meta: _,
                         protocol_version: _,
                         capabilities,
@@ -4216,8 +6117,7 @@ mod tests {
     }
 
     #[test]
-    fn test_elicitation_deserialization_untagged() {
-        // Test deserialization without the "type" field (should default to FormElicitationParam)
+    fn elicitation_without_mode_deserializes_as_form() {
         let json_data_without_tag = json!({
             "message": "Please provide more details.",
             "requestedSchema": {
@@ -4243,7 +6143,7 @@ mod tests {
             assert_eq!(requested_schema.title, Some(Cow::from("User Details")));
             assert_eq!(requested_schema.type_, ObjectTypeConst);
         } else {
-            panic!("Expected FormElicitationParam");
+            panic!("Expected FormElicitationParams");
         }
     }
 
@@ -4273,13 +6173,15 @@ mod tests {
         {
             assert_eq!(
                 meta,
-                Some(Meta(object!({ "meta_form_key_1": "meta form value 1" })))
+                Some(RequestMetaObject(MetaObject(
+                    object!({ "meta_form_key_1": "meta form value 1" })
+                )))
             );
             assert_eq!(message, "Please provide more details.");
             assert_eq!(requested_schema.title, Some(Cow::from("User Details")));
             assert_eq!(requested_schema.type_, ObjectTypeConst);
         } else {
-            panic!("Expected FormElicitationParam");
+            panic!("Expected FormElicitationParams");
         }
 
         let json_data_url = json!({
@@ -4300,20 +6202,24 @@ mod tests {
         {
             assert_eq!(
                 meta,
-                Some(Meta(object!({ "meta_url_key_1": "meta url value 1" })))
+                Some(RequestMetaObject(MetaObject(
+                    object!({ "meta_url_key_1": "meta url value 1" })
+                )))
             );
             assert_eq!(message, "Please fill out the form at the following URL.");
             assert_eq!(url, "https://example.com/form");
             assert_eq!(elicitation_id, "elicitation-123");
         } else {
-            panic!("Expected UrlElicitationParam");
+            panic!("Expected UrlElicitationParams");
         }
     }
 
     #[test]
     fn test_elicitation_serialization() {
         let form_elicitation = ElicitRequestParams::FormElicitationParams {
-            meta: Some(Meta(object!({ "meta_form_key_1": "meta form value 1" }))),
+            meta: Some(RequestMetaObject(MetaObject(
+                object!({ "meta_form_key_1": "meta form value 1" }),
+            ))),
             message: "Please provide more details.".to_string(),
             requested_schema: ElicitationSchema::builder()
                 .title("User Details")
@@ -4337,7 +6243,9 @@ mod tests {
         assert_eq!(json_form, expected_form_json);
 
         let url_elicitation = ElicitRequestParams::UrlElicitationParams {
-            meta: Some(Meta(object!({ "meta_url_key_1": "meta url value 1" }))),
+            meta: Some(RequestMetaObject(MetaObject(
+                object!({ "meta_url_key_1": "meta url value 1" }),
+            ))),
             message: "Please fill out the form at the following URL.".to_string(),
             url: "https://example.com/form".to_string(),
             elicitation_id: "elicitation-123".to_string(),
@@ -4351,6 +6259,17 @@ mod tests {
             "elicitationId": "elicitation-123"
         });
         assert_eq!(json_url, expected_url_json);
+    }
+
+    #[test]
+    fn test_url_elicitation_without_elicitation_id() {
+        let params: ElicitRequestParams = serde_json::from_value(json!({
+            "mode": "url",
+            "url": "https://mcp.example.com/ui/set_api_key",
+            "message": "Please provide your API key to continue."
+        }))
+        .expect("Deserialization failed");
+        assert_eq!(serde_json::to_value(&params).unwrap()["elicitationId"], "");
     }
 
     #[test]

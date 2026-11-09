@@ -19,7 +19,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use rmcp::transport::auth::{
-    AuthClient, AuthError, AuthorizationManager, CredentialStore, OAuthState, StoredCredentials,
+    AuthClient, AuthError, AuthorizationManager, AuthorizationRequest, CredentialStore, OAuthState,
+    StoredCredentials,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -81,11 +82,10 @@ pub async fn authorize(
     if let OAuthState::Unauthorized(manager) = &mut state {
         manager.set_credential_store(PersistentCredentialStore::new(url));
     }
-    let scope_refs: Vec<&str> = scopes.iter().map(String::as_str).collect();
-    state
-        .start_authorization(&scope_refs, &redirect_uri, Some(CLIENT_NAME))
-        .await
-        .map_err(describe)?;
+    let request = AuthorizationRequest::new(&redirect_uri)
+        .with_scopes(scopes.iter().cloned())
+        .with_client_name(CLIENT_NAME);
+    state.start_authorization(request).await.map_err(describe)?;
     let auth_url = match &state {
         OAuthState::Session(session) => session.get_authorization_url().to_string(),
         _ => return Err("OAuth did not start an authorization session".to_string()),
