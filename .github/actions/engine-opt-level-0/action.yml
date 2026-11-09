@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 name: Engine at opt-level 0
 description: >-
   Build lean-ctx-engine and lean-ctx at opt-level 0. Cargo.toml builds them
