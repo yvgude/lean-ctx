@@ -31,11 +31,56 @@ env:
   # (~90 MB) in the background. Without this, the #551 auto-activation can
   # load the engine mid-suite and slow tarpaulin past its timeout.
   LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD: "0"
+  # Pull requests read the sccache store but never write it: PR entries would
+  # crowd main's caches out of the repo's 10 GB Actions cache quota.
+  SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
 
 jobs:
+  # Path filter for pull requests. It is a skip list: a PR whose every changed
+  # file is listed below skips the engine jobs; any other file runs full CI.
+  # Only files no Rust test, build script or engine-job script reads belong
+  # here. Not listed on purpose: docs/** (a Rust test secret-scans every
+  # docs/**/*.md, others read docs/contracts and docs/reference), README.md,
+  # llms.txt, discord-faq.md, ARCHITECTURE.md, CONTRACTS.md, SECURITY.md,
+  # VISION.md, packages/, integrations/, product/. Pushes to main, the nightly
+  # schedule and workflow_dispatch always run everything (the step is skipped
+  # and the `rust` output stays empty, which the job conditions treat as
+  # "run"). Skipped jobs count as passed in CI Green.
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          # `rust` is true when some changed file matches every pattern, that
+          # is, when some file is not on the skip list.
+          predicate-quantifier: every
+          filters: |
+            rust:
+              - '**'
+              - '!BENCHMARKS.md'
+              - '!CHANGELOG.md'
+              - '!CLA.md'
+              - '!CODE_OF_CONDUCT.md'
+              - '!CONTRIBUTING.md'
+              - '!ECOSYSTEM.md'
+              - '!cookbook/**'
+              - '!infra/**'
+              - '!legal/**'
+              - '!specs/**'
+
   narrative-governance:
     name: Narrative governance
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -84,6 +129,7 @@ jobs:
   licensing-ip:
     name: Licensing and IP boundaries
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -118,6 +164,7 @@ jobs:
   package-assets:
     name: Published crate assets
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -150,6 +197,8 @@ jobs:
 
   test:
     name: Test
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -200,6 +249,11 @@ jobs:
       # the 180-min timeout. 64 cases keep the properties exercised on every
       # push at a quarter of the cost; local runs keep the full default.
       PROPTEST_CASES: 64
+      # Linux/Windows build the Engine at opt-level 0 (step "Engine at
+      # opt-level 0" below), which uses more stack per frame than the
+      # opt-level 1 the tests were written against; give test threads the
+      # main thread's 8 MiB. Same as GitLab's ci/gitlab-ci.yml.
+      RUST_MIN_STACK: "8388608"
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -217,6 +271,16 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          # Linux compiles through sccache (below); its GHA store and a
+          # cached target dir together would overrun the repo's 10 GB
+          # Actions cache, so Linux caches only the cargo registry.
+          cache-targets: ${{ matrix.os != 'ubuntu-latest' }}
+      - name: Engine at opt-level 0 (Linux and Windows)
+        if: runner.os != 'macOS'
+        uses: ./.github/actions/engine-opt-level-0
+      - name: Set up sccache (Linux)
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/sccache
 
       - name: Verify build-script freshness and source guard
         if: runner.os == 'Linux'
@@ -231,7 +295,11 @@ jobs:
         uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c # v2
         with:
           msystem: MINGW64
-          update: true
+          # No full pacman -Syu (the step took 96 s with it): the runner
+          # image's MSYS2 is current enough for the packages below, which are
+          # still installed fresh; `cache` keeps their downloads.
+          update: false
+          cache: true
           # lld: the ~50 test binaries each link the full lib; GNU ld is the
           # slowest part of the Windows job (Linux uses mold for the same).
           install: base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-lld
@@ -390,7 +458,10 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -402,9 +473,10 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
-          # Shared with Documentation: both type-check the all-features graph,
-          # and the repo's 10 GB Actions cache was evicting the Windows test
-          # cache under one key per job.
+          # Clippy keeps its target cache (a warm run takes 1-2 min) and stays
+          # off sccache. The key was once shared with Documentation, which now
+          # compiles through sccache; the name is kept so the warm cache on
+          # main still matches.
           shared-key: all-features-check
       - name: Run clippy
         working-directory: rust
@@ -422,18 +494,25 @@ jobs:
   # warnings are not denied here (override the workflow-wide -Dwarnings).
   build-minimal:
     name: Build (no embeddings / no ORT)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       RUSTFLAGS: ""
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4 # v4
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          # sccache holds the compiled crates; see Test.
+          cache-targets: false
       - name: Check build without ORT-backed features
         working-directory: rust
         run: cargo check --no-default-features --features "tree-sitter,http-server,secure-update,jemalloc"
@@ -493,6 +572,7 @@ jobs:
   cookbook:
     name: Cookbook (Node)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -521,6 +601,7 @@ jobs:
   pi-extension:
     name: Pi Extension (Node)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -555,7 +636,10 @@ jobs:
 
   rust-sdk:
     name: Rust SDK (lean-ctx-client)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -589,6 +673,7 @@ jobs:
     # LeanCTX, and must remain buildable as an auditor's offline binary.
     name: Evidence Verifier (standalone)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -622,7 +707,13 @@ jobs:
     # Deliberately NOT called an SDK: the LeanCTX SDK is thinkery-leanctx-sdk
     # (sdk/ in the product checkout). See docs/reference/sdk-surface.md.
     name: Embed facade (lean-ctx-embed)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CARGO_INCREMENTAL: "0"
+      RUST_MIN_STACK: "8388608"
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -630,10 +721,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy, rustfmt
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          cache-targets: false
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Format
         working-directory: rust
         run: cargo fmt -p lean-ctx-embed --check
@@ -659,6 +753,7 @@ jobs:
     # a benchmark smoke that proves the harness runs offline (local fallback).
     name: Hermes Plugin (Python)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -688,6 +783,9 @@ jobs:
     # multi-hour queue, so it now runs nightly and on demand only.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # tarpaulin's own --timeout is 3600 s for the test run, plus the
+    # instrumented build.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -752,6 +850,7 @@ jobs:
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -786,16 +885,27 @@ jobs:
 
   gateway-proof:
     name: Gateway Proof (60 scenarios, 26 bypass paths)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "0"
+      RUST_MIN_STACK: "8388608"
     steps:
       - uses: actions/checkout@v4 # v4
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          cache-targets: false
+      # The registry script runs `cargo test` itself, so the override goes
+      # into CARGO_HOME config rather than onto a command line.
+      - uses: ./.github/actions/engine-opt-level-0
       # Every proven scenario/path names tests that must exist and pass; a
       # release run (`--release`) additionally refuses while any is open.
       - name: Run the gateway proof registry
@@ -803,16 +913,23 @@ jobs:
 
   bench:
     name: Benchmarks
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          cache-targets: false
       - name: Compile benchmarks
         working-directory: rust
         # CI only proves the benches compile and link; it never runs them, so
@@ -834,17 +951,25 @@ jobs:
 
   quality-gate:
     name: Self-Footprint Gate (doctor overhead)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "0"
+      RUST_MIN_STACK: "8388608"
     steps:
       - uses: actions/checkout@v4 # v4
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          cache-targets: false
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Build lean-ctx
         working-directory: rust
         run: cargo build --quiet
@@ -870,22 +995,32 @@ jobs:
           cd "$SCRATCH/work"
           HOME="$SCRATCH/home" LEAN_CTX_DATA_DIR="$SCRATCH/data" "$BIN" doctor overhead --gate
 
+  # Documentation is three jobs: its four checks are independent (each builds
+  # its own binary and checks its own outputs) and ran 94 s + 428 s + 326 s +
+  # 608 s in series. Split, the longest leg sets the wall clock.
   doc:
     name: Documentation
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
     # GitHub-hosted, not pounce: hosted jobs start at once and run in parallel,
     # while every job routed to the four pounce runners queues behind the
     # Test (ubuntu) legs of all other open PRs and merges.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4 # v4
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: ./.github/actions/sccache
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
-          shared-key: all-features-check
+          cache-targets: false
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Check docs compile
         working-directory: rust
         env:
@@ -894,9 +1029,52 @@ jobs:
       - name: Check generated reference docs are current
         working-directory: rust
         run: cargo run -p lean-ctx-server --example gen_docs --features dev-tools -- --check
+
+  doc-registry:
+    name: Documentation (registry snapshots)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: ./.github/actions/sccache
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: rust -> target
+          cache-targets: false
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Check bundled registry snapshots are canonical
         working-directory: rust
         run: cargo run --example gen_registry --features dev-tools -- --check
+
+  doc-capabilities:
+    name: Documentation (capability matrix)
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: "0"
+      RUST_MIN_STACK: "8388608"
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: ./.github/actions/sccache
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: rust -> target
+          cache-targets: false
+      - uses: ./.github/actions/engine-opt-level-0
       - name: Check v4 product capability classification and generated matrix
         working-directory: rust
         run: |
@@ -1000,7 +1178,9 @@ jobs:
   ci-green:
     name: CI Green
     if: always()
+    timeout-minutes: 5
     needs:
+      - changes
       - test
       - clippy
       - build-minimal
@@ -1016,6 +1196,8 @@ jobs:
       - bench
       - quality-gate
       - doc
+      - doc-registry
+      - doc-capabilities
       - delivery-security-gate
       - narrative-governance
       - licensing-ip
