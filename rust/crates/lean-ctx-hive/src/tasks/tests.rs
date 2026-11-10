@@ -2266,10 +2266,6 @@ fn posted(fake: &Fake, tail: &str) -> Vec<Value> {
 /// same Instance is refused for the session that did the work, refused
 /// for the shared machine worker, and allowed for another session.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_process_task_goes_through_g6_and_another_session_verifies_it() {
     let (repo, spec) = super::gate::tests::cargo_repo();
     let fake = hive_with_process(json!({"risk": "M", "spec_commit": spec,

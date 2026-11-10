@@ -932,13 +932,25 @@ fn substitutions_in_conditionals_and_after_every_separator_are_gated() {
 
 /// One probe: an input, the shells known to run its marker, and the text the
 /// block reason must contain (any one of them). Only the unix marker test
-/// below runs the probes.
+/// below runs the probes. `bash_min` is the oldest bash (major, minor) that
+/// has the feature the probe uses; an older bash cannot run its marker.
 #[cfg(unix)]
 struct Probe {
     input: &'static str,
     shells: &'static [&'static str],
     reasons: &'static [&'static str],
+    bash_min: (u32, u32),
 }
+
+/// `printf -v` assigns to an array element (subscript evaluated): bash 4.1.
+#[cfg(unix)]
+const PRINTF_V_ARRAY: (u32, u32) = (4, 1);
+/// `[[ -v NAME[SUB] ]]` tests an array element (subscript evaluated): bash 4.3.
+#[cfg(unix)]
+const TEST_V_ARRAY: (u32, u32) = (4, 3);
+/// `wait -p VAR` (with `-n`): bash 5.1.
+#[cfg(unix)]
+const WAIT_P: (u32, u32) = (5, 1);
 
 #[cfg(unix)]
 const ALL: &[&str] = &["bash", "dash", "zsh"];
@@ -967,6 +979,22 @@ const fn probe(
         input,
         shells,
         reasons,
+        bash_min: (0, 0),
+    }
+}
+
+/// A bash-only probe that needs bash `bash_min` or newer to run its marker.
+#[cfg(unix)]
+const fn bash_probe(
+    input: &'static str,
+    bash_min: (u32, u32),
+    reasons: &'static [&'static str],
+) -> Probe {
+    Probe {
+        input,
+        shells: &["bash"],
+        reasons,
+        bash_min,
     }
 }
 
@@ -1024,16 +1052,16 @@ const PROBES: &[Probe] = &[
     probe("echo a |& evil_marker", &["bash", "zsh"], SUB),
     // #34: operands bash evaluates, and builtins that run a command.
     probe("[[ 'a[$(evil_marker)]' -eq 0 ]]", &["bash"], SUBSCRIPT),
-    probe("[[ -v 'a[$(evil_marker)]' ]]", &["bash"], SUBSCRIPT),
+    bash_probe("[[ -v 'a[$(evil_marker)]' ]]", TEST_V_ARRAY, SUBSCRIPT),
     probe("let 'a[$(evil_marker)]'", &["bash"], SUBSCRIPT),
     probe(
         "read 'a[$(evil_marker)]' <<< x",
         &["bash"],
         NAMED_AT_RUN_TIME,
     ),
-    probe(
+    bash_probe(
         "printf -v 'a[$(evil_marker)]' x",
-        &["bash"],
+        PRINTF_V_ARRAY,
         NAMED_AT_RUN_TIME,
     ),
     probe("compgen -W '$(evil_marker)' x", &["bash"], &["compgen -W"]),
@@ -1081,14 +1109,14 @@ const PROBES: &[Probe] = &[
     ),
     // r2: printf options read after expansion, globs through an unquoted
     // expansion, a `[` an expansion produces in `wait -p`.
-    probe(
+    bash_probe(
         "o=-v; printf $o 'a[$(evil_marker)]' x",
-        &["bash"],
+        PRINTF_V_ARRAY,
         NAMED_OR_SUBSCRIPT,
     ),
-    probe(
+    bash_probe(
         "set -- -v; printf \"$@\" 'a[$(evil_marker)]' x",
-        &["bash"],
+        PRINTF_V_ARRAY,
         NAMED_OR_SUBSCRIPT,
     ),
     probe(
@@ -1101,64 +1129,64 @@ const PROBES: &[Probe] = &[
         &["bash"],
         SUBSCRIPT,
     ),
-    probe(
+    bash_probe(
         "true & wait -n -p 'a[$(evil_marker)]'",
-        &["bash"],
+        WAIT_P,
         NAMED_OR_SUBSCRIPT,
     ),
-    probe(
+    bash_probe(
         "a=(1); B='['; true & wait -n -p \"a${B}\\$(evil_marker)]\"",
-        &["bash"],
+        WAIT_P,
         NAMED_OR_SUBSCRIPT,
     ),
-    probe(
+    bash_probe(
         "a=(1); true & wait -n -p \"a${X:-$'\\x5b'}\\$(evil_marker)]\"",
-        &["bash"],
+        WAIT_P,
         NAMED_OR_SUBSCRIPT,
     ),
     // r3: `wait` reads `-p` after expansion.
-    probe(
+    bash_probe(
         "a=(1); o='-pa[$(evil_marker)]'; true & wait -n \"$o\"",
-        &["bash"],
+        WAIT_P,
         NAMED_OR_SUBSCRIPT,
     ),
-    probe(
+    bash_probe(
         "a=(1); o='-pa[$(evil_marker)]'; true & command wait -n $o",
-        &["bash"],
+        WAIT_P,
         NAMED_OR_SUBSCRIPT,
     ),
     // r4: `${#:+word}`, a glob in the option word, `$((…) )`.
-    probe(
+    bash_probe(
         "a=(1); true & wait -n ${#:+'-pa[$(evil_marker)]'}",
-        &["bash"],
+        WAIT_P,
         NAMED_OR_SUBSCRIPT,
     ),
-    probe(
+    bash_probe(
         "a=(1); : > '-pa[$(evil_marker)]'; true & wait -n -?a*",
-        &["bash"],
+        WAIT_P,
         NAMED_OR_SUBSCRIPT,
     ),
     // `-v*`: the `-pa[…]` file of the probe above shares the directory.
-    probe(
+    bash_probe(
         "a=(1); : > '-va[$(evil_marker)]'; printf -v* x",
-        &["bash"],
+        PRINTF_V_ARRAY,
         NAMED_OR_SUBSCRIPT,
     ),
-    probe(
+    bash_probe(
         "a=(1); true & wait -n $((echo '-pa[$(evil_marker)]') )",
-        &["bash"],
+        WAIT_P,
         NAMED_OR_SUBSCRIPT,
     ),
     // r5: brace expansion builds `-v NAME`.
-    probe(
+    bash_probe(
         "a=(1); printf {-v,}'a[$(evil_marker)]' x",
-        &["bash"],
+        PRINTF_V_ARRAY,
         NAMED_OR_SUBSCRIPT,
     ),
     // r6: tilde expansion builds `-v NAME`.
-    probe(
+    bash_probe(
         "a=(1); OLDPWD='-va[$(evil_marker)]'; printf ~- x",
-        &["bash"],
+        PRINTF_V_ARRAY,
         NAMED_OR_SUBSCRIPT,
     ),
     // r7: tilde expansion reads a directory variable into arithmetic.
@@ -1172,9 +1200,9 @@ const PROBES: &[Probe] = &[
         &["bash"],
         SUBSCRIPT,
     ),
-    probe(
+    bash_probe(
         "a=(1); PWD='a[$(evil_marker)]'; [[ -v ~+ ]]",
-        &["bash"],
+        TEST_V_ARRAY,
         SUBSCRIPT,
     ),
     probe(
@@ -1314,9 +1342,53 @@ fn reason_text(err: &ShellError) -> &str {
     message.split("\nCommand:").next().unwrap_or(message)
 }
 
+/// The distinct bash binaries on this machine with their (major, minor)
+/// version: `/bin/bash` (3.2 on a stock Mac), the Homebrew and `/usr/local`
+/// ones, and every `bash` on `PATH`.
+#[cfg(unix)]
+fn installed_bashes() -> Vec<(std::path::PathBuf, (u32, u32))> {
+    let mut candidates: Vec<std::path::PathBuf> = [
+        "/bin/bash",
+        "/usr/bin/bash",
+        "/opt/homebrew/bin/bash",
+        "/usr/local/bin/bash",
+    ]
+    .iter()
+    .map(std::path::PathBuf::from)
+    .collect();
+    if let Some(path) = std::env::var_os("PATH") {
+        candidates.extend(std::env::split_paths(&path).map(|dir| dir.join("bash")));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut found = Vec::new();
+    for candidate in candidates {
+        let Ok(real) = std::fs::canonicalize(&candidate) else {
+            continue;
+        };
+        if !seen.insert(real) {
+            continue;
+        }
+        let Ok(out) = std::process::Command::new(&candidate)
+            .arg("-c")
+            .arg("echo \"${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}\"")
+            .stdin(std::process::Stdio::null())
+            .output()
+        else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut parts = text.split_whitespace().map(str::parse::<u32>);
+        if let (Some(Ok(major)), Some(Ok(minor))) = (parts.next(), parts.next()) {
+            found.push((candidate, (major, minor)));
+        }
+    }
+    found
+}
+
 /// Every probe is blocked; every probe runs its marker in at least one of
-/// its shells that is installed (a probe whose shells are all missing is
-/// skipped with a note); the block names the probe's reason. Offline and
+/// its shells that is installed (a probe whose shells are all missing, or
+/// whose only bash predates the feature it uses, is skipped with a note
+/// naming the versions); the block names the probe's reason. Offline and
 /// deterministic: the marker is a local script touching a file in a temp
 /// dir, each shell run is killed after a few seconds.
 #[cfg(unix)]
@@ -1338,6 +1410,7 @@ fn inputs_that_execute_the_marker_are_blocked() {
         std::env::var("PATH").unwrap_or_default()
     );
 
+    let bashes = installed_bashes();
     let inputs: Vec<&str> = PROBES.iter().map(|p| p.input).collect();
     let verdicts = verdicts("echo,cat,true", &inputs);
     let mut failures = Vec::new();
@@ -1359,17 +1432,38 @@ fn inputs_that_execute_the_marker_are_blocked() {
             ));
         }
 
-        let shells: Vec<String> = probe
-            .shells
-            .iter()
-            .map(|s| format!("/bin/{s}"))
-            .filter(|s| std::path::Path::new(s).exists())
-            .collect();
+        let mut shells: Vec<String> = Vec::new();
+        let mut too_old: Vec<String> = Vec::new();
+        for name in probe.shells {
+            if *name == "bash" {
+                for (bash, version) in &bashes {
+                    if *version >= probe.bash_min {
+                        shells.push(bash.display().to_string());
+                    } else {
+                        too_old.push(format!("{} is {}.{}", bash.display(), version.0, version.1));
+                    }
+                }
+            } else {
+                let shell = format!("/bin/{name}");
+                if std::path::Path::new(&shell).exists() {
+                    shells.push(shell);
+                }
+            }
+        }
         if shells.is_empty() {
-            eprintln!(
-                "skip marker run for {input:?}: none of {:?} installed",
-                probe.shells
-            );
+            if too_old.is_empty() {
+                eprintln!(
+                    "skip marker run for {input:?}: none of {:?} installed",
+                    probe.shells
+                );
+            } else {
+                eprintln!(
+                    "skip marker run for {input:?}: needs bash >= {}.{}, but {}",
+                    probe.bash_min.0,
+                    probe.bash_min.1,
+                    too_old.join(", ")
+                );
+            }
             continue;
         }
         // A coprocess runs asynchronously: `sh -c 'coproc x'` may exit before

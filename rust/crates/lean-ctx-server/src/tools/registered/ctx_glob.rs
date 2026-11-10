@@ -247,16 +247,16 @@ fn cached_or_walk(
 mod tests {
     use super::*;
 
-    /// The cross-agent cache serves no stub while any policy is active, and
-    /// policy tests set one process-wide under the test env lock. Tests that
-    /// assert a cache hit take the same lock so they never run inside one.
-    fn no_policy_window() -> lean_ctx::core::data_dir::TestEnvGuard {
-        lean_ctx::core::data_dir::test_env_lock()
-    }
+    // The cross-agent cache serves no stub while any policy is active
+    // (`cache_delivery::check`), and the live policy comes from the process
+    // environment and the user's config. Every test here pins "no policy"
+    // with the shared `TestPolicyOverride` (env lock + policy lock, restored
+    // on drop): the hit tests would otherwise fail and the no-stub tests pass
+    // vacuously whenever a policy is live.
 
     #[test]
     fn glob_adapter_records_then_serves_a_cross_agent_reference() {
-        let _window = no_policy_window();
+        let _policy = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("cached.rs"), "fn cached() {}\n").unwrap();
         let path = directory.path().to_string_lossy();
@@ -275,6 +275,7 @@ mod tests {
     /// their own correct results — never a dedup stub from a prior pattern.
     #[test]
     fn different_patterns_same_directory_return_distinct_results() {
+        let _policy = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.md"), "# A").unwrap();
         std::fs::write(dir.path().join("b.md"), "# B").unwrap();
@@ -306,7 +307,7 @@ mod tests {
     /// for the dedup mechanism itself).
     #[test]
     fn same_pattern_repeated_uses_cache() {
-        let _window = no_policy_window();
+        let _policy = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("x.ts"), "export {}").unwrap();
         let path = dir.path().to_string_lossy();
@@ -326,6 +327,7 @@ mod tests {
     /// never a stub from a different cached pattern.
     #[test]
     fn no_match_pattern_returns_zero_not_stub() {
+        let _policy = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("file.rs"), "fn main() {}").unwrap();
         let path = dir.path().to_string_lossy();

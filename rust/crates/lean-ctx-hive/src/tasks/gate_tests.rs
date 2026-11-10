@@ -104,6 +104,21 @@ fn one(path: &str, change: LockedChange) -> Vec<(String, LockedChange)> {
     vec![(path.to_owned(), change)]
 }
 
+/// `path` as the gate's `sh` reads it (`C:/x/y` on Windows), unquoted.
+pub(crate) fn sh_slashes(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    if cfg!(windows) {
+        text.replace('\\', "/")
+    } else {
+        text.into_owned()
+    }
+}
+
+/// `path` as one single-quoted word of the gate's `sh`.
+pub(crate) fn sh_path(path: &Path) -> String {
+    format!("'{}'", sh_slashes(path))
+}
+
 #[test]
 fn unchanged_locked_paths_pass_and_other_paths_do_not_count() {
     let (repo, spec) = spec_repo();
@@ -285,10 +300,6 @@ fn inputs(risk: TaskRisk, spec: &str, command: &str) -> GateInputs {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn m_and_h_records_rerun_the_judged_commit_with_the_locked_tests() {
     let (repo, spec) = spec_repo();
     repo.write("src/lib.rs", "pub fn refund() { /* done */ }\n");
@@ -323,10 +334,6 @@ fn m_and_h_records_rerun_the_judged_commit_with_the_locked_tests() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn s_record_checks_nothing_and_runs_the_declared_command() {
     let (repo, start) = spec_repo();
     repo.write("src/lib.rs", "pub fn refund() { /* fixed */ }\n");
@@ -348,10 +355,6 @@ fn s_record_checks_nothing_and_runs_the_declared_command() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_red_rerun_fails_and_a_locked_change_fails_without_running() {
     let (repo, spec) = spec_repo();
     let head = repo.commit("nothing");
@@ -369,7 +372,7 @@ fn a_red_rerun_fails_and_a_locked_change_fails_without_running() {
     repo.write("tests/refund.rs", "weakened\n");
     let head = repo.commit("weaken");
     let marker = repo.dir.path().join("ran");
-    let command = format!("touch {}", marker.display());
+    let command = format!("touch {}", sh_path(&marker));
     let fail = g6_record(
         &repo.root,
         &dirs(&repo),
@@ -397,10 +400,6 @@ fn a_red_rerun_fails_and_a_locked_change_fails_without_running() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn the_worktree_must_be_at_the_judged_commit() {
     let (repo, spec) = spec_repo();
     let head = repo.commit("next");
@@ -487,10 +486,6 @@ fn assert_probe_passed(record: &G6RecordV1) {
 /// F1: a smudge filter the agent configures in its repository (`.git/config`
 /// and `.git/info/attributes`) never rewrites the locked tests of the run.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_smudge_filter_of_the_agents_repo_never_reaches_the_rerun() {
     let (repo, spec) = spec_repo();
     repo.write("src/lib.rs", "pub fn refund() { /* done */ }\n");
@@ -524,10 +519,6 @@ fn a_smudge_filter_of_the_agents_repo_never_reaches_the_rerun() {
 
 /// F1: a replace ref in the agent's repository never swaps a locked test.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_replace_ref_of_the_agents_repo_never_swaps_a_locked_test() {
     let (repo, spec) = spec_repo();
     let head = repo.commit("build");
@@ -551,10 +542,6 @@ fn a_replace_ref_of_the_agents_repo_never_swaps_a_locked_test() {
 /// every parent's `.cargo/config.toml`; `runner = "true"` turns red green)
 /// refuses the run.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_cargo_config_above_the_gate_directory_refuses_the_run() {
     let (repo, spec) = spec_repo();
     let head = repo.commit("build");
@@ -566,40 +553,47 @@ fn a_cargo_config_above_the_gate_directory_refuses_the_run() {
     )
     .unwrap();
     let marker = repo.dir.path().join("ran");
-    let command = format!("touch {}; exit 1", marker.display());
+    let command = format!("touch {}; exit 1", sh_path(&marker));
     let gate = GateDirs {
         work: work(&repo),
         runs: instance.join("runtime/lean-ctx-g6"),
     };
     let err = g6_record(&repo.root, &gate, &head, &weak_inputs(&spec, &command)).unwrap_err();
-    assert!(err.to_string().contains(".cargo/config.toml"), "{err}");
+    let config = Path::new(".cargo").join("config.toml");
+    assert!(
+        err.to_string().contains(&*config.to_string_lossy()),
+        "{err}"
+    );
     assert!(!marker.exists(), "nothing ran");
 }
 
 /// F2: the run inherits nothing of the Instance's environment and runs in
 /// the gate's own directory, with the gate's CARGO_TARGET_DIR and TMPDIR.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn the_rerun_gets_only_the_gates_environment_and_directory() {
     let (repo, spec) = spec_repo();
     let head = repo.commit("build");
     let gate = dirs(&repo);
-    let base = std::fs::canonicalize(repo.dir.path()).unwrap();
+    let base = run::resolved(repo.dir.path()).expect("the repo's resolved path");
     let (w, r) = (
-        base.join("g6").display().to_string(),
-        base.join("runtime/lean-ctx-g6").display().to_string(),
+        sh_slashes(&base.join("g6")),
+        sh_slashes(&base.join("runtime").join("lean-ctx-g6")),
     );
+    // Git for Windows' sh shows `$PWD` as `/c/x`: compared as `C:/x`.
+    let (pwd, var) = if cfg!(windows) {
+        ("\"$(pwd -W)\"", "\"$(cygpath -m \"$")
+    } else {
+        ("\"$PWD\"", "\"$")
+    };
+    let end = if cfg!(windows) { "\")\"" } else { "\"" };
     // cargo test sets CARGO_MANIFEST_DIR and CARGO_PKG_NAME for this test
     // process; the gate's run must not see them.
     let command = format!(
         "test -z \"${{CARGO_MANIFEST_DIR:-}}${{CARGO_PKG_NAME:-}}${{RUSTFLAGS:-}}${{LD_PRELOAD:-}}\" || exit 6; \
-         case \"$PWD\" in {r}/*) ;; *) exit 7;; esac; \
-         case \"$CARGO_TARGET_DIR\" in {w}/*) ;; *) exit 8;; esac; \
-         case \"$TMPDIR\" in {w}/*) ;; *) exit 9;; esac; \
-         case \"$CARGO_HOME\" in {w}/*) ;; *) exit 10;; esac"
+         case {pwd} in {r}/*) ;; *) exit 7;; esac; \
+         case {var}CARGO_TARGET_DIR{end} in {w}/*) ;; *) exit 8;; esac; \
+         case {var}TMPDIR{end} in {w}/*) ;; *) exit 9;; esac; \
+         case {var}CARGO_HOME{end} in {w}/*) ;; *) exit 10;; esac"
     );
     let record = g6_record(&repo.root, &gate, &head, &weak_inputs(&spec, &command)).unwrap();
     assert_probe_passed(&record);
@@ -663,10 +657,6 @@ fn a_locked_change_in_the_commit_fails_although_the_worktree_was_restored() {
 /// F3: the rerun tree has the locked paths exactly as at spec_commit: a
 /// file the judged commit added under a locked path is not there.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn the_rerun_tree_holds_the_locked_paths_of_spec_commit_only() {
     let (repo, spec) = spec_repo();
     repo.write("tests/refund.rs", "weakened\n");
@@ -686,8 +676,16 @@ fn the_rerun_tree_holds_the_locked_paths_of_spec_commit_only() {
         &spec,
         &weak_inputs(
             &spec,
-            "test ! -e tests/refund/evil.rs && grep -q 'fn refunds() {}' tests/refund.rs \
-             && grep -q done src/lib.rs && test -L tests/fixture",
+            &format!(
+                "test ! -e tests/refund/evil.rs && grep -q 'fn refunds() {{}}' tests/refund.rs \
+                 && grep -q done src/lib.rs{}",
+                // `spec_repo` links the fixture on Unix only.
+                if cfg!(unix) {
+                    " && test -L tests/fixture"
+                } else {
+                    ""
+                }
+            ),
         ),
         None,
     )
@@ -766,12 +764,14 @@ pub(crate) fn cargo_repo() -> (Repo, String) {
 /// as the gate's own `PATH` finds it.
 pub(crate) fn cargo_command() -> String {
     format!(
-        "c={:?}; [ -x \"$c\" ] || c=cargo; \"$c\" test --offline",
-        run::user_home()
-            .unwrap()
-            .join(".cargo/bin/cargo")
-            .to_string_lossy()
-            .into_owned()
+        "c={}; [ -x \"$c\" ] || c=cargo; \"$c\" test --offline",
+        sh_path(
+            &run::user_home()
+                .expect("this user's home")
+                .join(".cargo")
+                .join("bin")
+                .join(run::exe("cargo"))
+        )
     )
 }
 
@@ -805,10 +805,6 @@ fn cargo_inputs(spec: &str) -> GateInputs {
 /// nor the submit, and the rerun (outside `$HOME`) does not read it: a
 /// `runner = "true"` there leaves the red run red (exit 101).
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_cargo_config_in_home_neither_refuses_the_gate_nor_reaches_the_run() {
     let (repo, spec) = cargo_repo();
     repo.write("README.md", "work\n");
@@ -850,7 +846,9 @@ fn rv_build_rs_rewrites_locked_test() {
 /// The lib of `repo` depends on a proc-macro crate `evil` whose macro runs
 /// `body` at compile time (`root` is the crate's directory, `test` the
 /// locked test's path) before the tests are built: code of the judged
-/// commit that runs without any build script.
+/// commit that runs without any build script. Its callers are the Unix-only
+/// probes.
+#[cfg(unix)]
 fn with_proc_macro(repo: &Repo, body: &str) {
     repo.write(
         "Cargo.toml",
@@ -863,7 +861,7 @@ fn with_proc_macro(repo: &Repo, body: &str) {
     repo.write(
         "evil/src/lib.rs",
         &format!(
-            "#[allow(unused_imports)]\nuse std::os::unix::fs::PermissionsExt;\n#[proc_macro]\npub fn boom(_: proc_macro::TokenStream) -> proc_macro::TokenStream {{\n    let root = std::env::var(\"CARGO_MANIFEST_DIR\").unwrap();\n    let test = format!(\"{{root}}/tests/refund.rs\");\n    {body}\n    proc_macro::TokenStream::new()\n}}\n"
+            "#[cfg(unix)]\n#[allow(unused_imports)]\nuse std::os::unix::fs::PermissionsExt;\n#[proc_macro]\npub fn boom(_: proc_macro::TokenStream) -> proc_macro::TokenStream {{\n    let root = std::env::var(\"CARGO_MANIFEST_DIR\").unwrap();\n    let test = format!(\"{{root}}/tests/refund.rs\");\n    {body}\n    proc_macro::TokenStream::new()\n}}\n"
         ),
     );
     repo.write(
@@ -876,11 +874,10 @@ fn with_proc_macro(repo: &Repo, body: &str) {
 /// writable again, rewrites it and adds a file under a locked path; the
 /// run turns green, but the check after the run sees both: a
 /// `locked_paths_changed` fail, never ready.
+// The probe chmods and renames as on Unix; the pin it defeats there
+// (inode, mode, change time: R4-1) is Unix-only (gate_run module docs).
+#[cfg(unix)]
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn code_that_unlocks_and_rewrites_a_locked_test_fails() {
     let (repo, spec) = cargo_repo();
     with_proc_macro(
@@ -949,11 +946,10 @@ fn main() {
 /// does the same at compile time (weakens the locked test, which restores
 /// the original bytes and modes when it runs). The pin of inode, mode and
 /// change time sees it: `locked_paths_changed`, never ready.
+// The probe chmods and renames as on Unix; the pin it defeats there
+// (inode, mode, change time: R4-1) is Unix-only (gate_run module docs).
+#[cfg(unix)]
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_locked_test_rewritten_and_restored_within_the_run_fails() {
     let (repo, spec) = cargo_repo();
     with_proc_macro(
@@ -1029,10 +1025,6 @@ fn rv3_build_rs_link_arg_entry_exits_green() {
 /// dependency, is refused too; a manifest change that leaves build scripts
 /// and test targets alone (a new dependency) is not.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn build_scripts_anywhere_and_their_manifest_keys_are_refused() {
     let (repo, spec) = cargo_repo();
     repo.write(
@@ -1095,11 +1087,10 @@ fn rv3_production_dirs_outside_home() {
 /// R4-1 (F8a): code of the judged commit swaps the whole tree root for a
 /// weakened copy and swaps it back; no locked entry inside changes, but
 /// the per-run directory that holds the tree is touched.
+// The probe chmods and renames as on Unix; the pin it defeats there
+// (inode, mode, change time: R4-1) is Unix-only (gate_run module docs).
+#[cfg(unix)]
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv4_root_swap_within_command() {
     let (repo, spec) = cargo_repo();
     with_proc_macro(
@@ -1133,11 +1124,10 @@ fn rv4_root_swap_within_command() {
 }
 
 /// R4-1 variant: a 0444 copy renamed over the locked file (a new inode).
+// The probe chmods and renames as on Unix; the pin it defeats there
+// (inode, mode, change time: R4-1) is Unix-only (gate_run module docs).
+#[cfg(unix)]
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv4_rename_over() {
     let (repo, spec) = cargo_repo();
     with_proc_macro(
@@ -1155,16 +1145,19 @@ fn rv4_rename_over() {
     let head = repo.commit("rename over");
     let record = g6_record(&repo.root, &dirs(&repo), &head, &cargo_inputs(&spec)).unwrap();
     assert_eq!(record.result, GateResult::Fail, "{record:?}");
-    assert_eq!(record.rule.as_deref(), Some(RULE_LOCKED_PATHS_CHANGED));
+    assert_eq!(
+        record.rule.as_deref(),
+        Some(RULE_LOCKED_PATHS_CHANGED),
+        "{record:?}"
+    );
 }
 
 /// R4-1 variant: in-place restore, then atime/mtime set back; the change
 /// time still moves and a same-user process cannot set it back.
+// The probe chmods and renames as on Unix; the pin it defeats there
+// (inode, mode, change time: R4-1) is Unix-only (gate_run module docs).
+#[cfg(unix)]
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv4_utime_back() {
     let (repo, spec) = cargo_repo();
     with_proc_macro(
@@ -1183,15 +1176,18 @@ fn rv4_utime_back() {
     let head = repo.commit("utime back");
     let record = g6_record(&repo.root, &dirs(&repo), &head, &cargo_inputs(&spec)).unwrap();
     assert_eq!(record.result, GateResult::Fail, "{record:?}");
-    assert_eq!(record.rule.as_deref(), Some(RULE_LOCKED_PATHS_CHANGED));
+    assert_eq!(
+        record.rule.as_deref(),
+        Some(RULE_LOCKED_PATHS_CHANGED),
+        "{record:?}"
+    );
 }
 
 /// R4-1 variant: a hard link keeps the original inode and is linked back.
+// The probe chmods and renames as on Unix; the pin it defeats there
+// (inode, mode, change time: R4-1) is Unix-only (gate_run module docs).
+#[cfg(unix)]
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv4_hard_link_back() {
     let (repo, spec) = cargo_repo();
     with_proc_macro(
@@ -1208,7 +1204,11 @@ fn rv4_hard_link_back() {
     let head = repo.commit("hard link back");
     let record = g6_record(&repo.root, &dirs(&repo), &head, &cargo_inputs(&spec)).unwrap();
     assert_eq!(record.result, GateResult::Fail, "{record:?}");
-    assert_eq!(record.rule.as_deref(), Some(RULE_LOCKED_PATHS_CHANGED));
+    assert_eq!(
+        record.rule.as_deref(),
+        Some(RULE_LOCKED_PATHS_CHANGED),
+        "{record:?}"
+    );
 }
 
 /// R4-2 (F8c): a workspace `default-members` that leaves the root package
@@ -1316,10 +1316,6 @@ fn rv4_test_target_keys_refused() {
 /// binary with an entry point that exits 0. The harness then reports
 /// nothing and the build-script source closure is dirty: Fail either way.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv4_build_rs_path_module_changed() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("repo");
@@ -1359,10 +1355,6 @@ fn rv4_build_rs_path_module_changed() {
 /// `Cargo.toml` is not a build script, so the task is not refused; the run
 /// proceeds (and the red locked test fails it, exit 101).
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv4_module_named_build_rs_runs() {
     let (repo, spec) = cargo_repo();
     repo.write("src/events/build.rs", "pub fn x() {}\n");
@@ -1384,10 +1376,6 @@ fn rv4_module_named_build_rs_runs() {
 /// test reports. The harness never names it passed, so the run fails:
 /// either no report at all, or one that does not run the locked test.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv4_lib_exits_zero_fails_report_missing() {
     let (repo, spec) = cargo_repo();
     repo.write(
@@ -1408,10 +1396,6 @@ fn rv4_lib_exits_zero_fails_report_missing() {
 /// A plain green cargo run carries the harness report, and the locked test
 /// is among the names it checked.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_green_cargo_run_carries_the_harness_report() {
     let (repo, spec, head) = green_cargo_repo();
     let record = g6_record(&repo.root, &dirs(&repo), &head, &cargo_inputs(&spec)).unwrap();
@@ -1438,11 +1422,10 @@ fn a_green_cargo_run_carries_the_harness_report() {
 /// away, a copy with a weakened locked test put in its place, and the weak
 /// test renames the original back. The tree root keeps its inode, but the
 /// per-run directory's change time moved: Fail, `locked_paths_changed`.
+// The probe chmods and renames as on Unix; the pin it defeats there
+// (inode, mode, change time: R4-1) is Unix-only (gate_run module docs).
+#[cfg(unix)]
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv4_cradle_swap_within_command() {
     let (repo, spec) = cargo_repo();
     with_proc_macro(
@@ -1461,6 +1444,8 @@ fn rv4_cradle_swap_within_command() {
             }
         }
         let orig = base.join(format!("{name}.orig"));
+        // macOS renames no 0555 directory: its owner opens it first.
+        let _ = std::fs::set_permissions(&cradle, std::os::unix::fs::PermissionsExt::from_mode(0o755));
         std::fs::rename(&cradle, &orig).unwrap();
         cp(&orig, &cradle);
         let _ = std::fs::set_permissions(format!("{root}/tests"), std::os::unix::fs::PermissionsExt::from_mode(0o755));
@@ -1472,16 +1457,16 @@ fn rv4_cradle_swap_within_command() {
     let head = repo.commit("cradle swap");
     let record = g6_record(&repo.root, &dirs(&repo), &head, &cargo_inputs(&spec)).unwrap();
     assert_eq!(record.result, GateResult::Fail, "{record:?}");
-    assert_eq!(record.rule.as_deref(), Some(RULE_LOCKED_PATHS_CHANGED));
+    assert_eq!(
+        record.rule.as_deref(),
+        Some(RULE_LOCKED_PATHS_CHANGED),
+        "{record:?}"
+    );
 }
 
 /// A cargo run that builds but runs no test at all is no evidence:
 /// `rerun_no_tests` (an S task, so no locked test to name).
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_cargo_run_without_tests_fails_rerun_no_tests() {
     let (repo, _) = cargo_repo();
     repo.git(&["rm", "-q", "tests/refund.rs"]);
@@ -1504,10 +1489,6 @@ fn a_cargo_run_without_tests_fails_rerun_no_tests() {
 /// makes the named passes outnumber the summaries: the report is
 /// inconsistent and the run fails.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_forged_ok_line_makes_the_report_inconsistent() {
     let (repo, spec) = cargo_repo();
     repo.write(
@@ -1531,10 +1512,6 @@ fn a_forged_ok_line_makes_the_report_inconsistent() {
 /// tree that the run does not enable): its test is `not_run` although the
 /// harness reports other tests passed.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_locked_test_that_is_not_built_is_not_run() {
     let (repo, _) = cargo_repo();
     repo.write(
@@ -1561,6 +1538,9 @@ fn a_locked_test_that_is_not_built_is_not_run() {
 /// the original put back by the weak test. The per-run directory sits in
 /// `runs` itself and its ancestor chain is pinned and watched: refused,
 /// never ready.
+// The probe chmods and renames as on Unix; the pin it defeats there
+// (inode, mode, change time: R5-1) is Unix-only (gate_run module docs).
+#[cfg(unix)]
 #[test]
 fn rv5_runs_base_swap_within_command_is_not_ready() {
     let (repo, spec) = cargo_repo();
@@ -1612,10 +1592,6 @@ fn rv5_runs_base_swap_within_command_is_not_ready() {
 /// `refunds ... ok`. The locked test counts only in its own binary:
 /// `locked_test_not_run`.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv5_same_name_in_another_binary_does_not_mask_exit0() {
     let (repo, spec) = cargo_repo();
     repo.write(
@@ -1642,10 +1618,6 @@ fn rv5_same_name_in_another_binary_does_not_mask_exit0() {
 /// binary exited 0. Whether cargo ran comes from the task's command, not
 /// from the target dir: a fail.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv5_doctest_removing_deps_dir_fails() {
     let (repo, spec) = cargo_repo();
     repo.write(
@@ -1862,10 +1834,6 @@ fn assert_locked_test_not_run(record: &G6RecordV1, why: &str) {
 
 /// R6-1: `#[test] fn name()` on one line (the form spec_repo writes).
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv6_one_line_test_attribute_hides_locked_test() {
     let record = rv6_record(
         "#[test] fn refunds() { assert!(refund::refund()); }\n",
@@ -1884,10 +1852,6 @@ fn rv6_one_line_test_attribute_hides_locked_test() {
 
 /// R6-1: rustfmt's multi-line `#[allow(..)]` between `#[test]` and the fn.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv6_multiline_attribute_hides_locked_test() {
     let record = rv6_record(
         "#[test]\n#[allow(\n    clippy::bool_assert_comparison,\n    reason = \"refunds read better as a comparison, see the tracking issue\"\n)]\nfn refunds() {\n    assert!(refund::refund());\n}\n",
@@ -1904,10 +1868,6 @@ fn rv6_multiline_attribute_hides_locked_test() {
 /// R6-1 (rstest-shaped): a macro that generates the locked tests under
 /// names the gate cannot see is refused, even when the run is green.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv6_test_generating_macro_is_refused() {
     let record = rv6_record(
         "macro_rules! test_cases {\n    ($($n:ident),*) => { $(#[test] fn $n() { assert!(refund::refund()); })* };\n}\ntest_cases!(refunds);\n",
@@ -1920,10 +1880,6 @@ fn rv6_test_generating_macro_is_refused() {
 /// the run is green; one whose tests come from a macro of another name
 /// fails too (R7-1: it may declare tests the gate cannot name).
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv6_locked_test_root_without_names_fails() {
     let green = "pub fn refund() -> bool {\n    true\n}\n";
     let record = rv6_record(
@@ -1973,10 +1929,6 @@ fn rv7_unhook(repo: &Repo, inputs: &GateInputs) -> G6RecordV1 {
 /// whose tests come from a macro the gate cannot name. Control first:
 /// hooked, the locked test runs and is red; unhooked, never ready.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv7_unhooked_nameless_unit_test_module_is_not_ready() {
     let (repo, _, inputs) = rv7_repo(
         "macro_rules! cases {\n    ($($n:ident),*) => { $(#[test] fn $n() { assert!(crate::refund()); })* };\n}\ncases!(refunds);\n",
@@ -1997,10 +1949,6 @@ const RV8_LISTED: &str = "listed by the compiler at spec_commit: src/refund_test
 /// R7-1: the same with `#[cfg_attr(test, test)]`, an attribute the name
 /// scan does not count but that names `test`.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv7_unhooked_cfg_attr_test_module_is_not_ready() {
     let (repo, _, inputs) =
         rv7_repo("#[cfg_attr(test, test)]\nfn refunds() {\n    assert!(crate::refund());\n}\n");
@@ -2010,10 +1958,6 @@ fn rv7_unhooked_cfg_attr_test_module_is_not_ready() {
 
 /// R7-1: a locked module with plain `#[test]`s, unhooked: not built.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv7_unhooked_named_unit_test_module_is_not_ready() {
     let (repo, _, inputs) = rv7_repo("#[test]\nfn refunds() {\n    assert!(crate::refund());\n}\n");
     let record = rv7_unhook(&repo, &inputs);
@@ -2040,10 +1984,6 @@ fn rv8_hooked_red_then_unhook(module: &str, lib_extra: &str) -> G6RecordV1 {
 
 /// A: the built-in `test` attribute imported under another name.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv8_renamed_test_attribute_unhooked() {
     let record = rv8_hooked_red_then_unhook(
         "use core::prelude::v1::test as check;\n#[check]\nfn refunds() {\n    assert!(crate::refund());\n}\n",
@@ -2054,10 +1994,6 @@ fn rv8_renamed_test_attribute_unhooked() {
 
 /// B: `#[r#test]` (raw identifier).
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv8_raw_ident_test_attribute_unhooked() {
     let record = rv8_hooked_red_then_unhook(
         "#[r#test]\nfn refunds() {\n    assert!(crate::refund());\n}\n",
@@ -2068,10 +2004,6 @@ fn rv8_raw_ident_test_attribute_unhooked() {
 
 /// C: the rename lives in the unlocked lib; the locked file has no `test` token.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv8_renamed_in_unlocked_lib_unhooked() {
     let record = rv8_hooked_red_then_unhook(
         "#[crate::check]\nfn refunds() {\n    assert!(crate::refund());\n}\n",
@@ -2086,10 +2018,6 @@ fn rv8_renamed_in_unlocked_lib_unhooked() {
 /// D: a named decoy next to a macro the unlocked lib defines; the judged
 /// commit keeps the module hooked and redefines the macro to nothing.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv8_named_decoy_and_redefined_macro() {
     let (repo, _, inputs) = rv7_repo("#[test]\nfn decoy() {}\ncases!(refunds);\n");
     repo.write(
@@ -2116,10 +2044,6 @@ fn rv8_named_decoy_and_redefined_macro() {
 /// E: a named decoy next to `#[cfg_attr(feature = "suite", test)]`; the
 /// judged commit drops the default feature in the (unlocked) Cargo.toml.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv8_named_decoy_and_cfg_attr_feature() {
     let (repo, _, inputs) = rv7_repo(
         "#[test]\nfn decoy() {}\n#[cfg_attr(feature = \"suite\", test)]\nfn refunds() {\n    assert!(crate::refund());\n}\n",
@@ -2148,10 +2072,6 @@ fn rv8_named_decoy_and_cfg_attr_feature() {
 /// F: a named locked test cfg'd on a feature, masked by a same-named
 /// unlocked test in the same binary (the lib's unit tests).
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv8_same_binary_same_name_masks_cfg_out_test() {
     let (repo, _, inputs) = rv7_repo(
         "#[cfg(not(feature = \"skip\"))]\n#[test]\nfn refunds() {\n    assert!(crate::refund());\n}\n",
@@ -2197,10 +2117,6 @@ fn rv9_control_red(repo: &Repo, inputs: &GateInputs) {
 /// unlocked lib; the locked file stays compiled (dep-info) but mounted in a
 /// fn body, where libtest does not collect tests.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv9_hollow_at_derived_path_locked_file_in_fn_body() {
     let (repo, _, inputs) = rv7_repo(RV9_PLAIN);
     repo.write("README", "control\n");
@@ -2220,10 +2136,6 @@ fn rv9_hollow_at_derived_path_locked_file_in_fn_body() {
 /// proc-macro crate in the unlocked lib root shadows the prelude's plain
 /// `#[test]` in the locked module; the locked body never runs.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv9_macro_use_shadows_plain_test() {
     let (repo, _, inputs) = rv7_repo(RV9_PLAIN);
     repo.write("README", "control\n");
@@ -2255,10 +2167,6 @@ fn rv9_macro_use_shadows_plain_test() {
 /// R9-3: `#[cfg_attr(feature = "x", should_panic)]` on a locked test; the
 /// unlocked Cargo.toml turns the feature on, so the red test passes.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv9_cfg_attr_should_panic_on_feature() {
     let (repo, _, inputs) = rv7_repo(
         "#[test]\n#[cfg_attr(feature = \"legacy\", should_panic)]\nfn refunds() {\n    assert!(crate::refund());\n}\n",
@@ -2282,10 +2190,6 @@ fn rv9_cfg_attr_should_panic_on_feature() {
 /// `use super::*`, std derives, allow/doc attributes, should_panic and
 /// ignore-free plain tests, green, is ready.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv9_legit_locked_module_is_ready() {
     let (repo, _, inputs) = rv7_repo(
         "//! Locked refund tests.\n#![allow(clippy::bool_assert_comparison)]\nuse super::*;\n\n#[derive(Debug, Clone, PartialEq)]\nstruct Case(bool);\n\n#[test]\nfn refunds() {\n    assert_eq!(Case(refund()), Case(true));\n}\n\nmod nested {\n    use super::*;\n    #[test]\n    #[should_panic(expected = \"boom\")]\n    fn panics() {\n        let _ = refund();\n        panic!(\"boom\");\n    }\n    mod deeper {\n        #[test]\n        fn deep() {}\n    }\n}\n",
@@ -2303,10 +2207,6 @@ fn rv9_legit_locked_module_is_ready() {
 /// No false positive: a locked integration root with a multi-file layout
 /// (`tests/multi/main.rs` + `tests/multi/helper.rs`, both locked).
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv9_legit_multi_file_integration_test_is_ready() {
     let (repo, _) = cargo_repo();
     std::fs::remove_file(repo.root.join("tests/refund.rs")).unwrap();
@@ -2331,10 +2231,6 @@ fn rv9_legit_multi_file_integration_test_is_ready() {
 /// No false positive: this repo's own layout, a locked test file mounted
 /// by `#[cfg(test)] #[path = "refund_tests.rs"] mod tests;`, green.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn rv9_legit_path_mounted_tests_file_is_ready() {
     let (repo, _, inputs) = rv7_repo(RV9_PLAIN);
     repo.write(
@@ -2357,10 +2253,6 @@ fn rv9_legit_path_mounted_tests_file_is_ready() {
 /// (each would leave a marker), and writes nothing into the judged run's
 /// target directory, so the judged run reads only its own dep-info.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn the_listing_runs_no_test_and_keeps_out_of_the_judged_target() {
     let (repo, _) = cargo_repo();
     let marks = repo.dir.path().join("marks");
@@ -2417,10 +2309,6 @@ fn the_listing_runs_no_test_and_keeps_out_of_the_judged_target() {
 /// judged commit redefines the macro to `#[ignore]` it. The compiler list
 /// of spec_commit still requires it passed.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_macro_test_ignored_by_an_unlocked_redefinition_fails_on_the_list() {
     let (repo, _) = cargo_repo();
     std::fs::remove_file(repo.root.join("tests/refund.rs")).unwrap();
@@ -2447,10 +2335,6 @@ fn a_macro_test_ignored_by_an_unlocked_redefinition_fails_on_the_list() {
 /// (`tests/x.rs`, `mod m { #[test] fn inner() }`): listed as `m::inner`,
 /// required, and green once fixed.
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn a_locked_integration_test_in_an_inline_module_is_listed_and_green() {
     let (repo, _) = cargo_repo();
     repo.write(

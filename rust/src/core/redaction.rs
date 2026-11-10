@@ -417,13 +417,20 @@ pub(crate) fn is_fact_key_slug(prefix: &str, value: &str) -> bool {
 
 /// Lowercase words and short numbers joined by `-`
 /// (`governor-design-pull-forward-2026-10-29`): at least three parts, at
-/// least two of them words; a number has at most 8 digits (dates, years,
-/// counters — not a PIN or an account number); a word has a vowel in at
-/// least a fifth of its letters and no run of more than four consonants, so
-/// random letter groups (`qhztvbkr`) and hex digests do not pass.
+/// least two of them words, and at least half of the letter parts words; a
+/// number has at most 8 digits (dates, years, counters — not a PIN or an
+/// account number). A word has a vowel in at least a fifth of its letters
+/// and no run of more than four consonants, or is a one-vowel word of five
+/// to nine letters whose consonants before and after the vowel are a common
+/// English onset and coda (`rights`, `scripts`, `strict`). A part that is
+/// neither must be one of a fixed list of abbreviations (`mr`, `mcp`), which
+/// do not count as words. Random letter groups (`qhztvbkr`, `xkq`) fail.
+/// Any part with a digit beside letters, an upper-case letter or another
+/// character fails the slug.
 fn looks_like_word_slug(value: &str) -> bool {
     let parts: Vec<&str> = value.split('-').collect();
     let mut words = 0usize;
+    let mut letter_parts = 0usize;
     let all_parts_ok = parts.iter().all(|part| {
         if !part.is_empty() && part.len() <= 8 && part.bytes().all(|b| b.is_ascii_digit()) {
             return true;
@@ -431,19 +438,59 @@ fn looks_like_word_slug(value: &str) -> bool {
         if part.len() < 2 || part.len() > 24 || !part.bytes().all(|b| b.is_ascii_lowercase()) {
             return false;
         }
-        let is_vowel = |b: u8| matches!(b, b'a' | b'e' | b'i' | b'o' | b'u' | b'y');
-        let vowels = part.bytes().filter(|b| is_vowel(*b)).count();
-        let mut run = 0usize;
-        let mut longest_run = 0usize;
-        for b in part.bytes() {
-            run = if is_vowel(b) { 0 } else { run + 1 };
-            longest_run = longest_run.max(run);
-        }
-        let word = vowels * 5 >= part.len() && longest_run <= 4;
+        letter_parts += 1;
+        let word = is_slug_word(part);
         words += usize::from(word);
-        word
+        word || SLUG_ABBREVIATIONS.contains(part)
     });
-    parts.len() >= 3 && all_parts_ok && words >= 2
+    parts.len() >= 3 && all_parts_ok && words >= 2 && words * 2 >= letter_parts
+}
+
+/// Vowel-free abbreviations a fact key may carry. A fixed list: a rule for
+/// "short and vowel-free" let random letter groups pass as abbreviations.
+const SLUG_ABBREVIATIONS: &[&str] = &[
+    "cd", "cdn", "cfg", "cmd", "csv", "ctx", "db", "dns", "gc", "grpc", "http", "js", "jwt", "mcp",
+    "md", "ml", "mr", "msg", "npm", "pdf", "pkg", "png", "pr", "rs", "sql", "src", "ssh", "svg",
+    "tls", "tmp", "ts", "ttl", "xml",
+];
+
+/// Consonants before the single vowel of a one-vowel word.
+const SLUG_ONSETS: &[&str] = &[
+    "", "b", "c", "d", "f", "g", "h", "j", "k", "l", "m", "n", "p", "q", "r", "s", "t", "v", "w",
+    "x", "z", "bl", "br", "ch", "cl", "cr", "dr", "fl", "fr", "gl", "gr", "ph", "pl", "pr", "sc",
+    "sh", "sk", "sl", "sm", "sn", "sp", "st", "sw", "th", "tr", "tw", "wh", "wr", "chr", "sch",
+    "scr", "shr", "spl", "spr", "str", "thr",
+];
+
+/// Consonants after the single vowel of a one-vowel word.
+const SLUG_CODAS: &[&str] = &[
+    "bs", "ch", "ck", "cks", "ct", "cts", "ds", "ft", "fts", "ght", "ghts", "gs", "ks", "ld",
+    "lds", "lf", "lk", "lks", "ll", "lls", "lm", "lp", "ls", "lt", "lts", "mp", "mps", "ms", "nch",
+    "nd", "nds", "ng", "ngs", "ngth", "ngths", "nk", "nks", "ns", "nt", "nth", "nths", "nts", "ps",
+    "pt", "pts", "rch", "rd", "rds", "rk", "rks", "rm", "rms", "rn", "rns", "rst", "rt", "rth",
+    "rts", "sh", "sk", "sks", "sp", "ss", "st", "sts", "tch", "th", "ths", "ts", "ws", "x", "xt",
+    "xts",
+];
+
+fn is_slug_word(part: &str) -> bool {
+    let is_vowel = |b: u8| matches!(b, b'a' | b'e' | b'i' | b'o' | b'u' | b'y');
+    let vowels = part.bytes().filter(|b| is_vowel(*b)).count();
+    let mut run = 0usize;
+    let mut longest_run = 0usize;
+    for b in part.bytes() {
+        run = if is_vowel(b) { 0 } else { run + 1 };
+        longest_run = longest_run.max(run);
+    }
+    if vowels * 5 >= part.len() && longest_run <= 4 {
+        return true;
+    }
+    if vowels != 1 || !(5..=9).contains(&part.len()) {
+        return false;
+    }
+    let Some(at) = part.bytes().position(is_vowel) else {
+        return false;
+    };
+    SLUG_ONSETS.contains(&&part[..at]) && SLUG_CODAS.contains(&&part[at + 1..])
 }
 
 /// #1095: when the regex `key=` consumes one `=` from `==`, the captured
@@ -1369,6 +1416,9 @@ mod tests {
         for kept in [
             r#"{"key":"governor-design-pull-forward-2026-10-29"}"#,
             r#"{"key": "hive-desktop-knowledge-speed-round-one"}"#,
+            // Words with one vowel in six or seven letters, abbreviations.
+            r#"{"key":"gotcha-code-reviewer-no-probe-rights"}"#,
+            r#"{"key":"hive-mr-ci-scripts-strict-backlog-check"}"#,
         ] {
             assert_eq!(redact_text(kept), kept);
         }
@@ -1377,6 +1427,8 @@ mod tests {
             r#"{"key":"qhztvbkr-plmnwxsd-rtvbnmkl-zxcvbnml"}"#.to_owned(),
             r#"{"key":"deadbeef-cafebabe-facefeed-0123456789"}"#.to_owned(),
             format!(r#"{{"key":"my-pin-{}"}}"#, "4".repeat(26)),
+            // Mostly vowel-free groups: abbreviations do not make a slug.
+            r#"{"key":"zxq-vbk-pwm-rtk-qzx-bnm-lkj-word-also"}"#.to_owned(),
             // A slug under any other name, or in free text.
             r#"{"auth":"governor-design-pull-forward-2026-10-29"}"#.to_owned(),
             r#"{"credential":"governor-design-pull-forward-2026-10-29"}"#.to_owned(),
@@ -1387,6 +1439,54 @@ mod tests {
         ];
         for masked in masked_cases {
             assert!(redact_text(&masked).contains("[REDACTED"), "{masked}");
+        }
+    }
+
+    /// The fact-key exemption must not let random keys through: lowercase
+    /// letter groups joined by `-` under a JSON `key` member stay masked by
+    /// the redactor and found by secret detection (`high_entropy_secret`,
+    /// 40+ characters) about as often as before the exemption existed
+    /// (at most ~4% of a shape reads as words). Seeded, so deterministic.
+    #[test]
+    fn random_lowercase_keys_under_a_key_member_stay_masked() {
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut letter = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            char::from(b'a' + u8::try_from(state % 26).unwrap_or(0))
+        };
+        let mut random_key = |groups: usize, size: usize| {
+            (0..groups)
+                .map(|_| (0..size).map(|_| letter()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("-")
+        };
+        const SAMPLES: usize = 2000;
+        const MAX_KEPT: usize = SAMPLES * 6 / 100;
+        for (groups, size) in [(8, 4), (9, 3), (12, 2), (5, 6)] {
+            let kept = (0..SAMPLES)
+                .filter(|_| {
+                    let doc = format!(r#"{{"key":"{}"}}"#, random_key(groups, size));
+                    !redact_text(&doc).contains("[REDACTED")
+                })
+                .count();
+            assert!(
+                kept <= MAX_KEPT,
+                "{groups}x{size}: {kept} of {SAMPLES} random keys kept"
+            );
+        }
+        for (groups, size) in [(10, 4), (11, 3), (14, 2), (6, 6)] {
+            let missed = (0..SAMPLES)
+                .filter(|_| {
+                    let doc = format!(r#"{{"key":"{}"}}"#, random_key(groups, size));
+                    crate::core::secret_detection::detect_secrets(&doc).is_empty()
+                })
+                .count();
+            assert!(
+                missed <= MAX_KEPT,
+                "{groups}x{size}: {missed} of {SAMPLES} random keys undetected"
+            );
         }
     }
 }

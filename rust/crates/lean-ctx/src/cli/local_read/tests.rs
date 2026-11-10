@@ -1857,6 +1857,60 @@ fn knowledge_list_withholds_only_the_fact_that_trips_the_release() {
     assert_eq!(parse(&clean.text)["withheld"], 0);
 }
 
+/// A fact key made of plain words (`…-rights`: one vowel in six letters)
+/// read as a generic long secret under `"key"`; its `id` still carried it,
+/// so the fact was withheld from every `knowledge.list`. It is released
+/// with its key and id intact, while a secret in another fact's value is
+/// still masked.
+#[test]
+fn knowledge_list_keeps_a_word_key_and_masks_a_secret_value() {
+    use crate::cli::common::carrier_tests_support::{AWS_KEY, governed, project};
+    use lean_ctx::core::knowledge::ProjectKnowledge;
+    use lean_ctx::core::memory_policy::MemoryPolicy;
+    const KEY: &str = "gotcha-code-reviewer-no-probe-rights";
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+    governed();
+    let (_project, root) = project();
+    let mut k = ProjectKnowledge::new(&root);
+    let policy = MemoryPolicy::default();
+    k.remember("gotcha", KEY, "plain words only", "s1", 0.9, &policy);
+    let secret = format!("deploy uses AWS_ACCESS_KEY_ID={AWS_KEY}");
+    k.remember("ops", "deploy", &secret, "s1", 0.9, &policy);
+
+    let query = knowledge::Query {
+        limit: 10,
+        ..Default::default()
+    };
+    let answer = answer_released_records(
+        "ctx_knowledge",
+        &root,
+        "knowledge.list",
+        Via::Cli,
+        knowledge::RECORDS,
+        || {
+            let (rows, noise) = knowledge::local_rows(&k.facts, false);
+            Ok(knowledge::select(&root, rows, &query, noise))
+        },
+    );
+    assert_eq!(answer.failed, None, "{}", answer.text);
+    assert!(!answer.text.contains(AWS_KEY), "{}", answer.text);
+    let doc = parse(&answer.text);
+    assert_eq!(doc["withheld"], 0, "{}", answer.text);
+    let facts = doc["facts"].as_array().expect("facts");
+    let fact = |id: &str| {
+        facts
+            .iter()
+            .find(|fact| fact["id"] == id)
+            .unwrap_or_else(|| panic!("{id} missing: {}", answer.text))
+    };
+    let gotcha = fact(&format!("gotcha/{KEY}"));
+    assert_eq!(gotcha["key"], KEY);
+    assert_eq!(gotcha["text"], "plain words only");
+    let masked = fact("ops/deploy")["text"].as_str().expect("text");
+    assert!(masked.contains("[REDACTED"), "{masked}");
+}
+
 /// #1298 review: every fact offends → an empty `facts`, `withheld` counts
 /// all of them and `returned` is 0; the notice is content-free. A clean fact
 /// that names what a withheld fact carried is withheld as well, so the

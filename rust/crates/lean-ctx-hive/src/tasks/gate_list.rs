@@ -101,10 +101,16 @@ pub(super) fn spec_list(
     };
     let lister = dir.join("lister.sh");
     write_lister(&lister, &lists)?;
+    let Some(lister) = launcher(&lister)? else {
+        return Ok(unavailable("the gate's list directory holds whitespace"));
+    };
     env.push((runner_var(&triple), lister.into_os_string()));
     // Doc-tests: rustdoc builds and runs them itself, past the runner.
     let rustdoc = dir.join("rustdoc.sh");
     write_rustdoc(&rustdoc)?;
+    let Some(rustdoc) = launcher(&rustdoc)? else {
+        return Ok(unavailable("the gate's list directory holds whitespace"));
+    };
     env.push(("RUSTDOC".into(), rustdoc.clone().into_os_string()));
     env.push(("CARGO_BUILD_RUSTDOC".into(), rustdoc.into_os_string()));
     let exit = run_command(&tree, command, &env, &mut log, deadline)?;
@@ -193,15 +199,20 @@ fn runner_var(triple: &str) -> String {
 /// in `lists` (its path, then its terse list), nothing on stdout, exit 0
 /// unless the binary could not list.
 fn write_lister(file: &Path, lists: &Path) -> Result<(), GateError> {
-    let lists = lists
-        .to_str()
-        .filter(|s| !s.contains('\''))
-        .ok_or_else(|| {
-            GateError::Check(format!(
-                "the gate's list directory {} cannot be quoted",
-                lists.display()
-            ))
-        })?;
+    // Git for Windows' sh takes `C:/x/y`; a backslash stays literal in quotes.
+    let quoted = lists.to_str().filter(|s| !s.contains('\'')).map(|s| {
+        if cfg!(windows) {
+            s.replace('\\', "/")
+        } else {
+            s.to_owned()
+        }
+    });
+    let Some(lists) = quoted else {
+        return Err(GateError::Check(format!(
+            "the gate's list directory {} cannot be quoted",
+            lists.display()
+        )));
+    };
     let script = format!(
         r#"#!/bin/sh
 bin=$1
@@ -244,6 +255,33 @@ done
 exec rustdoc "$@"
 "#,
     )
+}
+
+/// What cargo runs for the gate's shell script `script`: the script itself
+/// on Unix; on Windows a `.cmd` beside it that hands it to the gate's `sh`
+/// (cargo cannot start a `.sh`). Cargo splits a runner on whitespace, so a
+/// path with whitespace gives `None`.
+fn launcher(script: &Path) -> Result<Option<std::path::PathBuf>, GateError> {
+    if script.to_string_lossy().contains(char::is_whitespace) {
+        return Ok(None);
+    }
+    if cfg!(not(windows)) {
+        return Ok(Some(script.to_path_buf()));
+    }
+    let sh = super::run::shell()?;
+    let name = script
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let cmd = script.with_extension("cmd");
+    write_script(
+        &cmd,
+        &format!(
+            "@\"{}\" \"%~dp0{name}\" %*\r\n@exit /b %ERRORLEVEL%\r\n",
+            sh.display()
+        ),
+    )?;
+    Ok(Some(cmd))
 }
 
 /// Write the gate's own shell script `file`, private and executable.

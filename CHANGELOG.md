@@ -34,6 +34,11 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   private copy; no test of `spec_commit` runs), so a locked test the parser cannot name
   (macro-generated, `#[cfg_attr(test, test)]`) must still pass in the judged run. This can
   roughly double a G6 run's time.
+  G6 runs on Linux, macOS and Windows. On macOS a kqueue watch notices a renamed or removed
+  ancestor of the run tree (as inotify does on Linux). On Windows the run uses Git for
+  Windows' `sh`, an environment built from the known folders and a job object; there the
+  tree's ancestors have no rename protection and locked files are pinned by content,
+  attributes and write time (details in `tasks/gate_run.rs`).
 - **P4 tripwires: new crate `lean-ctx-tripwires`.** A pure, deterministic diff analyzer that flags the documented reward-hacking tricks (touched tests or graders, removed or weakened asserts, new skips, a falling test count, fixture constants, branches on test inputs, time/hash/assert overrides, swallowed errors, mock-only tests, edit cycles, plus `unparsable`) and returns a `leanctx.process.tripwires/v1` report; a hit routes to a person, never to automatic acceptance. Not wired into the gate yet.
 
 - **Each app session is its own Hive worker (E48).** An agent registered with
