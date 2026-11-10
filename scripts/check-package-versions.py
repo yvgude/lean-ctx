@@ -70,8 +70,10 @@ LOCKSTEP_CRATES = [
     "rust/crates/lean-ctx-proxy/Cargo.toml",
     "rust/crates/lean-ctx-server/Cargo.toml",
     "rust/crates/lean-ctx-hooks/Cargo.toml",
+    "rust/crates/lean-ctx-shell-policy/Cargo.toml",
 ]
-LOCKSTEP_NAMES = ("lean-ctx-engine", "lean-ctx-hive", "lean-ctx-proxy", "lean-ctx-server", "lean-ctx-hooks")
+LOCKSTEP_NAMES = ("lean-ctx-engine", "lean-ctx-hive", "lean-ctx-proxy", "lean-ctx-server", "lean-ctx-hooks",
+                 "lean-ctx-shell-policy")
 LOCKSTEP_PIN = re.compile(
     r'^(' + "|".join(map(re.escape, LOCKSTEP_NAMES)) + r')\s*=\s*\{[^}\n]*version\s*=\s*"=([^"]+)"',
     re.M,

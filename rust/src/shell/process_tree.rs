@@ -95,8 +95,7 @@ impl ProcessTree {
     pub(crate) fn kill(&self, child: &mut Child) {
         #[cfg(unix)]
         {
-            let pgid = child.id() as libc::pid_t;
-            if pgid > 0 {
+            if let Ok(pgid) = crate::ipc::process::group_target(child.id()) {
                 // SAFETY: killpg is a plain syscall; a stale group yields ESRCH.
                 unsafe { libc::killpg(pgid, libc::SIGKILL) };
             }

@@ -341,12 +341,13 @@ fn end_to_end_consolidation_populates_all_stores() {
     assert!(edges.iter().any(|e| e.kind == EDGE_DOCUMENTS));
     assert!(edges.iter().any(|e| e.kind == EDGE_QUERIES));
 
-    // Knowledge facts
+    // Knowledge facts: only the schema; issues, PRs and wiki pages are
+    // outside text and never become facts (pz21).
     assert!(result.facts_extracted > 0);
     let facts = &artifacts.facts;
-    assert!(facts.iter().any(|f| f.category == "known_bugs"));
-    assert!(facts.iter().any(|f| f.category == "recent_changes"));
-    assert!(facts.iter().any(|f| f.category == "documentation"));
+    assert!(!facts.iter().any(|f| f.category == "known_bugs"));
+    assert!(!facts.iter().any(|f| f.category == "recent_changes"));
+    assert!(!facts.iter().any(|f| f.category == "documentation"));
     assert!(facts.iter().any(|f| f.category == "data_model"));
 
     // Session cache
@@ -369,13 +370,17 @@ fn consolidation_summary_is_accurate() {
 
     assert_eq!(summary.chunks_indexed, 2);
     assert!(summary.edges_created > 0);
-    assert!(summary.facts_extracted > 0);
+    assert_eq!(
+        summary.facts_extracted, 0,
+        "outside text never becomes a fact"
+    );
     assert_eq!(summary.cache_entries_stored, 2);
 }
 
 #[test]
 fn consolidation_with_only_code_chunks_is_noop() {
     let code = ContentChunk::from(lean_ctx::core::bm25_index::CodeChunk {
+        input_origin: None,
         file_path: "src/main.rs".into(),
         symbol_name: "main".into(),
         kind: ChunkKind::Function,

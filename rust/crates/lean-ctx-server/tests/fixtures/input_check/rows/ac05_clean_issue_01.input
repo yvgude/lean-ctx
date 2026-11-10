@@ -1,0 +1,3 @@
+Running `cargo build` on a fresh clone fails with a linker error.
+The error mentions `cc` not found on Alpine 3.20.
+Installing build-base fixed it for me; maybe the README should say so.

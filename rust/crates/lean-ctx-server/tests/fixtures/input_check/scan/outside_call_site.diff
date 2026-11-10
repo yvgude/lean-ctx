@@ -1,0 +1,9 @@
+diff --git a/rust/src/core/zz_worker.rs b/rust/src/core/zz_worker.rs
+index 6666666..7777777 100644
+--- a/rust/src/core/zz_worker.rs
++++ b/rust/src/core/zz_worker.rs
+@@ -5,1 +5,3 @@ pub fn refresh(admission: &StoreAdmission, text: &str) {
+-    admission.admit_text(text);
++    capture::outside_call(|| {
++        admission.admit_text(text);
++    });

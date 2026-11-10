@@ -9,6 +9,7 @@ use std::collections::HashSet;
 
 use serde_json::Value;
 
+use crate::capture::conflicts::Kind;
 use crate::replica::fold::{Graph, Node};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -96,25 +97,55 @@ pub struct Index {
 }
 
 impl Index {
+    /// From the folded edges alone.
     pub fn new(graph: &Graph) -> Self {
-        let superseded: HashSet<String> = graph
+        Self::build(graph, &[])
+    }
+
+    /// From the folded edges and the links of each fact's values the save
+    /// history resolves ([`crate::capture::conflicts::derived`]): two
+    /// Instances' concurrent values of one shared fact are `conflicting`
+    /// as soon as both are folded here, not only once the conflict edge has
+    /// travelled through the Hive (#286).
+    pub fn with_saves(
+        graph: &Graph,
+        saves: &std::collections::BTreeMap<String, crate::replica::log::Save>,
+    ) -> Self {
+        Self::build(graph, &crate::capture::conflicts::derived(graph, saves))
+    }
+
+    fn build(graph: &Graph, links: &[(Kind, String, String)]) -> Self {
+        let mut superseded: HashSet<String> = graph
             .edges
             .values()
             .filter(|e| e.kind == "supersedes" && !e.retracted && live(graph, &e.from))
             .map(|e| e.to.clone())
             .collect();
+        superseded.extend(
+            links
+                .iter()
+                .filter(|(kind, from, _)| *kind == Kind::Supersedes && live(graph, from))
+                .map(|(_, _, to)| to.clone()),
+        );
         let open = |id: &str| live(graph, id) && !superseded.contains(id);
         let mut contradicted = HashSet::new();
-        for e in graph
+        let pairs = graph
             .edges
             .values()
             .filter(|e| e.kind == "contradicts" && !e.retracted)
-        {
-            if open(&e.to) {
-                contradicted.insert(e.from.clone());
+            .map(|e| (e.from.as_str(), e.to.as_str()))
+            .chain(
+                links
+                    .iter()
+                    .filter(|(kind, _, _)| *kind == Kind::Contradicts)
+                    .map(|(_, from, to)| (from.as_str(), to.as_str())),
+            );
+        for (from, to) in pairs {
+            if open(to) {
+                contradicted.insert(from.to_owned());
             }
-            if open(&e.from) {
-                contradicted.insert(e.to.clone());
+            if open(from) {
+                contradicted.insert(to.to_owned());
             }
         }
         Self {

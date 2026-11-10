@@ -342,6 +342,7 @@ mod dense_toggle_tests {
     fn small_index() -> BM25Index {
         BM25Index::from_chunks_for_test(vec![
             CodeChunk {
+                input_origin: None,
                 file_path: "auth.rs".into(),
                 symbol_name: "validate_token".into(),
                 kind: ChunkKind::Function,
@@ -353,6 +354,7 @@ mod dense_toggle_tests {
                 token_count: 0,
             },
             CodeChunk {
+                input_origin: None,
                 file_path: "db.rs".into(),
                 symbol_name: "connect_database".into(),
                 kind: ChunkKind::Function,

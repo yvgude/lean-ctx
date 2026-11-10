@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Typo in the docs: \"recieve\" should be \"receive\" on the install page."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

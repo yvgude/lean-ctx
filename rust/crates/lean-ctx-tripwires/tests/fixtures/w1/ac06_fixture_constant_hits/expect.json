@@ -1,0 +1,15 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 2,
+      "path": "rust/crates/demo/src/lib.rs",
+      "rule": "fixture_constant"
+    },
+    {
+      "line": 6,
+      "path": "rust/crates/demo/src/lib.rs",
+      "rule": "fixture_constant"
+    }
+  ]
+}

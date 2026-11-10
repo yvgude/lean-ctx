@@ -1,84 +1,117 @@
-//! Shell allowlist with AST-based command parsing.
+//! Shell command lexing and the registered shell-allowlist gate.
 //!
-//! Security model (Information Bottleneck principle):
-//! - When allowlist is set: ALL segments of a compound command must be allowed (deny-by-default)
-//! - When empty: all commands pass (backwards-compatible blocklist-only mode)
-//! - Dangerous patterns (subshells, eval, backticks) are blocked in restricted mode
+//! The lexical layer (lexer, heredocs, tokenizer, compound and case constructs,
+//! PowerShell statements) and the security mode live here in the Engine. The
+//! allowlist POLICY (enforcement, approval, self-reconfiguration and side-door
+//! checks) lives above the Engine in crates/lean-ctx-shell-policy (lib
+//! `lean_ctx_shell_policy`): an edit there re-checks that crate, not the Engine.
+//! The Engine's own callers reach the policy through [`register_gate`], which the
+//! policy crate installs; without a registration every check fails closed.
 
-mod approval;
-mod case_construct;
-mod compound;
-mod config;
-mod enforcement;
-mod heredoc;
-mod lexer;
-mod mode;
-mod partial;
-mod powershell;
-mod ps_statements;
-mod self_config;
-mod side_doors;
-mod substitution;
-mod tokenizer;
+#[doc(hidden)]
+pub mod case_construct;
+#[doc(hidden)]
+pub mod compound;
+#[doc(hidden)]
+pub mod heredoc;
+#[doc(hidden)]
+pub mod lexer;
+#[doc(hidden)]
+pub mod mode;
+#[doc(hidden)]
+pub mod powershell;
+#[doc(hidden)]
+pub mod ps_statements;
+#[doc(hidden)]
+pub mod tokenizer;
+
+use std::sync::OnceLock;
 
 use crate::core::error::ShellError;
 
-use case_construct::find_shell_word;
-use compound::expand_to_leaf_segments;
-use config::{allowlist_block_message, effective_allowlist};
-#[cfg(test)]
-use enforcement::{
-    check_all_segments, check_pipe_to_bare_interpreter, check_unconditional_blocked_only,
-    enforce_shell_allowlist, is_bare_interpreter_stdin, is_project_root_binary,
-    normalize_line_continuations,
+pub use case_construct::{contains_double_semicolon, find_shell_word, rewrite_case_constructs};
+pub use compound::expand_to_leaf_segments;
+pub use heredoc::{
+    heredoc_delims, read_heredoc_delim, strip_all_heredoc_bodies, strip_for_analysis,
 };
-use tokenizer::{
-    extract_all_commands, extract_base_from_segment, quote_aware_token_end, skip_env_assignments,
-    split_on_operators,
-};
-
-pub use approval::{
-    ApprovalMiss, ApprovalRequest, approval_request, check_shell_allowlist_granted,
-};
-pub use approval::{allow_execute_languages, allow_programs};
-pub(crate) use case_construct::{contains_double_semicolon, rewrite_case_constructs};
-pub use config::*;
-pub use enforcement::*;
-pub use heredoc::heredoc_delims;
-pub use heredoc::read_heredoc_delim;
-pub use heredoc::strip_all_heredoc_bodies;
-#[cfg(test)]
-pub(crate) use heredoc::{strip_comments, strip_quoted_heredoc_bodies};
 pub use mode::ShellSecurity;
-pub use partial::{PartialRun, partial_run};
-pub use self_config::{UNKNOWN_DOWNLOAD_TARGET, download_targets, with_run_cwd};
-pub use side_doors::LEAN_CTX_RUN_CONTROL_ENV;
-pub(crate) use substitution::check_substitution_in_args;
-#[cfg(test)]
-pub(crate) use substitution::has_expanding_substitution_in_args;
-#[cfg(test)]
-pub(crate) use tests::allow;
+pub use ps_statements::{Dialect, with_dialect};
 pub use tokenizer::*;
 
-#[cfg(test)]
-mod tests;
-#[cfg(test)]
-mod tests_conditionals;
-#[cfg(test)]
-mod tests_heredoc_quotes;
-#[cfg(test)]
-mod tests_multiword;
-#[cfg(test)]
-mod tests_pipe_target;
-#[cfg(test)]
-mod tests_ps1930;
-#[cfg(test)]
-mod tests_ps_quotes;
-#[cfg(test)]
-mod tests_redaction_marker;
-#[cfg(test)]
-mod tests_scoped_extra;
-#[cfg(test)]
-mod tests_tokenizer;
-#[cfg(test)]
-mod tests_warn_only;
+/// Longest command the gate validates; a longer one is refused in `enforce`
+/// mode. Every check re-scans the line, and a hook that runs out of time
+/// fails open.
+pub const MAX_VALIDATED_COMMAND_BYTES: usize = 64 * 1024;
+
+/// The shell-allowlist policy as the Engine sees it.
+#[derive(Clone, Copy)]
+pub struct ShellGate {
+    /// `check_shell_allowlist`: `Err` when the command must not run.
+    pub check: fn(&str) -> Result<(), ShellError>,
+    /// `warn_only_reason`: the reason text for a warn-only pass.
+    pub warn_only_reason: fn(&str) -> String,
+}
+
+static GATE: OnceLock<ShellGate> = OnceLock::new();
+
+/// Install the policy gate. The first registration wins and is never replaced:
+/// returns `false` when a gate was already registered, so the caller can
+/// refuse to start instead of running under a gate it did not install.
+#[must_use]
+pub fn register_gate(gate: ShellGate) -> bool {
+    GATE.set(gate).is_ok()
+}
+
+/// Engine unit tests cannot link the policy crate (it sits above the Engine),
+/// so they register this stand-in to exercise the gate wiring: when
+/// `LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE` is set, the first word of the command
+/// must be in that list; otherwise everything passes. The real policy is
+/// tested end to end in crates/lean-ctx-shell-policy/tests/attack_scenarios.rs.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub fn install_test_gate() {
+    fn check(command: &str) -> Result<(), ShellError> {
+        let Ok(list) = std::env::var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE") else {
+            return Ok(());
+        };
+        let first = command.split_whitespace().next().unwrap_or_default();
+        if list.split(',').any(|entry| entry.trim() == first) {
+            Ok(())
+        } else {
+            Err(ShellError::from(format!(
+                "test gate: '{first}' is not in the override allowlist"
+            )))
+        }
+    }
+    let _ = GATE.set(ShellGate {
+        check,
+        warn_only_reason: str::to_string,
+    });
+}
+
+/// Whether a policy gate is installed.
+pub fn gate_registered() -> bool {
+    GATE.get().is_some()
+}
+
+/// Check `command` against the registered policy. Fails closed (refuses) when
+/// no policy is registered, so a binary that forgot the registration can never
+/// run unchecked commands.
+pub fn check_registered(command: &str) -> Result<(), ShellError> {
+    match GATE.get() {
+        Some(gate) => (gate.check)(command),
+        None => Err(ShellError::from(
+            "lean-ctx: no shell-allowlist policy is registered in this build; \
+             refusing to run the command (fail closed)",
+        )),
+    }
+}
+
+/// The warn-only reason through the registered policy (the message itself
+/// when none is registered).
+pub fn warn_only_reason_registered(message: &str) -> String {
+    match GATE.get() {
+        Some(gate) => (gate.warn_only_reason)(message),
+        None => message.to_string(),
+    }
+}

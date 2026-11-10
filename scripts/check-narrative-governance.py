@@ -666,6 +666,24 @@ def _check_primary_content(
                 )
 
 
+def _with_changelog_fragments(root: Path, content: str) -> str:
+    """CHANGELOG.md with the pending changelog.d/ fragments folded into
+    [Unreleased], so unreleased claims are checked before the release folds
+    them. Unchanged without the folding tool (the public export) or fragments."""
+    tool = Path(__file__).with_name("changelog-fragments.py")
+    if not tool.is_file() or not (root / "changelog.d").is_dir():
+        return content
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("changelog_fragments", tool)
+    module = importlib.util.module_from_spec(spec)
+    # dataclasses resolve string annotations through sys.modules.
+    module = sys.modules.setdefault("changelog_fragments", module)
+    spec.loader.exec_module(module)
+    folded = module.folded_changelog(root)
+    return content if folded is None else folded
+
+
 def check_repository(root: Path) -> list[str]:
     try:
         contract = load_contract(root)
@@ -690,6 +708,8 @@ def check_repository(root: Path) -> list[str]:
             continue
         content = read(relative_path, root, failures)
         if content is not None:
+            if relative_path == "CHANGELOG.md":
+                content = _with_changelog_fragments(root, content)
             contents[relative_path] = content
             _check_narrative(relative_path, content, contract, failures)
 

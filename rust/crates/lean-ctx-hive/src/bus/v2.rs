@@ -15,8 +15,26 @@ use super::address::{is_wire_address, is_worker_id};
 
 pub const BUS_SCHEMA: &str = "leanctx.hive.bus/v2";
 pub const CONTROL_DOMAIN: &str = "leanctx.hive.control.v1\n";
-const TEXT_MAX: usize = 4000;
+/// The most characters of a question's or an answer's text.
+pub const TEXT_MAX: usize = 4000;
+/// The most characters of an offer's `what` and a handoff's `note`.
+pub const SHORT_TEXT_MAX: usize = 1000;
 const REFS_MAX: usize = 10;
+
+/// The most characters of the field a sending tool puts its text in for
+/// `kind` (question and answer `text`, offer `what`, handoff `note`); `None`
+/// for a finding or progress, whose text is not the sender's free text.
+pub fn text_max(kind: MessageType) -> Option<usize> {
+    match kind {
+        MessageType::Question | MessageType::Answer => Some(TEXT_MAX),
+        MessageType::Offer | MessageType::Handoff => Some(SHORT_TEXT_MAX),
+        MessageType::Finding | MessageType::Progress => None,
+    }
+}
+/// A syntactically valid worker id, used only to validate the other fields
+/// of a person's publish; it is removed before the frame is sent
+/// ([`super::relay_v2`]). The person rules do not apply under it.
+pub(crate) const PERSON_VALIDATION_WORKER: &str = "wkr_personpublishpending";
 
 /// The six message types (C0 2.2): the conversation types and `progress`
 /// as a status line. Work is a task (`ctx_tasks`), never a bus message.
@@ -128,6 +146,15 @@ pub struct Window {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invalid(pub String);
 
+impl Invalid {
+    /// The named rule of a person-rule refusal (`approval_on_behalf`, …;
+    /// [`super::person_rules`]), `None` for a shape refusal.
+    pub fn rule(&self) -> Option<&str> {
+        let rest = self.0.split_once("reason: ")?.1;
+        rest.split(':').next()
+    }
+}
+
 impl std::fmt::Display for Invalid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "invalid_message: {}", self.0)
@@ -235,7 +262,7 @@ fn check_body(kind: MessageType, body: &Value) -> Result<(), Invalid> {
         }
         MessageType::Offer => {
             only(map, &["what", "capability", "eta_minutes", "withdraw"])?;
-            chars(body, "what", 1, 1000)?;
+            chars(body, "what", 1, SHORT_TEXT_MAX)?;
             chars(body, "capability", 1, 64)?;
             int(body, "eta_minutes", 1, 10_080, true)?;
             match body.get("withdraw") {
@@ -247,7 +274,7 @@ fn check_body(kind: MessageType, body: &Value) -> Result<(), Invalid> {
             only(map, &["to_worker", "resource", "note", "lease_id"])?;
             worker(body, "to_worker", true)?;
             chars(body, "resource", 1, 200)?;
-            opt_chars(body, "note", 1, 1000)?;
+            opt_chars(body, "note", 1, SHORT_TEXT_MAX)?;
             lease(body, false)
         }
         MessageType::Finding => {
@@ -351,6 +378,11 @@ impl Publish {
         }
         if self.ck_wrapped.is_some() || self.epoch.is_some() {
             return Err(bad("key material on a plain place"));
+        }
+        // An agent's message never speaks for a person (process v1 §7); a
+        // person's own post (validated under the placeholder worker) may.
+        if self.worker_id != PERSON_VALIDATION_WORKER {
+            super::person_rules::check_agent_body(self.kind, &self.body)?;
         }
         check_body(self.kind, &self.body)
     }
@@ -504,6 +536,58 @@ pub struct PresenceEntry {
     pub worker_id: String,
     pub role: String,
     pub state: PresenceState,
+    /// QN0: the worker's name and its Instance, so another Instance can
+    /// show who is working (display only, never used to authorize).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_name: Option<String>,
+}
+
+/// The names a `presence.update` may carry besides the worker id (all
+/// optional; a Hive that does not send them leaves every one `None`).
+/// Display only: bounded single lines, never used to address or authorize.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PresenceNames {
+    /// `agent` | `person`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_name: Option<String>,
+}
+
+/// Longest name kept from a presence frame, in characters.
+const PRESENCE_NAME_CHARS: usize = 128;
+
+/// The optional names of a `presence.update` frame; a field that is no
+/// bounded single line is dropped, an unknown `kind` too.
+pub fn presence_names(value: &Value) -> PresenceNames {
+    let line = |field: &str| {
+        value[field]
+            .as_str()
+            .map(str::trim)
+            .filter(|v| {
+                !v.is_empty()
+                    && v.chars().count() <= PRESENCE_NAME_CHARS
+                    && !v.chars().any(char::is_control)
+            })
+            .map(str::to_owned)
+    };
+    PresenceNames {
+        kind: line("kind").filter(|k| matches!(k.as_str(), "agent" | "person")),
+        display_name: line("display_name"),
+        session_name: line("session_name"),
+        instance_id: line("instance_id"),
+        instance_name: line("instance_name"),
+    }
 }
 
 /// The frames the engine reads; others are ignored by the relay.
@@ -523,6 +607,8 @@ pub enum Inbound {
         role: String,
         state: PresenceState,
         at: u64,
+        /// The optional names a Hive relays with the presence.
+        names: PresenceNames,
     },
     Control {
         lifted: bool,
@@ -551,6 +637,22 @@ pub enum Inbound {
     },
     /// C0 2.2: a task of a followed vault changed.
     TaskEvent(Box<super::task_events::TaskEvent>),
+    /// A place's log grew (`log.advanced`): background sync tails it now.
+    /// `purge` (priority `purge`) skips the local debounce.
+    LogAdvanced {
+        place: String,
+        purge: bool,
+    },
+    /// A place's trust (members, keys) moved (`trust.advanced`).
+    TrustAdvanced {
+        place: String,
+    },
+    /// The effective policy of this instance has a new version
+    /// (`policy.advanced`). A hint only: nothing is applied before the
+    /// signed bundle is pulled and verified.
+    PolicyAdvanced {
+        version: u64,
+    },
     Other(String),
 }
 
@@ -614,6 +716,7 @@ pub fn parse_frame(text: &str) -> Result<Inbound, Invalid> {
             state: serde_json::from_value(value["state"].clone())
                 .map_err(|_| bad("presence.update: state"))?,
             at: n("at")?,
+            names: presence_names(&value),
         },
         "control" => {
             let lifted = match value["state"].as_str() {
@@ -643,6 +746,14 @@ pub fn parse_frame(text: &str) -> Result<Inbound, Invalid> {
         "task.event" => Inbound::TaskEvent(Box::new(
             super::task_events::TaskEvent::parse(&value).ok_or_else(|| bad("task.event"))?,
         )),
+        "log.advanced" => Inbound::LogAdvanced {
+            place: s("place")?,
+            purge: value["priority"].as_str() == Some("purge"),
+        },
+        "trust.advanced" => Inbound::TrustAdvanced { place: s("place")? },
+        "policy.advanced" => Inbound::PolicyAdvanced {
+            version: n("version")?,
+        },
         _ => Inbound::Other(t),
     })
 }

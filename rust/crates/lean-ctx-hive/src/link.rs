@@ -9,7 +9,9 @@
 //! 2.0 `link.schema.json`). Both are read; v1 is a hosted address.
 //! Resolution sends the vault on first sight; Hive binds it when this
 //! instance may contribute there. A repository without any identity marker
-//! gets a random `.lean-ctx-id` so its identity survives moves.
+//! gets a random `.lean-ctx-id` so its identity survives moves; one with a
+//! git origin never does (the origin is the identity of every checkout,
+//! [`super::vault::project_identity`]).
 
 use std::path::{Path, PathBuf};
 
@@ -19,15 +21,14 @@ use super::HiveError;
 use super::vault_address::VaultAddress;
 use lean_ctx_protocol::hive::vault::VaultRefV1;
 
+/// The one name of the link file. Every released Instance (3.12.0 on)
+/// writes it under this name; the Atlas-era name was dropped without an
+/// alias (owner: Hive starts fresh), so there is no second name to read.
 pub const LINK_FILE: &str = ".lean-ctx-hive.json";
-/// The link file before the Hive rename. Still read when [`LINK_FILE`] is
-/// missing; reading it writes [`LINK_FILE`] with the same bytes and keeps
-/// this file (it is committed, older engines in the team read it).
-pub const LEGACY_LINK_FILE: &str = ".lean-ctx-hive.json";
 
-/// True when `root` holds a link file under either name.
+/// True when `root` holds a link file.
 pub fn has_link_file(root: &Path) -> bool {
-    root.join(LINK_FILE).exists() || root.join(LEGACY_LINK_FILE).exists()
+    root.join(LINK_FILE).exists()
 }
 pub const LINK_SCHEMA: &str = "leanctx.hive.link/v1";
 pub const LINK_SCHEMA_V2: &str = "leanctx.hive.link/v2";
@@ -102,23 +103,9 @@ pub fn read_link(root: &Path) -> Result<Option<VaultLink>, HiveError> {
 pub use lean_ctx::core::git_worktree::main_worktree_root;
 
 fn read_link_file(root: &Path) -> Result<Option<VaultLink>, HiveError> {
-    if let Some((path, text)) = read_named(root, LINK_FILE)? {
-        return parse(&path, &text).map(Some);
-    }
-    let Some((path, text)) = read_named(root, LEGACY_LINK_FILE)? else {
-        return Ok(None);
-    };
-    let link = parse(&path, &text)?;
-    // Migrate on read: the Hive name gets the same bytes; the old file stays.
-    // Best effort: a read-only checkout still reads the old name next time.
-    let _ = write_file(&root.join(LINK_FILE), text.as_bytes());
-    Ok(Some(link))
-}
-
-fn read_named(root: &Path, name: &str) -> Result<Option<(PathBuf, String)>, HiveError> {
-    let path = root.join(name);
+    let path = root.join(LINK_FILE);
     match std::fs::read_to_string(&path) {
-        Ok(text) => Ok(Some((path, text))),
+        Ok(text) => parse(&path, &text).map(Some),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(HiveError::Local(format!("read {}: {e}", path.display()))),
     }
@@ -207,11 +194,6 @@ pub fn link(root: &Path, vault: &str) -> Result<LinkOutcome, HiveError> {
     let text = link_text(&address)?;
     let file = root.join(LINK_FILE);
     write_file(&file, text.as_bytes())?;
-    // An existing old-name file follows, so older engines in the team agree.
-    let legacy = root.join(LEGACY_LINK_FILE);
-    if legacy.exists() {
-        write_file(&legacy, text.as_bytes())?;
-    }
     Ok(LinkOutcome {
         file,
         created_identity,
@@ -298,6 +280,74 @@ mod tests {
         );
     }
 
+    /// Dogfood 5.11.: two checkouts of one origin, both linked, are one
+    /// repository. A git origin never gets a random id, and one an earlier
+    /// `hive link` wrote gives way to the origin; without an origin the
+    /// random id stays the identity.
+    #[test]
+    fn two_linked_checkouts_of_one_origin_keep_one_identity() {
+        use crate::vault::project_identity;
+        let base = tempfile::tempdir().unwrap();
+        let checkout = |name: &str| {
+            let root = base.path().join(name);
+            std::fs::create_dir_all(&root).unwrap();
+            // A real repository: identity v2 asks git for the origin.
+            for args in [
+                &["init", "-q"][..],
+                &[
+                    "remote",
+                    "add",
+                    "origin",
+                    "git@github.com:yves/leanctx-hive.git",
+                ][..],
+            ] {
+                let out = std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&root)
+                    .args(args)
+                    .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                    .env("GIT_CONFIG_NOSYSTEM", "1")
+                    .output()
+                    .unwrap();
+                assert!(out.status.success(), "git {args:?}: {out:?}");
+            }
+            root
+        };
+        let (mac, pounce) = (checkout("mac"), checkout("pounce"));
+        assert!(!link(&mac, "yves/leanctx-hive").unwrap().created_identity);
+        assert!(!mac.join(IDENTITY_FILE).exists(), "an origin needs no id");
+        // pounce still has the random id an earlier engine's link wrote.
+        std::fs::write(
+            pounce.join(IDENTITY_FILE),
+            "0dfac5e1b2c3d4e5f60718293a4b5c6d\n",
+        )
+        .unwrap();
+        assert!(!link(&pounce, "yves/leanctx-hive").unwrap().created_identity);
+        let origin = Some("git:github.com/yves/leanctx-hive".to_string());
+        assert_eq!(project_identity(&mac), origin);
+        assert_eq!(project_identity(&pounce), origin, "the random id gives way");
+        let parts = |root: &Path| crate::identity_v2::read_parts(root).stable();
+        assert_eq!(parts(&mac), parts(&pounce), "and in identity v2");
+
+        // A hand-written id is a deliberate name and stays the identity.
+        std::fs::write(pounce.join(IDENTITY_FILE), "billing-service\n").unwrap();
+        assert_eq!(
+            project_identity(&pounce).as_deref(),
+            Some("explicit:billing-service")
+        );
+
+        // Without an origin a random id is the only identity there is.
+        let bare = base.path().join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        assert!(link(&bare, "yves/notes").unwrap().created_identity);
+        let id = std::fs::read_to_string(bare.join(IDENTITY_FILE)).unwrap();
+        assert!(crate::vault::link_made_id(id.trim()));
+        assert_eq!(
+            project_identity(&bare),
+            Some(format!("explicit:{}", id.trim()))
+        );
+    }
+
     #[test]
     fn projects_with_an_identity_get_no_new_id_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -335,32 +385,6 @@ mod tests {
         serde_json::from_str::<PreVaLink>(&text).expect("an engine before the rename reads it");
         let back = read_link(dir.path()).unwrap().unwrap();
         assert_eq!((back.vault, back.server), (read.vault, None));
-    }
-
-    #[test]
-    fn the_hive_link_file_is_read_and_migrated_to_the_hive_name() {
-        let dir = tempfile::tempdir().unwrap();
-        let old = "{\"schema\":\"leanctx.hive.link/v1\",\"repo\":{\"ns\":\"acme\",\"name\":\"payments\"}}\n";
-        std::fs::write(dir.path().join(LEGACY_LINK_FILE), old).unwrap();
-        assert!(has_link_file(dir.path()));
-        let read = read_link(dir.path()).unwrap().unwrap();
-        assert_eq!(read.vault.name, "payments");
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join(LINK_FILE)).unwrap(),
-            old,
-            "the Hive name gets the same bytes"
-        );
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join(LEGACY_LINK_FILE)).unwrap(),
-            old,
-            "the old file stays"
-        );
-        // A new link keeps both names in step.
-        link(dir.path(), "acme/billing").unwrap();
-        for name in [LINK_FILE, LEGACY_LINK_FILE] {
-            let text = std::fs::read_to_string(dir.path().join(name)).unwrap();
-            assert!(text.contains("billing"), "{name}: {text}");
-        }
     }
 
     #[test]

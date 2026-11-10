@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use lean_ctx::core::shell_allowlist::{ApprovalMiss, ApprovalRequest};
+use lean_ctx_shell_policy::{ApprovalMiss, ApprovalRequest};
 
 fn request(programs: &[(&str, bool)]) -> ApprovalRequest {
     ApprovalRequest {

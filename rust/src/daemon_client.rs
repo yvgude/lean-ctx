@@ -213,13 +213,16 @@ fn format_daemon_tool_call_body(name: &str, arguments: Option<&serde_json::Value
     let project_root =
         (!crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(&root)))
             .then_some(root.as_str());
-    tool_call_body(name, arguments, project_root)
+    let rights_file = std::env::var_os(crate::core::session_rights::ENV_FILE)
+        .map(|raw| raw.to_string_lossy().into_owned());
+    tool_call_body(name, arguments, project_root, rights_file.as_deref())
 }
 
 fn tool_call_body(
     name: &str,
     arguments: Option<&serde_json::Value>,
     project_root: Option<&str>,
+    rights_file: Option<&str>,
 ) -> String {
     let mut body = serde_json::json!({
         "name": name,
@@ -227,6 +230,11 @@ fn tool_call_body(
     });
     if let Some(root) = project_root {
         body["projectRoot"] = serde_json::Value::String(root.to_string());
+    }
+    // The session's rights travel with the call (process-v1 §9): the shared
+    // daemon does not see this process's environment.
+    if let Some(rights) = rights_file {
+        body["rightsFile"] = serde_json::Value::String(rights.to_string());
     }
     body.to_string()
 }

@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Debian packages of the prebuilt Rust CI image (ci/images/rust/Dockerfile).
+# The union of what the Rust jobs in ci/gitlab-ci.yml installed per run:
+# v4-runtime (all of these) and v4-provenance (git, ca-certificates, python3).
+# Changing this file changes the image tag (ci/images/rust/build.sh).
+git
+ca-certificates
+python3
+cmake
+clang
+pkg-config
+libssl-dev
+mold
+nodejs
+npm
+passwd
+util-linux

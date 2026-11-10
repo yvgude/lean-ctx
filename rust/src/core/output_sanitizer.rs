@@ -158,7 +158,7 @@ pub fn sanitize(output: &str) -> String {
 /// Returns one signal per matching line (empty = clean); the content kind is
 /// inferred from the text. See [`detect_injection_as`].
 pub fn detect_injection(content: &str) -> Vec<InjectionSignal> {
-    if !injection_prefilter().is_match(content) {
+    if !injection_prefilter().is_match(&without_invisible(content)) {
         return Vec::new();
     }
     scan_injection(content, ContentKind::infer(content))
@@ -172,7 +172,7 @@ pub fn detect_injection(content: &str) -> Vec<InjectionSignal> {
 pub fn detect_injection_as(content: &str, kind: ContentKind) -> Vec<InjectionSignal> {
     // One case-insensitive pass over the whole text; clean content (the
     // overwhelming majority) never pays for lowercasing and line splitting.
-    if !injection_prefilter().is_match(content) {
+    if !injection_prefilter().is_match(&without_invisible(content)) {
         return Vec::new();
     }
     scan_injection(content, kind)
@@ -194,8 +194,21 @@ fn scan_injection(content: &str, kind: ContentKind) -> Vec<InjectionSignal> {
         .collect()
 }
 
+/// Invisible format characters (zero-width space/joiners, word joiner, BOM,
+/// soft hyphen) removed, so a phrase split by them still matches (pz21-AC04).
+fn without_invisible(text: &str) -> std::borrow::Cow<'_, str> {
+    const INVISIBLE: &[char] = &[
+        '\u{00ad}', '\u{200b}', '\u{200c}', '\u{200d}', '\u{2060}', '\u{feff}',
+    ];
+    if text.contains(INVISIBLE) {
+        std::borrow::Cow::Owned(text.replace(INVISIBLE, ""))
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
+
 fn classify_line(line: &str, kind: ContentKind) -> Option<(InjectionCategory, &'static str)> {
-    let lower = line.trim().to_lowercase();
+    let lower = without_invisible(line).trim().to_lowercase();
     for (needle, label) in INSTRUCTION_PHRASES {
         if contains_phrase(&lower, needle, kind) {
             return Some((InjectionCategory::InstructionPhrase, label));

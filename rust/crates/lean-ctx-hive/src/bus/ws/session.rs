@@ -22,7 +22,7 @@ use crate::knowledge::screening::Screen;
 use crate::state::HiveStore;
 use crate::transport::{PROTOCOL_V2, user_agent};
 use crate::vault::VaultMap;
-use crate::workers::attach::{self, LocalWorker, detect_host_app};
+use crate::workers::attach::{self, LocalWorker};
 use crate::workers::card::{Availability, Budget, WorkerCard};
 use crate::workers::register::ensure_registered;
 use lean_ctx::core::agents::{AgentEntry, AgentRegistry};
@@ -36,28 +36,32 @@ fn attach_agent(
     instance_id: &str,
     agent: &AgentEntry,
 ) -> Result<LocalWorker, HiveError> {
-    let transport = agent.transport.as_ref();
-    let host = detect_host_app(
-        transport.map(|t| t.host.as_str()),
-        Some(agent.agent_type.as_str()),
-        std::iter::empty::<(&str, &str)>(),
-        transport.and_then(|t| t.name.as_deref()),
-    );
-    Ok(attach::attach(
-        store,
-        instance_id,
-        &host,
-        agent.role.as_deref().unwrap_or_default(),
-    )?
-    .worker)
+    let (host, role) = attach::agent_worker_key(agent);
+    Ok(attach::attach(store, instance_id, &host, &role)?.worker)
+}
+
+/// The worker of `agent` in the worker book as it is now: by the same
+/// `(host_app, role)` key it attaches with ([`attach::agent_worker_key`]),
+/// so a session that registered after the relay connected maps to its
+/// worker too (#28).
+fn book_worker(book: &[LocalWorker], agent: &AgentEntry) -> Option<String> {
+    let (host, role) = attach::agent_worker_key(agent);
+    book.iter()
+        .find(|w| w.host_app == host && w.role == role)
+        .map(|w| w.worker_id.clone())
 }
 
 /// Register (E10, once) the workers of the active local agents in the
 /// subscribed vaults; agent id → registered worker. A failed registration
-/// leaves that agent out until the next pass.
-fn workers_of(session: &Session, agents: &[AgentEntry]) -> BTreeMap<String, LocalWorker> {
+/// leaves that agent out until the next pass; its error is kept under the
+/// agent id for the relay's report.
+fn workers_of(
+    session: &Session,
+    agents: &[AgentEntry],
+) -> (BTreeMap<String, LocalWorker>, BTreeMap<String, String>) {
     let instance_id = session.instance.instance_id.clone();
     let mut out = BTreeMap::new();
+    let mut failed = BTreeMap::new();
     for agent in agents {
         let result = attach_agent(&session.store, &instance_id, agent).and_then(|worker| {
             let card = WorkerCard::new(
@@ -73,12 +77,83 @@ fn workers_of(session: &Session, agents: &[AgentEntry]) -> BTreeMap<String, Loca
             Ok(worker) => {
                 out.insert(agent.agent_id.clone(), worker);
             }
-            Err(error) => session
-                .store
-                .record_error(&format!("bus worker registration: {error}")),
+            Err(error) => {
+                session
+                    .store
+                    .record_error(&format!("bus worker registration: {error}"));
+                failed.insert(agent.agent_id.clone(), error.to_string());
+            }
         }
     }
-    out
+    (out, failed)
+}
+
+/// What a hello Hive acknowledged announced, in the words `hive bus relay`
+/// prints and `bus/announced.txt` keeps (#252): each worker with its role
+/// and state on which buses, and for every agent that is not on a bus,
+/// why. `linked` tells whether an agent's checkout belongs to a vault this
+/// machine resolved; `denied` are the addresses the hello.ack refused.
+fn announce_report(
+    subscribe: &[String],
+    announced: &[PresenceEntry],
+    agents: &[AgentEntry],
+    workers: &BTreeMap<String, LocalWorker>,
+    failed: &BTreeMap<String, String>,
+    linked: impl Fn(&str) -> bool,
+    denied: &[String],
+) -> Vec<String> {
+    if agents.is_empty() {
+        return vec![
+            "bus relay: connected to Hive, but no agent is active on this machine's local bus: nobody was announced (an agent is announced once it registers with ctx_agent)".into(),
+        ];
+    }
+    let mut lines = vec![if subscribe.is_empty() {
+        "bus relay: connected to Hive, but no active agent works in a checkout linked to a Hive vault: Hive shows nobody on a bus (run `lean-ctx hive connect` in the checkout)".to_string()
+    } else {
+        format!(
+            "bus relay: connected to Hive; announced on {}:",
+            subscribe.join(", ")
+        )
+    }];
+    for agent in agents {
+        let role = agent.role.as_deref().unwrap_or_default();
+        let shown_role = if role.is_empty() { "no role" } else { role };
+        let line = match workers.get(&agent.agent_id) {
+            Some(worker) => {
+                let state = announced
+                    .iter()
+                    .find(|e| e.worker_id == worker.worker_id)
+                    .and_then(|e| serde_json::to_value(e.state).ok())
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                let mut line = format!(
+                    "  {} · {shown_role} · {state}  (agent {} in {})",
+                    worker.worker_id, agent.agent_id, agent.project_root
+                );
+                if !linked(&agent.project_root) {
+                    line.push_str(" — not on a bus: its checkout is not linked to a Hive vault");
+                } else if role.is_empty() {
+                    line.push_str(" — no role: register with role=… to claim tasks that need one");
+                }
+                line
+            }
+            None => format!(
+                "  agent {} ({shown_role}) in {}: not announced, its worker could not be registered: {}",
+                agent.agent_id,
+                agent.project_root,
+                failed
+                    .get(&agent.agent_id)
+                    .map_or("unknown error", String::as_str)
+            ),
+        };
+        lines.push(line);
+    }
+    for address in denied {
+        lines.push(format!(
+            "  {address}: refused by Hive (see `lean-ctx hive status`)"
+        ));
+    }
+    lines
 }
 
 /// True when every agent in `fresh` was announced with the same role (an
@@ -89,30 +164,50 @@ fn attached_alike(fresh: &[AgentEntry], announced: &[AgentEntry]) -> bool {
     fresh.iter().all(|a| announced.contains(&key(a)))
 }
 
-/// Presence entries, one per worker (active if any of its sessions is).
+/// Presence entries, one per worker (active if any of its sessions is),
+/// each with the worker's name and this Instance (QN0).
 fn presence(
     state: &StateV2,
     agents: &[AgentEntry],
     workers: &BTreeMap<String, LocalWorker>,
+    instance: &crate::state::InstanceRecord,
 ) -> Vec<PresenceEntry> {
-    let mut by_worker: BTreeMap<String, (String, bool)> = BTreeMap::new();
+    let mut by_worker: BTreeMap<String, (String, bool, Option<String>)> = BTreeMap::new();
     for agent in agents {
         if let Some(worker) = workers.get(&agent.agent_id) {
             let active = agent.status == lean_ctx::core::agents::AgentStatus::Active;
             let slot = by_worker
                 .entry(worker.worker_id.clone())
-                .or_insert_with(|| (worker.role.clone(), false));
+                .or_insert_with(|| (worker.role.clone(), false, None));
             slot.1 |= active;
+            if slot.2.is_none() {
+                slot.2 = agent
+                    .display_name
+                    .as_deref()
+                    .and_then(presence_line)
+                    .map(str::to_owned);
+            }
         }
     }
     by_worker
         .into_iter()
-        .map(|(worker_id, (role, active))| PresenceEntry {
+        .map(|(worker_id, (role, active, display_name))| PresenceEntry {
             state: relay_v2::presence_state(state, &worker_id, active),
             worker_id,
             role,
+            display_name,
+            instance_id: Some(instance.instance_id.clone()),
+            instance_name: presence_line(&instance.label).map(str::to_owned),
         })
         .collect()
+}
+
+/// `value` as a presence name: a trimmed single line of at most 128
+/// characters, else none.
+fn presence_line(value: &str) -> Option<&str> {
+    let value = value.trim();
+    (!value.is_empty() && value.chars().count() <= 128 && !value.chars().any(char::is_control))
+        .then_some(value)
 }
 
 /// Active local agents in linked vaults, and the subscriptions they make.
@@ -178,6 +273,7 @@ pub(super) async fn session_once(
     store: &HiveStore,
     config: &HiveConfig,
     connected: &mut bool,
+    report: &super::super::Report,
 ) -> Result<SessionEnd, HiveError> {
     let instance = store.instance()?.ok_or(HiveError::NotConnected)?;
     let root = crate::root_cert::trust_root(store, config, &instance.url)?;
@@ -187,12 +283,10 @@ pub(super) async fn session_once(
     }
     let data = store.data_dir().to_path_buf();
     let mut state = StateV2::load(&data);
-    // Nothing is in flight on a fresh socket: what the last one sent without
-    // `message.stored` goes again (Hive deduplicates by client_msg_id).
-    state.in_flight.clear();
-    let mut map = VaultMap::load(&data);
+    state.begin_connection();
+    let mut map = crate::resolution::current_view(&data);
     let (agents, subscribe) = local_view(&map);
-    let (session, workers) = {
+    let (session, (workers, failed)) = {
         let agents = agents.clone();
         tokio::task::spawn_blocking(move || {
             // Control keys come from key set v3 (E13); a refused or missing
@@ -229,19 +323,11 @@ pub(super) async fn session_once(
     let (mut sink, mut stream) = socket.split();
     let text = |frame: &Value| Message::Text(frame.to_string().into());
     let offline = |e: tokio_tungstenite::tungstenite::Error| HiveError::Offline(e.to_string());
-    let mut announced = presence(&state, &agents, &workers);
+    let mut announced = presence(&state, &agents, &workers, &instance);
     sink.send(text(&relay_v2::hello(&subscribe, &state, &announced)))
         .await
         .map_err(offline)?;
     let local_workers: BTreeSet<String> = workers.values().map(|w| w.worker_id.clone()).collect();
-    // Worker → the local agents that are it, for messages addressed to one.
-    let mut agents_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (agent, worker) in &workers {
-        agents_of
-            .entry(worker.worker_id.clone())
-            .or_default()
-            .push(agent.clone());
-    }
     let mut screen = Screen::for_installation();
     let mut tick = tokio::time::interval(TICK);
     let mut wake = tokio::time::interval(WAKE_POLL);
@@ -268,11 +354,14 @@ pub(super) async fn session_once(
                 }
                 state.save(&data)?;
             }
-            // A local agent registered or changed role: tick now, so a
-            // fresh hello announces it before its first claim.
+            // A local agent registered or changed role, or `hive bus relay`
+            // asked: a fresh hello announces this machine's workers again
+            // before the next claim, and its record answers the CLI (#252).
             _ = wake.tick() => {
                 if super::super::presence::take_announce(&data) {
-                    tick.reset_immediately();
+                    state.save(&data)?;
+                    let _ = sink.send(Message::Close(None)).await;
+                    return Ok(SessionEnd::Reannounce);
                 }
             }
             incoming = stream.next() => {
@@ -303,13 +392,36 @@ pub(super) async fn session_once(
                 match frame {
                     Inbound::HelloAck(ack) => {
                         store.record_success("bus", &stamp);
+                        // A policy change missed while offline is pulled at
+                        // once on every (re)connect (a 304 when none).
+                        let policy = ack["policy_version"].as_u64();
+                        if policy.is_some() {
+                            crate::policy::note_nudges_seen(store.data_dir());
+                        }
+                        crate::scheduler::nudge_policy(policy);
+                        state.person_publish = relay_v2::acks_person_publish(&ack);
+                        let mut refused = Vec::new();
                         for denied in ack["denied"].as_array().into_iter().flatten() {
-                            store.record_error(&format!(
-                                "bus: {} denied ({})",
+                            let line = format!(
+                                "{} denied ({})",
                                 denied["address"].as_str().unwrap_or("?"),
                                 denied["code"].as_str().unwrap_or("?")
-                            ));
+                            );
+                            store.record_error(&format!("bus: {line}"));
+                            refused.push(line);
                         }
+                        // What Hive now shows of this machine (#252).
+                        let lines = announce_report(
+                            &subscribe,
+                            &announced,
+                            &agents,
+                            &workers,
+                            &failed,
+                            |root| relay_v2::record_for(&map, root).is_some(),
+                            &refused,
+                        );
+                        super::super::presence::note_announced(&data, &lines);
+                        report.say(&lines.join("\n"));
                         // Subscribed now: what changed before is read once.
                         if !subscribe.is_empty() && catchup.is_none() {
                             let (map, subscribe) = (map.clone(), subscribe.clone());
@@ -343,6 +455,17 @@ pub(super) async fn session_once(
                                 chrono::Utc::now(),
                             );
                         } else {
+                            // Remembered for its sender, so no agent passes
+                            // the refused message on (process v1 §7).
+                            let sender = relay_v2::queued_worker(&data, &id);
+                            if let Err(error) = super::super::person_rules::note_refused(
+                                &data,
+                                &id,
+                                sender.as_deref(),
+                                &code,
+                            ) {
+                                store.record_error(&format!("bus refused record: {error}"));
+                            }
                             state.refused(&id);
                             relay_v2::settle_queued(&data, &id)?;
                             store.record_error(&format!("bus publish refused: {code}"));
@@ -355,8 +478,18 @@ pub(super) async fn session_once(
                         ));
                     }
                     Inbound::Deliver(message) => {
+                        // Who a message for one worker reaches is decided now,
+                        // from the live registry and the worker book, not from
+                        // what this connection saw when it opened (#28).
+                        let book = attach::list(store, &instance.instance_id).unwrap_or_default();
+                        let mine: BTreeSet<String> = local_workers
+                            .iter()
+                            .cloned()
+                            .chain(book.iter().map(|w| w.worker_id.clone()))
+                            .collect();
+                        let worker_of = |agent: &AgentEntry| book_worker(&book, agent);
                         let applied = AgentRegistry::mutate_locked(|registry| {
-                            relay_v2::apply_delivery(registry, &map, &mut state, &message, &local_workers, &agents_of)
+                            relay_v2::apply_delivery(registry, &map, &mut state, &message, &mine, &worker_of)
                         });
                         if let Ok((_, Err(error))) = applied {
                             store.record_error(&format!("bus delivery: {error}"));
@@ -406,15 +539,32 @@ pub(super) async fn session_once(
                     }
                     // Who works where: other machines' workers, for
                     // `ctx_agent list` (this machine's own are local).
-                    Inbound::Presence { address, worker_id, role, state: presence_state, at } => {
+                    Inbound::Presence { address, worker_id, role, state: presence_state, at, names } => {
                         if !local_workers.contains(&worker_id) {
                             let recorded = super::super::presence::PresenceMap::mutate(&data, |map| {
-                                map.apply(&address, &worker_id, &role, presence_state, at)
+                                map.apply_named(&address, &worker_id, &role, presence_state, at, names)
                             });
                             if let Err(error) = recorded {
                                 store.record_error(&format!("bus presence: {error}"));
                             }
                         }
+                    }
+                    // Background sync tails the place now (hints only: the
+                    // replica verifies whatever it fetches).
+                    Inbound::LogAdvanced { place, purge } => {
+                        let trigger = if purge {
+                            crate::sync::auto::Trigger::BusPurge
+                        } else {
+                            crate::sync::auto::Trigger::Bus
+                        };
+                        crate::sync::auto::nudge_place(&place, trigger);
+                    }
+                    Inbound::TrustAdvanced { place } => {
+                        crate::sync::auto::nudge_place(&place, crate::sync::auto::Trigger::Bus);
+                    }
+                    Inbound::PolicyAdvanced { version } => {
+                        crate::policy::note_nudges_seen(store.data_dir());
+                        crate::scheduler::nudge_policy(Some(version));
                     }
                     Inbound::Other(_) => {}
                 }
@@ -427,7 +577,7 @@ pub(super) async fn session_once(
                     let _ = sink.send(Message::Close(None)).await;
                     return Ok(SessionEnd::Closed);
                 }
-                map = VaultMap::load(&data);
+                map = crate::resolution::current_view(&data);
                 let (fresh_agents, fresh_subscribe) = local_view(&map);
                 // A new agent, or one that registered again with another
                 // role, attaches to another worker: announce it afresh.
@@ -436,16 +586,20 @@ pub(super) async fn session_once(
                     let _ = sink.send(Message::Close(None)).await;
                     return Ok(SessionEnd::Reannounce);
                 }
-                let fresh = presence(&state, &fresh_agents, &workers);
+                let fresh = presence(&state, &fresh_agents, &workers, &instance);
                 if fresh != announced {
                     // A worker changed state (held, idle): tell each place.
                     for address in &subscribe {
                         for entry in fresh.iter().filter(|e| !announced.contains(e)) {
-                            let update = json!({
+                            let mut update = json!({
                                 "t": "presence.update", "address": address,
-                                "worker_id": entry.worker_id, "role": entry.role,
-                                "state": entry.state, "at": now_ms(),
+                                "at": now_ms(),
                             });
+                            if let (Some(frame), Ok(Value::Object(fields))) =
+                                (update.as_object_mut(), serde_json::to_value(entry))
+                            {
+                                frame.extend(fields);
+                            }
                             sink.send(text(&update)).await.map_err(offline)?;
                         }
                     }
@@ -455,7 +609,8 @@ pub(super) async fn session_once(
                 if !bus_held(store) {
                     let registry = AgentRegistry::load_or_create();
                     let worker_of = |agent: &AgentEntry| workers.get(&agent.agent_id).map(|w| w.worker_id.clone());
-                    for item in relay_v2::outgoing(&registry, &map, &mut state, &mut screen, &worker_of) {
+                    let records = super::super::person_rules::Records::load(&data);
+                    for item in relay_v2::outgoing(&registry, &map, &mut state, &mut screen, &worker_of, &records) {
                         sink.send(text(&item.frame)).await.map_err(offline)?;
                     }
                     for frame in relay_v2::queued_frames(&data, &mut state) {
@@ -534,6 +689,164 @@ mod tests {
         changed[0].role = Some("tester".into());
         assert!(!attached_alike(&changed, &announced), "role changed");
         assert!(!attached_alike(&announced, &announced[..1]), "a new agent");
+    }
+
+    /// #28: the relay finds a session's worker in the book as it is now,
+    /// by host app and normalized role, so a session that reconnected under
+    /// a new agent id still gets its worker's message; another role or
+    /// host gets none.
+    #[test]
+    fn book_worker_maps_sessions_by_host_and_normalized_role() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let mut registry = AgentRegistry::new();
+        registry
+            .register("claude", Some("Coder"), "/src/p", None)
+            .unwrap();
+        let coder = registry.agents[0].clone();
+        let (host, _) = attach::agent_worker_key(&coder);
+        let worker = |id: &str, host: &str, role: &str| LocalWorker {
+            worker_id: id.into(),
+            host_app: host.into(),
+            role: role.into(),
+            name: None,
+            registered_at: None,
+            aliases: BTreeMap::new(),
+            last_attached: None,
+            per_session: false,
+        };
+        let book = vec![
+            worker("wkr_tester", &host, "tester"),
+            worker("wkr_coder", &host, "coder"),
+            worker("wkr_other_host", "some-other-host", "reviewer"),
+        ];
+
+        assert_eq!(
+            book_worker(&book, &coder).as_deref(),
+            Some("wkr_coder"),
+            "`Coder` maps to the `coder` worker"
+        );
+        let mut sibling = coder.clone();
+        sibling.agent_id = "claude-reconnected".into();
+        sibling.role = Some("coder".into());
+        assert_eq!(
+            book_worker(&book, &sibling).as_deref(),
+            Some("wkr_coder"),
+            "a second session with the same host and role maps to the same worker"
+        );
+        let mut other_role = coder.clone();
+        other_role.role = Some("security-reviewer".into());
+        assert_eq!(book_worker(&book, &other_role), None, "another role");
+        let mut other_host = coder.clone();
+        other_host.role = Some("reviewer".into());
+        assert_ne!(host, "some-other-host");
+        assert_eq!(book_worker(&book, &other_host), None, "another host");
+    }
+
+    /// #252: `hive bus relay` said nothing, so nobody saw that the tester
+    /// was not on the bus. Its report names each announced worker with role
+    /// and state, and for every agent that is not on a bus, why.
+    #[test]
+    fn the_relay_report_says_who_was_announced_and_why_not() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let mut registry = AgentRegistry::new();
+        registry
+            .register("claude", Some("tester"), "/src/pounce-hive", None)
+            .unwrap();
+        // One process holds one agent: the others are other sessions'.
+        let agents: Vec<AgentEntry> = [
+            ("tester", "/src/pounce-hive"),
+            ("dev", "/src/unlinked"),
+            ("", "/src/pounce-hive"),
+            ("ops", "/src/pounce-hive"),
+        ]
+        .iter()
+        .enumerate()
+        .map(|(n, (role, root))| {
+            let mut agent = registry.agents[0].clone();
+            agent.agent_id = format!("claude-{n}-x");
+            agent.role = Some((*role).to_string()).filter(|r| !r.is_empty());
+            agent.project_root = (*root).to_string();
+            agent
+        })
+        .collect();
+        let worker = |id: &str, role: &str| LocalWorker {
+            worker_id: id.into(),
+            host_app: "claude-code".into(),
+            role: role.into(),
+            name: None,
+            registered_at: Some(1),
+            aliases: BTreeMap::new(),
+            last_attached: None,
+            per_session: false,
+        };
+        let mut workers = BTreeMap::new();
+        workers.insert(agents[0].agent_id.clone(), worker("wkr_tester", "tester"));
+        workers.insert(agents[1].agent_id.clone(), worker("wkr_dev", "dev"));
+        workers.insert(agents[2].agent_id.clone(), worker("wkr_none", ""));
+        let mut failed = BTreeMap::new();
+        failed.insert(agents[3].agent_id.clone(), "Hive answered 503".to_string());
+        let announced = vec![PresenceEntry {
+            worker_id: "wkr_tester".into(),
+            role: "tester".into(),
+            state: super::super::super::v2::PresenceState::Active,
+            display_name: None,
+            instance_id: None,
+            instance_name: None,
+        }];
+        let subscribe = vec!["#yves/pounce-hive".to_string()];
+        let lines = announce_report(
+            &subscribe,
+            &announced,
+            &agents,
+            &workers,
+            &failed,
+            |root| root == "/src/pounce-hive",
+            &["#yves/secret denied (not_member)".into()],
+        );
+        let text = lines.join("\n");
+        assert_eq!(
+            lines[0],
+            "bus relay: connected to Hive; announced on #yves/pounce-hive:"
+        );
+        assert!(
+            text.contains(&format!(
+                "  wkr_tester · tester · active  (agent {} in /src/pounce-hive)",
+                agents[0].agent_id
+            )),
+            "{text}"
+        );
+        assert!(
+            text.contains("wkr_dev · dev") && text.contains("not linked to a Hive vault"),
+            "{text}"
+        );
+        assert!(
+            text.contains("wkr_none · no role ·") && text.contains("register with role="),
+            "{text}"
+        );
+        assert!(
+            text.contains("(ops) in /src/pounce-hive: not announced, its worker could not be registered: Hive answered 503"),
+            "{text}"
+        );
+        assert!(
+            text.contains("#yves/secret denied (not_member): refused by Hive"),
+            "{text}"
+        );
+
+        let none = announce_report(&[], &[], &[], &workers, &failed, |_| true, &[]);
+        assert!(none[0].contains("no agent is active"), "{none:?}");
+        let unlinked = announce_report(
+            &[],
+            &announced,
+            &agents[..1],
+            &workers,
+            &failed,
+            |_| false,
+            &[],
+        );
+        assert!(
+            unlinked[0].contains("no active agent works in a checkout linked"),
+            "{unlinked:?}"
+        );
     }
 
     /// A quota or policy refusal of a publish keeps the post; any other

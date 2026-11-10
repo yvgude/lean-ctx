@@ -40,6 +40,8 @@ L0  lean-ctx-patterns · lean-ctx-compress · lean-ctx-syntax ·
 | `lean-ctx-syntax` 0.1.0 (→ patterns, dev only) | `core/{ast_walk,syntax_validate}.rs`, `core/{deep_queries,import_resolver,signatures_ts}/**`, signature extraction, chunk grammar map | `pub use` in `core/mod.rs`; `core/signatures.rs` keeps telemetry + `extract_file_map` | tree-sitter grammars only in this crate, behind its features |
 | `lean-ctx-patterns` 0.1.0 | `core/patterns`, `core/tokens.rs`, `core/json_crush.rs`, `core/safety_needles.rs`, `compressor::strip_ansi` | `core/patterns/mod.rs`: policy gate, `cd` unwrap, user filters, `EngineEnv` (curl passthrough URLs). Re-export shims for `core::{tokens, json_crush, safety_needles}` | Extraction #1 (B07 experiment, measured) |
 | `lean-ctx-doc` 0.1.0 | new (no engine module moved) | `core/hive/docs.rs`: replica events in, signed C0 2.2 doc writes out | Docs in Hive (lean-ctx-38) |
+| `lean-ctx-activity` 0.1.0 (→ fs) | new (no engine module moved) | `core/activity.rs`: data dir + `core::redaction` for `record` | Activity stream, `activity list` (Local Read v1) |
+| `lean-ctx-tasks` 0.1.0 (→ fs) | new (no engine module moved) | lean-ctx-hive `tasks/local.rs`: store directory, linked check, bus notices | Local tasks (O1/O2, 04.11.) |
 
 ## Scheduled (outbound edges frozen)
 
@@ -87,6 +89,15 @@ crate still re-checks the whole engine.
   every entry point); the policy floor's read side, the vault map, the
   availability gate and the untrusted-content fence live in the engine. Its
   unit-test harness is in `UNIT_TEST_HARNESSES`.
+- `lean-ctx-shell-policy` (crates/lean-ctx-shell-policy, lib
+  `lean_ctx_shell_policy`): the shell-allowlist policy (enforcement, config,
+  approval, partial allow, self-config, side doors, substitution) above the
+  engine. The engine keeps only the lexical layer (`core::shell_allowlist`:
+  lexer, heredoc, tokenizer, compound, case, PowerShell, mode) and a
+  fail-closed gate: its exec path refuses every command until
+  `lean_ctx_shell_policy::install()` registers the policy (the composition
+  root calls it at dispatch). Hooks, server and the composition root depend
+  on it. Its unit-test harness is in `UNIT_TEST_HARNESSES`.
 - Moving: hooks/hook_handlers, above the engine.
 
 ## Edit loop by area

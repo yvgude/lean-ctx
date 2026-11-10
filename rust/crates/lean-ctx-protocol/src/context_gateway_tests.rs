@@ -794,3 +794,11 @@ fn quality_rejects_impossible_claims() {
     });
     assert!(serde_json::from_value::<ContextQualitySectionV1>(tampered).is_err());
 }
+
+#[test]
+fn external_or_unknown_covers_untrusted_and_unknown_only() {
+    assert!(TrustLevelV1::Untrusted.is_external_or_unknown());
+    assert!(TrustLevelV1::Unknown.is_external_or_unknown());
+    assert!(!TrustLevelV1::Internal.is_external_or_unknown());
+    assert!(!TrustLevelV1::Trusted.is_external_or_unknown());
+}

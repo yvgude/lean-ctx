@@ -746,7 +746,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
                                 "store full of protected evidence (recent, latest-indexed, tasks in progress): no new Decision Receipt is stored; \
                                  governed/sovereign releases are withheld. Raise LEAN_CTX_GATEWAY_STORE_MAX_MB (or max_disk_mb) or lower LEAN_CTX_GATEWAY_PROTECT_HOURS."
                             } else {
-                                "older unprotected receipts are removed in the background; run `lean-ctx inspect --maintain` to do it now."
+                                "older unprotected receipts and orphaned egress records, sidecars and output indexes are removed in the background; `lean-ctx inspect --maintain --dry-run` lists what a pass would remove (nothing is changed), `lean-ctx inspect --maintain` does it now."
                             }
                         ),
                     });

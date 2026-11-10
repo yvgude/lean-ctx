@@ -273,15 +273,12 @@ pub(super) fn cmd_pack_receive(args: &[String], project_root: &str) {
             }
         }
         TransportContentType::HandoffBundle => {
-            let out_path = std::path::Path::new(project_root)
-                .join(".lean-ctx")
-                .join("handoffs")
-                .join("received-bundle.json");
-            if let Some(parent) = out_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            match std::fs::write(&out_path, &envelope.payload_json) {
-                Ok(()) => eprintln!("Handoff bundle saved: {}", out_path.display()),
+            match lean_ctx::core::pathjail_write::write_project_data(
+                std::path::Path::new(project_root),
+                std::path::Path::new("handoffs/received-bundle.json"),
+                envelope.payload_json.as_bytes(),
+            ) {
+                Ok(out_path) => eprintln!("Handoff bundle saved: {}", out_path.display()),
                 Err(e) => super::exit_failed(format!("write failed: {e}")),
             }
         }

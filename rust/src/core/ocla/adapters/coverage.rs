@@ -170,7 +170,9 @@ mod tests {
                 budget_tokens: Some(100),
             },
             policy_constraints: PolicyConstraints::default(),
-            timeout_ms: 1_000,
+            // No deadline: the native success path is under test, and a cold
+            // tokenizer on a loaded host can exceed any fixed budget.
+            timeout_ms: 0,
         }
     }
 
@@ -242,9 +244,11 @@ mod tests {
             .expect("registered external adapter");
 
         assert!(registered_native.invoke(native_invocation(&native)).is_ok());
+        // A generous deadline for the success path (process spawn on a loaded
+        // host); the timeout path below keeps its 1 ms deadline.
         assert!(
             registered_external
-                .invoke(external_invocation(1_000))
+                .invoke(external_invocation(30_000))
                 .is_ok()
         );
 

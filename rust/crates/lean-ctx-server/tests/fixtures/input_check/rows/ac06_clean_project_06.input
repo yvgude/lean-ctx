@@ -1,0 +1,13 @@
+pub enum Role {
+    System,
+    User,
+    Assistant,
+}
+
+pub fn label(role: &Role) -> &'static str {
+    match role {
+        Role::System => "system",
+        Role::User => "user",
+        Role::Assistant => "assistant",
+    }
+}

@@ -416,6 +416,50 @@ it, through the same dialog and with the same choices. Shell code
 - **Proof:** every answer is written to the audit trail
   (`execute_approval:<choice>` with the languages and a digest of the code).
 
+### 2.4 Redaction markers
+
+A `[REDACTED:<label>]` marker stands for a value lean-ctx hid from the agent's
+view. Redaction applies to what the agent is shown, never to what runs, so a
+command or file write that carries a marker is refused in every
+`shell_security` mode: run as typed, it would write the marker itself, not the
+value (on 24.10. a marker copied into a remote config crash-looped a server).
+The refusal is permanent for that command; the agent recovers the value instead:
+
+- **From a command's output:** run the producing command inside the new one and
+  pipe its output on (`producer | consumer`), so the value never passes through
+  the agent's view.
+- **From an env var or a secrets file:** read it there inside the command
+  (`"$DB_URL"`, `--password-file`).
+
+**Allow-path for marker literals in source and test code.** Redaction tests and
+marker constants must contain the literal. These writes pass:
+
+- a shell command that is exactly one `cat > FILE <<'EOF'` (also `cat >> FILE`,
+  `cat <<'EOF' > FILE`, `tee [-a] FILE <<'EOF'`) whose markers all sit in the
+  body of that one *quoted* heredoc, with nothing else on the operator line (no
+  pipe, `;`, `&&`, substitution, variable, second file or second heredoc);
+- a `lean-ctx client fs write` and your client's own file-editing tool;
+
+and only when `FILE` is a Rust file (`*.rs`, compiled, never read as
+configuration at run time) or a test file of a common language (`py`, `ts`,
+`tsx`, `js`, `jsx`, `mjs`, `cjs`, `go`, `java`, `kt`, `swift`, `c`, `cc`,
+`cpp`, `h`, `hpp`, `cs`, `rb`) inside a `tests`/`test`/`__tests__` directory
+or named `test_*`, `*_test`, `*_tests`, `*.test.*`, `*.spec.*`, `*Test`,
+`*Tests`. Configuration and data files (`.env`, `.toml`, `.json`, `.yaml`,
+`.ini`, `.conf`, …), shell scripts, documents and non-test source in other
+languages (`settings.py`, `config.js`) never take a marker. Only the part of
+the path below the project root is judged, so a project that itself sits in a
+`test` or `tests` folder (`/home/u/test/app`) gains no exemption for
+`config/settings.py`. A `client fs write` outside the project root never takes
+a marker, and neither does an absolute heredoc target
+(`cat > /opt/test/app/config.js`). Nor does a path with a `..` part, or one
+that starts with `./` (`tests/../settings.py`, `./tests/x_test.py`): it is
+judged as written, and such a part could leave the test directory it names.
+
+Code that should not depend on the allow-path builds the marker at run time,
+e.g. `concat!("[REDACTED", ":AWS key]")` in Rust; the guard only matches the
+complete literal.
+
 ---
 
 ## 3. OS sandboxing for executed code
@@ -635,6 +679,23 @@ identifier/property references (`serverEnv.getStripeSecretKey`), camelCase
 subwords (`superuserPassword:` as a key), and obvious placeholders
 (`ghp_change_me`, `your_key_here`). Quoted string literals and digit-bearing
 values remain protected.
+
+One narrow exception keeps knowledge facts intact: the value of a JSON member
+named exactly `key` (`"key": "…"`, the form a serialized knowledge fact
+carries) is not taken for a long secret when it reads as a slug — at least
+three parts joined by `-`, at least two of them words (vowels in a fifth of
+their letters, no run of more than four consonants), numbers of at most eight
+digits (`governor-design-pull-forward-2026-10-29`). Before, every long fact key
+was masked to the same marker. The same text in free text (`key: …`,
+`SIGNING_KEY=…`) or under any other name (`encryption_key`, `auth`,
+`credential`) stays masked, and so does a value of random letter groups or a
+long number. Residual risk: a passphrase of real words joined by `-` (diceware)
+stored as the value of a member named `key` reads as a slug and is not masked;
+keep secrets under a secret's name, or add a `custom_patterns` entry for them.
+
+When a CLI `--json` document needs masking, its values are masked in place;
+if a masked piece of text still appears anywhere else in the document (under
+another name, inside another value), the whole document is withheld instead.
 
 ### 4.0 Secret-like paths on native Read and Grep
 
@@ -925,7 +986,19 @@ a whole and a retention policy that keeps it below the ceiling.
   is left goes too. Removals are final and booked in batches, and the task
   indexes are visited behind a saved cursor, so a pass a process could not
   finish is continued by the next one. `lean-ctx inspect --maintain` runs a
-  pass now, in the foreground.
+  pass now, in the foreground; `lean-ctx inspect --maintain --dry-run` lists
+  what that pass would remove or pack (kind, path and bytes; `--json` lists
+  every path) and changes nothing: no removal, no lock or stamp file, no
+  ledger rebuild.
+- **Orphans:** once older than the protected window, a pass also removes what
+  no receipt reaches any more: a trace sidecar or observation whose receipt is
+  gone, an egress decision link whose receipt is gone, an egress admission
+  whose decision receipt is gone, the attempt links and observations of a
+  removed admission, and an output index none of whose receipts is left. A
+  record that cannot be read is never taken for an orphan. The audit trail and
+  the execution ledger lie outside the store and are never touched.
+- **One receipt** is bounded at 64 MB unpacked: a larger one is refused before
+  anything is written, and never loaded.
 - **Protected, whatever their age or size:** receipts younger than 24 hours
   (`LEAN_CTX_GATEWAY_PROTECT_HOURS`), receipts a project's latest index lists,
   and the receipts of a task whose index changed within that window. Signed
@@ -934,7 +1007,7 @@ a whole and a retention policy that keeps it below the ceiling.
   incomplete.
 
 - **Ceiling:** `LEAN_CTX_GATEWAY_STORE_MAX_MB` if set (`0` = no ceiling), else
-  10 % of the `max_disk_mb` disk budget, else 1024 MB. It is deliberately not a
+  10 % of the `max_disk_mb` disk budget, else 4096 MB. It is deliberately not a
   `[context_gateway]` key: that table is part of every receipt's policy digest,
   and a storage ceiling decides no admission.
 - **At the ceiling** a write starts a pass that makes room (above) and is

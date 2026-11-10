@@ -633,3 +633,118 @@ async fn events_endpoint_scopes_directed_events_to_agent_identity() {
         "msg={scoped_msg:?}"
     );
 }
+
+/// A Developer rights file (process-v1 §9) over `worktree`, whose
+/// `tests/locked_test.rs` is locked past G2; `denied` are denied tools.
+fn session_rights_file(dir: &std::path::Path, worktree: &std::path::Path, denied: &[&str]) -> String {
+    std::fs::create_dir_all(worktree.join("tests")).expect("tests dir");
+    std::fs::create_dir_all(worktree.join("specs/42")).expect("spec dir");
+    std::fs::write(worktree.join("tests/locked_test.rs"), "#[test] fn t() {}\n").expect("test");
+    let list = json!({
+        "schema": "leanctx.hive.process.feature-list/v1", "process": "1.0",
+        "task": {"vault": "#acme/payments", "number": 42},
+        "spec_commit": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+        "test_command": "cargo test",
+        "locked_paths": ["tests/locked_test.rs", "specs/42/features.json"],
+        "features": [{"id": "F1", "description": "d", "steps": ["s"],
+                      "tests": ["tests/locked_test.rs::t"], "passes": false}]
+    });
+    std::fs::write(worktree.join("specs/42/features.json"), list.to_string()).expect("list");
+    let record = json!({
+        "schema": "leanctx.session-rights/v1", "process": "1.0",
+        "profile": {"id": "developer", "name": "Developer", "stages": ["build"],
+                    "delivers": "commits in its own worktree", "read": ["repo", "vault"],
+                    "write": ["own_worktree"], "deny_write": ["locked", "spec", "tests"],
+                    "may_stop": false, "availability": "now"},
+        "bindings": {"own_worktree": [worktree.to_string_lossy()]},
+        "feature_list": "specs/42/features.json",
+        "denied_tools": denied,
+    });
+    let rights = dir.join("rights.json");
+    std::fs::write(&rights, record.to_string()).expect("rights");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&rights, std::fs::Permissions::from_mode(0o600)).expect("0600");
+    }
+    rights.to_string_lossy().into_owned()
+}
+
+/// F6: the daemon runs a forwarded call under the sender's rights. Its
+/// `rightsFile` reaches the server handler through the request extensions
+/// (a denied tool is refused there), a forwarded write into a locked test is
+/// refused, a call without rights is unrestricted, and a TCP server never
+/// takes a rights file.
+#[tokio::test]
+async fn session_rights_daemon_calls_run_under_the_senders_rights() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let worktree = dir.path().join("wt");
+    std::fs::create_dir_all(worktree.join(".git")).expect("git marker");
+    let rights = session_rights_file(dir.path(), &worktree, &["ctx_tree"]);
+    let cfg = HttpServerConfig {
+        project_root: worktree.clone(),
+        ..HttpServerConfig::default()
+    };
+    let ipc = build_ipc_router(&cfg, None);
+    let call = |name: &str, arguments: Value, rights: Option<&str>| {
+        let mut body = json!({"name": name, "arguments": arguments});
+        if let Some(rights) = rights {
+            body["rightsFile"] = json!(rights);
+        }
+        body
+    };
+
+    let (status, denied) = local_request(
+        &ipc,
+        "POST",
+        "/v1/tools/call",
+        Some(call("ctx_tree", json!({"depth": 1}), Some(rights.as_str()))),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{denied}");
+    assert!(denied.contains("denied_tools"), "{denied}");
+
+    let locked = worktree.join("tests/locked_test.rs");
+    let (_, refused) = local_request(
+        &ipc,
+        "POST",
+        "/v1/tools/call",
+        Some(call(
+            "ctx_edit",
+            json!({"path": locked.to_string_lossy(), "old_string": "fn t", "new_string": "fn u"}),
+            Some(rights.as_str()),
+        )),
+    )
+    .await;
+    assert!(
+        refused.contains("feature_list_locked") || refused.contains("deny_write"),
+        "{refused}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&locked).expect("read"),
+        "#[test] fn t() {}\n",
+        "the locked test is unchanged"
+    );
+
+    let (status, open) = local_request(
+        &ipc,
+        "POST",
+        "/v1/tools/call",
+        Some(call("ctx_tree", json!({"depth": 1}), None)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{open}");
+    assert!(!open.contains("denied_tools"), "{open}");
+
+    let tcp = build_app_router_with_auth(&cfg, false, None);
+    let (status, body) = local_request(
+        &tcp,
+        "POST",
+        "/v1/tools/call",
+        Some(call("ctx_tree", json!({"depth": 1}), Some(rights.as_str()))),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(body.contains("rights_file_refused"), "{body}");
+}

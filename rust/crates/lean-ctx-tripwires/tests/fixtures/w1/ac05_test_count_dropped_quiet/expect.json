@@ -1,0 +1,14 @@
+{
+  "counts": {
+    "tests_base": 3,
+    "tests_candidate": 4
+  },
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "test_or_grader_touched"
+    }
+  ]
+}

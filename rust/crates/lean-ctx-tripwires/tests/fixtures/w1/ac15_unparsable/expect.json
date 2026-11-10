@@ -1,0 +1,26 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/data/blob.bin",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/src/big.rs",
+      "rule": "unparsable"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/src/broken.rs",
+      "rule": "unparsable"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/data/blob.bin",
+      "rule": "unparsable"
+    }
+  ],
+  "ok": false
+}

@@ -1,0 +1,29 @@
+{
+  "counts": {
+    "tests_base": 4,
+    "tests_candidate": 2
+  },
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "test_count_dropped"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/gone.rs",
+      "rule": "test_count_dropped"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/gone.rs",
+      "rule": "test_or_grader_touched"
+    }
+  ]
+}

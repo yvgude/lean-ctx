@@ -11,7 +11,7 @@ use super::mcp_process;
 
 const SOURCE: &str = "fn main() { println!(\"observed, not accepted\"); }\n";
 
-fn isolated_command(root: &Path) -> Command {
+pub(super) fn isolated_command(root: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
     command
         .env_clear()
@@ -92,7 +92,7 @@ fn cli_read_preserves_legacy_feedback_without_fabricating_acceptance() {
     }
 }
 
-fn read_lines(
+pub(super) fn read_lines(
     stream: impl std::io::Read + Send + 'static,
 ) -> (Receiver<String>, std::thread::JoinHandle<()>) {
     let (sender, receiver) = mpsc::channel();
@@ -119,7 +119,7 @@ fn wait_line(receiver: &Receiver<String>, matches: impl Fn(&str) -> bool) -> Str
     }
 }
 
-fn response(receiver: &Receiver<String>, id: u64) -> serde_json::Value {
+pub(super) fn response(receiver: &Receiver<String>, id: u64) -> serde_json::Value {
     let line = wait_line(receiver, |line| {
         serde_json::from_str::<serde_json::Value>(line).is_ok_and(|message| message["id"] == id)
     });

@@ -40,22 +40,52 @@ pub fn consolidate(chunks: &[ContentChunk]) -> ConsolidationArtifacts {
     // Every surviving chunk is then admitted by the context gateway before any
     // fact, edge or cache entry is derived from it (G5): extraction only ever
     // sees masked text, and withheld or restricted chunks are dropped whole.
+    //
+    // A quarantined chunk with a classified outside origin is still stored
+    // for delivery (pz21 §1, NB-2): every search that serves it fences it as
+    // untrusted input and redacts its injection lines at the release point.
+    // It never becomes a fact, an edge or a cache entry.
     let admission = crate::core::context_admission::stores::StoreAdmission::current();
-    let screened: Vec<ContentChunk> = chunks
-        .iter()
-        .filter(|c| !is_quarantined(c))
-        .filter_map(|c| crate::core::context_admission::provider::admit_chunk(c, &admission))
-        .collect();
+    let mut screened: Vec<ContentChunk> = Vec::new();
+    let mut fenced_only: Vec<ContentChunk> = Vec::new();
+    for chunk in chunks {
+        let quarantined = is_quarantined(chunk);
+        if quarantined && chunk.input_origin.is_none() {
+            continue;
+        }
+        let Some(admitted) =
+            crate::core::context_admission::provider::admit_chunk(chunk, &admission)
+        else {
+            continue;
+        };
+        if quarantined {
+            fenced_only.push(admitted);
+        } else {
+            screened.push(admitted);
+        }
+    }
 
     let external_chunks: Vec<&ContentChunk> = screened.iter().filter(|c| c.is_external()).collect();
 
     if external_chunks.is_empty() {
-        return ConsolidationArtifacts::default();
+        return ConsolidationArtifacts {
+            bm25_chunks: fenced_only,
+            ..ConsolidationArtifacts::default()
+        };
     }
 
     let edges = cross_source_edges::extract_cross_source_edges(&screened);
 
-    let facts = knowledge_provider_extract::extract_facts(&screened);
+    // Outside text never becomes project knowledge (pz21, review 22480
+    // finding 2): a fact is recalled as the Instance's own store, unfenced
+    // and untainted, so a chunk with an outside origin (an issue, a PR, a
+    // wiki page) yields no fact. It stays searchable, fenced on delivery.
+    let own: Vec<ContentChunk> = screened
+        .iter()
+        .filter(|chunk| chunk.input_origin.is_none())
+        .cloned()
+        .collect();
+    let facts = knowledge_provider_extract::extract_facts(&own);
 
     let cache_entries: Vec<CacheableProviderResult> = external_chunks
         .iter()
@@ -66,6 +96,7 @@ pub fn consolidate(chunks: &[ContentChunk]) -> ConsolidationArtifacts {
         })
         .collect();
 
+    screened.extend(fenced_only);
     ConsolidationArtifacts {
         bm25_chunks: screened,
         edges,
@@ -180,8 +211,12 @@ pub fn apply_artifacts_with_pg(
 /// admits them, whoever built them (G5, plan cases 37–40).
 fn admitted(artifacts: &ConsolidationArtifacts) -> ConsolidationArtifacts {
     let admission = crate::core::context_admission::stores::StoreAdmission::current();
-    let (admitted, dropped) =
-        crate::core::context_admission::provider::admit_artifacts(artifacts, &admission);
+    // A store write, not a delivery (pz21 §1.5 4a): it often runs detached
+    // (delivery indexing), so it is outside the call; readers admit the
+    // stored text again, with its origin, when they serve it.
+    let (admitted, dropped) = crate::core::context_admission::capture::outside_call(|| {
+        crate::core::context_admission::provider::admit_artifacts(artifacts, &admission)
+    });
     if dropped > 0 {
         tracing::info!("[consolidation] {dropped} artifact(s) withheld by the context gateway");
     }
@@ -426,7 +461,8 @@ mod tests {
         assert!(!artifacts.is_empty());
         assert_eq!(artifacts.bm25_chunks.len(), 2);
         assert!(!artifacts.edges.is_empty(), "`artifacts.edges` is empty");
-        assert!(!artifacts.facts.is_empty());
+        // Issues and PRs are outside text: no facts (finding 2).
+        assert!(artifacts.facts.is_empty(), "{:?}", artifacts.facts);
         assert_eq!(artifacts.cache_entries.len(), 2);
     }
 
@@ -438,8 +474,9 @@ mod tests {
 
     #[test]
     fn poisoned_provider_chunk_is_quarantined() {
-        // #8: a provider chunk carrying a prompt-injection payload must be
-        // dropped before it becomes a fact/edge/cache entry.
+        // #8: a provider chunk carrying a prompt-injection payload never
+        // becomes a fact/edge/cache entry. With its outside origin it is
+        // still stored for fenced, redacted delivery (pz21 §1, NB-2).
         let mut chunks = sample_chunks();
         chunks.push(ContentChunk::from_provider(
             "github",
@@ -452,11 +489,28 @@ mod tests {
             None,
         ));
         let artifacts = consolidate(&chunks);
-        // The two clean chunks survive; the poisoned one is quarantined.
+        // The poisoned chunk is indexed for fenced delivery only.
+        assert_eq!(artifacts.bm25_chunks.len(), 3);
+        assert!(
+            artifacts
+                .bm25_chunks
+                .iter()
+                .any(|c| c.input_origin.is_some() && c.file_path.ends_with("666")),
+            "the poisoned chunk keeps its outside origin"
+        );
+        assert!(
+            !artifacts
+                .facts
+                .iter()
+                .any(|f| f.value.contains("Ignore previous instructions")),
+            "poisoned content must never become a fact"
+        );
+        let mut without = chunks.clone();
+        without.pop();
         assert_eq!(
-            artifacts.bm25_chunks.len(),
-            2,
-            "poisoned chunk must be dropped"
+            artifacts.edges.len(),
+            consolidate(&without).edges.len(),
+            "poisoned content must never become an edge"
         );
         assert!(
             !artifacts
@@ -470,6 +524,7 @@ mod tests {
     #[test]
     fn consolidate_code_only_produces_empty_external_artifacts() {
         let code = ContentChunk::from(crate::core::bm25_index::CodeChunk {
+            input_origin: None,
             file_path: "src/main.rs".into(),
             symbol_name: "main".into(),
             kind: ChunkKind::Function,
@@ -494,7 +549,7 @@ mod tests {
 
         assert_eq!(summary.chunks_indexed, 2);
         assert!(summary.edges_created > 0);
-        assert!(summary.facts_extracted > 0);
+        assert_eq!(summary.facts_extracted, 0);
         assert_eq!(summary.cache_entries_stored, 2);
     }
 
@@ -561,7 +616,7 @@ mod tests {
 
         assert!(result.chunks_indexed > 0);
         assert!(result.edges_created > 0);
-        assert!(result.facts_extracted > 0);
+        assert_eq!(result.facts_extracted, 0);
         assert!(result.cache_entries_stored > 0);
     }
 
@@ -586,6 +641,45 @@ mod tests {
         assert!(
             hints.iter().any(|h| h.source_uri.contains("github://")),
             "issue/PR hint resolves from PG-backed edges, got {hints:?}"
+        );
+    }
+
+    /// Review 22480 finding 2: an issue title became a `known_bugs` fact,
+    /// and a recall handed it back as the Instance's own knowledge, unfenced
+    /// and untainted. Outside text yields no fact; a schema still does.
+    #[test]
+    fn outside_text_never_becomes_a_knowledge_fact() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _no_policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let directory = tempfile::tempdir().expect("project");
+        let root = directory.path().canonicalize().expect("canonical root");
+        let mut chunks = sample_chunks();
+        chunks.push(ContentChunk::from_provider(
+            "postgres",
+            "schemas",
+            "users",
+            "public.users",
+            ChunkKind::DbSchema,
+            "CREATE TABLE users (id serial PRIMARY KEY)".into(),
+            vec![],
+            None,
+        ));
+        let artifacts = consolidate(&chunks);
+        let root_text = root.to_string_lossy();
+        apply_artifacts_to_stores(&artifacts, &root_text, &PrunePrior::default());
+        let values: Vec<String> = crate::core::knowledge::ProjectKnowledge::load(&root_text)
+            .map(|k| k.facts.into_iter().map(|f| f.value).collect())
+            .unwrap_or_default();
+        assert!(
+            !values
+                .iter()
+                .any(|v| v.contains("Auth token bug") || v.contains("Fix auth expiry")),
+            "outside text recalled as project knowledge: {values:?}"
+        );
+        assert!(
+            artifacts.facts.iter().any(|f| f.category == "data_model"),
+            "{:?}",
+            artifacts.facts
         );
     }
 

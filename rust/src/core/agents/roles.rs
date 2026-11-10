@@ -14,6 +14,23 @@ pub enum AgentRole {
     Orchestrator,
 }
 
+/// Longest role id, in bytes.
+pub const MAX_ROLE_ID_BYTES: usize = 48;
+
+/// `raw` as a role id (`coder`, `reviewer`, `docs-writer`, …): trimmed and
+/// lower-cased, 1–48 bytes of `[a-z0-9_-]` starting with a letter. Free text
+/// (a session or display name such as "LeanCTX · Contracts") is no role id:
+/// `None`, and the caller names it a display name instead.
+pub fn role_id(raw: &str) -> Option<String> {
+    let id = raw.trim().to_ascii_lowercase();
+    let valid = id.len() <= MAX_ROLE_ID_BYTES
+        && id.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'-'));
+    valid.then_some(id)
+}
+
 impl AgentRole {
     pub fn from_str_loose(s: &str) -> Self {
         match s.to_lowercase().as_str() {

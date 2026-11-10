@@ -721,6 +721,56 @@ fn hermes_yaml_rewrites_to_strip_stale_env() {
 }
 
 #[test]
+fn goose_extension_is_added_beside_others_kept_idempotent_and_removed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.yaml");
+    let original = "GOOSE_PROVIDER: anthropic\nextensions:\n  developer:\n    enabled: true\n    name: developer\n    type: builtin\nGOOSE_MODEL: claude-sonnet\n";
+    std::fs::write(&path, original).unwrap();
+    let t = target("Goose", path.clone(), ConfigType::GooseYaml);
+
+    let res = write_goose_yaml(&t, "/opt/bin/lean-ctx", WriteOptions::default()).unwrap();
+    assert_eq!(res.action, WriteAction::Updated);
+    let written = std::fs::read_to_string(&path).unwrap();
+    let ext = written.find("extensions:").unwrap();
+    let ours = written.find("  lean-ctx:").expect(&written);
+    let model = written.find("GOOSE_MODEL").unwrap();
+    assert!(ext < ours && ours < model, "inside extensions:\n{written}");
+    assert!(written.contains("    cmd: \"/opt/bin/lean-ctx\"\n    args: []\n"));
+    assert!(written.contains("    type: stdio\n") && written.contains("  developer:\n"));
+
+    let again = write_goose_yaml(&t, "/opt/bin/lean-ctx", WriteOptions::default()).unwrap();
+    assert_eq!(again.action, WriteAction::Already);
+
+    remove_lean_ctx_server(&t, WriteOptions::default()).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+
+    // An empty `extensions` map followed by another key keeps its place.
+    std::fs::write(&path, "extensions: {}\nGOOSE_MODEL: x\n").unwrap();
+    write_goose_yaml(&t, "lean-ctx", WriteOptions::default()).unwrap();
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        written.starts_with("extensions:\n  lean-ctx:\n") && written.ends_with("GOOSE_MODEL: x\n"),
+        "{written}"
+    );
+
+    // Forms the line writer cannot edit are refused, never duplicated.
+    for odd in [
+        "extensions: {} # none yet\n",
+        "extensions: {developer: {enabled: true}}\n",
+        "extensions: # mine\n  developer:\n    enabled: true\n",
+    ] {
+        std::fs::write(&path, odd).unwrap();
+        let err = write_goose_yaml(&t, "lean-ctx", WriteOptions::default()).unwrap_err();
+        assert!(err.contains("not changed"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            odd,
+            "file untouched"
+        );
+    }
+}
+
+#[test]
 fn remove_codex_section_also_removes_env_subtable() {
     let input = "\
 [other]

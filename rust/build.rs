@@ -2,6 +2,7 @@
 
 fn main() {
     guard_source_contamination();
+    stamp_build_info();
     if validate_runtime_channels().is_err() {
         eprintln!(
             "BUILD BLOCKED: invalid or incomplete staging or production runtime channel policy"
@@ -146,4 +147,125 @@ fn visit_rs_files(dir: &std::path::Path, out: &mut Vec<String>) {
             out.push(path.display().to_string());
         }
     }
+}
+
+/// Stamps which pipeline built this binary (`LEANCTX_BUILD_KIND`) and from
+/// which commit (`LEANCTX_BUILD_COMMIT`, `LEANCTX_BUILD_DIRTY`) as compile-time
+/// env for `core::integrity`. The binary never asks git at runtime.
+///
+/// - `official`: only the upstream release workflow on `main` or a release
+///   tag ([`build_origin::release_commit`]).
+/// - `dogfood` / `dev`: a git checkout; `dogfood` when `LEANCTX_BUILD_KIND`
+///   says so or `HEAD` is the promoted `dogfood/instance` state.
+/// - `source`: a packaged crate (crates.io) or no git checkout; the commit
+///   comes from Cargo's `.cargo_vcs_info.json` when present.
+///
+/// `dirty` here covers the Engine's re-run triggers (its `src`, `HEAD`); the
+/// `lean-ctx` binary stamps commit and dirty again over every crate's
+/// sources (`crates/lean-ctx/build.rs`) and hands them to the Engine at
+/// start, so the binary's label covers the whole `rust/` tree.
+fn stamp_build_info() {
+    for name in [
+        "GITHUB_ACTIONS",
+        "GITHUB_REPOSITORY",
+        "GITHUB_EVENT_NAME",
+        "GITHUB_WORKFLOW_REF",
+        "GITHUB_REF",
+        "GITHUB_SHA",
+        "LEANCTX_BUILD_KIND",
+    ] {
+        println!("cargo::rerun-if-env-changed={name}");
+    }
+    let (kind, commit, dirty) = build_info();
+    println!("cargo::rustc-env=LEANCTX_BUILD_KIND={kind}");
+    println!(
+        "cargo::rustc-env=LEANCTX_BUILD_COMMIT={}",
+        commit.unwrap_or_default()
+    );
+    println!("cargo::rustc-env=LEANCTX_BUILD_DIRTY={}", u8::from(dirty));
+}
+
+#[path = "src/core/build_origin.rs"]
+mod build_origin;
+use build_origin::is_commit;
+
+fn build_info() -> (&'static str, Option<String>, bool) {
+    let env = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+    if let Some(sha) = build_origin::release_commit(&env) {
+        return ("official", Some(sha), false);
+    }
+    let requested = match env("LEANCTX_BUILD_KIND").as_deref() {
+        None => None,
+        Some("dev") => Some("dev"),
+        Some("dogfood") => Some("dogfood"),
+        Some(other) => panic!(
+            "LEANCTX_BUILD_KIND={other:?}: only \"dev\" or \"dogfood\"; \
+             \"official\" is set by the release workflow alone"
+        ),
+    };
+    // A packaged crate (crates.io, `cargo package` verify) may sit inside an
+    // unrelated git tree: its own VCS record wins over any surrounding repo.
+    if let Ok(vcs) = std::fs::read_to_string(".cargo_vcs_info.json") {
+        return (requested.unwrap_or("source"), vcs_info_sha1(&vcs), false);
+    }
+    if let Some(head) = git(&["rev-parse", "HEAD"]).filter(|s| is_commit(s)) {
+        watch_git_head();
+        let dirty = git(&[
+            "--no-optional-locks",
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+            "--",
+            ".",
+        ])
+        .is_some_and(|s| !s.is_empty());
+        let promoted = git(&[
+            "rev-parse",
+            "-q",
+            "--verify",
+            "refs/remotes/origin/dogfood/instance",
+        ])
+        .is_some_and(|s| s == head)
+            || git(&["symbolic-ref", "-q", "--short", "HEAD"]).as_deref() == Some("dogfood");
+        let kind = requested.unwrap_or(if promoted { "dogfood" } else { "dev" });
+        return (kind, Some(head), dirty);
+    }
+    (requested.unwrap_or("source"), None, false)
+}
+
+fn git(args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}
+
+/// Re-run when `HEAD` moves: the `HEAD` file and the branch ref it names
+/// (loose or packed). Only existing paths are watched, so an unchanged tree
+/// stays fresh. The index is not watched (every `git add` would rebuild the
+/// Engine); the dirty flag is refreshed whenever the build script re-runs.
+fn watch_git_head() {
+    let mut paths = vec!["HEAD".to_owned(), "packed-refs".to_owned()];
+    if let Some(branch) = git(&["symbolic-ref", "-q", "HEAD"]) {
+        paths.push(branch);
+    }
+    for path in paths {
+        if let Some(abs) = git(&["rev-parse", "--path-format=absolute", "--git-path", &path])
+            && std::path::Path::new(&abs).exists()
+        {
+            println!("cargo::rerun-if-changed={abs}");
+        }
+    }
+}
+
+/// `git.sha1` of Cargo's `.cargo_vcs_info.json` (a packaged source crate).
+fn vcs_info_sha1(text: &str) -> Option<String> {
+    let rest = &text[text.find("\"sha1\"")? + 6..];
+    let start = rest.find('"')? + 1;
+    let sha = rest[start..].get(..40)?;
+    is_commit(sha).then(|| sha.to_owned())
 }

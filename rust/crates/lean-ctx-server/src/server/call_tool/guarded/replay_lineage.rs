@@ -26,6 +26,12 @@
 //! is never changed and a completed operation is never executed again.
 //! Community developer mode replays an unknown lineage as before.
 //!
+//! A replayed output keeps the outside origins it was produced from (pz21
+//! §1.5): the dispatch's origin ledger is stored with the lineage and noted
+//! again in the call that serves the output, so its release fences and
+//! taints exactly as the first one did. Without a capture to note them in,
+//! such an output is not replayed.
+//!
 //! In-process only: relay or remote replay and any on-disk replay store are
 //! not covered here.
 
@@ -35,6 +41,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use rmcp::model::{CallToolResult, ContentBlock};
 
 use lean_ctx::core::archive::authority::ArchiveAuthority;
+use lean_ctx::core::context_admission::capture::{self, OriginLedger};
 use lean_ctx::core::context_admission::carrier::Withheld;
 
 /// Same order of magnitude as the lifecycle's own finished-output retention.
@@ -115,7 +122,13 @@ struct Entry {
     /// Digest of the gateway policy the output was produced under (response
     /// cache entries only; a replay is re-checked by the release point).
     gateway_digest: Option<String>,
+    /// The outside origins of the stored output (empty: project-only).
+    origins: OriginLedger,
 }
+
+/// The content-free reason a replay of an output with outside origins is
+/// refused when the serving call has no capture to note them in.
+pub(in crate::server::call_tool) const UNTRUSTED_REPLAY: &str = "untrusted_replay";
 
 struct Store {
     order: VecDeque<String>,
@@ -161,8 +174,20 @@ pub(in crate::server::call_tool) fn record(
     let lineage = Lineage::of(authority, declared);
     if let Some(key) = &call.key {
         record_for(key, lineage.clone(), None);
+        let origins = capture::current()
+            .map(|capture| capture.output_origins())
+            .unwrap_or_default();
+        record_origins(key, origins);
     }
     *call.lineage.lock().unwrap_or_else(PoisonError::into_inner) = Some(lineage);
+}
+
+/// Store the outside origins of the output just recorded for `key`.
+fn record_origins(key: &str, origins: OriginLedger) {
+    let mut store = store().lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(entry) = store.entries.get_mut(key) {
+        entry.origins = origins;
+    }
 }
 
 fn record_for(key: &str, lineage: Lineage, gateway_digest: Option<String>) {
@@ -170,6 +195,7 @@ fn record_for(key: &str, lineage: Lineage, gateway_digest: Option<String>) {
     if let Some(entry) = store.entries.get_mut(key) {
         entry.lineage = lineage;
         entry.gateway_digest = gateway_digest;
+        entry.origins = OriginLedger::default();
         entry.dispatches = entry.dispatches.saturating_add(1);
         return;
     }
@@ -179,6 +205,7 @@ fn record_for(key: &str, lineage: Lineage, gateway_digest: Option<String>) {
             lineage,
             dispatches: 1,
             gateway_digest,
+            origins: OriginLedger::default(),
         },
     );
     store.order.push_back(key.to_owned());
@@ -190,10 +217,31 @@ fn record_for(key: &str, lineage: Lineage, gateway_digest: Option<String>) {
 }
 
 /// Replay admission for the keyed call in scope: `Some(denial)` replaces the
-/// stored output; `None` lets the stored output through unchanged.
+/// stored output; `None` lets the stored output through to the release
+/// point, with its outside origins noted in the serving call's capture.
 pub(in crate::server::call_tool) fn denial() -> Option<CallToolResult> {
     let key = current_call()?.key.clone()?;
-    denial_text_for(&key).map(|text| CallToolResult::error(vec![ContentBlock::text(text)]))
+    if let Some(text) = denial_text_for(&key) {
+        return Some(CallToolResult::error(vec![ContentBlock::text(text)]));
+    }
+    renote_origins(&key).map(|text| CallToolResult::error(vec![ContentBlock::text(text)]))
+}
+
+/// Bring the stored output's outside origins into the serving call, so the
+/// release point fences and taints the replay. `Some(text)`: there is no
+/// capture to note them in, and the output is refused instead.
+fn renote_origins(key: &str) -> Option<String> {
+    let origins = entry(key).map(|entry| entry.origins).unwrap_or_default();
+    if origins.is_empty() {
+        return None;
+    }
+    match capture::current() {
+        Some(capture) => {
+            capture.renote_origins(&origins);
+            None
+        }
+        None => Some(Withheld::new(&[UNTRUSTED_REPLAY]).message("replayed result")),
+    }
 }
 
 /// Typed outcome of a keyed replay whose operation was dispatched earlier and

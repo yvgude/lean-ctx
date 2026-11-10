@@ -224,6 +224,10 @@ mod tests {
 
     #[test]
     fn search_boundary_matches_existing_operator() {
+        // Search answers "withheld under policy" while any content policy is active, and
+        // policy tests elsewhere in the crate pin one process-wide. Pin "none" here, or a
+        // parallel test decides this result (red in every v4-runtime run on 08.11.).
+        let _no_policy = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("sample.txt"), "alpha needle omega\n").unwrap();
         let request = SearchRequest {

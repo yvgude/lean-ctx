@@ -1,0 +1,12 @@
+{
+  "ac": "pz21-AC06",
+  "channel": "project",
+  "clean": true,
+  "fenced": false,
+  "must_contain": [
+    "2026-11-06T08:00:00Z INFO start\n2026-11-06T08:00:01Z INFO loaded 12 files\n2026-11-06T08:00:02Z INFO done"
+  ],
+  "must_not_contain": [],
+  "path": "tests/data/run.log",
+  "redacted_lines": 0
+}

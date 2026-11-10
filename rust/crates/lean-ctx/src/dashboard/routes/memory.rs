@@ -49,9 +49,11 @@ fn with_dashboard_project<T>(
 }
 
 fn admitted_dashboard_text(text: &str) -> Result<String, String> {
-    let result = lean_ctx::core::context_admission::admit_tool_output(
+    // The project's own memory, rendered for the dashboard.
+    let result = lean_ctx::core::context_admission::admit_tool_output_as(
         text,
         lean_ctx::core::context_admission::OutputCompleteness::complete(),
+        &lean_ctx::core::context_admission::carrier::INSTANCE,
     );
     result
         .text

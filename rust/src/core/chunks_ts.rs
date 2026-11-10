@@ -221,6 +221,7 @@ pub fn extract_chunks_ts(file_path: &str, content: &str, file_ext: &str) -> Opti
             let token_count = super::bm25_index::tokenize_for_index(&block).len();
 
             chunks.push(CodeChunk {
+                input_origin: None,
                 file_path: file_path.to_string(),
                 symbol_name: name_text.to_string(),
                 kind,

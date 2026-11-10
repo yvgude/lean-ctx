@@ -44,6 +44,12 @@ pub enum HiveError {
     /// The organization switched this upload off; stop it and drop its
     /// queue until a lease allows it again (never retried).
     UploadDisabled(HiveUploadKind),
+    /// The operator switched a feature off on this Hive (`404
+    /// feature_disabled`, e.g. `instance_metrics`). Not an error of this
+    /// instance: what waits stays local, tried again much later.
+    FeatureDisabled {
+        feature: Option<String>,
+    },
     NotFound,
     Conflict {
         expected: Option<u64>,
@@ -346,6 +352,9 @@ pub enum TaskRefusal {
     /// The opt-in's daily budget is used up until 00:00 UTC (§4,
     /// `daily_budget`); never retried before `retry_after`.
     DailyBudget { retry_after: Option<u64> },
+    /// C0 2.2 E47: a priority or labels write named an older
+    /// `fields_version` (`stale_base`): read the task again.
+    StaleBase,
 }
 
 impl TaskRefusal {
@@ -371,6 +380,9 @@ impl TaskRefusal {
             (HiveErrorCode::InvalidState, "optin_changed") => Self::OptinChanged,
             (HiveErrorCode::InvalidState, "optin_inactive") => Self::OptinInactive,
             (HiveErrorCode::RateLimited, "daily_budget") => Self::DailyBudget { retry_after },
+            (HiveErrorCode::InvalidState | HiveErrorCode::RevisionConflict, "stale_base") => {
+                Self::StaleBase
+            }
             _ => return None,
         })
     }
@@ -407,6 +419,9 @@ impl fmt::Display for TaskRefusal {
             Self::OptinChanged => f.write_str("the opt-in changed; it is read again"),
             Self::OptinInactive => f.write_str(
                 "this instance is not opted in (or the owner stopped worker mode on the web)",
+            ),
+            Self::StaleBase => f.write_str(
+                "the task's priority or labels changed meanwhile; read it again and retry",
             ),
             Self::DailyBudget { retry_after } => match retry_after {
                 Some(s) => write!(f, "today's task budget is used up (resets in {s} s)"),
@@ -452,7 +467,7 @@ fn permit_line(refusal: TaskRefusal, detail: &HiveErrorDetailV1) -> Option<Strin
         });
     match check {
         PermitCheck::Presence => line.push_str(
-            " [check: presence] Run `lean-ctx hive bus relay --for 30` (it relays, or makes the running relay announce the agent now) and claim again.",
+            " [check: presence] Run `lean-ctx hive bus relay --for 30`: it says who this machine announced, or why an agent is missing. Hive keeps an agent present only while a relay stays connected (the daemon's), so claim while it runs.",
         ),
         PermitCheck::Role => line.push_str(" [check: role]"),
         PermitCheck::Unknown => {}
@@ -558,6 +573,9 @@ impl HiveError {
                 Self::UploadDisabled(detail.kind.unwrap_or(HiveUploadKind::Unknown))
             }
             HiveErrorCode::NotFound => Self::NotFound,
+            HiveErrorCode::FeatureDisabled => Self::FeatureDisabled {
+                feature: wire_token(detail.feature.as_deref(), 64),
+            },
             HiveErrorCode::RevisionConflict => Self::Conflict {
                 expected: detail.expected,
                 actual: detail.actual,
@@ -694,6 +712,16 @@ impl fmt::Display for HiveError {
                 }
             },
             Self::NotFound => f.write_str("Hive does not know that item"),
+            Self::FeatureDisabled { feature } => match feature.as_deref() {
+                Some("instance_metrics") | None => f.write_str(
+                    "Hive has switched off instance metrics on this Hive; nothing was sent",
+                ),
+                Some(other) => write!(
+                    f,
+                    "Hive has switched off {} on this Hive; nothing was sent",
+                    other.replace('_', " ")
+                ),
+            },
             Self::Conflict { expected, actual } => match (expected, actual) {
                 (Some(e), Some(a)) => write!(f, "knowledge moved on (expected revision {e}, now {a})"),
                 _ => f.write_str("knowledge moved on"),
@@ -875,7 +903,7 @@ mod tests {
         let permit = |check: &str, agent_role: Option<&str>| permit_said(check, agent_role, "");
         assert_eq!(
             permit("presence", None),
-            "task #7: this agent is not on the bus: its session (or the relay) must be running and announce it with the task's role (the task needs role backend) [check: presence] Run `lean-ctx hive bus relay --for 30` (it relays, or makes the running relay announce the agent now) and claim again."
+            "task #7: this agent is not on the bus: its session (or the relay) must be running and announce it with the task's role (the task needs role backend) [check: presence] Run `lean-ctx hive bus relay --for 30`: it says who this machine announced, or why an agent is missing. Hive keeps an agent present only while a relay stays connected (the daemon's), so claim while it runs."
         );
         assert_eq!(
             permit("role", Some("web")),
@@ -893,7 +921,7 @@ mod tests {
                 None,
                 "Agent coder-1 is not on the bus: this task needs it present with role backend. Start its session (or the relay) and claim again."
             ),
-            "task #7: Agent coder-1 is not on the bus: this task needs it present with role backend. Start its session (or the relay) and claim again. [check: presence] Run `lean-ctx hive bus relay --for 30` (it relays, or makes the running relay announce the agent now) and claim again."
+            "task #7: Agent coder-1 is not on the bus: this task needs it present with role backend. Start its session (or the relay) and claim again. [check: presence] Run `lean-ctx hive bus relay --for 30`: it says who this machine announced, or why an agent is missing. Hive keeps an agent present only while a relay stays connected (the daemon's), so claim while it runs."
         );
         assert_eq!(
             permit_said(

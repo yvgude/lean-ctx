@@ -941,7 +941,15 @@ fn build_guarded(root: &str, respect_gitignore: bool, allow_secret_paths: bool) 
 
 fn spawn_build(root: String, respect_gitignore: bool, allow_secret_paths: bool) {
     std::thread::spawn(move || {
-        let _ = build_guarded(&root, respect_gitignore, allow_secret_paths);
+        // The build's project is the root it indexes: its files are the
+        // project's own, not unknown stored text (pz21 §1.4), whatever the
+        // process directory of this detached thread is.
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(std::path::PathBuf::from(&root))),
+            || {
+                let _ = build_guarded(&root, respect_gitignore, allow_secret_paths);
+            },
+        );
     });
 }
 

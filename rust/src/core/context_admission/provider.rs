@@ -27,15 +27,20 @@ use crate::core::knowledge_provider_extract::ExtractedFact;
 /// chunk is dropped.
 #[must_use]
 pub fn admit_chunk(chunk: &ContentChunk, admission: &StoreAdmission) -> Option<ContentChunk> {
-    let content = admission.admit(&chunk.content, Path::new(&chunk.file_path))?;
-    let symbol_name = admission.admit_text(&chunk.symbol_name)?;
+    // The chunk's class, derived once from its path and recorded origin
+    // (pz21 §1.4); the side fields are admitted with the same class, so a
+    // project chunk's symbol name is never unknown.
+    let path = Path::new(&chunk.file_path);
+    let class = super::stores::class_of_path(path, chunk.input_origin.as_ref());
+    let content = admission.admit(&chunk.content, path, chunk.input_origin.as_ref())?;
+    let symbol_name = admission.admit_text_as(&chunk.symbol_name, &class)?;
     let references = chunk
         .references
         .iter()
-        .map(|reference| admission.admit_text(reference))
+        .map(|reference| admission.admit_text_as(reference, &class))
         .collect::<Option<Vec<_>>>()?;
     let metadata = match &chunk.metadata {
-        Some(metadata) => Some(admit_json(metadata, admission)?),
+        Some(metadata) => Some(admit_json(metadata, admission, &class)?),
         None => None,
     };
     let mut admitted = chunk.clone();
@@ -112,7 +117,7 @@ fn admit_cache_entry(
     entry: &CacheableProviderResult,
     admission: &StoreAdmission,
 ) -> Option<CacheableProviderResult> {
-    let content = admission.admit(&entry.content, Path::new(&entry.uri))?;
+    let content = admission.admit(&entry.content, Path::new(&entry.uri), None)?;
     let token_count = if content == entry.content {
         entry.token_count
     } else {
@@ -127,9 +132,13 @@ fn admit_cache_entry(
 
 /// Metadata is admitted as its canonical JSON text. A masked document that
 /// no longer parses is dropped rather than stored half-masked.
-fn admit_json(value: &serde_json::Value, admission: &StoreAdmission) -> Option<serde_json::Value> {
+fn admit_json(
+    value: &serde_json::Value,
+    admission: &StoreAdmission,
+    class: &super::origin::SourceClass,
+) -> Option<serde_json::Value> {
     let text = serde_json::to_string(value).ok()?;
-    let admitted = admission.admit_text(&text)?;
+    let admitted = admission.admit_text_as(&text, class)?;
     if admitted == text {
         return Some(value.clone());
     }

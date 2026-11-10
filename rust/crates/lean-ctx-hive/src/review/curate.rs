@@ -85,17 +85,30 @@ pub fn contradicts_edge(
     stamp: Stamp,
     signer: &Signer<'_>,
 ) -> Result<Value, HiveError> {
+    let edge_id = ids::new_random_id("e")?;
+    contradicts_edge_at(place, &edge_id, from, to, stamp, signer)
+}
+
+/// `edge.add contradicts` with the edge id `edge_id` (the sync's conflict
+/// detection names its edges deterministically, [`crate::capture::conflicts`]).
+pub fn contradicts_edge_at(
+    place: &Place,
+    edge_id: &str,
+    from: &str,
+    to: &str,
+    stamp: Stamp,
+    signer: &Signer<'_>,
+) -> Result<Value, HiveError> {
     let body = json!({
         "body_nonce": sign::new_body_nonce()?,
         "from": from,
         "kind": "contradicts",
         "to": to,
     });
-    let edge_id = ids::new_random_id("e")?;
     event(
         place,
         "edge.add",
-        &edge_id,
+        edge_id,
         &body,
         "contradicts",
         stamp,

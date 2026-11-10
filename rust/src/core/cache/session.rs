@@ -155,7 +155,7 @@ impl SessionCache {
         };
         let cached_copy = tokens.is_some();
         Some(
-            crate::core::context_admission::admit_source_with_storage(
+            crate::core::context_admission::admit_project_file_with_storage(
                 &text,
                 &entry.path,
                 false,

@@ -7,6 +7,9 @@ use lean_ctx::core;
 pub(in crate::cli::dispatch) fn cmd_savings(rest: &[String]) {
     let action = rest.first().map_or("", String::as_str);
     match action {
+        "verify" if rest.iter().any(|a| a == "--json") => {
+            crate::cli::local_read::kinds::run("ledger.verify", rest);
+        }
         "verify" => {
             let v = core::savings_ledger::verify();
             if v.valid {

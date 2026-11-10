@@ -33,6 +33,7 @@ What the context gateway can see and stop for each host when fully set up.
 | cursor | deny native tools | no | partial | host-native file tools reach the model without gateway admission |
 | emacs | MCP only | no | not_observable | only ctx_* calls are admitted; the host's own tools are invisible |
 | gemini | deny native tools | no | partial | host-native file tools reach the model without gateway admission |
+| goose | MCP only | no | not_observable | only ctx_* calls are admitted; the host's own tools are invisible |
 | grok | MCP only | yes | enforced | non-model calls of the host (sign-in, pairing) pass through unchanged |
 | hermes | shell rewrite | no | partial | host-native file tools reach the model without gateway admission |
 | jetbrains | MCP only | no | not_observable | only ctx_* calls are admitted; the host's own tools are invisible |

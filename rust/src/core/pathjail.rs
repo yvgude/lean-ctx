@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::core::error::PathJailError;
 
+pub use crate::core::pathjail_write::{rebuild_below, write_below};
+
 /// `allow_paths` / `extra_roots` come from `config.toml`, where no shell ever
 /// runs — users writing `"$HOME/code"` or `"~/code"` got a literal,
 /// never-matching prefix and concluded the whole option was broken (GH #392).
@@ -312,7 +314,7 @@ pub fn is_read_only_path(candidate: &Path) -> bool {
 /// The canonicalized nearest-existing-ancestor of `candidate` with the
 /// not-yet-existing remainder re-appended. Resolves symlinks so a symlink
 /// *into* a guarded root cannot launder a write past a prefix check.
-fn canonical_target(candidate: &Path) -> PathBuf {
+pub(crate) fn canonical_target(candidate: &Path) -> PathBuf {
     match canonicalize_existing_ancestor(candidate) {
         Some((mut p, remainder)) => {
             for part in remainder.iter().rev() {
@@ -343,6 +345,9 @@ pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
             candidate.display()
         ));
     }
+    // The session's own rights profile (process-v1 §9) narrows every write,
+    // under a Workspace too: own worktree only, never a locked path.
+    crate::core::session_rights::check_write(candidate)?;
     // Under a Workspace a write needs a read-write root (#2120).
     match crate::core::workspace_authority::current() {
         crate::core::workspace_authority::Authority::Legacy => {}
@@ -387,49 +392,14 @@ pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
 /// this module, so the legacy-path firewall (tests/legacy_path_firewall) has
 /// nothing to flag.
 fn home_allow_dirs(home: &Path, ide_dirs_allowed: bool) -> Vec<PathBuf> {
-    if !ide_dirs_allowed {
-        return Vec::new();
-    }
-    // The editor registry probes the filesystem and PATH for ~40 editors; the
-    // jail runs on every path check, so resolve once per process and refresh
-    // on a TTL (#2195). The lock is held across the probe on purpose: it is
-    // the single flight. Every caller that reaches it has IDE dirs enabled
-    // (opt-in) and needs this list, so waiting for one probe costs no more
-    // than probing itself, never multiplies the probe I/O, and never serves
-    // an expired allow-list. The TTL runs from when the list is stored.
-    // Lock ordering: L145.
-    let mut cache = lock_home_allow_dirs();
-    if let Some((cached_home, stored_at, dirs)) = cache.as_ref()
-        && cached_home == home
-        && stored_at.elapsed() < HOME_ALLOW_DIRS_TTL
-    {
-        return dirs.clone();
-    }
-    #[cfg(test)]
-    HOME_ALLOW_DIRS_BUILDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let mut out = Vec::new();
-    let targets = crate::core::editor_registry::build_targets(home);
-    collect_ide_allow_dirs(home, &targets, &mut out);
-    *cache = Some((home.to_path_buf(), std::time::Instant::now(), out.clone()));
+    if ide_dirs_allowed {
+        // Cached per home and config generation (#2195); see `ide_dirs`.
+        let targets = ide_dirs::editor_targets(home);
+        collect_ide_allow_dirs(home, &targets, &mut out);
+    }
     out
 }
-
-const HOME_ALLOW_DIRS_TTL: std::time::Duration = std::time::Duration::from_secs(300);
-
-/// The IDE allow-dirs of one home: (home, stored at, dirs).
-type HomeAllowDirsCache = Option<(PathBuf, std::time::Instant, Vec<PathBuf>)>;
-
-static HOME_ALLOW_DIRS_CACHE: std::sync::Mutex<HomeAllowDirsCache> = std::sync::Mutex::new(None);
-
-fn lock_home_allow_dirs() -> std::sync::MutexGuard<'static, HomeAllowDirsCache> {
-    HOME_ALLOW_DIRS_CACHE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-#[cfg(test)]
-static HOME_ALLOW_DIRS_BUILDS: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
 
 /// Collect the in-home config/detect directories of every supported editor.
 ///
@@ -1364,6 +1334,9 @@ fn reject_symlink_on_windows(path: &Path) -> Result<(), PathJailError> {
     }
     Ok(())
 }
+
+#[path = "pathjail_ide_dirs.rs"]
+mod ide_dirs;
 
 #[cfg(all(test, windows))]
 #[path = "pathjail_windows_tests.rs"]

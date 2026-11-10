@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Task proposals through the outbox (`tasks` channel): an agent task the
 //! agent asks for, or a contradiction between two facts (lean-ctx-ae
-//! queues those). A proposal is screened when it is queued; the scheduler
-//! and `lean-ctx hive sync` send it. Hive
+//! queues those). A proposal is screened when it is queued; `ctx_tasks
+//! propose` sends it at once off the tool call ([`send_now`]), and the
+//! scheduler and `lean-ctx hive sync` send what is still queued. Hive
 //! answers with the task's state: a member agent's task is open at once
 //! (owners and maintainers may close it afterwards); a Hive that still
 //! asks for approval answers `proposed`, and that is what is reported.
@@ -50,6 +51,11 @@ pub struct QueuedProposal {
     /// Opaque session reference (`knowledge::draft::session_ref`).
     #[serde(default)]
     pub session_ref: Option<String>,
+    /// The local task this proposal brings into the vault on link
+    /// (`hive link --bring-local`); part of the key, so two local tasks
+    /// with the same title stay two vault tasks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_number: Option<u64>,
 }
 
 impl QueuedProposal {
@@ -86,8 +92,8 @@ impl QueuedProposal {
     }
 
     /// One proposal is one task, however often it is resent or requeued:
-    /// the key covers the project, the kind, the facts and (for an agent
-    /// task) the title.
+    /// the key covers the project, the kind, the facts, (for an agent task)
+    /// the title and, for a brought local task, its local number.
     #[must_use]
     pub fn idempotency_key(&self) -> String {
         let origin = self.origin();
@@ -95,21 +101,24 @@ impl QueuedProposal {
             ProposalKind::Agent => self.title.trim(),
             ProposalKind::Contradiction => "",
         };
-        let digest = Sha256::digest(
-            format!(
-                "leanctx.hive.task-proposal.v1\n{}\n{:?}\n{}\n{title}",
-                self.stable_identity,
-                self.kind,
-                origin.facts.join(",")
-            )
-            .as_bytes(),
+        let mut text = format!(
+            "leanctx.hive.task-proposal.v1\n{}\n{:?}\n{}\n{title}",
+            self.stable_identity,
+            self.kind,
+            origin.facts.join(",")
         );
+        // Absent for every other proposal: their keys stay as they were.
+        if let Some(number) = self.local_number {
+            text.push_str(&format!("\nlocal:{number}"));
+        }
+        let digest = Sha256::digest(text.as_bytes());
         hex::encode(&digest[..16])
     }
 }
 
-/// Screen, validate and queue `proposal`; returns the outbox item id.
-pub fn enqueue(data_dir: &Path, proposal: &QueuedProposal) -> Result<String, HiveError> {
+/// Secrets screened out, the request valid: before a proposal is queued
+/// or sent.
+fn checked(proposal: &QueuedProposal) -> Result<(), HiveError> {
     screened(&[
         ("title", Some(&proposal.title)),
         ("goal", proposal.goal.as_deref()),
@@ -119,8 +128,27 @@ pub fn enqueue(data_dir: &Path, proposal: &QueuedProposal) -> Result<String, Hiv
         .plain_request()
         .validate()
         .map_err(|e| HiveError::Refused(format!("invalid task proposal: {e}")))?;
+    Ok(())
+}
+
+/// Screen, validate and queue `proposal`; returns the outbox item id.
+pub fn enqueue(data_dir: &Path, proposal: &QueuedProposal) -> Result<String, HiveError> {
+    checked(proposal)?;
     let payload = serde_json::to_value(proposal).map_err(|e| HiveError::Local(e.to_string()))?;
     Outbox::at(data_dir).enqueue(CHANNEL_TASKS, payload, Utc::now())
+}
+
+/// Screen, validate and send `proposal` to `vault_id` now, without the
+/// outbox: for a caller that needs the task number at once (bringing local
+/// tasks into a vault on link). The idempotency key is the queued one, so
+/// a repeat after an interrupted run gets the same task back.
+pub fn propose_now(
+    session: &Session,
+    vault_id: &str,
+    proposal: &QueuedProposal,
+) -> Result<(u64, lean_ctx_protocol::hive::tasks::TaskState), HiveError> {
+    checked(proposal)?;
+    send(session, vault_id, proposal)
 }
 
 /// An agent task for the project at `project_root`.
@@ -153,6 +181,7 @@ pub fn propose_agent_task(
             acceptance: acceptance.trim().to_owned(),
             role: role.map(str::to_owned),
             session_ref: Some(crate::knowledge::draft::session_ref(session_id)),
+            local_number: None,
         },
     )
 }
@@ -167,6 +196,63 @@ pub struct DrainReport {
     pub problems: Vec<String>,
 }
 
+/// What became of one queued proposal.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Delivery {
+    /// Hive created the task.
+    Sent(u64, lean_ctx_protocol::hive::tasks::TaskState),
+    /// Kept in the outbox for a later pass (offline, 429, not linked yet).
+    Waiting(String),
+    /// Moved to the failed outbox; never sent.
+    Failed(String),
+}
+
+const NO_PROPOSE_RIGHT: &str = "the Hive lease does not allow task proposals";
+
+fn deliver(
+    session: &Session,
+    outbox: &Outbox,
+    map: &VaultMap,
+    mut item: crate::outbox::OutboxItem,
+    now: chrono::DateTime<Utc>,
+) -> Delivery {
+    let Ok(proposal) = serde_json::from_value::<QueuedProposal>(item.payload.clone()) else {
+        let _ = outbox.fail(&mut item, "damaged task proposal");
+        return Delivery::Failed("damaged task proposal".into());
+    };
+    // The checkout's current vault first: a proposal queued under an
+    // identity the checkout left goes where the checkout syncs now.
+    let Some(record) = map
+        .for_root(&proposal.root)
+        .or_else(|| map.vaults.get(&proposal.stable_identity))
+    else {
+        let reason = "this repository is not linked to a vault yet";
+        let _ = outbox.retry_later(&mut item, reason, None, now);
+        return Delivery::Waiting(reason.into());
+    };
+    match send(session, &record.vault_id, &proposal) {
+        Ok((number, state)) => {
+            let _ = outbox.remove(&item);
+            Delivery::Sent(number, state)
+        }
+        Err(error) if error.is_transient() => {
+            // 429: Retry-After / retry_after_s, or a quota's reset_at.
+            let retry_after = error.retry_after_at(chrono::Utc::now());
+            let _ = outbox.retry_later(&mut item, &error.to_string(), retry_after, now);
+            Delivery::Waiting(error.to_string())
+        }
+        Err(error @ HiveError::Refused(_)) => {
+            // Refused for now: try again later.
+            let _ = outbox.retry_later(&mut item, &error.to_string(), None, now);
+            Delivery::Waiting(error.to_string())
+        }
+        Err(error) => {
+            let _ = outbox.fail(&mut item, &error.to_string());
+            Delivery::Failed(error.to_string())
+        }
+    }
+}
+
 /// Send the due proposals (scheduler, `lean-ctx hive sync`; never inside
 /// a tool call).
 pub fn drain(session: &Session) -> DrainReport {
@@ -176,54 +262,69 @@ pub fn drain(session: &Session) -> DrainReport {
     let items = outbox.list(CHANNEL_TASKS);
     if !items.is_empty() && !session.lease.lease.grants(HiveRight::TasksPropose) {
         report.pending = items.len();
-        report
-            .problems
-            .push("the Hive lease does not allow task proposals".into());
+        report.problems.push(NO_PROPOSE_RIGHT.into());
         return report;
     }
-    let map = VaultMap::load(&data);
+    // Never into a vault a checkout's link file or identity left.
+    let map = match crate::resolution::load_current(&data) {
+        Ok((map, _)) => map,
+        Err(error) => {
+            report.problems.push(error.to_string());
+            VaultMap::default()
+        }
+    };
     let now = Utc::now();
-    for mut item in items {
+    for item in items {
         if !item.due(now) {
             continue;
         }
-        let Ok(proposal) = serde_json::from_value::<QueuedProposal>(item.payload.clone()) else {
-            let _ = outbox.fail(&mut item, "damaged task proposal");
-            continue;
-        };
-        let Some(record) = map.vaults.get(&proposal.stable_identity) else {
-            let _ = outbox.retry_later(
-                &mut item,
-                "this repository is not linked to a vault yet",
-                None,
-                now,
-            );
-            continue;
-        };
-        match send(session, &record.vault_id, &proposal) {
-            Ok(created) => {
-                report.sent.push(created);
-                let _ = outbox.remove(&item);
-            }
-            Err(error) if error.is_transient() => {
-                // 429: Retry-After / retry_after_s, or a quota's reset_at.
-                let retry_after = error.retry_after_at(chrono::Utc::now());
-                let _ = outbox.retry_later(&mut item, &error.to_string(), retry_after, now);
-            }
-            Err(error @ HiveError::Refused(_)) => {
-                // Refused for now: try again later.
-                let _ = outbox.retry_later(&mut item, &error.to_string(), None, now);
-            }
-            Err(error) => {
-                report.problems.push(error.to_string());
-                let _ = outbox.fail(&mut item, &error.to_string());
-            }
+        match deliver(session, &outbox, &map, item, now) {
+            Delivery::Sent(number, state) => report.sent.push((number, state)),
+            Delivery::Waiting(_) => {}
+            Delivery::Failed(problem) => report.problems.push(problem),
         }
     }
     let depth = outbox.depth(CHANNEL_TASKS);
     report.pending = depth.pending;
     report.failed = depth.failed;
     report
+}
+
+/// Send the queued proposal `id` now instead of with the next scheduler
+/// pass (`ctx_tasks propose` runs this off the tool call, as claims and
+/// results go out). A proposal that cannot go out now stays queued and the
+/// scheduler sends it later. `None`: the scheduler sent it meanwhile (Hive's
+/// idempotency key keeps a resend of one proposal one task).
+#[must_use]
+pub fn send_now(session: &Session, id: &str) -> Option<Delivery> {
+    let data = session.store.data_dir().to_path_buf();
+    let outbox = Outbox::at(&data);
+    let item = outbox
+        .list(CHANNEL_TASKS)
+        .into_iter()
+        .find(|item| item.id == id)?;
+    if !session.lease.lease.grants(HiveRight::TasksPropose) {
+        return Some(Delivery::Waiting(NO_PROPOSE_RIGHT.into()));
+    }
+    // Never into a vault a checkout's link file or identity left.
+    let map = match crate::resolution::load_current(&data) {
+        Ok((map, _)) => map,
+        Err(error) => return Some(Delivery::Waiting(error.to_string())),
+    };
+    Some(deliver(session, &outbox, &map, item, Utc::now()))
+}
+
+/// The caller's line for what [`send_now`] did.
+#[must_use]
+pub fn delivery_line(delivery: Option<&Delivery>) -> String {
+    match delivery {
+        Some(Delivery::Sent(number, state)) => created_line(*number, *state),
+        Some(Delivery::Waiting(reason)) => format!(
+            "Task proposal not sent yet ({reason}); it stays queued and the next Hive sync sends it."
+        ),
+        Some(Delivery::Failed(problem)) => format!("Task proposal not sent: {problem}."),
+        None => "Task proposal went out with the last Hive sync.".into(),
+    }
 }
 
 fn send(
@@ -233,9 +334,11 @@ fn send(
 ) -> Result<(u64, lean_ctx_protocol::hive::tasks::TaskState), HiveError> {
     let request = proposal.plain_request();
     let key = proposal.idempotency_key();
-    session
+    let sent = session
         .with_client(|client| super::client::TasksApi { client, vault_id }.propose(&request, &key))
-        .map(|ack| (ack.number, ack.state))
+        .map(|ack| (ack.number, ack.state));
+    super::reads::outdate(session.store.data_dir(), vault_id);
+    sent
 }
 
 /// What `lean-ctx hive sync` prints for a task Hive created from a

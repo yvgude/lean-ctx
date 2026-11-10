@@ -1,0 +1,10 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 0,
+      "path": "rust/crates/demo/src/extra.rs",
+      "rule": "test_or_grader_touched"
+    }
+  ]
+}

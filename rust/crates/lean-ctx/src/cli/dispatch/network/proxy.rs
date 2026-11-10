@@ -468,6 +468,13 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             println!(
                 "  codex-chatgpt <on|off|status>  Route a Codex ChatGPT-subscription login through the proxy"
             );
+            println!();
+            println!(
+                "The autostart service belongs to the default install; with LEAN_CTX_DATA_DIR,"
+            );
+            println!(
+                "another directory override or another HOME, enable/disable/--autostart leave it alone."
+            );
             return;
         }
         let sub = rest.first().map_or("help", std::string::String::as_str);
@@ -638,6 +645,13 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 // Wire first, report second. A manually started proxy is a
                 // perfectly good outcome on a platform without autostart.
                 let autostart_ok = lean_ctx::proxy_autostart::install(port, false);
+                // Another instance (directory override, sandbox HOME) has no
+                // autostart of its own: the service belongs to the default install.
+                let no_autostart = if lean_ctx::daemon_autostart::controls_user_services() {
+                    "This platform has no autostart backend"
+                } else {
+                    "This instance has no autostart service"
+                };
                 if autostart_ok {
                     std::thread::sleep(std::time::Duration::from_millis(500));
                 }
@@ -653,16 +667,15 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     println!(
                         "\x1b[32m✓\x1b[0m Clients wired to the proxy already serving port {port}."
                     );
-                    println!(
-                        "  This platform has no autostart backend, so the proxy does not survive a"
-                    );
+                    println!("  {no_autostart}, so the proxy does not survive a");
                     println!("  reboot — start it again with:  lean-ctx proxy start --port={port}");
                 } else {
                     // Both `install_shell_exports` and `install_codex_env` refuse to
                     // write against an unreachable proxy, so nothing above wired
                     // anything. Say that plainly instead of claiming success.
                     eprintln!(
-                        "\x1b[31m✗\x1b[0m Proxy enable: no autostart backend, and nothing is serving port {port}."
+                        "\x1b[31m✗\x1b[0m Proxy enable: {}, and nothing is serving port {port}.",
+                        no_autostart.to_lowercase()
                     );
                     eprintln!(
                         "  Client wiring requires a reachable proxy, so no client config was written."

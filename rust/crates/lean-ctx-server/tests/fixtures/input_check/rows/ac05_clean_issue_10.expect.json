@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Thanks for the project. One question: is there a way to disable telemetry completely?"
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

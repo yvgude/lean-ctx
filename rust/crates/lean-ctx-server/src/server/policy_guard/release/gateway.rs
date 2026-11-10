@@ -17,7 +17,20 @@ use lean_ctx::core::context_admission::carrier::{Release, ReleaseGate, Withheld}
 const MAX_NODES: usize = 10_000;
 const MAX_DEPTH: usize = 64;
 
-pub(super) fn release(mut result: CallToolResult) -> CallToolResult {
+/// The release point in two steps (pz21 §1.5): the origin step runs in
+/// every gateway mode — it reads the call's origin ledger, taints the
+/// session and fences outside text; the detector step (below) is skipped
+/// with the gateway off.
+pub(super) fn release(result: CallToolResult) -> CallToolResult {
+    let origin = super::origin::OriginStep::read();
+    let released = release_detected(result);
+    match origin {
+        Some(step) => step.fence(released),
+        None => released,
+    }
+}
+
+fn release_detected(mut result: CallToolResult) -> CallToolResult {
     let gate = ReleaseGate::current();
     if gate.inactive() {
         return result;
@@ -57,6 +70,15 @@ pub(super) fn release(mut result: CallToolResult) -> CallToolResult {
 /// finding withholds both; the code stays and the typed, content-free notice
 /// takes the message's place.
 pub(super) fn release_error(error: rmcp::ErrorData) -> rmcp::ErrorData {
+    // An error cannot be fenced: one that may carry outside text is
+    // replaced by the typed, content-free notice (pz21 §1.5).
+    if super::origin::OriginStep::read().is_some() {
+        return rmcp::ErrorData::new(
+            error.code,
+            Withheld::new(&[super::origin::UNTRUSTED_ERROR]).notice(),
+            None,
+        );
+    }
     let gate = ReleaseGate::current();
     if gate.inactive() {
         return error;

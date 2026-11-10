@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "The German translation uses the formal and informal address in the same dialog."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

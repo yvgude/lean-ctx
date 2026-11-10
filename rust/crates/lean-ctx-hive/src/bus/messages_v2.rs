@@ -16,6 +16,7 @@
 
 use serde_json::{Map, Value};
 
+use super::person_rules;
 use super::v2::{BUS_SCHEMA, MessageType, Publish, Ref, RefKind, ulid_for};
 use crate::HiveStore;
 use crate::knowledge::screening::Screen;
@@ -141,14 +142,20 @@ fn worker_of(store: &HiveStore, agent_id: &str) -> Result<String, String> {
 /// admission reads which worker a Hive control names (`None` when this
 /// machine is not enrolled or the agent is unknown).
 pub(crate) fn known_worker_of(store: &HiveStore, agent_id: &str) -> Option<String> {
+    known_worker_and_role_of(store, agent_id).map(|(worker_id, _)| worker_id)
+}
+
+/// [`known_worker_of`] and that worker's role (normalised; past the
+/// worker cap it may be `general`, not the agent's own).
+pub(crate) fn known_worker_and_role_of(
+    store: &HiveStore,
+    agent_id: &str,
+) -> Option<(String, String)> {
     use crate::workers::attach;
     let (instance_id, host, role) = host_and_role(store, agent_id).ok()?;
     let mut workers = attach::list(store, &instance_id).ok()?;
-    Some(
-        attach::attach_in(&mut workers, &instance_id, &host, &role)
-            .worker
-            .worker_id,
-    )
+    let worker = attach::attach_in(&mut workers, &instance_id, &host, &role).worker;
+    Some((worker.worker_id, worker.role))
 }
 
 /// The enrolled instance and the host app and role `agent_id` attaches with.
@@ -165,14 +172,7 @@ fn host_and_role(store: &HiveStore, agent_id: &str) -> Result<(String, String, S
         .iter()
         .find(|a| a.agent_id == agent_id)
         .ok_or("agent must be registered first (use action=register)")?;
-    let transport = agent.transport.as_ref();
-    let host = attach::detect_host_app(
-        transport.map(|t| t.host.as_str()),
-        Some(agent.agent_type.as_str()),
-        std::iter::empty::<(&str, &str)>(),
-        transport.and_then(|t| t.name.as_deref()),
-    );
-    let role = agent.role.clone().unwrap_or_default();
+    let (host, role) = attach::agent_worker_key(agent);
     Ok((instance.instance_id, host, role))
 }
 
@@ -194,14 +194,55 @@ pub fn send(
         format!("unknown type {raw:?}; use question|offer|handoff|answer|finding")
     })?;
     let map = VaultMap::load(store.data_dir());
-    let record = map.for_root(project_root).ok_or(
-        "this repository is not linked to a vault (`lean-ctx hive link <workspace>/<vault>`)",
-    )?;
+    let record = crate::resolution::vault_in(&map, std::path::Path::new(project_root))
+        .map_err(|e| e.to_string())?
+        .ok_or(
+            "this repository is not linked to a vault (`lean-ctx hive link <workspace>/<vault>`)",
+        )?;
     Screen::for_installation()
         .check(text)
         .map_err(|blocked| format!("not sent: the text contains a {blocked}"))?;
     let worker_id = worker_of(&store, agent_id)?;
-    let body = body(kind, text, &worker_id, extras)?;
+    // A handoff's resource is what the sender named, never a marked text.
+    let extras = Extras {
+        resource: extras
+            .resource
+            .or((kind == MessageType::Handoff).then_some(text)),
+        ..extras
+    };
+    let refs = refs_of(extras.refs);
+    // The always-enforced person rules first, on what the sender wrote.
+    let written = body(kind, text, &worker_id, extras)?;
+    person_rules::check_agent_body(kind, &written).map_err(|e| format!("not sent: {e}"))?;
+    person_rules::check_not_refused_in(
+        store.data_dir(),
+        kind,
+        &refs,
+        &written,
+        agent_id,
+        &worker_id,
+    )
+    .map_err(|e| format!("not sent: {e}"))?;
+    // Only the registered Queen appears as the Queen (process v1 §7): under
+    // `warn` the text goes marked for its receiver, under `enforce` not at
+    // all. The sender is looked up among the active presences.
+    let sent = {
+        let registry = lean_ctx::core::agents::AgentRegistry::load_or_create();
+        person_rules::apply_queen_rule(
+            store.data_dir(),
+            person_rules::Speaker::of_registry(&registry, Some(agent_id)),
+            &[text, extras.resource.unwrap_or_default()],
+            text,
+            Some(kind),
+            person_rules::QueenMode::current(),
+        )
+        .map_err(|e| format!("not sent: {e}"))?
+    };
+    let body = if sent == text {
+        written
+    } else {
+        body(kind, &sent, &worker_id, extras)?
+    };
     let now_ms = chrono::Utc::now().timestamp_millis().unsigned_abs();
     let publish = Publish {
         schema: BUS_SCHEMA.into(),
@@ -214,7 +255,7 @@ pub fn send(
         worker_id,
         thread_id: None,
         reply_to: extras.reply_to.map(str::to_owned),
-        refs: refs_of(extras.refs),
+        refs,
         body,
         ck_wrapped: None,
         epoch: None,
@@ -222,6 +263,8 @@ pub fn send(
         counts: None,
         window: None,
     };
+    // Refused before anything is remembered (a refused handoff is no offer).
+    publish.validate().map_err(|e| format!("not sent: {e}"))?;
     let id = publish.client_msg_id.clone();
     // A handoff is remembered with its offering agent, so a maintainer's
     // veto of it reaches that agent ([`super::handoff`]).

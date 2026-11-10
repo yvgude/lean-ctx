@@ -708,6 +708,7 @@ pub mod tests {
 
     fn make_chunk(file: &str, name: &str, content: &str, start: usize, end: usize) -> CodeChunk {
         CodeChunk {
+            input_origin: None,
             file_path: file.to_string(),
             symbol_name: name.to_string(),
             kind: ChunkKind::Function,

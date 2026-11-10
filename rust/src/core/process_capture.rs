@@ -502,12 +502,8 @@ fn stop_remaining_process_group(
     bin: &str,
     _: &mut ProcessCleanup,
 ) -> Result<(), String> {
-    let pgid = child.id() as libc::pid_t;
-    if pgid <= 0 {
-        return Err(format!(
-            "failed to stop child process group '{bin}': invalid process group id {pgid}"
-        ));
-    }
+    let pgid = crate::ipc::process::group_target(child.id())
+        .map_err(|refusal| format!("failed to stop child process group '{bin}': {refusal}"))?;
     // Ownership rule (Q13 steps 1 and 5): the group is addressed by the
     // child's pid, which is ours only while the child is unreaped. Every
     // caller observes the exit with `child_exited` (no reap) and reaps after

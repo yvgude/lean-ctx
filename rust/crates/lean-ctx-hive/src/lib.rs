@@ -20,6 +20,7 @@
 
 pub mod auth;
 pub mod background;
+pub mod bring_local;
 pub mod bus;
 pub mod capture;
 pub mod company_bound;
@@ -40,14 +41,18 @@ pub mod keyset_v3;
 pub mod knowledge;
 pub mod lease;
 pub mod link;
+pub mod local_docs;
 pub mod mapping;
 pub mod metrics;
 pub mod metrics_v2;
 pub mod migrate;
 pub mod outbox;
 pub mod policy;
+pub mod policy_sessions;
+pub mod queens;
 pub mod receipts;
 pub mod replica;
+pub mod resolution;
 pub mod review;
 pub mod revoked;
 pub mod root_cert;
@@ -83,8 +88,13 @@ pub fn register_hooks() {
     // Config off switches, Engine receipts, the runtime lease source (it
     // reads the Hive lease on every request).
     lean_ctx::core::config::hive::register_off_switches(receipts::apply_off_switches);
+    // Each receipt: queued for upload when allowed, and noted as evidence of
+    // the policy in force for this process's app session.
     lean_ctx::core::engine_interface::receipt_sink::register_receipt_sink(
-        receipts::note_engine_receipt,
+        |root, receipt_id, invocation, observation, now| {
+            receipts::note_engine_receipt(root, receipt_id, invocation, observation, now);
+            policy_sessions::note_receipt(receipt_id, now);
+        },
     );
     runtime_lease::ensure_registered();
     lean_ctx::core::agents::register_announce(bus::presence::request_announce);
@@ -105,6 +115,10 @@ pub fn register_hooks() {
                     session_id,
                     knowledge::draft::Trigger::SessionEnd,
                 );
+                // Owner 09.11.: workers of ended app sessions do not count.
+                if let Ok(store) = state::HiveStore::open() {
+                    workers::register::on_session_end(&store);
+                }
             },
         },
     );

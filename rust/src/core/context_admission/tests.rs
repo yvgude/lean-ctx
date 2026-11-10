@@ -74,7 +74,12 @@ fn assert_valid(admission: &Admission) {
 #[test]
 fn case_06_key_on_the_first_line_is_detected_and_redacted() {
     let text = format!("aws_key = {AWS_KEY}\nfn main() {{}}\n");
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::AllowRedacted);
     assert!(signal_hits(&admission, DetectorCategoryV1::Secret) >= 1);
@@ -88,7 +93,12 @@ fn case_06_key_on_the_first_line_is_detected_and_redacted() {
 fn database_url_next_to_another_secret_is_delivered_redacted() {
     let db = format!("postgres{}app:s3cretPassw0rd{}db:5432/app", "://", "@");
     let text = format!("DATABASE_URL={db}\naws_key = {AWS_KEY}\nport = 8080\n");
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::AllowRedacted);
     let out = delivered(&admission);
@@ -103,7 +113,12 @@ fn database_url_next_to_another_secret_is_delivered_redacted() {
 fn case_07_key_near_the_end_of_a_long_input_is_detected() {
     let mut text = "let filler = 1;\n".repeat(20_000);
     text.push_str(&format!("export GITHUB_TOKEN={GITHUB_TOKEN}\n"));
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     assert!(signal_hits(&admission, DetectorCategoryV1::Secret) >= 1);
     assert!(!delivered(&admission).contains(GITHUB_TOKEN));
@@ -115,7 +130,12 @@ fn case_07_key_near_the_end_of_a_long_input_is_detected() {
 #[test]
 fn case_08_private_key_is_detected() {
     let text = format!("{PRIVATE_KEY_HEADER}\nMIIEpAIBAAKCAQEA\n");
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     assert!(signal_hits(&admission, DetectorCategoryV1::Secret) >= 1);
     assert!(!delivered(&admission).contains(PRIVATE_KEY_HEADER));
@@ -126,6 +146,7 @@ fn case_09_secret_like_path_is_restricted_and_never_stored() {
     let admission = admit(
         "DATABASE_HOST=localhost\n",
         Some(Path::new(".env")),
+        &crate::core::context_admission::origin::SourceClass::Project,
         &policy(),
     );
     assert_valid(&admission);
@@ -143,7 +164,12 @@ fn case_09_secret_like_path_is_restricted_and_never_stored() {
 #[test]
 fn case_10_secret_is_absent_from_the_delivered_context() {
     let text = format!("config:\n  token: {GITHUB_TOKEN}\n  region: eu\n");
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     let out = delivered(&admission);
     assert!(!out.contains(GITHUB_TOKEN));
     assert!(out.contains("region: eu"));
@@ -153,7 +179,12 @@ fn case_10_secret_is_absent_from_the_delivered_context() {
 #[test]
 fn case_11_secret_never_reaches_the_decision_or_the_hud() {
     let text = format!("aws_key = {AWS_KEY}\n");
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     let decision = serde_json::to_string(&admission.decision).expect("serialize");
     assert!(!decision.contains(AWS_KEY));
     let hud = admission.hud_line().expect("redaction is visible");
@@ -166,7 +197,12 @@ fn case_11_secret_never_reaches_the_decision_or_the_hud() {
 #[test]
 fn case_12_checksum_valid_pii_is_detected_and_redacted() {
     let text = format!("card: {VALID_CARD}\n");
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     assert_eq!(signal_hits(&admission, DetectorCategoryV1::Pii), 1);
     let out = delivered(&admission);
@@ -176,7 +212,12 @@ fn case_12_checksum_valid_pii_is_detected_and_redacted() {
 #[test]
 fn case_13_checksum_failing_lookalike_is_not_flagged() {
     let text = format!("order id: {LUHN_FAILING_CARD}\ncontact: jane@example.com\n");
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::Allow);
     assert_eq!(
@@ -190,7 +231,12 @@ fn case_13_checksum_failing_lookalike_is_not_flagged() {
 #[test]
 fn case_14_redaction_keeps_the_surrounding_context_usable() {
     let text = format!("fn pay() {{\n    let card = \"{VALID_CARD}\";\n    charge(card);\n}}\n");
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     let out = delivered(&admission);
     assert!(out.contains("fn pay() {") && out.contains("charge(card);"));
     assert_eq!(out.lines().count(), text.lines().count());
@@ -207,7 +253,12 @@ const INJECTION: &str = concat!(
 #[test]
 fn case_15_obvious_injection_raises_a_signal_by_default() {
     let text = format!("# README\n{INJECTION}\nUsage: run it.\n");
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     assert_eq!(
         signal_hits(&admission, DetectorCategoryV1::PromptInjection),
@@ -233,7 +284,12 @@ fn case_15_obvious_injection_raises_a_signal_by_default() {
 #[test]
 fn case_16_configured_block_withholds_the_content() {
     let policy = policy_with(|g| g.injection = FilterAction::Block);
-    let admission = admit(&format!("{INJECTION}\n"), None, &policy);
+    let admission = admit(
+        &format!("{INJECTION}\n"),
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::Deny);
     assert!(admission.text.is_none());
@@ -249,7 +305,12 @@ fn case_16_configured_block_withholds_the_content() {
 fn case_17_configured_redact_replaces_only_the_offending_line() {
     let policy = policy_with(|g| g.injection = FilterAction::Redact);
     let text = format!("line one\n{INJECTION}\nline three\n");
-    let admission = admit(&text, None, &policy);
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::AllowRedacted);
     assert_eq!(
@@ -262,7 +323,12 @@ fn case_17_configured_redact_replaces_only_the_offending_line() {
 fn case_18_clean_code_passes_untouched() {
     let text =
         "/// Ignore whitespace in comparisons.\nfn eq(a: &str, b: &str) -> bool { a == b }\n";
-    let admission = admit(text, Some(Path::new("src/lib.rs")), &policy());
+    let admission = admit(
+        text,
+        Some(Path::new("src/lib.rs")),
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::Allow);
     assert!(
@@ -290,7 +356,12 @@ fn blocking_sees_the_original_before_any_redaction() {
     // PII redaction must not hide a secrets block configured on the same text.
     let policy = policy_with(|g| g.secrets = FilterAction::Block);
     let text = format!("card {VALID_CARD} key {AWS_KEY}\n");
-    let admission = admit(&text, None, &policy);
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_eq!(admission.disposition(), ContextDispositionV1::Deny);
     assert!(admission.text.is_none());
 }
@@ -298,7 +369,12 @@ fn blocking_sees_the_original_before_any_redaction() {
 #[test]
 fn delivered_but_flagged_secrets_keep_their_classification() {
     let policy = policy_with(|g| g.secrets = FilterAction::Warn);
-    let admission = admit(&format!("aws_key = {AWS_KEY}\n"), None, &policy);
+    let admission = admit(
+        &format!("aws_key = {AWS_KEY}\n"),
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_eq!(admission.disposition(), ContextDispositionV1::Allow);
     assert_eq!(admission.classification, ClassificationV1::Restricted);
     assert!(!admission.storable());
@@ -312,15 +388,31 @@ fn delivered_but_flagged_secrets_keep_their_classification() {
 
 #[test]
 fn classification_markings_raise_the_level() {
-    let confidential = admit("CONFIDENTIAL\nquarterly numbers\n", None, &policy());
+    let confidential = admit(
+        "CONFIDENTIAL\nquarterly numbers\n",
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_eq!(confidential.classification, ClassificationV1::Confidential);
     assert!(confidential.storable());
-    let top_secret = admit("*** TOP SECRET ***\nplans\n", None, &policy());
+    let top_secret = admit(
+        "*** TOP SECRET ***\nplans\n",
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_eq!(top_secret.classification, ClassificationV1::Restricted);
     assert!(!top_secret.storable());
     let blocking = policy_with(|g| g.classification = FilterAction::Redact);
     assert_eq!(
-        admit("CONFIDENTIAL\nx\n", None, &blocking).disposition(),
+        admit(
+            "CONFIDENTIAL\nx\n",
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &blocking
+        )
+        .disposition(),
         ContextDispositionV1::Deny,
         "a marking has no span to mask, so redact means withhold"
     );
@@ -330,7 +422,13 @@ fn classification_markings_raise_the_level() {
 fn governed_mode_never_treats_unclassified_content_as_public() {
     let policy = policy_with(|g| g.mode = GatewayModeV1::Governed);
     assert_eq!(
-        admit("fn main() {}\n", None, &policy).classification,
+        admit(
+            "fn main() {}\n",
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &policy
+        )
+        .classification,
         ClassificationV1::Internal
     );
 }
@@ -340,7 +438,12 @@ fn explicit_secret_detection_opt_out_disables_only_the_secrets_detector() {
     let mut policy = policy();
     policy.secret_patterns.enabled = false;
     let text = format!("aws_key = {AWS_KEY}\ncard {VALID_CARD}\n");
-    let admission = admit(&text, None, &policy);
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_valid(&admission);
     let secrets = &admission.decision.signals[0];
     assert_eq!(secrets.coverage.kind, CoverageKindV1::NotRequired);
@@ -352,14 +455,24 @@ fn explicit_secret_detection_opt_out_disables_only_the_secrets_detector() {
 fn user_exclude_patterns_are_respected() {
     let mut policy = policy();
     policy.secret_patterns.exclude_patterns = vec!["EXAMPLE$".into()];
-    let admission = admit(&format!("aws_key = {AWS_KEY}\n"), None, &policy);
+    let admission = admit(
+        &format!("aws_key = {AWS_KEY}\n"),
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_eq!(admission.disposition(), ContextDispositionV1::Allow);
 }
 
 #[test]
 fn disabled_gateway_is_explicit_not_silent() {
     let policy = policy_with(|g| g.enabled = false);
-    let admission = admit(&format!("aws_key = {AWS_KEY}\n"), None, &policy);
+    let admission = admit(
+        &format!("aws_key = {AWS_KEY}\n"),
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_valid(&admission);
     assert_eq!(
         admission.decision.reason_codes[0].as_str(),
@@ -437,13 +550,24 @@ fn detector_throughput() {
         let _ = content_digest(t);
     });
     measure("admit", &|t| {
-        let _ = admit(t, None, &policy());
+        let _ = admit(
+            t,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &policy(),
+        );
     });
 
     // Precision on real code: how many clean source files each default flags.
     let mut flagged = [0usize; 4];
     for text in &corpus {
-        let counts = admit(text, None, &policy()).counts;
+        let counts = admit(
+            text,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &policy(),
+        )
+        .counts;
         for (slot, hits) in flagged.iter_mut().zip([
             counts.secrets,
             counts.pii,
@@ -476,8 +600,18 @@ fn admission_is_deterministic_apart_from_latency() {
         )
     };
     assert_eq!(
-        strip(admit(&text, None, &policy())),
-        strip(admit(&text, None, &policy()))
+        strip(admit(
+            &text,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &policy()
+        )),
+        strip(admit(
+            &text,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &policy()
+        ))
     );
 }
 
@@ -522,7 +656,12 @@ fn a_match_across_the_line_end_at_a_chunk_boundary_is_found() {
 
     let indent = " ".repeat(detectors::CHUNK_BYTES);
     let field = format!("{indent}classification:\nlevel SECRET\n{tail}");
-    let admission = admit(&field, None, &policy());
+    let admission = admit(
+        &field,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     assert_eq!(admission.classification, ClassificationV1::Restricted);
 }
@@ -543,11 +682,24 @@ fn a_custom_pattern_match_across_a_chunk_boundary_is_found() {
         "the first chunk ends between the two words"
     );
 
-    let admission = admit(&text, None, &custom);
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &custom,
+    );
     assert_valid(&admission);
     assert_eq!(signal_hits(&admission, DetectorCategoryV1::Secret), 2);
     assert_eq!(
-        signal_hits(&admit(&text, None, &policy()), DetectorCategoryV1::Secret),
+        signal_hits(
+            &admit(
+                &text,
+                None,
+                &crate::core::context_admission::origin::SourceClass::Project,
+                &policy()
+            ),
+            DetectorCategoryV1::Secret
+        ),
         0
     );
 }
@@ -556,7 +708,12 @@ fn a_custom_pattern_match_across_a_chunk_boundary_is_found() {
 fn case_20_a_long_document_is_inspected_in_every_chunk() {
     let mut text = "let filler = 1;\n".repeat(80_000);
     text.push_str(&format!("aws_key = {AWS_KEY}\n"));
-    let admission = admit(&text, None, &policy());
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_valid(&admission);
     for signal in &admission.decision.signals {
         assert_eq!(signal.coverage.kind, CoverageKindV1::Complete);
@@ -572,7 +729,12 @@ fn case_20_a_long_document_is_inspected_in_every_chunk() {
 #[test]
 fn case_21_partial_inspection_withholds_in_governed_mode() {
     let text = "fn ordinary() {}\n".repeat(20);
-    let admission = admit(&text, None, &governed(|g| g.max_inspected_bytes = 64));
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &governed(|g| g.max_inspected_bytes = 64),
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::Deny);
     assert!(admission.text.is_none());
@@ -586,7 +748,12 @@ fn case_21_partial_inspection_withholds_in_governed_mode() {
 #[test]
 fn partial_inspection_is_delivered_but_visible_in_developer_mode() {
     let text = "fn ordinary() {}\n".repeat(20);
-    let admission = admit(&text, None, &policy_with(|g| g.max_inspected_bytes = 64));
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy_with(|g| g.max_inspected_bytes = 64),
+    );
     assert_valid(&admission);
     assert_eq!(delivered(&admission), text);
     assert!(has_reason(&admission, "coverage.partial"));
@@ -602,7 +769,12 @@ fn partial_inspection_is_delivered_but_visible_in_developer_mode() {
 #[test]
 fn case_58_a_timed_out_detector_withholds_in_governed_mode() {
     let text = "fn ordinary() {}\n";
-    let admission = admit(text, None, &governed(|g| g.detector_timeout_ms = 0));
+    let admission = admit(
+        text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &governed(|g| g.detector_timeout_ms = 0),
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::Deny);
     assert!(has_reason(&admission, "detector.timed_out"));
@@ -611,7 +783,12 @@ fn case_58_a_timed_out_detector_withholds_in_governed_mode() {
             || s.status == lean_ctx_protocol::context_gateway::DetectorStatusV1::TimedOut
     }));
 
-    let developer = admit(text, None, &policy_with(|g| g.detector_timeout_ms = 0));
+    let developer = admit(
+        text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy_with(|g| g.detector_timeout_ms = 0),
+    );
     assert_eq!(delivered(&developer), text);
     assert!(
         developer
@@ -626,7 +803,12 @@ fn case_19_a_failed_detector_never_passes_as_clean() {
     let mut governed = governed(|_| {});
     governed.secret_patterns.custom_patterns = vec!["(unclosed".into()];
     let text = "fn ordinary() {}\n";
-    let admission = admit(text, None, &governed);
+    let admission = admit(
+        text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &governed,
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::Deny);
     assert!(has_reason(&admission, "detector.invalid_pattern"));
@@ -639,7 +821,12 @@ fn case_19_a_failed_detector_never_passes_as_clean() {
 
     let mut developer = policy();
     developer.secret_patterns.custom_patterns = vec!["(unclosed".into()];
-    let admission = admit(text, None, &developer);
+    let admission = admit(
+        text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &developer,
+    );
     assert_eq!(delivered(&admission), text);
     assert!(
         admission
@@ -682,17 +869,35 @@ fn the_clean_memo_never_outlives_the_policy_that_admitted_it() {
     let text = "fn memoized() {}\n";
     write("[context_gateway]\nmode = \"governed\"\n");
     assert_eq!(
-        admit_source(text, "src/memo.rs", false).expect("clean"),
+        admit_source(
+            text,
+            "src/memo.rs",
+            false,
+            &crate::core::context_admission::origin::SourceClass::Project
+        )
+        .expect("clean"),
         text
     );
     assert_eq!(
-        admit_source(text, "src/memo.rs", false).expect("memo hit"),
+        admit_source(
+            text,
+            "src/memo.rs",
+            false,
+            &crate::core::context_admission::origin::SourceClass::Project
+        )
+        .expect("memo hit"),
         text
     );
 
     // A stricter policy must re-evaluate instead of reusing the clean verdict.
     write("[context_gateway]\nmode = \"governed\"\ndetector_timeout_ms = 0\n");
-    let error = admit_source(text, "src/memo.rs", false).expect_err("re-evaluated");
+    let error = admit_source(
+        text,
+        "src/memo.rs",
+        false,
+        &crate::core::context_admission::origin::SourceClass::Project,
+    )
+    .expect_err("re-evaluated");
     assert!(error.to_string().contains("detector.timed_out"), "{error}");
     // The refusal names the setting behind it, not only the code.
     assert!(error.to_string().contains("detector_timeout_ms"), "{error}");
@@ -731,17 +936,34 @@ fn a_built_in_secret_is_masked_not_withheld_with_and_without_a_pack() {
         ] {
             let with_pack = active.is_some();
             let _policy = crate::core::policy::runtime::TestPolicyOverride::set(active);
-            let delivered = admit_source(&source, "src/keyed.rs", false)
-                .unwrap_or_else(|error| panic!("{mode}, pack {with_pack}: withheld: {error}"));
+            let delivered = admit_source(
+                &source,
+                "src/keyed.rs",
+                false,
+                &crate::core::context_admission::origin::SourceClass::Project,
+            )
+            .unwrap_or_else(|error| panic!("{mode}, pack {with_pack}: withheld: {error}"));
             assert_eq!(delivered, masked, "{mode}, pack {with_pack}");
             assert_eq!(
-                admit_source(&delivered, "src/keyed.rs", false).expect("masked text is admitted"),
+                admit_source(
+                    &delivered,
+                    "src/keyed.rs",
+                    false,
+                    &crate::core::context_admission::origin::SourceClass::Project
+                )
+                .expect("masked text is admitted"),
                 masked,
                 "{mode}, pack {with_pack}: a second pass changes nothing"
             );
             // Masked text is not the original: a digest-bound read is refused.
             assert!(
-                admit_source(&source, "src/keyed.rs", true).is_err(),
+                admit_source(
+                    &source,
+                    "src/keyed.rs",
+                    true,
+                    &crate::core::context_admission::origin::SourceClass::Project
+                )
+                .is_err(),
                 "{mode}, pack {with_pack}"
             );
         }
@@ -866,7 +1088,12 @@ fn an_admission_inspects_with_the_runtime_of_its_snapshot() {
         "barrier: the live configuration has changed"
     );
     for text in ["first text\n", "second text\n"] {
-        let admission = admit(text, None, &snapshot);
+        let admission = admit(
+            text,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &snapshot,
+        );
         assert_valid(&admission);
         assert!(!has_reason(&admission, "semantic.unavailable"));
     }
@@ -879,13 +1106,23 @@ fn an_admission_inspects_with_the_runtime_of_its_snapshot() {
 
 #[test]
 fn semantic_findings_catch_what_heuristics_miss() {
-    let builtin = admit(SUBTLE, None, &policy());
+    let builtin = admit(
+        SUBTLE,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy(),
+    );
     assert_eq!(
         builtin.counts.injection, 0,
         "the heuristic misses this phrasing"
     );
 
-    let admission = admit(SUBTLE, None, &with_semantic(policy(), fake_semantic));
+    let admission = admit(
+        SUBTLE,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &with_semantic(policy(), fake_semantic),
+    );
     assert_valid(&admission);
     assert_eq!(admission.counts.semantic, 1);
     assert_eq!(admission.trust, TrustLevelV1::Untrusted);
@@ -903,7 +1140,12 @@ fn semantic_redaction_masks_exactly_the_validated_span() {
         policy_with(|g| g.injection = FilterAction::Redact),
         fake_semantic,
     );
-    let admission = admit(SUBTLE, None, &policy);
+    let admission = admit(
+        SUBTLE,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::AllowRedacted);
     assert_eq!(
@@ -995,7 +1237,12 @@ fn the_typed_engine_id_exception_is_confined_to_the_id_and_to_pii() {
 #[test]
 fn an_unavailable_semantic_runtime_is_reported_but_advisory() {
     let policy = with_semantic(governed(|_| {}), failing_semantic);
-    let admission = admit("fn ordinary() {}\n", None, &policy);
+    let admission = admit(
+        "fn ordinary() {}\n",
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_valid(&admission);
     assert_eq!(
         admission.disposition(),
@@ -1014,7 +1261,12 @@ fn an_unavailable_semantic_runtime_is_reported_but_advisory() {
     // B04: an expired licence is this same state (the runtime refuses with
     // `entitlement`, the worker reports it unavailable). Protection stays at
     // the floor: the built-in secret detector still redacts.
-    let secret = admit(&format!("aws_key = {AWS_KEY}\n"), None, &policy);
+    let secret = admit(
+        &format!("aws_key = {AWS_KEY}\n"),
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_valid(&secret);
     assert!(has_reason(&secret, "semantic.unavailable"));
     assert_eq!(secret.disposition(), ContextDispositionV1::AllowRedacted);
@@ -1030,7 +1282,12 @@ fn semantic_coverage_beyond_the_runtime_bound_is_partial() {
             findings: Vec::new(),
         })
     });
-    let admission = admit(&text, None, &policy);
+    let admission = admit(
+        &text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_valid(&admission);
     assert!(has_reason(&admission, "semantic.partial"));
     let signal = admission.decision.signals.last().expect("semantic signal");
@@ -1092,7 +1349,12 @@ fn text_outside_the_declared_coverage_is_not_inspected_never_covered() {
 
     let german = "Den Vertrag unterzeichnete Anna Meier, die mit ihrer Familie in der \
                   Stadt wohnt und für die Firma arbeitet.\n";
-    let admission = admit(german, None, &declared);
+    let admission = admit(
+        german,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &declared,
+    );
     assert_valid(&admission);
     assert!(has_reason(&admission, "semantic.pii.redacted"));
     assert!(!delivered(&admission).contains("Anna Meier"));
@@ -1107,7 +1369,12 @@ fn text_outside_the_declared_coverage_is_not_inspected_never_covered() {
         (code, "semantic.document_type_not_covered"),
         ("Anna Meier\n", "semantic.language_undetermined"),
     ] {
-        let admission = admit(text, None, &declared);
+        let admission = admit(
+            text,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &declared,
+        );
         assert_valid(&admission);
         assert!(
             has_reason(&admission, "semantic.pii.not_inspected"),
@@ -1142,7 +1409,12 @@ fn text_outside_the_declared_coverage_is_not_inspected_never_covered() {
 
     // An earlier set declares nothing: still asked, so its findings mask,
     // but it claims no coverage (fail-safe) and says coverage is unknown.
-    let admission = admit(french, None, &declaring(None));
+    let admission = admit(
+        french,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &declaring(None),
+    );
     assert_valid(&admission);
     assert!(has_reason(&admission, "semantic.pii.redacted"));
     assert!(has_reason(&admission, "semantic.pii.not_inspected"));
@@ -1215,11 +1487,21 @@ fn semantic_output_never_widens_what_the_floor_decided() {
         semantic::SemanticDetector::fixed_declaring(everything, italian_prose),
     ];
     for (index, (text, path, floor_policy)) in cases.iter().enumerate() {
-        let floor = admit(text, *path, floor_policy);
+        let floor = admit(
+            text,
+            *path,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            floor_policy,
+        );
         for (which, detect) in detectors.iter().enumerate() {
             let mut policy = floor_policy.clone();
             policy.semantic = Some(detect.clone());
-            let admission = admit(text, *path, &policy);
+            let admission = admit(
+                text,
+                *path,
+                &crate::core::context_admission::origin::SourceClass::Project,
+                &policy,
+            );
             let case = format!("case {index}, detector {which}");
             assert_valid(&admission);
             if which == 3 {
@@ -1259,10 +1541,20 @@ fn semantic_output_never_widens_what_the_floor_decided() {
     // and trust stay the floor's.
     let text = "fn ordinary() {}\n";
     let redacting = governed(|g| g.pii = FilterAction::Redact);
-    let floor = admit(text, None, &redacting);
+    let floor = admit(
+        text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &redacting,
+    );
     let mut policy = redacting.clone();
     policy.semantic = Some(semantic::SemanticDetector::fixed(everything));
-    let admission = admit(text, None, &policy);
+    let admission = admit(
+        text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_valid(&admission);
     assert_eq!(floor.disposition(), ContextDispositionV1::Allow);
     assert_eq!(admission.disposition(), ContextDispositionV1::AllowRedacted);
@@ -1300,11 +1592,23 @@ fn stored_context_is_checked_in_full_later_while_live_reads_keep_their_budget() 
     let mut redacting = policy_with(|g| g.pii = FilterAction::Redact);
     redacting.semantic = Some(semantic::SemanticDetector::fixed(one_line_per_call));
 
-    let live = admit(text, None, &redacting);
+    let live = admit(
+        text,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &redacting,
+    );
     assert!(has_reason(&live, "semantic.partial"));
     assert!(!pending(), "a live read queues nothing");
 
-    let first = for_stored_context(|| admit(text, None, &redacting));
+    let first = for_stored_context(|| {
+        admit(
+            text,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &redacting,
+        )
+    });
     assert!(has_reason(&first, "semantic.partial"));
     assert!(delivered(&first).contains("Anna Meier"));
     assert!(pending());
@@ -1314,19 +1618,38 @@ fn stored_context_is_checked_in_full_later_while_live_reads_keep_their_budget() 
     assert_eq!(drain(usize::MAX, || true), 1);
     assert!(!pending());
 
-    let checked = for_stored_context(|| admit(text, None, &redacting));
+    let checked = for_stored_context(|| {
+        admit(
+            text,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &redacting,
+        )
+    });
     assert_valid(&checked);
     assert!(!has_reason(&checked, "semantic.partial"));
     assert!(has_reason(&checked, "semantic.pii.redacted"));
     assert!(!delivered(&checked).contains("Anna Meier"));
     assert!(has_reason(
-        &admit(text, None, &redacting),
+        &admit(
+            text,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &redacting
+        ),
         "semantic.partial"
     ));
 
     let mut blocking = redacting.clone();
     blocking.gateway.pii = FilterAction::Block;
-    let withheld = for_stored_context(|| admit(text, None, &blocking));
+    let withheld = for_stored_context(|| {
+        admit(
+            text,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &blocking,
+        )
+    });
     assert_valid(&withheld);
     assert_eq!(withheld.disposition(), ContextDispositionV1::Deny);
     assert!(withheld.text.is_none());
@@ -1336,14 +1659,26 @@ fn stored_context_is_checked_in_full_later_while_live_reads_keep_their_budget() 
     // Another text: fixed test detectors share one identity, so the verdict
     // reached above would otherwise apply.
     let other = "Nothing on this line.\nAnna Meier signed it as well.\n";
-    let unavailable = for_stored_context(|| admit(other, None, &failing));
+    let unavailable = for_stored_context(|| {
+        admit(
+            other,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &failing,
+        )
+    });
     assert!(delivered(&unavailable).contains("Anna Meier"));
     assert!(!pending());
 }
 
 #[test]
 fn complete_coverage_is_unchanged_for_ordinary_content() {
-    let admission = admit("fn ordinary() {}\n", None, &governed(|_| {}));
+    let admission = admit(
+        "fn ordinary() {}\n",
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &governed(|_| {}),
+    );
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::Allow);
     assert_eq!(admission.counts.incomplete, 0);

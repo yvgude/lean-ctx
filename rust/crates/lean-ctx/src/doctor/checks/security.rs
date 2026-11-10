@@ -21,8 +21,8 @@ pub(crate) fn shell_allowlist_outcome() -> Outcome {
     // GL #788: the security mode overrides the allowlist view, so surface a
     // relaxed posture loudly — an unexpected `off`/`warn` must never hide behind
     // a populated allowlist.
-    match lean_ctx::core::shell_allowlist::ShellSecurity::resolve() {
-        lean_ctx::core::shell_allowlist::ShellSecurity::Off => {
+    match lean_ctx_shell_policy::ShellSecurity::resolve() {
+        lean_ctx_shell_policy::ShellSecurity::Off => {
             return Outcome {
                 ok: true,
                 line: format!(
@@ -30,7 +30,7 @@ pub(crate) fn shell_allowlist_outcome() -> Outcome {
                 ),
             };
         }
-        lean_ctx::core::shell_allowlist::ShellSecurity::Warn => {
+        lean_ctx_shell_policy::ShellSecurity::Warn => {
             return Outcome {
                 ok: true,
                 line: format!(
@@ -38,10 +38,10 @@ pub(crate) fn shell_allowlist_outcome() -> Outcome {
                 ),
             };
         }
-        lean_ctx::core::shell_allowlist::ShellSecurity::Enforce => {}
+        lean_ctx_shell_policy::ShellSecurity::Enforce => {}
     }
 
-    let effective = lean_ctx::core::shell_allowlist::effective_allowlist_pub();
+    let effective = lean_ctx_shell_policy::effective_allowlist_pub();
     if effective.is_empty() {
         return Outcome {
             ok: true,
@@ -51,7 +51,7 @@ pub(crate) fn shell_allowlist_outcome() -> Outcome {
         };
     }
 
-    let invalid = lean_ctx::core::shell_allowlist::invalid_allowlist_entries_pub();
+    let invalid = lean_ctx_shell_policy::invalid_allowlist_entries_pub();
     let invalid_note = if invalid.is_empty() {
         String::new()
     } else {
@@ -77,7 +77,7 @@ pub(crate) fn shell_allowlist_outcome() -> Outcome {
 /// NOT add the `*` automatically, since that would widen access — the user
 /// must choose. `None` when there's nothing to report.
 pub(crate) fn shell_allowlist_upgrade_advisory_outcome() -> Option<Outcome> {
-    let narrowed = lean_ctx::core::shell_allowlist::narrowed_allowlist_entries_pub();
+    let narrowed = lean_ctx_shell_policy::narrowed_allowlist_entries_pub();
     if narrowed.is_empty() {
         return None;
     }
@@ -97,8 +97,8 @@ pub(crate) fn shell_allowlist_upgrade_advisory_outcome() -> Option<Outcome> {
 /// are a permissive union, so this only warns; it never refuses. `None`
 /// when there's nothing to report.
 pub(crate) fn shell_allowlist_shadowing_outcome() -> Option<Outcome> {
-    let effective = lean_ctx::core::shell_allowlist::effective_allowlist_pub();
-    let shadowed = lean_ctx::core::shell_allowlist::shadowed_allowlist_entries_pub(&effective);
+    let effective = lean_ctx_shell_policy::effective_allowlist_pub();
+    let shadowed = lean_ctx_shell_policy::shadowed_allowlist_entries_pub(&effective);
     if shadowed.is_empty() {
         return None;
     }

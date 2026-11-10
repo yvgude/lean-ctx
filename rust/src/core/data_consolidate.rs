@@ -41,10 +41,12 @@ impl ConsolidationReport {
 
 /// Merge all non-canonical data dirs (those holding a `stats.json`) into the
 /// canonical [`crate::core::data_dir::lean_ctx_data_dir`]. Returns `None` when
-/// there is nothing to do (single tree, or an explicit `LEAN_CTX_DATA_DIR` pin).
+/// there is nothing to do (single tree, or any explicit `LEAN_CTX_*_DIR` override).
 pub fn consolidate() -> Option<ConsolidationReport> {
-    // An explicit data-dir pin is a deliberate single-dir choice — don't merge.
-    if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
+    // An explicit data-dir pin is a deliberate single-dir choice, and any other
+    // directory override means this process is not the real install: the
+    // default data dirs are then not ours to merge.
+    if crate::core::paths::dir_override_active() {
         return None;
     }
     let canonical = crate::core::data_dir::lean_ctx_data_dir().ok()?;

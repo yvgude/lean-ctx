@@ -59,6 +59,16 @@ pub struct AgentEntry {
     /// id, so its reads never consume the parent's directed messages.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    /// The launching app's session id (`LEAN_CTX_SESSION_ID`) of the
+    /// process that registered this presence, so the app maps presences to
+    /// its sessions without walking the process tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_session_id: Option<String>,
+    /// The name people see for this presence: `ctx_agent register`'s
+    /// `name`, else the launching app's session name
+    /// (`LEAN_CTX_SESSION_NAME`). Display only, never an address or a role.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
 
 /// The host behind an MCP transport, from the `initialize` handshake.
@@ -202,7 +212,7 @@ pub(crate) fn request_digest(domain: &str, payload: &serde_json::Value) -> Strin
 }
 
 /// The refusal of a key reused with another request; content-free.
-pub(crate) fn request_id_conflict() -> String {
+pub fn request_id_conflict() -> String {
     "request_id was already used with a different request (idempotency conflict)".to_string()
 }
 
@@ -217,6 +227,17 @@ impl ScratchpadEntry {
         self.metadata
             .get(REQUEST_ID_METADATA_KEY)
             .is_some_and(|key| key.starts_with(HIVE_INBOUND_KEY_PREFIX))
+    }
+
+    /// The Hive bus address an inbound entry came from (its relay key is
+    /// `hive:<address>:<seq>`); `None` for local entries.
+    pub fn hive_inbound_address(&self) -> Option<&str> {
+        self.metadata
+            .get(REQUEST_ID_METADATA_KEY)?
+            .strip_prefix(HIVE_INBOUND_KEY_PREFIX)?
+            .rsplit_once(':')
+            .map(|(address, _)| address)
+            .filter(|address| !address.is_empty())
     }
 
     /// Admit `message` for the bus and return the text to store with its

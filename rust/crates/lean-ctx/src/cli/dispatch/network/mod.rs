@@ -120,6 +120,9 @@ mod provider;
 pub(crate) use provider::*;
 mod proxy;
 pub(crate) use proxy::*;
+#[cfg(feature = "http-server")]
+mod serve_args;
+
 #[cfg(test)]
 mod tests;
 
@@ -493,11 +496,16 @@ fn daemon_help() {
     println!();
     println!("Commands:");
     println!("  start     Start the daemon in the background");
-    println!("  stop      Stop the running daemon");
-    println!("  restart   Stop the daemon, then start it again");
-    println!("  status    Show daemon status, PID, autostart state and service file");
+    println!("  stop      Stop the daemon of the active data dir (exit 1 when none runs there)");
+    println!("  restart   Stop the active data dir's daemon, then start it again");
+    println!("  status    Show daemon status, PID, data dir, autostart state and service file");
     println!("  enable    Install + start the autostart service (systemd user unit / LaunchAgent)");
     println!("  disable   Stop + remove the autostart service");
+    println!();
+    println!("Every command acts on the daemon of the active data dir (LEAN_CTX_DATA_DIR, else");
+    println!("the default), found through its daemon.pid and daemon.sock only. The autostart");
+    println!("service belongs to the default install; with a directory override or another");
+    println!("HOME, enable/disable refuse and stop/restart leave the service alone.");
     if let (Some(name), Some(path)) = (
         lean_ctx::daemon_autostart::service_name(),
         lean_ctx::daemon_autostart::service_file_path(),
@@ -525,6 +533,15 @@ pub(super) fn cmd_daemon(rest: &[String]) {
                 std::process::exit(1);
             }
         }
+        "enable" | "disable" if !lean_ctx::daemon_autostart::controls_user_services() => {
+            // The user-wide service runs the default install's daemon; a
+            // directory override or sandbox HOME never installs or removes it.
+            eprintln!(
+                "{}",
+                lean_ctx::daemon_autostart::not_this_instance_message()
+            );
+            std::process::exit(1);
+        }
         "enable" => {
             lean_ctx::daemon_autostart::install(false);
             println!(
@@ -541,17 +558,23 @@ pub(super) fn cmd_daemon(rest: &[String]) {
                 std::process::exit(1);
             }
         }
-        "stop" => {
-            lean_ctx::daemon_autostart::stop();
-            match lean_ctx::daemon::stop_daemon() {
-                Ok(()) => println!("Daemon stopped."),
-                Err(e) => eprintln!("Error: {e}"),
+        "stop" => match lean_ctx::daemon::stop_daemon() {
+            // Only this data dir's daemon; its autostart service only when
+            // the service runs that daemon (5 Nov 2026).
+            Ok(lean_ctx::daemon::DaemonStop::Stopped(_)) => println!("Daemon stopped."),
+            Ok(lean_ctx::daemon::DaemonStop::NotRunning) => {
+                eprintln!("{}", lean_ctx::daemon::not_running_message());
+                std::process::exit(1);
             }
-        }
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        },
         "restart" => {
-            // Stop both the supervised service and a manually started daemon,
-            // then start through the same channel that was active before.
-            lean_ctx::daemon_autostart::stop();
+            // Stop this data dir's daemon (and its supervisor when that runs
+            // it), then start through the channel of this instance. Another
+            // instance's daemon or service is never stopped or started.
             if let Err(e) = lean_ctx::daemon::stop_daemon() {
                 println!("  (stop: {e})");
             }
@@ -570,6 +593,9 @@ pub(super) fn cmd_daemon(rest: &[String]) {
                 }
             }
         }
+        "status" if crate::cli::local_read::wants_json(rest) => {
+            crate::cli::local_read::kinds::run("daemon.status", &rest[1..]);
+        }
         "status" => {
             println!("lean-ctx daemon:");
             // #2176 VM: the identity gate, not a bare liveness check — a
@@ -582,12 +608,16 @@ pub(super) fn cmd_daemon(rest: &[String]) {
                 }
                 (None, None) => println!("  Status:    not running"),
             }
+            println!("  Data dir:  {}", lean_ctx::ipc::endpoint_dir().display());
             let supported = lean_ctx::daemon_autostart::is_supported();
             let installed = lean_ctx::daemon_autostart::is_installed();
+            let other_instance = supported && !lean_ctx::daemon_autostart::controls_user_services();
             println!(
                 "  Autostart: {}",
                 if installed {
                     "enabled"
+                } else if other_instance {
+                    "not used by this instance (directory override or sandbox HOME)"
                 } else if supported {
                     "not installed (run: lean-ctx daemon enable)"
                 } else {
@@ -606,7 +636,7 @@ pub(super) fn cmd_daemon(rest: &[String]) {
             if verified.is_none() {
                 println!();
                 println!("  Start:     lean-ctx daemon start");
-                if supported && !installed {
+                if supported && !installed && !other_instance {
                     println!("  Autostart: lean-ctx daemon enable");
                 }
             }
@@ -615,283 +645,56 @@ pub(super) fn cmd_daemon(rest: &[String]) {
     }
 }
 
+/// `serve --print-socket [--json]`: where the daemon socket of this data dir
+/// is, so a local reader finds it without a shell. Plain: the path, one line.
+/// `--json`: the Local Read document `service.socket` (Local Service v1).
+#[cfg(feature = "http-server")]
+fn socket_document(json: bool) -> String {
+    let addr = lean_ctx::daemon::daemon_addr();
+    if !json {
+        return addr.display();
+    }
+    let daemon = lean_ctx::daemon::verified_daemon();
+    crate::cli::local_read::document(
+        "service.socket",
+        &serde_json::json!({
+            "socket": addr.display(),
+            "listening": daemon.is_some() && addr.is_listening(),
+            "pid": daemon.map(|d| d.pid),
+        }),
+    )
+}
+
 pub(super) fn cmd_serve(rest: &[String]) {
     #[cfg(feature = "http-server")]
     {
-        let mut cfg = crate::http_server::HttpServerConfig::default();
-        let mut daemon_mode = false;
-        let mut stop_mode = false;
-        let mut status_mode = false;
-        let mut foreground_daemon = false;
-        let mut multi_roots: Vec<(String, Option<String>)> = Vec::new();
-        let mut rrf_k: Option<f64> = None;
-        let mut a2a_task_authority_path: Option<String> = None;
-        let mut a2a_peers_path: Option<String> = None;
-        let mut a2a_signing_key_file: Option<String> = None;
-        let mut auth_token_file: Option<String> = None;
-        let mut i = 0;
-        while i < rest.len() {
-            match rest[i].as_str() {
-                "--daemon" | "-d" => daemon_mode = true,
-                "--stop" => stop_mode = true,
-                "--status" => status_mode = true,
-                "--_foreground-daemon" => foreground_daemon = true,
-                "--host" | "-H" => {
-                    i += 1;
-                    if i < rest.len() {
-                        cfg.host.clone_from(&rest[i]);
-                    }
-                }
-                arg if arg.starts_with("--host=") => {
-                    cfg.host = arg["--host=".len()..].to_string();
-                }
-                "--port" | "-p" => {
-                    i += 1;
-                    if i < rest.len()
-                        && let Ok(p) = rest[i].parse::<u16>()
-                    {
-                        cfg.port = p;
-                    }
-                }
-                arg if arg.starts_with("--port=") => {
-                    if let Ok(p) = arg["--port=".len()..].parse::<u16>() {
-                        cfg.port = p;
-                    }
-                }
-                "--project-root" => {
-                    i += 1;
-                    if i < rest.len() {
-                        cfg.project_root = std::path::PathBuf::from(&rest[i]);
-                    }
-                }
-                arg if arg.starts_with("--project-root=") => {
-                    cfg.project_root = std::path::PathBuf::from(&arg["--project-root=".len()..]);
-                }
-                "--auth-token" => {
-                    i += 1;
-                    if i < rest.len() {
-                        cfg.auth_token = Some(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--auth-token=") => {
-                    cfg.auth_token = Some(arg["--auth-token=".len()..].to_string());
-                }
-                "--auth-token-file" => {
-                    i += 1;
-                    if i < rest.len() {
-                        auth_token_file = Some(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--auth-token-file=") => {
-                    auth_token_file = Some(arg["--auth-token-file=".len()..].to_string());
-                }
-                "--a2a-signing-key" => {
-                    i += 1;
-                    if i < rest.len() {
-                        cfg.a2a_signing_key = Some(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--a2a-signing-key=") => {
-                    cfg.a2a_signing_key = Some(arg["--a2a-signing-key=".len()..].to_string());
-                }
-                "--a2a-signing-key-file" => {
-                    i += 1;
-                    if i < rest.len() {
-                        a2a_signing_key_file = Some(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--a2a-signing-key-file=") => {
-                    a2a_signing_key_file = Some(arg["--a2a-signing-key-file=".len()..].to_string());
-                }
-                "--a2a-recipient-id" => {
-                    i += 1;
-                    if i < rest.len() {
-                        cfg.a2a_recipient_id = Some(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--a2a-recipient-id=") => {
-                    cfg.a2a_recipient_id = Some(arg["--a2a-recipient-id=".len()..].to_string());
-                }
-                "--a2a-tenant-id" => {
-                    i += 1;
-                    if i < rest.len() {
-                        cfg.a2a_tenant_id = Some(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--a2a-tenant-id=") => {
-                    cfg.a2a_tenant_id = Some(arg["--a2a-tenant-id=".len()..].to_string());
-                }
-                "--a2a-project-id" => {
-                    i += 1;
-                    if i < rest.len() {
-                        cfg.a2a_project_id = Some(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--a2a-project-id=") => {
-                    cfg.a2a_project_id = Some(arg["--a2a-project-id=".len()..].to_string());
-                }
-                "--a2a-task-authority" => {
-                    i += 1;
-                    if i < rest.len() {
-                        a2a_task_authority_path = Some(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--a2a-task-authority=") => {
-                    a2a_task_authority_path =
-                        Some(arg["--a2a-task-authority=".len()..].to_string());
-                }
-                "--a2a-peers" => {
-                    i += 1;
-                    if i < rest.len() {
-                        a2a_peers_path = Some(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--a2a-peers=") => {
-                    a2a_peers_path = Some(arg["--a2a-peers=".len()..].to_string());
-                }
-                "--stateful" => cfg.stateful_mode = true,
-                "--stateless" => cfg.stateful_mode = false,
-                "--root" => {
-                    i += 1;
-                    if i < rest.len() {
-                        multi_roots.push((rest[i].clone(), None));
-                    }
-                }
-                arg if arg.starts_with("--root=") => {
-                    let val = arg["--root=".len()..].to_string();
-                    if let Some((path, alias)) = val.split_once(':') {
-                        multi_roots.push((path.to_string(), Some(alias.to_string())));
-                    } else {
-                        multi_roots.push((val, None));
-                    }
-                }
-                "--rrf-k" => {
-                    i += 1;
-                    if i < rest.len() {
-                        rrf_k = rest[i].parse::<f64>().ok();
-                    }
-                }
-                arg if arg.starts_with("--rrf-k=") => {
-                    rrf_k = arg["--rrf-k=".len()..].parse::<f64>().ok();
-                }
-                "--json" => cfg.json_response = true,
-                "--sse" => cfg.json_response = false,
-                "--disable-host-check" => cfg.disable_host_check = true,
-                "--allowed-host" => {
-                    i += 1;
-                    if i < rest.len() {
-                        cfg.allowed_hosts.push(rest[i].clone());
-                    }
-                }
-                arg if arg.starts_with("--allowed-host=") => {
-                    cfg.allowed_hosts
-                        .push(arg["--allowed-host=".len()..].to_string());
-                }
-                "--max-body-bytes" => {
-                    i += 1;
-                    if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<usize>()
-                    {
-                        cfg.max_body_bytes = n;
-                    }
-                }
-                arg if arg.starts_with("--max-body-bytes=") => {
-                    if let Ok(n) = arg["--max-body-bytes=".len()..].parse::<usize>() {
-                        cfg.max_body_bytes = n;
-                    }
-                }
-                "--max-concurrency" => {
-                    i += 1;
-                    if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<usize>()
-                    {
-                        cfg.max_concurrency = n;
-                    }
-                }
-                arg if arg.starts_with("--max-concurrency=") => {
-                    if let Ok(n) = arg["--max-concurrency=".len()..].parse::<usize>() {
-                        cfg.max_concurrency = n;
-                    }
-                }
-                "--max-rps" => {
-                    i += 1;
-                    if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<u32>()
-                    {
-                        cfg.max_rps = n;
-                    }
-                }
-                arg if arg.starts_with("--max-rps=") => {
-                    if let Ok(n) = arg["--max-rps=".len()..].parse::<u32>() {
-                        cfg.max_rps = n;
-                    }
-                }
-                "--rate-burst" => {
-                    i += 1;
-                    if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<u32>()
-                    {
-                        cfg.rate_burst = n;
-                    }
-                }
-                arg if arg.starts_with("--rate-burst=") => {
-                    if let Ok(n) = arg["--rate-burst=".len()..].parse::<u32>() {
-                        cfg.rate_burst = n;
-                    }
-                }
-                "--request-timeout-ms" => {
-                    i += 1;
-                    if i < rest.len()
-                        && let Ok(n) = rest[i].parse::<u64>()
-                    {
-                        cfg.request_timeout_ms = n;
-                    }
-                }
-                arg if arg.starts_with("--request-timeout-ms=") => {
-                    if let Ok(n) = arg["--request-timeout-ms=".len()..].parse::<u64>() {
-                        cfg.request_timeout_ms = n;
-                    }
-                }
-                "--help" | "-h" => {
-                    println!(
-                        "Usage: lean-ctx serve [--host H] [--port N] [--project-root DIR] [--daemon] [--stop] [--status]\n\
-                         \n\
-                         Options:\n  \
-                           --daemon, -d          Start as background daemon (UDS)\n  \
-                           --stop                Stop running daemon\n  \
-                           --status              Show daemon status\n  \
-                           --host, -H            Bind host (default: 127.0.0.1)\n  \
-                           --port, -p            Bind port (default: 8080)\n  \
-                           --project-root        Resolve relative paths against this root (default: cwd)\n  \
-                           --root PATH[:ALIAS]   Add a repo root for multi-repo mode (repeatable)\n  \
-                           --rrf-k N             RRF fusion parameter (default: 60.0)\n  \
-                           --a2a-signing-key-file  File with the key that verifies remote A2A envelope HMACs (must differ\n  \
-                                                 from auth token; env LEAN_CTX_A2A_SIGNING_KEY_FILE, or the key in LEAN_CTX_A2A_SIGNING_KEY)\n  \
-                           --a2a-signing-key     Deprecated: the key itself, visible in the process list\n  \
-                           --a2a-recipient-id    Bind incoming A2A envelopes to this server identity\n  \
-                           --a2a-tenant-id       Require signed tenant scope on incoming A2A envelopes\n  \
-                           --a2a-project-id      Require signed project scope on incoming A2A envelopes\n  \
-                           --a2a-task-authority  JSON peer/grant trust policy for signed A2A tasks (env LEAN_CTX_A2A_TASK_AUTHORITY)\n  \
-                           --a2a-peers           JSON bounded multi-peer relay table (env LEAN_CTX_A2A_PEERS)\n  \
-                           --auth-token-file     File with the token Authorization: Bearer <token> must carry (required\n  \
-                                                 for non-loopback binds; env LEAN_CTX_HTTP_TOKEN_FILE, or the token in LEAN_CTX_HTTP_TOKEN)\n  \
-                           --auth-token          Deprecated: the token itself, visible in the process list\n  \
-                           --stateful/--stateless  Streamable HTTP session mode (default: stateless)\n  \
-                           --json/--sse          Response framing in stateless mode (default: json)\n  \
-                           --max-body-bytes      Max request body size in bytes (default: 2097152)\n  \
-                           --max-concurrency     Max concurrent requests (default: 32)\n  \
-                           --max-rps             Max requests/sec (global, default: 50)\n  \
-                           --rate-burst          Rate limiter burst (global, default: 100)\n  \
-                           --request-timeout-ms  REST tool-call timeout (default: 30000)\n  \
-                           --allowed-host        Add allowed Host header (repeatable)\n  \
-                           --disable-host-check  Disable Host header validation (unsafe)"
-                    );
-                    return;
-                }
-                _ => {}
+        let parsed = match serve_args::parse(rest) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                eprintln!("lean-ctx serve: {error}\nRun `lean-ctx serve --help` for every flag.");
+                std::process::exit(2);
             }
-            i += 1;
+        };
+        if parsed.help {
+            println!("{}", serve_args::SERVE_USAGE);
+            return;
         }
+        let serve_args::ServeArgs {
+            mut cfg,
+            daemon_mode,
+            stop_mode,
+            status_mode,
+            print_socket,
+            json,
+            foreground_daemon,
+            multi_roots,
+            rrf_k,
+            a2a_task_authority_path,
+            a2a_peers_path,
+            a2a_signing_key_file,
+            auth_token_file,
+            help: _,
+        } = parsed;
 
         // Signed-task trust policy. Loaded before any listener starts so an
         // unreadable or invalid policy stops the server instead of silently
@@ -1030,11 +833,25 @@ pub(super) fn cmd_serve(rest: &[String]) {
             eprintln!("Multi-repo mode: {} roots configured", multi_roots.len());
         }
 
+        if print_socket {
+            println!("{}", socket_document(json));
+            return;
+        }
+
         if stop_mode {
-            lean_ctx::daemon_autostart::stop();
-            if let Err(e) = lean_ctx::daemon::stop_daemon() {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
+            // Only the daemon of the active data dir, through its own PID
+            // file and socket; the autostart service only when it runs that
+            // daemon (5 Nov 2026, see `daemon::stop_daemon`).
+            match lean_ctx::daemon::stop_daemon() {
+                Ok(lean_ctx::daemon::DaemonStop::Stopped(_)) => {}
+                Ok(lean_ctx::daemon::DaemonStop::NotRunning) => {
+                    eprintln!("{}", lean_ctx::daemon::not_running_message());
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
             }
             return;
         }

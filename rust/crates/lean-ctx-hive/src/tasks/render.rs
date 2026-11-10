@@ -8,7 +8,7 @@
 use super::TaskView;
 use crate::untrusted::{UntrustedKind, wrap};
 use lean_ctx_protocol::hive::tasks::{
-    TaskAckV1, TaskLifecycle, TaskListV1, TaskOriginKind, TaskResultV1, TaskState,
+    TaskAckV1, TaskLifecycle, TaskListV1, TaskOriginKind, TaskPriority, TaskResultV1, TaskState,
 };
 
 fn state(state: TaskState) -> &'static str {
@@ -28,7 +28,7 @@ fn state(state: TaskState) -> &'static str {
 /// The state word, plus ` running` when a Hive v5 lifecycle says the
 /// holder reported progress (the one thing `state` does not show). A 1.x
 /// Hive sends no lifecycle: the state alone, as before.
-fn state_with(task_state: TaskState, lifecycle: Option<TaskLifecycle>) -> String {
+pub(super) fn state_with(task_state: TaskState, lifecycle: Option<TaskLifecycle>) -> String {
     let word = state(task_state);
     if task_state == TaskState::Claimed && lifecycle == Some(TaskLifecycle::Running) {
         format!("{word} running")
@@ -74,13 +74,31 @@ pub fn render_verify_ack(ack: &TaskAckV1) -> String {
     }
 }
 
-fn origin(origin: TaskOriginKind) -> &'static str {
+pub(super) fn origin(origin: TaskOriginKind) -> &'static str {
     match origin {
         TaskOriginKind::Person => "person",
         TaskOriginKind::Agent => "agent",
         TaskOriginKind::Contradiction => "contradiction",
         TaskOriginKind::Question => "question",
         TaskOriginKind::Unknown => "unknown",
+    }
+}
+
+/// `"high "` before the state of a high-priority task, nothing for normal.
+pub(super) fn high(priority: Option<TaskPriority>) -> &'static str {
+    if priority == Some(TaskPriority::High) {
+        "high "
+    } else {
+        ""
+    }
+}
+
+/// ` [a, b]` for a task's labels, nothing without any.
+pub(super) fn labels(labels: &[String]) -> String {
+    if labels.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", labels.join(", "))
     }
 }
 
@@ -93,8 +111,9 @@ pub fn render_list(list: &TaskListV1, limit: usize) -> String {
     let mut body = String::new();
     for task in list.tasks.iter().take(limit) {
         body.push_str(&format!(
-            "#{} {} ({}){}{}: {}\n",
+            "#{} {}{} ({}){}{}{}: {}\n",
             task.number,
+            high(task.priority),
             state_with(task.state, task.lifecycle),
             origin(task.origin),
             task.role
@@ -102,6 +121,7 @@ pub fn render_list(list: &TaskListV1, limit: usize) -> String {
                 .map(|role| format!(" role={role}"))
                 .unwrap_or_default(),
             if task.mine { " mine" } else { "" },
+            labels(&task.labels),
             task.title.as_deref().unwrap_or("(untitled)"),
         ));
     }
@@ -116,6 +136,20 @@ pub fn render_list(list: &TaskListV1, limit: usize) -> String {
         out.push_str(&format!("\n… {more} more (ctx_tasks action=list)"));
     }
     out
+}
+
+/// The line under a partial listing.
+pub const PARTIAL_NOTE: &str = "(partial: Hive sends at most 100 tasks per answer, so older tasks may be missing; narrow the list with state or role)";
+
+/// [`render_list`] of a listing; a partial one says so under the tasks.
+#[must_use]
+pub fn render_listing(listing: &super::TaskListing, limit: usize) -> String {
+    let out = render_list(&listing.list, limit);
+    if listing.partial {
+        format!("{out}\n{PARTIAL_NOTE}")
+    } else {
+        out
+    }
 }
 
 /// One task with its updates and result.
@@ -164,6 +198,13 @@ pub fn render_task(view: &TaskView) -> String {
     }
     if let Some(acceptance) = acceptance {
         body.push_str(&format!("Done when: {acceptance}\n"));
+    }
+    body.push_str(&format!(
+        "Priority: {}\n",
+        super::fields::priority_word(task.priority)
+    ));
+    if !task.labels.is_empty() {
+        body.push_str(&format!("Labels: {}\n", task.labels.join(", ")));
     }
     body.push_str(&format!("Created by: {}\n", task.created_by.label));
     let source = format!("hive task #{}", task.number);

@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -80,6 +79,28 @@ pub fn verified_daemon() -> Option<ipc::process::ServiceProcess> {
     .next()
 }
 
+/// The PID of the running daemon as `daemon status` reports it: this process
+/// when it is the foreground daemon `daemon.pid` names, otherwise
+/// [`verified_daemon`]. The process sweep behind [`verified_daemon`] excludes
+/// its own PID, so the daemon answering its own `/v1/local/daemon` found no
+/// daemon (`running: false`) while `lean-ctx daemon status` saw it.
+#[must_use]
+pub fn running_daemon_pid() -> Option<u32> {
+    let own = std::process::id();
+    if is_recorded_self(is_foreground_daemon(), read_daemon_pid(), own) {
+        return Some(own);
+    }
+    verified_daemon().map(|daemon| daemon.pid)
+}
+
+/// Whether this process is the recorded daemon: it runs as the foreground
+/// daemon and `daemon.pid` names its PID. Being the foreground daemon alone
+/// is not enough: a second daemon that lost the start race is not the one
+/// `daemon.pid` and the socket belong to.
+fn is_recorded_self(foreground: bool, recorded: Option<u32>, own: u32) -> bool {
+    foreground && recorded == Some(own)
+}
+
 /// Releases up to 3.12.0 kept `daemon.pid` and `daemon.sock` in the OS
 /// data-local directory. A daemon such a release started is stopped before a
 /// new one starts and by `stop_daemon`, so the two never run side by side. Only
@@ -95,10 +116,7 @@ fn stop_legacy_daemon() {
         return;
     }
     let pid_path = legacy.join("daemon.pid");
-    let Some(pid) = fs::read_to_string(&pid_path)
-        .ok()
-        .and_then(|contents| contents.trim().parse::<u32>().ok())
-    else {
+    let Some(pid) = ipc::process::read_pid_file(&pid_path) else {
         return;
     };
     // Only when the PID still is a lean-ctx daemon of this user (command
@@ -165,9 +183,11 @@ fn legacy_record_verified(pid: u32) -> bool {
     verified
 }
 
+/// The PID in `daemon.pid`. Empty, garbage, 0, negative or overflowing
+/// content is warned about and the stale file removed; it never becomes a
+/// signal target (`ipc::process::read_pid_file`).
 pub fn read_daemon_pid() -> Option<u32> {
-    let contents = fs::read_to_string(daemon_pid_path()).ok()?;
-    contents.trim().parse::<u32>().ok()
+    ipc::process::read_pid_file(&daemon_pid_path())
 }
 
 /// Exclusive, bounded-wait lock that serializes the daemon-start critical
@@ -313,12 +333,38 @@ fn stale_pid_message(pid: u32) -> String {
     format!("No daemon was running (stale PID file for PID {pid} removed).")
 }
 
-pub fn stop_daemon() -> Result<()> {
+/// What `stop_daemon` found for the active data dir.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DaemonStop {
+    /// The daemon recorded in this data dir was stopped.
+    Stopped(u32),
+    /// No daemon runs for this data dir; no process was signalled.
+    NotRunning,
+}
+
+/// The line `serve --stop` and `daemon stop` print, and exit 1 after, when no
+/// daemon runs for the active data dir. Names the dir so that a caller with
+/// a scratch `LEAN_CTX_DATA_DIR` sees which instance it asked about.
+#[must_use]
+pub fn not_running_message() -> String {
+    format!(
+        "No lean-ctx daemon is running for data dir {}. Nothing was stopped.",
+        data_dir().display()
+    )
+}
+
+/// Stop the daemon of the active data dir (`LEAN_CTX_DATA_DIR`, else the
+/// default under HOME), resolved only through that dir's PID file, identity
+/// file and socket — never through a default path, a process name or a
+/// service name. The autostart service is stopped too, but only when it runs
+/// exactly this daemon's PID (5 Nov 2026: `systemctl --user stop` by unit
+/// name stopped the user's real daemon from a scratch data dir).
+pub fn stop_daemon() -> Result<DaemonStop> {
     stop_legacy_daemon();
 
+    // No record in this data dir: nothing is signalled, nothing is removed.
     let Some(record) = read_daemon_record() else {
-        eprintln!("No daemon PID file found. Nothing to stop.");
-        return Ok(());
+        return Ok(DaemonStop::NotRunning);
     };
     let pid = record.pid;
 
@@ -333,16 +379,35 @@ pub fn stop_daemon() -> Result<()> {
     .into_iter()
     .next() else {
         // Not provably the daemon: never signalled. Should the check have
-        // failed for a real daemon (unreadable command line), the endpoint
-        // shutdown still ends it before its endpoint files are removed.
-        if ipc::process::is_alive(pid) {
-            let _ = try_http_shutdown();
-        }
-        eprintln!("{}", stale_pid_message(pid));
+        // failed for a real daemon (unreadable command line, or a daemon in
+        // the caller's own process group), the endpoint shutdown still ends
+        // it before its endpoint files are removed. When that shutdown was
+        // accepted and the PID then ended, a daemon was stopped: that is
+        // reported and exits 0, never "Nothing was stopped".
+        let stopped_via_endpoint =
+            ipc::process::is_alive(pid) && try_http_shutdown() && wait_for_exit(pid);
         ipc::cleanup(&daemon_addr());
         remove_daemon_record();
-        return Ok(());
+        if stopped_via_endpoint {
+            eprintln!("lean-ctx daemon stopped (PID {pid}).");
+            return Ok(DaemonStop::Stopped(pid));
+        }
+        eprintln!("{}", stale_pid_message(pid));
+        return Ok(DaemonStop::NotRunning);
     };
+
+    // A supervised daemon is stopped through its supervisor, so that
+    // `Restart=`/`KeepAlive` does not bring it back — only when the service
+    // runs this very PID; a service of another instance is never addressed.
+    if crate::daemon_autostart::supervised_pid() == Some(daemon.pid) {
+        crate::daemon_autostart::stop();
+        for _ in 0..30 {
+            if !daemon.is_running() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
 
     // The HTTP shutdown goes to this instance's daemon endpoint, never to a PID.
     if try_http_shutdown() {
@@ -381,7 +446,18 @@ pub fn stop_daemon() -> Result<()> {
     // `serve`. The lifecycle commands (`stop`, `restart`, `config apply`,
     // `uninstall`, `dev-install`) sweep the background services explicitly
     // with `ipc::process::stop_services`, never MCP servers (#2176).
-    Ok(())
+    Ok(DaemonStop::Stopped(pid))
+}
+
+/// Wait up to 3 s for `pid` to end after an accepted endpoint shutdown.
+fn wait_for_exit(pid: u32) -> bool {
+    for _ in 0..30 {
+        if !ipc::process::is_alive(pid) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    !ipc::process::is_alive(pid)
 }
 
 fn try_http_shutdown() -> bool {
@@ -408,9 +484,12 @@ pub fn daemon_status() -> String {
                 daemon_pid_path().display()
             );
         }
-        return format!("Daemon not running (stale PID file for PID {pid})");
+        return format!(
+            "Daemon not running for data dir {} (stale PID file for PID {pid})",
+            data_dir().display()
+        );
     }
-    "Daemon not running".to_string()
+    format!("Daemon not running for data dir {}", data_dir().display())
 }
 
 fn write_pid_file(pid: u32) -> Result<()> {
@@ -419,9 +498,10 @@ fn write_pid_file(pid: u32) -> Result<()> {
         fs::create_dir_all(parent)
             .with_context(|| format!("cannot create dir: {}", parent.display()))?;
     }
-    let mut f = fs::File::create(&pid_path)
+    // Atomic (temp + rename): a reader never sees an empty file, which
+    // `read_daemon_pid` would remove as stale.
+    crate::core::atomic_fs::try_atomic_write(&pid_path, pid.to_string().as_bytes(), None)
         .with_context(|| format!("cannot write PID file: {}", pid_path.display()))?;
-    write!(f, "{pid}")?;
     // The identity defends the PID against reuse after a reboot or crash;
     // without one (unsupported platform) the PID is gated by command line.
     let identity_path = daemon_identity_path();
@@ -541,5 +621,17 @@ mod tests {
             "No daemon was running (stale PID file for PID 36492 removed)."
         );
         assert!(!line.contains("Cleaning up"));
+    }
+
+    /// The daemon answering its own `/v1/local/daemon` is the running
+    /// daemon when `daemon.pid` names it; the process sweep cannot see it.
+    #[test]
+    fn foreground_daemon_named_by_the_record_is_running() {
+        assert!(super::is_recorded_self(true, Some(4242), 4242));
+        // Not the foreground daemon, another recorded PID, or no record:
+        // fall back to the verified sweep.
+        assert!(!super::is_recorded_self(false, Some(4242), 4242));
+        assert!(!super::is_recorded_self(true, Some(4243), 4242));
+        assert!(!super::is_recorded_self(true, None, 4242));
     }
 }

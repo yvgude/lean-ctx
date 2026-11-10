@@ -2170,7 +2170,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lean-ctx"
-version = "3.12.2"
+version = "3.12.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -2199,6 +2199,8 @@ dependencies = [
  "lean-ctx-protocol",
  "lean-ctx-proxy",
  "lean-ctx-server",
+ "lean-ctx-shell-policy",
+ "lean-ctx-tasks",
  "libc",
  "md-5 0.11.0",
  "proptest",
@@ -2235,6 +2237,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lean-ctx-activity"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "lean-ctx-fs",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "lean-ctx-compress"
 version = "0.1.0"
 dependencies = [
@@ -2247,11 +2260,13 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-doc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "fs2",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tempfile",
 ]
 
 [[package]]
@@ -2268,7 +2283,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-engine"
-version = "3.12.2"
+version = "3.12.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2298,6 +2313,7 @@ dependencies = [
  "insta",
  "jsonschema",
  "keyring",
+ "lean-ctx-activity",
  "lean-ctx-compress",
  "lean-ctx-doc",
  "lean-ctx-fs",
@@ -2370,7 +2386,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-fs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "dirs",
@@ -2386,7 +2402,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hive"
-version = "3.12.2"
+version = "3.12.3"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2406,20 +2422,25 @@ dependencies = [
  "lean-ctx-doc",
  "lean-ctx-engine",
  "lean-ctx-protocol",
+ "lean-ctx-tasks",
  "libc",
  "p256",
+ "proc-macro2",
  "regex",
  "rusqlite",
  "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "syn 2.0.119",
  "tempfile",
  "tokio",
  "tokio-tungstenite",
  "toml",
  "tracing",
+ "unicode-general-category",
  "unicode-normalization",
+ "unicode-security",
  "ureq",
  "uuid",
  "zeroize",
@@ -2428,12 +2449,13 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hooks"
-version = "3.12.2"
+version = "3.12.3"
 dependencies = [
  "blake3",
  "chrono",
  "dirs",
  "lean-ctx-engine",
+ "lean-ctx-shell-policy",
  "regex",
  "serde",
  "serde_json",
@@ -2446,7 +2468,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-ocla"
-version = "5.0.0"
+version = "6.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2476,7 +2498,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-protocol"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
@@ -2491,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-proxy"
-version = "3.12.2"
+version = "3.12.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2531,7 +2553,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-server"
-version = "3.12.2"
+version = "3.12.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2553,6 +2575,8 @@ dependencies = [
  "lean-ctx-hooks",
  "lean-ctx-ocla",
  "lean-ctx-protocol",
+ "lean-ctx-shell-policy",
+ "lean-ctx-tasks",
  "libc",
  "lsp-types",
  "md-5 0.11.0",
@@ -2574,6 +2598,19 @@ dependencies = [
  "uuid",
  "walkdir",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "lean-ctx-shell-policy"
+version = "3.12.3"
+dependencies = [
+ "dirs",
+ "lean-ctx-engine",
+ "regex",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -2614,8 +2651,31 @@ dependencies = [
 ]
 
 [[package]]
-name = "lean-ctx-workgraph"
+name = "lean-ctx-tasks"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+ "fs2",
+ "lean-ctx-fs",
+ "lean-ctx-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "lean-ctx-tripwires"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "serde",
+ "serde_json",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "lean-ctx-workgraph"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "lean-ctx-protocol",
@@ -5449,6 +5509,22 @@ name = "unicode-properties"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d"
+
+[[package]]
+name = "unicode-script"
+version = "0.5.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "383ad40bb927465ec0ce7720e033cb4ca06912855fc35db31b5755d0de75b1ee"
+
+[[package]]
+name = "unicode-security"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a23f3d0a5f302dbfdc8c5303c943c325e67cb478611bf1f44fb4c1520c64eb7"
+dependencies = [
+ "unicode-normalization",
+ "unicode-script",
+]
 
 [[package]]
 name = "unicode-width"

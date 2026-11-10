@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "lean-ctx-activity"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+license = "Apache-2.0"
+description = "The host-neutral activity stream of LeanCTX | OSS: one bounded, redacted event log per agent session."
+repository = "https://github.com/yvgude/lean-ctx"
+homepage = "https://leanctx.com"
+keywords = ["lean-ctx", "llm", "agents", "activity"]
+categories = ["development-tools"]
+publish = true
+
+# A leaf crate: it never depends on `lean-ctx`. The engine supplies the data
+# directory and the redaction (core::activity, see rust/CRATE_MAP.md).
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+lean-ctx-fs = { path = "../lean-ctx-fs", version = "0.2.0" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.27"
+
+[lints.rust]
+unreachable_pub = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+missing_errors_doc = "allow"
+similar_names = "allow"
+assert_is_empty = "allow"
+doc_markdown = "allow"
+cast_possible_truncation = "allow"

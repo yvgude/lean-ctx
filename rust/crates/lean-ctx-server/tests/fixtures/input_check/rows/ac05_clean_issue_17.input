@@ -1,0 +1,3 @@
+Timeouts when the repository has more than 200k files.
+Indexing stops after about 120 seconds with no message.
+A larger limit or a visible warning would help.

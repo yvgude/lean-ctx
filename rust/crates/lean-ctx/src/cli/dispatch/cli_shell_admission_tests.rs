@@ -22,6 +22,10 @@ impl Drop for RestoreEnvironment {
 }
 
 fn with_shell_environment(test: impl FnOnce()) {
+    // The binary installs the policy in `run`; a test process does not go
+    // through it. Under nextest (one process per test) nothing else installs
+    // it either, so the gate would fail closed (126) before any child runs.
+    lean_ctx_shell_policy::install();
     let _lock = core::data_dir::test_env_lock();
     let keys = [
         "LEAN_CTX_ACTIVE",

@@ -76,6 +76,11 @@ pub(crate) fn wire_context(
         team: tags.team,
         project: tags.project,
         project_key: None, // read from the request body by the forward path
+        app_session: parts
+            .headers
+            .get(lean_ctx::core::activity::SESSION_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(lean_ctx::core::activity::session_id),
         saved_tokens: tokens_saved,
         // bytes/4 — the same estimation basis the proxy stats use throughout.
         uncompressed_input_tokens: original_size as u64 / 4,
@@ -126,6 +131,21 @@ pub(crate) struct PreparedRequestBody {
     pub(crate) route: Option<crate::routing::RouteDecision>,
 }
 
+/// The app session this request names: exactly one valid
+/// `x-leanctx-session-id` value, else none. Keys the agent's compaction
+/// directive, so anything ambiguous names no session (fail closed).
+fn compaction_session(parts: &Parts) -> Option<String> {
+    let mut values = parts
+        .headers
+        .get_all(lean_ctx::core::activity::SESSION_HEADER)
+        .iter();
+    let value = values.next()?;
+    if values.next().is_some() {
+        return None;
+    }
+    lean_ctx::core::activity::session_id(value.to_str().ok()?)
+}
+
 pub(crate) fn prepare_request_body(
     parts: &Parts,
     body_bytes: &[u8],
@@ -135,6 +155,12 @@ pub(crate) fn prepare_request_body(
     openai_shape: bool,
     compression_arm: Option<crate::holdout::Arm>,
 ) -> Result<PreparedRequestBody, StatusCode> {
+    // The proxy carries this app session: `ctx_session compact` may arm a
+    // directive for it (and says so honestly when no proxy does).
+    let session = compaction_session(parts);
+    if let Some(session) = session.as_deref() {
+        lean_ctx::core::compact_directive::note_carried(session);
+    }
     let encoding = request_body_encoding(parts);
     let decoded = match encoding {
         RequestBodyEncoding::Identity => Cow::Borrowed(body_bytes),
@@ -189,7 +215,7 @@ pub(crate) fn prepare_request_body(
     let content_dedup_tokens_saved = if compression_control {
         0
     } else {
-        crate::agent_compact::apply(&mut parsed)
+        crate::agent_compact::apply(&mut parsed, session.as_deref())
     };
 
     // Router runs on the freshly parsed body, before compression: the model
@@ -280,4 +306,34 @@ pub(crate) fn translated_openai_body(
     _parsed: &serde_json::Value,
 ) -> Option<serde_json::Value> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::{HeaderValue, Request};
+
+    use super::compaction_session;
+
+    fn session_of(values: &[&'static str]) -> Option<String> {
+        let mut request = Request::builder().uri("/v1/messages").body(()).unwrap();
+        for value in values {
+            request.headers_mut().append(
+                lean_ctx::core::activity::SESSION_HEADER,
+                HeaderValue::from_static(value),
+            );
+        }
+        let (parts, ()) = request.into_parts();
+        compaction_session(&parts)
+    }
+
+    /// The compaction session is exactly one valid header value; a repeated
+    /// header names no session, even when both values agree (fail closed).
+    #[test]
+    fn compaction_session_needs_exactly_one_valid_header() {
+        assert_eq!(session_of(&["a"]).as_deref(), Some("a"));
+        assert_eq!(session_of(&["a", "a"]), None, "duplicated header");
+        assert_eq!(session_of(&["a", "b"]), None, "conflicting headers");
+        assert_eq!(session_of(&[]), None, "no header");
+        assert_eq!(session_of(&["bad id"]), None, "malformed header");
+    }
 }

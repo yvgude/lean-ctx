@@ -59,6 +59,7 @@ const UNIT_TEST_HARNESSES: &[&str] = &[
     "lean_ctx_hive-",
     "lean_ctx_proxy-",
     "lean_ctx_server-",
+    "lean_ctx_shell_policy-",
 ];
 
 /// Whether this process is a test harness that must stay inside the

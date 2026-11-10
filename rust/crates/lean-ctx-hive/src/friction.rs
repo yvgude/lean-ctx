@@ -68,23 +68,13 @@ pub fn emit_due(store: &HiveStore, now: DateTime<Utc>) -> usize {
     // only names the worker it had, so an hour's findings never bring a
     // gone role back into a full book (and push out an idle one).
     let worker_of = |agent: &AgentEntry| {
-        let transport = agent.transport.as_ref();
-        let host = super::workers::attach::detect_host_app(
-            transport.map(|t| t.host.as_str()),
-            Some(agent.agent_type.as_str()),
-            std::iter::empty::<(&str, &str)>(),
-            transport.and_then(|t| t.name.as_deref()),
-        );
-        let role = agent
-            .role
-            .as_deref()
-            .unwrap_or(super::workers::GENERAL_ROLE);
+        let (host, role) = super::workers::attach::agent_worker_key(agent);
         if active.contains(agent.agent_id.as_str()) {
-            super::workers::attach::attach(store, &instance.instance_id, &host, role)
+            super::workers::attach::attach(store, &instance.instance_id, &host, &role)
                 .ok()
                 .map(|attached| attached.worker.worker_id)
         } else {
-            super::workers::attach::known(store, &instance.instance_id, &host, role)
+            super::workers::attach::known(store, &instance.instance_id, &host, &role)
                 .map(|worker| worker.worker_id)
         }
     };
@@ -372,6 +362,8 @@ mod tests {
             transport: None,
             role_source: None,
             parent: None,
+            app_session_id: None,
+            display_name: None,
         }
     }
 

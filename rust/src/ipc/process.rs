@@ -58,7 +58,29 @@ pub fn run_with_timeout(
 /// (GL #545, #2176).
 pub use super::detached::{DetachedChild, DetachedStderr, spawn_detached};
 
-pub use lean_ctx_fs::process::is_alive;
+pub use lean_ctx_fs::process::{
+    MAX_PID, PidFileError, PidRefusal, group_target, is_alive, parse_pid_file, signal_target,
+};
+
+/// Read a PID file. A missing file is `None`. A file whose content is not a
+/// signalable PID (empty, garbage, negative, 0, 1, above `i32::MAX`) is
+/// reported with a warning, removed as stale, and also `None`: such a value
+/// must never reach `kill(2)`, where `0` is the own process group and a
+/// wrapped `-1` is every process of the user.
+pub fn read_pid_file(path: &std::path::Path) -> Option<u32> {
+    let text = std::fs::read_to_string(path).ok()?;
+    match parse_pid_file(&text) {
+        Ok(pid) => Some(pid),
+        Err(error) => {
+            tracing::warn!(
+                "removing stale PID file {}: {error}; no process is signalled",
+                path.display()
+            );
+            let _ = std::fs::remove_file(path);
+            None
+        }
+    }
+}
 
 /// Returns a PID-reuse-safe identity when the operating system exposes one.
 ///
@@ -306,13 +328,13 @@ pub enum StopSignal {
 /// - macOS and other Unix: the identity is re-checked immediately before
 ///   `kill`; the remaining window is microseconds.
 pub fn signal_same_process(pid: u32, expected: &ProcessIdentity, signal: StopSignal) -> bool {
-    if pid == 0 || pid == std::process::id() {
+    let Ok(raw_pid) = signal_target(pid) else {
         return false;
-    }
+    };
     #[cfg(windows)]
     {
         // Windows has one way to stop a detached process; see StopSignal.
-        let _ = signal;
+        let _ = (signal, raw_pid);
         windows_terminate_same_process(pid, expected)
     }
     #[cfg(unix)]
@@ -321,20 +343,18 @@ pub fn signal_same_process(pid: u32, expected: &ProcessIdentity, signal: StopSig
             StopSignal::Terminate => libc::SIGTERM,
             StopSignal::Kill => libc::SIGKILL,
         };
-        let Ok(raw_pid) = libc::pid_t::try_from(pid) else {
-            return false;
-        };
         #[cfg(target_os = "linux")]
         if let Some(delivered) = linux_pidfd_signal(raw_pid, expected, sig) {
             return delivered;
         }
-        // SAFETY: `kill` takes the PID and signal by value; no pointer is
-        // dereferenced and errors surface via the return value.
+        // SAFETY: `kill` takes the PID and signal by value; `raw_pid` passed
+        // `signal_target`, so it names one other process, never a group or
+        // every process. No pointer is dereferenced.
         is_same_process(pid, expected) && unsafe { libc::kill(raw_pid, sig) } == 0
     }
     #[cfg(not(any(unix, windows)))]
     {
-        let _ = (expected, signal);
+        let _ = (expected, signal, raw_pid);
         false
     }
 }
@@ -653,11 +673,14 @@ fn windows_identity_of(handle: &ProcessHandle) -> Option<ProcessIdentity> {
 /// Ask a process to terminate gracefully (SIGTERM on Unix, nothing on Windows
 /// since we prefer HTTP shutdown; the caller should have already tried that).
 pub fn terminate_gracefully(pid: u32) -> Result<()> {
+    let raw =
+        signal_target(pid).map_err(|refusal| anyhow::anyhow!("not sending SIGTERM: {refusal}"))?;
     #[cfg(unix)]
     {
-        // SAFETY: `kill` takes the PID and signal by value; no pointer is
-        // dereferenced and errors surface via the return value.
-        let ret = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+        // SAFETY: `kill` takes the PID and signal by value; `raw` passed
+        // `signal_target` (one other process, never a group or every
+        // process). Errors surface via the return value.
+        let ret = unsafe { libc::kill(raw, libc::SIGTERM) };
         if ret != 0 {
             anyhow::bail!(
                 "Failed to send SIGTERM to PID {pid}: {}",
@@ -668,17 +691,22 @@ pub fn terminate_gracefully(pid: u32) -> Result<()> {
     }
     #[cfg(windows)]
     {
+        let _ = raw;
         force_kill(pid)
     }
 }
 
-/// Unconditionally kill a process.
+/// Kill a process. Refused (error, nothing signalled) for every PID
+/// [`signal_target`] refuses: 0, 1, above `i32::MAX`, this process.
 pub fn force_kill(pid: u32) -> Result<()> {
+    let raw =
+        signal_target(pid).map_err(|refusal| anyhow::anyhow!("not sending SIGKILL: {refusal}"))?;
     #[cfg(unix)]
     {
-        // SAFETY: `kill` takes the PID and signal by value; no pointer is
-        // dereferenced and errors surface via the return value.
-        let ret = unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+        // SAFETY: `kill` takes the PID and signal by value; `raw` passed
+        // `signal_target` (one other process, never a group or every
+        // process). Errors surface via the return value.
+        let ret = unsafe { libc::kill(raw, libc::SIGKILL) };
         if ret != 0 {
             anyhow::bail!(
                 "Failed to send SIGKILL to PID {pid}: {}",
@@ -693,6 +721,7 @@ pub fn force_kill(pid: u32) -> Result<()> {
         use windows_sys::Win32::System::Threading::{
             OpenProcess, PROCESS_TERMINATE, TerminateProcess,
         };
+        let _ = raw;
 
         // SAFETY: the Win32 calls take integer args only; the handle is
         // null-checked and closed before returning on every path.

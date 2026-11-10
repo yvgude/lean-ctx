@@ -400,6 +400,8 @@ pub(crate) fn engine_on_record(
         transport: None,
         role_source: None,
         parent: None,
+        app_session_id: None,
+        display_name: None,
     };
     AgentRegistry::mutate_locked(|registry| registry.agents.push(entry)).expect("registry saved");
 }

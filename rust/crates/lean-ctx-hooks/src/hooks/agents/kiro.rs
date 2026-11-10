@@ -9,6 +9,7 @@ pub(crate) fn install_kiro_hook() {
         "~/.kiro/settings/mcp.json",
         &home.join(".kiro/settings/mcp.json"),
     );
+    super::kiro_cline_hooks::install_kiro_runtime_hook(&home);
 
     let cwd = std::env::current_dir().unwrap_or_default();
     let steering_dir = cwd.join(".kiro").join("steering");

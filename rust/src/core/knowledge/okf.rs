@@ -147,14 +147,15 @@ pub fn to_okf_bundle(snapshot: &KnowledgeSnapshot) -> OkfBundle {
 }
 
 /// Writes a bundle to `dir`, creating category subdirectories as needed.
+///
+/// `dir` is the trusted export root. Below it every component — category
+/// directory and file — is checked per component and must not be a symlink,
+/// so a pre-existing bundle with a planted link cannot redirect the export.
 pub fn write_okf_bundle(dir: &Path, bundle: &OkfBundle) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     for (rel, contents) in bundle {
-        let path = dir.join(rel);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(&path, contents).map_err(|e| e.to_string())?;
+        // Shareable export (as before the confined write): 0644 before umask.
+        crate::core::pathjail_write::write_below(dir, Path::new(rel), contents.as_bytes(), 0o644)?;
     }
     Ok(())
 }
@@ -936,5 +937,41 @@ mod tests {
         assert_eq!(imp.patterns.len(), 1);
         assert_eq!(imp.patterns[0].pattern_type, "naming");
         assert_eq!(imp.patterns[0].examples, vec!["get_user()".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_okf_bundle_refuses_symlinked_components() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let mut bundle = OkfBundle::new();
+        bundle.insert("concepts/a.md".to_string(), "# a\n".to_string());
+
+        // A symlinked category directory pointing outside the export.
+        let dir = tmp.path().join("export1");
+        std::fs::create_dir_all(&dir).unwrap();
+        symlink(&outside, dir.join("concepts")).unwrap();
+        let err = write_okf_bundle(&dir, &bundle).unwrap_err();
+        assert!(err.contains("symlink"), "{err}");
+        assert!(!outside.join("a.md").exists());
+
+        // A symlinked bundle file pointing at a file outside the export.
+        let victim = tmp.path().join("victim.md");
+        std::fs::write(&victim, "keep").unwrap();
+        let dir = tmp.path().join("export2");
+        std::fs::create_dir_all(dir.join("concepts")).unwrap();
+        symlink(&victim, dir.join("concepts/a.md")).unwrap();
+        assert!(write_okf_bundle(&dir, &bundle).is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+
+        // A clean export still writes.
+        let dir = tmp.path().join("export3");
+        write_okf_bundle(&dir, &bundle).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("concepts/a.md")).unwrap(),
+            "# a\n"
+        );
     }
 }

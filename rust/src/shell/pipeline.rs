@@ -137,8 +137,11 @@ pub(super) fn exec_buffered(
         super::platform::resolve_carriage_returns(&super::platform::decode_output(&output.stderr));
 
     let raw_output = combine_streams(&stdout, &stderr, exit_code);
-    let admission =
-        crate::core::context_admission::admit_tool_output(&raw_output, captured.completeness);
+    let admission = crate::core::context_admission::admit_tool_output_as(
+        &raw_output,
+        captured.completeness,
+        &crate::core::patterns::output_class(command),
+    );
     let full_output = admission.rendered();
     let input_tokens = count_tokens(&raw_output);
 

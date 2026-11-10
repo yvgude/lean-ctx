@@ -352,7 +352,7 @@ pub(crate) fn admit_and_bind(
         return Err(Withheld::new(&[PROJECT_UNRESOLVED_CODE]));
     }
     let admission = super::semantic_deferred::for_stored_context(|| {
-        admit_carrier_text_under(text, Some(&policy))
+        admit_carrier_text_under(text, Some(&policy), &super::carrier::STORED)
     })?;
     let mut classification = admission.classification;
     if let Lineage::Sources { sources } = &lineage {
@@ -433,7 +433,7 @@ pub(crate) fn serve_stored(
 
 fn admit_stored_text(text: &str, policy: &AdmissionPolicy) -> Result<String, Withheld> {
     let admission = super::semantic_deferred::for_stored_context(|| {
-        admit_carrier_text_under(text, Some(policy))
+        admit_carrier_text_under(text, Some(policy), &super::carrier::STORED)
     })?;
     if admission.storable {
         Ok(admission.text)

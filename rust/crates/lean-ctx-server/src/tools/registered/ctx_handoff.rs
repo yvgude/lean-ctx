@@ -425,7 +425,9 @@ fn export_ledger(
         if let Err(e) = lean_ctx::core::pathjail::enforce_writable(&jailed) {
             return Ok(format!("Export write failed: {e}"));
         }
-        if let Err(e) = lean_ctx::core::handoff_transfer_bundle::write_bundle_v1(&jailed, &json) {
+        if let Err(e) = lean_ctx::core::handoff_transfer_bundle::write_bundle_v1(
+            &root_path, &candidate, &jailed, &json,
+        ) {
             return Ok(format!("Export write failed: {e}"));
         }
 

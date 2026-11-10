@@ -273,7 +273,9 @@ fn owned_group(child: &mut Child, kill_group: bool) -> Option<i32> {
     if !kill_group {
         return None;
     }
-    let pid = child.id() as libc::pid_t;
+    // Only a group id that may be signalled is ever returned (never 0, 1,
+    // a wrapped negative id, or the group this process is in).
+    let pid = crate::ipc::process::group_target(child.id()).ok()?;
     // SAFETY: getpgid only reads kernel process metadata; the pid is ours and
     // unreaped (alive or zombie), so it cannot name another process.
     let group = unsafe { libc::getpgid(pid) };
@@ -609,8 +611,7 @@ mod tests {
 
     #[cfg(unix)]
     fn alive(pid: u32) -> bool {
-        // SAFETY: signal 0 only probes for existence.
-        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+        crate::ipc::process::is_alive(pid)
     }
 
     /// Body of the guardian process (its own process group, created by the

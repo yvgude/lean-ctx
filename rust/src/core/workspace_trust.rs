@@ -246,7 +246,8 @@ pub fn list() -> Vec<TrustedWorkspace> {
 /// command (`shell_allowlist*`) or read (`allow_paths`) otherwise gives the agent
 /// no clue why an edit "did nothing"; this surfaces it inside the error itself.
 #[must_use]
-pub(crate) fn untrusted_override_notice() -> Option<String> {
+#[doc(hidden)]
+pub fn untrusted_override_notice() -> Option<String> {
     let root = crate::core::config::Config::find_project_root()?;
     untrusted_override_notice_for(Path::new(&root))
 }

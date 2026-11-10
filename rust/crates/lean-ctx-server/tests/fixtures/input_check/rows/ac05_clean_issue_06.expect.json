@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "The CLI prints a panic when the config file is empty."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

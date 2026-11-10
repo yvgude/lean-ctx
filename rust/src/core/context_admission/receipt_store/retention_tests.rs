@@ -253,18 +253,23 @@ fn a_ledger_that_understates_is_recounted_and_the_store_brought_down() {
     write_entry(dir, 101).expect("room after the pass");
 }
 
-/// A store of 100 000 files with a copied, overstated ledger, then with a
-/// stale one: the first write lists no directory — nothing is counted on
-/// the write path — and is stored. Counted operations, not wall-clock time,
-/// so a loaded machine cannot fail it; the times are printed only.
+/// A store whose copied ledger claims 250 056 files and 7 GiB, then a stale
+/// one: the first write lists no directory — nothing is counted on the write
+/// path — and is stored. Counted operations, not wall-clock time, so a loaded
+/// machine cannot fail it; the times are printed only. The store holds
+/// 2 000 real files: listings are counted, not timed, so the number of files
+/// changes no assertion. With 100 000 files (4.1 million entries listed by
+/// the swept sample) the test took longer than nextest's 300 s limit on a
+/// loaded Windows runner (#2214).
 #[test]
-fn the_first_write_to_a_store_of_100k_files_counts_nothing() {
+fn the_first_write_to_an_overbooked_store_counts_nothing() {
+    const FILES: u32 = 2_000;
     let _data = crate::core::data_dir::isolated_data_dir();
     let store = tempfile::tempdir().unwrap();
     let dir = store.path();
     let receipts = dir.join("receipts");
     std::fs::create_dir_all(&receipts).unwrap();
-    for n in 0..100_000u32 {
+    for n in 0..FILES {
         std::fs::write(receipts.join(format!("{}.json.zst", hex(n))), [0u8; 64]).unwrap();
     }
     claim_ledger(dir, 7 << 30, 250_056);
@@ -286,7 +291,7 @@ fn the_first_write_to_a_store_of_100k_files_counts_nothing() {
     }
 
     // A receipt write lists no directory: the sweep for orphaned temps
-    // listed all 100 000 receipts on every write, under the ledger lock.
+    // listed every receipt on every write, under the ledger lock.
     let p50 = |swept: bool, first: u32| {
         crate::core::atomic_fs::listings::take();
         let mut took: Vec<Duration> = (first..first + 41)
@@ -319,7 +324,9 @@ fn the_first_write_to_a_store_of_100k_files_counts_nothing() {
     };
     let (swept, swept_listings) = p50(true, 300_000);
     let (unswept, unswept_listings) = p50(false, 400_000);
-    eprintln!("receipt write p50 in a 100k store: swept {swept:?}, unswept {unswept:?}");
+    eprintln!(
+        "receipt write p50 in a store of {FILES} files: swept {swept:?}, unswept {unswept:?}"
+    );
     assert!(
         swept_listings >= 41,
         "the sweep lists the store: {swept_listings}"
@@ -407,4 +414,289 @@ fn passes_cut_short_after_a_few_batches_converge_across_restarts() {
     assert!(own_stamp(dir).is_some() && !dir.join(".maintenance.cursor").exists());
     let (bytes, _) = super::super::capacity::count_for_test(dir);
     assert_eq!(super::super::capacity::booked_bytes(dir).unwrap(), bytes);
+}
+
+/// A small JSON record at `sub/<name>.json`, `days_old` old.
+fn record(dir: &Path, sub: &str, name: &str, body: &serde_json::Value, days_old: u64) -> PathBuf {
+    let path = dir.join(sub).join(format!("{name}.json"));
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, serde_json::to_vec(body).unwrap()).unwrap();
+    age_file(&path, days_old);
+    path
+}
+
+/// Every file and directory below `root`: path, size and time — a change of
+/// any of them, or a file added or removed, changes the snapshot.
+fn snapshot(root: &Path) -> Vec<(PathBuf, u64, Option<SystemTime>, bool)> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(next) = stack.pop() {
+        for entry in std::fs::read_dir(&next).unwrap().flatten() {
+            let meta = entry.metadata().unwrap();
+            if meta.is_dir() {
+                stack.push(entry.path());
+            }
+            out.push((
+                entry.path(),
+                if meta.is_dir() { 0 } else { meta.len() },
+                meta.is_file().then(|| meta.modified().unwrap()),
+                meta.is_dir(),
+            ));
+        }
+    }
+    out.sort();
+    out
+}
+
+fn digest(n: u32) -> String {
+    format!("sha256:{}", hex(n))
+}
+
+/// A store with an expired receipt and its whole egress lifecycle, orphans
+/// of receipts already gone, live and young records, a crashed write's temp
+/// and a plain receipt to pack. Returns what a pass must remove and what it
+/// must keep.
+struct Fixture {
+    removed: Vec<(Action, PathBuf)>,
+    kept: Vec<PathBuf>,
+}
+
+fn lifecycle_store(dir: &Path) -> Fixture {
+    let mut removed = Vec::new();
+    let mut kept = Vec::new();
+    // Receipt 1 is expired: it goes with its trace, its egress lifecycle and
+    // its output index.
+    removed.push((Action::Receipt, receipt(dir, 1, "json.zst", 2048, 45)));
+    removed.push((
+        Action::Sidecar,
+        record(dir, "traces", &hex(1), &serde_json::json!({}), 45),
+    ));
+    removed.push((
+        Action::OrphanEgress,
+        record(
+            dir,
+            "egress/admissions",
+            &hex(60),
+            &serde_json::json!({"decision_receipt_digest": digest(1)}),
+            45,
+        ),
+    ));
+    removed.push((
+        Action::OrphanEgress,
+        record(
+            dir,
+            "egress/decisions",
+            &hex(1),
+            &serde_json::json!({"schema_version": 1, "admission_digest": digest(60)}),
+            45,
+        ),
+    ));
+    removed.push((
+        Action::OrphanEgress,
+        record(
+            dir,
+            &format!("egress/attempts/{}", hex(60)),
+            "1",
+            &serde_json::json!({"schema_version": 1, "observation_digest": digest(61)}),
+            45,
+        ),
+    ));
+    removed.push((
+        Action::OrphanEgress,
+        record(
+            dir,
+            "egress/observations",
+            &hex(61),
+            &serde_json::json!({"admission_receipt_digest": digest(60)}),
+            45,
+        ),
+    ));
+    removed.push((
+        Action::OrphanOutput,
+        index(dir, "outputs", &hex(70), &[1], 45),
+    ));
+    // Orphans of a receipt (50) gone before this pass.
+    removed.push((
+        Action::OrphanSidecar,
+        record(dir, "observed", &hex(50), &serde_json::json!({}), 3),
+    ));
+    removed.push((
+        Action::OrphanOutput,
+        index(dir, "outputs", &hex(71), &[50], 3),
+    ));
+    // A crashed write's temp.
+    let temp = dir
+        .join("receipts")
+        .join(format!(".{}.json.zst.lean-ctx.tmp.4294967294.1", hex(9)));
+    std::fs::write(&temp, [0u8; 300]).unwrap();
+    age_file(&temp, 1);
+    removed.push((Action::Temporary, temp));
+
+    // Receipt 2 stays, with everything that refers to it.
+    kept.push(receipt(dir, 2, "json.zst", 2048, 5));
+    kept.push(record(dir, "traces", &hex(2), &serde_json::json!({}), 5));
+    kept.push(record(
+        dir,
+        "egress/admissions",
+        &hex(62),
+        &serde_json::json!({"decision_receipt_digest": digest(2)}),
+        5,
+    ));
+    kept.push(record(
+        dir,
+        &format!("egress/attempts/{}", hex(62)),
+        "1",
+        &serde_json::json!({"schema_version": 1, "observation_digest": digest(63)}),
+        5,
+    ));
+    kept.push(record(
+        dir,
+        "egress/observations",
+        &hex(63),
+        &serde_json::json!({"admission_receipt_digest": digest(62)}),
+        5,
+    ));
+    kept.push(index(dir, "outputs", &hex(72), &[1, 2], 5));
+    // A failed admission names no receipt: kept.
+    kept.push(record(
+        dir,
+        "egress/admissions",
+        &hex(64),
+        &serde_json::json!({"decision_receipt_digest": null}),
+        45,
+    ));
+    // Young orphans stay inside the protected window.
+    kept.push(record(dir, "traces", &hex(51), &serde_json::json!({}), 0));
+    kept.push(index(dir, "outputs", &hex(73), &[51], 0));
+    // Unreadable records are never orphans.
+    for (sub, name) in [
+        ("egress/admissions", hex(65)),
+        ("egress/observations", hex(66)),
+        ("outputs", hex(74)),
+    ] {
+        let path = dir.join(sub).join(format!("{name}.json"));
+        std::fs::write(&path, b"not json").unwrap();
+        age_file(&path, 45);
+        kept.push(path);
+    }
+    // What a pass never touches.
+    std::fs::write(dir.join("receipt.key"), [7u8; 32]).unwrap();
+    kept.push(dir.join("receipt.key"));
+    kept.push(record(
+        dir,
+        "roots",
+        "r",
+        &serde_json::json!({"root": "/p"}),
+        45,
+    ));
+    Fixture { removed, kept }
+}
+
+/// A dry run lists, with paths and bytes, what a pass would remove and
+/// changes nothing: no file removed, written or touched, no lock, stamp,
+/// cursor or ledger. The real pass then removes exactly that list.
+#[test]
+fn a_dry_run_lists_what_a_pass_removes_and_changes_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("gateway");
+    std::fs::create_dir_all(&dir).unwrap();
+    let audit = root.path().join("audit").join("trail.jsonl");
+    std::fs::create_dir_all(audit.parent().unwrap()).unwrap();
+    std::fs::write(&audit, b"{\"anchor\":1}\n").unwrap();
+    let fixture = lifecycle_store(&dir);
+    let plain = receipt(&dir, 3, "json", 1024, 2);
+
+    let before = snapshot(root.path());
+    let plan = plan_in(&dir, SystemTime::now(), policy(None)).unwrap();
+    assert_eq!(snapshot(root.path()), before, "a dry run changed the store");
+    for bookkeeping in [STAMP, LOCK, CURSOR, ".usage.json", ".usage.lock"] {
+        assert!(!dir.join(bookkeeping).exists(), "{bookkeeping} written");
+    }
+
+    assert!(plan.dry_run && !plan.skipped);
+    let mut listed: Vec<(Action, PathBuf)> = plan
+        .planned
+        .iter()
+        .filter(|item| item.action != Action::Pack)
+        .map(|item| (item.action, item.path.clone()))
+        .collect();
+    listed.sort();
+    let mut expected = fixture.removed.clone();
+    expected.sort();
+    assert_eq!(listed, expected);
+    for item in &plan.planned {
+        assert_eq!(item.bytes, std::fs::metadata(&item.path).unwrap().len());
+    }
+    assert!(
+        plan.planned
+            .iter()
+            .any(|item| item.action == Action::Pack && item.path == plain)
+    );
+    assert_eq!((plan.removed, plan.packed, plan.removed_orphans), (1, 1, 7));
+    let freed: u64 = plan
+        .planned
+        .iter()
+        .filter(|item| !matches!(item.action, Action::Pack | Action::Temporary))
+        .map(|item| item.bytes)
+        .sum();
+    assert_eq!(plan.freed_bytes, freed);
+    assert!(
+        plan.largest_receipt_bytes >= 2048,
+        "{}",
+        plan.largest_receipt_bytes
+    );
+
+    // The real pass does what the plan said, and nothing else.
+    let done = maintain_in(&dir, SystemTime::now(), policy(None)).unwrap();
+    assert!(!done.dry_run && done.planned.is_empty());
+    assert_eq!(
+        (done.removed, done.removed_orphans),
+        (plan.removed, plan.removed_orphans)
+    );
+    assert_eq!(done.freed_bytes, plan.freed_bytes);
+    for (_, path) in &fixture.removed {
+        assert!(!path.exists(), "{} stays", path.display());
+    }
+    for path in &fixture.kept {
+        assert!(path.exists(), "{} was removed", path.display());
+    }
+    assert!(
+        !dir.join("egress/attempts").join(hex(60)).exists(),
+        "the emptied attempts directory stays"
+    );
+    assert_eq!(std::fs::read(&audit).unwrap(), b"{\"anchor\":1}\n");
+    let (bytes, _) = super::super::capacity::count_for_test(&dir);
+    assert_eq!(super::super::capacity::booked_bytes(&dir).unwrap(), bytes);
+    // Nothing left for a second pass, and a dry run agrees.
+    let again = plan_in(&dir, SystemTime::now(), policy(None)).unwrap();
+    assert!(again.planned.is_empty(), "{:?}", again.planned);
+}
+
+/// A dry run of a store that does not exist creates none.
+#[test]
+fn a_dry_run_of_a_missing_store_creates_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = root.path().join("gateway");
+    let plan = plan_in(&dir, SystemTime::now(), policy(None)).unwrap();
+    assert!(plan.dry_run && plan.planned.is_empty());
+    assert!(!dir.exists());
+}
+
+/// A plain receipt over the bound of one receipt is not loaded.
+#[test]
+fn a_receipt_over_its_bound_is_not_loaded() {
+    let store = tempfile::tempdir().unwrap();
+    let dir = store.path();
+    let receipts = dir.join("receipts");
+    std::fs::create_dir_all(&receipts).unwrap();
+    let path = receipts.join(format!("{}.json", hex(5)));
+    // Sparse: the bound is checked without writing 64 MB.
+    std::fs::File::create(&path)
+        .unwrap()
+        .set_len(MAX_RECEIPT_BYTES + 1)
+        .unwrap();
+    assert!(matches!(
+        super::super::load_in(dir, &hex(5)),
+        Err(super::super::LoadError::Unreadable)
+    ));
 }

@@ -350,7 +350,10 @@ pub mod tests {
     }
 
     /// AP07-G3: publish loaded and saved the bridge without a lock, so
-    /// parallel publishers dropped each other's entries.
+    /// parallel publishers dropped each other's entries. Later (#2214) the
+    /// polled `bridge.lock` failed the last of eight writers after 5 s
+    /// although the lock kept changing hands; `agents::FileLock` now takes
+    /// a `file_lock::Turn` first, so a moving queue fails no publisher.
     #[test]
     fn parallel_publishers_keep_every_entry() {
         use std::sync::{Arc, Barrier};

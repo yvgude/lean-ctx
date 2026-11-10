@@ -72,6 +72,9 @@ pub fn handle_observe() {
     // Host SendMessage → local bus "direct" entry; the bus admits the body
     // itself (redaction + withholding) before it is stored.
     super::send_mirror::maybe_mirror(&input);
+    // The per-session activity stream (Local Read `activity.list`): kinds
+    // and tool names from the payload, text only as admitted.
+    super::activity_feed::record(&input, admission.derivable(&input));
 
     let Some(event) = parse_observe_event(&input) else {
         return;
@@ -260,7 +263,7 @@ const SESSION_ENV_SIGNALS: &[(&str, &[&str])] = &[
 /// fixed order. Gemini precedes Claude because Gemini CLI also exports
 /// `CLAUDE_PROJECT_DIR` to hooks for compatibility; neither that alias nor
 /// `CLAUDECODE` (also set in IDE terminals) is used as a signal.
-fn session_lifecycle_source(
+pub(super) fn session_lifecycle_source(
     payload: &serde_json::Value,
     session_id: &str,
     env: impl Fn(&str) -> Option<String>,
@@ -776,6 +779,22 @@ fn append_radar_event(event: &ObserveEvent) {
     if event.event_type == "compaction" {
         write_compaction_marker(&data_dir, event.ts);
     }
+}
+
+/// Record a host compaction that happened now, for hooks that see the
+/// compaction without going through `observe` (the governor's `hook govern`).
+/// The MCP server's next tool call then re-delivers files in full.
+pub(super) fn record_compaction_now() {
+    let Ok(data_dir) = lean_ctx::core::data_dir::lean_ctx_data_dir() else {
+        return;
+    };
+    if std::fs::create_dir_all(&data_dir).is_err() {
+        return;
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    write_compaction_marker(&data_dir, ts);
 }
 
 /// Atomically write `last_compaction.json` via temp-file + rename.

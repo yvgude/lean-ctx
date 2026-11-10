@@ -1,0 +1,12 @@
+{
+  "edit_counts": {
+    "rust/crates/demo/src/lib.rs": 9
+  },
+  "hits": [
+    {
+      "line": 0,
+      "path": "rust/crates/demo/src/lib.rs",
+      "rule": "edit_cycles"
+    }
+  ]
+}

@@ -442,6 +442,24 @@ pub(crate) fn check_hermes_yaml(
     }
 }
 
+/// Goose: the `lean-ctx` entry under `extensions` names the binary.
+pub(crate) fn check_goose_yaml(path: &std::path::Path, binary: &str) -> NamedCheck {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let ok = content.contains("extensions:")
+        && content.contains("lean-ctx:")
+        && content.contains("cmd:")
+        && (content.contains(binary) || content.contains("lean-ctx\""));
+    NamedCheck {
+        name: "Goose extension".to_string(),
+        ok,
+        detail: match (path.exists(), ok) {
+            (false, _) => format!("missing ({})", path.display()),
+            (true, true) => format!("ok ({})", path.display()),
+            (true, false) => format!("drift ({})", path.display()),
+        },
+    }
+}
+
 pub(crate) fn check_vibe_config(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
         return NamedCheck {

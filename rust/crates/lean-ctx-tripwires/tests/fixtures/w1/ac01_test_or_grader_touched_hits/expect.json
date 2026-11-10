@@ -1,0 +1,30 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 0,
+      "path": ".gitlab-ci.yml",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/src/x.rs",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/fixtures/data.json",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/lean-ctx-tripwires/src/rules.rs",
+      "rule": "test_or_grader_touched"
+    }
+  ]
+}

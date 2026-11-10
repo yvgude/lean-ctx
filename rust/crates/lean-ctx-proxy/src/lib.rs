@@ -57,6 +57,10 @@ pub mod circuit_breaker;
 #[cfg(feature = "http-server")]
 mod codec;
 pub mod cold_prefix;
+#[cfg(all(test, feature = "http-server"))]
+mod compact_session_tests;
+#[cfg(all(test, feature = "http-server"))]
+mod compact_session_ttl_tests;
 pub mod compress;
 pub mod compress_api;
 pub mod compress_shared;

@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Running `cargo build` on a fresh clone fails with a linker error."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

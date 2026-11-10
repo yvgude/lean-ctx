@@ -16,8 +16,9 @@ use super::lexer::{lex, remove_ranges};
 /// Only quoted delimiters are stripped. An *unquoted* `<<EOF` heredoc DOES expand
 /// `$()`/backticks/`$VAR` in its body, so those bodies are deliberately left
 /// intact for the command-substitution checks to see.
-#[cfg(test)]
-pub(crate) fn strip_quoted_heredoc_bodies(command: &str) -> String {
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub fn strip_quoted_heredoc_bodies(command: &str) -> String {
     strip_for_analysis(command, true, false)
 }
 
@@ -35,7 +36,7 @@ pub fn strip_all_heredoc_bodies(command: &str) -> String {
 /// A terminator must match its delimiter exactly (after leading tabs for
 /// `<<-`), as in the shell. A body whose terminator never follows runs to the
 /// end of the input here; `enforce_shell_allowlist` blocks such a command.
-pub(crate) fn strip_for_analysis(command: &str, quoted_only: bool, comments: bool) -> String {
+pub fn strip_for_analysis(command: &str, quoted_only: bool, comments: bool) -> String {
     if !command.contains("<<") && (!comments || !command.contains('#')) {
         return command.to_string();
     }
@@ -133,8 +134,9 @@ pub fn read_heredoc_delim(bytes: &[u8], start: usize) -> Option<(String, bool, u
 ///
 /// The gate strips comments together with heredoc bodies through
 /// [`strip_for_analysis`]; this form is kept for the comment tests.
-#[cfg(test)]
-pub(crate) fn strip_comments(command: &str) -> String {
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub fn strip_comments(command: &str) -> String {
     if !command.contains('#') {
         return command.to_string();
     }

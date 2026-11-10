@@ -57,10 +57,32 @@ impl ContextEngine {
         serde_json::to_value(result).map_err(|e| anyhow!("serialize CallToolResult: {e}"))
     }
 
+    /// [`Self::call_tool_value`] under a caller's session rights (process-v1
+    /// §9): the shared daemon runs a forwarded call with the rights of the
+    /// session that sent it, not with its own.
+    pub async fn call_tool_value_with_rights(
+        &self,
+        name: &str,
+        arguments: Option<Value>,
+        rights: lean_ctx::core::session_rights::State,
+    ) -> Result<Value> {
+        let result = self.call_tool_bound(name, arguments, Some(rights)).await?;
+        serde_json::to_value(result).map_err(|e| anyhow!("serialize CallToolResult: {e}"))
+    }
+
     pub async fn call_tool_result(
         &self,
         name: &str,
         arguments: Option<Value>,
+    ) -> Result<CallToolResult> {
+        self.call_tool_bound(name, arguments, None).await
+    }
+
+    async fn call_tool_bound(
+        &self,
+        name: &str,
+        arguments: Option<Value>,
+        rights: Option<lean_ctx::core::session_rights::State>,
     ) -> Result<CallToolResult> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let req_id = NumberOrString::Number(id);
@@ -76,7 +98,12 @@ impl ContextEngine {
         };
 
         let params = CallToolRequestParams::new(name.to_string()).with_arguments(args_obj);
-        let call: CallToolRequest = CallToolRequest::new(params);
+        let mut call: CallToolRequest = CallToolRequest::new(params);
+        if let Some(rights) = rights {
+            // In-process only: extensions never travel over the wire.
+            call.extensions
+                .insert(lean_ctx::core::session_rights::RequestRights(rights));
+        }
         let client_req = ClientRequest::CallToolRequest(call);
         let msg = ClientJsonRpcMessage::Request(JsonRpcRequest::new(req_id, client_req));
 

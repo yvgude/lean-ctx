@@ -1174,3 +1174,96 @@ fn lean_ctx_c_multiline_preserves_all_lines_when_piped() {
     assert!(stdout.contains("LINE_B"), "LINE_B: {stdout}");
     assert!(stdout.contains("LINE_C"), "LINE_C: {stdout}");
 }
+
+/// The live hook (process-v1 §9): `lean-ctx hook rights` run as the binary
+/// with a Claude Code PreToolUse payload and a Developer rights file. An edit
+/// of the locked test and a Bash write into it are denied with their rule,
+/// an edit in the own worktree gets no decision (`{}`), and without a rights
+/// file the hook decides nothing.
+#[test]
+fn session_rights_hook_binary_denies_locked_paths_and_allows_the_worktree() {
+    use serde_json::{Value, json};
+    let dir = tempfile::tempdir().expect("tempdir");
+    let worktree = dir.path().join("wt");
+    for sub in ["tests", "specs/42", "src"] {
+        std::fs::create_dir_all(worktree.join(sub)).expect("dir");
+    }
+    let locked = worktree.join("tests/locked_test.rs");
+    std::fs::write(&locked, "#[test] fn t() {}\n").expect("test");
+    let list = json!({
+        "schema": "leanctx.hive.process.feature-list/v1", "process": "1.0",
+        "task": {"vault": "#acme/payments", "number": 42},
+        "spec_commit": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+        "test_command": "cargo test",
+        "locked_paths": ["tests/locked_test.rs", "specs/42/features.json"],
+        "features": [{"id": "F1", "description": "d", "steps": ["s"],
+                      "tests": ["tests/locked_test.rs::t"], "passes": false}]
+    });
+    std::fs::write(worktree.join("specs/42/features.json"), list.to_string()).expect("list");
+    let record = json!({
+        "schema": "leanctx.session-rights/v1", "process": "1.0",
+        "profile": {"id": "developer", "name": "Developer", "stages": ["build"],
+                    "delivers": "commits in its own worktree", "read": ["repo", "vault"],
+                    "write": ["own_worktree"], "deny_write": ["locked", "spec", "tests"],
+                    "may_stop": false, "availability": "now"},
+        "bindings": {"own_worktree": [worktree.to_string_lossy()]},
+        "feature_list": "specs/42/features.json",
+    });
+    let rights = dir.path().join("rights.json");
+    std::fs::write(&rights, record.to_string()).expect("rights");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&rights, std::fs::Permissions::from_mode(0o600)).expect("0600");
+    }
+    let store = dir.path().join("store");
+    let store = store.to_string_lossy().into_owned();
+    let rights = rights.to_string_lossy().into_owned();
+    let payload = |tool: &str, input: Value| {
+        json!({
+            "hook_event_name": "PreToolUse", "transcript_path": "/tmp/transcript.jsonl",
+            "session_id": "rights-test", "cwd": worktree.to_string_lossy(),
+            "tool_name": tool, "tool_input": input
+        })
+        .to_string()
+    };
+    let hook = |input: &str, with_rights: bool| {
+        let mut env = vec![("LEAN_CTX_DATA_DIR", store.as_str())];
+        if with_rights {
+            env.push(("LEAN_CTX_RIGHTS_FILE", rights.as_str()));
+        }
+        run_hook_test(&["hook", "rights"], &env, Some(input))
+    };
+    let denied = |stdout: &str| -> String {
+        let v: Value = serde_json::from_str(stdout.trim()).expect("hook JSON");
+        assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "deny", "{v}");
+        v["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    let (stdout, stderr, code) = hook(&payload("Edit", json!({"file_path": locked})), true);
+    assert_eq!(code, 0, "{stderr}");
+    let reason = denied(&stdout);
+    assert!(reason.contains("rule feature_list_locked"), "{reason}");
+
+    let (stdout, _, _) = hook(
+        &payload("Bash", json!({"command": "echo x >> tests/locked_test.rs"})),
+        true,
+    );
+    assert!(denied(&stdout).contains("rule "), "{stdout}");
+
+    let own = worktree.join("src/lib.rs");
+    let (stdout, stderr, code) = hook(&payload("Write", json!({"file_path": own})), true);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout.trim(), "{}", "allowed: no decision");
+
+    let (stdout, _, code) = hook(&payload("Edit", json!({"file_path": locked})), false);
+    assert_eq!(code, 0);
+    assert_eq!(stdout.trim(), "{}", "no rights file: no decision");
+    assert_eq!(
+        std::fs::read_to_string(&locked).expect("read"),
+        "#[test] fn t() {}\n"
+    );
+}

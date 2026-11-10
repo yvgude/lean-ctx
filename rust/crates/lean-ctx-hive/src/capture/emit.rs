@@ -73,7 +73,21 @@ pub fn emit(
             out.duplicates += 1;
             continue;
         }
-        let (applies, anchors) = build::applies_and_anchors(&fact.refs, checkout);
+        // A fact names its subject (category, key) by a keyed reference, so
+        // another Instance's value for the same fact is found as a conflict
+        // (#286, [`super::conflicts`]); it takes the last `applies_to` slot.
+        let (applies, anchors) = if c.node_type == NodeType::Fact {
+            let (mut applies, anchors) =
+                build::applies_and_anchors_within(&fact.refs, checkout, build::MAX_APPLIES_TO - 1);
+            applies.push(super::conflicts::subject_ref(
+                &place.pk_id,
+                &fact.category,
+                &fact.key,
+            ));
+            (applies, anchors)
+        } else {
+            build::applies_and_anchors(&fact.refs, checkout)
+        };
         let body = build::claim_body(c, &applies, anchors, decision_anchors)?;
         out.clock = hlc::send(out.clock, now_ms);
         let (event, node_id) = build::node_add(c, &body, place, out.clock, signer)?;
@@ -206,6 +220,14 @@ mod tests {
             key.verifying_key().as_bytes()
         ));
         assert_eq!(event["body"]["anchors"][0]["ref"], "file:src/lib.rs");
+        // #286: the fact names its subject (category, key), keyed.
+        assert_eq!(
+            event["body"]["applies_to"],
+            serde_json::json!([
+                "file:src/lib.rs",
+                crate::capture::conflicts::subject_ref(&place.pk_id, "arch", "relay")
+            ])
+        );
         let (kind, source) = replica.own_source(&first.queued[0].1).unwrap().unwrap();
         assert_eq!(kind, "fact");
         assert_ne!(
@@ -225,6 +247,86 @@ mod tests {
         .unwrap();
         assert_eq!((again.queued.len(), again.duplicates), (0, 1));
         assert_eq!(replica.pending().unwrap().len(), 1);
+    }
+
+    /// #286: two values of one fact (two Instances) carry the same subject
+    /// reference, which keeps its slot within the contract's five entries;
+    /// other node types carry none (their bodies have no `applies_to`).
+    #[test]
+    fn every_value_of_a_fact_names_the_same_subject_within_five_references() {
+        let repo = crate::capture::tests::repo();
+        let data = tempfile::tempdir().unwrap();
+        let (replica, _) = Replica::open(data.path(), "pl_subject", &[3; 32]).unwrap();
+        let key = SigningKey::from_bytes(&[0x49; 32]);
+        let place = Place {
+            kind: "vault".into(),
+            id: "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01".into(),
+            pk_id: [9; 32],
+            causal_base: 0,
+        };
+        let signer = Signer {
+            key: &key,
+            hlc_node: "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b".into(),
+            worker_id: "wkr_vk4oelpv5lzjmev44hun".into(),
+        };
+        let urls: Vec<String> = (0..6)
+            .map(|i| format!("https://docs.rs/blake3/{i}"))
+            .collect();
+        let fact = |node_type: NodeType, value: &str| CapturedFact {
+            candidate: CaptureCandidate {
+                node_type,
+                statement: value.into(),
+                steps: vec![],
+                commands: vec![],
+                refs: vec![],
+                evidence: EvidenceLevel::Observed,
+                sensitivity: SensitivityLevel::Public,
+            },
+            refs: urls.clone(),
+            category: "fact".into(),
+            key: "payments-retry".into(),
+            value: value.into(),
+            derived_from: vec![],
+        };
+        let target = Target {
+            replica: &replica,
+            place: &place,
+            signer: &signer,
+            project_hash: "ph",
+            decision_anchors: false,
+        };
+        let out = emit(
+            &target,
+            &mut Checkout::new(repo.path()),
+            &[
+                fact(NodeType::Fact, "Payments retry three times and then fail."),
+                fact(
+                    NodeType::Fact,
+                    "Payments back off for five minutes before any retry.",
+                ),
+                fact(
+                    NodeType::Gotcha,
+                    "Payments retries are not idempotent today.",
+                ),
+            ],
+            Stamp::default(),
+            1_792_800_000_000,
+        )
+        .unwrap();
+        assert_eq!(out.queued.len(), 3);
+        let bodies: Vec<serde_json::Value> = replica
+            .pending()
+            .unwrap()
+            .iter()
+            .map(|(_, b)| serde_json::from_slice::<serde_json::Value>(b).unwrap()["body"].clone())
+            .collect();
+        let subject = crate::capture::conflicts::subject_ref(&[9; 32], "fact", "payments-retry");
+        for body in &bodies[..2] {
+            let applies = body["applies_to"].as_array().unwrap();
+            assert_eq!(applies.len(), build::MAX_APPLIES_TO, "{body}");
+            assert_eq!(applies.last().unwrap(), subject.as_str());
+        }
+        assert!(bodies[2].get("applies_to").is_none(), "{}", bodies[2]);
     }
 
     /// v5 2.2.2, 2.6.1: a claim that names vault nodes is followed by one

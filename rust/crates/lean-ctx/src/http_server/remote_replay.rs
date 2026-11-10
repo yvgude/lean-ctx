@@ -263,7 +263,28 @@ fn update_ledger(
     let parent = path
         .parent()
         .ok_or_else(|| "replay ledger has no parent".to_string())?;
+    // The ledger lives in `<project>/.lean-ctx/a2a/`: neither directory may be
+    // a symlink, or the lock, temp and ledger writes would land outside the
+    // project. Checked on paths before and after creating them; the files
+    // themselves are opened `O_NOFOLLOW` below. A swap of a directory for a
+    // link between the check and the open is the remaining race here.
+    let ledger_dir_below_project = || -> Result<(), String> {
+        let project = parent
+            .ends_with(".lean-ctx/a2a")
+            .then(|| parent.parent().and_then(std::path::Path::parent))
+            .flatten();
+        match project {
+            Some(project) => lean_ctx::core::pathjail_write::rebuild_below(
+                project,
+                std::path::Path::new(".lean-ctx/a2a"),
+            )
+            .map(|_| ()),
+            None => Ok(()),
+        }
+    };
+    ledger_dir_below_project()?;
     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    ledger_dir_below_project()?;
     reject_symlink(path)?;
     let lock_path = path.with_extension("lock");
     reject_symlink(&lock_path)?;

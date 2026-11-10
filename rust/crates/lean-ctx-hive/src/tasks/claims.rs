@@ -78,6 +78,139 @@ impl HeldClaim {
 struct ClaimsFile {
     #[serde(default)]
     claims: Vec<HeldClaim>,
+    /// Who on this machine worked on a task (process v1 §3.1, §5).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    traces: Vec<WorkTrace>,
+}
+
+/// At most this many work traces are kept (the newest).
+const MAX_TRACES: usize = 500;
+
+/// What this Instance knows of its own work on a task, per session: the
+/// commit the claim started from (G6 of an S task pins it as
+/// `spec_commit`), and the session that submitted the result (the author
+/// a verify on this Instance is checked against: checker ≠ author by the
+/// per-session identity, never by the machine's shared worker id).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkTrace {
+    pub vault_id: String,
+    pub number: u64,
+    /// The bus agent id that claimed the task.
+    pub claimed_by: String,
+    /// The per-session identity that claimed it (its bus agent, app
+    /// session and registering process).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claimed_session: Option<SessionIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_commit: Option<String>,
+    /// The per-session identity that submitted the result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submitted_by: Option<SessionIdentity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submitted_commit: Option<String>,
+}
+
+/// One session on this Instance: its bus agent id, the app's session id
+/// (`LEAN_CTX_SESSION_ID` of the process that registered the agent) when
+/// the app launched it, and that registering process (`<pid>@<start
+/// marker>`), all as the local bus registry has them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionIdentity {
+    pub agent: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process: Option<String>,
+}
+
+impl SessionIdentity {
+    /// The same session: the same bus agent; else, when both name an app
+    /// session, the same app session (sessions the app runs in one daemon
+    /// share its process); else the same registering process (a fresh
+    /// registration in the same MCP process is no other checker). Without
+    /// either on both sides, nothing shows they differ: the same.
+    #[must_use]
+    pub fn same_as(&self, other: &Self) -> bool {
+        if self.agent == other.agent {
+            return true;
+        }
+        if let (Some(a), Some(b)) = (&self.session, &other.session) {
+            return a == b;
+        }
+        match (&self.process, &other.process) {
+            (Some(a), Some(b)) => a == b,
+            _ => true,
+        }
+    }
+}
+
+/// The trace of task `number` in `vault_id`.
+#[must_use]
+pub fn trace(data_dir: &Path, vault_id: &str, number: u64) -> Option<WorkTrace> {
+    load(data_dir)
+        .traces
+        .into_iter()
+        .find(|t| t.vault_id == vault_id && t.number == number)
+}
+
+/// A new claim by the session `by` on the task, made in a checkout at
+/// `start_commit`: the trace starts over (an earlier result's author no
+/// longer applies to the work of this claim).
+pub fn trace_claim(
+    data_dir: &Path,
+    vault_id: &str,
+    number: u64,
+    by: SessionIdentity,
+    start_commit: Option<String>,
+) -> Result<(), HiveError> {
+    change_file(data_dir, |file| {
+        file.traces
+            .retain(|t| !(t.vault_id == vault_id && t.number == number));
+        file.traces.push(WorkTrace {
+            vault_id: vault_id.to_owned(),
+            number,
+            claimed_by: by.agent.clone(),
+            claimed_session: Some(by),
+            start_commit,
+            submitted_by: None,
+            submitted_commit: None,
+        });
+        let excess = file.traces.len().saturating_sub(MAX_TRACES);
+        file.traces.drain(..excess);
+    })
+}
+
+/// Hive took the result of the task from `by`, for `commit`.
+pub fn trace_submit(
+    data_dir: &Path,
+    vault_id: &str,
+    number: u64,
+    by: SessionIdentity,
+    commit: Option<String>,
+) -> Result<(), HiveError> {
+    change_file(data_dir, |file| {
+        match file
+            .traces
+            .iter_mut()
+            .find(|t| t.vault_id == vault_id && t.number == number)
+        {
+            Some(trace) => {
+                trace.submitted_by = Some(by);
+                trace.submitted_commit = commit;
+            }
+            None => file.traces.push(WorkTrace {
+                vault_id: vault_id.to_owned(),
+                number,
+                claimed_by: by.agent.clone(),
+                claimed_session: None,
+                start_commit: None,
+                submitted_by: Some(by),
+                submitted_commit: commit,
+            }),
+        }
+        let excess = file.traces.len().saturating_sub(MAX_TRACES);
+        file.traces.drain(..excess);
+    })
 }
 
 /// One writer per process at a time (the renew thread and tool calls); the
@@ -99,6 +232,13 @@ fn save(data_dir: &Path, file: &ClaimsFile) -> Result<(), HiveError> {
 }
 
 fn change<T>(data_dir: &Path, edit: impl FnOnce(&mut Vec<HeldClaim>) -> T) -> Result<T, HiveError> {
+    change_file(data_dir, |file| edit(&mut file.claims))
+}
+
+fn change_file<T>(
+    data_dir: &Path,
+    edit: impl FnOnce(&mut ClaimsFile) -> T,
+) -> Result<T, HiveError> {
     let _guard = LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -106,7 +246,7 @@ fn change<T>(data_dir: &Path, edit: impl FnOnce(&mut Vec<HeldClaim>) -> T) -> Re
     let _file_lock = lean_ctx::core::agents::FileLock::acquire(&data_dir.join(LOCK_FILE))
         .map_err(|e| HiveError::Local(format!("claims lock: {e}")))?;
     let mut file = load(data_dir);
-    let out = edit(&mut file.claims);
+    let out = edit(&mut file);
     save(data_dir, &file)?;
     Ok(out)
 }

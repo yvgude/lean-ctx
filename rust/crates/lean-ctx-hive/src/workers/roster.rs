@@ -5,8 +5,7 @@
 
 use chrono::{DateTime, Utc};
 
-use super::attach::{LocalWorker, attach_in, detect_host_app, host_display};
-use super::normalize_role;
+use super::attach::{LocalWorker, agent_worker_key, attach_in, host_display};
 use lean_ctx::core::agents::{AgentEntry, AgentStatus};
 
 struct Row<'a> {
@@ -26,14 +25,7 @@ pub fn render(
     let mut book: Vec<LocalWorker> = instance.map(|(_, w)| w.to_vec()).unwrap_or_default();
     let mut rows: Vec<Row<'_>> = Vec::new();
     for agent in agents {
-        let transport = agent.transport.as_ref();
-        let host_app = detect_host_app(
-            transport.map(|t| t.host.as_str()),
-            Some(agent.agent_type.as_str()),
-            std::iter::empty::<(&str, &str)>(),
-            transport.and_then(|t| t.name.as_deref()),
-        );
-        let mut role = normalize_role(agent.role.as_deref().unwrap_or_default());
+        let (host_app, mut role) = agent_worker_key(agent);
         let mut worker_id = None;
         if let Some((instance_id, _)) = instance {
             let attached = attach_in(&mut book, instance_id, &host_app, &role);

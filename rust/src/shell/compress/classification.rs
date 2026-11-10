@@ -47,21 +47,7 @@ pub(in crate::shell) fn is_excluded_command(command: &str, excluded: &[String]) 
         return true;
     }
 
-    is_user_excluded(command, excluded)
-}
-
-/// `command` matches one of the user's `excluded_commands` prefixes: the
-/// whole command, or its leading words (`git` covers `git rev-parse HEAD`,
-/// not `gitk`). Case-insensitive.
-pub fn is_user_excluded(command: &str, excluded: &[String]) -> bool {
-    if excluded.is_empty() {
-        return false;
-    }
-    let cmd = command.trim().to_lowercase();
-    excluded.iter().any(|excl| {
-        let excl_lower = excl.trim().to_lowercase();
-        !excl_lower.is_empty() && (cmd == excl_lower || cmd.starts_with(&format!("{excl_lower} ")))
-    })
+    crate::shell::output_policy::is_user_excluded(command, excluded)
 }
 
 pub(super) fn is_search_output(command: &str) -> bool {

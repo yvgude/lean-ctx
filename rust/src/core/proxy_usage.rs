@@ -196,6 +196,19 @@ pub struct PersistedUsage {
     /// remains the device total.
     #[serde(default)]
     pub projects: HashMap<String, HashMap<String, ModelUsage>>,
+    /// The same totals per app session (the `x-leanctx-session-id` header a
+    /// launching app sends, see `core::activity::SESSION_HEADER`); only the
+    /// most recently used sessions are kept. Attribution only.
+    #[serde(default)]
+    pub sessions: HashMap<String, SessionUsage>,
+}
+
+/// One app session's totals per model and when the proxy last saw it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SessionUsage {
+    /// Unix seconds of the session's newest turn.
+    pub last_seen: u64,
+    pub models: HashMap<String, ModelUsage>,
 }
 
 /// The model the proxy saw last, with the time it saw it.

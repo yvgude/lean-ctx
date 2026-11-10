@@ -458,8 +458,10 @@ mod edge_cases {
         let elapsed = start.elapsed();
 
         assert_eq!(count, 500);
+        // A 10 ms budget is one scheduler slice on a loaded runner, so the
+        // timing half is opt-in (`LEAN_CTX_PERF_GATE=1`, CI's quiet perf step).
         assert!(
-            elapsed.as_millis() < 10,
+            std::env::var("LEAN_CTX_PERF_GATE").as_deref() != Ok("1") || elapsed.as_millis() < 10,
             "reset_delivery_flags should be fast, took {elapsed:?}"
         );
     }

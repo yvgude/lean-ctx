@@ -782,6 +782,14 @@ impl ServerHandler for LeanCtxServer {
         // The host's own id of this call, if it names one: noted with the
         // delivery so the proxy can tell which call these bytes answered.
         let host_call_id = crate::server::call_identity::host_call_id(request.meta.as_ref());
+        // Rights the shared daemon bound to this request in-process (§9);
+        // otherwise this process's own LEAN_CTX_RIGHTS_FILE.
+        let rights = context
+            .extensions
+            .get::<lean_ctx::core::session_rights::RequestRights>()
+            .map_or_else(lean_ctx::core::session_rights::current, |bound| {
+                bound.0.clone()
+            });
 
         ledger_entry.stage(lean_ctx::core::request_ledger::Stage::Handler);
         // #1781: scope the request's cancellation token for the whole dispatch
@@ -791,7 +799,7 @@ impl ServerHandler for LeanCtxServer {
             ct.clone(),
             Box::pin(crate::server::call_identity::scoped(
                 host_call_id,
-                self.call_tool_guarded(request),
+                lean_ctx::core::session_rights::scope(rights, self.call_tool_guarded(request)),
             )),
         ))
         .catch_unwind()

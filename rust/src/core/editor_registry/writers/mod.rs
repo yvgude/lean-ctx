@@ -79,6 +79,7 @@ pub fn write_config_with_options_and_rule_steering(
         ConfigType::JetBrains => write_jetbrains_config(target, binary, opts),
         ConfigType::Amp => write_amp_config(target, binary, opts),
         ConfigType::HermesYaml => write_hermes_yaml(target, binary, opts),
+        ConfigType::GooseYaml => write_goose_yaml(target, binary, opts),
         ConfigType::GeminiSettings => write_gemini_settings(target, binary, opts),
         ConfigType::QoderSettings => write_qoder_settings(target, binary, opts),
         ConfigType::AugmentVsCode => write_augment_vscode(target, binary, opts),
@@ -119,6 +120,7 @@ pub fn remove_lean_ctx_server(
         }
         ConfigType::Amp => remove_lean_ctx_amp_server(&target.config_path, opts),
         ConfigType::HermesYaml => remove_lean_ctx_hermes_yaml_server(&target.config_path),
+        ConfigType::GooseYaml => remove_lean_ctx_goose_yaml_server(&target.config_path),
         ConfigType::AugmentVsCode => {
             remove_lean_ctx_augment_vscode_server(&target.config_path, opts)
         }

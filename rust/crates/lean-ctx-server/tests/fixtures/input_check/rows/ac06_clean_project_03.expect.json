@@ -1,0 +1,12 @@
+{
+  "ac": "pz21-AC06",
+  "channel": "project",
+  "clean": true,
+  "fenced": false,
+  "must_contain": [
+    "[server]\nport = 8080\nhost = \"127.0.0.1\"\n\n[log]\nlevel = \"info\""
+  ],
+  "must_not_contain": [],
+  "path": "config/app.toml",
+  "redacted_lines": 0
+}

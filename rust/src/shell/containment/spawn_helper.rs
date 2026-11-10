@@ -301,12 +301,14 @@ fn end_group_once(held: &mut Held) {
         return;
     }
     held.killed = true;
-    let group = held.child.id() as libc::pid_t;
     #[cfg(any(test, feature = "test-support"))]
     GROUP_SIGNAL_LOG.with(|log| {
         log.borrow_mut()
             .push(exited_unreaped(&mut held.child).is_ok());
     });
+    let Ok(group) = crate::ipc::process::group_target(held.child.id()) else {
+        return;
+    };
     // SAFETY: plain syscall; the group id is pinned by our unreaped child
     // and this process is in another session.
     unsafe { libc::killpg(group, libc::SIGKILL) };

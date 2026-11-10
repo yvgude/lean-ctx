@@ -8,10 +8,22 @@ use chrono::Utc;
 
 use lean_ctx::core::knowledge::{AdmissionResult, sort_fact_for_output};
 
-/// The contradiction line of `remember` when the replaced value may not be
-/// delivered now: fixed text, nothing of the replaced value.
-const CONTRADICTION_WITHHELD: &str = "\n⚠ CONTRADICTION: this fact replaced a previous value, \
-     which the context gateway withholds (its source is no longer admitted).";
+/// Longest category or key echoed in the `remember` confirmation. The
+/// reply names the fact (category, key, revision) and never echoes the
+/// stored or the replaced text: hand-offs and agent entries are rewritten
+/// on every wake, and echoing both texts multiplied each write's token
+/// cost (#40).
+const REMEMBER_NAME_ECHO_MAX: usize = 80;
+
+/// `text` capped at `max` characters (char-boundary safe), `…` when cut.
+fn capped(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    let mut out: String = text.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
 
 pub(crate) fn handle_remember(
     project_root: &str,
@@ -120,40 +132,36 @@ pub(crate) fn handle_remember(
             .find(|f| f.category == cat && f.key == k && f.is_current());
         let rev = current_fact.map_or(1, |f| f.revision_count);
         let conf_count = current_fact.map_or(1, |f| f.confirmation_count);
+        let (cat, k) = (
+            capped(cat, REMEMBER_NAME_ECHO_MAX),
+            capped(k, REMEMBER_NAME_ECHO_MAX),
+        );
+        let size = v.chars().count();
         if contradiction.is_some() {
+            // A new value under the same category and key supersedes the
+            // old one: the normal life of a fact, not a contradiction.
+            // Neither text is echoed — the caller holds the new one, the old
+            // one is archived (and may be withheld by the context gateway).
+            // Contradictions between different facts are the bounded
+            // SIMILAR FACTS advisories below.
             format!(
-                "Updated [{cat}] {k}: {v} → revision {rev} (previous archived, confidence: {:.0}%)",
+                "Updated [{cat}] {k} → revision {rev}: previous value superseded and archived \
+                 ({size} chars, confidence: {:.0}%)",
                 conf * 100.0
             )
         } else if rev > 1 {
             format!(
-                "Confirmed [{cat}] {k}: {v} (revision {rev}, confirmed {conf_count}x, confidence: {:.0}%)",
+                "Confirmed [{cat}] {k} (revision {rev}, confirmed {conf_count}x, {size} chars, \
+                 confidence: {:.0}%)",
                 current_fact.map_or(conf, |f| f.confidence) * 100.0
             )
         } else {
             format!(
-                "Remembered [{cat}] {k}: {v} (revision 1, confidence: {:.0}%)",
+                "Remembered [{cat}] {k} (revision 1, {size} chars, confidence: {:.0}%)",
                 conf * 100.0
             )
         }
     };
-
-    if let Some(c) = &contradiction {
-        // The resolution quotes the value this call replaced — another
-        // fact's text. It is quoted only if that fact may be delivered now
-        // (`fact_served`, asked under the request's root and the store's);
-        // otherwise the line says that a value was replaced and nothing of
-        // it. Category, key and the new value are this call's own arguments.
-        let served =
-            |root: &str| fact_served(root, &c.category, &c.existing_key, &c.existing_value);
-        if served(project_root)
-            && (knowledge.project_root == project_root || served(&knowledge.project_root))
-        {
-            result.push_str(&format!("\n⚠ CONTRADICTION: {}", c.resolution));
-        } else {
-            result.push_str(CONTRADICTION_WITHHELD);
-        }
-    }
 
     // Cross-key advisories only help a genuine insert; a merge already collapsed
     // the closest duplicate, so there is nothing left for the agent to `judge`.
@@ -478,11 +486,32 @@ pub fn capture_remembered(
 }
 
 /// ` [to verify: …]` for a fact whose anchors no longer hold in
-/// `project_root` (J2), empty for a current or unanchored fact.
+/// `project_root` (J2), plus ` [contradicted]` for a fact judged to
+/// contradict another; empty for a current fact.
 pub(crate) fn to_verify_tag(
     project_root: &str,
     fact: &lean_ctx::core::knowledge::KnowledgeFact,
 ) -> String {
+    let contradicted = fact.review.as_ref().is_some_and(|review| {
+        review.state == lean_ctx::core::knowledge::FactReviewState::Contradicted
+    });
+    let suffix = if contradicted { " [contradicted]" } else { "" };
+    format!("{}{suffix}", anchor_tag(project_root, fact))
+}
+
+/// Append [`super::freshness::NOT_TRUTH_NOTE`] when `out` shows a fact
+/// tagged by [`to_verify_tag`].
+pub(crate) fn with_not_truth_note(mut out: String) -> String {
+    if out.contains(" [to verify: ") || out.contains(" [contradicted]") {
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(super::freshness::NOT_TRUTH_NOTE);
+    }
+    out
+}
+
+fn anchor_tag(project_root: &str, fact: &lean_ctx::core::knowledge::KnowledgeFact) -> String {
     if fact.anchors.is_empty() {
         return String::new();
     }
@@ -775,7 +804,7 @@ fn recall_local(
         ));
     }
     out.push_str("→ narrow with query=… or category=…");
-    Ok(out)
+    Ok(with_not_truth_note(out))
 }
 
 /// Parse an `as_of` timestamp: RFC 3339 (`2026-06-01T12:00:00Z`) or a bare
@@ -1139,11 +1168,12 @@ mod tests {
         assert!(out.contains("No facts valid at"), "got: {out}");
     }
 
-    /// The contradiction line quotes the replaced value only while that
-    /// value may be delivered: once the file it is bound to is gone, the
-    /// line is the fixed text and carries nothing of the value.
+    /// #40: a same-key update never quotes the old or the new value,
+    /// whether the replaced value is still served (its bound source file
+    /// exists) or withheld (the file is gone). The reply is the short
+    /// "Updated" line in both cases, with no contradiction text.
     #[test]
-    fn the_contradiction_line_quotes_a_replaced_value_only_while_it_is_served() {
+    fn a_same_key_update_never_quotes_the_old_or_new_value() {
         use lean_ctx::core::archive::bindings::{self, Item};
         use lean_ctx::core::context_admission::stored::lineage_support::{
             governed, project, scoped,
@@ -1180,19 +1210,110 @@ mod tests {
 
         assert!(remember(first).starts_with("Remembered"));
         bind(first);
-        let quoted = remember(second);
-        assert!(quoted.contains("⚠ CONTRADICTION"), "{quoted}");
-        assert!(
-            quoted.contains("RS256"),
-            "a served value is quoted: {quoted}"
-        );
+        let served = remember(second);
+        assert!(served.starts_with("Updated"), "{served}");
+        assert!(!served.contains("RS256"), "{served}");
+        assert!(!served.contains("release captain"), "{served}");
+        assert!(!served.contains("CONTRADICTION"), "{served}");
 
         bind(second);
         std::fs::remove_file(format!("{root}/auth.rs")).expect("delete");
         let withheld = remember(third);
-        assert!(withheld.contains(CONTRADICTION_WITHHELD), "{withheld}");
+        assert!(withheld.starts_with("Updated"), "{withheld}");
         assert!(!withheld.contains("release captain"), "{withheld}");
-        assert!(!withheld.contains("RS256"), "{withheld}");
+        assert!(!withheld.contains("nightly artifact"), "{withheld}");
+        assert!(!withheld.contains("CONTRADICTION"), "{withheld}");
+    }
+
+    /// #40: rewriting a long fact under the same category and key (a
+    /// hand-off, an agent entry) answers with a short, bounded line: key,
+    /// category, revision, superseded — neither the old nor the new text,
+    /// and no contradiction (the same key changing is not one).
+    #[test]
+    fn a_same_key_update_answers_short_without_either_text() {
+        use lean_ctx::core::context_admission::stored::lineage_support::{
+            governed, project, scoped,
+        };
+        let _data = governed();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let old: String = (0..120)
+            .map(|i| format!("old-handoff step {i} reviewed the gateway retention path; "))
+            .collect();
+        let new: String = (0..120)
+            .map(|i| {
+                format!("Queen wake {i}: tester accepted branch fix/{i} with the gate green. ")
+            })
+            .collect();
+        let remember = |value: &str| {
+            scoped(&root, || {
+                handle_remember(
+                    &root,
+                    Some("handoff"),
+                    Some("handoff-c-6ba4749e"),
+                    Some(value),
+                    "session-1",
+                    Some(0.9),
+                )
+            })
+        };
+
+        let first = remember(&old);
+        assert!(first.starts_with("Remembered"), "{first}");
+        assert!(first.len() < 300, "{} chars: {first}", first.len());
+        assert!(!first.contains("old-handoff step"), "{first}");
+
+        let updated = remember(&new);
+        assert!(updated.len() < 300, "{} chars: {updated}", updated.len());
+        assert!(
+            updated.starts_with("Updated [handoff] handoff-c-6ba4749e → revision 2"),
+            "{updated}"
+        );
+        assert!(updated.contains("superseded"), "{updated}");
+        assert!(!updated.contains("CONTRADICTION"), "{updated}");
+        assert!(!updated.contains("old-handoff step"), "{updated}");
+        assert!(!updated.contains("Queen wake"), "{updated}");
+
+        let confirmed = remember(&new);
+        assert!(confirmed.starts_with("Confirmed"), "{confirmed}");
+        assert!(confirmed.len() < 300, "{confirmed}");
+        assert!(!confirmed.contains("Queen wake"), "{confirmed}");
+    }
+
+    /// A contradiction between different facts is flagged as a bounded
+    /// preview of the other fact, safe on multi-byte text.
+    #[test]
+    fn a_cross_key_advisory_is_capped() {
+        use lean_ctx::core::context_admission::stored::lineage_support::{
+            governed, project, scoped,
+        };
+        let _data = governed();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let base = "Die Webhooks der Zahlungsschnittstelle werden dreimal wiederholt, \
+                    danach landet die Nachricht in der Fehlerwarteschlange für Prüfungen ÄÖÜ";
+        // Word overlap ~0.8: flagged as similar (> 0.35), not merged (< 0.9).
+        let other = base.replace("dreimal", "niemals");
+        let remember = |key: &str, value: &str| {
+            scoped(&root, || {
+                handle_remember(
+                    &root,
+                    Some("architecture"),
+                    Some(key),
+                    Some(value),
+                    "s",
+                    None,
+                )
+            })
+        };
+        remember("webhook-retries", &format!("{} {}", "ä".repeat(56), base));
+        let out = remember("webhook-no-retry", &other);
+        assert!(out.contains("SIMILAR FACTS"), "{out}");
+        assert!(
+            !out.contains("Fehlerwarteschlange"),
+            "capped preview: {out}"
+        );
+        assert!(out.len() < 1000, "{} chars: {out}", out.len());
     }
 
     /// J2: a remembered fact anchors to the code it is about; a change

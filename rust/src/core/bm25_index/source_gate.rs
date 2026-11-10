@@ -263,6 +263,7 @@ impl SourceGate {
                 None => admission::carrier::admit_carrier_text_under(
                     text,
                     Some(self.admission.admission_policy()),
+                    &admission::carrier::STORED,
                 )
                 .ok(),
             };
@@ -310,11 +311,54 @@ impl SourceGate {
     /// Whether `text`, derived from `source` (a path relative to the root,
     /// or an external reference), may be served now.
     pub(crate) fn serves(&mut self, source: &str, text: &str) -> bool {
+        self.serves_with(source, text, None)
+    }
+
+    /// [`Self::serves`] for a decision that delivers nothing (the ranking
+    /// corpus, the dense backend's source filter): the origin ledger is left
+    /// alone, so only the chunks a result actually carries taint the session.
+    pub(crate) fn admits_unserved(&mut self, source: &str, text: &str) -> bool {
+        let admitted = self.decide(source, text);
+        if !admitted {
+            self.withheld += 1;
+        }
+        admitted
+    }
+
+    /// [`Self::serves`] for a chunk with its recorded origin. A served chunk
+    /// of an external source (`scheme://`) is noted in the call's origin
+    /// ledger with its origin, or as unknown when it has none (an index
+    /// written before origins were kept, pz21 §1.6): the release point then
+    /// fences it.
+    pub(crate) fn serves_with(
+        &mut self,
+        source: &str,
+        text: &str,
+        input_origin: Option<&crate::core::context_admission::origin::InputOrigin>,
+    ) -> bool {
         let served = self.decide(source, text);
-        if !served {
+        if served {
+            Self::note_served(source, input_origin);
+        } else {
             self.withheld += 1;
         }
         served
+    }
+
+    /// Note a served chunk of an external source (`scheme://`, or one with a
+    /// recorded origin) in the call's origin ledger.
+    pub(crate) fn note_served(
+        source: &str,
+        input_origin: Option<&crate::core::context_admission::origin::InputOrigin>,
+    ) {
+        if source.contains("://") || input_origin.is_some() {
+            crate::core::context_admission::capture::note_origin(
+                &crate::core::context_admission::stores::class_of_path(
+                    Path::new(source),
+                    input_origin,
+                ),
+            );
+        }
     }
 
     /// Entries this gate refused. A count only: no path, no text.
@@ -433,9 +477,11 @@ impl SourceGate {
         };
         let mut current = String::new();
         for chunk in &view.chunks {
-            let admitted = self
-                .admission
-                .admit(&chunk.content, Path::new(&chunk.file_path))?;
+            let admitted = self.admission.admit(
+                &chunk.content,
+                Path::new(&chunk.file_path),
+                chunk.input_origin.as_ref(),
+            )?;
             current.push_str(&normalised(&admitted));
             current.push('\n');
         }
@@ -469,8 +515,13 @@ fn normalised(text: &str) -> String {
 /// built in the running call from sources the reader returned then — every
 /// chunk is served.
 pub fn chunk_served(gate: &mut Option<SourceGate>, chunk: &CodeChunk) -> bool {
-    gate.as_mut()
-        .is_none_or(|gate| gate.serves(&chunk.file_path, &chunk.content))
+    gate.as_mut().is_none_or(|gate| {
+        gate.serves_with(
+            &chunk.file_path,
+            &chunk.content,
+            chunk.input_origin.as_ref(),
+        )
+    })
 }
 
 impl BM25Index {

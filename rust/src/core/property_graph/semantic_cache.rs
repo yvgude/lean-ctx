@@ -143,7 +143,7 @@ pub fn store_admitted(
     .flatten()
     .collect::<Vec<_>>()
     .join("\n");
-    if admission.admit_text(&kept).as_deref() != Some(kept.as_str()) {
+    if admission.admit_instance_text(&kept).as_deref() != Some(kept.as_str()) {
         return Ok(false);
     }
     store(conn, site, caller_hash, value)?;

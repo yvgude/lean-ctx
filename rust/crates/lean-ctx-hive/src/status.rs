@@ -105,6 +105,9 @@ impl HiveStatusReport {
                 .metrics_v2
                 .as_ref()
                 .map(super::metrics_v2::upload::MetricsV2Status::wire),
+            // Per checkout: the CLI fills it for the project it runs in
+            // ([`super::resolution::Stale::wire`]).
+            vault_mismatch: None,
         }
     }
 }

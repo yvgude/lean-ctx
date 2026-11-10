@@ -328,6 +328,9 @@ LEAN_CTX_DISABLED=1 sed -i '' 's/old/new/g' <file>        # edit without hooks
   learned or adaptive methods need an A/B result against a simple heuristic.
   Models follow the Embedded Intelligence Principle. Details:
   `skills/leanctx-gateway-delivery/SKILL.md` → "Add capability only with evidence".
+- Changelog: describe the user-visible change in the PR description; a
+  `CHANGELOG.md` `[Unreleased]` entry is welcome. Maintainers carry it into the
+  release notes.
 
 ## Test Policy (single source of truth)
 

@@ -23,6 +23,7 @@ mod detectors;
 pub mod egress;
 pub mod hud;
 mod notes;
+pub mod origin;
 pub mod provider;
 pub mod receipt_store;
 pub mod recovery;
@@ -488,9 +489,24 @@ fn render_hud(
     (!parts.is_empty()).then(|| format!("[lean-ctx gateway: {}]", parts.join(" · ")))
 }
 
-/// Admit `text` (from `path`, when it came from a file) under `policy`.
+/// Admit `text` (from `path`, when it came from a file) of origin `class`
+/// under `policy`.
+///
+/// Trust is `min(origin_floor(class), content_trust)` (pz21 §1.2). An
+/// external or unknown class is noted in the call's origin ledger first,
+/// before any early return, and its injection action is raised from `Warn`
+/// to `Redact` where the text is delivered or stored for delivery (a
+/// detached store write inside `outside_call` included), never inside an
+/// egress-equality check (`capture::egress_check`, NB-2).
 #[must_use]
-pub fn admit(text: &str, path: Option<&Path>, policy: &AdmissionPolicy) -> Admission {
+pub fn admit(
+    text: &str,
+    path: Option<&Path>,
+    class: &origin::SourceClass,
+    policy: &AdmissionPolicy,
+) -> Admission {
+    capture::note_origin(class);
+    let floor = class.origin_floor();
     let object = content_digest(text);
     let gateway = &policy.gateway;
     if let Some(codes) = policy.config_refusal_codes() {
@@ -512,10 +528,12 @@ pub fn admit(text: &str, path: Option<&Path>, policy: &AdmissionPolicy) -> Admis
         };
     }
     if !policy.gateway_switch() {
+        // Developer mode skips the detectors, not the origin (N-2): a
+        // project file stays `Internal`, outside text keeps its floor.
         return Admission {
             text: Some(text.to_owned()),
             classification: gateway.mode.unclassified(),
-            trust: TrustLevelV1::Unknown,
+            trust: floor,
             decision: ContextDecisionV1 {
                 object,
                 disposition: ContextDispositionV1::Allow,
@@ -527,7 +545,15 @@ pub fn admit(text: &str, path: Option<&Path>, policy: &AdmissionPolicy) -> Admis
         };
     }
 
-    let actions = policy.actions();
+    let mut actions = policy.actions();
+    if class.is_external_or_unknown()
+        && !capture::egress_check_active()
+        && actions.injection == FilterAction::Warn
+    {
+        // Redaction default for untrusted or unknown text (pz21 §1.3 item 2):
+        // only the flagged lines; governed modes may already block.
+        actions.injection = FilterAction::Redact;
+    }
     let findings = detectors::inspect(
         text,
         path,
@@ -639,11 +665,12 @@ pub fn admit(text: &str, path: Option<&Path>, policy: &AdmissionPolicy) -> Admis
                 code.starts_with("semantic.prompt_injection") && !code.ends_with(".not_inspected")
             })
     });
-    let trust = if counts.injection > 0 || semantic_injection {
+    let content_trust = if counts.injection > 0 || semantic_injection {
         TrustLevelV1::Untrusted
     } else {
         TrustLevelV1::Internal
     };
+    let trust = floor.min(content_trust);
     let mut signals: Vec<DetectorSignalV1> = findings.signals();
     if let Some(outcome) = semantic {
         signals.push(outcome.signal);
@@ -740,7 +767,27 @@ impl ToolOutputAdmission {
     }
 }
 
+/// Output of the command the current call classified (`ctx_shell` sets the
+/// class of every command it runs, pz21 §1.8). Without a classified call the
+/// origin is unknown, never assumed to be the project's: a caller that knows
+/// its command or source passes the class to [`admit_tool_output_as`]
+/// (`patterns::tool_output::output_class`).
 pub fn admit_tool_output(text: &str, completeness: OutputCompleteness) -> ToolOutputAdmission {
+    let class = capture::current()
+        .and_then(|capture| capture.output_class())
+        .unwrap_or(origin::SourceClass::Unclassified {
+            tool: "tool_output",
+        });
+    admit_tool_output_as(text, completeness, &class)
+}
+
+/// [`admit_tool_output`] for output of origin `class`.
+pub fn admit_tool_output_as(
+    text: &str,
+    completeness: OutputCompleteness,
+    class: &origin::SourceClass,
+) -> ToolOutputAdmission {
+    capture::note_origin(class);
     // Check active project policy against the original bytes before Gateway
     // redaction can hide a phrase that policy must block.
     let project_original = crate::core::policy::content::protect_active(text);
@@ -748,7 +795,7 @@ pub fn admit_tool_output(text: &str, completeness: OutputCompleteness) -> ToolOu
         .as_ref()
         .is_ok_and(|admitted| admitted.as_ref() != text);
     let policy = carrier::current_policy();
-    let mut admission = admit(text, None, &policy);
+    let mut admission = admit(text, None, class, &policy);
     mark_capture_incomplete(&mut admission, completeness, &policy);
 
     let gateway_output = admission.text.clone();
@@ -757,7 +804,13 @@ pub fn admit_tool_output(text: &str, completeness: OutputCompleteness) -> ToolOu
         .ok()
         .zip(gateway_output.as_deref())
         .and_then(|(project_original, gateway_output)| {
-            compose_active_gateway_output(project_original, gateway_output, &policy, completeness)
+            compose_active_gateway_output(
+                project_original,
+                gateway_output,
+                class,
+                &policy,
+                completeness,
+            )
         });
     let policy_withheld = project_original.is_err() || (gateway_output.is_some() && text.is_none());
     if let Some(admitted) = &text {
@@ -779,7 +832,11 @@ pub fn admit_tool_output(text: &str, completeness: OutputCompleteness) -> ToolOu
             policy.gateway.mode,
             fingerprint_digest(&policy.fingerprint()),
         );
-        capture.record(&admission.decision, admission.counts);
+        capture.record_as(
+            &admission.decision,
+            admission.counts,
+            class.is_external_or_unknown(),
+        );
     }
     let mut notice = admission.hud_line_placed(policy.gateway.hud.redaction_counts_in_band());
     if policy_withheld {
@@ -824,13 +881,14 @@ fn mark_policy_withheld(admission: &mut Admission, reason_code: &str) {
 pub(crate) fn compose_active_gateway_output(
     project_original: &str,
     gateway_output: &str,
+    class: &origin::SourceClass,
     policy: &AdmissionPolicy,
     completeness: OutputCompleteness,
 ) -> Option<String> {
     let project_after_gateway = crate::core::policy::content::protect_active(gateway_output)
         .ok()?
         .into_owned();
-    let mut gateway_after_project = admit(project_original, None, policy);
+    let mut gateway_after_project = admit(project_original, None, class, policy);
     mark_capture_incomplete(&mut gateway_after_project, completeness, policy);
     let gateway_after_project = gateway_after_project.text?;
     (project_after_gateway == gateway_after_project).then_some(project_after_gateway)
@@ -847,7 +905,7 @@ pub(super) fn admit_output_for_storage(
         return None;
     }
     let project_original = crate::core::policy::content::protect_active(text).ok()?;
-    let mut admission = admit(text, None, policy);
+    let mut admission = admit(text, None, &origin::SourceClass::Project, policy);
     mark_capture_incomplete(&mut admission, completeness, policy);
     if !admission.storable() {
         return None;
@@ -856,6 +914,7 @@ pub(super) fn admit_output_for_storage(
     compose_active_gateway_output(
         project_original.as_ref(),
         &gateway_output,
+        &origin::SourceClass::Project,
         policy,
         completeness,
     )
@@ -940,9 +999,50 @@ pub fn admit_source(
     text: &str,
     path: &str,
     preserve_bytes: bool,
+    class: &origin::SourceClass,
 ) -> Result<String, std::io::Error> {
-    admit_source_with_storage(text, path, preserve_bytes, OutputCompleteness::complete())
-        .map(|admission| admission.text)
+    admit_source_with_storage(
+        text,
+        path,
+        preserve_bytes,
+        OutputCompleteness::complete(),
+        class,
+    )
+    .map(|admission| admission.text)
+}
+
+/// [`admit_source`] for text the Instance assembled itself (protocol text,
+/// its own knowledge store): origin Project (pz21 §1.4).
+pub fn admit_instance_source(
+    text: &str,
+    label: &str,
+    preserve_bytes: bool,
+) -> Result<String, std::io::Error> {
+    admit_source(text, label, preserve_bytes, &origin::SourceClass::Project)
+}
+
+/// [`admit_context_source`] for text the Instance assembled from its own
+/// project and records (a checkout diff, receipts, an engine source):
+/// origin Project (pz21 §1.4).
+pub fn admit_instance_context_source(text: &str) -> Result<SourceAdmission, std::io::Error> {
+    admit_context_source(text, &origin::SourceClass::Project)
+}
+
+/// [`admit_source_with_storage`] for a rooted read of a project file (the
+/// rooted reader and the read cache it fills): origin Project (pz21 §1.4).
+pub(crate) fn admit_project_file_with_storage(
+    text: &str,
+    path: &str,
+    preserve_bytes: bool,
+    completeness: OutputCompleteness,
+) -> Result<SourceAdmission, std::io::Error> {
+    admit_source_with_storage(
+        text,
+        path,
+        preserve_bytes,
+        completeness,
+        &origin::SourceClass::Project,
+    )
 }
 
 /// Admit a source and preserve whether its original Gateway classification may
@@ -952,21 +1052,43 @@ pub(crate) fn admit_source_with_storage(
     path: &str,
     preserve_bytes: bool,
     completeness: OutputCompleteness,
+    class: &origin::SourceClass,
 ) -> Result<SourceAdmission, std::io::Error> {
-    admit_source_inner(text, Some(path), preserve_bytes, completeness, None)
+    admit_source_inner(text, Some(path), preserve_bytes, completeness, None, class)
 }
 
-/// Admit an in-memory source without assigning it a synthetic filesystem path.
-pub fn admit_context_source(text: &str) -> Result<SourceAdmission, std::io::Error> {
-    admit_source_inner(text, None, false, OutputCompleteness::complete(), None)
+/// Admit an in-memory source of origin `class` without assigning it a
+/// synthetic filesystem path.
+pub fn admit_context_source(
+    text: &str,
+    class: &origin::SourceClass,
+) -> Result<SourceAdmission, std::io::Error> {
+    admit_source_inner(
+        text,
+        None,
+        false,
+        OutputCompleteness::complete(),
+        None,
+        class,
+    )
 }
 
 /// [`admit_context_source`] for text that is bound by a digest or signature
 /// and therefore cannot be delivered rewritten: a mask is a refusal, and it
 /// is recorded as one (never as an admitted redaction of a copy that did not
 /// leave).
-pub(crate) fn admit_bound_context_source(text: &str) -> Result<SourceAdmission, std::io::Error> {
-    admit_source_inner(text, None, true, OutputCompleteness::complete(), None)
+pub(crate) fn admit_bound_context_source(
+    text: &str,
+    class: &origin::SourceClass,
+) -> Result<SourceAdmission, std::io::Error> {
+    admit_source_inner(
+        text,
+        None,
+        true,
+        OutputCompleteness::complete(),
+        None,
+        class,
+    )
 }
 
 /// Admit a rooted source with one caller-captured Gateway snapshot. Hosted
@@ -986,6 +1108,7 @@ pub(crate) fn admit_source_with_snapshot(
         preserve_bytes,
         completeness,
         Some(snapshot.admission_policy()),
+        &origin::SourceClass::Project,
     )
 }
 
@@ -995,20 +1118,28 @@ fn admit_source_inner(
     preserve_bytes: bool,
     completeness: OutputCompleteness,
     policy_snapshot: Option<&AdmissionPolicy>,
+    class: &origin::SourceClass,
 ) -> Result<SourceAdmission, std::io::Error> {
-    admit_source_typed(text, path, preserve_bytes, completeness, policy_snapshot).map_err(
-        |reasons| {
-            let hint = withheld_remedy(&reasons);
-            let reasons: Vec<&str> = reasons.iter().map(ReasonCodeV1::as_str).collect();
-            std::io::Error::new(
-                std::io::ErrorKind::PermissionDenied,
-                format!(
-                    "source content withheld by the context gateway ({}){hint}",
-                    reasons.join(", ")
-                ),
-            )
-        },
+    capture::note_origin(class);
+    admit_source_typed(
+        text,
+        path,
+        preserve_bytes,
+        completeness,
+        policy_snapshot,
+        class,
     )
+    .map_err(|reasons| {
+        let hint = withheld_remedy(&reasons);
+        let reasons: Vec<&str> = reasons.iter().map(ReasonCodeV1::as_str).collect();
+        std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!(
+                "source content withheld by the context gateway ({}){hint}",
+                reasons.join(", ")
+            ),
+        )
+    })
 }
 
 /// The setting behind a withheld read, so the user can tell an intended policy
@@ -1046,7 +1177,9 @@ fn admit_source_typed(
     preserve_bytes: bool,
     completeness: OutputCompleteness,
     policy_snapshot: Option<&AdmissionPolicy>,
+    class: &origin::SourceClass,
 ) -> Result<SourceAdmission, Vec<ReasonCodeV1>> {
+    let external = class.is_external_or_unknown();
     // Inspect original content before a Gateway redaction or clean memo can
     // remove a signal required by the active project policy.
     let project_original = crate::core::policy::content::protect_active(text);
@@ -1076,7 +1209,7 @@ fn admit_source_typed(
         && let Some(decision) = clean::get_source(key)
     {
         if let Some(capture) = &capture {
-            capture.record(&decision.decision, AdmissionCounts::default());
+            capture.record_as(&decision.decision, AdmissionCounts::default(), external);
         }
         return Ok(SourceAdmission {
             text: project_original
@@ -1087,7 +1220,7 @@ fn admit_source_typed(
         });
     }
 
-    let mut admission = admit(text, path.map(Path::new), &policy);
+    let mut admission = admit(text, path.map(Path::new), class, &policy);
     mark_capture_incomplete(&mut admission, completeness, &policy);
     let storable = completeness.is_complete() && admission.storable();
     let gateway_admitted = admission.text.clone();
@@ -1096,7 +1229,13 @@ fn admit_source_typed(
         .ok()
         .zip(gateway_admitted.as_deref())
         .and_then(|(project_original, gateway_admitted)| {
-            compose_active_gateway_output(project_original, gateway_admitted, &policy, completeness)
+            compose_active_gateway_output(
+                project_original,
+                gateway_admitted,
+                class,
+                &policy,
+                completeness,
+            )
         });
     let mut refusal_reason = if project_original.is_err()
         || (gateway_admitted.is_some() && project_admitted.is_none())
@@ -1134,7 +1273,7 @@ fn admit_source_typed(
         mark_policy_withheld(&mut admission, reason_code);
     }
     if let Some(capture) = &capture {
-        capture.record(&admission.decision, admission.counts);
+        capture.record_as(&admission.decision, admission.counts, external);
     }
 
     let Some(project_admitted) = project_admitted else {
@@ -1200,7 +1339,7 @@ pub fn admit_uninspectable(path: Option<&Path>, bytes: u64, policy: &AdmissionPo
         signal.coverage.kind == lean_ctx_protocol::context_gateway::CoverageKindV1::Unsupported
     });
     if policy.config_unloadable() || !policy.gateway_switch() || !required {
-        return admit("", path, policy);
+        return admit("", path, &origin::SourceClass::Project, policy);
     }
     let restricted_path =
         path.is_some_and(|p| crate::core::io_boundary::is_secret_like(p).is_some());
@@ -1332,154 +1471,7 @@ fn content_digest(text: &str) -> Sha256Digest {
 }
 
 #[cfg(test)]
-mod shell_admission_regression_tests {
-    use super::*;
-
-    #[test]
-    fn rendered_notice_uses_a_newline_and_survives_empty_text() {
-        let admission = ToolOutputAdmission {
-            text: Some("body".to_string()),
-            notice: Some("[notice]".to_string()),
-        };
-        assert_eq!(admission.rendered(), "[notice]\nbody");
-
-        let empty = ToolOutputAdmission {
-            text: Some(String::new()),
-            notice: Some("[notice]".to_string()),
-        };
-        assert_eq!(empty.rendered(), "[notice]");
-    }
-
-    #[test]
-    fn incomplete_capture_is_never_persistable() {
-        let policy = AdmissionPolicy::builtin(
-            ContextGatewayConfig::default(),
-            SecretDetectionConfig::default(),
-        );
-        let incomplete = OutputCompleteness {
-            reader_incomplete: true,
-            ..OutputCompleteness::complete()
-        };
-        assert!(
-            admit_output_for_storage("partial output", incomplete, &policy).is_none(),
-            "an incomplete prefix must not seed a cache"
-        );
-    }
-
-    /// #2164: a background job whose command exited while a process it left
-    /// running still holds the pipe keeps its captured output for the status
-    /// poll; every other gap, and a mandatory gateway, still withholds it.
-    #[test]
-    fn background_poll_keeps_a_capture_whose_only_gap_is_a_held_pipe() {
-        let developer = AdmissionPolicy::builtin(
-            ContextGatewayConfig::default(),
-            SecretDetectionConfig::default(),
-        );
-        let held_pipe = OutputCompleteness {
-            reader_incomplete: true,
-            ..OutputCompleteness::complete()
-        };
-        assert_eq!(
-            admit_output_for_poll("hello stdout\nboom stderr", held_pipe, &developer).as_deref(),
-            Some("hello stdout\nboom stderr")
-        );
-        for other_gap in [
-            OutputCompleteness {
-                truncated: true,
-                ..held_pipe
-            },
-            OutputCompleteness {
-                timed_out: true,
-                ..held_pipe
-            },
-            OutputCompleteness {
-                cancelled: true,
-                ..OutputCompleteness::complete()
-            },
-        ] {
-            assert!(admit_output_for_poll("partial", other_gap, &developer).is_none());
-        }
-
-        let governed = AdmissionPolicy::builtin(
-            ContextGatewayConfig {
-                mode: GatewayModeV1::Governed,
-                ..ContextGatewayConfig::default()
-            },
-            SecretDetectionConfig::default(),
-        );
-        if governed.enabled_effective() {
-            assert!(admit_output_for_poll("partial", held_pipe, &governed).is_none());
-        }
-    }
-
-    #[test]
-    fn mandatory_gateway_marks_and_withholds_incomplete_capture() {
-        let gateway = ContextGatewayConfig {
-            mode: GatewayModeV1::Governed,
-            ..ContextGatewayConfig::default()
-        };
-        let policy = AdmissionPolicy::builtin(gateway, SecretDetectionConfig::default());
-        let incomplete = OutputCompleteness {
-            truncated: true,
-            ..OutputCompleteness::complete()
-        };
-        let mut admission = admit("partial output", None, &policy);
-        mark_capture_incomplete(&mut admission, incomplete, &policy);
-
-        if policy.enabled_effective() {
-            assert!(admission.text.is_none());
-            assert!(
-                admission
-                    .decision
-                    .reason_codes
-                    .iter()
-                    .any(|code| code.as_str() == "coverage.output_partial")
-            );
-        }
-    }
-
-    /// AWS's documented example access key, assembled so the source carries
-    /// no literal the public secret scanner flags.
-    fn aws_documentation_key() -> String {
-        ["AK", "IA", "IOSFODNN7EXAMPLE"].concat()
-    }
-
-    #[test]
-    fn overlapping_policy_and_gateway_redactions_withhold_noncomposable_output() {
-        let pack = crate::core::policy::parse(&format!(
-            "name = \"composition-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n[redaction]\ncustomer = 'customer {}'",
-            aws_documentation_key()
-        ))
-        .expect("valid policy");
-        let _project_policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(
-            crate::core::policy::resolve(&pack).expect("resolved policy"),
-        ));
-        let original = format!("customer {}", aws_documentation_key());
-        let original = original.as_str();
-        let project_original = crate::core::policy::content::protect_active(original)
-            .expect("project redaction is allowed")
-            .into_owned();
-        let policy = AdmissionPolicy::builtin(
-            ContextGatewayConfig::default(),
-            SecretDetectionConfig::default(),
-        );
-        let gateway_output = admit(original, None, &policy)
-            .text
-            .expect("developer gateway redacts and delivers");
-        assert_ne!(project_original.as_str(), original);
-        assert_ne!(gateway_output.as_str(), original);
-        assert!(
-            compose_active_gateway_output(
-                &project_original,
-                &gateway_output,
-                &policy,
-                OutputCompleteness::complete(),
-            )
-            .is_none(),
-            "overlapping redactions that depend on order must be withheld"
-        );
-    }
-}
+mod shell_admission_regression_tests;
 
 #[cfg(test)]
 mod tests;

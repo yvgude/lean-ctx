@@ -43,6 +43,8 @@ pub fn capabilities_value() -> Value {
         "server": {
             "name": "lean-ctx",
             "version": env!("CARGO_PKG_VERSION"),
+            // Additive: which pipeline built this binary, from which commit.
+            "build": crate::core::integrity::build().to_json(),
             "persona": active_persona.name,
         },
         "plane": "personal",

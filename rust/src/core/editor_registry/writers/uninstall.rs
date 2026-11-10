@@ -372,13 +372,43 @@ pub(super) fn remove_lean_ctx_hermes_yaml_server(
     })
 }
 
+pub(super) fn remove_lean_ctx_goose_yaml_server(
+    path: &std::path::Path,
+) -> Result<WriteResult, String> {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return Ok(WriteResult {
+            action: WriteAction::Already,
+            note: Some("goose config not found".to_string()),
+        });
+    };
+    let updated = remove_yaml_section_child(&content, "extensions", "lean-ctx");
+    if updated.trim_end() == content.trim_end() {
+        return Ok(WriteResult {
+            action: WriteAction::Already,
+            note: Some("lean-ctx not configured".to_string()),
+        });
+    }
+    crate::config_io::write_atomic_with_backup(path, &updated)?;
+    Ok(WriteResult {
+        action: WriteAction::Updated,
+        note: Some("removed lean-ctx from extensions".to_string()),
+    })
+}
+
 pub(super) fn remove_hermes_yaml_mcp_server_block(existing: &str, name: &str) -> String {
+    remove_yaml_section_child(existing, "mcp_servers", name)
+}
+
+/// Remove the child entry `name` (and its nested lines) from the top-level
+/// map `section`; everything else stays byte for byte.
+pub(super) fn remove_yaml_section_child(existing: &str, section: &str, name: &str) -> String {
+    let header = format!("{section}:");
     let mut out = String::with_capacity(existing.len());
     let mut in_mcp = false;
     let mut skipping = false;
     for line in existing.lines() {
         let trimmed = line.trim_end();
-        if trimmed == "mcp_servers:" {
+        if trimmed == header {
             in_mcp = true;
             out.push_str(line);
             out.push('\n');

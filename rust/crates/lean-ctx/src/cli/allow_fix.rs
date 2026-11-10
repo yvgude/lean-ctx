@@ -42,8 +42,7 @@ fn fix_array(array: &mut Array, key: &str) -> Vec<String> {
         .enumerate()
         .filter_map(|(i, v)| {
             let s = v.as_str()?;
-            (!lean_ctx::core::shell_allowlist::is_valid_allowlist_entry(s))
-                .then(|| (i, s.to_string()))
+            (!lean_ctx_shell_policy::is_valid_allowlist_entry(s)).then(|| (i, s.to_string()))
         })
         .collect();
 

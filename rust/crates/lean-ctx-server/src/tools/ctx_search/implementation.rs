@@ -506,7 +506,7 @@ fn search_compiled_pattern(
             // Search matches only ever come from admitted text: a masked value
             // cannot be found, and a withheld or restricted source is skipped
             // without disclosing it (G5).
-            let Some(text) = admission.admit(&text, path) else {
+            let Some(text) = admission.admit(&text, path, None) else {
                 files_withheld += 1;
                 continue;
             };

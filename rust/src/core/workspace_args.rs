@@ -75,7 +75,8 @@ fn parse_into(args: &[String], parsed: &mut Parsed) -> Result<Vec<String>, Strin
 /// Whether an agent shell may run `lean-ctx workspace <args>`: only forms
 /// that read or narrow (`show`, `diagnose`, `remove`, help). Anything that
 /// does not parse is refused — the verb must not hide behind a flag.
-pub(crate) fn agent_shell_may_run(args: &[String]) -> bool {
+#[doc(hidden)]
+pub fn agent_shell_may_run(args: &[String]) -> bool {
     if args
         .first()
         .is_none_or(|first| matches!(first.as_str(), "-h" | "--help" | "help"))

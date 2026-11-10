@@ -50,7 +50,13 @@ pub(super) fn compute_rewrite_for(input: &str, binary: &str) -> String {
         .and_then(serde_json::Value::as_str)
         .filter(|c| !c.is_empty())
         .map(std::path::PathBuf::from);
-    lean_ctx::core::shell_allowlist::with_run_cwd(run_cwd, || rewrite_for_payload(&v, &binary))
+    let dialect = payload::resolve_tool_name(&v)
+        .map_or(lean_ctx_shell_policy::Dialect::Posix, |tool| {
+            powershell_rewrite::dialect_for_tool(&tool)
+        });
+    lean_ctx_shell_policy::with_dialect(dialect, || {
+        lean_ctx_shell_policy::with_run_cwd(run_cwd, || rewrite_for_payload(&v, &binary))
+    })
 }
 
 fn rewrite_for_payload(v: &serde_json::Value, binary: &str) -> String {
@@ -88,8 +94,17 @@ fn rewrite_for_payload(v: &serde_json::Value, binary: &str) -> String {
     // invalid for Claude Code.
     let claude = is_claude_pretooluse_payload(v);
     let gemini = is_gemini_beforetool_payload(v);
-    let key_material = format!("{tool_name}\u{0}{cmd}\u{0}{claude}\u{0}{gemini}");
+    // The exclusion verdict is part of the key, so a config change within the
+    // dedup window is never answered with the decision made before it.
+    let excluded = super::exclusions::user_excluded_reason(&cmd);
+    let key_material = format!(
+        "{tool_name}\u{0}{cmd}\u{0}{claude}\u{0}{gemini}\u{0}{}",
+        excluded.unwrap_or("")
+    );
     dedup::deduped("rewrite", &key_material, || {
+        if let Some(reason) = excluded {
+            return excluded_output(&cmd, &binary, &tool_name, reason, v);
+        }
         if is_powershell_tool(&tool_name) {
             return powershell_output(&cmd, &binary, &tool_name, tool_args.as_ref(), v);
         }
@@ -127,7 +142,7 @@ fn rewrite_for_payload(v: &serde_json::Value, binary: &str) -> String {
             // Not delivered: the original runs natively under the host's own
             // approval. The allowlist the wrap would have enforced at run time
             // is enforced here instead, as the PowerShell path does.
-            if let Err(msg) = lean_ctx::core::shell_allowlist::check_shell_allowlist(&cmd) {
+            if let Err(msg) = lean_ctx_shell_policy::check_shell_allowlist(&cmd) {
                 debug_log::log_hook_decision(
                     "rewrite",
                     &tool_name,
@@ -163,6 +178,37 @@ fn rewrite_for_payload(v: &serde_json::Value, binary: &str) -> String {
             build_passthrough_output()
         }
     })
+}
+
+/// The hook output for a command the user excluded from lean-ctx (#2194): it
+/// runs natively and unchanged — no compression rewrite and no enforcement
+/// wrap. The shell allowlist the wrap would have enforced is checked here
+/// instead (`warn` reports, `off` passes), so an exclusion never loosens it.
+fn excluded_output(
+    cmd: &str,
+    binary: &str,
+    tool_name: &str,
+    reason: &str,
+    payload: &serde_json::Value,
+) -> String {
+    let denial = if is_powershell_tool(tool_name) {
+        powershell_rewrite::allowlist_denial(cmd, binary)
+    } else {
+        native_allowlist_denial(cmd, binary)
+    };
+    if let Some(msg) = denial {
+        debug_log::log_hook_decision(
+            "rewrite",
+            tool_name,
+            Route::Native,
+            cmd,
+            "denied by the shell allowlist (excluded from rewrite)",
+        );
+        return build_deny_output(&msg, payload);
+    }
+    debug_log::log_hook_decision("rewrite", tool_name, Route::Native, cmd, reason);
+    record_native_passthrough();
+    build_passthrough_output()
 }
 
 /// The hook output for a host's PowerShell tool (#1848) — see
@@ -243,38 +289,11 @@ pub(super) fn rewrite_skip_reason(cmd: &str, binary: &str) -> &'static str {
         "already a lean-ctx command"
     } else if cmd.contains("<<") {
         "heredoc cannot be rewritten safely"
-    } else if names_excluded_command(cmd) {
-        "listed in excluded_commands"
-    } else if is_compound(cmd) && !lean_ctx::core::shell_allowlist::passes_enforced(cmd) {
+    } else if is_compound(cmd) && !lean_ctx_shell_policy::passes_enforced(cmd) {
         "compound pipes/chains into a non-allowlisted or interpreter sink — left raw for the agent shell"
     } else {
         "not a known read/search/list command"
     }
-}
-
-/// `cmd`, or one of its top-level segments (`cd x && git status`), starts
-/// with a prefix from the user's `excluded_commands`, after any `VAR=value`
-/// prefix. Wrapping a compound wraps every segment, so one excluded segment
-/// keeps the whole line as typed (#2194).
-pub(super) fn names_excluded_command(cmd: &str) -> bool {
-    let excluded = lean_ctx::core::config::Config::load_arc();
-    excluded_by(cmd, &excluded.excluded_commands)
-}
-
-fn excluded_by(cmd: &str, excluded: &[String]) -> bool {
-    if excluded.is_empty() {
-        return false;
-    }
-    compound_lexer::split_compound(cmd)
-        .iter()
-        .filter_map(|s| match s {
-            compound_lexer::Segment::Command(c) => Some(c.trim()),
-            compound_lexer::Segment::Operator(_) => None,
-        })
-        .any(|c| {
-            let c = rewrite_registry::strip_env_prefix(c);
-            lean_ctx::shell::compress::is_user_excluded(c, excluded)
-        })
 }
 
 pub(super) fn is_rewritable(cmd: &str) -> bool {
@@ -293,7 +312,7 @@ pub(super) fn is_rewritable(cmd: &str) -> bool {
 /// hook sees it, and the nested POSIX quoting falls apart in the inner shell
 /// (#2088).
 pub(super) fn needs_enforcement_wrap(cmd: &str, binary: &str) -> bool {
-    use lean_ctx::core::shell_allowlist::{ShellSecurity, passes_enforced};
+    use lean_ctx_shell_policy::{ShellSecurity, passes_enforced};
 
     if ShellSecurity::resolve() == ShellSecurity::Off {
         return false;
@@ -321,11 +340,11 @@ pub(super) fn needs_enforcement_wrap(cmd: &str, binary: &str) -> bool {
 /// Such a command is checked here instead, with the active security mode
 /// (`warn` reports, `off` passes); `Some` carries the refusal for a deny. A
 /// plain `lean-ctx …` call gets only the lean-ctx checks
-/// ([`check_leanctx_invocation`](lean_ctx::core::shell_allowlist::check_leanctx_invocation)),
+/// ([`check_leanctx_invocation`](lean_ctx_shell_policy::check_leanctx_invocation)),
 /// any other the full allowlist. Body-aware: quoted heredoc bodies are data
 /// to the allowlist, so a `git commit -m "$(cat <<'EOF' … EOF)"` still passes.
 pub(crate) fn unwrappable_allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
-    use lean_ctx::core::shell_allowlist::{self, ShellSecurity};
+    use lean_ctx_shell_policy::{self as shell_allowlist, ShellSecurity};
     if ShellSecurity::resolve() == ShellSecurity::Off {
         return None;
     }
@@ -343,17 +362,19 @@ pub(crate) fn unwrappable_allowlist_denial(cmd: &str, binary: &str) -> Option<St
 /// The allowlist verdict for a command that will run natively, unwrapped:
 /// [`unwrappable_allowlist_denial`] for the commands the wrap cannot carry,
 /// the full allowlist for every other. For the hooks of hosts that do not
-/// take the enforcement wrap (Codex, Vibe, PowerShell, `hook copilot`).
+/// take the enforcement wrap (Codex, Vibe, Kiro, Cline, `hook copilot`).
+/// Bash runs the line whatever shell this process resolves: read as POSIX.
 pub(super) fn native_allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
-    if let Some(msg) = unwrappable_allowlist_denial(cmd, binary) {
-        return Some(msg);
-    }
-    if is_leanctx_call(cmd, binary) {
-        return None;
-    }
-    lean_ctx::core::shell_allowlist::check_shell_allowlist(cmd)
-        .err()
-        .map(|msg| msg.to_string())
+    use lean_ctx_shell_policy::{Dialect, check_shell_allowlist, with_dialect};
+    with_dialect(Dialect::Posix, || {
+        if let Some(msg) = unwrappable_allowlist_denial(cmd, binary) {
+            return Some(msg);
+        }
+        if is_leanctx_call(cmd, binary) {
+            return None;
+        }
+        check_shell_allowlist(cmd).err().map(|msg| msg.to_string())
+    })
 }
 
 /// True when `cmd` carries a top-level shell operator (`&&`, `||`, `;`, `|`),
@@ -482,13 +503,6 @@ pub(super) fn classify_rewrite(cmd: &str, binary: &str) -> Option<Rewrite> {
         return None;
     }
 
-    // #2194: a command the user listed in `excluded_commands` runs as typed.
-    // The enforcement wrap and the allowlist check of a native run are not
-    // rewrites and still apply (see `handle_rewrite`).
-    if names_excluded_command(cmd) {
-        return None;
-    }
-
     // The direct rewrites splice the binary into a Bash command line as-is: a
     // path with a space (`C:/Users/First Last/…`) must arrive quoted (#1865).
     if let Some(rewritten) = direct_rewrite(cmd, &shell_quote(binary)) {
@@ -515,6 +529,12 @@ pub(super) fn classify_rewrite(cmd: &str, binary: &str) -> Option<Rewrite> {
 /// PowerShell path (#1848).
 pub(super) fn passes_rewrite_guards(cmd: &str, binary: &str) -> bool {
     if is_leanctx_call(cmd, binary) {
+        return false;
+    }
+
+    // #2194: what the user excluded (`excluded_commands`, `redirect_exclude`)
+    // the native shell runs untouched, as `lean-ctx -c` leaves it.
+    if super::exclusions::user_excluded_reason(cmd).is_some() {
         return false;
     }
 
@@ -805,14 +825,14 @@ pub(super) fn rewrite_file_read_command(cmd: &str, binary: &str) -> Option<Strin
 }
 
 /// True if the command is a PowerShell-native file-read cmdlet (`Get-Content`/`gc`).
-fn is_powershell_file_read(cmd: &str) -> bool {
+pub(super) fn is_powershell_file_read(cmd: &str) -> bool {
     matches!(cmd.split_whitespace().next(), Some("Get-Content" | "gc"))
 }
 
 /// True if the command starts with sed/awk — candidates for the line-range
 /// read rewrites (#1279). Detected here rather than in the registry so plain
 /// sed/awk stay off the generic rewrite surface.
-fn is_sed_or_awk_line_read(cmd: &str) -> bool {
+pub(super) fn is_sed_or_awk_line_read(cmd: &str) -> bool {
     matches!(cmd.split_whitespace().next(), Some("sed" | "awk"))
 }
 
@@ -1109,7 +1129,7 @@ pub(super) fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> 
     // in that case lean-ctx -c won't enforce anyway.
     let enforce = needs_enforcement_wrap(cmd, binary);
     if commands.iter().any(|c| is_rewritable(c))
-        && (enforce || lean_ctx::core::shell_allowlist::passes_enforced(cmd))
+        && (enforce || lean_ctx_shell_policy::passes_enforced(cmd))
     {
         return Some(wrap_single_command(cmd, binary));
     }
@@ -1124,7 +1144,7 @@ pub(super) fn build_rewrite_compound(cmd: &str, binary: &str) -> Option<String> 
     // chain violates the allowlist, the form that runs must pass it, or the
     // whole chain takes the enforcement wrap — `bash -c 'id' && cat f` would
     // otherwise run `bash -c` unchecked.
-    if enforce && !lean_ctx::core::shell_allowlist::passes_enforced(&in_place) {
+    if enforce && !lean_ctx_shell_policy::passes_enforced(&in_place) {
         return Some(wrap_single_command(cmd, binary));
     }
     Some(in_place)
@@ -1272,7 +1292,7 @@ mod tests {
             let once = super::wrap_single_command("python parse_elf.py", binary);
             (
                 once.clone(),
-                lean_ctx::core::shell_allowlist::passes_enforced(&once),
+                lean_ctx_shell_policy::passes_enforced(&once),
                 rewrite_candidate(&once, binary),
                 super::needs_enforcement_wrap(&once, binary),
                 super::rewrite_skip_reason(&once, binary),

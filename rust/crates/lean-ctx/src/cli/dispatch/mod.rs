@@ -49,6 +49,9 @@ pub fn run() {
     // The MCP server refreshes stale shell-hook files on start (#1959); the
     // hook generator lives in the CLI, so it is handed to the engine here.
     lean_ctx::shell_hook::register_installed_hook_refresh(super::refresh_installed_shell_hooks);
+    // The shell-allowlist policy lives above the Engine; the Engine's exec
+    // gate refuses every command until it is registered (fail closed).
+    lean_ctx_shell_policy::install();
     lean_ctx_proxy::register_shapers();
     lean_ctx_hive::register_hooks();
     // Manifests, overhead, discovery cards and docs read the tool catalog
@@ -126,6 +129,10 @@ pub fn run() {
                 return;
             }
             "gain" => {
+                // Local Read v1 rollups: one JSON document, no hint or footer.
+                if super::local_read::usage::try_run("gain", &rest) {
+                    return;
+                }
                 // On a terminal the Cockpit shows these views; the text
                 // report stays for scripts, agents and `--terminal`.
                 if let cockpit_hint::Handled::Text(hint) =
@@ -137,6 +144,9 @@ pub fn run() {
                 return;
             }
             "spend" => {
+                if super::local_read::usage::try_run("spend", &rest) {
+                    return;
+                }
                 cmd_spend(&rest);
                 cockpit_hint::print_footer("spend", &rest);
                 return;
@@ -358,6 +368,9 @@ pub fn run() {
             }
             "audit" => {
                 match rest.first().map(String::as_str) {
+                    Some("verify") if super::local_read::wants_json(&rest) => {
+                        super::local_read::kinds::run("audit.verify", &rest);
+                    }
                     Some("evidence") => crate::cli::audit_report::cmd_evidence(&rest[1..]),
                     Some("determinism") => crate::cli::audit_report::cmd_determinism(&rest[1..]),
                     _ => println!("{}", crate::cli::audit_report::generate_report()),
@@ -366,6 +379,14 @@ pub fn run() {
             }
             "agent" => {
                 crate::cli::cmd_agent(&rest);
+                return;
+            }
+            "client" => {
+                crate::cli::cmd_client(&rest);
+                return;
+            }
+            "agents" => {
+                crate::cli::local_read::agents::cmd(&rest);
                 return;
             }
             "instructions" => {
@@ -559,6 +580,30 @@ pub fn run() {
             }
             "knowledge" => {
                 super::cmd_knowledge(&rest);
+                return;
+            }
+            "activity" => {
+                super::local_read::activity::run(&rest);
+                return;
+            }
+            "bus" => {
+                super::local_read::bus::run_bus(&rest);
+                return;
+            }
+            "presence" => {
+                super::local_read::bus_presence::run(&rest);
+                return;
+            }
+            "capabilities" => {
+                super::local_read::capabilities::run(&rest);
+                return;
+            }
+            "tasks" => {
+                super::cmd_tasks(&rest);
+                return;
+            }
+            "docs" => {
+                crate::cli::docs_cmd::run(&rest);
                 return;
             }
             "kit" | "kits" => {
@@ -817,6 +862,9 @@ pub fn run() {
             "hook" => {
                 hook_handlers::mark_hook_environment();
                 let action = rest.first().map_or("help", std::string::String::as_str);
+                // A session's hook profile (`LEAN_CTX_HOOK_PROFILE=governor`):
+                // the standard actions run as the governor's.
+                let action = hook_handlers::profile::effective_action(action);
                 // Security admission precedes compression bypasses, runtime-env
                 // capture, and the legacy fail-open watchdogs.
                 if hook_handlers::handle_protected_gate(action) {
@@ -839,7 +887,7 @@ pub fn run() {
                     }
                     // Gating hooks self-bound and fail open inside their handlers.
                     "rewrite" | "redirect" | "deny" | "vibe-pre-tool" | "rewrite-enforce"
-                    | "codex-enforce" => {}
+                    | "codex-enforce" | "kiro-enforce" | "cline-enforce" | "rights" => {}
                     // The governor self-bounds at 1.5 s and fails open; the
                     // watchdog only guards a wedged receipt write afterwards.
                     "govern" => {
@@ -886,12 +934,15 @@ pub fn run() {
                     "copilot" => hook_handlers::handle_copilot(),
                     "codex-pretooluse" => hook_handlers::handle_codex_pretooluse(),
                     "codex-enforce" => hook_handlers::handle_codex_enforce(),
+                    "kiro-enforce" => hook_handlers::handle_kiro_enforce(),
+                    "cline-enforce" => hook_handlers::handle_cline_enforce(),
                     "codex-session-start" => hook_handlers::handle_codex_session_start(),
                     "rewrite-inline" => hook_handlers::handle_rewrite_inline(),
                     "vibe-pre-tool" => hook_handlers::handle_vibe_pre_tool(),
+                    "rights" => hook_handlers::handle_rights(),
                     _ => {
                         eprintln!(
-                            "Usage: lean-ctx hook <rewrite|redirect|deny|read-dedup|govern|rewrite-enforce|observe|post-commit|copilot|codex-pretooluse|codex-enforce|codex-session-start|rewrite-inline|vibe-pre-tool>"
+                            "Usage: lean-ctx hook <rewrite|redirect|deny|rights|read-dedup|govern|rewrite-enforce|observe|post-commit|copilot|codex-pretooluse|codex-enforce|kiro-enforce|cline-enforce|codex-session-start|rewrite-inline|vibe-pre-tool>"
                         );
                         eprintln!(
                             "  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)"
@@ -949,7 +1000,11 @@ pub fn run() {
                 return;
             }
             "--version" | "-V" => {
-                println!("{}", core::integrity::origin_line());
+                if super::local_read::wants_json(&rest) {
+                    println!("{}", core::integrity::version_json());
+                } else {
+                    println!("{}", core::integrity::origin_line());
+                }
                 return;
             }
             "help" => {
@@ -1091,7 +1146,7 @@ fn extract_and_apply_env_prefix(cmd: &str) -> String {
                     // Only the run-control keys: the shell security mode, the
                     // allowlist or the config directory set here would loosen
                     // the gate this very process applies next.
-                    if lean_ctx::core::shell_allowlist::LEAN_CTX_RUN_CONTROL_ENV.contains(&key) {
+                    if lean_ctx_shell_policy::LEAN_CTX_RUN_CONTROL_ENV.contains(&key) {
                         // SAFETY: runs before tokio runtime spawns threads.
                         unsafe { std::env::set_var(key, value) };
                     }

@@ -132,12 +132,12 @@
     "rust/crates/lean-ctx-protocol/src/credential_redaction.rs": "6e522741b965a4ab8bb858e4fb765f4f6ca7d5aa18dd14533490874341313cb1",
     "rust/crates/lean-ctx-protocol/src/context_checkpoint.rs": "698433cd958541d830f5dde38598625dc323d28d5724c072cb4532c322d8c102",
     "rust/crates/lean-ctx-protocol/src/context_checkpoint/tests_core.rs": "2aa83f250907035c82ea5ae56078d0077d539a5799b51b4ab2139940ea7630d0",
-    "rust/src/core/execution_ledger/host/checkpoint_transfer/content.rs": "425c6fb54acb3b343a61087bb2e5c04d0b65b8bea10d1dd62f5cbb723990a0ca",
+    "rust/src/core/execution_ledger/host/checkpoint_transfer/content.rs": "5ecda30a661986ded5651f0a33804f56b81c8c8687ed7e87b43c3784043d0031",
     "rust/crates/lean-ctx-proxy/src/openai_responses_ws.rs": "f43f3e942dc20d28e1d7be08d012d01d70d9aba9bd80558fbd9364857372cce2"
   },
   "baseline": {
     "commit": "b37ee3be11f2525cd785348d3e43ccdbb590fe94",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "b5d845acadf11ee9991567e4c042cf242c6f541d9ec25f6b8975e290acbcce23"
+    "report_sha256": "14828c96fa3c63fd69930b4da00c121916df464589372ea2a0a0e78138aff43f"
   }
 }

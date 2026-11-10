@@ -21,6 +21,9 @@ pub enum ConfigType {
     JetBrains,
     Amp,
     HermesYaml,
+    /// Goose (`~/.config/goose/config.yaml`): a stdio entry under the
+    /// top-level `extensions` map (`cmd`/`args`/`type: stdio`/`enabled`).
+    GooseYaml,
     GeminiSettings,
     QoderSettings,
     /// Augment VS Code extension: top-level JSON array of server entries

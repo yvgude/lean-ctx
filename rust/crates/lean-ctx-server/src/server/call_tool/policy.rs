@@ -136,6 +136,21 @@ impl LeanCtxServer {
         }
     }
 
+    /// The session's rights profile (process-v1 §9): a denied tool, or any
+    /// tool while the rights file is unusable, is refused with its rule.
+    /// An alias is judged under the name of the handler it runs too.
+    pub(crate) fn guard_session_rights(&self, name: &str) -> Option<CallToolResult> {
+        let canonical = self
+            .registry
+            .as_ref()
+            .and_then(|registry| registry.get_arc(name))
+            .map_or(name, |tool| tool.rights_name());
+        lean_ctx::core::session_rights::current()
+            .check_tool_as(name, canonical)
+            .err()
+            .map(|reason| CallToolResult::error(vec![ContentBlock::text(reason)]))
+    }
+
     /// Resolve project root from MCP client roots (once per session).
     /// Called on the first tool call. If the client supports `roots/list`,
     /// we query it and pick the best root with project markers.
@@ -446,6 +461,32 @@ fn publish_saves(
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod session_rights_tests {
+    use crate::tools::registered::ctx_execute::session_rights_fixture::developer;
+
+    /// F4: `denied_tools: ["ctx_shell"]` also closes the `shell` alias, which
+    /// runs the same handler.
+    #[test]
+    fn session_rights_denied_ctx_shell_also_denies_the_shell_alias() {
+        let fx = developer(&["ctx_shell"]);
+        let server = crate::tools::create_server();
+        lean_ctx::core::session_rights::sync_scope(fx.state(), || {
+            for name in ["shell", "ctx_shell"] {
+                let refused = server
+                    .guard_session_rights(name)
+                    .unwrap_or_else(|| panic!("{name} must be refused"));
+                assert_eq!(refused.is_error, Some(true), "{name}");
+            }
+            assert!(server.guard_session_rights("ctx_read").is_none());
+        });
+        assert!(
+            server.guard_session_rights("shell").is_none(),
+            "no profile outside the scope"
+        );
+    }
 }
 
 #[cfg(test)]

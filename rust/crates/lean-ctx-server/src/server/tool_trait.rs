@@ -277,6 +277,13 @@ pub trait McpTool: Send + Sync {
     /// Tool name as registered in the MCP protocol (e.g. "ctx_tree").
     fn name(&self) -> &'static str;
 
+    /// The name of the handler this tool runs, for the session rights'
+    /// `denied_tools` (process-v1 §9): an alias names the tool it delegates
+    /// to, so denying that tool denies every name it is reachable under.
+    fn rights_name(&self) -> &'static str {
+        self.name()
+    }
+
     /// MCP tool definition including JSON schema. This replaces the
     /// corresponding entry in `granular_tool_defs()`.
     fn tool_def(&self) -> Tool;

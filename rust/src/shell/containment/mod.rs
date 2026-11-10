@@ -230,10 +230,14 @@ pub(crate) enum GroupEnd {
 /// this process is a member of `group`. Rule 2 is checked here.
 pub(crate) fn end_pinned_group(group: libc::pid_t, budget: Duration) -> GroupEnd {
     const ROUNDS_WITHOUT_SIGHT: u32 = 5;
-    // SAFETY: getpgrp has no preconditions.
-    if group <= 1 || unsafe { libc::getpgrp() } == group {
+    // 0/negative/1, this process, or the group this process is in: refused
+    // before any signal (`group_target` checks getpgrp).
+    let Some(group) = u32::try_from(group)
+        .ok()
+        .and_then(|group| crate::ipc::process::group_target(group).ok())
+    else {
         return GroupEnd::Refused;
-    }
+    };
     let deadline = Instant::now() + budget;
     let mut rounds = 0_u32;
     loop {

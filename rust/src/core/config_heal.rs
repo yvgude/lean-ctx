@@ -40,8 +40,15 @@ pub struct ConfigHealReport {
 
 /// Relocate a stray data-dir `config.toml` into the canonical config dir.
 /// Returns `None` when there is nothing to do (single-dir layout, or no stray
-/// config in the data dir).
+/// config in the data dir, or any `LEAN_CTX_*_DIR` override is active).
 pub fn heal() -> Option<ConfigHealReport> {
+    // With a config override the data dir is still the real install's, so the
+    // real `config.toml` would be moved into the override (a temp dir in tests).
+    // Same rule as the two siblings below; the #594 recovery runs from
+    // `doctor --fix` and setup in a terminal, where no override is set.
+    if crate::core::paths::dir_override_active() {
+        return None;
+    }
     let config_dir = crate::core::paths::config_dir().ok()?;
     let data_dir = crate::core::paths::data_dir().ok()?;
     heal_between(&config_dir, &data_dir)
@@ -102,6 +109,9 @@ pub(crate) fn heal_all() -> Vec<ConfigHealReport> {
 /// that [`heal`] would relocate, or `None` when the CLI and the MCP server
 /// already resolve the same config (no divergence).
 pub fn pending() -> Option<PathBuf> {
+    if crate::core::paths::dir_override_active() {
+        return None;
+    }
     let config_dir = crate::core::paths::config_dir().ok()?;
     let data_dir = crate::core::paths::data_dir().ok()?;
     if config_dir == data_dir {

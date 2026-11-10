@@ -442,7 +442,9 @@ fn handle_export(
             if let Err(e) = lean_ctx::core::pathjail::enforce_writable(&jailed) {
                 return format!("Export write failed: {e}");
             }
-            if let Err(e) = lean_ctx::core::ccp_session_bundle::write_bundle_v1(&jailed, &json) {
+            if let Err(e) = lean_ctx::core::ccp_session_bundle::write_bundle_v1(
+                &root_path, &candidate, &jailed, &json,
+            ) {
                 return format!("Export write failed: {e}");
             }
             written = Some(jailed.to_string_lossy().to_string());

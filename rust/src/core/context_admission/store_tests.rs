@@ -57,7 +57,7 @@ fn assert_clean(text: &str, what: &str) {
 fn e3_store_admission_masks_values_and_refuses_restricted_sources() {
     let admission = builtin();
     let admitted = admission
-        .admit(&leaky_source(), Path::new("src/main.rs"))
+        .admit(&leaky_source(), Path::new("src/main.rs"), None)
         .expect("an ordinary source is admitted");
     assert_clean(&admitted, "admitted store text");
     assert!(
@@ -68,7 +68,7 @@ fn e3_store_admission_masks_values_and_refuses_restricted_sources() {
     for restricted in [".env", "deploy/.ssh/config", "home/.aws/credentials"] {
         assert!(
             admission
-                .admit("TOKEN=abc\n", Path::new(restricted))
+                .admit("TOKEN=abc\n", Path::new(restricted), None)
                 .is_none(),
             "{restricted} is restricted and must never enter a store"
         );

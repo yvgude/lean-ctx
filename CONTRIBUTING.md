@@ -273,6 +273,8 @@ cd rust && cargo test --lib addons::registry
 - Keep PRs focused (one theme per PR)
 - Include a short test plan (commands you ran)
 - If relevant, include a small “before/after” token-savings snippet
+- Describe the user-visible change in the PR description; a `CHANGELOG.md`
+  `[Unreleased]` entry is welcome. Maintainers carry it into the release notes
 
 ## Contributor License Agreement (CLA)
 

@@ -24,7 +24,7 @@ use super::prompt::{confirm, wants_yes};
 use lean_ctx::core::config::setter::set_by_key;
 use lean_ctx::core::pathjail_scope::PathJailScope;
 use lean_ctx::core::security_posture::{JailState, PostureLevel, SecurityPosture};
-use lean_ctx::core::shell_allowlist::ShellSecurity;
+use lean_ctx_shell_policy::ShellSecurity;
 
 const BOLD: &str = "\x1b[1m";
 const DIM: &str = "\x1b[2m";

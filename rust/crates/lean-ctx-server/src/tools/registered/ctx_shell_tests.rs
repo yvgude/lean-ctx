@@ -99,6 +99,7 @@ fn format_noticed_snapshot(
             output_withheld,
             actual_exit_code,
             notice,
+            class: lean_ctx::core::context_admission::origin::SourceClass::Project,
         }
     });
     format_background_snapshot(id, is_cancel, snapshot)
@@ -424,4 +425,44 @@ fn env_refuses_lean_ctx_policy_keys() {
             "{error}"
         );
     }
+}
+
+/// R6-1: ctx_shell's `env` argument is a channel the rights check reads. Under
+/// a Developer profile, a git namespace variable in `env` (which
+/// `collect_extra_env` does not block) is refused before the command runs, so
+/// a merge cannot read a different object namespace than the gate verifies.
+#[test]
+fn session_rights_ctx_shell_env_namespace_keys_are_refused() {
+    use crate::tools::registered::ctx_execute::session_rights_fixture::developer;
+    let fx = developer(&[]);
+    let ctx = ToolContext {
+        project_root: fx.worktree.to_string_lossy().into_owned(),
+        ..ToolContext::default()
+    };
+    lean_ctx::core::session_rights::sync_scope(fx.state(), || {
+        for key in [
+            "GIT_DIR",
+            "GIT_REPLACE_REF_BASE",
+            "GIT_GRAFT_FILE",
+            "GIT_WORK_TREE",
+        ] {
+            let mut args = env_args(&[(key, "refs/x/")]);
+            args.insert(
+                "command".to_string(),
+                Value::String("git merge 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d".to_string()),
+            );
+            let out = CtxShellTool.handle(&args, &ctx).expect("a decision");
+            assert_eq!(
+                out.shell_outcome,
+                Some(ShellOutcome::Blocked),
+                "{key}: {}",
+                out.text
+            );
+            assert!(
+                out.text.contains(key) && out.text.contains("rule "),
+                "{key}: {}",
+                out.text
+            );
+        }
+    });
 }

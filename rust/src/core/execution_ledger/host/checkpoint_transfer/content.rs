@@ -338,7 +338,10 @@ fn admit_bound_source(text: &str, origin: Origin) -> Result<()> {
         crate::core::policy::audit_filter::audit_filter(tool, &outcome.audit, outcome.blocked);
         ensure!(!outcome.blocked, "checkpoint content withheld");
     }
-    match crate::core::context_admission::admit_bound_context_source(text) {
+    match crate::core::context_admission::admit_bound_context_source(
+        text,
+        &crate::core::context_admission::origin::SourceClass::Unclassified { tool: "checkpoint" },
+    ) {
         Ok(_) => Ok(()),
         // The gateway's own, content-free reason codes say which it was.
         Err(refusal) if refusal.to_string().contains("source.bytes_not_preserved") => {
@@ -396,9 +399,14 @@ pub(in crate::core::execution_ledger::host) fn admit_fresh(
         if admitted_in(open.as_ref(), text, false) {
             return Ok(None);
         }
-        let admitted = crate::core::context_admission::admit_context_source(text)
-            .map_err(|_| anyhow::anyhow!(GATEWAY_WITHHELD))?
-            .text;
+        let admitted = crate::core::context_admission::admit_context_source(
+            text,
+            &crate::core::context_admission::origin::SourceClass::Unclassified {
+                tool: "checkpoint",
+            },
+        )
+        .map_err(|_| anyhow::anyhow!(GATEWAY_WITHHELD))?
+        .text;
         capture::note_source_id(reference);
         // The admitted form is what later inspections of the bound document
         // see: it is decided, and is not decided again.

@@ -66,8 +66,8 @@ fn full_pipeline_provider_to_hints() {
         "should produce cross-source edges"
     );
     assert!(
-        !artifacts.facts.is_empty(),
-        "should extract knowledge facts"
+        artifacts.facts.is_empty(),
+        "outside text never becomes a knowledge fact (pz21)"
     );
     assert_eq!(
         artifacts.cache_entries.len(),
@@ -128,6 +128,7 @@ fn full_pipeline_provider_to_hints() {
 #[test]
 fn code_only_produces_no_hints() {
     let code = ContentChunk::from(lean_ctx::core::bm25_index::CodeChunk {
+        input_origin: None,
         file_path: "src/main.rs".into(),
         symbol_name: "main".into(),
         kind: ChunkKind::Function,
@@ -216,17 +217,17 @@ fn knowledge_extraction_from_mixed_chunks() {
         ),
     ];
 
-    let artifacts = consolidation::consolidate(&chunks);
+    // The extractor still reads both kinds; consolidation feeds it no
+    // outside text (pz21), so the stores never hold these as facts.
+    assert!(consolidation::consolidate(&chunks).facts.is_empty());
+    let facts = lean_ctx::core::knowledge_provider_extract::extract_facts(&chunks);
     assert!(
-        artifacts.facts.len() >= 2,
+        facts.len() >= 2,
         "should extract facts from both chunk types"
     );
 
-    let has_bug_fact = artifacts.facts.iter().any(|f| f.category == "known_bugs");
-    let has_change_fact = artifacts
-        .facts
-        .iter()
-        .any(|f| f.category == "recent_changes");
+    let has_bug_fact = facts.iter().any(|f| f.category == "known_bugs");
+    let has_change_fact = facts.iter().any(|f| f.category == "recent_changes");
     assert!(has_bug_fact, "issue should produce a known_bugs fact");
     assert!(has_change_fact, "PR should produce a recent_changes fact");
 }

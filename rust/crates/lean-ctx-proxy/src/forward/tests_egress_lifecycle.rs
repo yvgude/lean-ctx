@@ -31,8 +31,9 @@ const ACCEPT_FIRST: Duration = Duration::from_secs(30);
 const ACCEPT_RETRY: Duration = Duration::from_secs(5);
 /// One read of a request the upstream has accepted.
 const READ_BOUND: Duration = Duration::from_secs(10);
-/// A whole dispatch or forward.
-const DISPATCH_BOUND: Duration = Duration::from_secs(30);
+/// A whole dispatch or forward: two upstream attempts, each under the test
+/// client's 20 s hang guard, plus backoff.
+const DISPATCH_BOUND: Duration = Duration::from_secs(60);
 
 fn isolated_governed_gateway() -> lean_ctx::core::data_dir::IsolatedDataDir {
     let data = lean_ctx::core::data_dir::isolated_data_dir();

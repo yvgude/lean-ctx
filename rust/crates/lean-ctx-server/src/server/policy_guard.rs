@@ -19,7 +19,7 @@ use lean_ctx::core::policy::runtime::{self, ActivePolicy};
 pub use lean_ctx::core::policy::audit_filter::{audit_filter, audit_filter_as};
 
 mod release;
-pub use release::{release_outcome, release_result};
+pub use release::{release_error, release_outcome, release_result};
 
 /// Tools that can never be policy-denied (mirror role_guard's session/meta
 /// exemption), so a pack can't lock the operator out of fixing the policy.
@@ -176,8 +176,13 @@ pub fn protect_result(tool: &str, text: &str) -> Result<String, &'static str> {
 pub fn redact_model_text(text: &str) -> String {
     let (policy_redacted, _) = redact_result(text);
     let redacted = lean_ctx::core::redaction::redact_text_if_enabled(&policy_redacted);
-    lean_ctx::core::context_admission::admit_source(&redacted, "protocol:model-text", false)
-        .unwrap_or_else(|error| format!("[lean-ctx gateway: {error}]"))
+    // The model's own text, assembled by the Instance.
+    lean_ctx::core::context_admission::admit_instance_source(
+        &redacted,
+        "protocol:model-text",
+        false,
+    )
+    .unwrap_or_else(|error| format!("[lean-ctx gateway: {error}]"))
 }
 
 /// Audit a blocked egress (write/action) DLP decision (GL #676).

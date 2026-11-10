@@ -185,6 +185,7 @@ mod tests {
     #[test]
     fn no_edges_for_file_source_chunks() {
         let code_chunk = ContentChunk::from(crate::core::bm25_index::CodeChunk {
+            input_origin: None,
             file_path: "src/main.rs".into(),
             symbol_name: "main".into(),
             kind: ChunkKind::Function,

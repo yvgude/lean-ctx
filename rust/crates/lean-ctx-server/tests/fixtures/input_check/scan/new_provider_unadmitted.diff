@@ -1,0 +1,12 @@
+diff --git a/rust/src/core/providers/zz_feed.rs b/rust/src/core/providers/zz_feed.rs
+new file mode 100644
+index 0000000..5555555
+--- /dev/null
++++ b/rust/src/core/providers/zz_feed.rs
+@@ -0,0 +1,6 @@
++//! Reads an outside RSS feed.
++
++pub fn fetch_feed(url: &str) -> Result<String, String> {
++    let body = ureq::get(url).call().map_err(|e| e.to_string())?;
++    body.into_string().map_err(|e| e.to_string())
++}

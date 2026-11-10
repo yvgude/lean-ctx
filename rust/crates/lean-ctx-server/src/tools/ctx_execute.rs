@@ -17,7 +17,7 @@ pub(crate) fn approval_key(language: &str) -> String {
 pub(crate) fn languages_needing_approval<'a>(
     languages: impl IntoIterator<Item = &'a str>,
 ) -> Vec<&'static str> {
-    use lean_ctx::core::shell_allowlist::ShellSecurity;
+    use lean_ctx_shell_policy::ShellSecurity;
     if ShellSecurity::resolve() != ShellSecurity::Enforce {
         return Vec::new();
     }
@@ -91,9 +91,11 @@ pub fn handle_in(
     cwd: Option<&std::path::Path>,
 ) -> (String, ShellOutcome) {
     let checked = if sandbox::is_shell_language(language) {
-        lean_ctx::core::shell_allowlist::check_shell_allowlist(code)
+        lean_ctx_shell_policy::with_dialect(execute_dialect(), || {
+            lean_ctx_shell_policy::check_shell_allowlist(code)
+        })
     } else {
-        lean_ctx::core::shell_allowlist::refuse_redaction_marker(code)
+        lean_ctx_shell_policy::refuse_redaction_marker(code)
     };
     if let Err(message) = checked {
         return (message.to_string(), ShellOutcome::Blocked);
@@ -218,11 +220,21 @@ fn summarize_file_content(content: &str, intent: Option<&str>) -> String {
 /// results. The outcome carries the first non-zero exit code (0 when all
 /// tasks succeeded), so one failing task marks the whole batch as failed.
 pub fn handle_batch(items: &[(String, String)]) -> (String, ShellOutcome) {
+    handle_batch_in(items, None)
+}
+
+/// Same as [`handle_batch`], but every task runs in `cwd`.
+pub fn handle_batch_in(
+    items: &[(String, String)],
+    cwd: Option<&std::path::Path>,
+) -> (String, ShellOutcome) {
     for (index, (language, code)) in items.iter().enumerate() {
         let checked = if sandbox::is_shell_language(language) {
-            lean_ctx::core::shell_allowlist::check_shell_allowlist(code)
+            lean_ctx_shell_policy::with_dialect(execute_dialect(), || {
+                lean_ctx_shell_policy::check_shell_allowlist(code)
+            })
         } else {
-            lean_ctx::core::shell_allowlist::refuse_redaction_marker(code)
+            lean_ctx_shell_policy::refuse_redaction_marker(code)
         };
         if let Err(message) = checked {
             return (
@@ -234,7 +246,7 @@ pub fn handle_batch(items: &[(String, String)]) -> (String, ShellOutcome) {
             );
         }
     }
-    let results = sandbox::batch_execute(items);
+    let results = sandbox::batch_execute_in(items, cwd);
     let mut output = Vec::new();
 
     for (i, result) in results.iter().enumerate() {
@@ -426,6 +438,23 @@ mod tests {
         assert_eq!(batch.1, ShellOutcome::Blocked, "{}", batch.0);
     }
 
+    /// The code runs under `bash -c`, so `$BASH = cargo` runs `$BASH` with
+    /// arguments even when this process resolves PowerShell for `ctx_shell`.
+    #[test]
+    #[serial_test::serial]
+    #[cfg(unix)]
+    fn shell_execution_reads_the_line_as_bash_even_under_a_powershell_process() {
+        let _env_lock = lean_ctx::core::data_dir::test_env_lock();
+        lean_ctx::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "cargo");
+        lean_ctx::test_env::set_var("LEAN_CTX_SHELL", "pwsh");
+        let single = handle("shell", "$BASH = cargo", None, None);
+        let batch = handle_batch(&[("bash".to_string(), "$BASH = cargo".to_string())]);
+        lean_ctx::test_env::remove_var("LEAN_CTX_SHELL");
+        lean_ctx::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        assert_eq!(single.1, ShellOutcome::Blocked, "{}", single.0);
+        assert_eq!(batch.1, ShellOutcome::Blocked, "{}", batch.0);
+    }
+
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn batch_multiple_tasks() {
@@ -469,3 +498,13 @@ mod tests {
 #[cfg(test)]
 #[path = "ctx_execute_file_tests.rs"]
 mod file_tests;
+
+/// `ctx_execute` runs shell code with `bash -c` on Unix and `cmd` on Windows,
+/// whatever shell this process resolves for `ctx_shell`.
+fn execute_dialect() -> lean_ctx_shell_policy::Dialect {
+    if cfg!(windows) {
+        lean_ctx_shell_policy::Dialect::Cmd
+    } else {
+        lean_ctx_shell_policy::Dialect::Posix
+    }
+}

@@ -180,7 +180,7 @@ const POWERSHELL_BUILTINS: &[&str] = &[
 /// - `Some(true)`: safe PowerShell cmdlet / alias / builtin
 /// - `Some(false)`: destructive cmdlet (blocked)
 /// - `None`: not recognized as PowerShell syntax; fall through to standard allowlist
-pub(super) fn check_powershell_cmdlet(base: &str) -> Option<bool> {
+pub fn check_powershell_cmdlet(base: &str) -> Option<bool> {
     // Safe builtins/aliases (fast path)
     if POWERSHELL_BUILTINS
         .iter()
@@ -238,7 +238,7 @@ pub(super) fn check_powershell_cmdlet(base: &str) -> Option<bool> {
 /// #1930: is `base` a `Verb-Noun` cmdlet with a verb this module knows? Such
 /// a command runs the script blocks it receives, so their bodies are
 /// validated. `docker-compose` and other hyphenated binaries do not qualify.
-pub(super) fn is_known_cmdlet(base: &str) -> bool {
+pub fn is_known_cmdlet(base: &str) -> bool {
     looks_like_cmdlet(base)
         && (is_safe_exception(base) || is_safe_verb(base) || is_blocked_verb(base))
 }

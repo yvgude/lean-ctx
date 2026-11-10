@@ -5,6 +5,19 @@ mod model;
 pub use format::*;
 pub use model::*;
 
+/// Every project's own store (`<data>/project-stats/<key>`) with its
+/// project key, sorted by key.
+pub fn project_stores() -> Vec<(String, StatsStore)> {
+    io::project_keys()
+        .into_iter()
+        .filter_map(|key| {
+            io::load_projects(std::iter::once(key.as_str()))
+                .pop()
+                .map(|store| (key, store))
+        })
+        .collect()
+}
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;

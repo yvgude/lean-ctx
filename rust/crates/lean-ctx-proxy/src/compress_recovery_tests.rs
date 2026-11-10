@@ -703,9 +703,13 @@ fn input_purge_and_compaction_are_not_applied_under_protection() {
         json!({"model": "claude-test", "messages": messages})
     };
     let directive = || {
-        lean_ctx::core::compact_directive::clear();
-        lean_ctx::core::compact_directive::create(2, "SUMMARY: all findings kept.".into())
-            .expect("directive");
+        lean_ctx::core::compact_directive::clear("recovery-session");
+        lean_ctx::core::compact_directive::create(
+            "recovery-session",
+            2,
+            "SUMMARY: all findings kept.".into(),
+        )
+        .expect("directive");
     };
 
     let mut messages = failed_call();
@@ -716,7 +720,9 @@ fn input_purge_and_compaction_are_not_applied_under_protection() {
 
     directive();
     let mut body = conversation();
-    let (saved, kept) = observing(Reader::Model, || agent_compact::apply(&mut body));
+    let (saved, kept) = observing(Reader::Model, || {
+        agent_compact::apply(&mut body, Some("recovery-session"))
+    });
     assert_eq!(saved, 0);
     assert_eq!(body, conversation(), "the conversation stays as it is");
     assert_eq!(kept.counts(), only("recovery.summary_without_copy"));
@@ -730,10 +736,12 @@ fn input_purge_and_compaction_are_not_applied_under_protection() {
 
     directive();
     let mut body = conversation();
-    let (saved, kept) = observing(Reader::Model, || agent_compact::apply(&mut body));
+    let (saved, kept) = observing(Reader::Model, || {
+        agent_compact::apply(&mut body, Some("recovery-session"))
+    });
     assert!(saved > 0, "developer mode compacts as before");
     assert!(kept.is_empty());
-    lean_ctx::core::compact_directive::clear();
+    lean_ctx::core::compact_directive::clear("recovery-session");
 }
 
 /// [real registers and store] A JSON tool result whose inner text is

@@ -97,7 +97,8 @@ pub fn current_value(key: &str) -> Option<String> {
 
 /// Appends the new `entries` to the string array `key` of the GLOBAL config,
 /// through the schema-validated setter. Returns the entries that were new.
-pub(crate) fn add_to_global_list(key: &str, entries: &[String]) -> Result<Vec<String>, String> {
+#[doc(hidden)]
+pub fn add_to_global_list(key: &str, entries: &[String]) -> Result<Vec<String>, String> {
     let mut list = super::global_string_list(key);
     let added: Vec<String> = entries
         .iter()

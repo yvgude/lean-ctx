@@ -40,8 +40,9 @@ const ALLOWLIST: &[&str] = &[
     "core/protected_store.rs",
     // Denies writes from agent shells: lists every directory that may hold
     // lean-ctx state (the legacy dir included) so a command cannot write there.
-    // It never creates or reads the legacy path.
-    "core/shell_allowlist/self_config.rs",
+    // It never creates or reads the legacy path. Keys are root-relative; this
+    // one lives under crates/lean-ctx-shell-policy/src.
+    "self_config.rs",
     // Group 2: pre-existing direct home-writers/readers (tracked debt).
     "report.rs",
     "core/providers/config_provider/discovery.rs",
@@ -107,12 +108,14 @@ fn builds_home_legacy_path(text: &str) -> bool {
 
 #[test]
 fn no_new_home_legacy_path_construction() {
-    // The engine library, the MCP server (crates/lean-ctx-server) and the
-    // composition root (crates/lean-ctx) share one ALLOWLIST keyed by the
+    // The engine library, the MCP server (crates/lean-ctx-server), the shell
+    // policy (crates/lean-ctx-shell-policy) and the composition root
+    // (crates/lean-ctx) share one ALLOWLIST keyed by the
     // path below each crate's `src/`.
     let roots = [
         crate::engine_dir().join("src"),
         crate::engine_dir().join("crates/lean-ctx-server/src"),
+        crate::engine_dir().join("crates/lean-ctx-shell-policy/src"),
         crate::engine_dir().join("crates/lean-ctx/src"),
     ];
     let mut offenders = BTreeSet::new();

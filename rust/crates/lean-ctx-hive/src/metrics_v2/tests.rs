@@ -1144,3 +1144,117 @@ fn the_engine_local_on_since_survives_drop_and_starts_at_the_next_hour() {
         "a new enrolment starts over"
     );
 }
+
+/// A Hive on 127.0.0.1 that answers every request with `status` and `body`.
+fn answering(status: u16, body: serde_json::Value) -> String {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut writer = stream.try_clone().unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                    return;
+                }
+                if line.trim_end().is_empty() {
+                    break;
+                }
+                if let Some((name, value)) = line.split_once(':')
+                    && name.eq_ignore_ascii_case("content-length")
+                {
+                    length = value.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut sent = vec![0; length];
+            let _ = reader.read_exact(&mut sent);
+            let text = body.to_string();
+            let _ = write!(
+                writer,
+                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+                text.len()
+            );
+        }
+    });
+    origin
+}
+
+/// Dogfood 05.11. (pounce): with `HIVE_ENGINE_METRICS` off Hive answers the
+/// hours upload `404 feature_disabled`; it showed as "Hive answered 404
+/// (unknown)" on every `hive sync`. Now: its own error, the hours stay
+/// buffered, no send before the back-off (not even a manual sync), and
+/// `hive status` says it once.
+#[test]
+fn a_hive_with_instance_metrics_switched_off_keeps_the_hours_and_stays_quiet() {
+    use super::upload::{MetricsV2Run, held_back, switched_off};
+    use crate::HiveError;
+    let origin = answering(
+        404,
+        serde_json::json!({"error": {
+            "code": "feature_disabled",
+            "message": "this feature is switched off on this Hive",
+            "feature": "instance_metrics"
+        }}),
+    );
+    let client = crate::transport::HiveClient::new(&origin).unwrap();
+    let error = client
+        .post_idempotent(
+            lean_ctx_protocol::hive::metrics_v2::HOURS_ROUTE,
+            &serde_json::json!({}),
+            "k",
+        )
+        .unwrap_err();
+    assert_eq!(
+        error,
+        HiveError::FeatureDisabled {
+            feature: Some("instance_metrics".into())
+        }
+    );
+    assert!(!error.is_transient());
+    let text = error.to_string();
+    assert!(!text.contains("(unknown)"), "{text}");
+    assert!(text.contains("switched off instance metrics"), "{text}");
+
+    let dir = tempfile::tempdir().unwrap();
+    let hive = dir.path().join("hive");
+    let buffer = Buffer::at(&hive);
+    buffer
+        .put(&Item {
+            hour: HourStamp::new("2026-10-26T16:00:00Z"),
+            sampled: BTreeMap::new(),
+            bucket: Some(bucket("2026-10-26T16:00:00Z", 1)),
+            acked_rev: 0,
+        })
+        .unwrap();
+    let now = at(17, 0);
+    let mut state = State::default();
+    let HiveError::FeatureDisabled { feature } = error else {
+        unreachable!()
+    };
+    assert_eq!(
+        switched_off(&hive, &mut state, feature, now).unwrap(),
+        MetricsV2Run::NotDue
+    );
+    let kept = State::load(&hive);
+    assert_eq!(kept.switched_off.as_deref(), Some("instance_metrics"));
+    assert_eq!(kept.retry_at, Some(now.timestamp() + 3_600));
+    assert_eq!(buffer.pending(), 1, "the hours stay buffered");
+    // Neither the daemon nor a manual sync sends before the back-off.
+    let soon = now + Duration::minutes(30);
+    assert_eq!(held_back(&kept, soon, false), Some(MetricsV2Run::NotDue));
+    assert_eq!(held_back(&kept, soon, true), Some(MetricsV2Run::NotDue));
+    assert_eq!(held_back(&kept, now + Duration::hours(1), false), None);
+    // A rate limit still lets a manual sync try.
+    let limited = State {
+        retry_at: kept.retry_at,
+        ..State::default()
+    };
+    assert_eq!(held_back(&limited, soon, true), None);
+    assert_eq!(
+        held_back(&limited, soon, false),
+        Some(MetricsV2Run::Waiting)
+    );
+}

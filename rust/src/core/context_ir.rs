@@ -219,20 +219,16 @@ pub fn write_project_context_ir(
     ir: &ContextIrV1,
     filename: Option<&str>,
 ) -> Result<PathBuf, String> {
-    let proofs_dir = crate::core::pathutil::safe_project_data_dir(project_root)?.join("proofs");
-    std::fs::create_dir_all(&proofs_dir).map_err(|e| e.to_string())?;
-
     let ts = chrono::Utc::now().format("%Y-%m-%d_%H%M%S");
     let name = filename.map_or_else(
         || format!("context-ir-v1_{ts}.json"),
         std::string::ToString::to_string,
     );
-    let path = proofs_dir.join(name);
+    let destination = crate::core::context_proof::proof_destination(project_root, &name)?;
 
     let json = serde_json::to_string_pretty(ir).map_err(|e| e.to_string())?;
     let json = crate::core::redaction::redact_text(&json);
-    crate::config_io::write_atomic(&path, &json)?;
-    Ok(path)
+    destination.write(&json)
 }
 
 fn bound_and_redact_excerpt(s: &str) -> (String, bool) {

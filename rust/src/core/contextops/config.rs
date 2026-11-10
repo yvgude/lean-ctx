@@ -114,13 +114,12 @@ impl RulesConfig {
         };
 
         let path = Self::config_path(project_root);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
-        }
+        // `config_path` is `<root>/<dir>/rules.toml`; written below the
+        // project root without following a symlinked component.
+        let rel = crate::core::pathjail_write::relative_below(project_root, &path)?;
         let toml_str = toml::to_string_pretty(&config)
             .map_err(|e| format!("Failed to serialize config: {e}"))?;
-        std::fs::write(&path, &toml_str)
+        crate::core::pathjail_write::write_below(project_root, &rel, toml_str.as_bytes(), 0o644)
             .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
 
         Ok(config)

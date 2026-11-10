@@ -854,12 +854,10 @@ mod bounded_tests {
         }
     }
 
+    /// Validated probe: text that is not a signalable PID (0, -1, a value
+    /// that wraps) is never handed to `kill`.
     fn alive(pid: &str) -> bool {
-        Command::new("kill")
-            .args(["-0", pid.trim()])
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
+        crate::ipc::process::parse_pid_file(pid).is_ok_and(crate::ipc::process::is_alive)
     }
 
     /// A process of this test that no signing step started. Ended and reaped

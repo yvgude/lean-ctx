@@ -1,6 +1,6 @@
 [package]
 name = "lean-ctx-doc"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.87"
 license = "Apache-2.0"
@@ -13,6 +13,11 @@ repository = "https://github.com/yvgude/lean-ctx"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.11"
+# The local doc store's journal lock.
+fs2 = "0.4"
+
+[dev-dependencies]
+tempfile = "3.27"
 
 [lints.rust]
 unreachable_pub = "warn"

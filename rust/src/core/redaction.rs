@@ -314,6 +314,48 @@ pub(crate) fn normalize_secret_text(input: &str) -> String {
     input.chars().filter_map(fold_secret_match_char).collect()
 }
 
+/// The markers of the "Private key block" rule, as that rule spells them
+/// (only a PRIVATE KEY END closes a block: a certificate's END does not).
+const PRIVATE_KEY_KINDS: &str = r"(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----";
+
+fn private_key_marker(end: bool) -> &'static regex::Regex {
+    static HEADER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    static END: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let (cell, word) = if end {
+        (&END, "END")
+    } else {
+        (&HEADER, "BEGIN")
+    };
+    cell.get_or_init(|| {
+        regex::Regex::new(&format!(r"-----{word}\s+{PRIVATE_KEY_KINDS}"))
+            .expect("BUG: invalid private-key marker")
+    })
+}
+
+/// Whether `text`, normalized as the "Private key block" rule sees it,
+/// holds a private-key header with no private-key END after it: the rule's
+/// match would continue in the text that follows.
+pub fn ends_inside_private_key_block(text: &str) -> bool {
+    let normalized = normalize_secret_text(text);
+    let last = |end: bool| {
+        private_key_marker(end)
+            .find_iter(&normalized)
+            .last()
+            .map(|found| found.start())
+    };
+    match (last(false), last(true)) {
+        (Some(header), Some(end)) => header > end,
+        (Some(_), None) => true,
+        (None, _) => false,
+    }
+}
+
+/// Whether `text`, normalized as the "Private key block" rule sees it,
+/// holds a private-key END marker (the one the rule closes a block on).
+pub fn contains_private_key_end(text: &str) -> bool {
+    private_key_marker(true).is_match(&normalize_secret_text(text))
+}
+
 /// Whether the word after a bare `Bearer` is a credential rather than prose or a
 /// placeholder. Precision matters on the default redaction path ("Bearer
 /// authentication", "Bearer YOUR_TOKEN_HERE" must survive), but the identifier
@@ -351,6 +393,57 @@ pub(crate) fn is_benign_quoted_value(value: &str) -> bool {
         || is_placeholder_value(value)
         || looks_like_uuid(value)
         || (!value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Whether a "Generic long secret" match is the slug of a knowledge fact's
+/// own key: the value of a JSON member named exactly `key` (`"key":"…"` or
+/// `"key": "…"`, the quoted form a serialized fact carries) that reads as
+/// words. The rule fires on any 32+ character value after a name ending in
+/// `key`, so every long fact key was masked — all to the same marker, which
+/// merged distinct facts on export and import and broke the ids readers
+/// derive from keys.
+///
+/// Nothing else is exempt: free text (`key: …`, `SIGNING_KEY=…`), any other
+/// member name (`encryption_key`, `auth`, `credential`), and a value that
+/// does not read as words stay masked. `prefix` is the rule's kept group
+/// (the character before the name, the name, the separator).
+///
+/// Known residual risk: a passphrase made of real words joined by `-`
+/// (diceware) stored as the value of a member named `key` reads as a slug
+/// and is kept. A secret belongs under a secret's name, where it is masked.
+pub(crate) fn is_fact_key_slug(prefix: &str, value: &str) -> bool {
+    matches!(prefix, "\"key\":\"" | "\"key\": \"") && looks_like_word_slug(value)
+}
+
+/// Lowercase words and short numbers joined by `-`
+/// (`governor-design-pull-forward-2026-10-29`): at least three parts, at
+/// least two of them words; a number has at most 8 digits (dates, years,
+/// counters — not a PIN or an account number); a word has a vowel in at
+/// least a fifth of its letters and no run of more than four consonants, so
+/// random letter groups (`qhztvbkr`) and hex digests do not pass.
+fn looks_like_word_slug(value: &str) -> bool {
+    let parts: Vec<&str> = value.split('-').collect();
+    let mut words = 0usize;
+    let all_parts_ok = parts.iter().all(|part| {
+        if !part.is_empty() && part.len() <= 8 && part.bytes().all(|b| b.is_ascii_digit()) {
+            return true;
+        }
+        if part.len() < 2 || part.len() > 24 || !part.bytes().all(|b| b.is_ascii_lowercase()) {
+            return false;
+        }
+        let is_vowel = |b: u8| matches!(b, b'a' | b'e' | b'i' | b'o' | b'u' | b'y');
+        let vowels = part.bytes().filter(|b| is_vowel(*b)).count();
+        let mut run = 0usize;
+        let mut longest_run = 0usize;
+        for b in part.bytes() {
+            run = if is_vowel(b) { 0 } else { run + 1 };
+            longest_run = longest_run.max(run);
+        }
+        let word = vowels * 5 >= part.len() && longest_run <= 4;
+        words += usize::from(word);
+        word
+    });
+    parts.len() >= 3 && all_parts_ok && words >= 2
 }
 
 /// #1095: when the regex `key=` consumes one `=` from `==`, the captured
@@ -654,7 +747,9 @@ fn redact_found(input: &str, excludes: &[regex::Regex]) -> (String, Vec<&'static
             }
             if rule.label == "Generic long secret"
                 && caps.get(2).is_some_and(|value| {
-                    is_verified_signer_key(&normalized[..whole.start()], value.as_str())
+                    caps.get(1)
+                        .is_some_and(|prefix| is_fact_key_slug(prefix.as_str(), value.as_str()))
+                        || is_verified_signer_key(&normalized[..whole.start()], value.as_str())
                 })
             {
                 continue;
@@ -1262,6 +1357,36 @@ mod tests {
             r"assert secret == expected_value",
         ] {
             assert_eq!(redact_text(s), s, "comparison operator corrupted: {s}");
+        }
+    }
+
+    /// A knowledge fact's own key is a slug, not a secret: every long one
+    /// was masked to the same marker, merging distinct facts on export and
+    /// import. Only that member, in its quoted JSON form, with words for
+    /// parts, is kept; every other place and shape stays masked.
+    #[test]
+    fn only_a_word_slug_as_a_fact_key_is_kept() {
+        for kept in [
+            r#"{"key":"governor-design-pull-forward-2026-10-29"}"#,
+            r#"{"key": "hive-desktop-knowledge-speed-round-one"}"#,
+        ] {
+            assert_eq!(redact_text(kept), kept);
+        }
+        let masked_cases = [
+            // Random letter groups, a hex digest, a long number.
+            r#"{"key":"qhztvbkr-plmnwxsd-rtvbnmkl-zxcvbnml"}"#.to_owned(),
+            r#"{"key":"deadbeef-cafebabe-facefeed-0123456789"}"#.to_owned(),
+            format!(r#"{{"key":"my-pin-{}"}}"#, "4".repeat(26)),
+            // A slug under any other name, or in free text.
+            r#"{"auth":"governor-design-pull-forward-2026-10-29"}"#.to_owned(),
+            r#"{"credential":"governor-design-pull-forward-2026-10-29"}"#.to_owned(),
+            r#"{"encryption_key":"correct-horse-battery-staple-orbit-lamp"}"#.to_owned(),
+            "SIGNING_KEY=governor-design-pull-forward-2026-10-29".to_owned(),
+            "MASTER_KEY=governor-design-pull-forward-2026-10-29".to_owned(),
+            "key: hive-desktop-knowledge-speed-round-one".to_owned(),
+        ];
+        for masked in masked_cases {
+            assert!(redact_text(&masked).contains("[REDACTED"), "{masked}");
         }
     }
 }

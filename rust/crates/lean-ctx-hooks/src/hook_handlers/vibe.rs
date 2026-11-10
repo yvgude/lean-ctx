@@ -60,7 +60,7 @@ pub fn handle_vibe_pre_tool() {
 /// Pure decision core: maps a `pre_tool` invocation to the JSON stdout string,
 /// or `None` for passthrough (empty stdout). Factored out of the I/O wrapper so
 /// every tool × mode combination is deterministically testable.
-fn decide(
+pub(super) fn decide(
     parsed: &serde_json::Value,
     binary: &str,
     mode: crate::hooks::HookMode,
@@ -102,6 +102,13 @@ fn decide(
             // Commands already routed through lean-ctx are not denied by
             // Replace mode — that would block lean-ctx's own CLI surface (#801).
             if super::file_rewrite::is_leanctx_call(cmd, binary) {
+                return checked();
+            }
+
+            // #2194: a command the user excluded from lean-ctx runs natively,
+            // unchanged and not denied by Replace mode; only the allowlist
+            // applies (as in the Codex hook).
+            if super::exclusions::user_excluded_reason(cmd).is_some() {
                 return checked();
             }
 
@@ -318,5 +325,46 @@ mod tests {
                 "{tool} must never be intercepted"
             );
         }
+    }
+
+    /// #2194 r1: an excluded command is not rewritten, and Replace mode does
+    /// not deny it either (as in the Codex hook); the allowlist still does.
+    #[test]
+    fn excluded_command_runs_natively_in_replace_mode() {
+        let decide_bash = |cmd: &str| {
+            decide(
+                &inv("bash", &serde_json::json!({ "command": cmd })),
+                "lean-ctx",
+                HookMode::Replace,
+            )
+        };
+        let (excluded, outside_allowlist, other) =
+            crate::hook_handlers::tests::tests_excluded_rewrites::with_isolated_config(
+                |write_config| {
+                    write_config("excluded_commands = [\"git\", \"kubectl\"]\n");
+                    (
+                        decide_bash("git status"),
+                        decide_bash("kubectl get pods"),
+                        decide_bash("cat <<EOF\nhi\nEOF"),
+                    )
+                },
+            );
+        assert!(
+            excluded.is_none(),
+            "an excluded command passes unchanged: {excluded:?}"
+        );
+        let denied: serde_json::Value =
+            serde_json::from_str(&outside_allowlist.expect("allowlist denial")).unwrap();
+        assert_eq!(denied["decision"], "deny");
+        assert!(
+            !denied["reason"].as_str().unwrap().contains("replace mode"),
+            "the allowlist denies it, not Replace mode: {denied}"
+        );
+        let replace: serde_json::Value =
+            serde_json::from_str(&other.expect("replace denial")).unwrap();
+        assert!(
+            replace["reason"].as_str().unwrap().contains("ctx_shell"),
+            "a command not excluded is still denied by Replace mode: {replace}"
+        );
     }
 }

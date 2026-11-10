@@ -4,7 +4,7 @@ use crate::core::error::ShellError;
 /// select which body runs, but they are not commands and must not enter the
 /// allowlist walk. Including every body preserves deny-by-default validation:
 /// every command that could execute for any pattern must be allowlisted.
-pub(crate) fn rewrite_case_constructs(command: &str) -> Result<String, ShellError> {
+pub fn rewrite_case_constructs(command: &str) -> Result<String, ShellError> {
     rewrite_top_level_cases(&rewrite_substituted_cases(command)?)
 }
 
@@ -155,7 +155,7 @@ fn find_substituted_case(input: &str) -> Option<usize> {
 
 /// Parse one case statement beginning at `case`, returning its arm bodies and
 /// the byte length consumed through the matching `esac`.
-pub(super) fn parse_case_construct(input: &str) -> Result<(String, usize), ShellError> {
+pub fn parse_case_construct(input: &str) -> Result<(String, usize), ShellError> {
     let in_start = find_shell_word(input, "in", 4)
         .ok_or_else(|| case_parse_error(input, "missing `in` after the case expression"))?;
     let mut cursor = in_start + 2;
@@ -209,13 +209,13 @@ pub(super) fn parse_case_construct(input: &str) -> Result<(String, usize), Shell
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum CaseArmEnd {
+pub enum CaseArmEnd {
     Terminator { body_end: usize, next: usize },
     Esac { body_end: usize, esac_start: usize },
 }
 
 /// Find the end of a case pattern, ignoring quoted and nested shell syntax.
-pub(super) fn find_case_pattern_end(input: &str, start: usize) -> Option<usize> {
+pub fn find_case_pattern_end(input: &str, start: usize) -> Option<usize> {
     let bytes = input.as_bytes();
     let mut i = start;
     let mut paren_depth = 0u32;
@@ -278,7 +278,7 @@ pub(super) fn find_case_pattern_end(input: &str, start: usize) -> Option<usize> 
 }
 
 /// Find the next top-level `;;` or the matching outer `esac` in an arm body.
-pub(super) fn find_case_arm_end(input: &str, start: usize) -> Option<CaseArmEnd> {
+pub fn find_case_arm_end(input: &str, start: usize) -> Option<CaseArmEnd> {
     let bytes = input.as_bytes();
     let mut i = start;
     let mut paren_depth = 0u32;
@@ -369,7 +369,7 @@ pub(super) fn find_case_arm_end(input: &str, start: usize) -> Option<CaseArmEnd>
 }
 
 /// Return the first standalone unquoted shell word `word` at or after `start`.
-pub(super) fn find_shell_word(input: &str, word: &str, start: usize) -> Option<usize> {
+pub fn find_shell_word(input: &str, word: &str, start: usize) -> Option<usize> {
     let bytes = input.as_bytes();
     let word_bytes = word.as_bytes();
     let mut i = start.min(bytes.len());
@@ -393,13 +393,13 @@ pub(super) fn find_shell_word(input: &str, word: &str, start: usize) -> Option<u
     None
 }
 
-pub(super) fn is_shell_word_at(input: &str, start: usize, word: &str) -> bool {
+pub fn is_shell_word_at(input: &str, start: usize, word: &str) -> bool {
     start + word.len() <= input.len()
         && input.as_bytes()[start..].starts_with(word.as_bytes())
         && is_shell_word_boundary(input.as_bytes(), start, word.len())
 }
 
-pub(super) fn is_shell_word_boundary(bytes: &[u8], start: usize, word_len: usize) -> bool {
+pub fn is_shell_word_boundary(bytes: &[u8], start: usize, word_len: usize) -> bool {
     // A backtick delimits a word as well: `` `case x in x) ls;; esac` ``.
     let boundary = |c: u8| {
         c.is_ascii_whitespace()
@@ -409,7 +409,7 @@ pub(super) fn is_shell_word_boundary(bytes: &[u8], start: usize, word_len: usize
         && (start + word_len == bytes.len() || boundary(bytes[start + word_len]))
 }
 
-pub(super) fn skip_shell_whitespace(input: &str, start: usize) -> usize {
+pub fn skip_shell_whitespace(input: &str, start: usize) -> usize {
     input
         .as_bytes()
         .iter()
@@ -419,7 +419,7 @@ pub(super) fn skip_shell_whitespace(input: &str, start: usize) -> usize {
         .map_or(input.len(), |(i, _)| i)
 }
 
-pub(super) fn skip_quoted(bytes: &[u8], start: usize, quote: u8) -> Option<usize> {
+pub fn skip_quoted(bytes: &[u8], start: usize, quote: u8) -> Option<usize> {
     let mut i = start + 1;
     while i < bytes.len() {
         if bytes[i] == b'\\' && quote == b'"' {
@@ -433,7 +433,7 @@ pub(super) fn skip_quoted(bytes: &[u8], start: usize, quote: u8) -> Option<usize
     None
 }
 
-pub(super) fn skip_backticks(bytes: &[u8], start: usize) -> Option<usize> {
+pub fn skip_backticks(bytes: &[u8], start: usize) -> Option<usize> {
     let mut i = start + 1;
     while i < bytes.len() {
         if bytes[i] == b'\\' {
@@ -447,7 +447,7 @@ pub(super) fn skip_backticks(bytes: &[u8], start: usize) -> Option<usize> {
     None
 }
 
-pub(super) fn skip_shell_expansion(bytes: &[u8], start: usize) -> Option<usize> {
+pub fn skip_shell_expansion(bytes: &[u8], start: usize) -> Option<usize> {
     let (open, close) = match bytes.get(start..start + 2) {
         Some(b"${") => (b'{', b'}'),
         Some(b"$(") => (b'(', b')'),
@@ -481,7 +481,7 @@ pub(super) fn skip_shell_expansion(bytes: &[u8], start: usize) -> Option<usize> 
     None
 }
 
-pub(super) fn case_parse_error(input: &str, reason: &str) -> ShellError {
+pub fn case_parse_error(input: &str, reason: &str) -> ShellError {
     format!(
         "[BLOCKED — DO NOT RETRY] `case` construct could not be safely parsed: {reason}.\n\
          Command: {input}"
@@ -490,7 +490,7 @@ pub(super) fn case_parse_error(input: &str, reason: &str) -> ShellError {
 }
 
 /// Quote-aware scan for a `;;` terminator (the `case` arm separator).
-pub(crate) fn contains_double_semicolon(command: &str) -> bool {
+pub fn contains_double_semicolon(command: &str) -> bool {
     let bytes = command.as_bytes();
     let len = bytes.len();
     let mut in_single_quote = false;

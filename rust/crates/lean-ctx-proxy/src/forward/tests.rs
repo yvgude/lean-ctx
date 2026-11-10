@@ -108,8 +108,12 @@ fn proxy_test_state(upstream: &str) -> ProxyState {
         providers: Vec::new(),
     }));
     ProxyState {
+        // Hang guard only (the product client has no total timeout). It also
+        // bounds the response body read, which waits for the fsync'd egress
+        // observation written after the response head: that write took 2.4-2.6 s
+        // on a loaded gate host, and a 2 s bound turned it into a 502.
         client: crate::upstream_http_client_builder()
-            .timeout(std::time::Duration::from_secs(2))
+            .timeout(std::time::Duration::from_secs(20))
             .build()
             .unwrap(),
         port: 0,

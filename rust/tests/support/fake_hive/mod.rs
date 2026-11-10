@@ -77,14 +77,20 @@ pub(crate) struct FakeOptions {
     /// `Some(share)` it offers the setup and the approval page answered
     /// "Share this project" with `share`.
     pub(crate) device_setup: Option<bool>,
-    /// Every HTTP answer comes this much later (a slow Hive).
-    pub(crate) answer_delay: Option<std::time::Duration>,
+    /// No HTTP request is answered while set (a Hive that does not answer
+    /// yet); the waiting requests go on once it is cleared.
+    pub(crate) hold_answers: bool,
     /// Answer the instance card (E44) and worker registration (E10). The
     /// card tells the engine that this Hive speaks C0 2.x: its relay
     /// connects to the bus only after it, and its knowledge and message
     /// paths switch to 2.x. Off by default, so the other suites keep the
     /// paths they test.
     pub(crate) instance_card: bool,
+    /// Answer `POST /v1/vaults/match` (C0 vault_match): `bound` to the
+    /// vault an identity digest of the request was resolved to first, else
+    /// `none` (may create). Off by default: without it the engine falls back
+    /// to resolve, as against a Hive without the route.
+    pub(crate) vault_match: bool,
 }
 
 impl Default for FakeOptions {
@@ -109,8 +115,9 @@ impl Default for FakeOptions {
             refuse_metrics: false,
             slot_cooldown_until: None,
             device_setup: None,
-            answer_delay: None,
+            hold_answers: false,
             instance_card: false,
+            vault_match: false,
         }
     }
 }
@@ -350,9 +357,16 @@ impl FakeHive {
         inner.now += by;
     }
 
-    /// Answer every later HTTP request `by` later (a slow Hive).
-    pub(crate) fn delay_answers(&self, by: std::time::Duration) {
-        self.lock().options.answer_delay = Some(by);
+    /// Answer no HTTP request until [`Self::release_answers`]: a call that
+    /// waited for Hive would run into its whole client budget, so a test can
+    /// assert "does not wait" relative to that budget.
+    pub(crate) fn hold_answers(&self) {
+        self.lock().options.hold_answers = true;
+    }
+
+    /// Answer the held requests and every later one.
+    pub(crate) fn release_answers(&self) {
+        self.lock().options.hold_answers = false;
     }
 
     pub(crate) fn set_options(&self, options: FakeOptions) {
@@ -388,6 +402,14 @@ impl FakeHive {
             "created_by": {"kind": "person", "label": "Ada", "mine": false},
         }));
         number
+    }
+
+    /// Gives a task a role: only an agent present on the bus in that role
+    /// may claim it (Hive task #17).
+    pub(crate) fn set_task_role(&self, project_id: &str, number: u64, role: &str) {
+        let mut inner = self.lock();
+        let project = inner.projects.get_mut(project_id).expect("project");
+        project.tasks[usize::try_from(number - 1).unwrap()]["role"] = role.into();
     }
 
     /// The engine opt-in Hive answers with (`EngineOptinV1`).
@@ -799,9 +821,19 @@ async fn bus_session(shared: Shared, instance: String, socket: axum::extract::ws
             _ => {}
         }
     }
-    lock(&shared)
-        .bus_sockets
-        .retain(|socket| !socket.sender.same_channel(&sender));
+    {
+        let mut inner = lock(&shared);
+        inner
+            .bus_sockets
+            .retain(|socket| !socket.sender.same_channel(&sender));
+        // Like Hive: a worker is present only while the socket that
+        // announced it is connected (#252).
+        if !inner.bus_sockets.iter().any(|s| s.instance == instance) {
+            inner
+                .bus_presence
+                .retain(|_, (owner, _)| owner != &instance);
+        }
+    }
     writer.abort();
 }
 
@@ -928,13 +960,13 @@ async fn handle(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let delay = shared
+    while shared
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .options
-        .answer_delay;
-    if let Some(delay) = delay {
-        tokio::time::sleep(delay).await;
+        .hold_answers
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
     let mut inner = shared
         .lock()
@@ -1443,6 +1475,37 @@ fn route(
                 "schema": ORG_SALT_SCHEMA, "org_salt_id": ORG_SALT_ID, "salt": B64.encode(ORG_SALT),
             }),
         )),
+        ("POST", ["vaults", "match"]) if inner.options.vault_match => {
+            let request: Value = parse(body)?;
+            if request["org_salt_id"] != ORG_SALT_ID {
+                return Err(error(HiveErrorCode::InvalidRequest, "Unknown org_salt_id."));
+            }
+            // Like Hive's vault_bindings: the first resolve of a digest
+            // bound it; candidates are tried strongest first.
+            let bound = request["candidates"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c["digest"].as_str())
+                .map(project_id_for)
+                .find_map(|id| inner.projects.get(&id).map(|p| (id, p.repo.clone())));
+            Ok((
+                200,
+                match bound {
+                    Some((vault_id, (ns, name))) => json!({
+                        "schema": "leanctx.hive.vault-match/v1", "match": "bound",
+                        "vault": {
+                            "schema": VAULT_SCHEMA, "vault_id": vault_id,
+                            "vault": {"ns": ns, "name": name},
+                            "sealed": false, "sealed_conversion": "none",
+                        },
+                    }),
+                    None => json!({
+                        "schema": "leanctx.hive.vault-match/v1", "match": "none", "can_create": true,
+                    }),
+                },
+            ))
+        }
         ("POST", ["vaults", "resolve"]) => {
             let request: VaultResolveRequestV1 = parse(body)?;
             valid(request.validate())?;
@@ -1973,6 +2036,36 @@ fn route(
                     "optin_scope",
                     "The opt-in does not cover this project.",
                 );
+            }
+            // Hive task #17: a task with a role is claimed only by an agent
+            // present on the vault's bus address in that role.
+            let project = &inner.projects[*pid];
+            let task_role = wanted
+                .and_then(|n| project.tasks.get(usize::try_from(n).ok()?.checked_sub(1)?))
+                .and_then(|task| task["role"].as_str().map(str::to_string));
+            if let Some(role) = task_role {
+                let address = format!("#{}/{}", project.repo.0, project.repo.1);
+                let present = inner
+                    .bus_presence
+                    .get(&(address, request.agent.clone()))
+                    .map(|(_, frame)| frame["role"].as_str().unwrap_or_default().to_string());
+                let (check, agent_role) = match present {
+                    None => ("presence", None),
+                    Some(present) if present != role => ("role", Some(present)),
+                    Some(_) => ("", None),
+                };
+                if !check.is_empty() {
+                    let mut detail = HiveErrorDetailV1::new(
+                        HiveErrorCode::ForbiddenRight,
+                        "The agent is not present on the bus with the task's role.",
+                    );
+                    detail.reason = Some("not_permitted".into());
+                    detail.number = wanted;
+                    detail.check = Some(check.into());
+                    detail.role = Some(role);
+                    detail.agent_role = agent_role;
+                    return Err(error_with(detail));
+                }
             }
             Ok((
                 200,

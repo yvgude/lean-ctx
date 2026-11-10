@@ -256,7 +256,7 @@ mod tests {
 
     fn sample_index() -> BM25Index {
         BM25Index::from_chunks_for_test(vec![
-            CodeChunk {
+            CodeChunk { input_origin: None,
                 file_path: "login.rs".into(),
                 symbol_name: "login_user".into(),
                 kind: ChunkKind::Function,
@@ -267,7 +267,7 @@ mod tests {
                 tokens: vec![],
                 token_count: 0,
             },
-            CodeChunk {
+            CodeChunk { input_origin: None,
                 file_path: "cache.rs".into(),
                 symbol_name: "memo_cache".into(),
                 kind: ChunkKind::Function,
@@ -277,7 +277,7 @@ mod tests {
                 tokens: vec![],
                 token_count: 0,
             },
-            CodeChunk {
+            CodeChunk { input_origin: None,
                 file_path: "auth.rs".into(),
                 symbol_name: "oauth_flow".into(),
                 kind: ChunkKind::Function,

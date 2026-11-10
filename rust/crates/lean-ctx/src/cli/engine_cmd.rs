@@ -1223,7 +1223,7 @@ mod tests {
         let call = |source: &'static str| EngineCall::<EngineCliError> {
             project_root: Some(root.clone()),
             run: Box::new(move || {
-                lean_ctx::core::context_admission::admit_context_source(source)
+                lean_ctx::core::context_admission::admit_instance_context_source(source)
                     .map(|admitted| serde_json::json!({ "view": admitted.text }).to_string())
                     .map_err(|_| EngineCliError::Host("source_withheld"))
             }),

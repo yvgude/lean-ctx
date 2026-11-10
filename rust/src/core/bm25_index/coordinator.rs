@@ -58,7 +58,11 @@ pub fn get_or_start_build(root: &Path) -> Result<Arc<BM25Index>, SearchIndexBuil
         // loads it via the fast path. Catch panics so the single-flight flag is
         // always cleared and the coordinator never wedges.
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = BM25Index::load_or_build_fast(&bg_root);
+            // Detached, outlives the call (pz21 §1.5 4a): its text reaches an
+            // agent only through a reader that admits it again at serve time.
+            let _ = crate::core::context_admission::capture::outside_call(|| {
+                BM25Index::load_or_build_fast(&bg_root)
+            });
         }));
         building_flag().store(false, Ordering::SeqCst);
     });

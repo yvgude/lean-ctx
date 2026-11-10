@@ -82,6 +82,11 @@ fn entry_to_chunk(e: &CatalogEntry) -> ContentChunk {
     );
     ContentChunk {
         origin: None,
+        // A foreign MCP server authored this description (pz21 §1.1).
+        input_origin: Some(crate::core::context_admission::origin::InputOrigin::new(
+            crate::core::context_admission::origin::InputKind::ToolOutput,
+            format!("mcp:{}", e.namespaced),
+        )),
         file_path: e.namespaced.clone(),
         symbol_name: e.tool.clone(),
         kind: crate::core::bm25_index::ChunkKind::Other,

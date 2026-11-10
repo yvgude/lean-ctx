@@ -533,3 +533,84 @@ fn find_pids_never_reports_own_process_tree() {
         assert!(!protected.contains(&pid), "own tree pid {pid} reported");
     }
 }
+
+/// P0 2026-11-07: a PID file holding 0, a negative number, a value above
+/// i32::MAX, garbage or nothing never yields a PID; it is removed as stale.
+/// No signal syscall is reached: the parser refuses before any caller could
+/// pass the value on (and `signal_target` refuses it again before a kill).
+#[test]
+fn garbage_pid_files_are_removed_and_never_yield_a_pid() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for content in [
+        "0",
+        "-1",
+        "4294967295",
+        "2147483648",
+        "abc",
+        "",
+        "   \n",
+        "1",
+    ] {
+        let path = dir.path().join("daemon.pid");
+        std::fs::write(&path, content).expect("write PID file");
+        assert_eq!(read_pid_file(&path), None, "{content:?}");
+        assert!(!path.exists(), "{content:?}: the stale file is removed");
+    }
+    // A valid PID survives the read untouched.
+    let path = dir.path().join("daemon.pid");
+    std::fs::write(&path, "4242\n").expect("write PID file");
+    assert_eq!(read_pid_file(&path), Some(4242));
+    assert!(path.exists());
+    // A missing file is simply no PID.
+    assert_eq!(read_pid_file(&dir.path().join("missing.pid")), None);
+}
+
+/// Every value a corrupt PID file could carry is refused by the one gate in
+/// front of `kill`, before the syscall. Values that would become kill(0, …)
+/// or kill(-1, …) are only ever handed to the validator, never to a kill
+/// helper.
+#[test]
+fn the_signal_gate_refuses_values_that_would_address_groups_or_everyone() {
+    for pid in [0, 1, u32::MAX, MAX_PID + 1, std::process::id()] {
+        assert!(signal_target(pid).is_err(), "{pid}");
+        assert!(group_target(pid).is_err(), "{pid}");
+        assert!(!is_alive(pid) || pid == 1 || pid == std::process::id());
+    }
+    assert_eq!(signal_target(MAX_PID), Ok(i32::MAX));
+}
+
+/// A refused PID is an error from the kill helpers, not a silent success.
+/// Only the own PID is used here: if the gate ever regressed, SIGTERM to
+/// this test process would fail the run loudly rather than hit others.
+#[cfg(unix)]
+#[test]
+fn kill_helpers_report_refusal_for_the_own_process() {
+    let me = std::process::id();
+    let error = force_kill(me).expect_err("own PID refused");
+    assert!(error.to_string().contains("this process"), "{error}");
+    let error = terminate_gracefully(me).expect_err("own PID refused");
+    assert!(error.to_string().contains("this process"), "{error}");
+}
+
+/// The gate does not get in the way of the real job: a spawned live child
+/// still terminates through `terminate_gracefully` and `force_kill`.
+#[cfg(unix)]
+#[test]
+fn a_spawned_live_child_still_terminates() {
+    use std::os::unix::process::ExitStatusExt;
+    let mut child = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("spawn sleep");
+    terminate_gracefully(child.id()).expect("SIGTERM to a live child");
+    let status = child.wait().expect("wait");
+    assert_eq!(status.signal(), Some(libc::SIGTERM));
+
+    let mut child = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("spawn sleep");
+    force_kill(child.id()).expect("SIGKILL to a live child");
+    let status = child.wait().expect("wait");
+    assert_eq!(status.signal(), Some(libc::SIGKILL));
+}

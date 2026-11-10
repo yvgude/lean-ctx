@@ -70,7 +70,7 @@ fn session_load_uses_receiver_scope_without_expanding_authority() {
                 .current_dir(&root)
                 .args([
                     "--exact",
-                    "session_load_uses_receiver_scope_without_expanding_authority",
+                    "v4_session_load::session_load_uses_receiver_scope_without_expanding_authority",
                     "--nocapture",
                 ])
                 .env("V4_SESSION_LOAD_CHILD", "1")

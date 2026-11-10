@@ -1247,12 +1247,15 @@ impl CtxReadTool {
                                 })
                         },
                     );
-                    lean_ctx::core::cross_source_hints::format_hints(&hints)
+                    admitted_hints(&hints)
                 }
             })
         } else {
             String::new()
         };
+        // pz21 §1.8: a file this session downloaded through a matched
+        // command is outside text, whatever its path.
+        note_downloaded_read(path, &ctx.project_root);
 
         // Rule injection (#1325): discover and append rules scoped to this file
         // path (CLAUDE.md, AGENTS.md, .cursor/rules, .claude/rules) so the agent
@@ -1435,3 +1438,7 @@ mod repo_param_tests;
 #[cfg(test)]
 #[path = "ctx_read_override_tests.rs"]
 mod override_tests;
+
+#[path = "ctx_read_origin.rs"]
+mod origin_parts;
+use origin_parts::{admitted_hints, note_downloaded_read};

@@ -82,7 +82,11 @@ fn run_isolated(name: &str) -> bool {
     let data = tempfile::tempdir().unwrap();
     let mut child = std::process::Command::new(std::env::current_exe().unwrap());
     child
-        .args(["--exact", name, "--nocapture"])
+        .args([
+            "--exact",
+            &format!("v4_event_observation_authority::{name}"),
+            "--nocapture",
+        ])
         .env_clear()
         .env("V4_OBSERVATION_CHILD", name)
         .env("LEAN_CTX_DATA_DIR", data.path())

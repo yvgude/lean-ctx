@@ -170,7 +170,10 @@ mod tests {
         if admitted {
             lean_ctx::core::context_admission::capture::ADMISSIONS
                 .sync_scope(Some(capture.clone()), || {
-                    lean_ctx::core::context_admission::admit_context_source(text)
+                    lean_ctx::core::context_admission::admit_context_source(
+                        text,
+                        &lean_ctx::core::context_admission::origin::SourceClass::Project,
+                    )
                 })
                 .expect("a clean source is admitted");
         }
@@ -411,7 +414,11 @@ mod tests {
         let capture = AdmissionCapture::for_call(duty.snapshot().clone());
         lean_ctx::core::context_admission::capture::ADMISSIONS
             .sync_scope(Some(capture.clone()), || {
-                lean_ctx::core::context_admission::admit_context_source(CONTENT).map(|_| {
+                lean_ctx::core::context_admission::admit_context_source(
+                    CONTENT,
+                    &lean_ctx::core::context_admission::origin::SourceClass::Project,
+                )
+                .map(|_| {
                     lean_ctx::core::context_admission::capture::note_source_id("vendor/remote.rs");
                 })
             })
@@ -506,7 +513,10 @@ mod tests {
         let capture = AdmissionCapture::for_call(duty.snapshot().clone());
         lean_ctx::core::context_admission::capture::ADMISSIONS
             .sync_scope(Some(capture.clone()), || {
-                lean_ctx::core::context_admission::admit_context_source(CONTENT)
+                lean_ctx::core::context_admission::admit_context_source(
+                    CONTENT,
+                    &lean_ctx::core::context_admission::origin::SourceClass::Project,
+                )
             })
             .expect("a clean source is admitted");
         let mut result = CallToolResult::success(vec![rmcp::model::ContentBlock::text(CONTENT)]);

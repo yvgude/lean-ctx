@@ -1,0 +1,12 @@
+diff --git a/rust/crates/lean-ctx-server/src/tools/zz_render.rs b/rust/crates/lean-ctx-server/src/tools/zz_render.rs
+index 3333333..4444444 100644
+--- a/rust/crates/lean-ctx-server/src/tools/zz_render.rs
++++ b/rust/crates/lean-ctx-server/src/tools/zz_render.rs
+@@ -20,0 +21,7 @@
++fn needs_fence(trust: TrustLevelV1) -> bool {
++    trust == TrustLevelV1::Untrusted
++}
++
++fn needs_fence_too(trust: TrustLevelV1) -> bool {
++    matches!(trust, TrustLevelV1::Untrusted)
++}

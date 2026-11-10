@@ -72,7 +72,11 @@ impl Drop for SandboxDaemon<'_> {
         let Ok(pid) = std::fs::read_to_string(self.0.join("daemon.pid")) else {
             return;
         };
-        if let Ok(pid) = pid.trim().parse::<u32>() {
+        // Never hand `kill` a 0 (own process group) or a value that wraps to
+        // -1 (every process of the user): only a validated, foreign PID.
+        if let Ok(pid) = lean_ctx::ipc::process::parse_pid_file(&pid)
+            && lean_ctx::ipc::process::signal_target(pid).is_ok()
+        {
             #[cfg(unix)]
             let _ = std::process::Command::new("kill")
                 .arg(pid.to_string())

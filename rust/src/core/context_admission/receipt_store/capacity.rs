@@ -69,7 +69,7 @@ use serde::{Deserialize, Serialize};
 
 /// Default ceiling of the store when neither the override nor a disk budget
 /// is set.
-pub(crate) const DEFAULT_STORE_MB: u64 = 1024;
+pub(crate) const DEFAULT_STORE_MB: u64 = 4096;
 /// Room reserved at entry for the records a lifecycle writes afterwards: one
 /// trace sidecar (≤ 256 KiB), one observation, the egress records and index
 /// entries.

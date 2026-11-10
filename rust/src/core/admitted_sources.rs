@@ -25,6 +25,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::core::context_admission::origin::{InputOrigin, SourceClass};
 use crate::core::context_admission::{OutputCompleteness, SourceAdmission};
 use crate::core::rooted_read::AdmittedRootedRead;
 
@@ -255,8 +256,31 @@ fn project_policy_allows(text: &str, complete: bool, tool: &str) -> Result<(), S
 /// result is the delivered text and whether the original may be kept; `Err`
 /// is the content-free reason.
 pub fn admit_remote_text(text: &str, tool: &str) -> Result<SourceAdmission, String> {
+    admit_remote_class(text, tool, &REMOTE_UNKNOWN)
+}
+
+/// [`admit_remote_text`] with the origin the caller knows (the fetched URL,
+/// the foreign ref): untrusted by origin, whatever its content (pz21 §1.1).
+pub fn admit_remote_text_as(
+    text: &str,
+    tool: &str,
+    origin: &InputOrigin,
+) -> Result<SourceAdmission, String> {
+    admit_remote_class(text, tool, &SourceClass::External(origin.clone()))
+}
+
+const REMOTE_UNKNOWN: SourceClass = SourceClass::Unclassified { tool: "remote" };
+
+fn admit_remote_class(
+    text: &str,
+    tool: &str,
+    class: &SourceClass,
+) -> Result<SourceAdmission, String> {
+    // First, before the project policy can refuse (pz21 §1.5 C1).
+    crate::core::context_admission::capture::note_origin(class);
     project_policy_allows(text, true, tool)?;
-    crate::core::context_admission::admit_context_source(text).map_err(|error| error.to_string())
+    crate::core::context_admission::admit_context_source(text, class)
+        .map_err(|error| error.to_string())
 }
 
 /// Admit the bytes of a file that is not a file of the project (a file of a
@@ -272,6 +296,31 @@ pub fn admit_remote_file(
     origin_path: &str,
     tool: &str,
 ) -> Result<SourceAdmission, String> {
+    admit_remote_file_class(bytes, origin_path, tool, &REMOTE_UNKNOWN)
+}
+
+/// [`admit_remote_file`] with the origin the caller knows (`remote_file`).
+pub fn admit_remote_file_as(
+    bytes: Vec<u8>,
+    origin_path: &str,
+    tool: &str,
+    origin: &InputOrigin,
+) -> Result<SourceAdmission, String> {
+    admit_remote_file_class(
+        bytes,
+        origin_path,
+        tool,
+        &SourceClass::External(origin.clone()),
+    )
+}
+
+fn admit_remote_file_class(
+    bytes: Vec<u8>,
+    origin_path: &str,
+    tool: &str,
+    class: &SourceClass,
+) -> Result<SourceAdmission, String> {
+    crate::core::context_admission::capture::note_origin(class);
     if crate::core::binary_detect::has_binary_extension(origin_path)
         || crate::core::text_decode::looks_binary(&bytes[..bytes.len().min(8192)])
     {
@@ -288,6 +337,7 @@ pub fn admit_remote_file(
             decode_lossy: !complete,
             ..Default::default()
         },
+        class,
     )
     .inspect(|_| crate::core::context_admission::capture::note_source_id(origin_path))
     .map_err(|error| error.to_string())

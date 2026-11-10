@@ -72,7 +72,10 @@ impl Category {
 fn categorize(name: &str) -> Category {
     match name {
         // --- config: RO-safe ---
-        "config.toml" | "env.sh" | "layout.toml" => Category::Config,
+        // providers/personas/multi-repo are resolved through
+        // `paths::config_dir_member`: a split must put them where they are read.
+        "config.toml" | "env.sh" | "layout.toml" | "providers.toml" | "providers" | "personas"
+        | "multi-repo.toml" => Category::Config,
         n if n.starts_with("shell-hook.") => Category::Config,
 
         // --- state: events, logs, journals, ledgers, dashboards ---
@@ -364,7 +367,10 @@ fn backup_path(dest: &Path) -> PathBuf {
 /// when there is nothing to split: a fresh/already-split install, or an explicit
 /// `LEAN_CTX_DATA_DIR` (a deliberate single-dir choice we must not override).
 fn detect() -> Option<(PathBuf, Targets)> {
-    if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
+    // Any directory override, not only the data dir: a `LEAN_CTX_CONFIG_DIR`
+    // (or state/cache) override would otherwise become a split target and pull
+    // the real install's files into it.
+    if crate::core::paths::dir_override_active() {
         return None;
     }
     let src = crate::core::paths::single_dir_override()?;
@@ -475,6 +481,9 @@ mod tests {
     fn categorize_routes_each_category() {
         assert_eq!(categorize("config.toml"), Category::Config);
         assert_eq!(categorize("shell-hook.zsh"), Category::Config);
+        for member in ["providers.toml", "providers", "personas", "multi-repo.toml"] {
+            assert_eq!(categorize(member), Category::Config, "{member}");
+        }
         assert_eq!(categorize("events.jsonl"), Category::State);
         assert_eq!(categorize("pipeline_stats.json"), Category::State);
         assert_eq!(categorize("semantic_cache"), Category::Cache);

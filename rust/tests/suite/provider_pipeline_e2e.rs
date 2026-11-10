@@ -344,12 +344,12 @@ fn scenario_knowledge_remember_recall_roundtrip() {
         );
     }
 
-    // Recall should find the bug by category
+    // The issue is outside text: it never becomes a fact, so a recall
+    // cannot hand it back as the Instance's own knowledge (pz21).
     let recalled = knowledge.recall_by_category("known_bugs");
-    assert!(!recalled.is_empty(), "Should recall known_bugs facts");
     assert!(
-        recalled.iter().any(|f| f.value.contains("Token expiry")),
-        "Should recall the token expiry bug"
+        !recalled.iter().any(|f| f.value.contains("Token expiry")),
+        "outside text recalled as project knowledge"
     );
 
     // Recall data_model

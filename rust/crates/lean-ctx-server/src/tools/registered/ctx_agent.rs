@@ -44,7 +44,11 @@ impl McpTool for CtxAgentTool {
                     },
                     "role": {
                         "type": "string",
-                        "description": "dev|review|test|plan"
+                        "description": "register: role id (coder|reviewer|tester|planner|…; lower-case letters, digits, - and _); free text is not stored as a role"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "register: display name people see (e.g. the session name); a re-register takes over the new one"
                     },
                     "durable_identity_id": {
                         "type": "string",
@@ -134,6 +138,21 @@ impl McpTool for CtxAgentTool {
                         "maxLength": 128,
                         "description": "post: idempotency key; a retry with the same key and message returns the first post, a different message is refused"
                     },
+                    "kind": {
+                        "type": "string",
+                        "enum": ["hello", "status", "offer", "request", "handoff", "coordinate", "conflict", "escalate", "ask", "answer", "decide", "consent", "execute", "stop"],
+                        "description": "post: Queen-network kind; only the registered Queen posts one (else not_queen); priority high only with conflict, escalate or stop"
+                    },
+                    "task_id": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "description": "post: the task the message belongs to"
+                    },
+                    "thread": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "description": "post: the conversation the message belongs to"
+                    },
                     "type": {
                         "type": "string",
                         "enum": ["question", "offer", "handoff", "answer", "finding"],
@@ -199,6 +218,11 @@ impl McpTool for CtxAgentTool {
         }
         let agent_type = get_str(args, "agent_type");
         let role = get_str(args, "role");
+        let name = if action == "register" {
+            get_str(args, "name")
+        } else {
+            None
+        };
         let durable_identity_id = if action == "register" {
             get_str(args, "durable_identity_id")
         } else {
@@ -225,6 +249,11 @@ impl McpTool for CtxAgentTool {
         let write = get_bool(args, "write").unwrap_or(false);
         let filename = get_str(args, "filename");
         let request_id = get_str(args, "request_id");
+        let (kind, task_id, thread) = (
+            get_str(args, "kind"),
+            get_str(args, "task_id"),
+            get_str(args, "thread"),
+        );
 
         let project_root = ctx.project_root.clone();
 
@@ -257,27 +286,37 @@ impl McpTool for CtxAgentTool {
         if action == "register"
             && named_agent_id.is_none()
             && !get_bool(args, "replace").unwrap_or(false)
-            && let (Some(parent), Some(requested)) = (&session_agent_id, &role)
+            && let (Some(parent), Some(requested)) = (
+                &session_agent_id,
+                role.as_deref().and_then(lean_ctx::core::agents::role_id),
+            )
         {
+            let requested = &requested;
             let registry = lean_ctx::core::agents::AgentRegistry::load_or_create();
             if registry
                 .declared_role(parent)
                 .is_some_and(|held| held != *requested)
             {
                 let atype = agent_type.as_deref().unwrap_or("subagent");
+                let (_, display, _) = crate::tools::ctx_agent::role_and_name(None, name.as_deref());
                 let registered = lean_ctx::core::agents::AgentRegistry::mutate_locked(|registry| {
-                    registry.register_child(atype, requested, &project_root, parent)
+                    let id = registry.register_child(atype, requested, &project_root, parent)?;
+                    if let Some(display) = &display {
+                        registry.set_display_name(&id, display);
+                    }
+                    Ok(id)
                 })
                 .and_then(|(_, id)| id);
                 let text = match registered {
                     Ok(id) => {
                         lean_ctx_hive::bus::presence::request_announce();
                         format!(
-                            "Agent registered: {id} (type: {atype}, role: {requested}) as its own \
+                            "Agent registered: {id} (type: {atype}, role: {requested}, name: {}) as its own \
                              identity next to {parent} in this MCP connection. Pass \
                              agent_id=\"{id}\" on every later ctx_agent call (read, wait, post, \
                              send, status, ...); without it a call acts as {parent} and reads \
-                             its messages. replace=true changes {parent}'s own role instead."
+                             its messages. replace=true changes {parent}'s own role instead.",
+                            display.as_deref().unwrap_or("none")
                         )
                     }
                     Err(e) => format!("Registration failed: {e}"),
@@ -394,25 +433,40 @@ impl McpTool for CtxAgentTool {
             });
         }
 
-        let result = crate::tools::ctx_agent::handle(
-            &action,
-            agent_type.as_deref(),
-            role.as_deref(),
-            durable_identity_id.as_deref(),
-            &project_root,
-            current_agent_id.as_deref(),
-            message.as_deref(),
-            category.as_deref(),
-            to_agent.as_deref(),
-            status.as_deref(),
-            privacy.as_deref(),
-            priority.as_deref(),
-            ttl_hours,
-            format.as_deref(),
-            write,
-            filename.as_deref(),
-            request_id.as_deref(),
-        );
+        let result = if action == "register" {
+            crate::tools::ctx_agent::register(
+                agent_type.as_deref(),
+                role.as_deref(),
+                name.as_deref(),
+                durable_identity_id.as_deref(),
+                &project_root,
+            )
+        } else {
+            crate::tools::ctx_agent::handle_with(
+                &action,
+                agent_type.as_deref(),
+                role.as_deref(),
+                durable_identity_id.as_deref(),
+                &project_root,
+                current_agent_id.as_deref(),
+                message.as_deref(),
+                category.as_deref(),
+                to_agent.as_deref(),
+                status.as_deref(),
+                privacy.as_deref(),
+                priority.as_deref(),
+                ttl_hours,
+                format.as_deref(),
+                write,
+                filename.as_deref(),
+                request_id.as_deref(),
+                crate::tools::ctx_agent::PostFields {
+                    kind: kind.as_deref(),
+                    task_id: task_id.as_deref(),
+                    thread: thread.as_deref(),
+                },
+            )
+        };
 
         if action == "register" {
             if let Some(id) = result.split(':').nth(1) {

@@ -246,7 +246,18 @@ fn collect_matches(
         let re = regex_fn();
         for caps in re.captures_iter(&normalized) {
             let whole = caps.get(0).map_or("", |m| m.as_str());
-            if guarded_match_is_benign(&caps) || excluded(excludes, whole) {
+            if guarded_match_is_benign(&caps)
+                || (name == "high_entropy_secret"
+                    && caps.get(2).is_some_and(|value| {
+                        caps.get(1).is_some_and(|prefix| {
+                            crate::core::redaction::is_fact_key_slug(
+                                prefix.as_str(),
+                                value.as_str(),
+                            )
+                        })
+                    }))
+                || excluded(excludes, whole)
+            {
                 continue;
             }
             let start = caps.get(0).map_or(0, |m| m.start());

@@ -18,16 +18,19 @@ impl McpTool for CtxDocTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_doc",
-            "Project documentation in the linked Hive vault: pages of sections, bound to code.\n\
+            "Project documentation: pages of sections, bound to code. In the linked Hive vault, else local to this Instance.\n\
              WORKFLOW: action=list or search first, then show slug (outline=true, section=<heading-slug>).\n\
-             Reads are local (offline). action=write slug content='# Title\\n…' creates or revises a page;\n\
+             Reads are offline. action=write slug content='# Title\\n…' creates or revises a page;\n\
              action=edit slug find replace changes one unique stretch; action=note adds an addendum.\n\
-             anchors=[file:…] binds a page to code; action=status lists stale pages, action=confirm re-pins after a check.\n\
-             Writes are queued and sent in the background. Link pages as [text](/slug#heading).",
+             anchors=[file:…] binds a page to code; action=status lists stale pages, confirm re-pins after a check.\n\
+             Vault writes queue in the background; local writes save at once as revisions\n\
+             (local only: action=history slug, show slug rev=N, move slug to=new, delete slug). Link pages as [text](/slug#heading).",
             json!({
                 "type": "object",
                 "properties": {
-                    "action": { "type": "string", "description": "list|show|search|status|write|edit|note|confirm" },
+                    "action": { "type": "string", "description": "list|show|search|status|write|edit|note|confirm|history|move|delete" },
+                    "to": { "type": "string", "description": "move: the new slug" },
+                    "rev": { "type": "integer", "description": "show/list (local docs): as of this revision" },
                     "anchors": { "type": "array", "items": { "type": "string" }, "description": "write: code the page derives from (file:src/x.rs, dir:src/core, glob:src/**/*.rs, shape:docs); a change makes the page stale" },
                     "slug": { "type": "string", "description": "Page slug, e.g. guide/retry (list: a prefix)" },
                     "section": { "type": "string", "description": "show: one section by its heading slug" },
@@ -62,6 +65,10 @@ impl McpTool for CtxDocTool {
             owned("status"),
         );
         let anchors = get_str_array(args, "anchors").unwrap_or_default();
+        let to = owned("to");
+        let agent = ctx.agent_id.as_ref().and_then(|agent| {
+            crate::server::bounded_lock::read(agent, "ctx_doc agent").and_then(|a| a.clone())
+        });
         let call = Args {
             anchors: &anchors,
             action: &action,
@@ -73,6 +80,9 @@ impl McpTool for CtxDocTool {
             replace: replace.as_deref(),
             kind: kind.as_deref(),
             status: status.as_deref(),
+            to: to.as_deref(),
+            rev: args.get("rev").and_then(Value::as_u64),
+            author: agent.map(lean_ctx_doc::local::Author::agent),
             outline: args
                 .get("outline")
                 .and_then(Value::as_bool)

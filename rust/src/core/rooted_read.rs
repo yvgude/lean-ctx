@@ -56,7 +56,7 @@ pub fn read_file_lossy_admitted_for_cli(
             outcome.blocked,
         );
     }
-    crate::core::context_admission::admit_source_with_storage(
+    crate::core::context_admission::admit_project_file_with_storage(
         &decoded.content,
         path,
         false,
@@ -480,7 +480,7 @@ use crate::core::context_admission::cross_line::{
 ///   when the unit ends after the key, or after the separator.
 ///
 /// Decided on the unit alone; never on a seam.
-fn unit_ends_inside_a_rule(text: &str) -> bool {
+pub fn unit_ends_inside_a_rule(text: &str) -> bool {
     use std::sync::OnceLock;
     const KINDS: &str = r"(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----";
     static OPEN_HEADER: OnceLock<regex::Regex> = OnceLock::new();
@@ -799,7 +799,7 @@ fn admit_read_with(
             completeness,
             snapshot,
         ),
-        None => crate::core::context_admission::admit_source_with_storage(
+        None => crate::core::context_admission::admit_project_file_with_storage(
             &original,
             path,
             preserve_bytes,

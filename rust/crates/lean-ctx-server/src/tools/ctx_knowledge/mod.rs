@@ -12,6 +12,8 @@ mod changes;
 pub(crate) use changes::session_change_count;
 pub(crate) mod embeddings;
 pub(crate) use embeddings::*;
+pub mod fact_ids;
+pub mod freshness;
 mod linked;
 mod remember;
 pub use remember::*;

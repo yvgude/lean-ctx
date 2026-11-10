@@ -1,0 +1,6 @@
+The CLI prints a panic when the config file is empty.
+```
+thread 'main' panicked at src/config.rs:88:14
+called `Option::unwrap()` on a `None` value
+```
+An empty file should probably mean defaults.

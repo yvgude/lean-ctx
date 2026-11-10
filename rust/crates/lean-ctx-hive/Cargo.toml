@@ -4,7 +4,7 @@
 # Published in lockstep with the Engine.
 [package]
 name = "lean-ctx-hive"
-version = "3.12.2"
+version = "3.12.3"
 edition = "2024"
 license = "Apache-2.0"
 description = "The LeanCTX | Hive connector: enrollment, bus, knowledge sync, tasks and policy on top of LeanCTX | OSS."
@@ -25,9 +25,10 @@ http-server = ["lean-ctx-engine/http-server", "dep:tokio-tungstenite", "dep:rust
 test-support = ["lean-ctx-engine/test-support"]
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false }
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
-lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.1.0" }
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.6.0" }
+lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.2.0" }
+lean-ctx-tasks = { path = "../lean-ctx-tasks", version = "0.1.0" }
 http = "1.4"
 tokio = { version = "1.52", features = [
   "rt",
@@ -62,7 +63,9 @@ hmac = "0.13"
 sha2 = "0.11"
 hkdf = "0.13"
 chacha20poly1305 = "0.10"
+unicode-general-category = "1.1"
 unicode-normalization = "0.1"
+unicode-security = "0.1.3"
 ed25519-dalek = { version = "2.2", features = ["rand_core"] }
 zeroize = "1"
 getrandom = "0.4"
@@ -73,6 +76,9 @@ blake3 = "1.8"
 p256 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8", "std"] }
 zstd = "0.14.3"
 fs2 = "0.4"
+# Parses the locked test files of a G6 rerun (tasks/gate_report.rs).
+syn = { version = "2.0", default-features = false, features = ["full", "visit", "parsing"] }
+proc-macro2 = { version = "1.0", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
@@ -86,7 +92,7 @@ keyring = { version = "3.6.3", default-features = false, features = ["sync-secre
 [dev-dependencies]
 # The Engine's test helpers for this crate's unit tests (see core::test_mode),
 # and its tree-sitter symbol anchors, which the capture tests resolve.
-lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false, features = ["test-support", "tree-sitter"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false, features = ["test-support", "tree-sitter"] }
 jsonschema = { version = "0.46", default-features = false }
 
 [lints]

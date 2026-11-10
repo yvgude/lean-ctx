@@ -8,6 +8,17 @@ pub fn zed_settings_path(home: &std::path::Path) -> PathBuf {
     }
 }
 
+/// Goose's config directory: `~/.config/goose` on macOS and Linux,
+/// `%APPDATA%\Block\goose\config` on Windows.
+pub fn goose_config_dir(home: &std::path::Path) -> PathBuf {
+    if cfg!(windows)
+        && let Some(appdata) = std::env::var_os("APPDATA")
+    {
+        return PathBuf::from(appdata).join("Block/goose/config");
+    }
+    home.join(".config/goose")
+}
+
 pub fn zed_config_dir(home: &std::path::Path) -> PathBuf {
     if cfg!(target_os = "macos") {
         home.join("Library/Application Support/Zed")

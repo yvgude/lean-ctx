@@ -88,6 +88,8 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "plan",
     "compile",
     "knowledge",
+    "tasks",
+    "docs",
     "skillify",
     "summary",
     "overview",

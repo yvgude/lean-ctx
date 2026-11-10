@@ -387,6 +387,12 @@ pub(crate) fn agent_mcp_targets(
             home.join(".aider/mcp.json"),
             ConfigType::McpJson,
         ),
+        "goose" => push(
+            &mut targets,
+            "Goose",
+            lean_ctx::core::editor_registry::goose_config_dir(&home).join("config.yaml"),
+            ConfigType::GooseYaml,
+        ),
         "continue" => push(
             &mut targets,
             "Continue",
@@ -672,6 +678,12 @@ pub fn disable_agent_mcp(agent: &str, overwrite_invalid: bool) -> Result<(), Str
             "Aider",
             home.join(".aider/mcp.json"),
             ConfigType::McpJson,
+        ),
+        "goose" => push(
+            &mut targets,
+            "Goose",
+            lean_ctx::core::editor_registry::goose_config_dir(&home).join("config.yaml"),
+            ConfigType::GooseYaml,
         ),
         "continue" => push(
             &mut targets,

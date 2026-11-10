@@ -1,0 +1,12 @@
+{
+  "ac": "pz21-AC06",
+  "channel": "project",
+  "clean": true,
+  "fenced": false,
+  "must_contain": [
+    "/// Adds two numbers.\npub fn add(a: i64, b: i64) -> i64 {\n    a + b\n}"
+  ],
+  "must_not_contain": [],
+  "path": "src/math.rs",
+  "redacted_lines": 0
+}

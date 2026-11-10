@@ -347,10 +347,13 @@ mod unix {
         // that recycled PID; only kill a group whose leader is still ours.
         // SAFETY: the child was spawned with its own process group; the negative
         // PID addresses that owned group and no pointers cross the syscall.
-        if status.is_none() {
-            // SAFETY: only the unreaped leader's own process group is addressed.
+        if status.is_none()
+            && let Ok(group) = crate::ipc::process::group_target(child.id())
+        {
+            // SAFETY: only the unreaped leader's own process group is
+            // addressed; `group` is positive, so `-group` is never 0 or -1.
             unsafe {
-                libc::kill(-(child.id() as i32), libc::SIGKILL);
+                libc::kill(-group, libc::SIGKILL);
             }
         }
         let _ = child.wait();
@@ -693,14 +696,10 @@ mod unix {
             };
             let value = credential(&launch, directory.path()).unwrap();
             assert_eq!(value.as_str(), "not-a-credential");
-            let pid: libc::pid_t = std::fs::read_to_string(&left)
-                .unwrap()
-                .trim()
-                .parse()
-                .unwrap();
+            let pid = crate::ipc::process::parse_pid_file(&std::fs::read_to_string(&left).unwrap())
+                .expect("the reader wrote a valid PID");
             let deadline = Instant::now() + Duration::from_secs(5);
-            // SAFETY: signal 0 only probes for existence.
-            while unsafe { libc::kill(pid, 0) } == 0 {
+            while crate::ipc::process::is_alive(pid) {
                 assert!(
                     Instant::now() < deadline,
                     "the reader's background process outlived the read"

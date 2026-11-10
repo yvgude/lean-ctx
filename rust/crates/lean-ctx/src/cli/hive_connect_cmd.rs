@@ -202,6 +202,14 @@ pub(super) fn run(config: &HiveConfig, args: &[String]) -> Result<(), HiveError>
         instance.workspace_label(),
         plan_name(&session.lease.lease.plan)
     );
+    // Sync runs in the daemon's background: keep it running by itself, and
+    // restart it so its scheduler starts for this connection (a test or an
+    // isolated instance never installs a user-wide service).
+    if let Some(line) = lean_ctx::daemon_autostart::supervision_line(
+        lean_ctx::daemon_autostart::ensure_supervised(true),
+    ) {
+        println!("{line}");
+    }
     // E44 at connect (SPEC-ENGINE §3.6). A Hive before C0 2.0 has no
     // instance card; that never fails the connect.
     if let Err(error) = lean_ctx_hive::workers::register::announce_instance(&session) {
@@ -603,6 +611,30 @@ fn confirm_sharing(
 /// Step 3: name the vault of the project at `root`. Never fails the
 /// connect: the background sync retries what did not work here.
 fn map_project(config: &HiveConfig, session: &Session, root: &Path, device: bool) -> Outcome {
+    // Dogfood 5.11.: a recorded vault the link file or the identity no
+    // longer backs is dropped here and resolved again, never reused.
+    match lean_ctx_hive::resolution::forget_stale_at(session.store.data_dir(), root) {
+        Ok(Some(stale)) => println!("  Note: {}; resolving it again.", stale.describe()),
+        Ok(None) => {}
+        Err(error) => return Outcome::Retry(error.to_string()),
+    }
+    let outcome = map_project_step(config, session, root, device);
+    if let Outcome::Shared { ns, name } = &outcome {
+        let ours = lean_ctx_protocol::hive::vault::VaultRefV1 {
+            ns: ns.clone(),
+            name: name.clone(),
+        };
+        if let Some(other) = lean_ctx_hive::mapping::bound_elsewhere(session, root, &ours) {
+            println!(
+                "  Warning: Hive binds this repository to the vault {}/{} (another Instance of {} resolved it there), but this machine syncs it with {ns}/{name}. One repository in two vaults splits its knowledge: run `lean-ctx hive link {}/{}` here, or move it in Hive.",
+                other.ns, other.name, session.instance.org_name, other.ns, other.name
+            );
+        }
+    }
+    outcome
+}
+
+fn map_project_step(config: &HiveConfig, session: &Session, root: &Path, device: bool) -> Outcome {
     let project = project_name(root);
     let org = &session.instance.org_name;
     match steps::project_step(&VaultMap::load(session.store.data_dir()), root) {
@@ -656,6 +688,11 @@ fn map_project(config: &HiveConfig, session: &Session, root: &Path, device: bool
                     Outcome::KeptLocal("you said no to sharing it".into())
                 }
                 Err(MapError::Consent(_)) => Outcome::Waiting,
+                Err(MapError::Hive(HiveError::Refused(why)))
+                    if why.starts_with("vault_mismatch") =>
+                {
+                    Outcome::KeptLocal(why)
+                }
                 Err(error) => Outcome::Retry(format!(
                     "it has no vault yet ({error}); `lean-ctx hive link <workspace>/<vault>` names one"
                 )),

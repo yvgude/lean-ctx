@@ -2,6 +2,30 @@
   "bomFormat": "CycloneDX",
   "components": [
     {
+      "bom-ref": "path+file://./rust/crates/lean-ctx-activity#0.1.0",
+      "description": "The host-neutral activity stream of LeanCTX | OSS: one bounded, redacted event log per agent session.",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://leanctx.com"
+        },
+        {
+          "type": "vcs",
+          "url": "https://github.com/yvgude/lean-ctx"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0"
+        }
+      ],
+      "name": "lean-ctx-activity",
+      "purl": "pkg:cargo/lean-ctx-activity@0.1.0?download_url=file://crates/lean-ctx-activity",
+      "scope": "required",
+      "type": "library",
+      "version": "0.1.0"
+    },
+    {
       "bom-ref": "path+file://./rust/crates/lean-ctx-compress#0.1.0",
       "description": "Deterministic text compressors (Markdown, JSON, CSV/TSV, YAML, HTML) for LeanCTX | OSS.",
       "externalReferences": [
@@ -26,7 +50,7 @@
       "version": "0.1.0"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-doc#0.1.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-doc#0.2.0",
       "description": "The documentation model of lean-ctx: pages, sections, notes and code anchors, replicated through LeanCTX | Hive.",
       "externalReferences": [
         {
@@ -40,13 +64,13 @@
         }
       ],
       "name": "lean-ctx-doc",
-      "purl": "pkg:cargo/lean-ctx-doc@0.1.0?download_url=file://crates/lean-ctx-doc",
+      "purl": "pkg:cargo/lean-ctx-doc@0.2.0?download_url=file://crates/lean-ctx-doc",
       "scope": "required",
       "type": "library",
-      "version": "0.1.0"
+      "version": "0.2.0"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-fs#0.1.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-fs#0.2.0",
       "description": "Filesystem and environment foundation for LeanCTX | OSS: atomic writes, file locks, hashing, JSONC, home resolution.",
       "externalReferences": [
         {
@@ -64,13 +88,13 @@
         }
       ],
       "name": "lean-ctx-fs",
-      "purl": "pkg:cargo/lean-ctx-fs@0.1.0?download_url=file://crates/lean-ctx-fs",
+      "purl": "pkg:cargo/lean-ctx-fs@0.2.0?download_url=file://crates/lean-ctx-fs",
       "scope": "required",
       "type": "library",
-      "version": "0.1.0"
+      "version": "0.2.0"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-ocla#5.0.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-ocla#6.0.0",
       "description": "Open Context & Token Lifecycle Architecture \u2014 the provider-neutral contract boundary (capability traits, canonical types, token envelopes) shared between lean-ctx-core (OSS) and lean-ctx-enterprise (proprietary).",
       "externalReferences": [
         {
@@ -84,10 +108,10 @@
         }
       ],
       "name": "lean-ctx-ocla",
-      "purl": "pkg:cargo/lean-ctx-ocla@5.0.0?download_url=file://crates/lean-ctx-ocla",
+      "purl": "pkg:cargo/lean-ctx-ocla@6.0.0?download_url=file://crates/lean-ctx-ocla",
       "scope": "required",
       "type": "library",
-      "version": "5.0.0"
+      "version": "6.0.0"
     },
     {
       "bom-ref": "path+file://./rust/crates/lean-ctx-patterns#0.1.0",
@@ -114,7 +138,7 @@
       "version": "0.1.0"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-protocol#0.5.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-protocol#0.6.0",
       "description": "Open wire contracts for lean-ctx: events, observations, assignments, evidence gaps.",
       "externalReferences": [
         {
@@ -128,10 +152,10 @@
         }
       ],
       "name": "lean-ctx-protocol",
-      "purl": "pkg:cargo/lean-ctx-protocol@0.5.0?download_url=file://crates/lean-ctx-protocol",
+      "purl": "pkg:cargo/lean-ctx-protocol@0.6.0?download_url=file://crates/lean-ctx-protocol",
       "scope": "required",
       "type": "library",
-      "version": "0.5.0"
+      "version": "0.6.0"
     },
     {
       "bom-ref": "path+file://./rust/crates/lean-ctx-syntax#0.1.0",
@@ -158,7 +182,7 @@
       "version": "0.1.0"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-workgraph#0.1.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-workgraph#0.2.0",
       "description": "Bounded multi-agent work graph, budget cascade and outcome evaluation model for LeanCTX | OSS.",
       "externalReferences": [
         {
@@ -176,10 +200,10 @@
         }
       ],
       "name": "lean-ctx-workgraph",
-      "purl": "pkg:cargo/lean-ctx-workgraph@0.1.0?download_url=file://crates/lean-ctx-workgraph",
+      "purl": "pkg:cargo/lean-ctx-workgraph@0.2.0?download_url=file://crates/lean-ctx-workgraph",
       "scope": "required",
       "type": "library",
-      "version": "0.1.0"
+      "version": "0.2.0"
     },
     {
       "bom-ref": "path+file://./rust/crates/leanctx-native-storage#0.1.1",
@@ -16888,14 +16912,15 @@
         "registry+https://github.com/rust-lang/crates.io-index#http@1.5.0",
         "registry+https://github.com/rust-lang/crates.io-index#ignore@0.4.30",
         "registry+https://github.com/rust-lang/crates.io-index#keyring@3.6.3",
+        "path+file://./rust/crates/lean-ctx-activity#0.1.0",
         "path+file://./rust/crates/lean-ctx-compress#0.1.0",
-        "path+file://./rust/crates/lean-ctx-doc#0.1.0",
-        "path+file://./rust/crates/lean-ctx-fs#0.1.0",
-        "path+file://./rust/crates/lean-ctx-ocla#5.0.0",
+        "path+file://./rust/crates/lean-ctx-doc#0.2.0",
+        "path+file://./rust/crates/lean-ctx-fs#0.2.0",
+        "path+file://./rust/crates/lean-ctx-ocla#6.0.0",
         "path+file://./rust/crates/lean-ctx-patterns#0.1.0",
-        "path+file://./rust/crates/lean-ctx-protocol#0.5.0",
+        "path+file://./rust/crates/lean-ctx-protocol#0.6.0",
         "path+file://./rust/crates/lean-ctx-syntax#0.1.0",
-        "path+file://./rust/crates/lean-ctx-workgraph#0.1.0",
+        "path+file://./rust/crates/lean-ctx-workgraph#0.2.0",
         "path+file://./rust/crates/leanctx-native-storage#0.1.1",
         "registry+https://github.com/rust-lang/crates.io-index#libc@0.2.189",
         "registry+https://github.com/rust-lang/crates.io-index#libloading@0.8.9",
@@ -16952,7 +16977,16 @@
         "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5",
         "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
       ],
-      "ref": "path+file://./rust#lean-ctx-engine@3.12.2"
+      "ref": "path+file://./rust#lean-ctx-engine@3.12.3"
+    },
+    {
+      "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#chrono@0.4.45",
+        "path+file://./rust/crates/lean-ctx-fs#0.2.0",
+        "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
+        "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151"
+      ],
+      "ref": "path+file://./rust/crates/lean-ctx-activity#0.1.0"
     },
     {
       "dependsOn": [
@@ -16966,11 +17000,12 @@
     },
     {
       "dependsOn": [
+        "registry+https://github.com/rust-lang/crates.io-index#fs2@0.4.3",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-doc#0.1.0"
+      "ref": "path+file://./rust/crates/lean-ctx-doc#0.2.0"
     },
     {
       "dependsOn": [
@@ -16983,7 +17018,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#toml@1.1.4+spec-1.1.0",
         "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-fs#0.1.0"
+      "ref": "path+file://./rust/crates/lean-ctx-fs#0.2.0"
     },
     {
       "dependsOn": [
@@ -16992,14 +17027,14 @@
         "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.6",
         "registry+https://github.com/rust-lang/crates.io-index#ed25519-dalek@2.2.0",
         "registry+https://github.com/rust-lang/crates.io-index#getrandom@0.4.3",
-        "path+file://./rust/crates/lean-ctx-protocol#0.5.0",
+        "path+file://./rust/crates/lean-ctx-protocol#0.6.0",
         "registry+https://github.com/rust-lang/crates.io-index#semver@1.0.28",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-ocla#5.0.0"
+      "ref": "path+file://./rust/crates/lean-ctx-ocla#6.0.0"
     },
     {
       "dependsOn": [
@@ -17022,7 +17057,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-protocol#0.5.0"
+      "ref": "path+file://./rust/crates/lean-ctx-protocol#0.6.0"
     },
     {
       "dependsOn": [
@@ -17059,13 +17094,13 @@
     {
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#blake3@1.8.6",
-        "path+file://./rust/crates/lean-ctx-protocol#0.5.0",
+        "path+file://./rust/crates/lean-ctx-protocol#0.6.0",
         "registry+https://github.com/rust-lang/crates.io-index#serde@1.0.229",
         "registry+https://github.com/rust-lang/crates.io-index#serde_json@1.0.151",
         "registry+https://github.com/rust-lang/crates.io-index#sha2@0.11.0",
         "registry+https://github.com/rust-lang/crates.io-index#thiserror@2.0.20"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-workgraph#0.1.0"
+      "ref": "path+file://./rust/crates/lean-ctx-workgraph#0.2.0"
     },
     {
       "dependsOn": [
@@ -20837,14 +20872,14 @@
   ],
   "metadata": {
     "component": {
-      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.2",
+      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.3",
       "components": [
         {
-          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.2 bin-target-0",
+          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.3 bin-target-0",
           "name": "lean_ctx",
-          "purl": "pkg:cargo/lean-ctx-engine@3.12.2?download_url=file://.#src/lib.rs",
+          "purl": "pkg:cargo/lean-ctx-engine@3.12.3?download_url=file://.#src/lib.rs",
           "type": "library",
-          "version": "3.12.2"
+          "version": "3.12.3"
         }
       ],
       "description": "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI agents behind the lean-ctx CLI, MCP server and proxy integrations.",
@@ -20864,10 +20899,10 @@
         }
       ],
       "name": "lean-ctx-engine",
-      "purl": "pkg:cargo/lean-ctx-engine@3.12.2?download_url=file://.",
+      "purl": "pkg:cargo/lean-ctx-engine@3.12.3?download_url=file://.",
       "scope": "required",
       "type": "library",
-      "version": "3.12.2"
+      "version": "3.12.3"
     },
     "properties": [
       {
@@ -20876,7 +20911,7 @@
       },
       {
         "name": "leanctx:cargo-lock-sha256",
-        "value": "7bbc281faa671a94f0b05b3181d794494f888094ca31076bd93c380e5afa19ee"
+        "value": "244406655444ce38a045358b0780179fe504634f075af30d8252e60e9fdd3e74"
       }
     ],
     "tools": [

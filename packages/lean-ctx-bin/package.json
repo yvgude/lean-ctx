@@ -1,6 +1,6 @@
 {
   "name": "lean-ctx-bin",
-  "version": "3.12.2",
+  "version": "3.12.3",
   "description": "LeanCTX | OSS — the open-source runtime for the Context Gateway for AI Systems. Select context, apply supported controls, and inspect evidence. No Rust required.",
   "keywords": [
     "lean-ctx",

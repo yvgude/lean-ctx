@@ -33,6 +33,7 @@ use lean_ctx::core::provider_bandit::ProviderBandit;
 
 fn code_chunk(path: &str, symbol: &str, content: &str, kind: ChunkKind) -> ContentChunk {
     ContentChunk::from(CodeChunk {
+        input_origin: None,
         file_path: path.into(),
         symbol_name: symbol.into(),
         kind,

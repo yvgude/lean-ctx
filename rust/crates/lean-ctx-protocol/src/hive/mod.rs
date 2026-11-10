@@ -33,6 +33,7 @@ pub mod effective_policy;
 pub mod enroll;
 pub mod error;
 pub mod facts;
+pub mod gate;
 pub mod graph;
 pub mod knowledge;
 pub mod lease;

@@ -137,7 +137,7 @@ mod tests {
         let capture = AdmissionCapture::for_call(duty.snapshot().clone());
         ADMISSIONS
             .sync_scope(Some(capture.clone()), || {
-                lean_ctx::core::context_admission::admit_context_source(text)
+                lean_ctx::core::context_admission::admit_instance_context_source(text)
             })
             .expect("a clean source is admitted");
         let delivery = trace::Delivery::mcp("ctx_read", duty.snapshot());
@@ -324,7 +324,7 @@ mod tests {
             let duty = Duty::at_entry();
             let capture = AdmissionCapture::for_call(duty.snapshot().clone());
             let admitted = ADMISSIONS.sync_scope(Some(capture.clone()), || {
-                lean_ctx::core::context_admission::admit_context_source(text)
+                lean_ctx::core::context_admission::admit_instance_context_source(text)
             });
             assert_eq!(admitted.is_err(), withheld, "{route:?}: {admitted:?}");
             // A withheld source hands over the refusal, never the text.
@@ -461,7 +461,7 @@ mod tests {
         let delivered = "pub fn dashboard_body() {}\n";
         ADMISSIONS
             .sync_scope(Some(capture.clone()), || {
-                lean_ctx::core::context_admission::admit_context_source(delivered)
+                lean_ctx::core::context_admission::admit_instance_context_source(delivered)
             })
             .expect("a clean source is admitted");
         let delivery = trace::Delivery::mcp("ctx_read", duty.snapshot());

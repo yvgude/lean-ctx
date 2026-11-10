@@ -187,6 +187,7 @@ pub(crate) fn extract_admitted_chunks(
                 *remaining_chunks -= 1;
                 exhausted.set(*remaining_chunks == 0 || *remaining_bytes == 0);
                 chunks.push(CodeChunk {
+                    input_origin: None,
                     file_path: file_path.into(),
                     symbol_name: name.into(),
                     kind,
@@ -444,6 +445,7 @@ fn extract_chunks_fallback_budgeted(
             let token_count = tokenize(&block).len();
 
             chunks.push(CodeChunk {
+                input_origin: None,
                 file_path: file_path.to_string(),
                 symbol_name: name,
                 kind,
@@ -485,6 +487,7 @@ fn extract_chunks_fallback_budgeted(
                 let start_line = 1 + bytecount::count(&bytes[..c.offset], b'\n');
                 let end_line = start_line + bytecount::count(slice, b'\n');
                 chunks.push(CodeChunk {
+                    input_origin: None,
                     file_path: file_path.to_string(),
                     symbol_name: name,
                     kind: ChunkKind::Module,
@@ -511,6 +514,7 @@ fn extract_chunks_fallback_budgeted(
                 .collect::<Vec<_>>()
                 .join("\n");
             chunks.push(CodeChunk {
+                input_origin: None,
                 file_path: file_path.to_string(),
                 symbol_name: file_path.to_string(),
                 kind: ChunkKind::Module,

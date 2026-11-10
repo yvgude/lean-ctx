@@ -20,7 +20,7 @@ use super::jira::JiraProvider;
 use super::mcp_bridge::McpBridgeProvider;
 use super::postgres::PostgresProvider;
 use super::provider_trait::ContextProvider;
-use super::registry::global_registry;
+use super::registry::{ProviderRegistry, global_registry};
 
 /// Register all built-in providers with the global registry.
 /// Respects `[providers]` config for enabling/disabling individual providers.
@@ -31,14 +31,20 @@ pub fn init_builtin_providers() {
 
 /// Register all providers, including config-based ones scoped to `project_root`.
 pub fn init_with_project_root(project_root: Option<&Path>) {
+    populate(global_registry(), project_root);
+}
+
+/// Register every provider `project_root` has into `registry`. A caller
+/// that only inspects (a listing) passes its own fresh registry, so the
+/// shared one is never changed and one project's providers never reach
+/// another's.
+pub fn populate(registry: &ProviderRegistry, project_root: Option<&Path>) {
     let cfg = crate::core::config::Config::load();
 
     if !cfg.providers.enabled {
         tracing::debug!("[providers] subsystem disabled via config");
         return;
     }
-
-    let registry = global_registry();
 
     // --- Built-in providers ---
     if cfg.providers.github.enabled {

@@ -63,7 +63,7 @@ pub fn shell_tokenize(input: &str) -> Vec<String> {
 /// `$(...)` looked like the end of the token, splitting `s=$(gh pr view …)`
 /// into a bogus token `s=$(gh` plus a leftover `pr` that got misread as the
 /// base command.
-pub(super) fn quote_aware_token_end(input: &str) -> usize {
+pub fn quote_aware_token_end(input: &str) -> usize {
     let bytes = input.as_bytes();
     let len = bytes.len();
     let mut i = 0;
@@ -117,7 +117,7 @@ pub(super) fn quote_aware_token_end(input: &str) -> usize {
 }
 /// Extract ALL command segments from a compound shell command.
 /// Splits on: &&, ||, ;, | (pipe), and handles subshell grouping.
-pub(super) fn extract_all_commands(command: &str) -> Vec<String> {
+pub fn extract_all_commands(command: &str) -> Vec<String> {
     split_on_operators(command)
         .into_iter()
         .map(|s| s.trim().to_string())
@@ -230,7 +230,7 @@ fn closes_double_bracket(bytes: &[u8], i: usize) -> bool {
 /// command — the escaped pipe is regex data, not an operator. The old scanner
 /// split there and blocked the pattern fragment as an unknown command; same
 /// for `find … -exec rm {} \;`.
-pub(super) fn split_on_operators(command: &str) -> Vec<&str> {
+pub fn split_on_operators(command: &str) -> Vec<&str> {
     split_with_separators(command)
         .into_iter()
         .map(|(segment, _)| segment)
@@ -303,7 +303,7 @@ pub(super) fn has_call_operator_before_break(command: &str) -> bool {
 /// The top-level statements of a command line: the original text between
 /// `;`/newline separators, each still holding its `&&`, `||`, `|` and `&`
 /// verbatim. Same scanner as [`segments_with_separators`].
-pub(super) fn sequence_statements(command: &str) -> Vec<&str> {
+pub fn sequence_statements(command: &str) -> Vec<&str> {
     let base = command.as_ptr() as usize;
     let mut out = Vec::new();
     let mut start: Option<usize> = None;
@@ -519,7 +519,7 @@ fn split_with_separators(command: &str) -> Vec<(&str, Option<Separator>)> {
 /// the first token) and the subcommand-scoped allowlist matcher (which needs
 /// the rest of the tokens too), so the two normalizations cannot drift
 /// (GH #1419 follow-up).
-pub(super) fn extract_command_tokens_from_segment(segment: &str) -> Vec<String> {
+pub fn extract_command_tokens_from_segment(segment: &str) -> Vec<String> {
     let trimmed = segment.trim();
     if trimmed.is_empty() {
         return Vec::new();
@@ -551,12 +551,50 @@ pub(super) fn extract_command_tokens_from_segment(segment: &str) -> Vec<String> 
         .next()
         .unwrap_or(&first_token)
         .to_string();
+    // `./unset`, `/tmp/x/export` run a file, not the builtin: keep the path so
+    // the allowlist sees a program, not a builtin name.
+    let basename = if first_token.contains('/') && ENV_SETTING_BUILTINS.contains(&basename.as_str())
+    {
+        first_token.clone()
+    } else {
+        basename
+    };
 
     std::iter::once(basename).chain(token_iter).collect()
 }
 
+/// The program a command word runs, for the gate's name checks (`env`,
+/// `git`, interpreters, wrappers, unconditionally blocked programs): its
+/// last path component — on macOS and Windows, whose file systems ignore
+/// case by default, lower-cased (and without `.exe` on Windows), so
+/// `/usr/bin/ENV` is `env` there.
+pub fn exec_name(token: &str) -> String {
+    exec_name_for(
+        token,
+        cfg!(any(target_os = "macos", windows)),
+        cfg!(windows),
+    )
+}
+
+pub fn exec_name_for(token: &str, fold_case: bool, windows: bool) -> String {
+    let base = if windows {
+        token.rsplit(['/', '\\']).next()
+    } else {
+        token.rsplit('/').next()
+    }
+    .unwrap_or(token);
+    if !fold_case {
+        return base.to_owned();
+    }
+    let lower = base.to_ascii_lowercase();
+    match lower.strip_suffix(".exe") {
+        Some(stem) if windows => stem.to_owned(),
+        _ => lower,
+    }
+}
+
 /// Extract the base command name from a single segment (no operators).
-pub(super) fn extract_base_from_segment(segment: &str) -> String {
+pub fn extract_base_from_segment(segment: &str) -> String {
     extract_command_tokens_from_segment(segment)
         .into_iter()
         .next()
@@ -566,8 +604,15 @@ pub(super) fn extract_base_from_segment(segment: &str) -> String {
 /// Skip a local PowerShell assignment (`$result = Get-Content …`) so the
 /// wrapped cmdlet is validated. Environment/scoped variables contain `:` and
 /// intentionally remain unrecognized, preventing `$env:PATH = …` bypasses.
-pub(super) fn skip_powershell_assignment(segment: &str) -> &str {
+///
+/// Only a PowerShell host reads `$name = value` as an assignment. Bash runs
+/// `$name` with the arguments `= value`, so under any other shell the line is
+/// left whole and its `$` command word is refused as expanding at run time.
+pub fn skip_powershell_assignment(segment: &str) -> &str {
     let trimmed = segment.trim_start();
+    if super::ps_statements::host_mode() != super::ps_statements::Mode::PowerShell {
+        return trimmed;
+    }
     let Some(variable_end) = powershell_local_variable_end(trimmed) else {
         return trimmed;
     };
@@ -601,6 +646,10 @@ fn powershell_local_variable_end(segment: &str) -> Option<usize> {
 /// A bare local variable or simple index lookup is pipeline data, not a command.
 /// Method calls and scoped variables deliberately fall through to deny-by-default.
 fn is_powershell_value_expression(segment: &str) -> bool {
+    // Bash runs a bare `$VAR` as the command it expands to.
+    if super::ps_statements::host_mode() != super::ps_statements::Mode::PowerShell {
+        return false;
+    }
     let trimmed = segment.trim();
     let Some(variable_end) = powershell_local_variable_end(trimmed) else {
         return false;
@@ -616,7 +665,7 @@ fn is_powershell_value_expression(segment: &str) -> bool {
 /// Pattern: `NAME() {`, `function NAME {` or `function NAME() {`; GH #2131
 /// adds `NAME(){`, a body on the next line and a `( … )` subshell body.
 /// Returns the function name if it is a definition, `None` otherwise.
-pub(super) fn detect_function_def(segment: &str) -> Option<String> {
+pub fn detect_function_def(segment: &str) -> Option<String> {
     function_def_parts(segment).map(|(name, _)| name.to_string())
 }
 
@@ -625,7 +674,7 @@ pub(super) fn detect_function_def(segment: &str) -> Option<String> {
 /// `echo hi; echo bye;`. The allowlist expands it like a top-level command
 /// line, so control flow in a body (`for … do … done`, `if … then … fi`) is not
 /// mistaken for commands (GH #2002).
-pub(super) fn function_body(segment: &str) -> Option<&str> {
+pub fn function_body(segment: &str) -> Option<&str> {
     function_def_parts(segment).map(|(_, body)| body)
 }
 
@@ -697,30 +746,225 @@ fn strip_empty_parens(text: &str) -> Option<&str> {
 /// is not a bare inline `PATH=… cmd` hijack — skip the builtin and any
 /// following `VAR=value` tokens so export-only segments contribute no leaf
 /// command and `export PATH=… ; python3 …` resolves to `python3`.
-const ENV_SETTING_BUILTINS: &[&str] =
-    &["export", "unset", "readonly", "local", "declare", "typeset"];
+const ENV_SETTING_BUILTINS: &[&str] = &[
+    "export", "unset", "readonly", "local", "declare", "typeset", "umask",
+];
+
+/// A builtin whose operands the gate may step over (see [`accepts_operand`]).
+#[derive(Clone, Copy, PartialEq)]
+enum OperandKind {
+    /// `export`, `readonly`, `declare`, `local`, `typeset`: names, `NAME=value`.
+    Declaration,
+    /// `unset`: plain names only.
+    Unset,
+    /// `umask`: a mode.
+    Umask,
+}
+
+fn operand_kind_of(unquoted: &str) -> Option<OperandKind> {
+    match unquoted {
+        "umask" => Some(OperandKind::Umask),
+        "unset" => Some(OperandKind::Unset),
+        n if ENV_SETTING_BUILTINS.contains(&n) => Some(OperandKind::Declaration),
+        _ => None,
+    }
+}
+
+fn is_identifier(s: &str) -> bool {
+    let mut bytes = s.bytes();
+    bytes
+        .next()
+        .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+/// A flag cluster from a fixed whitelist. Everything else stays a leaf, and
+/// so blocked: `-f` (exports a function), `-i` (arithmetic on every later
+/// assignment, which runs `a[$(cmd)]` subscripts), `-a`/`-A` (a quoted word
+/// is re-parsed as a compound assignment), `-n` (namerefs).
+fn is_safe_flag(token: &str, allowed: &str) -> bool {
+    token == "--"
+        || token
+            .strip_prefix('-')
+            .is_some_and(|f| !f.is_empty() && f.chars().all(|c| allowed.contains(c)))
+}
+
+fn is_umask_mode(token: &str) -> bool {
+    if matches!(token, "-S" | "-p") {
+        return true;
+    }
+    if (1..=4).contains(&token.len()) && token.bytes().all(|b| (b'0'..=b'7').contains(&b)) {
+        return true;
+    }
+    !token.is_empty()
+        && token.split(',').all(|clause| {
+            let rest = clause.trim_start_matches(['u', 'g', 'o', 'a']);
+            rest.strip_prefix(['-', '+', '='])
+                .is_some_and(|perm| perm.chars().all(|c| "rwxXst".contains(c)))
+        })
+}
+
+/// Whether `unquoted` may be consumed as an operand of the builtin `kind`:
+/// a variable name, a plain assignment, or a umask mode, never a program.
+/// Anything else (an array subscript, `=(`, a flag outside the whitelist, a
+/// redirection, a backtick) is not consumed and reaches the allowlist as the
+/// leaf command.
+fn accepts_operand(kind: OperandKind, raw: &str, unquoted: &str) -> bool {
+    match kind {
+        OperandKind::Umask => is_umask_mode(unquoted),
+        OperandKind::Unset => is_identifier(unquoted) || is_safe_flag(unquoted, "v"),
+        OperandKind::Declaration => {
+            if is_identifier(unquoted) || is_safe_flag(unquoted, "rxgplutv") {
+                return true;
+            }
+            // The raw token, not the unquoted one: what is quoted or escaped
+            // decides what bash expands and re-parses.
+            raw.split_once('=').is_some_and(|(name, value)| {
+                is_identifier(name)
+                    && !EVALUATED_SPECIAL_VARS.contains(&name)
+                    && is_safe_declaration_value(value)
+            })
+        }
+    }
+}
+
+/// Whether the raw value of a `declare`-family assignment is one of three
+/// plain forms. `declare` re-parses a value that expands to `(…)` as a
+/// compound assignment when the target is an array, and that runs a `$(cmd)`
+/// nobody scans; bash can produce the `(` through `$'…'`, `${X:-(}`, braces or
+/// a variable, so the value is whitelisted rather than searched:
+/// - a bare word of `[A-Za-z0-9_./:,@%+=-]` and plain `$NAME` / `${NAME}`;
+/// - a single-quoted string without `(`, `$` or a backtick;
+/// - a double-quoted string whose only expansions are `$NAME` / `${NAME}`,
+///   without `(`, `[`, a backtick, a backslash or `$(`.
+fn is_safe_declaration_value(value: &str) -> bool {
+    const BARE: &str = "_./:,@%+=-";
+    if let Some(inner) = value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
+        return !inner.contains(['\'', '(', '$', '`']);
+    }
+    if let Some(inner) = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+        return !inner.contains(['"', '(', '[', '`', '\\'])
+            && only_plain_expansions(inner, |_| true);
+    }
+    only_plain_expansions(value, |c| c.is_ascii_alphanumeric() || BARE.contains(c))
+}
+
+/// Every `$` in `s` starts `$NAME` or `${NAME}`, and every other character
+/// satisfies `literal`.
+fn only_plain_expansions(s: &str, literal: impl Fn(char) -> bool) -> bool {
+    let mut rest = s;
+    while let Some(c) = rest.chars().next() {
+        if c != '$' {
+            if !literal(c) {
+                return false;
+            }
+            rest = &rest[c.len_utf8()..];
+            continue;
+        }
+        rest = &rest[1..];
+        let name = if let Some(braced) = rest.strip_prefix('{') {
+            let Some((name, after)) = braced.split_once('}') else {
+                return false;
+            };
+            rest = after;
+            name
+        } else {
+            let end = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(rest.len());
+            let (name, after) = rest.split_at(end);
+            rest = after;
+            name
+        };
+        if !is_identifier(name) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Variables bash keeps integer-attributed: assigning one evaluates the value
+/// arithmetically (`a[$(cmd)]` runs `cmd`) without any `-i`. No assignment to
+/// them is stepped over, whatever the value, because arithmetic resolves
+/// names recursively. The list comes from a full `compgen -v` sweep (plus a
+/// further set of well-known special variables) of bash, trying each name as
+/// `NAME='a[$(cmd)]'`; only these run `cmd`.
+pub const EVALUATED_SPECIAL_VARS: &[&str] = &[
+    "SECONDS",
+    "RANDOM",
+    "SRANDOM",
+    "OPTIND",
+    "HISTCMD",
+    "BASH_XTRACEFD",
+    "BASH_COMPAT",
+];
+
+/// Whether `token` (`NAME=…`, `NAME+=…`) assigns one of [`EVALUATED_SPECIAL_VARS`].
+pub fn assigns_evaluated_special(token: &str) -> bool {
+    token.split_once('=').is_some_and(|(name, _)| {
+        EVALUATED_SPECIAL_VARS.contains(&name.strip_suffix('+').unwrap_or(name))
+    })
+}
+
+/// What stands in for the command of a segment whose builtin operand was
+/// refused: no allowlist entry can ever match it, and the NUL cannot be typed,
+/// so it cannot be approved either.
+const REFUSED_OPERAND_SENTINEL: &str = "\0refused-builtin-operand";
+
+/// The operand or assignment of a leading `export`/`unset`/… prefix that the
+/// gate does not step over, if any. `skip_env_assignments` fails closed on it;
+/// this names it for the refusal message.
+pub fn refused_builtin_operand(segment: &str) -> Option<String> {
+    skip_env_prefix(segment.trim()).err()
+}
 
 /// Skip leading KEY=VALUE environment variable assignments.
 /// Uses quote-aware scanning so `FOO="bar baz" git status` correctly
-/// skips the entire `FOO="bar baz"` token.
-pub(super) fn skip_env_assignments(segment: &str) -> &str {
+/// skips the entire `FOO="bar baz"` token. A refused operand of an
+/// env-setting builtin, or an assignment to an evaluated special variable,
+/// makes the whole segment unmatchable instead: bash never runs an operand
+/// as a program, so it must not become a leaf an allowlisted name can unlock.
+pub fn skip_env_assignments(segment: &str) -> &str {
+    skip_env_prefix(segment).unwrap_or(REFUSED_OPERAND_SENTINEL)
+}
+
+fn skip_env_prefix(segment: &str) -> Result<&str, String> {
     let mut rest = segment;
+    let mut operand_kind: Option<OperandKind> = None;
     loop {
         let rest_trimmed = rest.trim_start();
         if rest_trimmed.is_empty() {
-            return rest_trimmed;
+            return Ok(rest_trimmed);
         }
         let end = quote_aware_token_end(rest_trimmed);
         if end == 0 {
-            return rest_trimmed;
+            return Ok(rest_trimmed);
         }
         let raw_token = &rest_trimmed[..end];
         let unquoted: String = raw_token
             .chars()
             .filter(|c| *c != '"' && *c != '\'')
             .collect();
-        let base_token = unquoted.rsplit('/').next().unwrap_or(unquoted.as_str());
-        if ENV_SETTING_BUILTINS.contains(&base_token) {
+        if let Some(kind) = operand_kind {
+            if accepts_operand(kind, raw_token, &unquoted) {
+                rest = &rest_trimmed[end..];
+                continue;
+            }
+            return Err(raw_token.to_string());
+        }
+        // Bash removes backslashes and quotes from the command word, so
+        // `\declare`, `decl\are` and `'export'` all run the builtin. Only the
+        // bare spelling is checked by the operand whitelist; any other
+        // spelling of a builtin name, or a `$'..'` / `$".."` word that bash
+        // may expand into one, fails closed.
+        let dequoted: String = unquoted.chars().filter(|c| *c != '\\').collect();
+        if raw_token != dequoted && operand_kind_of(&dequoted).is_some() {
+            return Err(raw_token.to_string());
+        }
+        // Only the bare builtin name counts: `./unset` and `/tmp/x/export`
+        // are programs and must reach the allowlist as such.
+        if let Some(kind) = operand_kind_of(&unquoted) {
+            operand_kind = Some(kind);
             rest = &rest_trimmed[end..];
             continue;
         }
@@ -732,9 +976,16 @@ pub(super) fn skip_env_assignments(segment: &str) -> &str {
                 && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
         });
         if is_posix_assignment {
+            if assigns_evaluated_special(&unquoted) {
+                return Err(raw_token.to_string());
+            }
             rest = &rest_trimmed[end..];
+        } else if raw_token.contains("$'") || raw_token.contains("$\"") {
+            // A command word bash may build from `$'..'` / `$".."` (not a
+            // leading assignment, whose value may use them freely).
+            return Err(raw_token.to_string());
         } else {
-            return rest_trimmed;
+            return Ok(rest_trimmed);
         }
     }
 }

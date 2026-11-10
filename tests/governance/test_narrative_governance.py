@@ -376,6 +376,26 @@ class NarrativeGovernanceTests(unittest.TestCase):
             failures = GOVERNANCE.check_repository(root)
             self.assertTrue(any("CHANGELOG.md" in item and "unsupported blanket claim" in item for item in failures), failures)
 
+    @unittest.skipUnless(
+        (Path(GOVERNANCE.__file__).parent / "changelog-fragments.py").is_file(),
+        "changelog fragments are folded in the private mirror only",
+    )
+    def test_pending_changelog_fragments_are_checked_as_unreleased(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            write_fixture(root)
+            history = "# Changelog\n\n[Current positioning](docs/POSITIONING_CANONICAL.md)\n\n## [Unreleased]\n\n## [1.0.0]\n\nMaintenance.\n"
+            (root / "CHANGELOG.md").write_text(history, encoding="utf-8")
+            index = root / "README.md"
+            index.write_text(index.read_text(encoding="utf-8") + "\n[Changelog](CHANGELOG.md)\n", encoding="utf-8")
+            fragments = root / "changelog.d"
+            fragments.mkdir()
+            (fragments / "plain.md").write_text("---\nsection: Fixed\n---\n\n- **Maintenance.**\n", encoding="utf-8")
+            self.assertEqual(GOVERNANCE.check_repository(root), [])
+            (fragments / "claim.md").write_text("---\nsection: Added\n---\n\n- LeanCTX saves 60–90% tokens.\n", encoding="utf-8")
+            failures = GOVERNANCE.check_repository(root)
+            self.assertTrue(any("CHANGELOG.md" in item and "unsupported blanket claim" in item for item in failures), failures)
+
     def test_later_product_redefinition_fails_but_scoped_discussion_passes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

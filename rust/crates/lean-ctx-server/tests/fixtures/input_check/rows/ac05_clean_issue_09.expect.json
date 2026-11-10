@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "The `--json` output of `status` is not valid JSON when a path contains a backslash."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

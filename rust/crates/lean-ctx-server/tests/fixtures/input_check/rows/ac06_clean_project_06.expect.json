@@ -1,0 +1,12 @@
+{
+  "ac": "pz21-AC06",
+  "channel": "project",
+  "clean": true,
+  "fenced": false,
+  "must_contain": [
+    "pub enum Role {\n    System,\n    User,\n    Assistant,\n}\n\npub fn label(role: &Role) -> &'static str {\n    match role {\n        Role::System => \"system\",\n        Role::User => \"user\",\n        Role::Assistant => \"assistant\",\n    }\n}"
+  ],
+  "must_not_contain": [],
+  "path": "src/roles.rs",
+  "redacted_lines": 0
+}

@@ -246,10 +246,23 @@ fn cmd_graph_snapshot(sub: &str, args: &[String]) {
                     std::process::exit(1);
                 }
             };
-            if let Some(parent) = out_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Err(e) = lean_ctx::config_io::write_atomic_with_backup(&out_path, &content) {
+            let written = if out_path == default_snapshot_path(&root) {
+                // The default lives in the repo's `.lean-ctx/`: no symlinked
+                // component below the project root may redirect it.
+                lean_ctx::core::pathjail_write::write_below(
+                    std::path::Path::new(&root),
+                    std::path::Path::new(".lean-ctx/graph.snapshot"),
+                    content.as_bytes(),
+                    0o644,
+                )
+                .map(|_| ())
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                lean_ctx::config_io::write_atomic_with_backup(&out_path, &content)
+            };
+            if let Err(e) = written {
                 eprintln!("snapshot write failed: {e}");
                 std::process::exit(1);
             }

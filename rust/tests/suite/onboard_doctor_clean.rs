@@ -141,6 +141,11 @@ fn fresh_install_doctor_is_plain_and_exits_zero() {
         .env("LEAN_CTX_DATA_DIR", home.join("data"))
         .env("TERM", "dumb")
         .env("LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD", "0")
+        // Inside a container (the CI runner) doctor also requires the
+        // documented Docker environment; model it as the onboard test does, so
+        // this test means the same on a host and in CI.
+        .env("BASH_ENV", home.join("cfg/env.sh"))
+        .env("CLAUDE_ENV_FILE", home.join("cfg/env.sh"))
         .output()
         .expect("doctor spawn");
     let stdout = String::from_utf8_lossy(&doctor.stdout);

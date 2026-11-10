@@ -2,13 +2,14 @@
 # the separately governed Production SDK. `default-members` keeps ordinary
 # build/test/clippy commands scoped to the Engine and the crates split out of it
 # (lean-ctx-patterns, lean-ctx-compress, lean-ctx-workgraph, lean-ctx-fs,
-# lean-ctx-syntax, lean-ctx-doc) and the `lean-ctx` binary package above it,
+# lean-ctx-syntax, lean-ctx-doc, lean-ctx-activity, lean-ctx-tasks, lean-ctx-tripwires) and the `lean-ctx` binary package above it,
 # so their tests stay in every default run.
 [workspace]
 members = [
   ".",
   "crates/lean-ctx",
   "crates/lean-ctx-hooks",
+  "crates/lean-ctx-shell-policy",
   "crates/lean-ctx-hive",
   "crates/lean-ctx-server",
   "crates/lean-ctx-proxy",
@@ -22,17 +23,23 @@ members = [
   "crates/leanctx-native-storage",
   "crates/lean-ctx-embed",
   "crates/lean-ctx-doc",
+  "crates/lean-ctx-activity",
+  "crates/lean-ctx-tasks",
+  "crates/lean-ctx-tripwires",
 ]
-default-members = [".", "crates/lean-ctx", "crates/lean-ctx-hooks", "crates/lean-ctx-hive", "crates/lean-ctx-server", "crates/lean-ctx-proxy", "crates/lean-ctx-fs", "crates/lean-ctx-patterns", "crates/lean-ctx-compress", "crates/lean-ctx-syntax", "crates/lean-ctx-workgraph", "crates/lean-ctx-doc"]
+default-members = [".", "crates/lean-ctx", "crates/lean-ctx-hooks", "crates/lean-ctx-shell-policy", "crates/lean-ctx-hive", "crates/lean-ctx-server", "crates/lean-ctx-proxy", "crates/lean-ctx-fs", "crates/lean-ctx-patterns", "crates/lean-ctx-compress", "crates/lean-ctx-syntax", "crates/lean-ctx-workgraph", "crates/lean-ctx-doc", "crates/lean-ctx-activity", "crates/lean-ctx-tasks", "crates/lean-ctx-tripwires"]
 
 # The Engine library. The `lean-ctx` binary (and the published crate name users
 # install) lives in crates/lean-ctx, which depends on this package, so crates
 # split upward out of the Engine can sit between the two.
 [package]
 name = "lean-ctx-engine"
-version = "3.12.2"
+version = "3.12.3"
 edition = "2024"
 autobins = false
+# Integration tests are listed below: one binary for the shared ones instead
+# of one per tests/*.rs file (each links the whole Engine).
+autotests = false
 description = "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI agents behind the lean-ctx CLI, MCP server and proxy integrations."
 license = "Apache-2.0"
 repository = "https://github.com/yvgude/lean-ctx"
@@ -45,6 +52,32 @@ exclude = ["examples/", "tests/", "crates/"]
 [lib]
 name = "lean_ctx"
 path = "src/lib.rs"
+
+# The Engine's integration tests: tests/engine.rs holds them as modules.
+[[test]]
+name = "engine"
+path = "tests/engine.rs"
+
+# These need a process of their own (see tests/engine.rs).
+[[test]]
+name = "gateway_postprocess_e2e"
+path = "tests/gateway_postprocess_e2e.rs"
+
+[[test]]
+name = "graph_provider_cold_open"
+path = "tests/graph_provider_cold_open.rs"
+
+[[test]]
+name = "lazy_graph_build_latch_tests"
+path = "tests/lazy_graph_build_latch_tests.rs"
+
+[[test]]
+name = "ocp_self_validation"
+path = "tests/ocp_self_validation.rs"
+
+[[test]]
+name = "outcome_pricing_e2e"
+path = "tests/outcome_pricing_e2e.rs"
 
 [[example]]
 name = "gen_tdd_schema"
@@ -139,14 +172,15 @@ grammar-julia = ["tree-sitter", "lean-ctx-syntax/grammar-julia"]
 wasm = ["dep:wasmi"]
 
 [dependencies]
-lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "5.0.0" }
-lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.5.0" }
-lean-ctx-workgraph = { path = "crates/lean-ctx-workgraph", version = "0.1.0" }
+lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "6.0.0" }
+lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.6.0" }
+lean-ctx-workgraph = { path = "crates/lean-ctx-workgraph", version = "0.2.0" }
 lean-ctx-patterns = { path = "crates/lean-ctx-patterns", version = "0.1.0" }
 lean-ctx-compress = { path = "crates/lean-ctx-compress", version = "0.1.0" }
-lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.1.0" }
+lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.2.0" }
 lean-ctx-syntax = { path = "crates/lean-ctx-syntax", version = "0.1.0" }
-lean-ctx-doc = { path = "crates/lean-ctx-doc", version = "0.1.0" }
+lean-ctx-doc = { path = "crates/lean-ctx-doc", version = "0.2.0" }
+lean-ctx-activity = { path = "crates/lean-ctx-activity", version = "0.1.0" }
 rmcp = { version = "3", features = [
   "server",
   "client",
@@ -480,7 +514,7 @@ keyring = { version = "3.6.3", default-features = false, features = ["sync-secre
 
 [dev-dependencies]
 # Test helpers only: env mutation under the shared test lock, listing counter.
-lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.1.0", features = ["test-support"] }
+lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.2.0", features = ["test-support"] }
 leanctx-verify = { path = "../packages/leanctx-verify" }
 criterion = { version = "0.8", features = ["html_reports"] }
 filetime = "0.2"

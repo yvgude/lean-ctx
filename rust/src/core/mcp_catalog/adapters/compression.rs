@@ -134,6 +134,12 @@ fn admitted_answer(
         text,
         &format!("mcp://{server}::{tool}"),
         false,
+        &crate::core::context_admission::origin::SourceClass::External(
+            crate::core::context_admission::origin::InputOrigin::new(
+                crate::core::context_admission::origin::InputKind::ToolOutput,
+                format!("mcp:{server}::{tool}"),
+            ),
+        ),
     )
     .ok()?;
     Some(super::super::redact_downstream_output_with(

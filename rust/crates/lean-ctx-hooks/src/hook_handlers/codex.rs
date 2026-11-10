@@ -210,7 +210,7 @@ pub(super) fn codex_enforce_decision(input: &str, binary: &str) -> String {
 /// Codex has no enforcement wrap: a command it runs natively is checked
 /// against the shell allowlist here and denied on violation, whichever
 /// branch lets it run.
-fn codex_bash_output(
+pub(super) fn codex_bash_output(
     cmd: &str,
     binary: &str,
     replace_denies: impl FnOnce() -> bool,
@@ -223,6 +223,12 @@ fn codex_bash_output(
     // Package-manager install commands are never wrapped or denied by
     // Replace mode — that causes hangs and confuses users.
     if super::file_rewrite::is_package_manager_install(cmd) {
+        return run_checked();
+    }
+
+    // #2194: a command the user excluded from lean-ctx runs natively,
+    // unchanged and not denied by Replace mode; only the allowlist applies.
+    if super::exclusions::user_excluded_reason(cmd).is_some() {
         return run_checked();
     }
 

@@ -181,6 +181,21 @@ fn register(machine: &Machine, project: &Path) -> String {
         .to_string()
 }
 
+/// What a lease call that waited for Hive would wait: its whole budget.
+const LEASE_BUDGET: std::time::Duration = lean_ctx_hive::bus::leases::BUDGET;
+
+/// A call that waited for a Hive holding its answers would run into its
+/// whole client `budget`; one that does not wait ends in a fraction of it.
+/// Half the budget is the bound: relative to the blocker, not an absolute
+/// latency a loaded runner can miss.
+fn assert_no_wait_for_hive(what: &str, started: std::time::Instant, budget: std::time::Duration) {
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < budget / 2,
+        "{what} waited for Hive: {elapsed:?} (budget {budget:?})"
+    );
+}
+
 fn wait_for(what: &str, condition: impl Fn() -> bool) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while !condition() {
@@ -379,8 +394,10 @@ fn leases_and_handoffs_cross_machines_through_hive() {
     let alpha2 = register(&a, &root_a);
     // A slow Hive never holds the call: pending, then a release while Hive
     // is still asked; the release waits behind the grant and ends it.
+    // Hive answers nothing until both calls returned, so a call that waited
+    // for it would take the whole lease budget: each must stay under half.
     std::fs::write(root_a.join("src/slow.rs"), "pub fn slow() {}\n").unwrap();
-    fake.delay_answers(std::time::Duration::from_millis(1500));
+    fake.hold_answers();
     let started = std::time::Instant::now();
     let pending = agent(
         &a,
@@ -391,6 +408,8 @@ fn leases_and_handoffs_cross_machines_through_hive() {
         None,
         None,
     );
+    assert_no_wait_for_hive("lease_acquire", started, LEASE_BUDGET);
+    let started = std::time::Instant::now();
     let released = agent(
         &a,
         &root_a,
@@ -400,11 +419,8 @@ fn leases_and_handoffs_cross_machines_through_hive() {
         Some(&lease_ref(&pending)),
         None,
     );
-    assert!(
-        started.elapsed() < std::time::Duration::from_millis(1000),
-        "no tool call waits for Hive: {:?}",
-        started.elapsed()
-    );
+    assert_no_wait_for_hive("lease_release", started, LEASE_BUDGET);
+    fake.release_answers();
     assert!(pending.contains("scope=pending"), "{pending}");
     assert!(released.contains("Lease released"), "{released}");
     let shown = answered(&a, &root_a, &alpha2);
@@ -436,11 +452,7 @@ fn leases_and_handoffs_cross_machines_through_hive() {
         None,
         None,
     );
-    assert!(
-        started.elapsed() < std::time::Duration::from_secs(1),
-        "{:?}",
-        started.elapsed()
-    );
+    assert_no_wait_for_hive("offline lease_acquire", started, LEASE_BUDGET);
     assert!(local.contains("scope=pending"), "{local}");
     let offline = answered(&a, &root_a, &alpha2);
     assert!(
@@ -475,14 +487,12 @@ fn task_calls_never_wait_for_hive() {
     machine.enter();
     let caller = cache::caller("tester");
     let quick = |what: &str, started: std::time::Instant| {
-        assert!(
-            started.elapsed() < std::time::Duration::from_millis(1000),
-            "{what} waited for Hive: {:?}",
-            started.elapsed()
-        );
+        assert_no_wait_for_hive(what, started, lean_ctx_hive::tasks::BUDGET);
     };
 
-    fake.delay_answers(std::time::Duration::from_millis(1500));
+    // Hive answers nothing until both calls returned: a call that waited for
+    // it would take the whole task budget.
+    fake.hold_answers();
     let started = std::time::Instant::now();
     let first = cache::list(&root, &ListFilter::default(), &caller).unwrap();
     quick("list", started);
@@ -497,6 +507,7 @@ fn task_calls_never_wait_for_hive() {
     )
     .unwrap();
     quick("a queued change", started);
+    fake.release_answers();
     assert!(
         queued.starts_with("Queued for Hive: claim of task #1"),
         "{queued}"
@@ -519,4 +530,77 @@ fn task_calls_never_wait_for_hive() {
     assert!(wait_idle(std::time::Duration::from_secs(30)));
     let fresh = cache::list(&root, &ListFilter::default(), &caller).unwrap();
     assert!(!fresh.contains("a refresh is running"), "{fresh}");
+}
+
+/// #280: a `ctx_tasks propose` goes out at once off the tool call, as
+/// claims and results do, not only with the next scheduler pass: another
+/// Instance lists the task within 10 s, and no `hive sync` runs after the
+/// proposal (none runs in this test process at all).
+#[test]
+fn a_proposed_task_reaches_another_instance_without_a_sync() {
+    use lean_ctx_hive::background::{wait_idle, with_answers};
+    use lean_ctx_hive::tasks::cache;
+    use lean_ctx_protocol::hive::lease::HiveRight;
+    use lean_ctx_server::server::tool_trait::{McpTool as _, ToolContext};
+    let _env = lean_ctx::core::data_dir::test_env_lock();
+    let _dirs = RestoreDirs::capture();
+    let mut options = FakeOptions::default();
+    options.rights.extend([
+        HiveRight::TasksRead,
+        HiveRight::TasksWork,
+        HiveRight::TasksPropose,
+    ]);
+    let fake = FakeHive::start_with(options);
+    let (a, b) = (Machine::new(&fake), Machine::new(&fake));
+    let (root_a, root_b) = (a.project(), b.project());
+    let title = "Document the refund retries";
+
+    a.enter();
+    let args = serde_json::json!({
+        "action": "propose",
+        "title": title,
+        "acceptance": "The retry budget is documented in the README",
+    });
+    let ctx = ToolContext {
+        project_root: root_a.to_string_lossy().into_owned(),
+        ..ToolContext::default()
+    };
+    let started = std::time::Instant::now();
+    let proposed = lean_ctx_server::tools::registered::ctx_tasks::CtxTasksTool
+        .handle(args.as_object().unwrap(), &ctx)
+        .unwrap()
+        .text;
+    // Relative to what waiting would cost (the tasks client budget), not an
+    // absolute 1 s a loaded runner can miss.
+    assert_no_wait_for_hive("propose", started, lean_ctx_hive::tasks::BUDGET);
+
+    let deadline = started + std::time::Duration::from_secs(10);
+    loop {
+        let listed = b.run(&root_b, &["hive", "tasks", "list"]);
+        let text = String::from_utf8_lossy(&listed.stdout).into_owned();
+        if text.contains(title) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "B does not list the proposed task 10 s after the proposal ({proposed}): {listed:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+    assert!(
+        proposed.contains("Queued for Hive: task proposal"),
+        "{proposed}"
+    );
+    assert!(
+        lean_ctx_hive::outbox::Outbox::at(&a.data())
+            .list(lean_ctx_hive::outbox::CHANNEL_TASKS)
+            .is_empty(),
+        "the sent proposal left A's outbox"
+    );
+    // What Hive answered comes with A's next ctx_tasks call.
+    assert!(wait_idle(std::time::Duration::from_secs(30)));
+    a.enter();
+    let caller = cache::caller("mcp");
+    let answer = with_answers(&caller, String::new());
+    assert!(answer.contains("Created task #1, open now"), "{answer}");
 }

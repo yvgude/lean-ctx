@@ -120,6 +120,13 @@ impl McpTool for CtxShellTool {
             })?),
             None => None,
         };
+        // pz21 §1.8: output from outside the repository is `tool_output`;
+        // a download also names the file it wrote.
+        note_tool_output(
+            &command,
+            resolved_cwd.as_ref().map(|(cwd, _)| cwd.as_str()),
+            &ctx.project_root,
+        );
 
         // The write-doctrine check (no `>`, `tee`, heredoc-to-file, curl -o, …)
         // is an MCP-payload-safety convention, not a security boundary, so it is
@@ -151,6 +158,31 @@ impl McpTool for CtxShellTool {
             });
         }
 
+        // The session's rights profile (process-v1 §9): every write the command
+        // line names stays in the role's write scope, never a locked path.
+        let rights_cwd = resolved_cwd
+            .as_ref()
+            .map_or_else(|| ctx.project_root.clone(), |(cwd, _)| cwd.clone());
+        // The `env` argument sets variables on the child, so the rights check
+        // sees its keys too (a namespace or command-valued variable there is
+        // refused just like the inline `KEY=value` form).
+        let env_keys: Vec<&str> = args
+            .get("env")
+            .and_then(Value::as_object)
+            .map(|obj| obj.keys().map(String::as_str).collect())
+            .unwrap_or_default();
+        if let Err(reason) = lean_ctx::core::session_rights::current().check_bash(
+            &command,
+            std::path::Path::new(&rights_cwd),
+            &env_keys,
+        ) {
+            return Ok(ToolOutput {
+                shell_outcome: Some(ShellOutcome::Blocked),
+                content_blocks: None,
+                ..ToolOutput::simple(reason)
+            });
+        }
+
         if let Some((lang, code, remainder)) = detect_heredoc_reroute(&command) {
             return tokio::task::block_in_place(|| {
                 handle_interpreter_heredoc_reroute(args, ctx, &lang, &code, remainder)
@@ -163,12 +195,12 @@ impl McpTool for CtxShellTool {
         let run_cwd = resolved_cwd
             .as_ref()
             .map(|(cwd, _)| std::path::PathBuf::from(cwd));
-        if let Err(msg) = lean_ctx::core::shell_allowlist::with_run_cwd(run_cwd, || {
-            lean_ctx::core::shell_allowlist::check_shell_allowlist_granted(&command, &grant)
+        if let Err(msg) = lean_ctx_shell_policy::with_run_cwd(run_cwd, || {
+            lean_ctx_shell_policy::check_shell_allowlist_granted(&command, &grant)
         }) {
             // Independent `;`/newline statements: run the allowed ones and
             // name each skipped one, instead of refusing the whole line.
-            if let Some(plan) = lean_ctx::core::shell_allowlist::partial_run(&command, &grant) {
+            if let Some(plan) = lean_ctx_shell_policy::partial_run(&command, &grant) {
                 let mut sub = args.clone();
                 sub.insert("command".into(), Value::String(plan.run));
                 let mut output = self.handle(&sub, ctx)?;
@@ -724,10 +756,11 @@ fn shell_mismatch_hint(command: &str, output: &str) -> String {
 /// Collect the caller's `env` overrides, refusing protected keys by name instead
 /// of dropping them silently (#1771).
 ///
-/// The inline-override refusal in `core/shell_allowlist/enforcement.rs` points the
+/// The inline-override refusal in `crates/lean-ctx-shell-policy/src/enforcement.rs` points the
 /// caller at this parameter and uses `PATH` as its worked example — yet five of the
 /// nine variables it blocks inline (`PATH`, `GIT_SSH`, `GIT_SSH_COMMAND`,
-/// `LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`) are also in [`is_dangerous_env_key`].
+/// `LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`) are also refused here, by the shared override
+/// policy [`lean_ctx_shell_policy::env_override_refused`].
 /// Filtering them away meant the recommended recovery ran the command with the
 /// ambient value and reported success, which is worse than the refusal it replaced:
 /// a wrong result that looks right. Naming the key is the only honest outcome.
@@ -741,7 +774,7 @@ fn collect_extra_env(
     let mut rejected: Vec<&str> = Vec::new();
     for (key, value) in obj {
         let Some(text) = value.as_str() else { continue };
-        if is_dangerous_env_key(key) {
+        if lean_ctx_shell_policy::env_override_refused(key, text) {
             rejected.push(key.as_str());
             continue;
         }
@@ -766,75 +799,14 @@ fn collect_extra_env(
     ))
 }
 
-fn is_dangerous_env_key(key: &str) -> bool {
-    const BLOCKED: &[&str] = &[
-        // Dynamic linker injection
-        "LD_PRELOAD",
-        "LD_LIBRARY_PATH",
-        "DYLD_INSERT_LIBRARIES",
-        "DYLD_LIBRARY_PATH",
-        "DYLD_FRAMEWORK_PATH",
-        // Shell re-entry / startup injection
-        "BASH_ENV",
-        "ENV",
-        "PROMPT_COMMAND",
-        "SHELL",
-        "IFS",
-        "CDPATH",
-        // Binary resolution hijacking
-        "PATH",
-        "GIT_EXEC_PATH",
-        "GIT_SSH",
-        "GIT_SSH_COMMAND",
-        // Identity / home directory manipulation
-        "HOME",
-        "USER",
-        "LOGNAME",
-        "XDG_CONFIG_HOME",
-        "XDG_DATA_HOME",
-        "XDG_STATE_HOME",
-        "XDG_CACHE_HOME",
-        // Language runtime search path hijacking
-        "PYTHONPATH",
-        "PYTHONSTARTUP",
-        "PYTHONHOME",
-        "NODE_PATH",
-        "NODE_OPTIONS",
-        "RUBYOPT",
-        "RUBYLIB",
-        "GEM_PATH",
-        "GEM_HOME",
-        "PERL5LIB",
-        "PERL5OPT",
-        "CLASSPATH",
-        "JAVA_HOME",
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOPATH",
-        "GOROOT",
-    ];
-    let upper = key.to_uppercase();
-    if BLOCKED.contains(&upper.as_str()) {
-        return true;
-    }
-    if upper.starts_with("LD_") && upper.ends_with("_PATH") {
-        return true;
-    }
-    // Block all lean-ctx config overrides from env
-    if upper.starts_with("LEAN_CTX_") || upper.starts_with("LCTX_") {
-        return true;
-    }
-    false
-}
-
 /// Warn when shell reads secret-like paths via cat/head/tail/less/more.
 /// WARN-ONLY: command still executes, this is purely observational.
 fn warn_shell_secret_paths(command: &str) {
     const READ_CMDS: &[&str] = &["cat", "head", "tail", "less", "more", "bat"];
-    let segments = lean_ctx::core::shell_allowlist::extract_all_commands_pub(command);
+    let segments = lean_ctx_shell_policy::extract_all_commands_pub(command);
     for seg in &segments {
         let trimmed = seg.trim();
-        let tokens = lean_ctx::core::shell_allowlist::shell_tokenize(trimmed);
+        let tokens = lean_ctx_shell_policy::shell_tokenize(trimmed);
         if tokens.is_empty() {
             continue;
         }
@@ -958,7 +930,7 @@ fn detect_heredoc_reroute(command: &str) -> Option<(String, String, Option<Strin
     }
 
     let first_line = lines[0];
-    let delims = lean_ctx::core::shell_allowlist::heredoc_delims(first_line, false);
+    let delims = lean_ctx_shell_policy::heredoc_delims(first_line, false);
     if delims.len() != 1 {
         return None;
     }
@@ -1061,14 +1033,14 @@ fn has_trailing_tokens_after_heredoc_delim(line: &str, heredoc_pos: usize) -> bo
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
     }
-    let Some((_, _, next)) = lean_ctx::core::shell_allowlist::read_heredoc_delim(bytes, i) else {
+    let Some((_, _, next)) = lean_ctx_shell_policy::read_heredoc_delim(bytes, i) else {
         return true;
     };
     !line[next..].trim().is_empty()
 }
 
 fn parse_interpreter_heredoc_prelude(prelude: &str) -> Option<&'static str> {
-    let tokens = lean_ctx::core::shell_allowlist::shell_tokenize(prelude.trim());
+    let tokens = lean_ctx_shell_policy::shell_tokenize(prelude.trim());
     let mut idx = 0;
     while idx < tokens.len() && is_env_assignment_token(&tokens[idx]) {
         idx += 1;
@@ -1177,7 +1149,7 @@ fn handle_interpreter_heredoc_reroute(
         });
     };
 
-    if let Err(msg) = lean_ctx::core::shell_allowlist::check_shell_allowlist_granted(
+    if let Err(msg) = lean_ctx_shell_policy::check_shell_allowlist_granted(
         &rest_cmd,
         &crate::server::shell_approval::current_grant(),
     ) {
@@ -1282,6 +1254,36 @@ fn detect_bare_cat_file(command: &str) -> Option<String> {
         return None;
     }
     Some(file_path.to_string())
+}
+
+/// Classify `command` by the `tool_output` table (pz21 §1.8). A match makes
+/// every command output this call admits `tool_output` (fenced, the session
+/// tainted) and taints the session at once with each file it downloads, so
+/// a later `ctx_read` of exactly that file is fenced too.
+fn note_tool_output(command: &str, cwd: Option<&str>, project_root: &str) {
+    use lean_ctx::core::context_admission::{capture, origin};
+    let Some(found) = lean_ctx::core::patterns::tool_output::classify(command) else {
+        // The project's own command: said explicitly, since an unclassified
+        // output is admitted as of unknown origin.
+        if let Some(capture) = capture::current() {
+            capture.set_output_class(lean_ctx::core::patterns::output_class(command));
+        }
+        return;
+    };
+    let class = found.class();
+    if let Some(capture) = capture::current() {
+        capture.set_output_class(class.clone());
+    }
+    capture::note_origin(&class);
+    let root = std::path::Path::new(project_root);
+    let base = cwd.map_or(root, std::path::Path::new);
+    for download in &found.downloads {
+        let class = origin::download_origin(root, base, std::path::Path::new(download)).map_or(
+            origin::SourceClass::Unclassified { tool: "download" },
+            origin::SourceClass::External,
+        );
+        capture::note_origin(&class);
+    }
 }
 
 #[cfg(test)]

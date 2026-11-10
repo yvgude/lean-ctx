@@ -22,7 +22,7 @@ const MAX_SUMMARY_LEN: usize = 120;
 /// knowledge, so they never become durable facts. Failures, test and build
 /// results stay findings. Matching the producer's own formats also catches the
 /// records older sessions still carry.
-pub(crate) fn is_activity_record(summary: &str) -> bool {
+pub fn is_activity_record(summary: &str) -> bool {
     if let Some(rest) = summary.strip_prefix("Read ") {
         let head = rest.split_once(" — ").map_or(rest, |(head, _)| head);
         let (path, tail) = head

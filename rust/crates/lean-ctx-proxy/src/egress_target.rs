@@ -324,7 +324,15 @@ mod tests {
         let policy = lean_ctx::core::context_admission::AdmissionPolicy::from_config(
             &lean_ctx::core::config::Config::load_arc(),
         );
-        let admission = lean_ctx::core::context_admission::admit(&text, None, &policy);
+        // An egress check, as in production (pz21 §1.5 4a).
+        let admission = lean_ctx::core::context_admission::capture::outside_call(|| {
+            lean_ctx::core::context_admission::admit(
+                &text,
+                None,
+                &lean_ctx::core::context_admission::origin::EGRESS,
+                &policy,
+            )
+        });
         admission.text.as_deref() == Some(text.as_str())
     }
 

@@ -575,18 +575,19 @@ mod tests {
         });
 
         let url = format!("ws://{proxy_addr}/backend-api/wham/connect");
-        tokio::time::timeout(
-            Duration::from_secs(3),
-            tokio_tungstenite::connect_async(url),
-        )
-        .await
-        .expect("handshake must complete")
-        .expect("proxy must tunnel the upgrade to the upstream")
-        .0
+        tokio::time::timeout(HANG_GUARD, tokio_tungstenite::connect_async(url))
+            .await
+            .expect("handshake must complete")
+            .expect("proxy must tunnel the upgrade to the upstream")
+            .0
     }
 
+    /// Hang guard only: a healthy tunnel answers in milliseconds, but a loaded
+    /// CI host missed the former 3 s ("a frame must arrive: Elapsed").
+    const HANG_GUARD: Duration = Duration::from_secs(20);
+
     async fn next_frame(client: &mut WebSocketStream<MaybeTlsStream<TcpStream>>) -> Message {
-        tokio::time::timeout(Duration::from_secs(3), client.next())
+        tokio::time::timeout(HANG_GUARD, client.next())
             .await
             .expect("a frame must arrive")
             .expect("stream open")
@@ -607,7 +608,7 @@ mod tests {
             .send(Message::Text("remote-control".into()))
             .await
             .unwrap();
-        let echoed = tokio::time::timeout(Duration::from_secs(3), client.next())
+        let echoed = tokio::time::timeout(HANG_GUARD, client.next())
             .await
             .expect("echo must arrive")
             .expect("stream open")
@@ -616,7 +617,7 @@ mod tests {
 
         let binary = Message::Binary(vec![9, 8, 7].into());
         client.send(binary.clone()).await.unwrap();
-        let echoed = tokio::time::timeout(Duration::from_secs(3), client.next())
+        let echoed = tokio::time::timeout(HANG_GUARD, client.next())
             .await
             .expect("binary echo must arrive")
             .expect("stream open")

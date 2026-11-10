@@ -285,6 +285,50 @@ pub fn retire_evicted(session: &crate::auth::Session) -> Result<(), HiveError> {
     first_error.map_or(Ok(()), Err)
 }
 
+/// How long a worker no session used stays before the sync retires it
+/// (`lean-ctx hive worker retire --idle` defaults to the same).
+pub const IDLE_RETIRE: std::time::Duration = std::time::Duration::from_hours(24);
+/// How long the worker of an ended app session stays (its role is never
+/// attached again once the session is gone).
+pub const SESSION_IDLE_RETIRE: std::time::Duration = std::time::Duration::from_secs(3600);
+/// See [`on_session_end`].
+const SESSION_END_GRACE: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// The sync's sweep (owner 09.11.: workers that are not active do not
+/// count): give up the workers idle for [`IDLE_RETIRE`] and those of ended
+/// app sessions idle for [`SESSION_IDLE_RETIRE`], then retire on Hive every
+/// worker queued so far. The ids given up now.
+pub fn sweep(session: &crate::auth::Session) -> Result<Vec<String>, HiveError> {
+    let instance_id = &session.instance.instance_id;
+    let mut gone = super::attach::give_up_idle(&session.store, instance_id, IDLE_RETIRE, false)?;
+    gone.extend(super::attach::give_up_idle(
+        &session.store,
+        instance_id,
+        SESSION_IDLE_RETIRE,
+        true,
+    )?);
+    retire_evicted(session)?;
+    Ok(gone)
+}
+
+/// When an agent session ends: give up the workers of app sessions that no
+/// active session holds and none attached in the last [`SESSION_END_GRACE`]
+/// (a session still starting up). No request; Hive hears of them with the
+/// next sync or registration ([`retire_evicted`]). A worker the ending
+/// session still holds goes with the sync's [`sweep`].
+pub fn on_session_end(store: &crate::state::HiveStore) {
+    let Ok(Some(instance)) = store.instance() else {
+        return;
+    };
+    match super::attach::give_up_idle(store, &instance.instance_id, SESSION_END_GRACE, true) {
+        Ok(gone) if !gone.is_empty() => {
+            tracing::debug!("hive: workers of ended sessions given up: {gone:?}");
+        }
+        Ok(_) => {}
+        Err(error) => tracing::debug!("hive: workers of ended sessions not given up: {error}"),
+    }
+}
+
 /// Register the worker a session attached to, once (E10 on the first
 /// event or bus post, SPEC-ENGINE §3.6), and remember it in the book.
 /// An already registered worker costs no request. Workers the book gave

@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Regression: the progress bar no longer updates in non-interactive terminals."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

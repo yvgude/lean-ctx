@@ -223,6 +223,13 @@ fn bound_cache_allowed(config: &lean_ctx::core::config::Config) -> bool {
         && lean_ctx::core::redaction::redaction_enabled_for_active_role()
 }
 
+/// Whether the output of the call in scope carries no outside origin (its
+/// ledger and marked parts are empty). Without a capture: unknown, so no.
+fn project_only_output() -> bool {
+    lean_ctx::core::context_admission::capture::current()
+        .is_some_and(|capture| capture.output_origins().is_empty())
+}
+
 /// The lineage record of a response-cache entry.
 fn cache_lineage_id(key: &ResponseCacheKey) -> String {
     format!("{}:{:016x}", key.model, key.hash)
@@ -284,10 +291,16 @@ impl LeanCtxServer {
         // One Workspace snapshot per call (#2120): every path check of this
         // call sees one revision, and the next call sees a detached root gone.
         let authority = lean_ctx::core::workspace_authority::current();
-        lean_ctx::core::workspace_authority::scope(
-            authority,
-            self.session
-                .scope(Box::pin(self.call_tool_guarded_bound(request))),
+        // One rights snapshot per call (process-v1 §9): the request's bound
+        // rights (shared daemon) or this process's LEAN_CTX_RIGHTS_FILE.
+        let rights = lean_ctx::core::session_rights::current();
+        lean_ctx::core::session_rights::scope(
+            rights,
+            lean_ctx::core::workspace_authority::scope(
+                authority,
+                self.session
+                    .scope(Box::pin(self.call_tool_guarded_bound(request))),
+            ),
         )
         .await
     }
@@ -340,7 +353,14 @@ impl LeanCtxServer {
                 // checks can return, as well as before lifecycle replay lookup.
                 self.resolve_roots_once().await;
                 self.session.pin();
-                let project = self.session.read().await.project_root.clone();
+                let (project, session_id) = {
+                    let session = self.session.read().await;
+                    // The session this call serves: its taint is what the
+                    // release point extends and `session_taint()` reads
+                    // (pz21 §1.7).
+                    lean_ctx::core::session::taint::bind(&session.id, &session.taint);
+                    (session.project_root.clone(), session.id.clone())
+                };
                 lean_ctx::core::policy::runtime::bind_request_project(project.as_deref());
                 // One Decision Receipt per call: every admission inside this
                 // call (handler and its read workers) lands in this capture.
@@ -350,6 +370,10 @@ impl LeanCtxServer {
                         lean_ctx::core::context_admission::capture::CallSnapshot::take(),
                     );
                 let tool_name = request.name.to_string();
+                let activity = crate::server::activity::PendingCall::new(
+                    &tool_name,
+                    request.arguments.as_ref(),
+                );
                 let result = lean_ctx::core::context_admission::capture::ADMISSIONS
                     .scope(
                         Some(admissions.clone()),
@@ -369,6 +393,27 @@ impl LeanCtxServer {
                         error
                     }
                 });
+                // Persisted already (write-through); the session state keeps
+                // the same taint for its own save and for later loads.
+                if let Some(taint) = lean_ctx::core::session::taint::snapshot_for(&session_id)
+                    .filter(lean_ctx::core::context_admission::origin::InputTaint::is_tainted)
+                {
+                    let mut session = self.session.write().await;
+                    if session.id == session_id {
+                        session.taint.merge(&taint);
+                    }
+                }
+                {
+                    let failed = result
+                        .as_ref()
+                        .map_or(true, |r| r.is_error.unwrap_or(false));
+                    let (session_id, project_root) = {
+                        let session = self.session.read().await;
+                        (session.id.clone(), session.project_root.clone())
+                    };
+                    let client_name = self.client_name.read().await.clone();
+                    activity.finish(&session_id, project_root.as_deref(), &client_name, failed);
+                }
                 // The receipt is stored before the result leaves (G08).
                 self.finish_gateway_receipt(admissions, result, &tool_name)
                     .await
@@ -598,6 +643,12 @@ impl LeanCtxServer {
                     "inner workflow denied",
                 ));
             }
+            if let Some(denied) = self.guard_session_rights(guard_name) {
+                return Ok(PreparedCallResult::Terminal(
+                    denied,
+                    "inner session rights denied",
+                ));
+            }
         }
 
         // Plan mode enforcement: update session state and notify on transitions.
@@ -665,6 +716,13 @@ impl LeanCtxServer {
 
         if let Some(blocked) = self.guard_workflow(name).await {
             return Ok(PreparedCallResult::Terminal(blocked, "workflow denied"));
+        }
+
+        if let Some(blocked) = self.guard_session_rights(name) {
+            return Ok(PreparedCallResult::Terminal(
+                blocked,
+                "session rights denied",
+            ));
         }
 
         // #990: determine machine-readability *before* the once-per-session
@@ -1264,7 +1322,10 @@ impl lean_ctx::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
             // not cached at all.
             let bindable = !lean_ctx::core::context_admission::stored::source_authority_required()
                 || replay_lineage::bind_cache_entry(&cache_lineage_id(&key));
-            if bindable {
+            // A cache hit is served without a dispatch, so nothing would
+            // note its outside origins: such a result is never cached
+            // (pz21 §1.5), in every mode.
+            if bindable && project_only_output() {
                 cache_call_result(global_response_cache(), key, output);
             }
         }

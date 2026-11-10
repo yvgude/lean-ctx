@@ -215,7 +215,7 @@ const WORD_OPERATORS: &[&str] = &[
 const SCRIPT_BLOCK_ALIASES: &[&str] = &["%", "?", "foreach", "where"];
 
 /// Text this module found inside a statement, for the walker to validate.
-pub(super) enum Found {
+pub enum Found {
     /// A pipeline, validated like any command line.
     Command(String),
     /// The body of a `{ … }` block; see [`block_statement_commands`].
@@ -232,7 +232,7 @@ pub(super) enum Found {
 /// POSIX shell every context is `Strict`: a single operand (`$t.Actions`,
 /// `($t)`, `@(cmd)`, `[Type]::Member()`) or nothing.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Mode {
+pub enum Mode {
     Strict,
     PowerShell,
 }
@@ -241,19 +241,31 @@ thread_local! {
     static FORCED_HOST: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
 }
 
-/// Overrides the executing shell for checks on this thread until dropped.
-///
-/// A host's PowerShell tool runs its line in PowerShell whatever shell
-/// lean-ctx would detect for itself: a host that launches its hooks through
-/// Git Bash (Claude Code on Windows does) hands the hook
-/// `SHELL=/usr/bin/bash` and `MSYSTEM=MINGW64` (see
-/// [`super::check_shell_allowlist_in_powershell`]).
-pub(super) struct HostGuard {
+/// The shell that actually executes the checked line. The check cannot read
+/// this from the process: `ctx_execute` always runs `bash -c` on Unix and the
+/// hook for the Bash tool hands the line to bash, whatever shell this process
+/// resolves, while the PowerShell tool runs PowerShell.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Dialect {
+    Posix,
+    PowerShell,
+    Cmd,
+}
+
+/// Runs `f` with the allowlist reading the line for the shell that will
+/// execute it, instead of the one this process resolves.
+pub fn with_dialect<T>(dialect: Dialect, f: impl FnOnce() -> T) -> T {
+    let _restore = HostGuard::powershell(dialect == Dialect::PowerShell);
+    f()
+}
+
+/// Scoped override of the executing shell for this thread.
+pub struct HostGuard {
     prev: Option<bool>,
 }
 
 impl HostGuard {
-    pub(super) fn powershell(on: bool) -> Self {
+    pub fn powershell(on: bool) -> Self {
         Self {
             prev: FORCED_HOST.with(|host| host.replace(Some(on))),
         }
@@ -266,10 +278,10 @@ impl Drop for HostGuard {
     }
 }
 
-/// The mode for the shell that runs the checked line: the one `ctx_shell`,
-/// `ctx_execute` and the shell aliases execute with, unless a [`HostGuard`]
-/// names it.
-pub(super) fn host_mode() -> Mode {
+/// The mode for the shell that runs the checked line: the one `ctx_shell`
+/// and the shell aliases execute with, unless the caller named the executor
+/// through [`with_dialect`].
+pub fn host_mode() -> Mode {
     if let Some(forced) = FORCED_HOST.with(std::cell::Cell::get) {
         return if forced {
             Mode::PowerShell
@@ -298,7 +310,7 @@ pub(super) fn host_is_powershell() -> bool {
 /// forms `if cmd; then`, `for x in …`, `for ((…))`, `do cmd` keep their own
 /// handling). `Some(Err)` when it is, but a part cannot be read: blocking is
 /// the only safe answer, because the unread part may hold a command.
-pub(super) fn statement_commands(segment: &str) -> Option<Result<Vec<Found>, ShellError>> {
+pub fn statement_commands(segment: &str) -> Option<Result<Vec<Found>, ShellError>> {
     let mut rest = segment.trim();
     if !starts_powershell_statement(rest) {
         return None;
@@ -386,17 +398,16 @@ pub(super) fn statement_commands(segment: &str) -> Option<Result<Vec<Found>, She
 /// `$p.WaitForExit()` — or `None` if `segment` is not one this module can
 /// prove inert apart from those commands.
 ///
-/// Under a POSIX shell only statements that open with PowerShell syntax (`$`,
-/// `(`, `@(`, `[Type]`) qualify: a bare or quoted word at statement start is
-/// a command there and stays with the allowlist.
-pub(super) fn expression_commands(segment: &str) -> Option<Vec<String>> {
-    let trimmed = segment.trim();
-    let mode = host_mode();
-    let opens_powershell = trimmed.starts_with(['$', '(', '[']) || trimmed.starts_with("@(");
-    if mode == Mode::Strict && !opens_powershell {
+/// Only PowerShell reads a statement as an expression. Under a POSIX shell
+/// (and cmd) nothing qualifies: `( "sh" )` is a subshell whose command word is
+/// `sh`, `$BASH` is a word that expands at run time, and `[Type]::Member` is a
+/// glob. Those statements stay with the walker, which accepts only a literal,
+/// allowlisted command word.
+pub fn expression_commands(segment: &str) -> Option<Vec<String>> {
+    if host_mode() == Mode::Strict {
         return None;
     }
-    scan_expression(trimmed, mode)
+    scan_expression(segment.trim())
 }
 
 /// Commands of one statement inside a `{ … }` block (a control-flow body or
@@ -405,7 +416,7 @@ pub(super) fn expression_commands(segment: &str) -> Option<Vec<String>> {
 /// Under PowerShell a local assignment (`$n = $n + 1`, `$i++`) is read too;
 /// scoped variables (`$env:PATH = …`) are not local and stay with the walker.
 /// Under a POSIX shell a block statement follows the statement-level rules.
-pub(super) fn block_statement_commands(statement: &str) -> Option<Vec<String>> {
+pub fn block_statement_commands(statement: &str) -> Option<Vec<String>> {
     let statement = statement.trim();
     if host_mode() == Mode::Strict {
         return expression_commands(statement);
@@ -415,7 +426,7 @@ pub(super) fn block_statement_commands(statement: &str) -> Option<Vec<String>> {
         Some(value) => value,
         None => statement,
     };
-    scan_expression(value, Mode::PowerShell)
+    scan_expression(value)
 }
 
 /// `$n = <value>`, `$n += <value>` → `<value>`; `$n++` / `$n--` → empty.
@@ -439,7 +450,7 @@ fn local_assignment_value(statement: &str) -> Option<&str> {
 /// expression this module reads? Then an empty leaf list means the line runs
 /// no command, not that the walker found nothing to check. The target of a
 /// call operator (`& 'x'`) is a command, never inert.
-pub(super) fn is_inert_powershell(command: &str) -> bool {
+pub fn is_inert_powershell(command: &str) -> bool {
     let Ok(segments) = super::compound::call_operator_segments(command) else {
         return false;
     };
@@ -458,7 +469,7 @@ pub(super) fn is_inert_powershell(command: &str) -> bool {
 /// (`ForEach-Object { … }`, `Where-Object { … }`, `@{e={ … }}`), which the
 /// cmdlet runs. Empty for anything that is not a known cmdlet or a
 /// script-block alias.
-pub(super) fn script_block_bodies(segment: &str, base: &str) -> Vec<String> {
+pub fn script_block_bodies(segment: &str, base: &str) -> Vec<String> {
     let takes_blocks = super::powershell::is_known_cmdlet(base)
         || SCRIPT_BLOCK_ALIASES
             .iter()
@@ -579,19 +590,24 @@ fn for_header_expressions(header: &str) -> Option<Vec<&str>> {
 
 /// A `( … )` group's commands: none if it is an inert expression apart from
 /// nested groups, otherwise the group is itself a pipeline to validate.
+/// Under a POSIX shell a group is always a pipeline (a subshell): no
+/// expression is inert there.
 fn group_commands(inner: &str, mode: Mode) -> Vec<String> {
     let inner = inner.trim();
     if inner.is_empty() {
         return Vec::new();
     }
-    scan_expression(inner, mode).unwrap_or_else(|| vec![inner.to_string()])
+    if mode == Mode::Strict {
+        return vec![inner.to_string()];
+    }
+    scan_expression(inner).unwrap_or_else(|| vec![inner.to_string()])
 }
 
 /// Scan a PowerShell expression. `Some(commands)` when every part is inert —
 /// variables, member reads, literals, operators, allowlisted .NET members —
 /// apart from the returned command texts of `( … )`, `@( … )` and `$( … )`.
-/// In `Strict` mode the expression must be one operand and nothing else.
-fn scan_expression(expr: &str, mode: Mode) -> Option<Vec<String>> {
+/// PowerShell only: a POSIX shell never gets here.
+fn scan_expression(expr: &str) -> Option<Vec<String>> {
     let bytes = expr.as_bytes();
     let mut commands = Vec::new();
     let mut i = 0;
@@ -602,15 +618,11 @@ fn scan_expression(expr: &str, mode: Mode) -> Option<Vec<String>> {
             continue;
         }
         if !expect_operand {
-            if mode == Mode::Strict {
-                return None;
-            }
             i = scan_operator(expr, i)?;
             expect_operand = true;
             continue;
         }
-        match scan_operand(expr, i, mode, &mut commands)? {
-            Operand::Prefix(_) if mode == Mode::Strict => return None,
+        match scan_operand(expr, i, &mut commands)? {
             Operand::Prefix(end) => i = end,
             Operand::Value(end, root) => {
                 i = scan_postfix(expr, end, root, &mut commands)?;
@@ -638,7 +650,7 @@ enum Operand {
     Prefix(usize),
 }
 
-fn scan_operand(expr: &str, i: usize, mode: Mode, commands: &mut Vec<String>) -> Option<Operand> {
+fn scan_operand(expr: &str, i: usize, commands: &mut Vec<String>) -> Option<Operand> {
     let bytes = expr.as_bytes();
     match bytes[i] {
         b'-' if bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic) => {
@@ -656,7 +668,7 @@ fn scan_operand(expr: &str, i: usize, mode: Mode, commands: &mut Vec<String>) ->
         }
         b'(' => {
             let (inner, end) = balanced_paren_at(expr, i)?;
-            commands.extend(group_commands(inner, mode));
+            commands.extend(group_commands(inner, Mode::PowerShell));
             Some(Operand::Value(end, Root::Value))
         }
         b'@' | b'$' if bytes.get(i + 1) == Some(&b'(') => {
@@ -757,7 +769,7 @@ fn scan_postfix(expr: &str, mut i: usize, root: Root, commands: &mut Vec<String>
             }
             Some(b'[') => {
                 let close = matching_bracket(expr, i)?;
-                commands.extend(scan_expression(&expr[i + 1..close], Mode::PowerShell)?);
+                commands.extend(scan_expression(&expr[i + 1..close])?);
                 i = close + 1;
             }
             _ => return Some(i),
@@ -774,7 +786,7 @@ fn argument_commands(args: &str) -> Option<Vec<String>> {
     if args.trim().is_empty() {
         Some(Vec::new())
     } else {
-        scan_expression(args, Mode::PowerShell)
+        scan_expression(args)
     }
 }
 
@@ -863,7 +875,7 @@ fn string_end(s: &str, i: usize) -> Option<usize> {
 /// too. A `{ … }` block is skipped: the walker reads the blocks a command runs
 /// itself. Empty when the host is not PowerShell, whose shells refuse such a
 /// group. `None` when a string, group or block does not close.
-pub(super) fn argument_subexpressions(segment: &str) -> Option<Vec<&str>> {
+pub fn argument_subexpressions(segment: &str) -> Option<Vec<&str>> {
     if host_mode() != Mode::PowerShell {
         return Some(Vec::new());
     }
@@ -935,7 +947,7 @@ fn matching_paren(s: &str, open: usize) -> Option<usize> {
 /// are. Groups and blocks are skipped: the walker reads those itself, and a
 /// hashtable inside them meets this scan there. Empty when the host is not
 /// PowerShell. `None` when a string, group or block does not close.
-pub(super) fn hashtable_values(segment: &str) -> Option<Vec<&str>> {
+pub fn hashtable_values(segment: &str) -> Option<Vec<&str>> {
     if host_mode() != Mode::PowerShell {
         return Some(Vec::new());
     }
@@ -1054,7 +1066,7 @@ fn matching_bracket(s: &str, open: usize) -> Option<usize> {
 
 /// The body of `s` when all of it is one `{ … }` script block (`{ a }`, not
 /// `{ a } + { b }`), quote-aware.
-pub(super) fn whole_script_block(s: &str) -> Option<&str> {
+pub fn whole_script_block(s: &str) -> Option<&str> {
     let s = s.trim();
     if !s.starts_with('{') {
         return None;

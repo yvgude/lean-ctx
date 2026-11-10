@@ -211,6 +211,463 @@ async fn daemon_tool_calls_run_in_the_project_they_name() {
     assert!(body.contains("project_root_refused"), "{body}");
 }
 
+async fn local_request(
+    app: &Router,
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+) -> (StatusCode, String) {
+    let request = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("Host", "localhost")
+        .header("Content-Type", "application/json")
+        .body(body.map_or_else(Body::empty, |b| Body::from(b.to_string())))
+        .expect("request");
+    let response = app.clone().oneshot(request).await.expect("response");
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), 4_000_000)
+        .await
+        .expect("body");
+    (status, String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Local Service v1: on the daemon socket a Local Read route answers with
+/// exactly the bytes the CLI prints for the same arguments, its errors are
+/// Local Read error documents with an HTTP status by code, and a TCP server
+/// never serves the routes.
+#[tokio::test]
+async fn local_routes_answer_the_cli_document_on_the_socket_only() {
+    use crate::cli::local_read;
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let project = tempfile::tempdir().expect("project");
+    std::fs::create_dir(project.path().join(".git")).expect("git marker");
+    let root = project
+        .path()
+        .canonicalize()
+        .expect("root")
+        .display()
+        .to_string();
+    let cfg = HttpServerConfig {
+        project_root: project.path().to_path_buf(),
+        ..HttpServerConfig::default()
+    };
+    let ipc = build_ipc_router(&cfg, None);
+
+    let post = json!({"project_root": root, "broadcast": true, "message": "shapes posted"});
+    let (status, posted) = local_request(&ipc, "POST", "/v1/local/messages", Some(post)).await;
+    assert_eq!(status, StatusCode::OK, "{posted}");
+    let posted: Value = serde_json::from_str(&posted).expect("json");
+    assert_eq!(posted["kind"], "agent.post");
+    assert_eq!(posted["from"], "hive-person");
+
+    let uri = format!(
+        "/v1/local/messages?project_root={}&limit=5",
+        urlencode(&root)
+    );
+    let (status, served) = local_request(&ipc, "GET", &uri, None).await;
+    assert_eq!(status, StatusCode::OK, "{served}");
+    let args: Vec<String> = ["--json", "--project-root", &root, "--limit", "5"]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let printed = local_read::bus::messages(&args, local_read::Via::Cli).text;
+    assert_eq!(
+        served,
+        format!("{printed}\n"),
+        "the route body is the CLI's stdout"
+    );
+    assert!(served.contains("shapes posted"), "{served}");
+
+    for (method, uri, status, code) in [
+        (
+            "GET",
+            "/v1/local/messages".to_owned(),
+            StatusCode::BAD_REQUEST,
+            "no_project",
+        ),
+        (
+            "GET",
+            format!(
+                "/v1/local/knowledge?project_root={}&color=red",
+                urlencode(&root)
+            ),
+            StatusCode::BAD_REQUEST,
+            "invalid_argument",
+        ),
+        (
+            "GET",
+            "/v1/local/hive/docs?project_root=%2F".to_owned(),
+            StatusCode::BAD_REQUEST,
+            "no_project",
+        ),
+        (
+            "GET",
+            "/v1/local/nothing-here".to_owned(),
+            StatusCode::NOT_FOUND,
+            "not_found",
+        ),
+        (
+            "POST",
+            "/v1/local/messages".to_owned(),
+            StatusCode::BAD_REQUEST,
+            // A post always belongs to a project: it is named first.
+            "no_project",
+        ),
+    ] {
+        let (got, body) = local_request(&ipc, method, &uri, None).await;
+        assert_eq!(got, status, "{method} {uri}: {body}");
+        let doc: Value = serde_json::from_str(&body).expect("an error document");
+        assert_eq!(doc["kind"], "error", "{uri}");
+        assert_eq!(doc["error"]["code"], code, "{uri}");
+    }
+
+    let (status, caps) = local_request(&ipc, "GET", "/v1/local/capabilities", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, again) = local_request(&ipc, "GET", "/v1/local/capabilities", None).await;
+    assert_eq!(caps, again, "the capabilities document is deterministic");
+    let caps: Value = serde_json::from_str(&caps).expect("json");
+    assert_eq!(caps["kind"], "capabilities");
+    for route in local_read::routes::all() {
+        assert!(
+            caps["routes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|r| r["path"] == route.path
+                    && r["method"] == route.method.as_str()
+                    && r["kind"] == route.kind),
+            "{} {} listed",
+            route.method.as_str(),
+            route.path
+        );
+        assert!(
+            caps["kinds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|k| k == route.kind)
+        );
+    }
+    assert_eq!(caps["events"]["path"], "/v1/local/events");
+    // Contracts' names: command paths joined by `.`; plain `tasks`/`docs`
+    // are the project's local ones, not the vault's.
+    // Every verb is listed with its transports (Contracts' builder): the
+    // ones a route answers are `socket` too, the rest `cli` only.
+    let tasks = caps["commands"]["hive.tasks"].as_array().unwrap();
+    assert_eq!(tasks[0], json!({"verb": "list", "via": ["cli", "socket"]}));
+    assert_eq!(tasks[1], json!({"verb": "show", "via": ["cli", "socket"]}));
+    assert!(tasks.contains(&json!({"verb": "claim", "via": ["cli"]})));
+    assert_eq!(caps["commands"]["hive"][0]["verb"], "status");
+    // Each route row of a command verb names it, for Contracts' builder.
+    let row = caps["routes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "tasks.list")
+        .expect("tasks.list row");
+    assert_eq!(row["command"], "hive.tasks");
+    assert_eq!(row["verb"], "list");
+    // The local tasks part brings its verbs, each on both transports.
+    let tasks = caps["commands"]["tasks"].as_array().expect("tasks verbs");
+    for verb in ["decide", "verify", "stop"] {
+        assert!(
+            tasks.contains(&serde_json::json!({"verb": verb, "via": ["cli", "socket"]})),
+            "{verb}: {tasks:?}"
+        );
+    }
+
+    let tcp = build_app_router_with_auth(&cfg, false, None);
+    let (_, body) = local_request(&tcp, "GET", "/v1/local/capabilities", None).await;
+    assert!(!body.contains("\"kind\":\"capabilities\""), "TCP: {body}");
+}
+
+/// `hive.status` names a project only when it can: without `project_root`,
+/// or with one that is no project (`~`, `/`, a missing path), the socket
+/// answers the folder-less status (`project: null`, never the daemon's own
+/// working directory) instead of `no_project`. With a project the answer
+/// is unchanged and byte for byte the CLI's. Capabilities mark the route
+/// `"project": "optional"`.
+#[tokio::test]
+async fn local_status_answers_without_a_project() {
+    use crate::cli::local_read;
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let project = tempfile::tempdir().expect("project");
+    std::fs::create_dir(project.path().join(".git")).expect("git marker");
+    let root = project
+        .path()
+        .canonicalize()
+        .expect("root")
+        .display()
+        .to_string();
+    let cfg = HttpServerConfig {
+        project_root: project.path().to_path_buf(),
+        ..HttpServerConfig::default()
+    };
+    let ipc = build_ipc_router(&cfg, None);
+    let home = dirs::home_dir().expect("home").display().to_string();
+    let missing = project.path().join("not-there").display().to_string();
+
+    let mut folderless = Vec::new();
+    for uri in [
+        "/v1/local/status".to_owned(),
+        format!("/v1/local/status?project_root={}", urlencode(&home)),
+        "/v1/local/status?project_root=%2F".to_owned(),
+        format!("/v1/local/status?project_root={}", urlencode(&missing)),
+    ] {
+        let (status, body) = local_request(&ipc, "GET", &uri, None).await;
+        assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+        let doc: Value = serde_json::from_str(&body).expect("json");
+        assert_eq!(doc["kind"], "hive.status", "{uri}: {body}");
+        assert_eq!(doc["project"], Value::Null, "{uri}: no invented project");
+        assert!(
+            !body.contains(&root),
+            "{uri}: never the daemon's working directory: {body}"
+        );
+        folderless.push(body);
+    }
+    assert!(
+        folderless.windows(2).all(|w| w[0] == w[1]),
+        "every folder-less request answers the same document"
+    );
+    let printed = local_read::status::answer(&["--json".to_owned()]).text;
+    assert_eq!(
+        folderless[0],
+        format!("{printed}\n"),
+        "the folder-less route body is the builder's"
+    );
+
+    let uri = format!("/v1/local/status?project_root={}", urlencode(&root));
+    let (status, body) = local_request(&ipc, "GET", &uri, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let doc: Value = serde_json::from_str(&body).expect("json");
+    assert_eq!(
+        doc["project"],
+        json!({"root": root, "vault": null, "linked": false})
+    );
+    let args: Vec<String> = ["--json", "--project-root", &root]
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let printed = local_read::status::answer(&args).text;
+    assert_eq!(body, format!("{printed}\n"), "the route body is the CLI's");
+
+    let (_, caps) = local_request(&ipc, "GET", "/v1/local/capabilities", None).await;
+    let caps: Value = serde_json::from_str(&caps).expect("json");
+    let row = |kind: &str| {
+        caps["routes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["kind"] == kind)
+            .cloned()
+            .unwrap_or_else(|| panic!("{kind} row"))
+    };
+    assert_eq!(row("hive.status")["project"], "optional");
+    assert_eq!(row("tasks.list")["project"], true);
+    assert_eq!(row("capabilities")["project"], false);
+}
+
+/// G08 on the socket: under protection every released answer stores
+/// exactly ONE receipt, for the bytes the socket sends (document and final
+/// `\n`, channel `mcp_transport`). A masked value is told in the notice
+/// header (route) or a `release_notice` event (stream); a document withheld
+/// as a whole is the 403 `withheld` document (route) or that document as
+/// the event, never a second receipt for a stderr reason nobody writes; no
+/// receipt means 503 without a body.
+#[test]
+fn socket_answers_receipt_exactly_the_bytes_they_send() {
+    use super::local_service::{NOTICE_HEADER, Tail, answer_response};
+    use crate::cli::common::carrier_tests_support::{AWS_KEY, governed, project};
+    use crate::cli::local_read::{self, Answer, Via, routes::EVENT_TYPES};
+    use lean_ctx::core::context_admission::receipt_store::{self, trace};
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+    governed();
+    let (_project, root) = project();
+    let receipts = || receipt_store::latest(&root, 64).len();
+    let body_of = |response: Response| {
+        let bytes =
+            futures::executor::block_on(axum::body::to_bytes(response.into_body(), 1 << 20))
+                .expect("body");
+        String::from_utf8(bytes.to_vec()).expect("utf-8")
+    };
+    // The newest receipt binds `sent` for the transport.
+    let bound_to_transport = |sent: &str| {
+        let latest = receipt_store::latest(&root, 1);
+        let stored = latest[0].1.as_ref().expect("a verified receipt");
+        let trace::StoredTrace::Bound { sidecar, .. } = trace::load(&stored.digest) else {
+            panic!("a mandatory receipt has its sidecar");
+        };
+        assert_eq!(
+            sidecar.release_prepared.channel,
+            trace::Channel::McpTransport
+        );
+        assert_eq!(
+            sidecar.release_prepared.bytes,
+            receipt_store::output_digest(sent.as_bytes())
+        );
+    };
+    let masked_value = || json!({"note": format!("AWS_ACCESS_KEY_ID={AWS_KEY}")});
+    let secret_key = || {
+        let mut keyed = serde_json::Map::new();
+        keyed.insert(AWS_KEY.to_owned(), json!("value"));
+        Value::Object(keyed)
+    };
+
+    // A masked value: the masked document, the notice header, one receipt.
+    let before = receipts();
+    let masked =
+        local_read::answer_released("ctx_agent", &root, "agent.messages", Via::Socket, || {
+            Ok(masked_value())
+        });
+    assert_eq!(receipts(), before + 1, "one receipt");
+    assert!(masked.notice.is_some());
+    let response = answer_response(&masked);
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().contains_key(NOTICE_HEADER));
+    let sent = body_of(response);
+    assert!(!sent.contains(AWS_KEY), "{sent}");
+    bound_to_transport(&sent);
+
+    // Withheld as a whole: the 403 `withheld` document, still one receipt.
+    let before = receipts();
+    let withheld =
+        local_read::answer_released("ctx_agent", &root, "agent.messages", Via::Socket, || {
+            Ok(secret_key())
+        });
+    assert_eq!(receipts(), before + 1, "one receipt, no stderr twin");
+    let response = answer_response(&withheld);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let sent = body_of(response);
+    let doc: Value = serde_json::from_str(&sent).expect("a document");
+    assert_eq!(doc["error"]["code"], "withheld");
+    assert!(!sent.contains(AWS_KEY) && !sent.contains("value"), "{sent}");
+    bound_to_transport(&sent);
+
+    // No receipt: nothing is sent.
+    let response = answer_response(&Answer::unreceipted());
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(body_of(response).is_empty());
+
+    // Events: a masked one is followed by its notice (when asked for); a
+    // withheld one is sent as the receipted refusal under its own type.
+    let tail = Tail::new(Some(root.clone()), false, EVENT_TYPES.to_vec());
+    let mut out = Vec::new();
+    tail.push_released(&mut out, "ctx_agent", "message", masked_value());
+    let kinds: Vec<&str> = out.iter().map(|(kind, _)| *kind).collect();
+    assert_eq!(kinds, ["message", "release_notice"]);
+    assert!(!out[0].1.contains(AWS_KEY));
+    bound_to_transport(&format!("{}\n", out[0].1));
+    let quiet = Tail::new(Some(root.clone()), false, vec!["message"]);
+    let mut out = Vec::new();
+    quiet.push_released(&mut out, "ctx_agent", "message", masked_value());
+    assert_eq!(out.len(), 1, "release_notice follows `types`");
+    let before = receipts();
+    let mut out = Vec::new();
+    tail.push_released(&mut out, "ctx_agent", "message", secret_key());
+    assert_eq!(receipts(), before + 1, "one receipt for the event sent");
+    assert_eq!(out.len(), 1);
+    let doc: Value = serde_json::from_str(&out[0].1).expect("a document");
+    assert_eq!(doc["error"]["code"], "withheld");
+    bound_to_transport(&format!("{}\n", out[0].1));
+}
+
+fn urlencode(raw: &str) -> String {
+    raw.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            other => format!("%{other:02X}"),
+        })
+        .collect()
+}
+
+/// The live stream opens with `hello` and then reports what happens, not
+/// what was there: a message posted after the stream started arrives as a
+/// `message` event with the `agent.messages` row. An unknown type is refused.
+#[tokio::test]
+async fn local_events_start_with_hello_and_report_new_messages() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let project = tempfile::tempdir().expect("project");
+    std::fs::create_dir(project.path().join(".git")).expect("git marker");
+    let root = project
+        .path()
+        .canonicalize()
+        .expect("root")
+        .display()
+        .to_string();
+    let cfg = HttpServerConfig {
+        project_root: project.path().to_path_buf(),
+        ..HttpServerConfig::default()
+    };
+    let ipc = build_ipc_router(&cfg, None);
+    let post = |text: &'static str| {
+        let root = root.clone();
+        lean_ctx::core::agents::AgentRegistry::mutate_locked(move |registry| {
+            crate::cli::local_read::bus::post(registry, &[], text, None, Some(&root))
+        })
+        .expect("registry")
+        .1
+        .expect("posted");
+    };
+    post("before the stream");
+
+    let (status, body) = local_request(&ipc, "GET", "/v1/local/events?types=nope", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let (status, body) = local_request(&ipc, "GET", "/v1/local/events?color=red", None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body.contains("\"code\":\"invalid_argument\""),
+        "an error document: {body}"
+    );
+
+    let uri = format!(
+        "/v1/local/events?types=message&project_root={}",
+        urlencode(&root)
+    );
+    let request = Request::builder()
+        .uri(uri)
+        .header("Host", "localhost")
+        .body(Body::empty())
+        .expect("request");
+    let response = ipc.clone().oneshot(request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut stream = response.into_body().into_data_stream();
+    let mut seen = String::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    let mut posted = false;
+    while !seen.contains("event: message") && tokio::time::Instant::now() < deadline {
+        if !posted && seen.contains("event: hello") {
+            post("after the stream started");
+            posted = true;
+        }
+        if let Ok(Some(Ok(bytes))) =
+            tokio::time::timeout(Duration::from_secs(3), stream.next()).await
+        {
+            seen.push_str(&String::from_utf8_lossy(&bytes));
+        }
+    }
+    let hello = seen.find("event: hello").expect("hello first");
+    let message = seen.find("event: message").expect("a message event");
+    assert!(hello < message, "{seen}");
+    // The data line is the released document itself (what its receipt binds).
+    let data = seen
+        .lines()
+        .filter_map(|l| l.strip_prefix("data: "))
+        .find(|d| d.contains("after the stream started"))
+        .expect("the message's data line");
+    let doc: Value = serde_json::from_str(data).expect("one JSON document");
+    assert_eq!(doc["contract"], "local-read/1");
+    assert_eq!(doc["kind"], "event.message");
+    assert!(seen.contains("after the stream started"), "{seen}");
+    assert!(
+        !seen.contains("before the stream"),
+        "live, not a replay: {seen}"
+    );
+}
+
 /// AP10-R4: a failed tool call was logged with the error's text, and that
 /// text echoes what the caller sent (here the arguments) or what the release
 /// point withheld from the reply. The log line names the error kind only.

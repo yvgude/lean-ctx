@@ -24,6 +24,16 @@ pub(super) fn is_powershell_tool(tool_name: &str) -> bool {
     )
 }
 
+/// The shell a host tool hands its command to: PowerShell for the PowerShell
+/// tool, bash otherwise — whatever shell this hook process resolves itself.
+pub(super) fn dialect_for_tool(tool_name: &str) -> lean_ctx_shell_policy::Dialect {
+    if is_powershell_tool(tool_name) {
+        lean_ctx_shell_policy::Dialect::PowerShell
+    } else {
+        lean_ctx_shell_policy::Dialect::Posix
+    }
+}
+
 /// What the hook does with a PowerShell tool call.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum PowerShellDecision {
@@ -57,7 +67,17 @@ pub(super) fn decide(cmd: &str, binary: &str) -> PowerShellDecision {
 /// and `"`; the POSIX-based checks do not, so `"x“; calc; “y"` looked like
 /// one quoted word. They are checked as the ASCII quotes PowerShell takes
 /// them for.
+///
+/// PowerShell runs the line whatever shell this hook process resolves for
+/// itself, so it is always read as PowerShell.
 pub(super) fn allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
+    use lean_ctx_shell_policy::{Dialect, with_dialect};
+    with_dialect(Dialect::PowerShell, || {
+        powershell_allowlist_denial(cmd, binary)
+    })
+}
+
+fn powershell_allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
     let as_read: String = cmd
         .chars()
         .map(|c| match c {
@@ -70,7 +90,7 @@ pub(super) fn allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
             other => other,
         })
         .collect();
-    use lean_ctx::core::shell_allowlist::{self, ShellSecurity};
+    use lean_ctx_shell_policy::{self as shell_allowlist, ShellSecurity};
     // Never a "plain lean-ctx call": PowerShell separates statements and
     // builds arrays differently, so every PowerShell line gets the full
     // check, lean-ctx segments included.
@@ -80,9 +100,7 @@ pub(super) fn allowlist_denial(cmd: &str, binary: &str) -> Option<String> {
     {
         return Some(msg);
     }
-    // Read as PowerShell, not as the shell lean-ctx detects: the hook may
-    // run under Git Bash (`SHELL=/usr/bin/bash`, `MSYSTEM`).
-    shell_allowlist::check_shell_allowlist_in_powershell(&as_read)
+    shell_allowlist::check_shell_allowlist(&as_read)
         .err()
         .map(|msg| msg.to_string())
 }

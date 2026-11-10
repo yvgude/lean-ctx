@@ -17,6 +17,10 @@ pub struct SessionState {
     #[serde(skip)]
     pub last_save_failed: bool,
     pub id: String,
+    /// The launching app's session id (`LEAN_CTX_SESSION_ID`) when this
+    /// session was opened under one: attribution for `session stats`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_session_id: Option<String>,
     pub version: u32,
     pub started_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -72,6 +76,12 @@ pub struct SessionState {
     /// query-conditioned IB compression when no explicit task is set.
     #[serde(default)]
     pub last_semantic_query: Option<String>,
+    /// The untrusted origins this session has read (pz21 §1.7). Written
+    /// through by `session::taint` at the release point; an older session
+    /// file without it reads untainted, which is safe (the taint only
+    /// restricts).
+    #[serde(default)]
+    pub taint: crate::core::context_admission::origin::InputTaint,
     /// #717: in-memory timestamp of the last flush to disk. Backs the
     /// time-based save trigger so a slow trickle of changes (below the
     /// 5-change batch) still reaches disk — the dashboard reads session

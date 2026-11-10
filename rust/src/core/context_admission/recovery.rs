@@ -17,8 +17,18 @@
 /// store (`"archive"`, `"tee"`, `"reference"`, `"session-cache"`); it never
 /// carries content. The error is content-free and names the reason codes.
 pub fn admit_recovered(text: &str, origin: &str) -> Result<String, String> {
-    super::semantic_deferred::for_stored_context(|| {
-        super::admit_source(text, &format!("recovery:{origin}"), false)
+    // Stored tool output no longer knows where it came from: unknown, so it
+    // is fenced when handed back (Rule U). Project knowledge is the
+    // Instance's own store; its provenance is pz20's.
+    let label = format!("recovery:{origin}");
+    super::semantic_deferred::for_stored_context(|| match origin {
+        "knowledge" => super::admit_instance_source(text, &label, false),
+        _ => super::admit_source(
+            text,
+            &label,
+            false,
+            &super::origin::SourceClass::Unclassified { tool: "recovery" },
+        ),
     })
     .map_err(|error| format!("stored output withheld by the context gateway: {error}"))
 }
@@ -27,5 +37,7 @@ pub fn admit_recovered(text: &str, origin: &str) -> Result<String, String> {
 /// it must not be stored (withheld, or restricted — owner decision E3).
 #[must_use]
 pub fn admit_for_storage(text: &str) -> Option<String> {
-    super::stores::StoreAdmission::current().admit_text(text)
+    // Storage is not delivery: what is handed back is re-admitted
+    // (`admit_recovered`) with an unknown origin.
+    super::stores::StoreAdmission::current().admit_instance_text(text)
 }

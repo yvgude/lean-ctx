@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "bc5157a267362bf62cd31153e55401fe219fd7ae5693892df93e9ddb2d4bc977"
+approved_content_sha256 = "c7ab236b6d058ed5b2c598e6ba1e749faa2087221c2b3a514b4937e7f231e5ac"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.2: only the workspace crate versions moved 3.12.1 -> 3.12.2 in Cargo.lock and the SBOM; same 558 components and licenses. Owner okay in the 3.12.x integration lead session on 2026-11-04 (answer \"Freigeben\" to the notices question naming old fdf3c5f9 and new pending e24024a7)."
-approved_at = "2026-11-03"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.3 after the library crate bumps in 96a0cb6e59: pending variant 25c453a33cfb3bb5fae530d3cad59539a150d71ebce97cbb6ba2befdaf5ee927, approved variant c7ab236b6d058ed5b2c598e6ba1e749faa2087221c2b3a514b4937e7f231e5ac; inventory unchanged from df9af755, only the Cargo.lock and SBOM input digests changed. Owner approval in the 3.12.3 release session on 2026-11-10 (answer \"Approve c7ab236b...\")."
+approved_at = "2026-11-10"

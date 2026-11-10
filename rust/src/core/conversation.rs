@@ -181,7 +181,9 @@ fn subagent_scope() -> Option<String> {
             // (`resolve_scope`, `allows_stub`, `allows_cold_stub`), which take
             // every input explicitly — the same reason the gate matrix is tested
             // that way rather than through the process-global recency store.
-            if cfg!(test) {
+            // `test-support`: the engine as other crates' tests build it (their
+            // dev-dependency), where `cfg!(test)` of this crate is false.
+            if cfg!(any(test, feature = "test-support")) {
                 return None;
             }
             resolve_scope(

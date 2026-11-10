@@ -64,9 +64,22 @@ impl BM25Index {
             if !source.contains("://")
                 || !verbatim(
                     &chunk.content,
-                    admission.admit(&chunk.content, Path::new(source)),
+                    admission.admit(
+                        &chunk.content,
+                        Path::new(source),
+                        chunk.input_origin.as_ref(),
+                    ),
                 )
-                || !verbatim(&chunk.symbol_name, admission.admit_text(&chunk.symbol_name))
+                || !verbatim(
+                    &chunk.symbol_name,
+                    admission.admit_text_as(
+                        &chunk.symbol_name,
+                        &crate::core::context_admission::stores::class_of_path(
+                            Path::new(source),
+                            chunk.input_origin.as_ref(),
+                        ),
+                    ),
+                )
             {
                 continue;
             }

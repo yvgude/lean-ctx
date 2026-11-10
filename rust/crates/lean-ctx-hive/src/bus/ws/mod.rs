@@ -135,11 +135,13 @@ enum SessionEnd {
 
 /// Reconnect until a fatal error (returned, see [`stopped`]), or until
 /// `limit` has passed (`None`). `[hive]` as it was at start is not kept:
-/// every connect reads it again.
+/// every connect reads it again. `report` hears what each session sent
+/// and why the relay waits or reconnects (#252: it used to say nothing).
 pub(super) async fn run(
     store: HiveStore,
     _started_with: HiveConfig,
     limit: Option<Duration>,
+    report: super::Report,
 ) -> Option<HiveError> {
     let _friction = FrictionEmitter::start(store.clone());
     let deadline = limit.map(|limit| tokio::time::Instant::now() + limit);
@@ -152,6 +154,9 @@ pub(super) async fn run(
         // `enabled = false` pauses the relay without a daemon restart, and
         // switching it back on resumes it.
         let Some(config) = super::relay_config() else {
+            report.say(
+                "bus relay: the bus is off in [hive] (bus = \"off\" or enabled = false): nothing is sent until it is on again",
+            );
             tokio::select! {
                 () = tokio::time::sleep(TICK) => continue,
                 () = sleep_until(deadline) => return None,
@@ -170,12 +175,22 @@ pub(super) async fn run(
                 .unwrap_or_else(|e| Err(HiveError::Local(e.to_string())));
                 match card {
                     Err(error) if fatal(&error) => return Some(stopped(&store, error)),
-                    Err(error) => store.record_error(&format!("bus: instance card: {error}")),
+                    Err(error) => {
+                        report.say(&format!(
+                            "bus relay: the instance card failed ({error}); no socket is opened, asking again in {} s",
+                            CARD_RETRY.as_secs()
+                        ));
+                        store.record_error(&format!("bus: instance card: {error}"));
+                    }
                     Ok(()) => {}
                 }
                 if super::relay_v2::speaks_v2(&store) {
                     continue;
                 }
+                report.say(&format!(
+                    "bus relay: Hive's instance card did not confirm bus protocol 2.x: no socket is opened, asking again in {} s",
+                    CARD_RETRY.as_secs()
+                ));
             }
             tokio::select! {
                 () = tokio::time::sleep(TICK) => continue,
@@ -184,7 +199,7 @@ pub(super) async fn run(
         }
         let mut connected = false;
         let session = tokio::select! {
-            result = session::session_once(&store, &config, &mut connected) => result,
+            result = session::session_once(&store, &config, &mut connected, &report) => result,
             () = sleep_until(deadline) => return None,
         };
         failures = if connected {
@@ -192,15 +207,28 @@ pub(super) async fn run(
         } else {
             failures.saturating_add(1)
         };
+        let delay = reconnect_delay(failures, jitter_ms());
         match session {
             // A fresh hello is due: reconnect right away.
-            Ok(SessionEnd::Reannounce) => continue,
-            Ok(SessionEnd::Closed) => {}
+            Ok(SessionEnd::Reannounce) => {
+                report.say("bus relay: announcing this machine's agents afresh");
+                continue;
+            }
+            Ok(SessionEnd::Closed) => report.say(&format!(
+                "bus relay: Hive closed the socket (its workers left the bus); reconnecting in {} s",
+                delay.as_secs()
+            )),
             Err(error) if fatal(&error) => return Some(stopped(&store, error)),
-            Err(error) => store.record_error(&format!("bus: {error}")),
+            Err(error) => {
+                report.say(&format!(
+                    "bus relay: {error}; trying again in {} s",
+                    delay.as_secs()
+                ));
+                store.record_error(&format!("bus: {error}"));
+            }
         }
         tokio::select! {
-            () = tokio::time::sleep(reconnect_delay(failures, jitter_ms())) => {}
+            () = tokio::time::sleep(delay) => {}
             () = sleep_until(deadline) => return None,
         }
     }
@@ -397,7 +425,12 @@ mod tests {
             .build()
             .unwrap();
         let started = std::time::Instant::now();
-        let end = runtime.block_on(run(store, config, Some(Duration::from_secs(60))));
+        let end = runtime.block_on(run(
+            store,
+            config,
+            Some(Duration::from_secs(60)),
+            crate::bus::Report::quiet(),
+        ));
         assert_eq!(end.map(|e| e.to_string()).as_deref(), Some(REVOKED_LINE));
         assert!(
             started.elapsed() < Duration::from_secs(30),

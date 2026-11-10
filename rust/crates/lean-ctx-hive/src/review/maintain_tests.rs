@@ -635,6 +635,28 @@ fn every_field_the_engine_sets_is_mutable_in_c0() {
     ] {
         walk(&root.join(dir), &mut files);
     }
+    // The local doc store's journal never reaches a vault: its writes are
+    // local-only (Queen, share-bring-local-rules-2026-11-04), so C0
+    // mutability does not apply to them. Skipped are exactly the doc
+    // writer's `write::field_set(` in local_docs.rs (the `shared` mark) and
+    // in the `"move"` arm of ctx_doc.rs's plan_write (move is local-only,
+    // `LOCAL_ONLY` there); every other `field_set(` is still checked. Pages
+    // brought on link are built by `write::create_page`.
+    let local_only = |p: &Path, before: &str| {
+        if !before.ends_with("write::") {
+            return false;
+        }
+        if p.ends_with("lean-ctx-hive/src/local_docs.rs") {
+            return true;
+        }
+        // The nearest match arm before the call is `"move" => {`.
+        p.ends_with("lean-ctx-server/src/tools/ctx_doc.rs")
+            && before.rfind("\" => {").and_then(|end| {
+                before[..end]
+                    .rfind('"')
+                    .map(|start| &before[start + 1..end])
+            }) == Some("move")
+    };
     files.sort();
     let mut seen = std::collections::BTreeSet::new();
     for p in &files {
@@ -650,6 +672,9 @@ fn every_field_the_engine_sets_is_mutable_in_c0() {
         }
         for (i, _) in src.match_indices("field_set(") {
             let before = &src[..i];
+            if local_only(p, before) {
+                continue;
+            }
             // The definition, and other `*field_set(` functions.
             if before.ends_with("fn ")
                 || before.ends_with(|c: char| c.is_alphanumeric() || c == '_')

@@ -179,6 +179,41 @@ fn register_forwards_explicit_durable_identity_binding() {
 }
 
 #[test]
+fn register_stores_a_role_id_and_a_display_name_and_says_what_it_stored() {
+    let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+    let stored = || {
+        let registry = lean_ctx::core::agents::AgentRegistry::load().expect("presence registry");
+        let agent = &registry.agents[0];
+        (agent.role.clone(), agent.display_name.clone())
+    };
+    // A session name given as the role is no role: it becomes the name.
+    let first = super::register(
+        Some("claude"),
+        Some("LeanCTX · Contract 3.12.3"),
+        None,
+        None,
+        "/project",
+    );
+    assert!(
+        first.contains("role: none, name: LeanCTX · Contract 3.12.3)"),
+        "{first}"
+    );
+    assert!(first.contains("warning: unknown_role"), "{first}");
+    assert_eq!(stored(), (None, Some("LeanCTX · Contract 3.12.3".into())));
+    // Re-registering the same presence takes over the new role and name.
+    let again = super::register(
+        Some("claude"),
+        Some("Coder"),
+        Some("Contracts"),
+        None,
+        "/project",
+    );
+    assert!(again.contains("role: coder, name: Contracts)"), "{again}");
+    assert!(!again.contains("warning"), "{again}");
+    assert_eq!(stored(), (Some("coder".into()), Some("Contracts".into())));
+}
+
+#[test]
 fn bound_handoff_posts_before_finishing_presence() {
     let _iso = lean_ctx::core::data_dir::isolated_data_dir();
     lean_ctx::core::agent_registry::register("durable-handoff", "coder", "owner")
@@ -370,4 +405,240 @@ fn a_late_hive_veto_releases_the_local_lease_and_reaches_the_next_call() {
     );
     let again = call("control_status", Some(&agent), None);
     assert!(!again.contains("Hive answered"), "shown once: {again}");
+}
+
+#[cfg(unix)]
+fn export_written(project: &std::path::Path, filename: &str) -> String {
+    handle(
+        "export",
+        Some("codex"),
+        None,
+        None,
+        &project.to_string_lossy(),
+        Some("agent-x"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        true,
+        Some(filename),
+        None,
+    )
+}
+
+/// The A2A snapshot export writes into `<project>/.lean-ctx/proofs/`. A
+/// symlinked proofs dir or target file must not redirect it outside.
+#[cfg(unix)]
+#[test]
+fn a2a_snapshot_export_refuses_symlinked_destinations() {
+    use std::os::unix::fs::symlink;
+    let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+
+    // Symlinked proofs directory.
+    let project = tmp.path().join("p1");
+    std::fs::create_dir_all(project.join(".lean-ctx")).unwrap();
+    symlink(&outside, project.join(".lean-ctx/proofs")).unwrap();
+    let answer = export_written(&project, "snap.json");
+    assert!(answer.starts_with("Error: write snapshot:"), "{answer}");
+    assert!(answer.contains("symlink"), "{answer}");
+    assert!(!outside.join("snap.json").exists());
+
+    // Symlinked target file.
+    let victim = tmp.path().join("victim.json");
+    std::fs::write(&victim, "keep").unwrap();
+    let project = tmp.path().join("p2");
+    std::fs::create_dir_all(project.join(".lean-ctx/proofs")).unwrap();
+    symlink(&victim, project.join(".lean-ctx/proofs/snap.json")).unwrap();
+    let answer = export_written(&project, "snap.json");
+    assert!(answer.starts_with("Error: write snapshot:"), "{answer}");
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+
+    // Not a plain file name.
+    let project = tmp.path().join("p3");
+    std::fs::create_dir_all(&project).unwrap();
+    let answer = export_written(&project, "..");
+    assert!(answer.starts_with("Error: write snapshot:"), "{answer}");
+
+    // A normal export still writes.
+    let answer = export_written(&project, "snap.json");
+    assert!(answer.starts_with("A2A snapshot exported:"), "{answer}");
+    let written = std::fs::read_to_string(project.join(".lean-ctx/proofs/snap.json")).unwrap();
+    assert!(written.contains("\"schema_version\""), "{written}");
+}
+
+/// QN0 over `ctx_agent post`: `queen` reaches the registered Queen (or is
+/// refused when none is active), a kind comes only from that Queen (a role
+/// named `queen` is a label), and kind, task and thread land on the entry.
+#[test]
+fn post_routes_queen_refuses_a_kind_from_others_and_stores_task_and_thread() {
+    use lean_ctx::core::agents::AgentRegistry;
+    use lean_ctx_hive::bus::queen_kinds::{KIND_KEY, THREAD_KEY};
+    let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+    let project = "/work/app";
+    let post = |from: &str, to: Option<&str>, fields: super::PostFields<'_>| {
+        super::handle_with(
+            "post",
+            None,
+            None,
+            None,
+            project,
+            Some(from),
+            Some("status update"),
+            Some("status"),
+            to,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            fields,
+        )
+    };
+
+    let mut registry = AgentRegistry::load_or_create();
+    let queen = registry
+        .register("claude", Some("queen"), project, None)
+        .unwrap();
+    let mut entry = registry.agents[0].clone();
+    entry.agent_id = "mcp-2-pretender".into();
+    entry.app_session_id = Some("app-session-pretender-2".into());
+    registry.agents.push(entry);
+    registry.save().unwrap();
+
+    // No registered Queen yet: `queen` is no address, not even the agent
+    // whose role is `queen`.
+    let refused = post(
+        "mcp-2-pretender",
+        Some("queen"),
+        super::PostFields::default(),
+    );
+    assert!(refused.contains("no_queen"), "{refused}");
+
+    lean_ctx_hive::queens::register_in(
+        &lean_ctx_hive::queens::data_dir().unwrap(),
+        "app-session-queen-1",
+        Some("Queen"),
+        "2026-11-09T10:00:00Z",
+    )
+    .unwrap();
+    let mut registry = AgentRegistry::load_or_create();
+    registry
+        .agents
+        .iter_mut()
+        .find(|a| a.agent_id == queen)
+        .unwrap()
+        .app_session_id = Some("app-session-queen-1".into());
+    registry.save().unwrap();
+
+    let kind = super::PostFields {
+        kind: Some("stop"),
+        ..Default::default()
+    };
+    let refused = post("mcp-2-pretender", None, kind);
+    assert!(refused.contains("not_queen"), "{refused}");
+    let refused = post(
+        &queen,
+        None,
+        super::PostFields {
+            kind: Some("no-such-kind"),
+            ..Default::default()
+        },
+    );
+    assert!(refused.contains("not posted"), "{refused}");
+
+    let routed = post(
+        "mcp-2-pretender",
+        Some("queen"),
+        super::PostFields {
+            kind: None,
+            task_id: Some("67"),
+            thread: Some("review-r1"),
+        },
+    );
+    assert!(routed.starts_with("Posted"), "{routed}");
+    let registry = AgentRegistry::load_or_create();
+    let entry = registry.scratchpad.last().expect("posted entry");
+    assert_eq!(entry.to_agent.as_deref(), Some(queen.as_str()));
+    assert_eq!(entry.task_id.as_deref(), Some("67"));
+    assert_eq!(
+        entry.metadata.get(THREAD_KEY).map(String::as_str),
+        Some("review-r1")
+    );
+    assert!(!entry.metadata.contains_key(KIND_KEY));
+
+    let stop = post(
+        &queen,
+        Some("mcp-2-pretender"),
+        super::PostFields {
+            kind: Some("stop"),
+            task_id: Some("67"),
+            thread: None,
+        },
+    );
+    assert!(stop.starts_with("Posted"), "{stop}");
+    let registry = AgentRegistry::load_or_create();
+    let entry = registry.scratchpad.last().expect("posted entry");
+    assert_eq!(
+        entry.metadata.get(KIND_KEY).map(String::as_str),
+        Some("stop")
+    );
+    assert_eq!(entry.task_id.as_deref(), Some("67"));
+}
+
+/// The per-sender budget holds for every post, not only one with a kind:
+/// the 21st plain post within a minute is refused and filed nowhere.
+#[test]
+fn the_21st_plain_post_within_a_minute_is_refused() {
+    let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+    let project = "/work/app";
+    let mut registry = lean_ctx::core::agents::AgentRegistry::load_or_create();
+    let worker = registry
+        .register("claude", Some("developer"), project, None)
+        .unwrap();
+    registry.save().unwrap();
+    let post = || {
+        super::handle_with(
+            "post",
+            None,
+            None,
+            None,
+            project,
+            Some(&worker),
+            Some("progress"),
+            Some("status"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+            super::PostFields::default(),
+        )
+    };
+    for n in 1..=20 {
+        let posted = post();
+        assert!(posted.starts_with("Posted"), "post {n}: {posted}");
+    }
+    let refused = post();
+    assert!(refused.contains("not posted: rate_limited"), "{refused}");
+    let registry = lean_ctx::core::agents::AgentRegistry::load_or_create();
+    let filed = registry
+        .scratchpad
+        .iter()
+        .filter(|e| e.from_agent == worker)
+        .count();
+    assert_eq!(filed, 20);
 }

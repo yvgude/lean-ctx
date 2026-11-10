@@ -81,6 +81,11 @@ pub(crate) struct State {
     pub(crate) last_run: Option<i64>,
     #[serde(default)]
     pub(crate) refusal: Option<Refusal>,
+    /// The feature Hive switched off (`404 feature_disabled`, e.g.
+    /// `instance_metrics`): nothing is sent before `retry_at`, not even by
+    /// a manual sync; the hours stay buffered for when it is on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) switched_off: Option<String>,
     /// The sharing state Hive last answered for `org_id`.
     #[serde(default)]
     pub(crate) sharing: Option<SharingStateV2>,

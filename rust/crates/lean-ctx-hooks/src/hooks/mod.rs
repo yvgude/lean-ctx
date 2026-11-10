@@ -128,6 +128,25 @@ pub fn installed_hook_mode(agent: &str, home: &std::path::Path) -> Option<HookMo
     hooks_installed_for(agent, home).then(|| recommend_hook_mode(agent))
 }
 
+/// True when LeanCTX installs tool hooks into `agent` (not only MCP, rules or
+/// a plugin): the agents `hooks_installed_for` can find.
+pub fn has_tool_hooks(agent: &str) -> bool {
+    matches!(
+        agent,
+        "claude"
+            | "codebuddy"
+            | "cursor"
+            | "gemini"
+            | "codex"
+            | "windsurf"
+            | "copilot"
+            | "qoder"
+            | "qodercli"
+            | "kiro"
+            | "cline"
+    )
+}
+
 /// True when `agent` already has lean-ctx hook artifacts on disk (global only).
 fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
     match agent {
@@ -164,6 +183,8 @@ fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
                 || file_contains_lean_ctx(&home.join(".github/hooks/hooks.json"))
         }
         "qoder" | "qodercli" => file_contains_lean_ctx(&home.join(".qoder/settings.json")),
+        "kiro" => agents::kiro_cline_hooks::kiro_hook_installed(home),
+        "cline" => agents::kiro_cline_hooks::cline_hook_installed(home),
         _ => false,
     }
 }
@@ -899,7 +920,11 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
                 install_windsurf_hooks_replace(&home);
             }
         }
-        "cline" | "roo" => install_cline_rules(global),
+        "cline" => {
+            install_cline_rules(global);
+            agents::install_cline_runtime_hook(&home);
+        }
+        "roo" => install_cline_rules(global),
         "copilot" | "vscode" => install_copilot_hook(global),
         // VS Code Insiders needs no hook install of its own: the MCP entry in
         // its separate `Code - Insiders/User/mcp.json` is written by the
@@ -921,7 +946,9 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
         // — adding prompts. Its settings.json MCP entry (canonical or legacy
         // root, plus the mandatory `schema_version`) is written by the
         // editor-registry `MuseSettings` writer via `configure_agent_mcp`.
-        "vscode-insiders" | "commandcode" | "codewhale" | "muse" | "omp" => {}
+        // Goose has no hooks LeanCTX drives; its `extensions` entry is the
+        // editor-registry writer's.
+        "vscode-insiders" | "commandcode" | "codewhale" | "muse" | "omp" | "goose" => {}
         "pi" => install_pi_hook_with_mode(global, mode),
         "qoder" | "qodercli" => install_qoder_hook_with_mode(mode),
         "qoderwork" => install_mcp_json_agent(
@@ -986,7 +1013,7 @@ pub fn install_agent_hook_with_mode(agent: &str, global: bool, mode: HookMode) {
             eprintln!("Unknown agent: {agent}");
             eprintln!("  Supported: aider, amazonq, amp, antigravity, antigravity-cli, augment,");
             eprintln!(
-                "    claude, cline, codebuddy, codewhale, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini, grok,"
+                "    claude, cline, codebuddy, codewhale, codex, commandcode, continue, copilot, crush, cursor, emacs, gemini, goose, grok,"
             );
             eprintln!(
                 "    grok-build, hermes, jetbrains, kiro, muse, neovim, omp, openclaw, opencode, pi, qoder,"
@@ -1079,6 +1106,10 @@ pub fn install_agent_runtime_hook_with_mode(agent: &str, global: bool, mode: Hoo
         }
         "copilot" | "vscode" => install_copilot_runtime_hook(global),
         "qoder" | "qodercli" => install_qoder_runtime_hook_with_mode(mode),
+        // Kiro and Cline enforcement hooks live in the home directory only;
+        // their MCP entry and steering/rules stay with setup.
+        "kiro" => agents::install_kiro_runtime_hook(&home),
+        "cline" => agents::install_cline_runtime_hook(&home),
 
         // Pi's global setup installs the runtime package/config but deliberately
         // skips its project-local AGENTS.md when global=true.

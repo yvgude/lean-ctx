@@ -11,6 +11,7 @@
 #![warn(clippy::undocumented_unsafe_blocks)]
 
 pub mod atomic_fs;
+pub mod confined_write;
 pub mod env_lock;
 pub mod error;
 pub mod file_lock;

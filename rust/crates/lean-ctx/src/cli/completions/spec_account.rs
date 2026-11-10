@@ -59,6 +59,26 @@ pub(super) const KNOWLEDGE: CommandNode = CommandNode {
     hidden: false,
 };
 
+pub(super) const TASKS: CommandNode = CommandNode {
+    name: "tasks",
+    aliases: &[],
+    description: "The project's tasks (local, or its Hive vault)",
+    subcommands: &[],
+    flags: &[],
+    positional: None,
+    hidden: false,
+};
+
+pub(super) const DOCS: CommandNode = CommandNode {
+    name: "docs",
+    aliases: &[],
+    description: "The project's doc pages (local, or its Hive vault)",
+    subcommands: &[],
+    flags: &[],
+    positional: None,
+    hidden: false,
+};
+
 pub(super) const STATS: CommandNode = CommandNode {
     name: "stats",
     aliases: &["introspect"],

@@ -234,6 +234,10 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                 crate::tools::ctx_knowledge::handle_export_okf(&project_root, out.as_deref()),
             ));
         }
+        // Hive (#270): a write that moved the knowledge journal (remember,
+        // a conflict's fact update, forget, import …) is pushed to Hive
+        // from this process within about a second, off this call.
+        let journal_before = journal_head(&project_root);
         if action == "import" {
             let Some(path) = get_str(args, "path").or_else(|| query.clone()) else {
                 return Ok(text_output(
@@ -253,15 +257,14 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             let merge = get_str(args, "merge")
                 .and_then(|s| lean_ctx::core::knowledge::ImportMerge::parse(&s))
                 .unwrap_or(lean_ctx::core::knowledge::ImportMerge::SkipExisting);
-            return Ok(text_output(
-                &action,
-                crate::tools::ctx_knowledge::handle_import(
-                    &project_root,
-                    &path,
-                    merge,
-                    &session_id,
-                ),
-            ));
+            let text = crate::tools::ctx_knowledge::handle_import(
+                &project_root,
+                &path,
+                merge,
+                &session_id,
+            );
+            push_if_written(&project_root, journal_before);
+            return Ok(text_output(&action, text));
         }
 
         // A typed failure (every failure of the declaring actions `recall`,
@@ -343,6 +346,20 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             },
             _ => result,
         };
+        // Hive: whether the fact goes to the team, or stays local and why
+        // (the capture gate's rules, checked now instead of at sync).
+        let result = match (action == "remember" && !failed, value.as_deref()) {
+            (true, Some(value)) => {
+                let has_ref = get_str_array(args, "refs").is_some_and(|r| !r.is_empty())
+                    || !anchors.is_empty();
+                match lean_ctx_hive::capture::sharing::note(&project_root, value, has_ref) {
+                    Some(line) => format!("{result}\nhive: {line}"),
+                    None => result,
+                }
+            }
+            _ => result,
+        };
+        push_if_written(&project_root, journal_before);
 
         if failed {
             return Err(crate::server::tool_trait::tool_execution_error(result));
@@ -370,6 +387,21 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             args.and_then(|args| get_str(args, "action")).as_deref(),
             Some("recall" | "timeline" | "search")
         )
+    }
+}
+
+/// The newest LSN of the knowledge journal of `project_root`.
+fn journal_head(project_root: &str) -> Option<u64> {
+    lean_ctx::core::knowledge::knowledge_dir_of(project_root)
+        .ok()
+        .map(|dir| lean_ctx::core::knowledge::journal::head_lsn(&dir))
+}
+
+/// Push the vault of `project_root` to Hive soon when the journal moved
+/// past `before` (the head before the action ran).
+fn push_if_written(project_root: &str, before: Option<u64>) {
+    if before.is_some() && journal_head(project_root) != before {
+        lean_ctx_hive::sync::on_write::push_soon(project_root);
     }
 }
 
@@ -863,5 +895,37 @@ mod tests {
         assert!(inside.join("index.md").exists(), "{text}");
         let text = call(&ctx, &json!({"action": "import", "path": inside}));
         assert!(text.contains("import"), "{text}");
+    }
+
+    /// #270: a fact `ctx_knowledge` remembers is handed to the push on write
+    /// of this process (which pushes the vault within about a second); a
+    /// read that writes nothing is not.
+    #[test]
+    fn a_remembered_fact_asks_for_a_push_and_a_recall_does_not() {
+        use lean_ctx_hive::sync::on_write::requested;
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let ctx = ToolContext {
+            project_root: root.clone(),
+            session: Some(std::sync::Arc::new(tokio::sync::RwLock::new(
+                lean_ctx::core::session::SessionState::new(),
+            ))),
+            ..ToolContext::default()
+        };
+        assert_eq!(requested(&root), 0);
+        call(
+            &ctx,
+            &json!({"action": "remember", "category": "architecture",
+                    "key": "retry", "value": "payments retry three times"}),
+        );
+        assert_eq!(requested(&root), 1, "the write asks for a push");
+        call(&ctx, &json!({"action": "recall", "query": "retry"}));
+        assert_eq!(requested(&root), 1, "a recall writes nothing");
     }
 }

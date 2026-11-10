@@ -1,0 +1,45 @@
+# pz21 origin scan allowlist (locked at spec_commit; design v4 §1.4, §1.5 item 4).
+#
+# Paths are relative to the repository root, one per line; `#` starts a comment.
+#
+# Default section: the only non-test files where `SourceClass::Project` may
+# appear in a changed line. Project = rooted project-file reader, own
+# build/test command output, Instance-internal assembly (design §1.4).
+# Adding a file here is a Spec Writer change, never a Developer edit.
+rust/src/core/context_admission/origin.rs
+rust/src/core/context_admission/mod.rs
+rust/src/core/context_admission/stores.rs
+rust/src/core/context_admission/capture.rs
+rust/src/core/context_admission/carrier.rs
+rust/src/core/admitted_sources.rs
+rust/src/core/patterns/mod.rs
+rust/crates/lean-ctx-server/src/tools/ctx_shell.rs
+rust/crates/lean-ctx-server/src/server/policy_guard/release/gateway.rs
+rust/crates/lean-ctx-server/src/server/call_tool/gateway_receipt.rs
+# Instance-internal assembly that calls admit_context_source (design §0 callers).
+rust/crates/lean-ctx/src/cli/engine_cmd.rs
+rust/crates/lean-ctx/src/dashboard/routes/gateway_receipts.rs
+# Call sites of the carrier `Project` aliases (`carrier::INSTANCE`,
+# `carrier::STORED`); a use of either is checked like the literal.
+rust/src/core/context_admission/stored.rs # STORED: store-boundary check; readers re-admit at serve time
+rust/src/core/bm25_index/source_gate.rs # STORED: BM25 index write gate, a store write
+rust/src/core/import/mod.rs # STORED: imported copy entering a derived store
+rust/src/core/contextops/drift.rs # INSTANCE: diff of the user's agent rule files and installed rules
+rust/src/core/shell_history.rs # INSTANCE: lines the user typed on this machine
+rust/src/core/session/admission.rs # INSTANCE: values of the session's own state
+rust/crates/lean-ctx/src/dashboard/routes/memory.rs # INSTANCE: the project's own memory view
+rust/crates/lean-ctx-server/src/server/background_shell.rs # INSTANCE: test job fixtures in its mod tests
+
+[outside_call]
+# The only files where `capture::outside_call` may appear in a changed line
+# (design §1.5 item 4a table; capture.rs defines it).
+rust/src/core/context_admission/capture.rs
+rust/crates/lean-ctx-server/src/tools/ctx_provider.rs
+rust/src/core/bm25_index/coordinator.rs
+# The store boundary every consolidation store write passes (`admitted()`):
+# a store write, not a delivery; readers admit the stored text again with its
+# origin when they serve it (same reason as the ctx_provider.rs row).
+rust/src/core/consolidation.rs
+rust/crates/lean-ctx-proxy/src/egress_target.rs
+rust/src/core/context_admission/egress.rs
+rust/src/core/context_admission/egress_walk.rs

@@ -50,6 +50,14 @@ pub(crate) fn write_hermes_yaml(
 }
 
 pub(crate) fn upsert_hermes_yaml_mcp(existing: &str, lean_ctx_block: &str) -> String {
+    upsert_yaml_section_child(existing, "mcp_servers", lean_ctx_block)
+}
+
+/// Insert `block` (an indented child entry) into the top-level map
+/// `section`, creating the section at the end when it is missing.
+pub(crate) fn upsert_yaml_section_child(existing: &str, section: &str, block: &str) -> String {
+    let lean_ctx_block = block;
+    let header = format!("{section}:");
     let mut out = String::with_capacity(existing.len() + lean_ctx_block.len() + 32);
     let mut in_mcp_section = false;
     let mut saw_mcp_child = false;
@@ -57,7 +65,7 @@ pub(crate) fn upsert_hermes_yaml_mcp(existing: &str, lean_ctx_block: &str) -> St
     let lines: Vec<&str> = existing.lines().collect();
 
     for line in &lines {
-        if !inserted && line.trim_end() == "mcp_servers:" {
+        if !inserted && line.trim_end() == header {
             in_mcp_section = true;
             out.push_str(line);
             out.push('\n');
@@ -75,7 +83,9 @@ pub(crate) fn upsert_hermes_yaml_mcp(existing: &str, lean_ctx_block: &str) -> St
                 continue;
             }
 
-            if saw_mcp_child && (line.trim().is_empty() || is_toplevel) {
+            // An empty section ends at the next top-level key: insert before
+            // it, never at the end of the file under another key.
+            if is_toplevel || (saw_mcp_child && line.trim().is_empty()) {
                 out.push_str(lean_ctx_block);
                 out.push('\n');
                 inserted = true;
@@ -97,7 +107,9 @@ pub(crate) fn upsert_hermes_yaml_mcp(existing: &str, lean_ctx_block: &str) -> St
         if !out.ends_with('\n') {
             out.push('\n');
         }
-        out.push_str("\nmcp_servers:\n");
+        out.push('\n');
+        out.push_str(&header);
+        out.push('\n');
         out.push_str(lean_ctx_block);
         out.push('\n');
     }

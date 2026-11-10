@@ -145,7 +145,14 @@ order = 7
 name = "test-fixtures"
 class = "tests_examples"
 license = "apache"
-include = ["scripts/tests/fixtures/ip-provenance/**"]
+# Byte-exact base/candidate trees the tripwire tests diff; an SPDX header would
+# change what they compare, and one fixture is deliberately unparsable.
+include = [
+  "scripts/tests/fixtures/ip-provenance/**",
+  "rust/crates/lean-ctx-tripwires/tests/fixtures/**",
+  # pz21 locked acceptance inputs (pages, rows, scan diffs): byte-exact.
+  "rust/crates/lean-ctx-server/tests/fixtures/input_check/**",
+]
 exclude = []
 fixture = true
 
@@ -244,6 +251,8 @@ exclude = [
   "rust/examples/**",
   "rust/crates/lean-ctx-sdk/**",
   "scripts/tests/fixtures/ip-provenance/**",
+  "rust/crates/lean-ctx-tripwires/tests/fixtures/**",
+  "rust/crates/lean-ctx-server/tests/fixtures/input_check/**",
   "**/generated/**",
   "generated/**",
   "*.generated.*",

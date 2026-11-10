@@ -13,46 +13,78 @@
 //! the executing `$SHELL`), the lexer does not pick one: it reports a
 //! [`Lexed::problem`] and the gate blocks the command.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use super::compound::balanced_paren_at;
 
 /// One expansion the shell performs: the inner text of `$( … )`, `<( … )`,
 /// `>( … )`, zsh `=( … )` or a backtick pair, or — `arithmetic` — the
-/// expression of `$(( … ))` or an arithmetic command `(( … ))`.
-pub(super) struct Expansion<'a> {
-    pub(super) body: &'a str,
-    pub(super) arithmetic: bool,
+/// expression of `$(( … ))` or an arithmetic command `(( … ))`. A backtick
+/// body is the script the shell runs: with its `\\`, `` \` `` and `\$`
+/// unescaped ([`backtick_script`]).
+pub struct Expansion<'a> {
+    pub body: Cow<'a, str>,
+    pub arithmetic: bool,
+}
+
+/// The script a backtick substitution runs: inside backticks the shell first
+/// turns `\\`, `` \` `` and `\$` into `\`, `` ` `` and `$`, then parses the
+/// result (POSIX 2.6.3). Any other backslash stays.
+pub fn backtick_script(raw: &str) -> Cow<'_, str> {
+    if !raw.contains('\\') {
+        return Cow::Borrowed(raw);
+    }
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut changed = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && matches!(bytes.get(i + 1), Some(b'\\' | b'`' | b'$')) {
+            out.push(bytes[i + 1]);
+            changed = true;
+            i += 2;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    if changed {
+        // Only ASCII backslashes were removed: still valid UTF-8.
+        Cow::Owned(String::from_utf8(out).unwrap_or_else(|_| raw.to_string()))
+    } else {
+        Cow::Borrowed(raw)
+    }
 }
 
 /// A heredoc and the text its body occupies.
-pub(super) struct Heredoc {
-    pub(super) delim: String,
-    pub(super) quoted: bool,
+pub struct Heredoc {
+    pub delim: String,
+    pub quoted: bool,
     /// From the newline ending the operator's line through the end of the
     /// terminator line (its own newline excluded): removing it leaves the
     /// operator line followed by the line after the terminator.
-    pub(super) body: Range<usize>,
+    pub body: Range<usize>,
 }
 
 /// What [`lex`] found in a command.
 #[derive(Default)]
-pub(super) struct Lexed<'a> {
+pub struct Lexed<'a> {
     /// Top-level expansions in source order; nested ones are inside the bodies.
-    pub(super) expansions: Vec<Expansion<'a>>,
+    pub expansions: Vec<Expansion<'a>>,
     /// `#` to the end of its line, wherever the shell starts a comment.
-    pub(super) comments: Vec<Range<usize>>,
+    pub comments: Vec<Range<usize>>,
     /// Every heredoc, in operator order, at any nesting depth.
-    pub(super) heredocs: Vec<Heredoc>,
+    pub heredocs: Vec<Heredoc>,
     /// Every `\`+newline the shell removes as a line continuation: not one
     /// that is itself escaped (`\\⏎`), single-quoted or in a quoted heredoc.
-    pub(super) continuations: Vec<Range<usize>>,
+    pub continuations: Vec<Range<usize>>,
     /// The first construct the shells disagree on, or that cannot be
     /// validated (an unterminated heredoc). The gate blocks when set.
-    pub(super) problem: Option<&'static str>,
+    pub problem: Option<&'static str>,
     /// Nesting went past [`MAX_NESTING`]; the rest of that level was not
     /// scanned (and `problem` is set).
-    pub(super) too_deep: bool,
+    pub too_deep: bool,
 }
 
 /// Deepest nesting of substitutions, backticks and `${…}` the lexer follows.
@@ -62,13 +94,16 @@ pub(super) struct Lexed<'a> {
 const MAX_NESTING: usize = 64;
 
 /// Lex `command` as the shell would.
-pub(super) fn lex(command: &str) -> Lexed<'_> {
+pub fn lex(command: &str) -> Lexed<'_> {
     let mut lexer = Lexer {
         s: command,
         out: Lexed::default(),
         pending: Vec::new(),
         nesting: 0,
     };
+    if has_stop_parsing_token(command) && super::ps_statements::host_is_powershell() {
+        lexer.flag(STOP_PARSING);
+    }
     lexer.scan(command.len(), 0, Mode::Shell, Close::Eof, true);
     // Operators with no line after them have an empty body.
     let len = command.len();
@@ -83,7 +118,7 @@ pub(super) fn lex(command: &str) -> Lexed<'_> {
 }
 
 /// `command` without the given byte ranges (overlaps merged).
-pub(super) fn remove_ranges(command: &str, mut ranges: Vec<Range<usize>>) -> String {
+pub fn remove_ranges(command: &str, mut ranges: Vec<Range<usize>>) -> String {
     if ranges.is_empty() {
         return command.to_string();
     }
@@ -122,9 +157,30 @@ const TOO_DEEP: &str = "substitutions, backticks, `${…}` or PowerShell `( … 
 const ATTACHED_BLOCK_COMMENT: &str =
     "a PowerShell block comment `<#` attached to a word, where it may not start a comment";
 const UNTERMINATED_BLOCK_COMMENT: &str = "a PowerShell block comment `<#` without its closing `#>`";
+const HEREDOC_IN_REGEX_GROUP: &str = "`<<` inside a `( … )` group of a `[[ … =~ … ]]` regex, which \
+     bash reads as regex text and other shells may read as a here-document";
+const COMMENT_IN_REGEX: &str = "a `#` after a `(`, `)` or `|` in the regex of `[[ … =~ … ]]` \
+     with quotes, `$`, backticks or a backslash after it on its line: bash reads it as regex \
+     text, zsh may read it as a comment";
+const QUOTE_ESCAPE_IN_BACKTICK: &str = "a `\\\"` in a backtick substitution inside double quotes, \
+     which bash unescapes and other shells may not";
+const HERE_STRING: &str = "a PowerShell here-string (`@'` or `@\"` ending its line), whose \
+     line-anchored closing `'@`/`\"@` the gate does not follow (write the text to a file instead)";
+const ESCAPED_DELIMITER: &str = "a PowerShell backtick escape before a quote, `#`, `;`, `|` or \
+     `&`, which the gate reads as a substitution";
+const PS_BRACED_VARIABLE: &str = "a PowerShell braced variable `${…}` holding a quote, `$`, a \
+     backtick, a bracket, a line break or a non-ASCII character, where PowerShell ends the name \
+     at the first `}` but the gate would read past it";
+const STOP_PARSING: &str = "the PowerShell stop-parsing token `--%`, after which PowerShell \
+     passes quotes literally up to the next `|` or line break";
+const PS_HEREDOC: &str = "`<<` under PowerShell, which has no here-documents: PowerShell keeps \
+     the next line as a command where the gate would read it as here-document text";
+const PS_ATTACHED_COMMENT: &str = "a `#` attached to a PowerShell quote, group, member access, \
+     parameter, redirection or non-ASCII character, or after a `[`, `(` or `{`, where PowerShell \
+     starts a comment the gate would read as part of a word";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Mode {
+pub enum Mode {
     /// Ordinary shell text: quotes, comments and heredoc operators apply.
     Shell,
     /// An unquoted heredoc body: only `\`, `$…` expansions and backticks are
@@ -165,9 +221,32 @@ impl<'a> Lexer<'a> {
         self.out.problem.get_or_insert(problem);
     }
 
-    fn push(&mut self, collect: bool, body: &'a str, arithmetic: bool) {
+    fn push(&mut self, collect: bool, body: impl Into<Cow<'a, str>>, arithmetic: bool) {
         if collect {
-            self.out.expansions.push(Expansion { body, arithmetic });
+            self.out.expansions.push(Expansion {
+                body: body.into(),
+                arithmetic,
+            });
+        }
+    }
+
+    /// Lex a backtick body the shell unescaped first, for the constructs the
+    /// shells disagree on. Its positions are not positions in the command, so
+    /// its comments and heredocs stay in the command's text; the gate strips
+    /// them when it reads the body as its own script.
+    fn scan_unescaped(&mut self, script: &str) {
+        let mut inner = Lexer {
+            s: script,
+            out: Lexed::default(),
+            pending: Vec::new(),
+            nesting: self.nesting,
+        };
+        inner.scan(script.len(), 0, Mode::Shell, Close::Eof, false);
+        if inner.out.too_deep {
+            self.out.too_deep = true;
+        }
+        if let Some(problem) = inner.out.problem {
+            self.flag(problem);
         }
     }
 
@@ -217,9 +296,24 @@ impl<'a> Lexer<'a> {
         // Index of the last `)` that closed a group (not a substitution):
         // a `#` right after it starts a comment, as after any operator.
         let mut bare_close_at = usize::MAX;
+        // After an unquoted `=~` word bash reads the next word as a regex
+        // (`parse_cond_command`): nowhere in that word does a `#` start a
+        // comment — after a group's `)` or a `|` neither — and inside its
+        // `( … )` groups `<<` starts no here-document. It ends only at a
+        // blank, newline, `;`, `&`, `<`, `>` or an unmatched `)` outside a
+        // group. `regex_await`: the word has not started yet; `regex_word`:
+        // the scan is in it; `regex_depth`: its open groups.
+        let mut regex_await = false;
+        let mut regex_word = false;
+        let mut regex_depth: u32 = 0;
 
         while i < end {
             let ch = bytes[i];
+            if regex_await && !matches!(ch, b' ' | b'\t') {
+                regex_await = false;
+                // A `#` opening the word is a comment, as at any word start.
+                regex_word = !matches!(ch, b'\n' | b'#');
+            }
             if ch == b'\\' {
                 if bytes.get(i + 1) == Some(&b'\n') {
                     self.out.continuations.push(i..i + 2);
@@ -250,6 +344,20 @@ impl<'a> Lexer<'a> {
                         if bytes.get(i + 2) == Some(&b'(') {
                             self.flag(ZSH_PARAM_FLAGS);
                         }
+                        // PowerShell ends a braced variable `${…}` at the first
+                        // `}`; quotes, `$`, backticks and groups inside it are
+                        // part of the name. The scan below reads it the shell
+                        // way, so `${x'}; cmd #'}` was one quoted word to the
+                        // gate while PowerShell ran `cmd`. Under the PowerShell
+                        // host a body that holds any byte the two readings
+                        // could disagree on is refused; with none of them both
+                        // end at the same `}`.
+                        if super::ps_statements::host_is_powershell()
+                            && braced_variable_disagrees(&bytes[i + 2..])
+                        {
+                            self.flag(PS_BRACED_VARIABLE);
+                            return unterminated;
+                        }
                         let quoted = in_double || mode == Mode::Param { quoted: true };
                         match self.scan(end, i + 2, Mode::Param { quoted }, Close::Brace, collect) {
                             Some(after) => i = after,
@@ -269,11 +377,45 @@ impl<'a> Lexer<'a> {
                 }
             }
             if ch == b'`' {
+                // PowerShell's escape character. Before a quote, `#` or a
+                // separator it hides that byte from the readings below, which
+                // pair backticks as a substitution whose body ignores quotes:
+                // `` `'; cmd; '`' `` ran `cmd` behind one "string".
+                //
+                // `$` is deliberately NOT in this set. A backtick before `$`
+                // escapes the `$` (`` `$5 ``, `` `$( ``), a common and
+                // legitimate form in double-quoted strings, and it hides no
+                // separator — `` `$x; cmd `` is already blocked because the
+                // backtick body `$x; cmd` meets the allowlist and fails it.
+                // Adding `$` here would only add false refusals. To refuse it
+                // regardless, add `b'$'` to the set below.
+                if matches!(
+                    bytes.get(i + 1),
+                    Some(b'\'' | b'"' | b'#' | b';' | b'|' | b'&')
+                ) && super::ps_statements::host_is_powershell()
+                {
+                    self.flag(ESCAPED_DELIMITER);
+                    i += 2;
+                    continue;
+                }
                 let close_at = closing_backtick(bytes, i + 1);
                 let body_end = close_at.unwrap_or(end);
-                self.push(collect, &s[i + 1..body_end], false);
-                // The body is a script: record its comments and heredocs.
-                self.scan(body_end, i + 1, Mode::Shell, Close::Eof, false);
+                let raw = &s[i + 1..body_end];
+                if in_double && raw.contains("\\\"") {
+                    self.flag(QUOTE_ESCAPE_IN_BACKTICK);
+                }
+                match backtick_script(raw) {
+                    // The body is a script: record its comments and heredocs.
+                    Cow::Borrowed(raw) => {
+                        self.push(collect, raw, false);
+                        self.scan(body_end, i + 1, Mode::Shell, Close::Eof, false);
+                    }
+                    // The shell runs the unescaped text, not the raw one.
+                    Cow::Owned(script) => {
+                        self.scan_unescaped(&script);
+                        self.push(collect, script, false);
+                    }
+                }
                 match close_at {
                     Some(close_at) => i = close_at + 1,
                     None => return unterminated,
@@ -289,7 +431,24 @@ impl<'a> Lexer<'a> {
                 i += 1;
                 continue;
             }
+            if regex_word
+                && regex_depth == 0
+                && matches!(ch, b' ' | b'\t' | b'\n' | b';' | b'&' | b'<' | b'>')
+            {
+                regex_word = false;
+            }
             match ch {
+                // PowerShell here-string `@'`/`@"` ending its line: it closes
+                // at a line-anchored `'@`/`"@`, where the quote rules below
+                // would pair its quotes as ordinary ones and hide a `;` after
+                // the close. The gate does not follow it: refused.
+                b'@' if matches!(bytes.get(i + 1), Some(b'\'' | b'"'))
+                    && opens_here_string(bytes, i + 2)
+                    && super::ps_statements::host_is_powershell() =>
+                {
+                    self.flag(HERE_STRING);
+                    return unterminated;
+                }
                 b'"' => in_double = true,
                 b'\'' if mode == (Mode::Param { quoted: true }) => {
                     // Literal in bash, a quote in dash and zsh.
@@ -304,11 +463,45 @@ impl<'a> Lexer<'a> {
                     Some(close_at) => i = close_at,
                     None => return unterminated,
                 },
+                // Regex text to bash. zsh may read a `#` starting a word as a
+                // comment, and so read quotes and substitutions after it
+                // differently: such a line is refused.
+                b'#' if regex_word => {
+                    let line_end = s[i..end].find('\n').map_or(end, |k| i + k);
+                    if starts_word(bytes, i, start, bare_close_at)
+                        && s[i..line_end].contains(['\'', '"', '`', '$', '\\'])
+                    {
+                        self.flag(COMMENT_IN_REGEX);
+                    }
+                }
+                b'<' if regex_depth > 0 && bytes.get(i + 1) == Some(&b'<') => {
+                    self.flag(HEREDOC_IN_REGEX_GROUP);
+                    i += 2;
+                    continue;
+                }
                 b'#' if !param && starts_word(bytes, i, start, bare_close_at) => {
                     let line_end = s[i..end].find('\n').map_or(end, |k| i + k);
                     self.out.comments.push(i..line_end);
                     i = line_end;
                     continue;
+                }
+                // PowerShell starts a comment wherever a token ends: after a
+                // closing quote, `}`, `)`, a member access, `,`, `-Name:` or
+                // a redirection, while the rule above reads one word there.
+                // `echo 'a'#'⏎cmd⏎#'` ran `cmd` behind one "word". Only a `#`
+                // inside a plain word is ordinary text to both readings, and
+                // only in argument mode: after any `[`, `(` or `{` in this
+                // scan PowerShell may be in expression mode, where `$x[ 0#'`
+                // is a number and a comment (review note 23662).
+                b'#' if !param
+                    && super::ps_statements::host_is_powershell()
+                    && (!in_plain_powershell_word(&bytes[start..i])
+                        || bytes[start..i]
+                            .iter()
+                            .any(|b| matches!(b, b'[' | b'(' | b'{'))) =>
+                {
+                    self.flag(PS_ATTACHED_COMMENT);
+                    return unterminated;
                 }
                 // PowerShell block comment `<# … #>`: it may span lines and
                 // ends at `#>`, so the `#` rule above would read its closing
@@ -335,6 +528,13 @@ impl<'a> Lexer<'a> {
                         i += 3;
                         continue;
                     }
+                    // PowerShell has no here-documents: `a<<EOF` is one
+                    // argument and the next line a command, which the gate
+                    // would skip as here-document text.
+                    if super::ps_statements::host_is_powershell() {
+                        self.flag(PS_HEREDOC);
+                        return unterminated;
+                    }
                     if i < arithmetic_until {
                         self.flag(SHIFT_IN_ARITHMETIC_COMMAND);
                         i += 2;
@@ -359,6 +559,15 @@ impl<'a> Lexer<'a> {
                 }
                 // zsh `=( … )` process substitution, where `=` starts a word
                 // (`a=(…)` is an array assignment).
+                b'=' if mode == Mode::Shell
+                    && bytes.get(i + 1) == Some(&b'~')
+                    && matches!(bytes.get(i + 2), Some(b' ' | b'\t'))
+                    && starts_word(bytes, i, start, bare_close_at) =>
+                {
+                    regex_await = true;
+                    i += 2;
+                    continue;
+                }
                 b'=' if !param
                     && bytes.get(i + 1) == Some(&b'(')
                     && starts_word(bytes, i, start, bare_close_at) =>
@@ -392,6 +601,9 @@ impl<'a> Lexer<'a> {
                         self.push(collect, expr, true);
                         arithmetic_until = after + 1;
                     }
+                    if regex_word {
+                        regex_depth += 1;
+                    }
                     depth += 1;
                     // PowerShell reads each `(` as a nested expression or
                     // pipeline, one recursive scan per level: bound it like a
@@ -407,6 +619,11 @@ impl<'a> Lexer<'a> {
                 b')' => {
                     if close == Close::Paren && depth == 0 {
                         return Some(i + 1);
+                    }
+                    if regex_depth > 0 {
+                        regex_depth -= 1;
+                    } else {
+                        regex_word = false;
                     }
                     depth = depth.saturating_sub(1);
                     bare_close_at = i;
@@ -543,18 +760,126 @@ impl<'a> Lexer<'a> {
     }
 }
 
+/// Could PowerShell and the shell reading end the braced variable whose body
+/// starts at `body` at different places? PowerShell ends it at the first `}`;
+/// the shell reading pairs quotes, `$…`, backticks, groups and nested braces
+/// first. Any of those (or a line break) before that `}`, or no `}` at all,
+/// counts as a disagreement.
+fn braced_variable_disagrees(body: &[u8]) -> bool {
+    match body.iter().position(|&b| b == b'}') {
+        Some(close) => body[..close].iter().any(|b| {
+            matches!(
+                b,
+                b'\'' | b'"' | b'`' | b'$' | b'{' | b'(' | b')' | b'\n' | b'\r' | b'\\'
+            ) || *b >= 0x80
+        }),
+        None => true,
+    }
+}
+
+/// Does `bytes` start with the stop-parsing token: two dashes, each `-` or one
+/// of `– — ―` (U+2013..U+2015), then `%`? Only this check reads those dashes
+/// as `-`; every other check sees them unchanged, as a native program does.
+fn is_stop_parsing_token(bytes: &[u8]) -> bool {
+    let mut rest = bytes;
+    for _ in 0..2 {
+        rest = match rest {
+            [b'-', tail @ ..] | [0xE2, 0x80, 0x93..=0x95, tail @ ..] => tail,
+            _ => return false,
+        };
+    }
+    rest.first() == Some(&b'%')
+}
+
+/// Does `command` hold the PowerShell stop-parsing token `--%` anywhere, quoted
+/// or not, other than glued into a plain word?
+///
+/// After `--%` PowerShell passes the rest of the line up to a `|` or line
+/// break to a native program verbatim, so quotes no longer pair:
+/// `echo --% '| cmd #'` pipes into `cmd` while the quote rules read one quoted
+/// word. A native-program argument whose value is exactly `--%` (from
+/// `"--%"`, `'--%'` or `"$e--%"`) makes pwsh re-split the following arguments
+/// at spaces. PowerShell starts a token after whitespace of any kind, `,`, a
+/// closing quote, `}`, `)`, a redirection or a member access (`$x.y--%`), so
+/// instead of following its tokenizer the gate refuses every occurrence unless
+/// the text before it, back to an ASCII space, tab or line break, is a
+/// non-empty plain word of ASCII letters, digits, `_`, `-` and `=` ending in
+/// a letter, digit, `_` or `=` (`--format=--%`, `a--%`). The dashes `– — ―`
+/// count as `-` here (refused conservatively; pwsh 7.4.6 does not stop parsing
+/// at them, Windows PowerShell 5.1 is untested).
+fn has_stop_parsing_token(command: &str) -> bool {
+    let bytes = command.as_bytes();
+    (0..bytes.len()).any(|i| {
+        matches!(bytes[i], b'-' | 0xE2)
+            && is_stop_parsing_token(&bytes[i..])
+            && !glued_into_plain_word(&bytes[..i])
+    })
+}
+
+/// Is `before` (the text before a stop-parsing token) a plain word that
+/// glues the token into an ordinary argument? See [`has_stop_parsing_token`].
+fn glued_into_plain_word(before: &[u8]) -> bool {
+    let start = before
+        .iter()
+        .rposition(|b| matches!(b, b' ' | b'\t' | b'\n'))
+        .map_or(0, |p| p + 1);
+    let word = &before[start..];
+    word.last()
+        .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'='))
+        && word
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'='))
+}
+
 /// Does a `#` at `i` start a word, i.e. a comment? At the start of the
 /// scanned text, after a blank or one of `;&|()`, but after `)` only when it
 /// closed a group: the `)` of `$(…)` or `<(…)` ends no word (`$(a)#b`).
+///
+/// A backslash-escaped blank or operator ends no word (`a\ #b`, `a\;#b` are
+/// one word to the shell). The gate joins `\`+newline continuations before it
+/// lexes (`normalize_line_continuations`).
 fn starts_word(bytes: &[u8], i: usize, start: usize, bare_close_at: usize) -> bool {
     if i == start {
         return true;
+    }
+    if escaped(bytes, i - 1, start) {
+        return false;
     }
     match bytes[i - 1] {
         b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'(' => true,
         b')' => bare_close_at == i - 1,
         _ => false,
     }
+}
+
+/// Is the byte at `at` escaped: preceded by an odd run of backslashes that
+/// does not reach back before `start`?
+fn escaped(bytes: &[u8], at: usize, start: usize) -> bool {
+    bytes[start..at]
+        .iter()
+        .rev()
+        .take_while(|&&b| b == b'\\')
+        .count()
+        % 2
+        == 1
+}
+
+/// Is a `#` right after `before` ordinary text to PowerShell too? Only when
+/// the word it continues (back to an ASCII blank) holds nothing but ASCII
+/// letters, digits and `_-=./+~%!?*^`: pwsh 7.4.6 reads such a word as one
+/// generic token (`a#b`, `--format=#c`, `-x#c`, `HEAD~1#c`). A quote, `$`,
+/// `@`, group, `,`, `:`, redirection or non-ASCII byte may end the token there,
+/// so the `#` would open a comment.
+fn in_plain_powershell_word(before: &[u8]) -> bool {
+    let start = before
+        .iter()
+        .rposition(|b| matches!(b, b' ' | b'\t' | b'\n'))
+        .map_or(0, |p| p + 1);
+    let word = &before[start..];
+    !word.is_empty()
+        && word
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || b"_-=./+~%!?*^".contains(b))
 }
 
 /// Is the `(` at `i` the argument list of a PowerShell member call —
@@ -630,4 +955,13 @@ fn closing_backtick(bytes: &[u8], from: usize) -> Option<usize> {
         }
     }
     None
+}
+
+/// Does the text after a PowerShell `@'`/`@"` at `from` run to a line break
+/// with only blanks between, so the pair opens a here-string?
+fn opens_here_string(bytes: &[u8], from: usize) -> bool {
+    bytes[from..]
+        .iter()
+        .find(|b| !matches!(b, b' ' | b'\t' | b'\r'))
+        .is_some_and(|b| *b == b'\n')
 }

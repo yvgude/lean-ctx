@@ -32,7 +32,8 @@ no-decision output.
 | Mistral Vibe (`vibe`) | C (unverified) | Today's `pre_tool` hook | — | Vibe's hook is MCP-gated in the installer; no post-tool replacement |
 | Antigravity IDE / CLI (`antigravity`, `antigravity-cli`) | C (unverified) | Today's Gemini-format hooks / `agy` plugin | — | Shares Gemini's dialect but its tool names and plugin contract are not verified for enforcement |
 | OpenCode (`opencode`), Pi (`pi`), Hermes (`hermes`), OpenClaw (`openclaw`), Crush (`crush`) | C | Plugin or extension integrations | — | In-process plugin APIs, not command hooks; a governor would be a plugin change |
-| Aider, Amazon Q, Amp, Augment, Cline, Roo, CodeWhale, Command Code, Continue, Emacs, Grok, JetBrains, Kiro, Muse Code, Neovim, Oh My Pi, QoderWork, Qwen, Sublime, Trae, Verdent, VS Code, VS Code Insiders, Zed | C | none | — | No tool hooks LeanCTX drives (MCP registration only) |
+| Kiro (`kiro`), Cline (`cline`) | C + enforcement hook | Kiro: `~/.kiro/hooks/lean-ctx.json` `PreToolUse` → `hook kiro-enforce` (exit 2 + stderr blocks). Cline: `~/.cline/hooks/PreToolUse` → `hook cline-enforce` (`{"cancel": true}` blocks; macOS/Linux) | today's rules/steering | Neither documents an input rewrite (kiro.dev/docs/hooks/types, cline `.clinerules/hooks/README.md`), so the hook only denies an allowlist violation or a secret-like read and never approves; the MCP server stays until a governor switch is verified |
+| Aider, Amazon Q, Amp, Augment, Roo, CodeWhale, Command Code, Continue, Emacs, Goose, Grok, JetBrains, Muse Code, Neovim, Oh My Pi, QoderWork, Qwen, Sublime, Trae, Verdent, VS Code, VS Code Insiders, Zed | C | none | — | No tool hooks LeanCTX drives (MCP registration only; Goose's plugin hooks are not installed) |
 
 ## Switching
 

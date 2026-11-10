@@ -43,6 +43,7 @@ SCAN_ROOTS = (
     "rust/crates/lean-ctx-hooks",
     "rust/crates/lean-ctx-proxy",
     "rust/crates/lean-ctx-server",
+    "rust/crates/lean-ctx-shell-policy",
     "rust/crates/lean-ctx-syntax",
     "rust/crates/lean-ctx-workgraph",
 )

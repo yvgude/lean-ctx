@@ -336,8 +336,11 @@ fn a_verified_signer_key_is_not_a_generic_secret_and_stays_under_policy() {
     let clean = document(serde_json::json!({"state": "admitted"}));
     {
         let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
-        // Without the verification the document is withheld: the defect.
-        assert!(plain().release_document(clean.clone()).is_err());
+        // Without the verification the key reads as a secret: its value is
+        // masked where it stands and never delivered (the whole document
+        // used to be withheld for it).
+        let (masked, notice) = plain().release_document(clean.clone()).expect("masked");
+        assert!(!masked.contains(key) && notice.is_some(), "{masked}");
         // With it the document keeps its bytes.
         assert_eq!(
             verified().release_document(clean.clone()),
@@ -359,12 +362,10 @@ fn a_verified_signer_key_is_not_a_generic_secret_and_stays_under_policy() {
         );
         let other = key.to_uppercase();
         let malformed = serde_json::json!({"package": {"signer_public_key": other}}).to_string();
-        assert!(
-            plain()
-                .verified_signer_key(Some(&other))
-                .release_document(malformed)
-                .is_err()
-        );
+        let released = plain()
+            .verified_signer_key(Some(&other))
+            .release_document(malformed);
+        assert!(released.is_ok_and(|(text, _)| !text.contains(&other)));
     }
     // An operator's own pattern against the key, or against its member,
     // sees the ORIGINAL document: the verified document is not released
@@ -404,6 +405,35 @@ fn a_finding_in_a_json_key_withholds_the_document() {
     let reason = run.release_document(keyed).expect_err("withheld");
     assert!(!reason.contains(AWS_KEY), "{reason}");
     assert!(!reason.contains("value"), "{reason}");
+}
+
+/// #1298 review: the content-free notice of a per-record release names the
+/// number of records left out, and nothing of them.
+#[test]
+fn the_per_record_notice_names_the_withheld_count() {
+    const SESSION_KEY: &str = "wake-mcp-9fK2xQ7vT4bL8nR3cW6yH1mJ5pD0sGz";
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+    governed();
+    let (_project, root) = project();
+    let run = super::CliToolRun::new("ctx_knowledge", &root, None).per_record(super::Records {
+        path: &["facts"],
+        report: None,
+    });
+    let document = serde_json::json!({"facts": [
+        {"id": format!("session/{SESSION_KEY}"), "key": SESSION_KEY},
+        {"id": "decision/db", "key": "db", "text": "Postgres for the ledger"},
+    ]})
+    .to_string();
+    let (released, notice) = run
+        .release_document(document)
+        .expect("released, not withheld");
+    assert!(!released.contains(SESSION_KEY), "{released}");
+    assert_eq!(
+        notice.as_deref(),
+        Some("[lean-ctx gateway: 1 record(s) withheld]"),
+        "{released}"
+    );
 }
 
 #[test]

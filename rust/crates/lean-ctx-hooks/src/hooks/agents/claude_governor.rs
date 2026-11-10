@@ -13,9 +13,10 @@
 //!
 //! What the profile writes, and nothing else:
 //! - PostToolUse `Read|Bash|Edit|…` → `hook govern` (explicit 5 s timeout);
-//!   PreCompact, PostCompact, SessionStart → `hook govern` (purge only, no
-//!   stdout); SessionEnd → `hook observe`; PostToolUse `SendMessage` →
-//!   `hook observe` (mirrors the host's direct messages to the local bus).
+//!   PreCompact, PostCompact, SessionStart → `hook govern` (purge, plus the
+//!   compaction marker on a compaction or clear; no stdout); SessionEnd →
+//!   `hook observe`; PostToolUse `SendMessage` → `hook observe` (mirrors the
+//!   host's direct messages to the local bus).
 //! - PreToolUse Bash|Read|Grep|Glob → `hook rewrite-enforce`: only security —
 //!   the allowlist wrap (#1408) and the secret-path deny of `hook redirect`;
 //!   no compression rewrites, no `cat` → `ctx_read` (owner decision O-1).

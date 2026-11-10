@@ -23,6 +23,20 @@
 //! writes refused ([`proven_full`]). A task some of whose receipts were
 //! removed reports itself incomplete, as for any missing receipt.
 //!
+//! **Orphans** go too, once they are older than the protected window: a
+//! trace sidecar or observation whose receipt is gone, an egress decision
+//! link whose receipt is gone, an egress admission whose decision receipt is
+//! gone, the attempt links and observations of an admission that is gone,
+//! and an output index none of whose receipts is left. Nothing is an orphan
+//! because it cannot be read: a damaged record is left as it is. The audit
+//! trail (`<data>/audit`) and the execution ledger live outside the store and
+//! are never touched; the store's own ledger is bookkeeping, rebuilt from
+//! the count.
+//!
+//! **A dry run** ([`plan_in`]) walks the same way and lists what a pass
+//! would remove or pack — kind, path, bytes — without changing a byte: no
+//! removal, no packing, no lock or stamp file, no ledger rebuild, no cursor.
+//!
 //! **Progress persists.** Every removal is final and booked in batches, and
 //! the task indexes are visited in name order behind a cursor saved per
 //! batch, so a pass a process could not finish is continued — not
@@ -44,8 +58,8 @@ pub const PROTECT_HOURS: u64 = 24;
 /// A pass that has to make room brings the store down to this share of its
 /// ceiling, so it does not run again at the next delivery.
 pub(crate) const TARGET_PERCENT: u64 = 80;
-/// A decompressed receipt larger than this is not loaded.
-const MAX_RECEIPT_BYTES: u64 = 64 << 20;
+/// The bound of one receipt: a larger one is neither written nor loaded.
+pub(crate) const MAX_RECEIPT_BYTES: u64 = 64 << 20;
 const ZSTD_LEVEL: i32 = 3;
 /// Plain receipts younger than this are left for a later pass.
 const PACK_AFTER: Duration = Duration::from_mins(10);
@@ -130,6 +144,72 @@ pub struct Maintenance {
     pub full: bool,
     /// Another process was on it: nothing was done here.
     pub skipped: bool,
+    /// Orphaned sidecars, egress records and output indexes removed.
+    pub removed_orphans: u64,
+    /// The largest receipt file the pass counted, in stored bytes.
+    pub largest_receipt_bytes: u64,
+    /// A dry run: nothing was changed; [`Self::planned`] lists what a pass
+    /// would have done, and the counts above are what it would have counted.
+    pub dry_run: bool,
+    /// What a dry run found to remove or pack. Empty after a real pass.
+    pub planned: Vec<Planned>,
+}
+
+/// One file a pass would remove or pack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Planned {
+    pub action: Action,
+    pub path: PathBuf,
+    /// The file's stored size: what removing it frees (packing frees part).
+    pub bytes: u64,
+}
+
+/// Why a pass touches a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Action {
+    /// A receipt past the retention window or over the store's target.
+    Receipt,
+    /// The trace sidecar or observation of a receipt removed with it.
+    Sidecar,
+    /// A task index none of whose receipts is left (or its marker).
+    TaskIndex,
+    /// A trace sidecar or observation whose receipt is gone.
+    OrphanSidecar,
+    /// An egress decision link, admission, attempt link or observation
+    /// whose lifecycle is gone.
+    OrphanEgress,
+    /// An output index none of whose receipts is left.
+    OrphanOutput,
+    /// A crashed write's temporary file.
+    Temporary,
+    /// A plain receipt that would be packed in place.
+    Pack,
+}
+
+impl Action {
+    pub const ALL: [Self; 8] = [
+        Self::Receipt,
+        Self::Sidecar,
+        Self::TaskIndex,
+        Self::OrphanSidecar,
+        Self::OrphanEgress,
+        Self::OrphanOutput,
+        Self::Temporary,
+        Self::Pack,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Receipt => "receipt",
+            Self::Sidecar => "sidecar",
+            Self::TaskIndex => "task_index",
+            Self::OrphanSidecar => "orphan_sidecar",
+            Self::OrphanEgress => "orphan_egress",
+            Self::OrphanOutput => "orphan_output",
+            Self::Temporary => "temporary",
+            Self::Pack => "pack",
+        }
+    }
 }
 
 /// What a finished pass found, as stamped.
@@ -232,12 +312,16 @@ pub(crate) fn maintain_in_background(dir: PathBuf, urgent: bool) {
 
 pub fn log(outcome: &Result<Maintenance, String>) {
     match outcome {
-        Ok(done) if done.packed + done.removed + done.removed_tasks > 0 || done.full => {
+        Ok(done)
+            if done.packed + done.removed + done.removed_tasks + done.removed_orphans > 0
+                || done.full =>
+        {
             tracing::info!(
-                "gateway evidence store: {} packed, {} receipts and {} task indexes removed, {} MB freed, {} MB held{}",
+                "gateway evidence store: {} packed, {} receipts, {} task indexes and {} orphans removed, {} MB freed, {} MB held{}",
                 done.packed,
                 done.removed,
                 done.removed_tasks,
+                done.removed_orphans,
                 done.freed_bytes / 1_048_576,
                 done.bytes / 1_048_576,
                 if done.full {
@@ -270,7 +354,7 @@ pub fn maintain_in(dir: &Path, now: SystemTime, policy: Policy) -> Result<Mainte
             ..Maintenance::default()
         });
     }
-    let result = maintain_locked(dir, now, policy);
+    let result = maintain_locked(dir, now, policy, false);
     // Stamped when the pass ends, also when it failed (then never as full),
     // so a broken store is not retried on every delivery; an interrupted
     // pass stays unstamped.
@@ -282,6 +366,22 @@ pub fn maintain_in(dir: &Path, now: SystemTime, policy: Policy) -> Result<Mainte
         let _ = crate::core::atomic_fs::try_atomic_write(&dir.join(STAMP), &bytes, None);
     }
     result
+}
+
+/// What one pass over `dir` at `now` under `policy` would do, changing
+/// nothing: the same walk and the same decisions as [`maintain_in`], with
+/// every removal and packing listed in [`Maintenance::planned`] instead of
+/// performed. No lock is taken (a lock file would be a change); a pass of
+/// another process running meanwhile can make the plan stale, never wrong
+/// about what this call did, which is nothing.
+pub fn plan_in(dir: &Path, now: SystemTime, policy: Policy) -> Result<Maintenance, String> {
+    if !dir.is_dir() {
+        return Ok(Maintenance {
+            dry_run: true,
+            ..Maintenance::default()
+        });
+    }
+    maintain_locked(dir, now, policy, true)
 }
 
 struct Stored {
@@ -299,17 +399,32 @@ struct Walk {
     bytes: u64,
     objects: u64,
     receipts: Vec<Stored>,
-    /// Trace sidecars and observations by path, with their sizes.
-    sidecars: HashMap<PathBuf, u64>,
+    /// Trace sidecars and observations by path: how large, changed when.
+    sidecars: HashMap<PathBuf, (u64, SystemTime)>,
     /// The files under `tasks/` by name: changed when, how large.
     tasks: BTreeMap<String, (SystemTime, u64)>,
+    /// The files under `egress/` and `outputs/`.
+    linked: Vec<Linked>,
+    /// Crashed writes' temporaries a dry run left in place (not counted).
+    temporaries: Vec<(PathBuf, u64)>,
+}
+
+/// A file of the store that belongs to another record's lifecycle.
+struct Linked {
+    /// Its directory below the store, `/`-separated (`egress/admissions`).
+    sub: String,
+    /// Its file name without `.json`.
+    stem: String,
+    path: PathBuf,
+    modified: SystemTime,
+    size: u64,
 }
 
 /// Count every file of the store — complete or an error, like the ledger's
 /// own count — and note the receipts, sidecars and task files. A file that
 /// vanishes while it is counted (an atomic write's temporary, a removal) was
-/// not there.
-fn walk(dir: &Path, now: SystemTime) -> Result<Walk, String> {
+/// not there. A dry run removes no crashed write's temporary: it lists it.
+fn walk(dir: &Path, now: SystemTime, dry_run: bool) -> Result<Walk, String> {
     let unreadable = |what: &Path, error: std::io::Error| {
         format!(
             "gateway evidence store cannot be measured ({}: {error})",
@@ -356,10 +471,14 @@ fn walk(dir: &Path, now: SystemTime) -> Result<Walk, String> {
             let name = name.to_string_lossy();
             // Store writes do not sweep for a crashed write's temp: the walk
             // does, and does not count what it removes.
-            if crate::core::atomic_fs::is_orphaned_temp(&name, modified, now)
-                && std::fs::remove_file(&path).is_ok()
-            {
-                continue;
+            if crate::core::atomic_fs::is_orphaned_temp(&name, modified, now) {
+                if dry_run {
+                    walk.temporaries.push((path, meta.len()));
+                    continue;
+                }
+                if std::fs::remove_file(&path).is_ok() {
+                    continue;
+                }
             }
             let size = meta.len();
             walk.bytes = walk.bytes.saturating_add(size);
@@ -377,10 +496,21 @@ fn walk(dir: &Path, now: SystemTime) -> Result<Walk, String> {
                     }
                 }
                 "traces" | "observed" => {
-                    walk.sidecars.insert(path, size);
+                    walk.sidecars.insert(path, (size, modified));
                 }
                 "tasks" => {
                     walk.tasks.insert(name.into_owned(), (modified, size));
+                }
+                sub if sub == "outputs" || sub.starts_with("egress") => {
+                    if let Some(stem) = name.strip_suffix(".json") {
+                        walk.linked.push(Linked {
+                            sub: sub.replace(std::path::MAIN_SEPARATOR, "/"),
+                            stem: stem.to_owned(),
+                            path,
+                            modified,
+                            size,
+                        });
+                    }
                 }
                 _ => {}
             }
@@ -436,30 +566,60 @@ fn tasks_in_progress(
     digests
 }
 
-/// Removals not yet booked against the store's ledger.
+/// Removals not yet booked against the store's ledger. In a dry run nothing
+/// is removed or booked: each removal is listed instead.
 #[derive(Default)]
 struct Pending {
     bytes: u64,
     objects: u64,
+    dry_run: bool,
+    /// Every path removed (or, in a dry run, listed) in this pass: no file
+    /// is counted twice.
+    done: HashSet<PathBuf>,
+    planned: Vec<Planned>,
 }
 
 impl Pending {
-    /// Remove `path`, known to hold `size` bytes; `false`: it is not there.
-    fn remove(&mut self, path: &Path, size: u64) -> bool {
-        if std::fs::remove_file(path).is_err() {
+    fn new(dry_run: bool) -> Self {
+        Self {
+            dry_run,
+            ..Self::default()
+        }
+    }
+
+    /// Remove `path`, known to hold `size` bytes, for `action`; `false`: it
+    /// is not there (or was already removed in this pass).
+    fn remove(&mut self, action: Action, path: &Path, size: u64) -> bool {
+        if self.done.contains(path) {
             return false;
         }
+        if self.dry_run {
+            if std::fs::symlink_metadata(path).is_err() {
+                return false;
+            }
+            self.planned.push(Planned {
+                action,
+                path: path.to_path_buf(),
+                bytes: size,
+            });
+        } else if std::fs::remove_file(path).is_err() {
+            return false;
+        }
+        self.done.insert(path.to_path_buf());
         self.bytes += size;
         self.objects += 1;
         true
     }
 
     /// Book the removals when a batch is full (or with `force`); `true`:
-    /// booked.
+    /// booked. A dry run books nothing.
     fn book(&mut self, dir: &Path, force: bool) -> bool {
         if self.objects > 0 && (force || self.objects >= BOOK_EVERY) {
-            super::capacity::book_removal(dir, self.bytes, self.objects);
-            *self = Self::default();
+            if !self.dry_run {
+                super::capacity::book_removal(dir, self.bytes, self.objects);
+            }
+            self.bytes = 0;
+            self.objects = 0;
             return true;
         }
         false
@@ -486,22 +646,51 @@ fn batch_done() {
     });
 }
 
-fn maintain_locked(dir: &Path, now: SystemTime, policy: Policy) -> Result<Maintenance, String> {
-    let mut report = Maintenance::default();
+fn maintain_locked(
+    dir: &Path,
+    now: SystemTime,
+    policy: Policy,
+    dry_run: bool,
+) -> Result<Maintenance, String> {
+    let mut report = Maintenance {
+        dry_run,
+        ..Maintenance::default()
+    };
     // The truth first: count the files, rebuild the ledger from the count.
-    let start = super::capacity::snapshot(dir);
-    let mut walked = walk(dir, now)?;
+    let start = (!dry_run).then(|| super::capacity::snapshot(dir)).flatten();
+    let mut walked = walk(dir, now, dry_run)?;
     if let Some(start) = &start {
         super::capacity::rebuild(dir, start, (walked.bytes, walked.objects));
     }
+    let mut pending = Pending::new(dry_run);
+    for (path, size) in &walked.temporaries {
+        pending.remove(Action::Temporary, path, *size);
+    }
+    report.largest_receipt_bytes = walked
+        .receipts
+        .iter()
+        .map(|item| item.size)
+        .max()
+        .unwrap_or(0);
     let mut total = walked.bytes;
     let fresh_tasks = tasks_in_progress(dir, &walked, now, policy.protect);
     let mut keep = latest_listed(dir);
     keep.extend(fresh_tasks);
 
-    walked.receipts.sort_by_key(|item| item.modified);
-    let mut pending = Pending::default();
+    // Orphans of receipts already gone first: what they free is not taken
+    // from receipts that could stay.
     let mut gone: HashSet<String> = HashSet::new();
+    let freed = sweep_orphans(
+        &walked,
+        &gone,
+        now,
+        policy.protect,
+        &mut pending,
+        &mut report,
+    );
+    total = total.saturating_sub(freed);
+
+    walked.receipts.sort_by_key(|item| item.modified);
     for item in &walked.receipts {
         if keep.contains(&item.hex) || age(now, item.modified) < policy.protect {
             continue;
@@ -513,7 +702,7 @@ fn maintain_locked(dir: &Path, now: SystemTime, policy: Policy) -> Result<Mainte
         if !(expired || over) {
             continue;
         }
-        if !pending.remove(&item.path, item.size) {
+        if !pending.remove(Action::Receipt, &item.path, item.size) {
             continue;
         }
         let mut freed = item.size;
@@ -521,8 +710,8 @@ fn maintain_locked(dir: &Path, now: SystemTime, policy: Policy) -> Result<Mainte
             dir.join("traces").join(format!("{}.json", item.hex)),
             dir.join("observed").join(format!("{}.json", item.hex)),
         ] {
-            if let Some(size) = walked.sidecars.get(&sidecar).copied()
-                && pending.remove(&sidecar, size)
+            if let Some((size, _)) = walked.sidecars.get(&sidecar).copied()
+                && pending.remove(Action::Sidecar, &sidecar, size)
             {
                 freed += size;
             }
@@ -556,12 +745,34 @@ fn maintain_locked(dir: &Path, now: SystemTime, policy: Policy) -> Result<Mainte
         );
         total = total.saturating_sub(freed);
     }
+    // The receipts removed now leave orphans of their own.
+    if !gone.is_empty() {
+        let freed = sweep_orphans(
+            &walked,
+            &gone,
+            now,
+            policy.protect,
+            &mut pending,
+            &mut report,
+        );
+        total = total.saturating_sub(freed);
+    }
     pending.book(dir, true);
 
     // Packing last: what stays plain and settled is packed.
     let receipts = dir.join("receipts");
     for item in &mut walked.receipts {
         if item.plain && !gone.contains(&item.hex) && age(now, item.modified) >= PACK_AFTER {
+            if dry_run {
+                // What packing frees is not known before it is done.
+                pending.planned.push(Planned {
+                    action: Action::Pack,
+                    path: item.path.clone(),
+                    bytes: item.size,
+                });
+                report.packed += 1;
+                continue;
+            }
             let before = item.size;
             // A receipt that cannot be packed now stays plain for a later pass.
             if pack_in_place(dir, &receipts, item).is_ok() {
@@ -570,12 +781,155 @@ fn maintain_locked(dir: &Path, now: SystemTime, policy: Policy) -> Result<Mainte
             }
         }
     }
+    report.planned = std::mem::take(&mut pending.planned);
 
     report.bytes = total;
     report.full = policy
         .ceiling_bytes
         .is_some_and(|ceiling| total.saturating_add(super::capacity::LIFECYCLE_RESERVE) > ceiling);
     Ok(report)
+}
+
+/// The digest hex a small JSON record of the store names under `field`.
+/// `None` when the record cannot be read, is not a record of a known shape
+/// or names none: such a record is never taken for an orphan.
+fn named_digest(path: &Path, field: &str) -> Option<String> {
+    let bytes = super::read_egress_record(path).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    let hex = value.get(field)?.as_str()?.strip_prefix("sha256:")?;
+    super::is_digest_hex(hex).then(|| hex.to_owned())
+}
+
+fn remove_orphan(
+    pending: &mut Pending,
+    report: &mut Maintenance,
+    action: Action,
+    path: &Path,
+    size: u64,
+) -> u64 {
+    if pending.remove(action, path, size) {
+        report.removed_orphans += 1;
+        report.freed_bytes += size;
+        size
+    } else {
+        0
+    }
+}
+
+/// Remove the orphans older than `protect`, given the receipts of the walk
+/// without those `gone` in this pass. Returns the bytes freed.
+///
+/// - `traces/<r>.json`, `observed/<r>.json`, `egress/decisions/<r>.json`:
+///   receipt `r` is gone.
+/// - `egress/admissions/<a>.json`: the decision receipt it names is gone (an
+///   admission that names none, a failed one, is kept).
+/// - `egress/attempts/<a>/<n>.json`: admission `a` is gone or an orphan.
+/// - `egress/observations/<o>.json`: the admission it names is gone or an
+///   orphan.
+/// - `outputs/<d>.json`: none of the receipts it lists is left.
+///
+/// A record that cannot be read is kept, whatever its age.
+fn sweep_orphans(
+    walked: &Walk,
+    gone: &HashSet<String>,
+    now: SystemTime,
+    protect: Duration,
+    pending: &mut Pending,
+    report: &mut Maintenance,
+) -> u64 {
+    let receipts: HashSet<&str> = walked
+        .receipts
+        .iter()
+        .map(|item| item.hex.as_str())
+        .filter(|hex| !gone.contains(*hex))
+        .collect();
+    let settled = |at: SystemTime| age(now, at) >= protect;
+    let mut freed = 0;
+
+    let mut sidecars: Vec<_> = walked.sidecars.iter().collect();
+    sidecars.sort();
+    for (path, (size, modified)) in sidecars {
+        let receipt = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_suffix(".json"))
+            .filter(|hex| super::is_digest_hex(hex));
+        if let Some(hex) = receipt
+            && !receipts.contains(hex)
+            && settled(*modified)
+        {
+            freed += remove_orphan(pending, report, Action::OrphanSidecar, path, *size);
+        }
+    }
+
+    // The admissions that stay: every one but those whose receipt is gone.
+    let mut admissions: HashSet<&str> = HashSet::new();
+    for item in walked
+        .linked
+        .iter()
+        .filter(|item| item.sub == "egress/admissions")
+    {
+        // Removed by the first sweep of this pass: no longer readable, and
+        // no longer an admission that stays.
+        if pending.done.contains(&item.path) {
+            continue;
+        }
+        let orphan = settled(item.modified)
+            && named_digest(&item.path, "decision_receipt_digest")
+                .is_some_and(|hex| !receipts.contains(hex.as_str()));
+        if orphan {
+            freed += remove_orphan(pending, report, Action::OrphanEgress, &item.path, item.size);
+        } else {
+            admissions.insert(item.stem.as_str());
+        }
+    }
+
+    let mut emptied: Vec<PathBuf> = Vec::new();
+    for item in &walked.linked {
+        if !settled(item.modified) {
+            continue;
+        }
+        let orphan = match item.sub.as_str() {
+            "egress/decisions" => {
+                super::is_digest_hex(&item.stem) && !receipts.contains(item.stem.as_str())
+            }
+            "egress/observations" => named_digest(&item.path, "admission_receipt_digest")
+                .is_some_and(|hex| !admissions.contains(hex.as_str())),
+            "outputs" => super::read_index(&item.path).is_ok_and(|index| {
+                !index
+                    .receipts
+                    .iter()
+                    .any(|hex| receipts.contains(hex.as_str()))
+            }),
+            sub => match sub.strip_prefix("egress/attempts/") {
+                Some(admission) if super::is_digest_hex(admission) => {
+                    let orphan = !admissions.contains(admission);
+                    if orphan && let Some(parent) = item.path.parent() {
+                        emptied.push(parent.to_path_buf());
+                    }
+                    orphan
+                }
+                _ => false,
+            },
+        };
+        if orphan {
+            let action = if item.sub == "outputs" {
+                Action::OrphanOutput
+            } else {
+                Action::OrphanEgress
+            };
+            freed += remove_orphan(pending, report, action, &item.path, item.size);
+        }
+    }
+    // An attempts directory left empty goes too (directories are not counted).
+    if !pending.dry_run {
+        emptied.sort();
+        emptied.dedup();
+        for directory in emptied {
+            let _ = std::fs::remove_dir(directory);
+        }
+    }
+    freed
 }
 
 /// Pack the plain receipt `item` beside itself, keeping its time (retention
@@ -666,12 +1020,12 @@ fn prune_tasks(
             if changed {
                 break 'visit;
             }
-            if pending.remove(&path, *size) {
+            if pending.remove(Action::TaskIndex, &path, *size) {
                 report.removed_tasks += 1;
                 freed += size;
                 let marker = format!("{stem}.incomplete");
                 if let Some((_, marker_size)) = walked.tasks.get(&marker)
-                    && pending.remove(&tasks.join(&marker), *marker_size)
+                    && pending.remove(Action::TaskIndex, &tasks.join(&marker), *marker_size)
                 {
                     freed += marker_size;
                 }
@@ -682,15 +1036,20 @@ fn prune_tasks(
         visited += 1;
         if visited.is_multiple_of(BOOK_EVERY) {
             pending.book(dir, true);
-            save_cursor(dir, name);
+            if !pending.dry_run {
+                save_cursor(dir, name);
+            }
             batch_done();
         }
     }
-    let _ = std::fs::remove_file(dir.join(CURSOR));
+    if !pending.dry_run {
+        let _ = std::fs::remove_file(dir.join(CURSOR));
+    }
     report.freed_bytes += freed;
     freed
 }
 
+// The tests in retention_tests.rs run as `retention::tests::*`.
 #[cfg(test)]
 #[path = "retention_tests.rs"]
 mod tests;

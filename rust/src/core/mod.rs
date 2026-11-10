@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------------------
 // Domain: Compression
 // ---------------------------------------------------------------------------
+pub mod activity;
 pub mod admitted_sources;
 pub mod aggressiveness;
 pub mod auto_capture;
@@ -191,6 +192,7 @@ pub mod handoff_ledger;
 pub mod handoff_transfer_bundle;
 pub mod session;
 pub mod session_diff;
+pub mod session_rights;
 pub mod session_summary;
 pub mod signer_trust;
 pub mod skillify;
@@ -376,6 +378,9 @@ pub mod ingestion;
 pub mod input_filters;
 pub mod installation_id;
 pub mod instruction_compiler;
+// Compiled into build.rs (`#[path]`); here only for its tests.
+#[cfg(test)]
+mod build_origin;
 pub mod integrity;
 pub mod intent_engine;
 pub(crate) mod intent_lang;
@@ -538,9 +543,11 @@ pub mod deps;
 #[cfg(test)]
 mod doc_claims;
 pub mod editor_registry;
+pub mod feature_list;
 pub mod firewall;
 pub mod pathjail;
 pub mod pathjail_scope;
+pub mod pathjail_write;
 pub mod relevance_gate;
 pub mod signatures;
 #[cfg(feature = "tree-sitter")]

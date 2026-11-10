@@ -490,20 +490,27 @@ mod tests {
         );
     }
 
+    /// A writer holds the registry lock for the whole call. A route that took
+    /// the lock would wait the full `ACQUIRE_TIMEOUT`, so the bound is half
+    /// of it: relative to the blocker, not an absolute latency budget a
+    /// loaded CI runner can miss.
     #[test]
     fn agents_route_does_not_wait_for_registry_writer() {
+        use lean_ctx::core::agents::{ACQUIRE_TIMEOUT, FileLock};
+
         let isolated = lean_ctx::core::data_dir::isolated_data_dir();
         let agents_dir = isolated.path().join("agents");
         std::fs::create_dir_all(&agents_dir).expect("agents dir");
-        std::fs::write(agents_dir.join("registry.lock"), b"held").expect("registry lock");
+        let _writer = FileLock::acquire(&agents_dir.join("registry.lock")).expect("registry lock");
 
         let started = std::time::Instant::now();
         let (status, _, _) = handle("/api/agents", "", "GET", "").expect("agents route");
+        let elapsed = started.elapsed();
 
         assert_eq!(status, "200 OK");
         assert!(
-            started.elapsed() < std::time::Duration::from_millis(500),
-            "read-only agents route must not wait for a registry writer"
+            elapsed < ACQUIRE_TIMEOUT / 2,
+            "read-only agents route must not wait for a registry writer: {elapsed:?}"
         );
     }
 

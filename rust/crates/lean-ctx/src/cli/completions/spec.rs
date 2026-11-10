@@ -93,6 +93,8 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     super::spec_account::AGENT,
     super::spec_account::SESSION,
     super::spec_account::KNOWLEDGE,
+    super::spec_account::TASKS,
+    super::spec_account::DOCS,
     super::spec_account::STATS,
     super::spec_account::CHEATSHEET,
     super::spec_account::MCP,

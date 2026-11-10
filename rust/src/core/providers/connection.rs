@@ -19,7 +19,91 @@ pub struct ConnectionCheck {
     /// What the source will be read for (repository, project, database).
     pub scope: Option<String>,
     pub error: Option<String>,
+    /// Why the check failed, machine-readable (`None` when connected).
+    pub reason: Option<FailureReason>,
     pub latency_ms: u64,
+}
+
+/// Why a provider check or call failed. Stable snake_case strings; readers
+/// show an unknown value as-is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureReason {
+    /// A required setting or credential is missing.
+    NotConfigured,
+    /// The source refused the credentials (HTTP 401/403, a database login).
+    Auth,
+    /// The source could not be reached (DNS, connection refused, TLS).
+    Unreachable,
+    Timeout,
+    RateLimited,
+    NotFound,
+    /// The source answered with a server error (HTTP 5xx).
+    Unavailable,
+    /// This source cannot be checked or called here.
+    Unsupported,
+    /// The request itself was malformed (bad arguments or input).
+    InvalidInput,
+    Error,
+}
+
+impl FailureReason {
+    /// The reason of an HTTP status.
+    pub fn of_status(status: u16) -> Self {
+        match status {
+            401 | 403 => Self::Auth,
+            404 => Self::NotFound,
+            408 => Self::Timeout,
+            429 => Self::RateLimited,
+            500..=599 => Self::Unavailable,
+            _ => Self::Error,
+        }
+    }
+
+    /// The reason a client's error text names, for sources whose clients
+    /// only report text (Jira, `psql`).
+    pub fn of_message(message: &str) -> Self {
+        let m = message.to_ascii_lowercase();
+        let has = |needles: &[&str]| needles.iter().any(|n| m.contains(n));
+        if has(&[
+            "not set",
+            "not configured",
+            "missing",
+            "no such file",
+            "not found in path",
+        ]) {
+            Self::NotConfigured
+        } else if has(&[
+            "http 401",
+            "http 403",
+            "unauthorized",
+            "forbidden",
+            "authentication failed",
+            "refused the token",
+        ]) {
+            Self::Auth
+        } else if has(&["timeout", "timed out", "no answer within"]) {
+            Self::Timeout
+        } else if has(&["http 429", "rate limit"]) {
+            Self::RateLimited
+        } else if has(&["http 404"]) {
+            Self::NotFound
+        } else if has(&["http 5"]) {
+            Self::Unavailable
+        } else if has(&[
+            "could not connect",
+            "connection refused",
+            "dns",
+            "resolve",
+            "unreachable",
+            "tls",
+            "connect",
+        ]) {
+            Self::Unreachable
+        } else {
+            Self::Error
+        }
+    }
 }
 
 pub const CHECKABLE: &[&str] = &["github", "gitlab", "jira", "postgres"];
@@ -43,22 +127,34 @@ pub fn check(provider: &str, timeout: Duration) -> ConnectionCheck {
         Ok(_) => receiver.recv_timeout(timeout).unwrap_or_else(|_| {
             failed(
                 provider,
+                FailureReason::Timeout,
                 format!("no answer within {} s", timeout.as_secs()),
                 started,
             )
         }),
-        Err(e) => failed(provider, format!("cannot start the check: {e}"), started),
+        Err(e) => failed(
+            provider,
+            FailureReason::Error,
+            format!("cannot start the check: {e}"),
+            started,
+        ),
     };
     redact(result, &secret_values())
 }
 
-fn failed(provider: &str, error: String, started: Instant) -> ConnectionCheck {
+fn failed(
+    provider: &str,
+    reason: FailureReason,
+    error: String,
+    started: Instant,
+) -> ConnectionCheck {
     ConnectionCheck {
         provider: provider.to_string(),
         connected: false,
         account: None,
         scope: None,
         error: Some(error),
+        reason: Some(reason),
         latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
     }
 }
@@ -115,9 +211,12 @@ fn check_now(provider: &str) -> ConnectionCheck {
         "gitlab" => gitlab(),
         "jira" => jira(),
         "postgres" => postgres(),
-        other => Err(format!(
-            "{other} cannot be checked here; use one of {}",
-            CHECKABLE.join(", ")
+        other => Err((
+            FailureReason::Unsupported,
+            format!(
+                "{other} cannot be checked here; use one of {}",
+                CHECKABLE.join(", ")
+            ),
         )),
     };
     let latency_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
@@ -128,17 +227,47 @@ fn check_now(provider: &str) -> ConnectionCheck {
             account: Some(account),
             scope,
             error: None,
+            reason: None,
             latency_ms,
         },
-        Err(error) => ConnectionCheck {
+        Err((reason, error)) => ConnectionCheck {
             provider: provider.to_string(),
             connected: false,
             account: None,
             scope: None,
             error: Some(error),
+            reason: Some(reason),
             latency_ms,
         },
     }
+}
+
+/// A failed check: its reason and its (unredacted) text.
+type Failure = (FailureReason, String);
+
+fn not_configured(error: String) -> Failure {
+    (FailureReason::NotConfigured, error)
+}
+
+fn by_message(error: String) -> Failure {
+    (FailureReason::of_message(&error), error)
+}
+
+/// The body of an HTTP answer, or the failure its outcome names.
+fn http_body(
+    outcome: super::hardened_http::HttpOutcome,
+    context: impl FnOnce(String) -> String,
+) -> Result<String, Failure> {
+    use super::hardened_http::HttpOutcome as O;
+    let reason = match &outcome {
+        O::Success { .. } => None,
+        O::Timeout { .. } => Some(FailureReason::Timeout),
+        O::NetworkError { .. } => Some(FailureReason::Unreachable),
+        O::HttpError { status, .. } => Some(FailureReason::of_status(*status)),
+    };
+    outcome
+        .into_body()
+        .map_err(|e| (reason.unwrap_or(FailureReason::Error), context(e)))
 }
 
 fn field(body: &str, keys: &[&str]) -> Option<String> {
@@ -148,49 +277,51 @@ fn field(body: &str, keys: &[&str]) -> Option<String> {
         .map(str::to_string)
 }
 
-fn github() -> Result<(String, Option<String>), String> {
-    let config = GitHubConfig::from_env()?;
+fn github() -> Result<(String, Option<String>), Failure> {
+    let config = GitHubConfig::from_env().map_err(not_configured)?;
     let token = format!("Bearer {}", config.token);
-    let body = super::hardened_http::provider_get_with_headers(
-        "github",
-        &format!("{}/user", config.api_base),
-        &[
-            ("Authorization", &token),
-            ("Accept", "application/vnd.github+json"),
-            ("X-GitHub-Api-Version", "2022-11-28"),
-        ],
-    )
-    .into_body()
-    .map_err(|e| format!("GitHub refused the token: {e}"))?;
+    let body = http_body(
+        super::hardened_http::provider_get_with_headers(
+            "github",
+            &format!("{}/user", config.api_base),
+            &[
+                ("Authorization", &token),
+                ("Accept", "application/vnd.github+json"),
+                ("X-GitHub-Api-Version", "2022-11-28"),
+            ],
+        ),
+        |e| format!("GitHub refused the token: {e}"),
+    )?;
     let login = field(&body, &["login"]).unwrap_or_else(|| "signed in".to_string());
     Ok((login, config.repo_slug()))
 }
 
-fn gitlab() -> Result<(String, Option<String>), String> {
-    let config = GitLabConfig::from_env()?;
-    let body = super::hardened_http::provider_get_with_headers(
-        "gitlab",
-        &config.api_url("/user"),
-        &[("PRIVATE-TOKEN", &config.token)],
-    )
-    .into_body()
-    .map_err(|e| format!("GitLab at {} refused the token: {e}", config.host))?;
+fn gitlab() -> Result<(String, Option<String>), Failure> {
+    let config = GitLabConfig::from_env().map_err(not_configured)?;
+    let body = http_body(
+        super::hardened_http::provider_get_with_headers(
+            "gitlab",
+            &config.api_url("/user"),
+            &[("PRIVATE-TOKEN", &config.token)],
+        ),
+        |e| format!("GitLab at {} refused the token: {e}", config.host),
+    )?;
     let user = field(&body, &["username", "name"]).unwrap_or_else(|| "signed in".to_string());
     Ok((user, config.project_path.clone()))
 }
 
-fn jira() -> Result<(String, Option<String>), String> {
-    let config = JiraConfig::from_env()?;
-    let user = config.whoami()?;
+fn jira() -> Result<(String, Option<String>), Failure> {
+    let config = JiraConfig::from_env().map_err(not_configured)?;
+    let user = config.whoami().map_err(by_message)?;
     Ok((user, config.project.clone()))
 }
 
 /// The check's `psql` call; the connection travels only in `PG*` variables.
-fn postgres_command() -> Result<std::process::Command, String> {
+fn postgres_command() -> Result<std::process::Command, Failure> {
     if !super::credentials::is_set("DATABASE_URL") && !super::credentials::is_set("PGDATABASE") {
-        return Err("DATABASE_URL not set".to_string());
+        return Err(not_configured("DATABASE_URL not set".to_string()));
     }
-    let mut command = super::postgres::psql_command()?;
+    let mut command = super::postgres::psql_command().map_err(not_configured)?;
     command
         .args([
             "-X",
@@ -205,9 +336,10 @@ fn postgres_command() -> Result<std::process::Command, String> {
     Ok(command)
 }
 
-fn postgres() -> Result<(String, Option<String>), String> {
+fn postgres() -> Result<(String, Option<String>), Failure> {
     let mut command = postgres_command()?;
-    let out = super::postgres::run_psql(&mut command, std::time::Duration::from_secs(10))?;
+    let out = super::postgres::run_psql(&mut command, std::time::Duration::from_secs(10))
+        .map_err(by_message)?;
     let line = out.lines().next().unwrap_or("").trim();
     let (user, database) = line.split_once('|').unwrap_or((line, ""));
     Ok((
@@ -224,7 +356,33 @@ mod tests {
     fn unknown_sources_are_refused_without_a_request() {
         let result = check("weather", CHECK_TIMEOUT);
         assert!(!result.connected);
+        assert_eq!(result.reason, Some(FailureReason::Unsupported));
         assert!(result.error.unwrap().contains("github"));
+    }
+
+    #[test]
+    fn failures_carry_a_machine_readable_reason() {
+        assert_eq!(FailureReason::of_status(401), FailureReason::Auth);
+        assert_eq!(FailureReason::of_status(429), FailureReason::RateLimited);
+        assert_eq!(FailureReason::of_status(503), FailureReason::Unavailable);
+        for (text, reason) in [
+            ("JIRA_URL not set", FailureReason::NotConfigured),
+            ("HTTP 401: Unauthorized", FailureReason::Auth),
+            (
+                "psql: FATAL: password authentication failed",
+                FailureReason::Auth,
+            ),
+            (
+                "psql: could not connect to server: Connection refused",
+                FailureReason::Unreachable,
+            ),
+            ("request timed out", FailureReason::Timeout),
+            ("something odd", FailureReason::Error),
+        ] {
+            assert_eq!(FailureReason::of_message(text), reason, "{text}");
+        }
+        let line = serde_json::to_string(&FailureReason::NotConfigured).unwrap();
+        assert_eq!(line, "\"not_configured\"");
     }
 
     #[test]
@@ -242,6 +400,7 @@ mod tests {
                 account: Some("reader:Pw-Secret9".into()),
                 scope: Some("app".into()),
                 error: Some(format!("cannot reach {url}: password Pw-Secret9 refused")),
+                reason: Some(FailureReason::Auth),
                 latency_ms: 1,
             },
             &secrets,

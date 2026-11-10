@@ -57,12 +57,109 @@ pub fn service_file_path() -> Option<std::path::PathBuf> {
     }
 }
 
+/// Whether this process may drive the user-wide autostart services (the
+/// systemd user unit, the LaunchAgent). They run the daemon of the default
+/// install: the account's own HOME and no directory override. The service
+/// manager addresses a unit by name (`systemctl --user stop
+/// lean-ctx-daemon`), whatever data dir the caller has, so a process with
+/// `LEAN_CTX_DATA_DIR` (or another directory override) or a sandbox HOME is
+/// another instance and never stops, starts, installs or removes them. On
+/// 5 Nov 2026 `serve --stop` with a scratch `LEAN_CTX_DATA_DIR` stopped the
+/// user's real daemon through exactly that call.
+#[must_use]
+pub fn controls_user_services() -> bool {
+    services_belong_to_instance(
+        crate::core::paths::dir_override_active(),
+        dirs::home_dir().as_deref(),
+        crate::core::config::shell_policy::real_user_home().as_deref(),
+    )
+}
+
+/// [`controls_user_services`] as a pure function of its inputs.
+fn services_belong_to_instance(
+    override_active: bool,
+    home: Option<&std::path::Path>,
+    account_home: Option<&std::path::Path>,
+) -> bool {
+    if override_active {
+        return false;
+    }
+    let (Some(home), Some(account_home)) = (home, account_home) else {
+        return false;
+    };
+    home == account_home
+        || std::fs::canonicalize(home)
+            .ok()
+            .zip(std::fs::canonicalize(account_home).ok())
+            .is_some_and(|(a, b)| a == b)
+}
+
+/// What a command prints when it leaves a user-wide service alone because it
+/// belongs to another instance (see [`controls_user_services`]): the daemon
+/// and proxy autostart units and the auto-update schedule (LaunchAgent,
+/// systemd timer, crontab entry, scheduled task).
+#[must_use]
+pub fn not_this_instance_message() -> &'static str {
+    "Not this instance: the user-wide service (daemon or proxy autostart, auto-update \
+     schedule) belongs to the default install (the account's HOME without LEAN_CTX_DATA_DIR \
+     or another directory override); this instance leaves it alone."
+}
+
+/// The PID of the daemon the autostart service runs right now, when the
+/// service belongs to this instance. `None` when it runs nothing, is not
+/// installed, or belongs to another instance. Read-only.
+#[must_use]
+pub fn supervised_pid() -> Option<u32> {
+    if !is_supported() || !controls_user_services() {
+        return None;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if !launchagent_path().exists() {
+            return None;
+        }
+        crate::core::launchd::service_pid(PLIST_LABEL)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if !systemd_path().exists() {
+            return None;
+        }
+        let output = std::process::Command::new("systemctl")
+            .args([
+                "--user",
+                "show",
+                "--property=MainPID",
+                "--value",
+                SYSTEMD_SERVICE,
+            ])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())?;
+        String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse::<u32>()
+            .ok()
+            .filter(|pid| *pid != 0)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        None
+    }
+}
+
 pub fn install(quiet: bool) {
     let binary = crate::proxy_autostart::find_binary();
     install_with_binary(&binary, quiet);
 }
 
 pub fn install_with_binary(binary: &str, quiet: bool) {
+    if is_supported() && !controls_user_services() {
+        if !quiet {
+            eprintln!("{}", not_this_instance_message());
+        }
+        return;
+    }
     if binary.is_empty() {
         if !quiet {
             tracing::error!("Cannot find lean-ctx binary for daemon autostart");
@@ -84,7 +181,13 @@ pub fn install_with_binary(binary: &str, quiet: bool) {
     }
 }
 
+/// Stop the autostart service. A no-op for another instance (see
+/// [`controls_user_services`]); that instance's daemon is stopped through
+/// its own PID file and endpoint by [`crate::daemon::stop_daemon`].
 pub fn stop() {
+    if !controls_user_services() {
+        return;
+    }
     #[cfg(target_os = "macos")]
     {
         let plist_path = launchagent_path();
@@ -101,7 +204,11 @@ pub fn stop() {
     }
 }
 
+/// Start the autostart service; a no-op for another instance.
 pub fn start() {
+    if !controls_user_services() {
+        return;
+    }
     #[cfg(target_os = "macos")]
     {
         let plist_path = launchagent_path();
@@ -119,6 +226,12 @@ pub fn start() {
 }
 
 pub fn uninstall(quiet: bool) {
+    if is_supported() && !controls_user_services() {
+        if !quiet {
+            eprintln!("{}", not_this_instance_message());
+        }
+        return;
+    }
     #[cfg(target_os = "macos")]
     uninstall_launchagent(quiet);
 
@@ -129,7 +242,93 @@ pub fn uninstall(quiet: bool) {
     let _ = quiet;
 }
 
+/// What [`ensure_supervised`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Supervision {
+    /// The service was installed already (and is started if it was not).
+    Already,
+    /// The service is installed now; a daemon started by hand was handed over.
+    Installed,
+    /// Installing it did not work: the daemon runs without supervision.
+    Failed,
+    /// No supervisor on this platform, or a test / isolated instance (a
+    /// directory override), which never installs a user-wide service.
+    Skipped,
+}
+
+/// Make sure the daemon runs under the platform's supervisor (systemd user
+/// unit, LaunchAgent): it starts at login and restarts after a crash, so
+/// work that lives in the daemon (Hive's background sync, the outbox) never
+/// depends on someone starting it by hand. A daemon started by hand is
+/// stopped first so the supervised one can take its socket. `restart`: a
+/// supervised daemon already running is restarted (a new connection or a
+/// new build takes effect; the daemon reads both only at start).
+pub fn ensure_supervised(restart: bool) -> Supervision {
+    if !is_supported() || cfg!(test) || !controls_user_services() {
+        return Supervision::Skipped;
+    }
+    if is_installed() {
+        if restart {
+            stop();
+        }
+        if restart || !crate::daemon::is_daemon_running() {
+            start();
+        }
+        return Supervision::Already;
+    }
+    if crate::daemon::is_daemon_running() {
+        let _ = crate::daemon::stop_daemon();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    install(true);
+    if is_installed() {
+        Supervision::Installed
+    } else {
+        Supervision::Failed
+    }
+}
+
+/// The line a command shows for `supervision` (`None`: nothing to say).
+pub fn supervision_line(supervision: Supervision) -> Option<String> {
+    match supervision {
+        Supervision::Installed => Some(format!(
+            "The LeanCTX daemon now runs supervised ({}): it starts at login and restarts after a crash.{}",
+            service_name().unwrap_or("service"),
+            linger_hint()
+        )),
+        Supervision::Failed => Some(
+            "The LeanCTX daemon could not be set up to start by itself; run `lean-ctx daemon enable`."
+                .to_string(),
+        ),
+        Supervision::Already | Supervision::Skipped => None,
+    }
+}
+
+/// Linux without lingering stops user services at logout (a headless
+/// server): the hint, else nothing.
+fn linger_hint() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        let user = whoami();
+        let lingering = std::process::Command::new("loginctl")
+            .args(["show-user", &user, "-p", "Linger", "--value"])
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "yes");
+        if !lingering {
+            return format!(
+                " To keep it running while you are logged out: loginctl enable-linger {user}"
+            );
+        }
+    }
+    String::new()
+}
+
+/// Whether this instance's autostart service is installed. Another
+/// instance's service (see [`controls_user_services`]) never counts.
 pub fn is_installed() -> bool {
+    if !controls_user_services() {
+        return false;
+    }
     #[cfg(target_os = "macos")]
     {
         launchagent_path().exists()
@@ -378,6 +577,57 @@ fn uninstall_systemd(quiet: bool) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
+    /// 5 Nov 2026: the user-wide service belongs to the default install
+    /// only. A directory override or a sandbox HOME is another instance.
+    #[test]
+    fn user_services_belong_to_the_default_install_only() {
+        let account = Path::new("/home/someone");
+        let sandbox = Path::new("/tmp/sandbox-home");
+        assert!(super::services_belong_to_instance(
+            false,
+            Some(account),
+            Some(account)
+        ));
+        assert!(!super::services_belong_to_instance(
+            true,
+            Some(account),
+            Some(account)
+        ));
+        assert!(!super::services_belong_to_instance(
+            false,
+            Some(sandbox),
+            Some(account)
+        ));
+        assert!(!super::services_belong_to_instance(
+            false,
+            None,
+            Some(account)
+        ));
+        assert!(!super::services_belong_to_instance(
+            false,
+            Some(account),
+            None
+        ));
+    }
+
+    /// Under a directory override nothing reaches the service manager:
+    /// `stop`/`start`/`uninstall` return before `systemctl`/`launchctl`.
+    #[test]
+    fn directory_override_never_controls_user_services() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let dir = tempfile::tempdir().expect("tempdir");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.path());
+        let controls = super::controls_user_services();
+        let installed = super::is_installed();
+        let supervised = super::supervised_pid();
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        assert!(!controls);
+        assert!(!installed);
+        assert_eq!(supervised, None);
+    }
+
     /// #2176: support and the service path agree, and the unsupported line
     /// never claims success.
     #[test]

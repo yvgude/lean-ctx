@@ -56,6 +56,33 @@ pub fn normalize_role(role: &str) -> String {
     }
 }
 
+/// Length of the session tag in a per-session role.
+const SESSION_TAG_LEN: usize = 8;
+/// Domain of the session tag hash.
+const SESSION_TAG_DOMAIN: &str = "leanctx.hive.session-agent.v1|";
+
+/// The role a session's worker is registered under. Without an app session
+/// it is the normalised role, so every session of that role on this
+/// instance shares one worker. With an app session (`LEAN_CTX_SESSION_ID`,
+/// recorded as the presence's `app_session_id`) it is
+/// `<role>-s<tag>`, where `tag` is base32(blake3(domain ‖ session))[..8] and
+/// the role is cut so the whole fits the 32-character role limit. Each
+/// session then gets its own durable worker (`wkr_` id), stable for the
+/// life of that app session. Hive recomputes the id from the role as sent,
+/// so this needs nothing new on Hive, and Hive's `self_verify` check
+/// (worker id of the verdict == worker id of the result) then tells a
+/// worker session apart from a separate reviewer session on the same host.
+pub fn session_role(role: &str, app_session: Option<&str>) -> String {
+    let role = normalize_role(role);
+    let Some(session) = app_session.map(str::trim).filter(|s| !s.is_empty()) else {
+        return role;
+    };
+    let digest = blake3::hash(format!("{SESSION_TAG_DOMAIN}{session}").as_bytes());
+    let tag = &base32_lower(digest.as_bytes())[..SESSION_TAG_LEN];
+    let base: String = role.chars().take(ROLE_MAX - 2 - SESSION_TAG_LEN).collect();
+    format!("{}-s{tag}", base.trim_end_matches('-'))
+}
+
 /// The instance id as the server hashes it: the dashed lowercase UUID. A
 /// 1.x enrolment stores `inst_<32 hex>`; the same id in another spelling
 /// would give another worker id (E10 `worker_not_owned`, dogfood 25.10.).

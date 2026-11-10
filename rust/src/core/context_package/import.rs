@@ -231,6 +231,42 @@ mod tests {
         s
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn save_refuses_a_dangling_symlink_out_of_the_project() {
+        // A cloned repository can ship `notes.json -> ../outside/.bash_aliases`.
+        // The jail treats the dangling link as a new file name in the project,
+        // so the save itself must not write through it.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let project = tmp.path().join("app");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let target = outside.join(".bash_aliases");
+        std::os::unix::fs::symlink("../outside/.bash_aliases", project.join("notes.json")).unwrap();
+
+        let result = save_package(
+            &sample_session(),
+            &project.to_string_lossy(),
+            None,
+            None,
+            Some(&project.join("notes.json")),
+        );
+        assert!(result.is_err(), "save through a dangling link: {result:?}");
+        assert!(!target.exists(), "nothing is written outside the project");
+
+        // A plain destination in the project still works.
+        let saved = save_package(
+            &sample_session(),
+            &project.to_string_lossy(),
+            None,
+            None,
+            Some(&project.join("snapshot.ctx.json")),
+        )
+        .expect("plain save");
+        assert!(saved.exists());
+    }
+
     #[test]
     fn save_then_resume_round_trips_session_slice() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -269,7 +305,10 @@ mod tests {
     }
 
     /// AP07-G2: the replay loaded and saved outside the project lock, so
-    /// parallel imports into one project lost each other's facts.
+    /// parallel imports into one project lost each other's facts. Later
+    /// (#2214) the polled project lock failed a waiter behind the others
+    /// ("knowledge lock unavailable"); the replay now queues for a
+    /// `file_lock::Turn` before that lock.
     #[test]
     fn parallel_knowledge_replays_keep_every_fact() {
         use std::sync::{Arc, Barrier};

@@ -94,6 +94,63 @@ fn arguments_are_validated() {
         parse(&["--project-id".into(), "project-a".into()]).is_err(),
         "a scope without a task"
     );
+    let options = parse(&["--maintain".into(), "--dry-run".into(), "--json".into()])
+        .expect("valid arguments")
+        .expect("not help");
+    assert!(options.maintain && options.dry_run && options.json);
+    assert!(
+        parse(&["--dry-run".into()]).is_err(),
+        "a dry run of nothing"
+    );
+    assert!(
+        parse(&["--maintain".into(), "--task".into(), "task-1".into()]).is_err(),
+        "maintenance is not a lookup"
+    );
+}
+
+#[test]
+fn a_dry_run_report_names_kinds_paths_and_bytes() {
+    use lean_ctx::core::context_admission::receipt_store::retention::{
+        Action, Maintenance, Planned,
+    };
+    let planned: Vec<Planned> = (0..25)
+        .map(|n| Planned {
+            action: Action::OrphanEgress,
+            path: std::path::PathBuf::from(format!("/store/egress/decisions/{n}.json")),
+            bytes: 100,
+        })
+        .chain(std::iter::once(Planned {
+            action: Action::Receipt,
+            path: std::path::PathBuf::from("/store/receipts/r.json.zst"),
+            bytes: 4096,
+        }))
+        .collect();
+    let plan = Maintenance {
+        dry_run: true,
+        removed: 1,
+        removed_orphans: 25,
+        freed_bytes: 6596,
+        bytes: 1 << 20,
+        planned,
+        ..Maintenance::default()
+    };
+    let text = render_maintenance(&plan);
+    assert!(text.starts_with("Dry run — nothing was changed."), "{text}");
+    assert!(text.contains("receipt: 1 files"), "{text}");
+    assert!(
+        text.contains("/store/receipts/r.json.zst (4096 B)"),
+        "{text}"
+    );
+    assert!(text.contains("orphan_egress: 25 files"), "{text}");
+    assert!(
+        text.contains("… 5 more (--json lists every path)"),
+        "{text}"
+    );
+    let json = maintenance_json(&plan);
+    assert_eq!(json["dry_run"], true);
+    assert_eq!(json["planned"].as_array().unwrap().len(), 26);
+    assert_eq!(json["kinds"]["orphan_egress"]["bytes"], 2500);
+    assert_eq!(json["kinds"]["pack"]["files"], 0);
 }
 
 #[test]
@@ -150,7 +207,10 @@ fn delivered_bytes_lead_back_to_their_receipt() {
     let capture = AdmissionCapture::for_call(duty.snapshot().clone());
     ADMISSIONS
         .sync_scope(Some(capture.clone()), || {
-            lean_ctx::core::context_admission::admit_context_source(delivered)
+            lean_ctx::core::context_admission::admit_context_source(
+                delivered,
+                &lean_ctx::core::context_admission::origin::SourceClass::Project,
+            )
         })
         .expect("a clean source is admitted");
     let record = receipt_store::record_delivery(
@@ -225,7 +285,10 @@ fn delivered_bytes_lead_back_to_their_receipt() {
     let twin_capture = AdmissionCapture::for_call(duty.snapshot().clone());
     ADMISSIONS
         .sync_scope(Some(twin_capture.clone()), || {
-            lean_ctx::core::context_admission::admit_context_source(delivered)
+            lean_ctx::core::context_admission::admit_context_source(
+                delivered,
+                &lean_ctx::core::context_admission::origin::SourceClass::Project,
+            )
         })
         .expect("a clean source is admitted");
     let twin = receipt_store::record_delivery(
@@ -313,7 +376,10 @@ fn delivered_bytes_lead_back_to_their_receipt() {
     let capture = AdmissionCapture::for_call(duty.snapshot().clone());
     ADMISSIONS
         .sync_scope(Some(capture.clone()), || {
-            lean_ctx::core::context_admission::admit_context_source(failing)
+            lean_ctx::core::context_admission::admit_context_source(
+                failing,
+                &lean_ctx::core::context_admission::origin::SourceClass::Project,
+            )
         })
         .expect("a clean source is admitted");
     let record = receipt_store::record_delivery(

@@ -228,6 +228,9 @@ pub(crate) fn cmd_agent(args: &[String]) {
                 std::process::exit(1);
             }
         }
+        Some(action @ ("messages" | "post")) => {
+            super::local_read::bus::run(action, &args[1..]);
+        }
         None | Some("help" | "--help" | "-h") => println!("{AGENT_USAGE}"),
         // An unknown subcommand is an error, not the help with exit 0: a
         // mistyped `agent reed` looked like an empty read (lead, 25.10.).
@@ -245,6 +248,9 @@ USAGE:\n\
   lean-ctx agent presence [--json] [--all]  inspect local MCP agent liveness\n\
   lean-ctx agent wait --id <bus id> [--timeout <s>]  wait for bus messages (paged; exit 2 = none)\n\
   lean-ctx agent read --id <bus id>          read bus messages once, without waiting (paged)\n\
+  lean-ctx agent messages --json [--since <rfc3339>] [--to <id>] [--limit N]  the bus as JSON (local-read/1)\n\
+  lean-ctx agent post --json (--to <id>… | --broadcast) --message <text> [--thread <t>] [--project-root <p>]\n\
+                                             post as the person (hive-person)\n\
   lean-ctx agent friction [--since <30m|12h|7d>]  local friction summary\n\
   lean-ctx agent show <agent-id> [--trust-domain org.example]\n\
   lean-ctx agent heartbeat <agent-id>        liveness + attestation drift check (exit 3 = unacknowledged drift)\n\
@@ -275,33 +281,44 @@ struct LocalPresenceRow {
     status_message: Option<String>,
 }
 
+/// Seconds since its last activity within which a live presence is `active`.
+pub(crate) const ACTIVE_WINDOW_SECONDS: i64 = 60;
+
+/// Whether `agent`'s process still lives, and its state (`active`, `idle`,
+/// `finished`) at `now`.
+pub(crate) fn agent_liveness(
+    agent: &lean_ctx::core::agents::AgentEntry,
+    now: chrono::DateTime<chrono::Utc>,
+    compatibility_identities: &lean_ctx::core::agents::ProcessIdentityIndex,
+) -> (bool, &'static str) {
+    let alive = agent
+        .process_identity
+        .as_ref()
+        .or_else(|| compatibility_identities.get(&agent.agent_id))
+        .is_some_and(|identity| lean_ctx::ipc::process::matches_identity(agent.pid, identity));
+    let age_seconds = (now - agent.last_active).num_seconds().max(0);
+    let state = if !alive || agent.status == lean_ctx::core::agents::AgentStatus::Finished {
+        "finished"
+    } else if age_seconds <= ACTIVE_WINDOW_SECONDS {
+        "active"
+    } else {
+        "idle"
+    };
+    (alive, state)
+}
+
 fn local_presence_snapshot(
     registry: &lean_ctx::core::agents::AgentRegistry,
     now: chrono::DateTime<chrono::Utc>,
     include_finished: bool,
     compatibility_identities: &lean_ctx::core::agents::ProcessIdentityIndex,
 ) -> Vec<LocalPresenceRow> {
-    const ACTIVE_WINDOW_SECONDS: i64 = 60;
-
     let mut rows: Vec<_> = registry
         .agents
         .iter()
         .filter_map(|agent| {
-            let alive = agent
-                .process_identity
-                .as_ref()
-                .or_else(|| compatibility_identities.get(&agent.agent_id))
-                .is_some_and(|identity| {
-                    lean_ctx::ipc::process::matches_identity(agent.pid, identity)
-                });
+            let (alive, state) = agent_liveness(agent, now, compatibility_identities);
             let age_seconds = (now - agent.last_active).num_seconds().max(0);
-            let state = if !alive || agent.status == lean_ctx::core::agents::AgentStatus::Finished {
-                "finished"
-            } else if age_seconds <= ACTIVE_WINDOW_SECONDS {
-                "active"
-            } else {
-                "idle"
-            };
             (include_finished || state != "finished").then(|| LocalPresenceRow {
                 id: agent.agent_id.clone(),
                 agent_type: agent.agent_type.clone(),
@@ -325,8 +342,6 @@ fn local_presence_snapshot(
 }
 
 fn print_local_presence(as_json: bool, include_finished: bool) {
-    const ACTIVE_WINDOW_SECONDS: i64 = 60;
-
     let registry = lean_ctx::core::agents::AgentRegistry::mutate_locked(|registry| {
         registry.cleanup_stale(
             lean_ctx::core::config::Config::load()
@@ -542,6 +557,8 @@ mod tests {
                     transport: None,
                     role_source: None,
                     parent: None,
+                    app_session_id: None,
+                    display_name: None,
                 },
                 AgentEntry {
                     agent_id: "idle".to_string(),
@@ -558,6 +575,8 @@ mod tests {
                     transport: None,
                     role_source: None,
                     parent: None,
+                    app_session_id: None,
+                    display_name: None,
                 },
                 AgentEntry {
                     agent_id: "finished".to_string(),
@@ -574,6 +593,8 @@ mod tests {
                     transport: None,
                     role_source: None,
                     parent: None,
+                    app_session_id: None,
+                    display_name: None,
                 },
             ],
             scratchpad: vec![],

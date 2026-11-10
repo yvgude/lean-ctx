@@ -119,8 +119,12 @@ pub(crate) fn detect_drift(home: &Path) -> Vec<DriftReport> {
                 // file lives outside any project and has no rooted reader).
                 // Nothing read here is written anywhere.
                 let diff = compute_diff(expected_trimmed, section_trimmed);
-                let diff = match crate::core::context_admission::carrier::admit_carrier_text(&diff)
-                {
+                let diff = match crate::core::context_admission::carrier::admit_carrier_text(
+                    &diff,
+                    // The user's own agent rule file and the rules lean-ctx
+                    // installs: no outside origin.
+                    &crate::core::context_admission::carrier::INSTANCE,
+                ) {
                     Ok(admitted) => admitted.text,
                     Err(withheld) => withheld.notice(),
                 };

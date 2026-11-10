@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "After upgrading to 3.12 the search results lost their line numbers."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}
