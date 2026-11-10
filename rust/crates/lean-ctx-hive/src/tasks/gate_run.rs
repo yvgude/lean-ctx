@@ -776,6 +776,10 @@ fn walk(
 
 /// Makes every directory of the run tree writable again when dropped, so
 /// the tree can be removed whatever the run left read-only.
+#[cfg_attr(
+    not(unix),
+    expect(dead_code, reason = "only Unix runs set directories read-only")
+)]
 pub(super) struct Unlock(pub(super) PathBuf);
 
 impl Drop for Unlock {

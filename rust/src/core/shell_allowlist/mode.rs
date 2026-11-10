@@ -2,7 +2,7 @@
 //! gating (GL #788).
 //!
 //! Three levels, applied at the single chokepoint
-//! [`check_shell_allowlist`](super::check_shell_allowlist) so MCP and CLI behave
+//! `check_shell_allowlist` so MCP and CLI behave
 //! identically:
 //!
 //! - `enforce` (**default**, secure-by-default): the allowlist and the

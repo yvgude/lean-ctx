@@ -420,12 +420,10 @@ pub fn last_seen_ms(worker: &LocalWorker) -> Option<u64> {
 
 /// The workers that may retire (owner 09.11.: workers that are not active
 /// do not count and are switched off): not the connector's own (host
-/// [`CAPTURE_HOST`]), held by no active session in `in_use`, and last seen
+/// `CAPTURE_HOST`), held by no active session in `in_use`, and last seen
 /// before `cutoff_ms` (never seen: idle). With `session_only`, only the
 /// workers recorded as one app session's ([`LocalWorker::per_session`]),
 /// which end with it.
-///
-/// [`CAPTURE_HOST`]: crate::sync::place::CAPTURE_HOST
 #[must_use]
 pub fn idle_workers(
     workers: &[LocalWorker],
@@ -487,7 +485,7 @@ fn busy_ids(
         .collect()
 }
 
-/// [`give_up_in`] on the book of `instance_id`, for an explicit retirement
+/// `give_up_in` on the book of `instance_id`, for an explicit retirement
 /// (`lean-ctx hive worker retire <wkr_…>`). Refused when an active local
 /// session holds one of `ids` (Hive would delete a worker that keeps
 /// posting), or when the agent registry cannot be read to tell; `force`

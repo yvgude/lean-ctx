@@ -261,7 +261,7 @@ pub fn check_agent_body(kind: MessageType, body: &Value) -> Result<(), Invalid> 
 // --- the Queen ---------------------------------------------------------
 
 /// `text` as the Queen rule reads it: a character that looks like printable
-/// ASCII that ASCII, by its UTS #39 skeleton ([`latin_skeleton`], the whole
+/// ASCII that ASCII, by its UTS #39 skeleton (`latin_skeleton`, the whole
 /// Unicode `confusables.txt`), so `Quеen` with a Cyrillic `е` or `Qᴜeen`
 /// with a small capital `ᴜ` reads `Queen`; every other character in its
 /// NFKC compatibility form (fullwidth `［` is `[`, a no-break space a
@@ -453,7 +453,7 @@ impl<'a> Speaker<'a> {
     /// The receiver's mark of an unverified Queen sender: its real name,
     /// agent id and role, each on one line, without a bracket that could end
     /// the mark early and at most [`MARK_FIELD_MAX`] characters long
-    /// ([`mark_field`]).
+    /// (`mark_field`).
     pub fn mark(&self) -> String {
         let agent = self.agent_id.unwrap_or("unregistered");
         format!(

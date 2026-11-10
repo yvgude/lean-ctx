@@ -809,7 +809,7 @@ fn balanced_paren_inner(segment: &str) -> Option<&str> {
 
 /// If `s` is a single balanced `{ … }` brace group with nothing trailing the
 /// closing `}`, return the inner command list (`{ a; b; }` → `a; b`). Mirrors
-/// [`balanced_paren_inner`] so [`resolve_segment_leaves`] can recurse into the
+/// `balanced_paren_inner` so `resolve_segment_leaves` can recurse into the
 /// group and validate every inner command, not just the first (#968).
 ///
 /// Only a real brace *group* qualifies: the `{` must be followed by whitespace

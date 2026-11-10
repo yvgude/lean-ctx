@@ -11,7 +11,7 @@
 //! Bounded: requests of one checkout coalesce (a burst of writes is one
 //! push), one push per `SPACING` per checkout in this process, and every
 //! push takes its turn from the vault's budget that all processes of the
-//! machine share ([`super::budget`]: a burst of `BURST_MAX` attempts, then
+//! machine share (`super::budget`: a burst of `BURST_MAX` attempts, then
 //! one per `BURST_EVERY`, none while a failure or Hive's `Retry-After` holds the
 //! vault back). A vault another sync holds is tried again at most
 //! `LOCK_RETRIES` times. Whatever does not go out here, the daemon's sync

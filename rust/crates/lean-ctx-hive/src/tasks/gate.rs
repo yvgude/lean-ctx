@@ -26,7 +26,7 @@
 //! `outside_repo`. A locked path that itself lies outside the repository
 //! is refused.
 //!
-//! **The rerun** ([`run`]) runs its tree outside `$HOME` (cargo reads every
+//! **The rerun** (`run`) runs its tree outside `$HOME` (cargo reads every
 //! parent's `.cargo/config.toml`; a run under one is refused), with an
 //! empty environment plus a fixed allowlist (a fixed `PATH`, the gate's own
 //! `CARGO_HOME`, `CARGO_TARGET_DIR` and `TMPDIR` under the Instance's data
@@ -36,10 +36,10 @@
 //! build script that rewrote a locked test fails `locked_paths_changed`).
 //! A judged commit that changes, against `spec_commit`, cargo's
 //! configuration or toolchain file, any build script, or the build-script
-//! and test-target keys of any manifest ([`manifest`]) is refused: those
+//! and test-target keys of any manifest (`manifest`) is refused: those
 //! choose what runs the tests.
 //!
-//! **The compiler's list** ([`list`]): before the rerun, for an M/H task
+//! **The compiler's list** (`list`): before the rerun, for an M/H task
 //! whose command runs cargo, the same command runs at `spec_commit` in a
 //! tree, target directory and log of its own, with a target runner that
 //! lists each test binary's tests instead of running them. The locked
@@ -365,7 +365,7 @@ fn rank(change: LockedChange) -> u8 {
 /// `spec_commit` (§5): every path under `checked` byte-identical, nothing
 /// new, deleted, untracked or of another type, no locked symlink resolving
 /// outside. It runs in the agent's repository (the worktree is there) with
-/// the hardened [`git`]; [`g6_record`] adds the commit-to-commit check
+/// the hardened `git`; [`g6_record`] adds the commit-to-commit check
 /// from a private copy, which no config of that repository reaches.
 pub fn check_locked_paths(
     root: &Path,

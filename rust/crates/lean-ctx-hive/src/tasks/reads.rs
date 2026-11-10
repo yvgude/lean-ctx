@@ -17,7 +17,7 @@
 //!   the caller gets [`HiveError::RateLimited`] with the seconds left, never
 //!   "not found".
 //! - A change of this machine (claim, update, verify, propose…) or a task
-//!   event from Hive outdates the vault's entries ([`outdate`]).
+//!   event from Hive outdates the vault's entries (`outdate`).
 
 use std::collections::BTreeMap;
 use std::path::Path;

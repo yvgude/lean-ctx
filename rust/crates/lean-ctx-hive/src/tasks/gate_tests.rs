@@ -1021,6 +1021,7 @@ fn build_scripts_anywhere_and_their_manifest_keys_are_refused() {
 /// system resolves it, never what the caller's `XDG_RUNTIME_DIR` says.
 /// macOS: `/tmp` is a symlink the gate refuses, so the base is
 /// `/private/tmp`, a real directory.
+#[cfg(unix)]
 #[test]
 fn rv3_production_dirs_outside_home() {
     let home = dirs::home_dir().unwrap();
@@ -1553,6 +1554,7 @@ fn rv5_doctest_removing_deps_dir_fails() {
 /// The gate takes rustup's toolchain from the passwd home and refuses a
 /// differing env. Changes the process env: run alone with `--ignored
 /// --test-threads=1`.
+#[cfg(unix)]
 #[test]
 #[ignore = "sets CARGO_HOME for the whole process"]
 fn rv5_fake_cargo_from_caller_cargo_home_is_refused() {
@@ -1615,6 +1617,7 @@ fn toolchain_dirs_refuse_a_differing_env() {
 
 /// R5-5: a committed symlink to a directory outside the tree, used as a
 /// path dependency. Resolved through the commit's tree: refused.
+#[cfg(unix)]
 #[test]
 fn rv5_symlinked_path_dep_outside_is_refused() {
     let (repo, spec) = cargo_repo();

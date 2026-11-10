@@ -82,7 +82,7 @@ pub struct Lexed<'a> {
     /// The first construct the shells disagree on, or that cannot be
     /// validated (an unterminated heredoc). The gate blocks when set.
     pub problem: Option<&'static str>,
-    /// Nesting went past [`MAX_NESTING`]; the rest of that level was not
+    /// Nesting went past `MAX_NESTING`; the rest of that level was not
     /// scanned (and `problem` is set).
     pub too_deep: bool,
 }

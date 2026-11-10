@@ -16,7 +16,7 @@
 //! - **Overflow is sticky:** nothing is dropped silently; a ref that cannot
 //!   be recorded marks the whole session, and so does a change the bounded
 //!   lock could not take in time.
-//! - **Locking:** [`ACTIVE`] is a bounded lock (LOCK_ORDERING L148), held
+//! - **Locking:** `ACTIVE` is a bounded lock (LOCK_ORDERING L148), held
 //!   only to merge or copy the in-memory taint; sidecar reads and writes run
 //!   after it is released.
 

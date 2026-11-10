@@ -312,7 +312,7 @@ pub fn sweep(session: &crate::auth::Session) -> Result<Vec<String>, HiveError> {
 }
 
 /// When an agent session ends: give up the workers of app sessions that no
-/// active session holds and none attached in the last [`SESSION_END_GRACE`]
+/// active session holds and none attached in the last `SESSION_END_GRACE`
 /// (a session still starting up). No request; Hive hears of them with the
 /// next sync or registration ([`retire_evicted`]). A worker the ending
 /// session still holds goes with the sync's [`sweep`].

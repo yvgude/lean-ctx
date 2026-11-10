@@ -23,7 +23,7 @@
 //! backs off
 //! exponentially up to `BACKOFF_MAX`, or as long as Hive's `Retry-After`
 //! asks. The burst cap and the backoff are shared with every other process
-//! of the machine that syncs ([`super::budget`]). Offline only backs off:
+//! of the machine that syncs (`super::budget`). Offline only backs off:
 //! pending events stay in the replica and go out with the next sync that
 //! reaches Hive.
 //!
