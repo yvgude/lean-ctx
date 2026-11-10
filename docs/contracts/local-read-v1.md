@@ -6,7 +6,9 @@ Changes in 3.12.3 (additive unless marked):
 - Policy and sync (§23): `hive.sync`, `policy.sessions` and `policy.session` are served on
   the local service (`/v1/local/hive/sync`, `/v1/local/hive/policy/sessions[/{id}]`) and
   listed in capabilities. `policy.sessions` `installed` adds `vaults`: one row per vault the
-  policy reaches here, with its `vault_id` and which policy applies.
+  policy reaches here, with its `vault_id` and which policy applies. `installed` adds
+  `enforcement`: the version enforced here, when Hive acknowledged it, the live sessions
+  under it and when this Instance reported it to Hive (§23.2).
 - Local tasks (§3c): a project linked to no vault keeps its tasks on this Instance;
   `lean-ctx tasks list|show|propose|decide|claim|update|submit|amend|release|verify|stop --json`
   (`tasks.list`, `tasks.task`, `tasks.ack`), the same on the local service under
@@ -1681,7 +1683,13 @@ matches on). They are different strings for the same vault: do not join the two 
       {"vault_id": "v_…", "ns": "acme", "name": "web",
        "roots": ["/home/me/web"], "policy": "default"},
       {"vault_id": "v_…", "ns": null, "name": null, "roots": [], "policy": "vault"}
-    ]
+    ],
+    "enforcement": {
+      "applied_version": 7,
+      "acknowledged_at": "2026-11-09T08:00:00Z",
+      "sessions": ["app-1"],
+      "reported_at": "2026-11-09T08:00:02Z"
+    }
   },
   "sessions": [
     {"session_id": "app-1", "version": 7, "digest": "sha256:…", "signature": "verified",
@@ -1718,6 +1726,17 @@ matches on). They are different strings for the same vault: do not join the two 
   - The linked vaults come from the vault map (`projects.json`). A vault map that cannot be
     read is taken as empty, the same as "no checkout linked here": `vaults` then lists only
     the policy's vault-level entries.
+  - `enforcement`: the installed policy as enforced on this machine.
+    - `applied_version`: the version enforced, only when `signature` is `verified`, `state`
+      is `in_force` and `acked` is `true`; `null` otherwise (an expired, unverified or
+      unacknowledged policy is never shown as enforced).
+    - `acknowledged_at`: when Hive acknowledged `applied_version` (`null` with it).
+    - `sessions`: the live app sessions enforcing the installed policy, sorted: those whose
+      newest receipt (within the last 15 minutes) was made under this version and digest,
+      verified and in force. Empty for an expired or invalid policy.
+    - `reported_at`: when this Instance reported `applied_version` to Hive on the bus
+      (frame `policy.applied`, once per version and digest, sent only when Hive's
+      `hello.ack.features` names `policy_applied`); `null` until then.
 - `sessions[]`, sorted by `session_id`: one row per app session with recorded evidence
   (at most 256 sessions, the most recently written). The row names the policy of the
   session's newest receipt: `session_id`, `version`, `digest`, `signature`, `state` (as in

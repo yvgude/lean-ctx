@@ -136,6 +136,47 @@ pub(crate) struct InstalledDoc {
     /// `vault_id`): every vault linked here, and every vault with a
     /// vault-level entry in the installed policy.
     pub vaults: Vec<PolicyVault>,
+    /// Whether this policy is enforced here, and by which sessions.
+    pub enforcement: Enforcement,
+}
+
+/// The installed policy as enforced on this machine (D4).
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub(crate) struct Enforcement {
+    /// The version enforced: verified, in force and acknowledged by Hive
+    /// for this version and digest; `null` otherwise (an expired,
+    /// unverified or unacknowledged policy is not reported as enforced).
+    pub applied_version: Option<u64>,
+    /// When Hive acknowledged that version (`null` with it).
+    pub acknowledged_at: Option<String>,
+    /// The live app sessions (a receipt within the last 15 minutes) whose
+    /// newest receipt was made under the installed verified policy in
+    /// force; sorted.
+    pub sessions: Vec<String>,
+    /// When this Instance reported `applied_version` to Hive on the bus
+    /// (`policy.applied`); `null` until then.
+    pub reported_at: Option<String>,
+}
+
+fn enforcement(
+    hive_data: &std::path::Path,
+    installed: &Installed,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Enforcement {
+    let enforced =
+        installed.signature == "verified" && installed.state == "in_force" && installed.acked;
+    let applied_version = installed.version.filter(|_| enforced);
+    let reported_at = policy_sessions::load_reported(hive_data)
+        .filter(|r| {
+            Some(r.version) == applied_version && installed.digest.as_ref() == Some(&r.digest)
+        })
+        .map(|r| r.reported_at);
+    Enforcement {
+        applied_version,
+        acknowledged_at: installed.acked_at.clone().filter(|_| enforced),
+        sessions: policy_sessions::enforcing(hive_data, installed, now),
+        reported_at,
+    }
 }
 
 /// One vault under the installed policy, so a reader matches a project
@@ -243,6 +284,7 @@ fn installed_doc(
     installed: Installed,
     pulls: &lean_ctx_hive::policy::PullRecord,
     vaults: Vec<PolicyVault>,
+    enforcement: Enforcement,
 ) -> Option<InstalledDoc> {
     if installed.signature == "none" {
         return None;
@@ -264,6 +306,7 @@ fn installed_doc(
         last_pull_at: pulls.last_pull_at.clone(),
         nudges: pulls.nudges_seen,
         vaults,
+        enforcement,
     })
 }
 
@@ -272,13 +315,16 @@ pub(crate) fn sessions_doc(
     hive_data: &std::path::Path,
     now: chrono::DateTime<chrono::Utc>,
 ) -> SessionsDoc {
+    let policy = policy_sessions::installed(hive_data, now);
+    let enforced = enforcement(hive_data, &policy, now);
     let installed = installed_doc(
-        policy_sessions::installed(hive_data, now),
+        policy,
         &lean_ctx_hive::policy::load_pulls(hive_data),
         policy_vaults(
             &lean_ctx::core::vault_map::VaultMap::load(hive_data),
             vault_entries(hive_data).as_deref(),
         ),
+        enforced,
     );
     let sessions = policy_sessions::list(hive_data)
         .into_iter()
@@ -596,6 +642,62 @@ mod tests {
             "{text}"
         );
         assert!(value["installed"]["vaults"][0]["ns"].is_null(), "{text}");
+    }
+
+    /// D4: `installed.enforcement` names the version enforced, when Hive
+    /// acknowledged it, the live sessions under it and the bus report.
+    #[test]
+    fn installed_says_which_version_is_enforced_and_by_which_sessions() {
+        use lean_ctx_hive::policy_sessions::{Reported, note_reported, record};
+        let dir = tempfile::tempdir().unwrap();
+        let now = chrono::Utc::now();
+        install_floor(dir.path(), &[]);
+        record(dir.path(), "app-live", "r1", now);
+        record(
+            dir.path(),
+            "app-old",
+            "r2",
+            now - chrono::Duration::hours(1),
+        );
+        let enforcement = |doc: &SessionsDoc| {
+            let text = super::super::document("policy.sessions", doc);
+            serde_json::from_str::<serde_json::Value>(&text).unwrap()["installed"]["enforcement"]
+                .clone()
+        };
+        assert_eq!(
+            enforcement(&sessions_doc(dir.path(), now)),
+            serde_json::json!({"applied_version": null, "acknowledged_at": null,
+                "sessions": ["app-live"], "reported_at": null}),
+            "verified and in force, not yet acknowledged by Hive"
+        );
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let state = serde_json::json!({"effective": {
+            "version": 3, "digest": digest, "issued_at": "", "not_after": "",
+            "key_id": "k_policy", "unenforced": [],
+            "ack": {"version": 3, "digest": digest, "state": "acked",
+                    "acked_at": "2026-11-05T11:00:00Z"}}});
+        let policy_dir = dir.path().join("policy");
+        std::fs::create_dir_all(&policy_dir).unwrap();
+        std::fs::write(
+            policy_dir.join("state.json"),
+            serde_json::to_vec(&state).unwrap(),
+        )
+        .unwrap();
+        note_reported(
+            dir.path(),
+            &Reported {
+                version: 3,
+                digest,
+                sessions: 1,
+                reported_at: "2026-11-05T11:00:05Z".into(),
+            },
+        );
+        assert_eq!(
+            enforcement(&sessions_doc(dir.path(), now)),
+            serde_json::json!({"applied_version": 3,
+                "acknowledged_at": "2026-11-05T11:00:00Z",
+                "sessions": ["app-live"], "reported_at": "2026-11-05T11:00:05Z"})
+        );
     }
 
     #[test]

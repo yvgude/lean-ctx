@@ -8,7 +8,15 @@ workflow:
   auto_cancel:
     on_new_commit: interruptible
   rules:
+    # CI_LANE_TAG picks the project's runner lane (see `variables` below):
+    # merge trains test what lands, so they take the main lane; every other
+    # merge request pipeline takes the MR lane.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"'
+      variables:
+        CI_LANE_TAG: lane-p5-main
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      variables:
+        CI_LANE_TAG: lane-p5-mr
     # Post-merge pipelines: merges land as pushed merge commits, so the
     # combined result is only tested here. Every merge keeps its own verdict,
     # so a later push never cancels the previous post-merge run.
@@ -31,6 +39,11 @@ include:
           - ee/ci/scope-register.yml
 
 variables:
+  # Per-project runner lane for the heavy jobs (owner 10.11.): lane-p5-main
+  # for integration/*, default-branch and merge-train pipelines, lane-p5-mr
+  # for merge requests (workflow rules above). The lane runners take only
+  # their own tag; the light jobs stay on `light`.
+  CI_LANE_TAG: lane-p5-main
   # Checkout (measured 09.11. over 20 green pipelines: get_sources median
   # 2-6 s per job, of which the fetch itself is under 1 s). The runner keeps
   # one clone per concurrent slot in a persistent volume and only fetches new
@@ -101,6 +114,9 @@ v4-runtime:
   image:
     name: lean-ctx-ci-rust:65e3bbf776c5
     pull_policy: if-not-present
+  # The project's lane runner (CI_LANE_TAG above); mr-quick and mr-lint
+  # inherit it.
+  tags: ["$CI_LANE_TAG"]
   timeout: 3 hours
   interruptible: true
   # Start only after the fast provenance gate passed: a red provenance makes

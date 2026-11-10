@@ -336,6 +336,8 @@ pub(super) async fn session_once(
     // HTTP and off this loop; its events are applied here.
     let mut catchup: Option<tokio::task::JoinHandle<(Vec<TaskEvent>, Vec<String>)>> = None;
     let mut replay = relay_v2::Replay::default();
+    // Hive takes the `policy.applied` frame (its `hello.ack` names it).
+    let mut policy_applied = false;
     loop {
         tokio::select! {
             caught = async { catchup.as_mut().expect("guarded by is_some").await }, if catchup.is_some() => {
@@ -400,6 +402,7 @@ pub(super) async fn session_once(
                         }
                         crate::scheduler::nudge_policy(policy);
                         state.person_publish = relay_v2::acks_person_publish(&ack);
+                        policy_applied = relay_v2::acks_feature(&ack, relay_v2::POLICY_APPLIED);
                         let mut refused = Vec::new();
                         for denied in ack["denied"].as_array().into_iter().flatten() {
                             let line = format!(
@@ -604,6 +607,16 @@ pub(super) async fn session_once(
                         }
                     }
                     announced = fresh;
+                }
+                // D4: once per version and digest, tell Hive which signed
+                // policy this Instance applied and how many live sessions
+                // enforce it (verified, in force and acked only).
+                if policy_applied
+                    && let Some((frame, reported)) =
+                        crate::policy_sessions::applied_frame(&data, chrono::Utc::now())
+                {
+                    sink.send(text(&frame)).await.map_err(offline)?;
+                    crate::policy_sessions::note_reported(&data, &reported);
                 }
                 // A bus quota or policy throttle: posts stay local until it ends.
                 if !bus_held(store) {

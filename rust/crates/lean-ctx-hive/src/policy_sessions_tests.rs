@@ -31,6 +31,93 @@ fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 11, 5, 12, 0, 0).unwrap()
 }
 
+/// Hive's answer to the ack of `version` (the installed digest), as the
+/// policy pull records it.
+fn ack(hive_data: &Path, version: u64, state: &str) {
+    use crate::effective_policy::{AckRecord, EffectiveState};
+    let digest = format!("sha256:{}", "a".repeat(64));
+    let policy = crate::policy::PolicyState {
+        effective: Some(EffectiveState {
+            version,
+            digest: digest.clone(),
+            key_id: "k_policy".into(),
+            ack: Some(AckRecord {
+                version,
+                digest,
+                state: state.into(),
+                acked_at: "2026-11-05T11:00:00Z".into(),
+            }),
+            ..EffectiveState::default()
+        }),
+        ..crate::policy::PolicyState::default()
+    };
+    write_private(
+        &hive_data.join("policy"),
+        "state.json",
+        &serde_json::to_vec(&policy).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn an_applied_policy_is_reported_once_per_version_with_its_live_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    install(dir.path(), 7, "2099-01-01T00:00:00Z");
+    record(dir.path(), "app-live", "r1", now());
+    record(
+        dir.path(),
+        "app-old",
+        "r2",
+        now() - chrono::Duration::hours(1),
+    );
+    assert!(
+        applied_frame(dir.path(), now()).is_none(),
+        "not acknowledged by Hive yet"
+    );
+    ack(dir.path(), 7, "acked");
+    let (frame, reported) = applied_frame(dir.path(), now()).expect("acked: reported");
+    assert_eq!(
+        frame,
+        serde_json::json!({"t": "policy.applied", "version": 7,
+            "digest": format!("sha256:{}", "a".repeat(64)), "key_id": "k_policy",
+            "applied_at": "2026-11-05T11:00:00Z", "sessions": 1})
+    );
+    note_reported(dir.path(), &reported);
+    assert!(
+        applied_frame(dir.path(), now()).is_none(),
+        "one report per version and digest"
+    );
+    install(dir.path(), 8, "2099-01-01T00:00:00Z");
+    ack(dir.path(), 8, "acked");
+    let (frame, _) = applied_frame(dir.path(), now()).expect("a new version is reported");
+    assert_eq!(frame["version"], 8);
+    assert_eq!(frame["sessions"], 0, "no live session ran under 8 yet");
+}
+
+#[test]
+fn a_stale_or_unverified_policy_is_never_reported_as_applied() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(applied_frame(dir.path(), now()).is_none(), "no policy");
+    install(dir.path(), 4, "2026-01-01T00:00:00Z");
+    ack(dir.path(), 4, "acked");
+    assert!(applied_frame(dir.path(), now()).is_none(), "expired");
+    install(dir.path(), 5, "2099-01-01T00:00:00Z");
+    ack(dir.path(), 5, "outdated");
+    assert!(applied_frame(dir.path(), now()).is_none(), "outdated ack");
+    ack(dir.path(), 4, "acked");
+    assert!(
+        applied_frame(dir.path(), now()).is_none(),
+        "the ack is for another version"
+    );
+    ack(dir.path(), 5, "acked");
+    std::fs::write(
+        effective_floor::floor_dir_in(dir.path()).join(effective_floor::FLOOR_FILE),
+        b"{damaged",
+    )
+    .unwrap();
+    assert!(applied_frame(dir.path(), now()).is_none(), "damaged floor");
+}
+
 #[test]
 fn session_ids_follow_the_app_rule() {
     assert_eq!(session_id(" app-7f3a ").as_deref(), Some("app-7f3a"));

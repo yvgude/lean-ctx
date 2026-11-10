@@ -6,6 +6,18 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+### Added
+
+- **Policy enforcement acknowledged to Hive (D4).** The bus hello now names the features
+  `policy_advanced` and `policy_applied`, so Hive delivers its `policy.advanced` nudge (it
+  sends that nudge only to Instances that name the feature). Once per version and digest of a
+  verified policy that is in force and that Hive acknowledged, the Instance sends one
+  `policy.applied` frame: `version`, `digest`, `key_id`, `applied_at` and `sessions` (the live
+  app sessions enforcing it). It sends the frame only when Hive's `hello.ack.features` names
+  `policy_applied`. An expired, outdated or unverified policy is never reported. Local Read
+  `policy.sessions` adds `installed.enforcement` (`applied_version`, `acknowledged_at`,
+  `sessions`, `reported_at`), additively.
+
 ## [3.12.3] — 2026-11-10
 
 ### Added

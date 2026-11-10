@@ -114,13 +114,28 @@ pub const PERSON_SENDER: &str = "hive-person";
 /// The `hello.ack` feature that says the Hive accepts a person's publish.
 pub const PERSON_PUBLISH: &str = "person_publish";
 
-/// Whether a `hello.ack` names [`PERSON_PUBLISH`] among its `features`.
-pub fn acks_person_publish(ack: &Value) -> bool {
+/// The hello feature that asks Hive for `hello.ack.policy_version` and the
+/// `policy.advanced` nudge.
+pub const POLICY_ADVANCED: &str = "policy_advanced";
+/// The hello feature for the `policy.applied` frame: the Instance sends it
+/// only when `hello.ack.features` names it too.
+pub const POLICY_APPLIED: &str = "policy_applied";
+/// The features this Instance names in its hello (Hive answers with the
+/// ones it speaks too).
+pub const HELLO_FEATURES: &[&str] = &[POLICY_ADVANCED, POLICY_APPLIED];
+
+/// Whether a `hello.ack` names `feature` among its `features`.
+pub fn acks_feature(ack: &Value, feature: &str) -> bool {
     ack["features"]
         .as_array()
         .into_iter()
         .flatten()
-        .any(|f| f.as_str() == Some(PERSON_PUBLISH))
+        .any(|f| f.as_str() == Some(feature))
+}
+
+/// Whether a `hello.ack` names [`PERSON_PUBLISH`] among its `features`.
+pub fn acks_person_publish(ack: &Value) -> bool {
+    acks_feature(ack, PERSON_PUBLISH)
 }
 
 impl StateV2 {
@@ -502,7 +517,8 @@ pub(crate) fn subscriptions(map: &VaultMap, agents: &[&AgentEntry]) -> Vec<Strin
 }
 
 /// The C0 2.0 hello: subscriptions, their cursors, and the presence of the
-/// local workers (`held` while a control holds them).
+/// local workers (`held` while a control holds them), and the
+/// [`HELLO_FEATURES`] this Instance speaks.
 pub fn hello(subscribe: &[String], state: &StateV2, presence: &[PresenceEntry]) -> Value {
     let cursors: BTreeMap<&String, u64> = subscribe
         .iter()
@@ -514,6 +530,7 @@ pub fn hello(subscribe: &[String], state: &StateV2, presence: &[PresenceEntry]) 
         "subscribe": subscribe,
         "cursors": cursors,
         "presence": presence,
+        "features": HELLO_FEATURES,
     })
 }
 

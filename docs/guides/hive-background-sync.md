@@ -76,4 +76,9 @@ Hive signs the policy in force. The Instance pulls it every
 the bus reconnects; it verifies the signature, applies it and acknowledges
 it. `lean-ctx hive policy sessions --json` (kind `policy.sessions`) shows the
 installed version and which version each app session
-(`LEAN_CTX_SESSION_ID`) ran under, with its receipts.
+(`LEAN_CTX_SESSION_ID`) ran under, with its receipts. Its
+`installed.enforcement` names the version enforced here (verified, in force
+and acknowledged), the live sessions enforcing it, and when the Instance
+reported it to Hive: once per version, the bus frame `policy.applied`
+carries the version, digest, acknowledgement time and the number of live
+sessions. An expired or unverified policy is never reported as applied.

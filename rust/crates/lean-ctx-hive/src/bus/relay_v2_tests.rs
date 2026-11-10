@@ -521,13 +521,16 @@ fn the_hello_matches_the_contract_shape() {
         json!({"t": "hello", "protocol": "2.0", "subscribe": ["#acme/payments"],
             "cursors": {"#acme/payments": 41},
             "presence": [{"worker_id": WORKER, "role": "backend", "state": "active",
-                "display_name": "Backend", "instance_id": "ins_a", "instance_name": "Laptop"}]})
+                "display_name": "Backend", "instance_id": "ins_a", "instance_name": "Laptop"}],
+            "features": ["policy_advanced", "policy_applied"]})
     );
+    // The 2.0 sample predates the optional `features` member.
     let sample = fixture("bus/frame.hello.json");
     let keys = |v: &Value| {
         v.as_object()
             .unwrap()
             .keys()
+            .filter(|k| *k != "features")
             .cloned()
             .collect::<BTreeSet<_>>()
     };

@@ -8,7 +8,10 @@
 //! session's process records the policy installed at that moment (the
 //! floor the Hive policy pull verified and installed) in
 //! `<data_dir>/hive/policy/sessions/<session>.json`. A process without a
-//! session id records nothing. Local only: nothing here is sent to Hive.
+//! session id records nothing. The session evidence stays local; Hive
+//! receives only the `policy.applied` bus frame ([`applied_frame`]): the
+//! policy version and digest this Instance applied and how many live
+//! sessions enforce it, once per version and digest.
 //!
 //! Kinds `policy.sessions` (all sessions) and `policy.session` (one).
 
@@ -256,6 +259,94 @@ pub fn note_receipt(receipt_id: &str, now: DateTime<Utc>) {
         return;
     }
     record(store.data_dir(), &session, receipt_id, now);
+}
+
+/// A session counts as live while its newest receipt is this recent.
+pub const LIVE_WINDOW_MINUTES: i64 = 15;
+const REPORTED_FILE: &str = "applied.json";
+
+/// The live sessions (newest receipt within [`LIVE_WINDOW_MINUTES`] of
+/// `now`) whose newest receipt was made under `policy`, a verified policy
+/// in force; sorted. Empty for any other policy.
+pub fn enforcing(hive_data: &Path, policy: &Installed, now: DateTime<Utc>) -> Vec<String> {
+    if policy.signature != "verified" || policy.state != "in_force" || policy.version.is_none() {
+        return Vec::new();
+    }
+    let since = now - chrono::Duration::minutes(LIVE_WINDOW_MINUTES);
+    list(hive_data)
+        .into_iter()
+        .filter(|evidence| {
+            evidence.applied.last().is_some_and(|row| {
+                row.version == policy.version
+                    && row.digest == policy.digest
+                    && row.signature == "verified"
+                    && row.state == "in_force"
+                    && DateTime::parse_from_rfc3339(&row.last_at)
+                        .is_ok_and(|at| at.with_timezone(&Utc) >= since)
+            })
+        })
+        .map(|evidence| evidence.session_id)
+        .collect()
+}
+
+/// What this Instance last reported to Hive as applied
+/// (`<data_dir>/hive/policy/applied.json`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Reported {
+    pub version: u64,
+    pub digest: String,
+    pub sessions: u64,
+    pub reported_at: String,
+}
+
+/// The last [`Reported`] record, if any.
+pub fn load_reported(hive_data: &Path) -> Option<Reported> {
+    std::fs::read(hive_data.join("policy").join(REPORTED_FILE))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
+
+/// Record that `reported` went out on the bus.
+pub fn note_reported(hive_data: &Path, reported: &Reported) {
+    if let Ok(bytes) = serde_json::to_vec_pretty(reported) {
+        let _ = write_private(&hive_data.join("policy"), REPORTED_FILE, &bytes);
+    }
+}
+
+/// The `policy.applied` frame this Instance owes Hive at `now`, with the
+/// record to keep once it is sent: only for a policy whose signature
+/// verified, that is in force and that Hive acknowledged for this version
+/// and digest, and only once per version and digest. A stale (expired,
+/// outdated) or unverified policy is never reported as applied.
+pub fn applied_frame(
+    hive_data: &Path,
+    now: DateTime<Utc>,
+) -> Option<(serde_json::Value, Reported)> {
+    let policy = installed(hive_data, now);
+    if policy.signature != "verified" || policy.state != "in_force" || !policy.acked {
+        return None;
+    }
+    let (version, digest) = (policy.version?, policy.digest.clone()?);
+    if load_reported(hive_data).is_some_and(|r| r.version == version && r.digest == digest) {
+        return None;
+    }
+    let sessions = enforcing(hive_data, &policy, now).len() as u64;
+    let frame = serde_json::json!({
+        "t": "policy.applied",
+        "version": version,
+        "digest": digest,
+        "key_id": policy.key_id,
+        "applied_at": policy.acked_at,
+        "sessions": sessions,
+    });
+    let reported = Reported {
+        version,
+        digest,
+        sessions,
+        reported_at: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+    };
+    Some((frame, reported))
 }
 
 #[cfg(test)]
