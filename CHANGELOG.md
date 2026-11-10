@@ -352,6 +352,11 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Fixed
 
+- **`ctx_patch op=create` fills an existing empty file** (#2223, reported by @HaleTom). A
+  0-byte file had no lines to anchor and no text for `replace_unique`, so no op could write
+  it. `create` now accepts an existing empty regular file (not a symlink) and keeps its
+  permissions; non-empty files are still refused. `replace_unique` with an empty
+  `old_text` names `op=create` in its error.
 - **`ctx_knowledge remember` answers in one short line.** The reply names category, key,
   revision and size — "Updated [cat] key → revision N: previous value superseded and
   archived" — and no longer echoes the new text or both texts as `⚠ CONTRADICTION` on a

@@ -287,13 +287,19 @@ fn single_create_op(ops: &[AnchorOp]) -> Option<Result<&str, String>> {
 }
 
 /// `op=create`: write a NEW file (strict — an existing file is an error, unlike
-/// `ctx_edit create=true` which overwrites). Reuses the PathJail +
+/// `ctx_edit create=true` which overwrites). The one exception is an existing
+/// empty regular file (not a symlink): it has no lines to anchor and no text
+/// for `replace_unique`, and its preimage (0 bytes) is fully known, so create
+/// fills it and keeps its permissions (#2223). Reuses the PathJail +
 /// atomic-write boundary of the anchored path.
 fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, CacheEffect) {
-    if path.exists() {
+    let empty_file = std::fs::symlink_metadata(path)
+        .ok()
+        .filter(|m| m.file_type().is_file() && m.len() == 0);
+    if empty_file.is_none() && path.exists() {
         return (
             format!(
-                "ERROR: {} already exists — create is for new files only. \
+                "ERROR: {} already exists — create is for new or empty files only. \
                  Use anchored ops (ctx_read mode=\"anchored\" → set_line/replace_lines) to modify it.",
                 params.path
             ),
@@ -317,7 +323,10 @@ fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, C
         );
     }
 
-    if let Err(e) = write_atomic_bytes_with_permissions(path, content.as_bytes(), None) {
+    let permissions = empty_file.map(|m| m.permissions());
+    if let Err(e) =
+        write_atomic_bytes_with_permissions(path, content.as_bytes(), permissions.as_ref())
+    {
         return (e, CacheEffect::None);
     }
 

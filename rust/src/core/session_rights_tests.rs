@@ -1188,3 +1188,21 @@ fn session_rights_extra_own_worktree_folders_are_writable_not_lock_roots() {
     let err = rule(s.check_write(&fx.worktree.join(LOCKED)));
     assert!(err.contains("feature_list_locked"), "{err}");
 }
+
+/// `resolve` keeps the drive of a Windows path: `C:\x` must not
+/// become `\x` (the rights file then pointed at a drive-less path).
+#[test]
+fn resolve_keeps_the_drive_prefix() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("wt");
+    std::fs::create_dir_all(&dir).unwrap();
+    let resolved = resolve(&dir).unwrap();
+    assert_eq!(
+        resolved.components().next(),
+        dir.components().next(),
+        "{} lost its prefix or root",
+        resolved.display()
+    );
+    assert!(resolved.is_absolute(), "{}", resolved.display());
+    assert!(resolved.is_dir(), "{}", resolved.display());
+}

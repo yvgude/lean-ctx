@@ -312,6 +312,10 @@ jobs:
         shell: bash
         run: |
           umask 077
+          # input_check's ac26 scans the diff a spec review judged; CI
+          # judges no spec diff, so the range is empty (spec = commit = HEAD).
+          INPUT_CHECK_COMMIT="$(git rev-parse HEAD)"
+          export INPUT_CHECK_COMMIT INPUT_CHECK_SPEC_COMMIT="$INPUT_CHECK_COMMIT"
           if [[ "${{ runner.os }}" == "macOS" && -x "${CARGO_HOME}/bin/cargo" ]]; then
             CARGO="${CARGO_HOME}/bin/cargo"
           else
@@ -329,14 +333,14 @@ jobs:
             fi
             JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
             CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
-            "$CARGO" test --target x86_64-pc-windows-gnu --all-features "${SELECT[@]}"
+            "$CARGO" test --no-fail-fast --target x86_64-pc-windows-gnu --all-features "${SELECT[@]}"
           elif [[ "${{ runner.os }}" == "Linux" ]]; then
             # `mold -run` redirects child linker invocations to mold without
             # touching RUSTFLAGS (which is pinned to `-Dwarnings` job-wide and
             # would override any .cargo/config.toml rustflags).
-            mold -run "$CARGO" test --all-features
+            mold -run "$CARGO" test --no-fail-fast --all-features
           else
-            "$CARGO" test --all-features
+            "$CARGO" test --no-fail-fast --all-features
           fi
 
       # Wall-clock gates: #581's parallel BM25 rebuild win, the context-kernel
@@ -893,7 +897,7 @@ jobs:
       - name: Check v4 product capability classification and generated matrix
         working-directory: rust
         run: |
-          cargo test -p lean-ctx-server --test product_capability_classification
+          cargo test -p lean-ctx-server --test server product_capability_classification
           cargo run --quiet --example gen_product_capability_matrix
           git diff --exit-code -- data/product-capabilities.toml ../docs/reference/generated/product-capabilities.md
 

@@ -443,7 +443,15 @@ async fn local_status_answers_without_a_project() {
     let doc: Value = serde_json::from_str(&body).expect("json");
     assert_eq!(
         doc["project"],
-        json!({"root": root, "vault": null, "linked": false})
+        json!({
+            // The CLI's own project-root form (Windows: `C:/...`).
+            "root": lean_ctx::core::command_root::detect_project_root(&[
+                "--project-root".to_owned(),
+                root.clone()
+            ]),
+            "vault": null,
+            "linked": false
+        })
     );
     let args: Vec<String> = ["--json", "--project-root", &root]
         .iter()

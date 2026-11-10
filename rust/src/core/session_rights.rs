@@ -664,15 +664,26 @@ pub fn resolve(path: &Path) -> Result<PathBuf, String> {
 }
 
 /// Queue the components of `path` (last first, so they pop in order); an
-/// absolute `path` restarts from its root.
+/// absolute `path` restarts from its root. A Windows drive prefix is kept:
+/// `C:\x` restarts at `C:\`, and a rooted `\x` stays on the current drive.
 fn push_components(path: &Path, out: &mut PathBuf, pending: &mut Vec<OsString>) {
     let mut parts = Vec::new();
+    let mut after_prefix = false;
     for component in path.components() {
         match component {
-            Component::Prefix(_) | Component::RootDir => {
-                *out = PathBuf::from(component.as_os_str());
-                if let Component::Prefix(_) = component {
-                    out.push(std::path::MAIN_SEPARATOR_STR);
+            Component::Prefix(prefix) => {
+                *out = PathBuf::from(prefix.as_os_str());
+                out.push(std::path::MAIN_SEPARATOR_STR);
+                after_prefix = true;
+                parts.clear();
+            }
+            Component::RootDir => {
+                if !after_prefix {
+                    let drive = match out.components().next() {
+                        Some(Component::Prefix(prefix)) => PathBuf::from(prefix.as_os_str()),
+                        _ => PathBuf::new(),
+                    };
+                    *out = drive.join(component.as_os_str());
                 }
                 parts.clear();
             }

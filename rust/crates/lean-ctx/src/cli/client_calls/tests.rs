@@ -23,7 +23,9 @@ fn caller_in(root: &str) -> Caller {
 /// A project `proj` inside a temp dir, with `outside.txt` next to it.
 fn project() -> (tempfile::TempDir, String) {
     let tmp = tempfile::tempdir().unwrap();
-    let root = tmp.path().canonicalize().unwrap().join("proj");
+    let root = lean_ctx::core::pathutil::safe_canonicalize(tmp.path())
+        .unwrap()
+        .join("proj");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(tmp.path().join("outside.txt"), "out").unwrap();
     (tmp, root.to_string_lossy().into_owned())
