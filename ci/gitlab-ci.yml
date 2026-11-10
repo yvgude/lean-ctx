@@ -4,9 +4,15 @@
 
 workflow:
   # A new commit on an MR branch (rebase worker push) cancels the superseded
-  # pipeline, including running interruptible jobs.
+  # pipeline, including running interruptible jobs. Only merge request jobs
+  # are interruptible (see .interruptible-on-mr below).
+  # A failed job cancels every other job of the pipeline at once (owner
+  # 10.11.: a red cheap check must stop the pipeline within about two minutes,
+  # not after 20+ minutes of heavy jobs). The cheap gates below also gate the
+  # heavy jobs through `needs:`, so those do not even start on a red gate.
   auto_cancel:
     on_new_commit: interruptible
+    on_job_failure: all
   rules:
     # CI_LANE_TAG picks the project's runner lane (see `variables` below):
     # merge trains test what lands, so they take the main lane; every other
@@ -63,8 +69,56 @@ variables:
   # job's user). The Rust jobs rely on starting from that clean state: a
   # cached tree left by an untrusted MR job must never reach the post-merge
   # run that writes the shared compiler cache. Do not add -e exclusions.
+  # The Rust jobs' compiled output lives outside the checkout instead
+  # (CI_TARGET_DIR in v4-runtime, owner 10.11.), in the runner slot's /builds
+  # volume. That keeps the boundary: the runner gives protected refs
+  # (integration/*, default branch) their own `-protected` volume, separate
+  # from the one of unprotected refs (merge requests, merge trains), so the
+  # protected run that writes the compiler cache only ever sees target state
+  # that protected runs wrote. MR jobs of one slot share their target state
+  # with each other: the trust domain of the MR jobs that already read the
+  # compiler cache through their read-only overlay.
   GIT_CLEAN_FLAGS: -ffdx
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+# Interruptible on merge requests only: a newer MR push may stop the
+# superseded run, while integration/* and default-branch runs always finish
+# (each merge keeps its own verdict). Jobs of this file that run on both kinds
+# of pipeline take these rules via !reference; ee/ci/scope-register.yml repeats
+# them (an included file cannot reference the including one).
+.interruptible-on-mr:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      interruptible: true
+    - when: on_success
+      interruptible: false
+
+# Cheap gates (owner 10.11.): small, fast checks on the light runner
+# (2 CPU / 4 GB, not throttled): rust-fmt, ip-boundary-skill-installed and
+# scope-register (ee/ci). The heavy jobs (mr-quick, mr-lint, v4-runtime) list
+# them in `needs:`, so a red gate stops a pipeline before any lane slot is
+# taken. The two private-tree gates are `optional` there because a checkout
+# without them (or another project) runs none. v4-provenance (also light) takes
+# 3-8 minutes, too long to hold every MR back: on merge requests it runs beside
+# the heavy jobs, and its failure cancels them (auto_cancel on_job_failure).
+
+# Rust formatting on its own, on the light runner: no compilation, so a format
+# error fails the pipeline within a minute instead of after the lane queue and
+# mr-lint's clippy build. mr-lint and v4-runtime still run the same check.
+rust-fmt:
+  stage: verify
+  image:
+    name: lean-ctx-ci-rust:65e3bbf776c5
+    pull_policy: if-not-present
+  tags: [light]
+  timeout: 5 minutes
+  interruptible: false
+  rules:
+    - !reference [.interruptible-on-mr, rules]
+  needs: []
+  script:
+    - cd rust
+    - cargo +stable fmt --all --check
 
 # IP09: an agent checkout without the reviewed IP-governance skill and root rule
 # fails. The expected digest of the whole skill bundle (every file, with its
@@ -73,15 +127,30 @@ variables:
 # the private project; a missing variable is a failure, not a skip.
 ip-boundary-skill-installed:
   stage: verify
-  image: python:3.12-slim
+  # The image of the other light jobs (scope-register, v4-provenance), kept on
+  # the host: python:3.12-slim was used by this job alone, a second image the
+  # runner had to start (prepare_executor) on a loaded host.
+  image:
+    name: lean-ctx-ci-rust:65e3bbf776c5
+    pull_policy: if-not-present
   # Python only: run on the small runner (2 CPU / 4 GB slots), so the job does
   # not queue behind Rust builds for a 12-CPU slot.
   tags: [light]
   timeout: 5 minutes
-  interruptible: true
+  interruptible: false
   rules:
-    - if: '$CI_PROJECT_PATH == "root/lean-ctx"'
+    - if: '$CI_PROJECT_PATH != "root/lean-ctx"'
+      when: never
+    - !reference [.interruptible-on-mr, rules]
+  needs: []
   script:
+    - |
+      # A branch cut from the public tree has no .agents/: name the cause
+      # instead of failing on a missing file. Still a failure, never a skip.
+      if ! test -f .agents/skills/leanctx-ip-governance/scripts/check_installation.py; then
+        echo "ip-boundary: .agents/skills/leanctx-ip-governance is missing; this branch was cut from the public tree. Recreate it from the private target branch (git switch -c <name> origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-<target branch>}) and re-apply the change." >&2
+        exit 1
+      fi
     - test -n "${LEANCTX_APPROVED_SKILL_BUNDLE_SHA256:-}"
     - python3 .agents/skills/leanctx-ip-governance/scripts/check_installation.py --repo . --require-pinned
     # Negative proof on every run: a consistently tampered skill copy (both
@@ -118,10 +187,19 @@ v4-runtime:
   # inherit it.
   tags: ["$CI_LANE_TAG"]
   timeout: 3 hours
-  interruptible: true
-  # Start only after the fast provenance gate passed: a red provenance makes
-  # the pipeline fail anyway.
+  # Post-merge only: never interrupted (mr-quick sets its own value).
+  interruptible: false
+  # Start only after the cheap gates and the provenance gate passed: a red
+  # gate makes the pipeline fail anyway.
   needs:
+    - job: rust-fmt
+      artifacts: false
+    - job: ip-boundary-skill-installed
+      artifacts: false
+      optional: true
+    - job: scope-register
+      artifacts: false
+      optional: true
     - job: v4-provenance
       artifacts: false
   # One run per branch at a time. Pushes that land while a run is going wait
@@ -177,6 +255,14 @@ v4-runtime:
     # uncached.
     V4_SCCACHE_MOUNT: /sccache
     SCCACHE_CACHE_SIZE: 60G
+    # Persistent Cargo target per runner slot (owner 10.11.; before_script
+    # sets it up). Outside the checkout, so git clean keeps it, and in the
+    # slot's /builds volume, which the runner splits by protected and
+    # unprotected refs (see GIT_CLEAN_FLAGS). The last component stays
+    # `target`: tests recognise build output by paths like /target/debug/deps.
+    CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/target"
+    # A target over this size (GiB) is wiped at job start.
+    CI_TARGET_CAP_GB: "40"
     # The server lives as long as the job's container.
     SCCACHE_IDLE_TIMEOUT: "0"
     # sccache cannot cache incremental compilations.
@@ -260,6 +346,60 @@ v4-runtime:
         fi
       done
     - |
+      # Persistent Cargo target (CI_TARGET_DIR; owner 10.11.): the slot keeps
+      # its compiled output between jobs, so unchanged crates are not even
+      # looked up in sccache again. Root prepares it before any job code
+      # runs. /builds/.ci-cache and the project directory below it are
+      # root-owned 0755 real directories, so job code (ci-runner) can neither
+      # swap the target for a link nor forge the stamp beside it; the target
+      # belongs to ci-runner. Nothing here follows a symlink. Toolchain or
+      # image changes and targets over CI_TARGET_CAP_GB start fresh.
+      test "${CI_BUILDS_DIR:-}" = /builds || { echo "target: unexpected CI_BUILDS_DIR" >&2; exit 1; }
+      case "${CI_PROJECT_PATH_SLUG:-}" in ''|*[!a-z0-9-]*) echo "target: unexpected CI_PROJECT_PATH_SLUG" >&2; exit 1;; esac
+      case "${CI_TARGET_CAP_GB:-}" in ''|*[!0-9]*) echo "target: unexpected CI_TARGET_CAP_GB" >&2; exit 1;; esac
+      ci_target_parent="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG"
+      ci_target="$ci_target_parent/target"
+      test "${CI_TARGET_DIR:-}" = "$ci_target" || { echo "target: unexpected CI_TARGET_DIR" >&2; exit 1; }
+      case "$ci_target/" in "$CI_PROJECT_DIR"/*) echo "target: inside the checkout" >&2; exit 1;; esac
+      if test -L /builds; then echo "target: /builds is a symlink" >&2; exit 1; fi
+      for ci_dir in /builds/.ci-cache "$ci_target_parent"; do
+        if test -L "$ci_dir"; then echo "target: $ci_dir is a symlink" >&2; exit 1; fi
+        if ! test -e "$ci_dir"; then mkdir -m 0755 -- "$ci_dir"; fi
+        if ! test -d "$ci_dir" || test -L "$ci_dir"; then echo "target: $ci_dir is no directory" >&2; exit 1; fi
+        if test "$(stat -c %u -- "$ci_dir")" != 0; then echo "target: $ci_dir is not owned by root" >&2; exit 1; fi
+        chown -h root:root -- "$ci_dir"
+        chmod 0755 -- "$ci_dir"
+      done
+      ci_stamp="$(printf '%s\n' "${CI_JOB_IMAGE:-}" "$(rustc +stable -vV)" | sha256sum | cut -d' ' -f1)"
+      ci_target_state=fresh
+      if test -L "$ci_target"; then echo "target: $ci_target is a symlink" >&2; exit 1; fi
+      if test -e "$ci_target"; then
+        if ! test -d "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then
+          ci_target_state="wiped (not a ci-runner directory)"
+        elif ! test -f "$ci_target_parent/target.stamp" || test -L "$ci_target_parent/target.stamp" \
+          || test "$(cat -- "$ci_target_parent/target.stamp")" != "$ci_stamp"; then
+          ci_target_state="wiped (toolchain or image changed)"
+        else
+          ci_target_gb="$(du -sx --block-size=1G -- "$ci_target" | cut -f1)"
+          if test "$ci_target_gb" -gt "$CI_TARGET_CAP_GB"; then
+            ci_target_state="wiped ($ci_target_gb GB > cap)"
+          else
+            ci_target_state="reused $ci_target_gb GB"
+          fi
+        fi
+        case "$ci_target_state" in wiped*) rm -rf --one-file-system -- "$ci_target";; esac
+        # Reports of an earlier job must never pass for this job's report.
+        rm -rf --one-file-system -- "$ci_target/nextest"
+      fi
+      rm -f -- "$ci_target_parent/target.stamp"
+      printf '%s\n' "$ci_stamp" > "$ci_target_parent/target.stamp"
+      chmod 0644 -- "$ci_target_parent/target.stamp"
+      if test -L "$ci_target"; then echo "target: $ci_target is a symlink" >&2; exit 1; fi
+      install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_target"
+      if test -L "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then echo "target: $ci_target is not ci-runner's directory" >&2; exit 1; fi
+      echo "target: $ci_target_state" > "$CI_PROJECT_DIR/runtime-evidence/target.txt"
+      cat -- "$CI_PROJECT_DIR/runtime-evidence/target.txt"
+    - |
       # Compiler cache. sccache keys every entry by a hash of the compiler,
       # its arguments, the environment and every input file, so a hit is the
       # output those exact inputs produce. Only a protected post-merge push
@@ -302,7 +442,9 @@ v4-runtime:
         export HOME=/home/ci-runner
         case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
-        export CARGO_TARGET_DIR="$CI_PROJECT_DIR/rust/target"
+        export CARGO_TARGET_DIR="$CI_TARGET_DIR"
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
         test "$(id -un)" = ci-runner
         test "$(id -u)" -gt 0
         test "$(id -g)" -gt 0
@@ -371,7 +513,21 @@ v4-runtime:
 mr-quick:
   extends: v4-runtime
   timeout: 45 minutes
-  needs: []
+  # Merge request only, so always interruptible (overrides v4-runtime).
+  interruptible: true
+  # Starts once the cheap gates are green (about a minute on the light
+  # runner), so a format or skill/scope error never takes a lane slot.
+  # v4-provenance runs beside it; a red provenance cancels it
+  # (auto_cancel on_job_failure). mr-lint inherits this list.
+  needs:
+    - job: rust-fmt
+      artifacts: false
+    - job: ip-boundary-skill-installed
+      artifacts: false
+      optional: true
+    - job: scope-register
+      artifacts: false
+      optional: true
   # One run per merge request: a newer push to the same MR waits here (and
   # auto_cancel stops the superseded run). Merge requests do not queue behind
   # each other; the runner's concurrent limit bounds the host load (owner
@@ -414,7 +570,9 @@ mr-quick:
         export HOME=/home/ci-runner
         case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
-        export CARGO_TARGET_DIR="$CI_PROJECT_DIR/rust/target"
+        export CARGO_TARGET_DIR="$CI_TARGET_DIR"
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
         test "$(id -un)" = ci-runner
         test "$(id -u)" -gt 0
         test "$(id -g)" -gt 0
@@ -462,7 +620,9 @@ mr-lint:
         export HOME=/home/ci-runner
         case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
-        export CARGO_TARGET_DIR="$CI_PROJECT_DIR/rust/target"
+        export CARGO_TARGET_DIR="$CI_TARGET_DIR"
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
         test "$(id -un)" = ci-runner
         test "$(id -u)" -gt 0
         test "$(id -g)" -gt 0
@@ -492,7 +652,10 @@ v4-provenance:
   # ip-boundary-skill-installed).
   tags: [light]
   timeout: 15 minutes
-  interruptible: true
+  interruptible: false
+  rules:
+    - !reference [.interruptible-on-mr, rules]
+  needs: []
   # `cargo fetch` below downloaded every crate from crates.io on each run
   # (measured 09.11.: 7-11 s). Read the crates v4-runtime already keeps in the
   # shared cache instead (same key, pull only, so this job never writes it);

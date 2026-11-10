@@ -344,6 +344,10 @@ mod tests {
         // #802 keeps the observation tier *balanced*: an exact key hit (+1.0) still
         // outranks a synthesized summary (+0.4), so a stale summary can never bury a
         // precisely-queried raw fact. This is the guarantee the reference docs make.
+        // `remember` admits each fact through the process-global gateway config and
+        // data dirs; without the env lock a parallel test switching them made the
+        // admission withhold "jwt" and this ranking assert on the wrong fact (#53).
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let policy = default_policy();
         let k_root = tempfile::tempdir().unwrap();
         let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());

@@ -19,7 +19,9 @@ lean-ctx doctor
 Use `lean-ctx setup` for the guided path or `lean-ctx init --agent <name>` to
 configure one detected coding agent. Codex, Claude Code, and Cursor are the
 current first-class local setup paths; other wiring is an implementation
-reference that requires a local compatibility check. Attach integrations are
+reference that requires a local compatibility check. Front ends that run those
+agents, such as [T3 Code](t3-code.md), get LeanCTX | OSS through the agent's
+configuration. Attach integrations are
 local Runtime capabilities; their visibility and evidence coverage depend on the
 integration.
 

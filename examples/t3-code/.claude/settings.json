@@ -1,0 +1,12 @@
+{
+  "enabledMcpjsonServers": ["lean-ctx"],
+  "permissions": {
+    "allow": [
+      "mcp__lean-ctx__ctx_read",
+      "mcp__lean-ctx__ctx_search",
+      "mcp__lean-ctx__ctx_tree",
+      "mcp__lean-ctx__ctx_glob",
+      "mcp__lean-ctx__ctx_compose"
+    ]
+  }
+}

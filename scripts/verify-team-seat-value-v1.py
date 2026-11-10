@@ -909,6 +909,30 @@ def verify_signature_vector(doc, records, envelopes):
         fail("signature tamper")
 
 
+# The CI definitions are pinned only in the lines that run this pack's
+# verifiers, in file order. Their whole-file digest changed with every
+# unrelated pipeline edit (16 of 17 frozen-hash failures, 7-10 Nov 2026) and
+# made every open merge request conflict on this manifest. Removing,
+# commenting out or editing such a line still fails here; that the GitLab job
+# running them stays unconditional is asserted by
+# scripts/tests/test_gitlab_runtime_gate.py.
+CI_FILES = (".github/workflows/ci.yml", "ci/gitlab-ci.yml")
+CI_VERIFIERS = (
+    "scripts/verify-team-context-v1.py",
+    "scripts/verify-team-seat-value-v1.py",
+    "scripts/verify-team-seat-value-rust-parity.py",
+)
+
+
+def ci_fragment(text):
+    return [line.strip() for line in text.splitlines()
+            if any(script in line for script in CI_VERIFIERS)]
+
+
+def ci_fragment_digest(lines):
+    return hashlib.sha256("".join(line + "\n" for line in lines).encode("utf-8")).hexdigest()
+
+
 def verify_frozen():
     manifest = load(PACK / "frozen-hashes.json")
     if manifest.get("contract") != "team-seat-value-v1" or manifest.get("v") != 1:
@@ -920,6 +944,21 @@ def verify_frozen():
         path = ROOT / rel
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             fail("frozen hash: " + rel)
+    fragments = manifest.get("ci_fragment_sha256")
+    if not isinstance(fragments, dict) or sorted(fragments) != sorted(CI_FILES):
+        fail("frozen CI fragment inventory")
+    for rel in CI_FILES:
+        path = ROOT / rel
+        if rel in hashes or not path.is_file():
+            fail("frozen CI fragment: " + rel)
+        lines = ci_fragment(path.read_text(encoding="utf-8"))
+        if any(not any(script in line for line in lines) for script in CI_VERIFIERS):
+            fail("frozen CI fragment: %s no longer runs every team verifier" % rel)
+        actual = ci_fragment_digest(lines)
+        if actual != fragments[rel]:
+            fail("frozen CI fragment: %s (the lines that run the team verifiers changed; "
+                 "now %s - if intended, pin it as ci_fragment_sha256 in %s)"
+                 % (rel, actual, (PACK / "frozen-hashes.json").relative_to(ROOT)))
 
 
 def record_kind(record):

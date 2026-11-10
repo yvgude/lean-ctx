@@ -1,0 +1,455 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Write, show and verify ECCP change envelopes stored in git notes.
+
+A change envelope (schema ``leanctx.change-envelope/v1``) records the intent
+of a merge request and the evidence for it. It is stored as a JSON git note
+under ``refs/notes/eccp`` on the merge request's head commit.
+
+    eccp-envelope write --base-ref origin/main --task 157 --check unit=pass
+    eccp-envelope show [COMMIT]
+    eccp-envelope verify [COMMIT]
+
+Standard library only. Exit codes: 0 ok, 1 invalid envelope, 2 usage or git
+error (including a commit without an envelope).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import PurePosixPath
+import re
+import shlex
+import subprocess
+import sys
+
+try:  # Python 3.11+
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - older interpreters
+    tomllib = None
+
+SCHEMA_ID = "leanctx.change-envelope/v1"
+NOTES_REF = "eccp"  # git expands this to refs/notes/eccp
+CLASSES = ("L", "I", "G")
+CHECK_RESULTS = ("pass", "fail", "skip", "error")
+TOOLCHAIN_FILES = ("rust-toolchain.toml", "rust-toolchain", "rust/rust-toolchain.toml", "rust/rust-toolchain")
+DERIVATIONS_FILE = "ci/derivations.toml"
+SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
+
+
+class EnvelopeError(Exception):
+    """Usage or git failure (exit 2)."""
+
+
+def git(*args: str, check: bool = True, input_text: str | None = None) -> subprocess.CompletedProcess:
+    proc = subprocess.run(
+        ["git", *args],
+        input=input_text,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if check and proc.returncode != 0:
+        raise EnvelopeError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
+    return proc
+
+
+def rev(commitish: str) -> str:
+    return git("rev-parse", "--verify", "--quiet", f"{commitish}^{{commit}}").stdout.strip()
+
+
+def blob_exists(commit: str, path: str) -> bool:
+    return git("cat-file", "-e", f"{commit}:{path}", check=False).returncode == 0
+
+
+def read_blob(commit: str, path: str) -> str:
+    return git("show", f"{commit}:{path}").stdout
+
+
+def is_ancestor(ancestor: str, descendant: str) -> bool:
+    return git("merge-base", "--is-ancestor", ancestor, descendant, check=False).returncode == 0
+
+
+# ---------------------------------------------------------------- read set
+
+
+def crate_name(manifest: str) -> str | None:
+    if tomllib is not None:
+        try:
+            name = tomllib.loads(manifest).get("package", {}).get("name")
+            return name if isinstance(name, str) else None
+        except tomllib.TOMLDecodeError:
+            return None
+    section = re.search(r"^\[package\]\s*$(.*?)(?=^\[|\Z)", manifest, re.M | re.S)
+    found = section and re.search(r'^name\s*=\s*"([^"]+)"', section.group(1), re.M)
+    return found.group(1) if found else None
+
+
+def crates_touched(base: str, head: str) -> list[str]:
+    """Cargo packages owning the files changed between base and head."""
+    changed = git("diff", "--name-only", "--no-renames", f"{base}..{head}").stdout.split()
+    manifests: dict[str, str | None] = {}
+    crates: set[str] = set()
+    for path in changed:
+        for parent in PurePosixPath(path).parents:
+            manifest = "Cargo.toml" if str(parent) == "." else f"{parent}/Cargo.toml"
+            if manifest not in manifests:
+                manifests[manifest] = crate_name(read_blob(head, manifest)) if blob_exists(head, manifest) else None
+            if manifests[manifest]:
+                crates.add(manifests[manifest])
+                break
+    return sorted(crates)
+
+
+def toolchain(head: str, rustc_version: str | None) -> dict:
+    pinned = None
+    for path in TOOLCHAIN_FILES:
+        if blob_exists(head, path):
+            pinned = {"path": path, "content": read_blob(head, path).strip()}
+            break
+    if rustc_version is None:
+        try:
+            proc = subprocess.run(["rustc", "-V"], capture_output=True, text=True, check=False)
+            rustc_version = proc.stdout.strip() if proc.returncode == 0 else None
+        except OSError:
+            rustc_version = None
+    return {"rust_toolchain": pinned, "rustc": rustc_version or None}
+
+
+def load_json_file(path: str, what: str):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise EnvelopeError(f"cannot read {what} from {path}: {exc}") from exc
+
+
+def load_observed_reads(path: str) -> list[str]:
+    """A JSON list of paths, or one path per line (LeanCTX session export)."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError as exc:
+        raise EnvelopeError(f"cannot read observed reads from {path}: {exc}") from exc
+    stripped = text.strip()
+    if stripped.startswith("["):
+        reads = json.loads(stripped)
+    else:
+        reads = [line.strip() for line in stripped.splitlines() if line.strip()]
+    if not all(isinstance(item, str) for item in reads):
+        raise EnvelopeError("observed reads must be a list of paths")
+    return sorted(set(reads))
+
+
+# ------------------------------------------------------------------- hooks
+
+
+def classify(args, base: str, head: str) -> str | None:
+    """Change class. Hook for the W1b-02 classifier.
+
+    ``--class`` wins; otherwise ``$ECCP_CLASSIFIER`` (a command) is run with
+    the base and head commits as arguments and must print L, I or G. Without
+    either the class stays null (unknown).
+    """
+    if args.change_class:
+        return args.change_class
+    command = os.environ.get("ECCP_CLASSIFIER")
+    if not command:
+        return None
+    proc = subprocess.run([*shlex.split(command), base, head], capture_output=True, text=True, check=False)
+    value = proc.stdout.strip()
+    if proc.returncode != 0 or value not in CLASSES:
+        raise EnvelopeError(f"classifier failed (exit {proc.returncode}, output {value!r})")
+    return value
+
+
+def derivations(args, head: str) -> list[dict]:
+    """Inputs of generated files. Hook for W4-05 (ci/derivations.toml).
+
+    ``--derivations FILE`` (JSON list) wins. Otherwise ``ci/derivations.toml``
+    at the head commit is read when present: each ``[[derivation]]`` table
+    names an ``output`` and its ``inputs``; the envelope records each input
+    with its blob id at head instead of the generated output.
+    """
+    if args.derivations:
+        entries = load_json_file(args.derivations, "derivations")
+        if not isinstance(entries, list):
+            raise EnvelopeError("--derivations must hold a JSON list")
+        return entries
+    if not blob_exists(head, DERIVATIONS_FILE) or tomllib is None:
+        return []
+    try:
+        table = tomllib.loads(read_blob(head, DERIVATIONS_FILE))
+    except tomllib.TOMLDecodeError as exc:
+        raise EnvelopeError(f"{DERIVATIONS_FILE}: {exc}") from exc
+    result = []
+    for entry in table.get("derivation", table.get("derivations", [])):
+        output = entry.get("output")
+        inputs = entry.get("inputs", [])
+        if not isinstance(output, str) or not isinstance(inputs, list):
+            raise EnvelopeError(f"{DERIVATIONS_FILE}: each derivation needs output and inputs")
+        recorded = []
+        for path in sorted(inputs):
+            blob = git("rev-parse", "--verify", "--quiet", f"{head}:{path}", check=False).stdout.strip()
+            recorded.append({"path": path, "blob": blob or None})
+        result.append({"output": output, "inputs": recorded})
+    return sorted(result, key=lambda item: item["output"])
+
+
+# ---------------------------------------------------------------- evidence
+
+
+def parse_check(spec: str, head: str) -> dict:
+    """``name=result`` or ``name=result@commit``."""
+    name, sep, rest = spec.partition("=")
+    if not sep or not name:
+        raise EnvelopeError(f"--check {spec!r}: expected name=result[@commit]")
+    result, _, commitish = rest.partition("@")
+    if result not in CHECK_RESULTS:
+        raise EnvelopeError(f"--check {spec!r}: result must be one of {', '.join(CHECK_RESULTS)}")
+    commit = rev(commitish) if commitish else head
+    if not commit:
+        raise EnvelopeError(f"--check {spec!r}: unknown commit {commitish!r}")
+    return {"name": name, "result": result, "commit": commit}
+
+
+# ------------------------------------------------------------------ build
+
+
+def build_envelope(args) -> dict:
+    head = rev(args.commit)
+    if not head:
+        raise EnvelopeError(f"unknown commit {args.commit!r}")
+    base_tip = rev(args.base_ref)
+    if not base_tip:
+        raise EnvelopeError(f"unknown base ref {args.base_ref!r}")
+    base = git("merge-base", base_tip, head).stdout.strip()
+
+    read_set = {
+        "crates": crates_touched(base, head),
+        "toolchain": toolchain(head, args.rustc_version),
+    }
+    if args.public_api_hashes:
+        hashes = load_json_file(args.public_api_hashes, "public API hashes")
+        if not isinstance(hashes, dict):
+            raise EnvelopeError("--public-api-hashes must hold a JSON object {crate: hash}")
+        read_set["public_api_hashes"] = dict(sorted(hashes.items()))
+    if args.observed_reads:
+        read_set["observed_reads"] = load_observed_reads(args.observed_reads)
+
+    checks = [parse_check(spec, head) for spec in args.check or []]
+    return {
+        "schema": SCHEMA_ID,
+        "head": head,
+        "intent": {
+            "task": args.task,
+            "plan_url": args.plan_url,
+            "acceptance": sorted(set(args.acceptance or [])),
+        },
+        "base": {"ref": args.base_ref, "commit": base},
+        "class": classify(args, base, head),
+        "read_set": read_set,
+        "derivations": derivations(args, head),
+        "evidence": {"checks": sorted(checks, key=lambda c: (c["name"], c["commit"]))},
+    }
+
+
+def render(envelope: dict) -> str:
+    return json.dumps(envelope, indent=2, sort_keys=True) + "\n"
+
+
+# --------------------------------------------------------------- validate
+
+
+def schema_errors(env) -> list[str]:
+    """Structural check equivalent to docs/contracts/change-envelope-v1.schema.json."""
+    errors: list[str] = []
+
+    def expect(cond: bool, message: str) -> bool:
+        if not cond:
+            errors.append(message)
+        return cond
+
+    def keys(obj, path: str, required: set[str], optional: set[str] = frozenset()) -> bool:
+        if not expect(isinstance(obj, dict), f"{path}: must be an object"):
+            return False
+        missing = required - obj.keys()
+        extra = obj.keys() - required - optional
+        expect(not missing, f"{path}: missing {', '.join(sorted(missing))}")
+        expect(not extra, f"{path}: unexpected {', '.join(sorted(extra))}")
+        return not missing
+
+    def sha(value, path: str) -> None:
+        expect(isinstance(value, str) and bool(SHA_RE.match(value)), f"{path}: must be a full commit id")
+
+    def str_list(value, path: str) -> None:
+        expect(isinstance(value, list) and all(isinstance(v, str) and v for v in value), f"{path}: must be a list of strings")
+
+    top = {"schema", "head", "intent", "base", "class", "read_set", "derivations", "evidence"}
+    if not keys(env, "envelope", top):
+        return errors
+    expect(env["schema"] == SCHEMA_ID, f"schema: must be {SCHEMA_ID!r}")
+    sha(env["head"], "head")
+
+    if keys(env["intent"], "intent", {"task", "plan_url", "acceptance"}):
+        intent = env["intent"]
+        expect(isinstance(intent["task"], str) and intent["task"] != "", "intent.task: must be a non-empty string")
+        expect(intent["plan_url"] is None or isinstance(intent["plan_url"], str), "intent.plan_url: must be a string or null")
+        str_list(intent["acceptance"], "intent.acceptance")
+
+    if keys(env["base"], "base", {"ref", "commit"}):
+        expect(isinstance(env["base"]["ref"], str) and env["base"]["ref"] != "", "base.ref: must be a non-empty string")
+        sha(env["base"]["commit"], "base.commit")
+
+    expect(env["class"] is None or env["class"] in CLASSES, "class: must be L, I, G or null")
+
+    if keys(env["read_set"], "read_set", {"crates", "toolchain"}, {"public_api_hashes", "observed_reads"}):
+        rs = env["read_set"]
+        str_list(rs["crates"], "read_set.crates")
+        if keys(rs["toolchain"], "read_set.toolchain", {"rust_toolchain", "rustc"}):
+            pinned = rs["toolchain"]["rust_toolchain"]
+            if pinned is not None and keys(pinned, "read_set.toolchain.rust_toolchain", {"path", "content"}):
+                expect(all(isinstance(pinned[k], str) for k in ("path", "content")), "read_set.toolchain.rust_toolchain: path and content must be strings")
+            rustc = rs["toolchain"]["rustc"]
+            expect(rustc is None or isinstance(rustc, str), "read_set.toolchain.rustc: must be a string or null")
+        if "public_api_hashes" in rs:
+            hashes = rs["public_api_hashes"]
+            expect(isinstance(hashes, dict) and all(isinstance(v, str) for v in hashes.values()), "read_set.public_api_hashes: must map crate to hash string")
+        if "observed_reads" in rs:
+            str_list(rs["observed_reads"], "read_set.observed_reads")
+
+    if expect(isinstance(env["derivations"], list), "derivations: must be a list"):
+        for i, entry in enumerate(env["derivations"]):
+            path = f"derivations[{i}]"
+            if keys(entry, path, {"output", "inputs"}):
+                expect(isinstance(entry["output"], str) and entry["output"] != "", f"{path}.output: must be a non-empty string")
+                if expect(isinstance(entry["inputs"], list), f"{path}.inputs: must be a list"):
+                    for j, item in enumerate(entry["inputs"]):
+                        if keys(item, f"{path}.inputs[{j}]", {"path", "blob"}):
+                            expect(isinstance(item["path"], str), f"{path}.inputs[{j}].path: must be a string")
+                            expect(item["blob"] is None or (isinstance(item["blob"], str) and bool(SHA_RE.match(item["blob"]))), f"{path}.inputs[{j}].blob: must be an object id or null")
+
+    if keys(env["evidence"], "evidence", {"checks"}) and expect(isinstance(env["evidence"]["checks"], list), "evidence.checks: must be a list"):
+        for i, check in enumerate(env["evidence"]["checks"]):
+            path = f"evidence.checks[{i}]"
+            if keys(check, path, {"name", "result", "commit"}):
+                expect(isinstance(check["name"], str) and check["name"] != "", f"{path}.name: must be a non-empty string")
+                expect(check["result"] in CHECK_RESULTS, f"{path}.result: must be one of {', '.join(CHECK_RESULTS)}")
+                sha(check["commit"], f"{path}.commit")
+    return errors
+
+
+def graph_errors(env: dict, commit: str) -> list[str]:
+    """Checks against the repository: head, base ancestry, evidence commits."""
+    errors = []
+    if env["head"] != commit:
+        errors.append(f"head: envelope names {env['head']} but is attached to {commit}")
+    base = env["base"]["commit"]
+    if not rev(base):
+        errors.append(f"base.commit: {base} is not in this repository")
+    elif not is_ancestor(base, commit):
+        errors.append(f"base.commit: {base} is not an ancestor of {commit}")
+    for i, check in enumerate(env["evidence"]["checks"]):
+        if not rev(check["commit"]):
+            errors.append(f"evidence.checks[{i}].commit: {check['commit']} is not in this repository")
+        elif not is_ancestor(check["commit"], commit):
+            errors.append(f"evidence.checks[{i}].commit: {check['commit']} is not {commit} or an ancestor")
+    return errors
+
+
+def read_note(commitish: str) -> tuple[str, dict]:
+    commit = rev(commitish)
+    if not commit:
+        raise EnvelopeError(f"unknown commit {commitish!r}")
+    proc = git("notes", "--ref", NOTES_REF, "show", commit, check=False)
+    if proc.returncode != 0:
+        raise EnvelopeError(f"no envelope in refs/notes/{NOTES_REF} for {commit}")
+    try:
+        return commit, json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"note is not JSON: {exc}") from exc
+
+
+# --------------------------------------------------------------- commands
+
+
+def cmd_write(args) -> int:
+    envelope = build_envelope(args)
+    errors = schema_errors(envelope)
+    if errors:
+        raise EnvelopeError("built envelope is invalid: " + "; ".join(errors))
+    text = render(envelope)
+    if args.dry_run:
+        sys.stdout.write(text)
+        return 0
+    git("notes", "--ref", NOTES_REF, "add", "-f", "-F", "-", envelope["head"], input_text=text)
+    print(f"envelope written to refs/notes/{NOTES_REF} for {envelope['head']}")
+    return 0
+
+
+def cmd_show(args) -> int:
+    try:
+        _, envelope = read_note(args.commit)
+    except ValueError as exc:
+        print(f"invalid: {exc}", file=sys.stderr)
+        return 1
+    sys.stdout.write(render(envelope))
+    return 0
+
+
+def cmd_verify(args) -> int:
+    try:
+        commit, envelope = read_note(args.commit)
+    except ValueError as exc:
+        print(f"invalid: {exc}", file=sys.stderr)
+        return 1
+    errors = schema_errors(envelope)
+    if not errors:
+        errors = graph_errors(envelope, commit)
+    if errors:
+        for error in errors:
+            print(f"invalid: {error}", file=sys.stderr)
+        return 1
+    stale = sum(1 for c in envelope["evidence"]["checks"] if c["commit"] != commit)
+    print(f"ok: {SCHEMA_ID} on {commit} ({len(envelope['evidence']['checks'])} checks, {stale} on an earlier commit)")
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    root = argparse.ArgumentParser(prog="eccp-envelope", description=__doc__.split("\n\n")[0])
+    sub = root.add_subparsers(dest="command", required=True)
+
+    write = sub.add_parser("write", help="build the envelope and store it as a git note")
+    write.add_argument("--commit", default="HEAD", help="merge request head commit (default HEAD)")
+    write.add_argument("--base-ref", required=True, help="target branch ref, e.g. origin/integration/3.12.3")
+    write.add_argument("--task", required=True, help="task id, e.g. 157")
+    write.add_argument("--plan-url", help="plan page URL")
+    write.add_argument("--acceptance", action="append", metavar="PATH", help="acceptance test file (repeatable)")
+    write.add_argument("--class", dest="change_class", choices=CLASSES, help="change class; else $ECCP_CLASSIFIER, else null")
+    write.add_argument("--check", action="append", metavar="NAME=RESULT[@COMMIT]", help="evidence check (repeatable)")
+    write.add_argument("--public-api-hashes", metavar="FILE", help="JSON object {crate: hash}")
+    write.add_argument("--observed-reads", metavar="FILE", help="LeanCTX session reads: JSON list or one path per line")
+    write.add_argument("--derivations", metavar="FILE", help="JSON list overriding ci/derivations.toml")
+    write.add_argument("--rustc-version", help="rustc -V output to record instead of running rustc")
+    write.add_argument("--dry-run", action="store_true", help="print the envelope, write no note")
+    write.set_defaults(func=cmd_write)
+
+    for name, func, text in (("show", cmd_show, "print the envelope"), ("verify", cmd_verify, "check schema and ancestry")):
+        command = sub.add_parser(name, help=text)
+        command.add_argument("commit", nargs="?", default="HEAD")
+        command.set_defaults(func=func)
+    return root
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    try:
+        return args.func(args)
+    except EnvelopeError as exc:
+        print(f"eccp-envelope: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -455,9 +455,12 @@ pub(super) fn make_private_dir(dir: &Path) -> Result<(), GateError> {
 /// targets). Nothing runs cargo here, so parent configs do not matter.
 pub(super) fn private_dir(work: &Path) -> Result<tempfile::TempDir, GateError> {
     make_private_dir(work)?;
+    // Resolved, so the run's variables name the long form (a Windows temp
+    // folder can be an 8.3 short name such as `RUNNER~1`).
+    let work = resolved(work).map_err(|e| GateError::Check(format!("the gate's work dir: {e}")))?;
     tempfile::Builder::new()
         .prefix("g6-")
-        .tempdir_in(work)
+        .tempdir_in(&work)
         .map_err(|e| GateError::Check(format!("a fresh directory: {e}")))
 }
 
@@ -624,6 +627,8 @@ pub(super) fn run_env(
 ) -> Result<Vec<(String, std::ffi::OsString)>, GateError> {
     let home = user_home()?;
     let (rustup_cargo, rustup) = run_toolchain(&home)?;
+    make_private_dir(work)?;
+    let work = resolved(work).map_err(|e| GateError::Check(format!("the gate's work dir: {e}")))?;
     let cargo_home = work.join("cargo-home");
     make_private_dir(&cargo_home)?;
     for name in ["config", "config.toml", "credentials", "credentials.toml"] {

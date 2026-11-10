@@ -64,6 +64,49 @@ fn only_a_busy_or_late_worker_is_asked_twice() {
     assert!(answer.is_err());
 }
 
+/// #53: callers queued behind the one worker. Each request stays within its
+/// own bound, together they take longer than it; the deadline counted from
+/// enqueue failed the last callers ("policy refresh deadline exceeded"). A
+/// request that never returns still fails its caller after the bound.
+#[test]
+fn a_queue_that_keeps_moving_fails_no_caller_and_a_stall_still_fails() {
+    let bound = std::time::Duration::from_millis(400);
+    let answer = || {
+        Ok(refresh::VerifiedPolicy {
+            policy: None,
+            fingerprint: blake3::hash(b"queued"),
+            lifetime: None,
+            observation: None,
+        })
+    };
+    let queue = refresh::Refresher::spawn(bound, move |_, _| {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        answer()
+    })
+    .unwrap();
+    std::thread::scope(|scope| {
+        let callers: Vec<_> = (0..8)
+            .map(|_| scope.spawn(|| queue.ask(PathBuf::new())))
+            .collect();
+        for caller in callers {
+            assert!(caller.join().unwrap().is_ok(), "a moving queue fails none");
+        }
+    });
+
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let held = std::sync::Mutex::new(held);
+    let stalled = refresh::Refresher::spawn(bound, move |_, _| {
+        let _ = held.lock().unwrap().recv();
+        answer()
+    })
+    .unwrap();
+    assert_eq!(
+        stalled.ask(PathBuf::new()).err().as_deref(),
+        Some("policy refresh deadline exceeded")
+    );
+    drop(release);
+}
+
 #[test]
 fn exact_bytes_reuse_compilation_and_changed_bytes_revoke_without_reload() {
     let _isolation = crate::core::data_dir::isolated_data_dir();

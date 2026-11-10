@@ -30,3 +30,16 @@ rust/tests/fixtures/config_migration_v3_11_0/** -text
 # the checksum, so `git diff --check` must not ask for one.
 ee/governance/migrations/002_request_log.sql -whitespace
 ee/governance/migrations/014_stripe_billing.sql -whitespace
+
+# Derivations registry (scripts/derivations.py): generated files are regenerated
+# and list files merge as line sets, so two branches never text-conflict on them.
+# Needs `python3 scripts/derivations.py install` once per clone; without it git
+# falls back to its normal text merge. After a merge, run
+# `python3 scripts/derivations.py regenerate` and commit what it rewrites.
+CHANGELOG.md merge=leanctx-lineset
+PUBLISH_MANIFEST.toml merge=leanctx-lineset
+ee/delivery/FEATURE_SCOPE_REGISTER.csv merge=leanctx-lineset
+frozen-hashes.json merge=leanctx-json
+Cargo.lock merge=leanctx-cargolock
+SBOM.cdx.json merge=leanctx-regenerate
+THIRD_PARTY_NOTICES merge=leanctx-regenerate

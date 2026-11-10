@@ -5,6 +5,7 @@
 use super::{ActivePolicy, PROJECT_PACK_PATH};
 use crate::core::policy::{files, org, parse, resolve};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
@@ -31,37 +32,107 @@ pub(super) struct VerifiedPolicy {
 
 struct Request {
     root: PathBuf,
-    deadline: Instant,
+    /// Set by a caller that stopped waiting: the worker skips the request.
+    abandoned: Arc<AtomicBool>,
     reply: mpsc::Sender<VerifiedResult>,
 }
 
-fn worker() -> Option<&'static mpsc::SyncSender<Request>> {
-    static WORKER: OnceLock<Option<mpsc::SyncSender<Request>>> = OnceLock::new();
+/// The one bounded worker and its line of waiting requests.
+///
+/// A request's bound counts from the moment the worker takes it, not from
+/// when it was queued: parallel callers (tool calls of one server, tests of one
+/// process) queue behind one another, and a deadline counted from enqueue made
+/// a caller fail for the work of every request ahead of it although each of
+/// them stayed within its own bound (#53). A caller still fails after
+/// [`DEADLINE`] in which the worker took or finished no request, so a stalled
+/// refresh fails every waiter after the same bound; a moving queue fails none.
+pub(super) struct Refresher {
+    tx: mpsc::SyncSender<Request>,
+    /// [`DEADLINE`] outside tests: what one request may take, and how long a
+    /// caller waits without the worker taking or finishing any request.
+    bound: Duration,
+    /// Counts every request the worker took and every one it finished.
+    progress: Arc<AtomicU64>,
+}
+
+impl Refresher {
+    pub(super) fn spawn(
+        bound: Duration,
+        mut work: impl FnMut(&Path, Instant) -> VerifiedResult + Send + 'static,
+    ) -> Option<Self> {
+        let (tx, rx) = mpsc::sync_channel::<Request>(16);
+        let progress = Arc::new(AtomicU64::new(0));
+        let moved = Arc::clone(&progress);
+        std::thread::Builder::new()
+            .name("policy-refresh".into())
+            .spawn(move || {
+                while let Ok(request) = rx.recv() {
+                    moved.fetch_add(1, Ordering::SeqCst);
+                    if request.abandoned.load(Ordering::SeqCst) {
+                        continue;
+                    }
+                    let deadline = Instant::now() + bound;
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        work(&request.root, deadline)
+                    }))
+                    .unwrap_or_else(|_| Err("policy refresh failed".into()));
+                    let result = if Instant::now() < deadline {
+                        result
+                    } else {
+                        Err(DEADLINE_EXCEEDED.into())
+                    };
+                    moved.fetch_add(1, Ordering::SeqCst);
+                    let _ = request.reply.send(result);
+                }
+            })
+            .ok()?;
+        Some(Self {
+            tx,
+            bound,
+            progress,
+        })
+    }
+
+    pub(super) fn ask(&self, root: PathBuf) -> VerifiedResult {
+        let (reply, rx) = mpsc::channel();
+        let abandoned = Arc::new(AtomicBool::new(false));
+        let mut seen = self.progress.load(Ordering::SeqCst);
+        self.tx
+            .try_send(Request {
+                root,
+                abandoned: Arc::clone(&abandoned),
+                reply,
+            })
+            .map_err(|_| BUSY)?;
+        let mut stalled_at = Instant::now() + self.bound;
+        loop {
+            match rx.recv_timeout(stalled_at.saturating_duration_since(Instant::now())) {
+                Ok(result) => return result,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    let count = self.progress.load(Ordering::SeqCst);
+                    if count == seen {
+                        abandoned.store(true, Ordering::SeqCst);
+                        return Err(DEADLINE_EXCEEDED.into());
+                    }
+                    seen = count;
+                    stalled_at = Instant::now() + self.bound;
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err("policy refresh failed".into());
+                }
+            }
+        }
+    }
+}
+
+fn worker() -> Option<&'static Refresher> {
+    static WORKER: OnceLock<Option<Refresher>> = OnceLock::new();
     WORKER
         .get_or_init(|| {
-            let (tx, rx) = mpsc::sync_channel::<Request>(16);
-            std::thread::Builder::new()
-                .name("policy-refresh".into())
-                .spawn(move || {
-                    let mut cache = RefreshCache::default();
-                    while let Ok(request) = rx.recv() {
-                        if Instant::now() >= request.deadline {
-                            continue;
-                        }
-                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            cache.refresh_verified_by(&request.root, request.deadline)
-                        }))
-                        .unwrap_or_else(|_| Err("policy refresh failed".into()));
-                        let result = if Instant::now() < request.deadline {
-                            result
-                        } else {
-                            Err(DEADLINE_EXCEEDED.into())
-                        };
-                        let _ = request.reply.send(result);
-                    }
-                })
-                .ok()?;
-            Some(tx)
+            let mut cache = RefreshCache::default();
+            Refresher::spawn(DEADLINE, move |root, deadline| {
+                cache.refresh_verified_by(root, deadline)
+            })
         })
         .as_ref()
 }
@@ -71,22 +142,9 @@ pub(super) fn current(root: PathBuf) -> PolicyResult {
 }
 
 pub(super) fn current_verified(root: PathBuf) -> VerifiedResult {
-    let deadline = Instant::now() + DEADLINE;
-    let (tx, rx) = mpsc::channel();
-    worker()
+    let result = worker()
         .ok_or("policy refresh worker unavailable")?
-        .try_send(Request {
-            root,
-            deadline,
-            reply: tx,
-        })
-        .map_err(|_| BUSY)?;
-    let result = rx
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .map_err(|_| DEADLINE_EXCEEDED)?;
-    if Instant::now() >= deadline {
-        return Err(DEADLINE_EXCEEDED.into());
-    }
+        .ask(root);
     #[cfg(any(test, feature = "test-support"))]
     let result = result.map(|mut verified| {
         ANSWER_HOOK.with(|slot| {
