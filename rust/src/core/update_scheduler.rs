@@ -36,7 +36,15 @@ impl std::fmt::Display for ScheduleInfo {
     }
 }
 
+/// Install the auto-update schedule. Refused for another instance (directory
+/// override, sandbox HOME): the LaunchAgent label, the systemd timer and the
+/// per-user crontab all belong to the default install, and `crontab` ignores
+/// HOME entirely (6 Nov 2026, see
+/// [`crate::daemon_autostart::controls_user_services`]).
 pub fn install_schedule(interval_hours: u64) -> Result<ScheduleInfo, String> {
+    if !crate::daemon_autostart::controls_user_services() {
+        return Err(crate::daemon_autostart::not_this_instance_message().to_string());
+    }
     let binary = std::path::PathBuf::from(super::portable_binary::resolve_portable_binary());
 
     #[cfg(target_os = "macos")]
@@ -55,7 +63,13 @@ pub fn install_schedule(interval_hours: u64) -> Result<ScheduleInfo, String> {
     }
 }
 
+/// Remove the auto-update schedule. Refused for another instance, like
+/// [`install_schedule`]: otherwise `lean-ctx uninstall` with a sandbox HOME
+/// stripped the real user's `lean-ctx … update` crontab line.
 pub fn remove_schedule() -> Result<(), String> {
+    if !crate::daemon_autostart::controls_user_services() {
+        return Err(crate::daemon_autostart::not_this_instance_message().to_string());
+    }
     #[cfg(target_os = "macos")]
     return remove_macos_launchagent();
 
@@ -69,7 +83,18 @@ pub fn remove_schedule() -> Result<(), String> {
     Ok(())
 }
 
+/// The schedule's state. "disabled" for another instance, without querying
+/// `launchctl`, `systemctl`, `crontab` or `schtasks`: the schedule is not its own.
 pub fn schedule_status() -> ScheduleInfo {
+    if !crate::daemon_autostart::controls_user_services() {
+        return ScheduleInfo {
+            enabled: false,
+            mechanism: "not this instance".into(),
+            interval_hours: 0,
+            scheduler_path: None,
+            last_check: None,
+        };
+    }
     #[cfg(target_os = "macos")]
     return macos_status();
 

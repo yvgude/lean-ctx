@@ -1168,7 +1168,11 @@ fn process_scan_file(
     // The summary is source text that enters a derived store (E3): it is
     // admitted like every other stored excerpt, and a restricted file has none.
     let summary = admission
-        .admit(&extract_summary(&content), std::path::Path::new(file_path))
+        .admit(
+            &extract_summary(&content),
+            std::path::Path::new(file_path),
+            None,
+        )
         .unwrap_or_default();
 
     let exports: Vec<String> = sigs
@@ -1230,10 +1234,14 @@ fn process_scan_targets(
     admission: &StoreAdmission,
 ) -> Vec<ScanFileResult> {
     if parallel {
+        // The workers admit on the call's behalf (pz21 §1.5 4a).
+        let carried = crate::core::context_admission::capture::carry();
         targets
             .par_iter()
             .filter_map(|(file_path, rel, ext)| {
-                process_scan_file(file_path, rel, ext, previous_symbols, existing, admission)
+                carried.enter(|| {
+                    process_scan_file(file_path, rel, ext, previous_symbols, existing, admission)
+                })
             })
             .collect()
     } else {

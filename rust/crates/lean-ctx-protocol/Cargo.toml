@@ -1,11 +1,17 @@
 [package]
 name = "lean-ctx-protocol"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.87"
 license = "Apache-2.0"
 description = "Open wire contracts for lean-ctx: events, observations, assignments, evidence gaps."
 repository = "https://github.com/yvgude/lean-ctx"
+# One test binary: tests/main.rs holds the contract tests as modules.
+autotests = false
+
+[[test]]
+name = "protocol"
+path = "tests/main.rs"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["std"] }

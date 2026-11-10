@@ -17,6 +17,13 @@
 pub static malloc_conf: &[u8] = lean_ctx::JEMALLOC_CONF;
 
 fn main() {
+    // Before anything prints a version: this binary's commit and dirty flag,
+    // stamped over every crate it links (build.rs), not only the Engine's.
+    lean_ctx::core::integrity::set_binary_stamp(
+        env!("LEANCTX_BINARY_COMMIT"),
+        matches!(env!("LEANCTX_BINARY_DIRTY").as_bytes(), b"1"),
+    );
+
     // First, before any parser exists: tree-sitter allocations made by one
     // allocator must never be freed by the other (#2075).
     lean_ctx::core::memory_guard::route_tree_sitter_to_jemalloc();

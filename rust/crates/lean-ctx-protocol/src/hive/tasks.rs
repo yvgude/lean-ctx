@@ -43,7 +43,7 @@
 //!
 //! | Route | Body | Answer | Lease right |
 //! |---|---|---|---|
-//! | `GET` (`?state=…&role=…&mine=true`) | | [`TaskListV1`] | `tasks.read` |
+//! | `GET` (`?state=…&role=…&mine=true&priority=…`) | | [`TaskListV1`] | `tasks.read` |
 //! | `GET /{number}` | | [`TaskV1`] | `tasks.read` |
 //! | `POST` | [`TaskProposeRequestV1`] | [`TaskAckV1`] (`proposed`) | `tasks.propose` |
 //! | `POST /{number}/claim` | [`TaskClaimRequestV1`] | [`TaskClaimAckV1`] | `tasks.work` |
@@ -99,6 +99,8 @@ pub const TASK_UPDATE_SCHEMA: &str = "leanctx.hive.task-update/v1";
 pub const TASK_RESULT_SCHEMA: &str = "leanctx.hive.task-result/v1";
 /// C0 2.2 E48: another agent's verdict on a submitted result.
 pub const TASK_VERIFY_SCHEMA: &str = "leanctx.hive.task-verify/v1";
+/// 3.12.3: the submitter corrects its submitted result (summary, evidence).
+pub const TASK_AMEND_SCHEMA: &str = "leanctx.hive.task-amend/v1";
 /// C0 2.2 E47 `PATCH`: a task's priority and labels.
 pub const TASK_FIELDS_SCHEMA: &str = "leanctx.hive.task-fields/v1";
 
@@ -592,6 +594,12 @@ pub struct TaskResultRequestV1 {
     /// (unknown fields are denied), so it is sent only to a v5 Hive.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<TaskOutcome>,
+    /// Process v1 G6: the Instance's part of the record for the judged
+    /// commit (clean locked paths, a green rerun; blocked on the CI pipeline
+    /// Hive reads). Sent only for a process task (a task view with
+    /// `process`), so a Hive without process tasks never sees the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate_record: Option<super::gate::G6RecordV1>,
 }
 
 impl TaskResultRequestV1 {
@@ -614,6 +622,14 @@ impl TaskResultRequestV1 {
                 return Err(ValidationError::new("a failed result brings no draft"));
             }
             draft.validate()?;
+        }
+        if let Some(record) = &self.gate_record {
+            record.validate()?;
+            if !record.ready_for_hive() || self.outcome == Some(TaskOutcome::Failed) {
+                return Err(ValidationError::new(
+                    "a result carries only a G6 record whose Instance checks hold, on a completed result",
+                ));
+            }
         }
         Ok(())
     }
@@ -651,19 +667,24 @@ pub struct TaskVerifyRequestV1 {
     pub reason: Option<String>,
 }
 
+fn validate_worker_id(worker_id: &str) -> Result<(), ValidationError> {
+    let worker_ok = (1..=128).contains(&worker_id.len())
+        && worker_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'));
+    if worker_ok {
+        Ok(())
+    } else {
+        Err(ValidationError::new(
+            "worker_id is 1-128 of [A-Za-z0-9._:-]",
+        ))
+    }
+}
+
 impl TaskVerifyRequestV1 {
     pub fn validate(&self) -> Result<(), ValidationError> {
         require_schema(&self.schema, TASK_VERIFY_SCHEMA)?;
-        let worker_ok = (1..=128).contains(&self.worker_id.len())
-            && self
-                .worker_id
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'));
-        if !worker_ok {
-            return Err(ValidationError::new(
-                "worker_id is 1-128 of [A-Za-z0-9._:-]",
-            ));
-        }
+        validate_worker_id(&self.worker_id)?;
         match (self.verdict, &self.reason) {
             (TaskVerdict::Unknown, _) => Err(ValidationError::new("verdict is accept or reject")),
             (TaskVerdict::Reject, None) => Err(ValidationError::new("a reject names its reason")),
@@ -683,6 +704,171 @@ pub struct TaskVerificationV1 {
     pub reason: Option<String>,
 }
 
+/// `POST …/{number}/amend` (3.12.3, `tasks.work`): a result is corrected
+/// without a claim (a submit ends the claim). Two shapes, by state
+/// ([`amend_rule`]):
+/// - `submitted`: the agent that submitted it (`worker_id`) replaces
+///   `evidence` (the whole new list) and optionally `summary`;
+/// - `done`: the submitter, a person or a registered Queen session records
+///   the merge once (`merge_commit`, the merge commit's SHA); nothing else
+///   changes. Never the reviewer (`verified_by`): `403 not_merger`.
+///
+/// Anyone else is `403 not_submitter` ([`may_amend`]). Hive appends a `kind: amendment`
+/// update with `amended_from` (the evidence before) and `amended_to` (the
+/// evidence after, or the merge commit), so the history keeps old → new.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskAmendRequestV1 {
+    pub schema: String,
+    pub worker_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<EvidenceV1>,
+    /// The merge commit's SHA (7-64 lowercase hex), on a `done` task only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_commit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+impl TaskAmendRequestV1 {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        require_schema(&self.schema, TASK_AMEND_SCHEMA)?;
+        validate_worker_id(&self.worker_id)?;
+        if let Some(reason) = &self.reason {
+            validate_text(reason, MAX_REASON_CHARS, "reason", false)?;
+        }
+        match &self.merge_commit {
+            Some(commit) => {
+                if !self.evidence.is_empty() || self.summary.is_some() {
+                    return Err(ValidationError::new(
+                        "a merge record carries only merge_commit (no evidence, no summary)",
+                    ));
+                }
+                merge_evidence(commit).validate()
+            }
+            None => {
+                if let Some(summary) = &self.summary {
+                    validate_text(summary, MAX_SUMMARY_CHARS, "summary", false)?;
+                }
+                validate_evidence(&self.evidence)
+            }
+        }
+    }
+}
+
+/// The merge commit as a piece of evidence (how history shows it).
+pub fn merge_evidence(commit: &str) -> EvidenceV1 {
+    EvidenceV1 {
+        kind: EvidenceKind::Commit,
+        reference: Some(commit.to_owned()),
+        anchor: None,
+    }
+}
+
+/// Why a result cannot be amended (the Hive reason code in brackets).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AmendRefusal {
+    /// Only a `submitted` or `done` task carries a result to amend
+    /// (`not_amendable`).
+    NotAmendable,
+    /// A `done` task takes only a merge record (`record_merge_only`).
+    RecordMergeOnly,
+    /// A merge record is for a `done` task; a `submitted` one is not merged
+    /// yet (`not_merged_yet`).
+    NotMergedYet,
+    /// The task's merge is already recorded; it is never replaced
+    /// (`merge_recorded`).
+    MergeRecorded,
+}
+
+impl AmendRefusal {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::NotAmendable => "not_amendable",
+            Self::RecordMergeOnly => "record_merge_only",
+            Self::NotMergedYet => "not_merged_yet",
+            Self::MergeRecorded => "merge_recorded",
+        }
+    }
+}
+
+/// What a task's state allows an amendment of its result: `submitted`
+/// replaces summary and evidence; `done` records the merge once and
+/// changes nothing else; any other state refuses. The one rule for Hive and
+/// the client (the client checks first, Hive enforces); who may amend is
+/// [`may_amend`].
+pub fn amend_rule(task: &TaskV1, request: &TaskAmendRequestV1) -> Result<(), AmendRefusal> {
+    let result = task.result.as_ref().ok_or(AmendRefusal::NotAmendable)?;
+    match (task.state, &request.merge_commit) {
+        (TaskState::Submitted, None) => Ok(()),
+        (TaskState::Submitted, Some(_)) => Err(AmendRefusal::NotMergedYet),
+        (TaskState::Done, Some(_)) if result.merge.is_some() => Err(AmendRefusal::MergeRecorded),
+        (TaskState::Done, Some(_)) => Ok(()),
+        (TaskState::Done, None) => Err(AmendRefusal::RecordMergeOnly),
+        _ => Err(AmendRefusal::NotAmendable),
+    }
+}
+
+/// Who is amending, as the caller established it: the result's submitter,
+/// the reviewer (the actor whose verdict made the task `done`), a person,
+/// or a Queen session the app registered.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AmendCaller {
+    pub submitter: bool,
+    pub reviewer: bool,
+    pub person: bool,
+    pub queen: bool,
+}
+
+/// Why this caller may not amend (`403` with the code).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AmendForbidden {
+    /// Only the submitter corrects a result (`not_submitter`).
+    NotSubmitter,
+    /// The reviewer never records the merge: checker and merger stay
+    /// separate (`not_merger`).
+    NotMerger,
+}
+
+impl AmendForbidden {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::NotSubmitter => "not_submitter",
+            Self::NotMerger => "not_merger",
+        }
+    }
+}
+
+/// Who may amend: the submitter always (a correction, or its merge
+/// record); a merge record also a person or a registered Queen session;
+/// never the reviewer (`not_merger`), anyone else `not_submitter`.
+pub fn may_amend(request: &TaskAmendRequestV1, caller: AmendCaller) -> Result<(), AmendForbidden> {
+    if caller.submitter {
+        return Ok(());
+    }
+    if request.merge_commit.is_none() {
+        return Err(AmendForbidden::NotSubmitter);
+    }
+    if caller.reviewer {
+        return Err(AmendForbidden::NotMerger);
+    }
+    if caller.person || caller.queen {
+        Ok(())
+    } else {
+        Err(AmendForbidden::NotSubmitter)
+    }
+}
+
+/// 3.12.3: a `done` task's merge record (`amend` with `merge_commit`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskMergeV1 {
+    pub commit: String,
+    pub by: TaskActorV1,
+    pub at: UtcTimestamp,
+}
+
 /// What a task update is (C0 2.2): the holder's progress, or a verifier's
 /// verdict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -690,6 +876,9 @@ pub struct TaskVerificationV1 {
 pub enum TaskUpdateKind {
     Progress,
     Verification,
+    /// 3.12.3: the submitter amended its result (`amended_from` holds the
+    /// evidence before).
+    Amendment,
     #[serde(other)]
     Unknown,
 }
@@ -766,6 +955,14 @@ pub struct TaskUpdateV1 {
     /// C0 2.2: a verifier's verdict, on `kind: verification`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<TaskVerdict>,
+    /// 3.12.3, on `kind: amendment`: the result's evidence before the
+    /// amendment, so the history keeps every earlier reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub amended_from: Vec<EvidenceViewV1>,
+    /// 3.12.3, on `kind: amendment`: the evidence after it (old → new), or
+    /// the merge commit of a merge record.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub amended_to: Vec<EvidenceViewV1>,
 }
 
 /// Evidence as Hive shows it: `verified` is set by Hive (a `receipt`
@@ -797,6 +994,9 @@ pub struct TaskResultV1 {
     pub evidence: Vec<EvidenceViewV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<UsageV1>,
+    /// 3.12.3: the merge, once recorded on a `done` task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge: Option<TaskMergeV1>,
 }
 
 /// Who decided on a result: a person, or the auto-merge threshold (Personal).
@@ -881,6 +1081,10 @@ pub struct TaskV1 {
     /// of [`TaskFieldsRequestV1`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fields_version: Option<u32>,
+    /// Process v1: the task's process part (risk, what G6 needs, Hive's G6
+    /// record). Absent on a task that is not a process task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process: Option<super::gate::TaskProcessV1>,
 }
 
 impl TaskV1 {
@@ -1019,6 +1223,7 @@ mod tests {
             draft: None,
             usage: None,
             outcome: None,
+            gate_record: None,
         };
         assert!(result.validate().is_err(), "no evidence");
         let r = |kind, reference: &str| EvidenceV1 {

@@ -20,12 +20,15 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{Connected, ListFilter, connected, list_via, render_list, render_task, view_of};
+use super::{
+    Connected, ListFilter, TaskListing, connected, list_cached, render_listing, render_task,
+    show_cached, view_of,
+};
 use crate::HiveError;
 use crate::background;
 use crate::state::{load_or_quarantine, lock_state, write_private};
 use lean_ctx_protocol::hive::lease::HiveRight;
-use lean_ctx_protocol::hive::tasks::{TaskListV1, TaskState, TaskV1};
+use lean_ctx_protocol::hive::tasks::{TaskState, TaskV1};
 
 const CACHE_FILE: &str = "task-cache.json";
 /// An entry younger than this is shown without a refresh.
@@ -60,7 +63,7 @@ impl<T> Entry<T> {
 struct VaultCache {
     /// Keyed by the list query (`?state=open`, `` for all).
     #[serde(default)]
-    lists: BTreeMap<String, Entry<TaskListV1>>,
+    lists: BTreeMap<String, Entry<TaskListing>>,
     #[serde(default)]
     tasks: BTreeMap<u64, Entry<TaskV1>>,
 }
@@ -96,6 +99,7 @@ fn mutate(data_dir: &Path, vault_id: &str, change: impl FnOnce(&mut VaultCache))
 /// Mark what is cached for the vault outdated: the next read refreshes it
 /// (a change of this machine, or a `task.event` from Hive).
 pub(crate) fn outdate(data_dir: &Path, vault_id: &str) {
+    super::reads::outdate(data_dir, vault_id);
     mutate(data_dir, vault_id, |vault| {
         vault.lists.values_mut().for_each(|e| e.outdated = true);
         vault.tasks.values_mut().for_each(|e| e.outdated = true);
@@ -123,10 +127,13 @@ fn refresh_list(c: Connected, query: String, filter: ListFilter, caller: Option<
     background::submit_once(
         caller.unwrap_or("ctx_tasks:briefing"),
         &key,
-        move || match list_via(&c.link(), &filter) {
-            Ok(list) => {
+        move || match list_cached(&c.link(), &filter) {
+            // A list Hive did not send now (rate limit, not reachable) is
+            // not stored as fresh; the next read tries again.
+            Ok(read) if read.stale.is_some() => None,
+            Ok(read) => {
                 mutate(c.store.data_dir(), &c.project.vault_id, |vault| {
-                    vault.lists.insert(query, Entry::new(list));
+                    vault.lists.insert(query, Entry::new(read.value));
                 });
                 None
             }
@@ -150,8 +157,12 @@ pub fn list(project_root: &Path, filter: &ListFilter, caller: &str) -> Result<St
         .remove(&c.project.vault_id)
         .and_then(|mut vault| vault.lists.remove(&query));
     let answer = match &entry {
-        Some(entry) if entry.fresh(Utc::now()) => return Ok(render_list(&entry.value, 50)),
-        Some(entry) => format!("{}{}", render_list(&entry.value, 50), stale_note(entry.at)),
+        Some(entry) if entry.fresh(Utc::now()) => return Ok(render_listing(&entry.value, 50)),
+        Some(entry) => format!(
+            "{}{}",
+            render_listing(&entry.value, 50),
+            stale_note(entry.at)
+        ),
         None => NOT_LOADED.to_string(),
     };
     refresh_list(c, query, filter.clone(), Some(caller));
@@ -172,18 +183,17 @@ pub fn show(project_root: &Path, number: u64, caller: &str) -> Result<String, Hi
         None => NOT_LOADED.to_string(),
     };
     let key = format!("tasks:{}:#{number}", c.project.vault_id);
-    background::submit_once(caller, &key, move || {
-        match c.link().call(|api| api.show(number)) {
-            Ok(task) => {
-                mutate(c.store.data_dir(), &c.project.vault_id, |vault| {
-                    vault.tasks.insert(number, Entry::new(task));
-                });
-                None
-            }
-            Err(error) => Some(format!(
-                "Hive tasks: task #{number} could not be fetched: {error}"
-            )),
+    background::submit_once(caller, &key, move || match show_cached(&c.link(), number) {
+        Ok(read) if read.stale.is_some() => None,
+        Ok(read) => {
+            mutate(c.store.data_dir(), &c.project.vault_id, |vault| {
+                vault.tasks.insert(number, Entry::new(read.value.task));
+            });
+            None
         }
+        Err(error) => Some(format!(
+            "Hive tasks: task #{number} could not be fetched: {error}"
+        )),
     });
     Ok(answer)
 }
@@ -202,12 +212,12 @@ pub(super) fn open_tasks(c: Connected) -> Option<String> {
         .and_then(|mut vault| vault.lists.remove(&query));
     let answer = match &entry {
         Some(entry) if entry.fresh(Utc::now()) => {
-            return (!entry.value.tasks.is_empty()).then(|| render_list(&entry.value, 5));
+            return (!entry.value.list.tasks.is_empty()).then(|| render_listing(&entry.value, 5));
         }
-        Some(entry) if entry.value.tasks.is_empty() => None,
+        Some(entry) if entry.value.list.tasks.is_empty() => None,
         Some(entry) => Some(format!(
             "{}{}",
-            render_list(&entry.value, 5),
+            render_listing(&entry.value, 5),
             stale_note(entry.at)
         )),
         None => Some(
@@ -217,6 +227,34 @@ pub(super) fn open_tasks(c: Connected) -> Option<String> {
     };
     refresh_list(c, query, filter, None);
     answer
+}
+
+/// Fetch the task lists a session reads first (all, and open) for the
+/// checkout at `project_root` into the cache, in the caller's thread: the
+/// daemon's background sync keeps them warm, so a fresh session answers at
+/// once from them (with their age) instead of "being fetched". A list the
+/// Instance fetched less than [`super::reads::READ_TTL`] ago is not asked
+/// again. `Ok(false)` when tasks do not apply there (no right, not
+/// shared): nothing fetched.
+pub fn warm(project_root: &Path) -> Result<bool, HiveError> {
+    let Ok(c) = connected(project_root, HiveRight::TasksRead) else {
+        return Ok(false);
+    };
+    let open = ListFilter {
+        state: Some(TaskState::Open),
+        ..ListFilter::default()
+    };
+    for filter in [ListFilter::default(), open] {
+        let query = filter.query()?;
+        let read = list_cached(&c.link(), &filter)?;
+        if read.stale.is_some() {
+            continue;
+        }
+        mutate(c.store.data_dir(), &c.project.vault_id, |vault| {
+            vault.lists.insert(query, Entry::new(read.value));
+        });
+    }
+    Ok(true)
 }
 
 /// Queue the change `job` (`what` names it, e.g. "claim of task #4") for
@@ -250,6 +288,7 @@ pub fn queue(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lean_ctx_protocol::hive::tasks::TaskListV1;
 
     #[test]
     fn an_entry_is_fresh_until_it_ages_or_a_change_outdates_it() {
@@ -269,14 +308,23 @@ mod tests {
             "vault_id": "vlt_a", "tasks": []
         }))
         .unwrap();
+        // A list cached before 3.12.3 (no `partial`) reads as whole.
+        let before: TaskListing = serde_json::from_value(serde_json::to_value(&list).unwrap())
+            .expect("an older cached list reads");
+        assert!(!before.partial);
         mutate(dir.path(), "vlt_a", |vault| {
-            vault
-                .lists
-                .insert("?state=open".into(), Entry::new(list.clone()));
+            vault.lists.insert(
+                "?state=open".into(),
+                Entry::new(TaskListing {
+                    list: list.clone(),
+                    partial: false,
+                }),
+            );
         });
         let cached = load(dir.path());
         let entry = &cached.vaults["vlt_a"].lists["?state=open"];
-        assert_eq!(entry.value, list);
+        assert_eq!(entry.value.list, list);
+        assert!(!entry.value.partial);
         assert!(entry.fresh(Utc::now()));
         assert!(!cached.vaults.contains_key("vlt_b"));
         outdate(dir.path(), "vlt_a");

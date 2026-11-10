@@ -151,10 +151,18 @@ pub fn classify_service_cmdline(command: &str) -> Option<ServiceKind> {
     let has = |flag: &str| args.iter().any(|a| a == flag);
     match args.first()?.as_str() {
         "serve" => {
-            // `serve --stop/--status/--daemon` are one-shot CLI calls.
-            if ["--stop", "--status", "--daemon", "-d", "--help", "-h"]
-                .iter()
-                .any(|f| has(f))
+            // `serve --stop/--status/--daemon/--print-socket` are one-shot CLI calls.
+            if [
+                "--stop",
+                "--status",
+                "--daemon",
+                "-d",
+                "--print-socket",
+                "--help",
+                "-h",
+            ]
+            .iter()
+            .any(|f| has(f))
             {
                 None
             } else if has("--_foreground-daemon") {

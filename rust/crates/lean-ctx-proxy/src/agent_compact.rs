@@ -37,10 +37,16 @@ fn is_plain_user(msg: &Value) -> bool {
     msg.get("role").and_then(|r| r.as_str()) == Some("user") && !has_tool_result(msg)
 }
 
-/// Apply the active directive to `parsed`. Returns tokens saved (0 when no
+/// Apply the directive of app session `session` to `parsed`. Returns tokens
+/// saved (0 when the request names no session, the session has no
 /// directive, wrong shape, or any safety guard declines — never an error).
-pub(crate) fn apply(parsed: &mut Value) -> usize {
-    let Some(mut directive) = compact_directive::load_active() else {
+/// A directive belongs to the session that armed it; a request without a
+/// valid session id is nobody's and is never compacted (fail closed).
+pub(crate) fn apply(parsed: &mut Value, session: Option<&str>) -> usize {
+    let Some(session) = session else {
+        return 0;
+    };
+    let Some(mut directive) = compact_directive::load_active(session) else {
         return 0;
     };
     let Some(messages) = parsed.get_mut("messages").and_then(|m| m.as_array_mut()) else {
@@ -113,7 +119,7 @@ pub(crate) fn apply(parsed: &mut Value) -> usize {
         directive.original_handle = super::ccr::persist_conversation(&span_serialized);
         // Best-effort: a failed save only costs boundary stability on the
         // next request, never correctness.
-        let _ = compact_directive::save(&directive);
+        let _ = compact_directive::save(session, &directive);
     }
 
     let restore_hint = directive
@@ -167,10 +173,16 @@ mod tests {
         json!({"model": "claude-x", "messages": messages})
     }
 
+    const SESSION: &str = "agent-compact-test";
+
     fn seeded_directive(keep: usize) {
-        lean_ctx::core::compact_directive::clear();
-        lean_ctx::core::compact_directive::create(keep, "SUMMARY: all findings kept.".into())
-            .expect("directive");
+        lean_ctx::core::compact_directive::clear(SESSION);
+        lean_ctx::core::compact_directive::create(
+            SESSION,
+            keep,
+            "SUMMARY: all findings kept.".into(),
+        )
+        .expect("directive");
     }
 
     #[test]
@@ -188,7 +200,7 @@ mod tests {
         msgs.push(plain_user("turn 3 (latest)"));
 
         let mut first = body(&msgs);
-        let saved = apply(&mut first);
+        let saved = apply(&mut first, Some(SESSION));
         assert!(saved > 0, "compaction must save tokens");
         let compacted = first["messages"].as_array().unwrap();
         assert!(
@@ -209,16 +221,23 @@ mod tests {
         let mut grown = msgs.clone();
         grown.push(plain_user("turn 4 (new)"));
         let mut second = body(&grown);
-        apply(&mut second);
+        apply(&mut second, Some(SESSION));
         assert_eq!(
             first["messages"][0], second["messages"][0],
             "stub byte-stable across requests"
         );
 
         // Restore = clear; the untouched original history flows again.
-        assert!(lean_ctx::core::compact_directive::clear());
+        // Another session, or no session at all, never gets the directive.
+        for other in [Some("another-session"), None] {
+            let mut foreign = body(&msgs);
+            assert_eq!(apply(&mut foreign, other), 0, "{other:?}");
+            assert_eq!(foreign, body(&msgs), "{other:?}: untouched");
+        }
+
+        assert!(lean_ctx::core::compact_directive::clear(SESSION));
         let mut third = body(&msgs);
-        assert_eq!(apply(&mut third), 0);
+        assert_eq!(apply(&mut third, Some(SESSION)), 0);
         assert!(third["messages"][0]["content"].is_string());
     }
 
@@ -230,7 +249,7 @@ mod tests {
         // Span smaller than the minimum → no-op.
         seeded_directive(1);
         let mut tiny = body(&[plain_user("a"), plain_user("b")]);
-        assert_eq!(apply(&mut tiny), 0);
+        assert_eq!(apply(&mut tiny, Some(SESSION)), 0);
 
         // OpenAI shape (tool role) → no-op.
         seeded_directive(1);
@@ -240,7 +259,7 @@ mod tests {
             plain_user("next"),
             plain_user("latest"),
         ]);
-        assert_eq!(apply(&mut openai), 0);
+        assert_eq!(apply(&mut openai, Some(SESSION)), 0);
 
         // First live message carries a tool_result (pair reaches into the
         // cached prefix) → no-op.
@@ -253,7 +272,7 @@ mod tests {
             plain_user("c"),
         ]);
         // cached prefix ends at index 1; messages[1] is a tool_result.
-        assert_eq!(apply(&mut torn), 0);
-        lean_ctx::core::compact_directive::clear();
+        assert_eq!(apply(&mut torn, Some(SESSION)), 0);
+        lean_ctx::core::compact_directive::clear(SESSION);
     }
 }

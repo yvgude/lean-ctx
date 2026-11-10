@@ -38,6 +38,10 @@ impl KnowledgeNodeRef {
     }
 }
 
+/// The kinds this store writes. Every released reader of `relations.json`
+/// deserializes the kind strictly, so a new kind is added only once the
+/// oldest supported reader parses it; kinds a newer writer stored are kept
+/// as written (see [`KnowledgeRelationGraph::load`]).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum KnowledgeEdgeKind {
@@ -105,6 +109,15 @@ pub struct KnowledgeRelationGraph {
     /// Skipping it preserves the existing relations.json format.
     #[serde(skip)]
     pub(crate) edge_positions: BTreeMap<String, Vec<usize>>,
+    /// Edges this build cannot read (a kind or shape a newer writer stored),
+    /// kept as written and saved back unchanged, so no reader drops what it
+    /// does not understand.
+    #[serde(skip)]
+    foreign_edges: Vec<serde_json::Value>,
+    /// The file exists but does not parse: [`Self::save`] refuses, so a
+    /// writer never replaces relations it could not read with an empty set.
+    #[serde(skip)]
+    unreadable: bool,
 }
 
 impl Default for KnowledgeRelationGraph {
@@ -114,6 +127,8 @@ impl Default for KnowledgeRelationGraph {
             edges: Vec::new(),
             updated_at: Utc::now(),
             edge_positions: BTreeMap::new(),
+            foreign_edges: Vec::new(),
+            unreadable: false,
         }
     }
 }
@@ -125,6 +140,8 @@ impl KnowledgeRelationGraph {
             edges: Vec::new(),
             updated_at: Utc::now(),
             edge_positions: BTreeMap::new(),
+            foreign_edges: Vec::new(),
+            unreadable: false,
         }
     }
 
@@ -136,18 +153,59 @@ impl KnowledgeRelationGraph {
     }
 
     pub fn load(project_hash: &str) -> Option<Self> {
-        let path = Self::path(project_hash).ok()?;
-        let content = std::fs::read_to_string(&path).ok()?;
-        let mut g = serde_json::from_str::<Self>(&content).ok()?;
+        Self::load_checked(project_hash).ok().flatten()
+    }
+
+    /// `Ok(None)` when there is no file, `Err` when it exists but cannot be
+    /// read or parsed.
+    fn load_checked(project_hash: &str) -> Result<Option<Self>, String> {
+        let path = Self::path(project_hash)?;
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(format!("{}: {e}", path.display())),
+        };
+        let mut g = Self::from_json(&content)
+            .ok_or_else(|| format!("{} does not parse", path.display()))?;
         if g.project_hash.trim().is_empty() {
             g.project_hash = project_hash.to_string();
         }
         g.rebuild_index();
+        Ok(Some(g))
+    }
+
+    /// Parse a stored graph edge by edge: an edge this build cannot read is
+    /// kept in [`Self::foreign_edges`] instead of failing the whole file.
+    fn from_json(content: &str) -> Option<Self> {
+        let mut doc: serde_json::Value = serde_json::from_str(content).ok()?;
+        let raw = doc.as_object_mut()?.remove("edges");
+        let mut g: Self = serde_json::from_value(doc).ok()?;
+        match raw {
+            None | Some(serde_json::Value::Null) => {}
+            Some(serde_json::Value::Array(raw)) => {
+                for edge in raw {
+                    match serde_json::from_value::<KnowledgeEdge>(edge.clone()) {
+                        Ok(edge) => g.edges.push(edge),
+                        Err(_) => g.foreign_edges.push(edge),
+                    }
+                }
+            }
+            Some(_) => return None,
+        }
         Some(g)
     }
 
     pub fn load_or_create(project_hash: &str) -> Self {
-        Self::load(project_hash).unwrap_or_else(|| Self::new(project_hash))
+        match Self::load_checked(project_hash) {
+            Ok(Some(g)) => g,
+            Ok(None) => Self::new(project_hash),
+            Err(error) => {
+                tracing::warn!("[knowledge] relations not loaded, kept as they are: {error}");
+                let mut g = Self::new(project_hash);
+                g.unreadable = true;
+                g
+            }
+        }
     }
 
     /// Load, change and save the graph under the project's knowledge lock,
@@ -171,6 +229,12 @@ impl KnowledgeRelationGraph {
     }
 
     pub fn save(&mut self) -> Result<(), String> {
+        if self.unreadable {
+            return Err(
+                "relations.json could not be read; it is not overwritten (fix or remove it)"
+                    .to_string(),
+            );
+        }
         let path = Self::path(&self.project_hash)?;
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -191,7 +255,18 @@ impl KnowledgeRelationGraph {
         });
         self.rebuild_index();
 
-        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        let json = if self.foreign_edges.is_empty() {
+            serde_json::to_string_pretty(self)
+        } else {
+            // Foreign edges follow the readable ones, in the order they were read.
+            serde_json::to_value(&*self).and_then(|mut doc| {
+                if let Some(serde_json::Value::Array(edges)) = doc.get_mut("edges") {
+                    edges.extend(self.foreign_edges.iter().cloned());
+                }
+                serde_json::to_string_pretty(&doc)
+            })
+        }
+        .map_err(|e| e.to_string())?;
         // `load` treats an unparsable file as absent; a torn write must not
         // turn into an empty graph that the next save persists.
         crate::core::atomic_fs::try_atomic_write(&path, json.as_bytes(), None)
@@ -426,8 +501,11 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let root = project.path().to_string_lossy().into_owned();
         let hash = crate::core::project_hash::hash_project_root(&root);
+        // Six writers race as well as sixteen did, and stay inside the lock's
+        // 10 s wait on a loaded CI host (sixteen serialized fsyncs did not).
+        const WRITERS: usize = 6;
         std::thread::scope(|s| {
-            for i in 0..16 {
+            for i in 0..WRITERS {
                 let (root, hash) = (&root, &hash);
                 s.spawn(move || {
                     KnowledgeRelationGraph::mutate_locked(root, hash, |graph| {
@@ -446,7 +524,7 @@ mod tests {
         let graph = KnowledgeRelationGraph::load(&hash).expect("saved graph");
         assert_eq!(
             graph.edges.len(),
-            16,
+            WRITERS,
             "an edge was lost to a concurrent write"
         );
 
@@ -525,6 +603,90 @@ mod tests {
         let edge: KnowledgeEdge = serde_json::from_str(json).unwrap();
         assert!((edge.strength - 0.5).abs() < 0.01);
         assert!((edge.decay_rate - 0.02).abs() < 0.001);
+    }
+
+    /// A file holding an old-shape edge and an edge of a kind this build does
+    /// not know survives load → change → save: the old edge is read, the
+    /// unknown one is written back as it was, and a second save of the
+    /// same graph writes the same edges.
+    #[test]
+    fn unknown_kinds_survive_a_write() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let hash = crate::core::project_hash::hash_project_root(&root);
+        let future = serde_json::json!({
+            "from": {"category": "a", "key": "1"},
+            "to": {"category": "c", "key": "3"},
+            "kind": "answers",
+            "created_at": "2026-11-01T00:00:00Z",
+            "count": 2,
+            "source_session": "newer-build"
+        });
+        let doc = serde_json::json!({
+            "project_hash": hash,
+            "edges": [
+                {"from": {"category": "a", "key": "1"}, "to": {"category": "b", "key": "2"},
+                 "kind": "related_to", "created_at": "2024-01-01T00:00:00Z",
+                 "count": 1, "source_session": "s1"},
+                future
+            ],
+            "updated_at": "2024-01-01T00:00:00Z"
+        });
+        let path = KnowledgeRelationGraph::path(&hash).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, doc.to_string()).unwrap();
+
+        KnowledgeRelationGraph::mutate_locked(&root, &hash, |g| {
+            assert_eq!(g.edges.len(), 1, "the old-shape edge is read");
+            g.upsert_edge(
+                KnowledgeNodeRef::new("a", "1"),
+                KnowledgeNodeRef::new("d", "4"),
+                KnowledgeEdgeKind::DependsOn,
+                "s2",
+            );
+            Some(())
+        })
+        .expect("write");
+        let edges_on_disk = || -> Vec<serde_json::Value> {
+            let saved: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            saved["edges"].as_array().unwrap().clone()
+        };
+        let first = edges_on_disk();
+        assert_eq!(first.len(), 3);
+        assert_eq!(first.last(), Some(&future), "kept exactly as written");
+
+        let mut again = KnowledgeRelationGraph::load(&hash).unwrap();
+        again.save().unwrap();
+        assert_eq!(edges_on_disk(), first, "same graph, same edges on disk");
+    }
+
+    /// A file that does not parse is never replaced by an empty graph.
+    #[test]
+    fn an_unreadable_file_is_not_overwritten() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let hash = crate::core::project_hash::hash_project_root(&root);
+        let path = KnowledgeRelationGraph::path(&hash).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "{\"edges\": [ torn").unwrap();
+
+        let written = KnowledgeRelationGraph::mutate_locked(&root, &hash, |g| {
+            g.upsert_edge(
+                KnowledgeNodeRef::new("a", "1"),
+                KnowledgeNodeRef::new("b", "2"),
+                KnowledgeEdgeKind::DependsOn,
+                "s1",
+            );
+            Some(())
+        });
+        assert!(written.is_err(), "{written:?}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"edges\": [ torn"
+        );
     }
 
     #[test]

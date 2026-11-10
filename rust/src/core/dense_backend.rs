@@ -705,7 +705,11 @@ fn remote_row_snippet(
             chunk.file_path == row.source && chunk_digest(&chunk.content) == digest
         })?;
         return gate
-            .serves(&chunk.file_path, &chunk.content)
+            .serves_with(
+                &chunk.file_path,
+                &chunk.content,
+                chunk.input_origin.as_ref(),
+            )
             .then(|| chunk.content.lines().take(5).collect::<Vec<_>>().join("\n"));
     }
     let snippet = snippet_from_disk(root, row.source, row.start_line, row.end_line, 5);

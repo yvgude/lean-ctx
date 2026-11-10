@@ -1,0 +1,9 @@
+# Prompt format
+
+The model server expects this framing:
+
+```text
+{{IM_START}}system
+{{SYSTEM_LABEL}} you are a helpful assistant
+{{IM_END}}
+```

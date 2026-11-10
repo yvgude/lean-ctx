@@ -49,7 +49,7 @@ fn runtime_initialization_reports_storage_error_and_recovers() {
     child
         .args([
             "--exact",
-            "runtime_initialization_reports_storage_error_and_recovers",
+            "v4_context_runtime_init::runtime_initialization_reports_storage_error_and_recovers",
             "--nocapture",
         ])
         .env_clear()

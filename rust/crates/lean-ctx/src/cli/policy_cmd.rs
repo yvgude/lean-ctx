@@ -17,6 +17,10 @@ const PROJECT_PACK_PATH: &str = ".lean-ctx/policy.toml";
 /// Entry point dispatched from `cli::dispatch`.
 pub(crate) fn cmd_policy(args: &[String]) {
     match args.first().map(String::as_str) {
+        // Local Read v1: the project's effective policies with their source.
+        Some("list") if crate::cli::local_read::wants_json(args) => {
+            crate::cli::local_read::kinds::run("policies.list", &args[1..]);
+        }
         Some("list") => cmd_list(),
         Some("show") => cmd_show(&args[1..]),
         Some("validate") => cmd_validate(&args[1..]),

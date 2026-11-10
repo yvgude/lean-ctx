@@ -208,6 +208,22 @@ fn connect_status_disconnect_round_trip() {
         raw["drafts"],
         serde_json::json!({"queued": 0, "refused": 0})
     );
+    // Local Read v1 only on opt-in (docs/contracts/local-read-v1.md): the
+    // cockpit fields, plus the lease as a local reader sees it.
+    let local: serde_json::Value = serde_json::from_slice(
+        &machine
+            .run(&["status", "--json", "--contract", "local-read/1"])
+            .stdout,
+    )
+    .unwrap();
+    assert_eq!(local["contract"], "local-read/1");
+    assert_eq!(local["kind"], "hive.status");
+    assert_eq!(local["connected"], true);
+    assert_eq!(local["plan"], "team");
+    assert_eq!(local["lease_state"], "valid");
+    assert!(local["lease_valid_until"].is_string());
+    assert!(local["rights"].as_array().is_some_and(|r| !r.is_empty()));
+    assert_eq!(local["trial_ends_at"], serde_json::Value::Null);
 
     let human = text(&machine.run(&["status"]).stdout);
     assert!(human.contains("Lease:        valid until"), "{human}");
@@ -1528,14 +1544,15 @@ fn project_tasks_are_listed_opened_once_and_claimed_only_under_the_optin() {
             ],
         )
     };
-    assert!(propose("Stabilise the timer test").status.success());
-    let sync = machine.run_in(&project, &["hive", "sync"]);
+    // A linked repo's proposal goes out at once, not with the next sync (#280).
+    let proposed = propose("Stabilise the timer test");
+    assert!(proposed.status.success(), "{proposed:?}");
     assert!(
-        text(&sync.stdout).contains(&format!(
+        text(&proposed.stdout).contains(&format!(
             "Created task #{}, open now (any agent may claim it).",
             number + 1
         )),
-        "{sync:?}"
+        "{proposed:?}"
     );
     // The same proposal again is the same task (idempotency key).
     assert!(propose("Stabilise the timer test").status.success());
@@ -1563,8 +1580,18 @@ struct McpSession {
 
 impl McpSession {
     fn start(machine: &Machine, dir: &Path) -> Self {
+        Self::start_in_app_session(machine, dir, None)
+    }
+
+    /// As [`Self::start`], launched by the app as its session `app_session`
+    /// (`LEAN_CTX_SESSION_ID`).
+    fn start_in_app_session(machine: &Machine, dir: &Path, app_session: Option<&str>) -> Self {
         let home = machine.home.path();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+        if let Some(app_session) = app_session {
+            command.env("LEAN_CTX_SESSION_ID", app_session);
+        }
+        let mut child = command
             .current_dir(dir)
             .env("LEAN_CTX_HIVE_PREVIEW", "1")
             .env("HOME", home)
@@ -1655,7 +1682,17 @@ fn an_agent_registered_after_the_relay_connected_is_announced_and_can_send() {
     wait_for("the relay's first hello", || !fake.bus_hellos().is_empty());
     let sessions = fake.bus_sessions();
 
-    let mut host = McpSession::start(&machine, &project);
+    // HN0: of this Instance's agents only the Queen the app registered
+    // speaks on the vault bus; the late agent is that Queen session.
+    const QUEEN_SESSION: &str = "app-session-late-queen";
+    lean_ctx_hive::queens::register_in(
+        &home.join("data"),
+        QUEEN_SESSION,
+        Some("Late"),
+        "2026-11-09T00:00:00Z",
+    )
+    .unwrap();
+    let mut host = McpSession::start_in_app_session(&machine, &project, Some(QUEEN_SESSION));
     let registered = host.call(
         "ctx_agent",
         &serde_json::json!({"action": "register", "agent_type": "claude", "role": "late"}),
@@ -1674,7 +1711,12 @@ fn an_agent_registered_after_the_relay_connected_is_announced_and_can_send() {
         fake.bus_hellos().last().and_then(|(_, presence)| {
             presence
                 .iter()
-                .find(|p| p["role"] == "late")
+                // An app session's worker role carries its session suffix.
+                .find(|p| {
+                    p["role"]
+                        .as_str()
+                        .is_some_and(|r| r == "late" || r.starts_with("late-"))
+                })
                 .and_then(|p| p["worker_id"].as_str().map(str::to_string))
         })
     };
@@ -1695,6 +1737,139 @@ fn an_agent_registered_after_the_relay_connected_is_announced_and_can_send() {
     );
     relay.kill().ok();
     relay.wait().ok();
+}
+
+/// #252: a remote worker's role-gated claim was refused "[check: presence]"
+/// although the worker was active on the local bus, and `hive bus relay`
+/// printed nothing. Hive keeps a worker present only while the relay that
+/// announced it is connected. Here the relay prints whom it announced (and
+/// why another agent is not on a bus), the worker is present on the vault
+/// address in its role, its claim of a role-gated task succeeds while the
+/// relay runs, and once the relay is gone a claim is refused again.
+#[test]
+fn the_relay_announces_a_remote_worker_so_its_role_gated_claim_succeeds() {
+    use lean_ctx_protocol::hive::lease::HiveRight;
+    let mut rights = FakeOptions::default().rights;
+    rights.extend([HiveRight::TasksRead, HiveRight::TasksWork]);
+    let fake = FakeHive::start_with(FakeOptions {
+        rights,
+        instance_card: true,
+        ..FakeOptions::default()
+    });
+    let machine = Machine::new();
+    assert!(machine.connect(&fake).status.success());
+    let project = git_project(&machine, "remote", "git@github.com:acme/remote.git");
+    assert!(machine.run_in(&project, &["hive", "sync"]).status.success());
+    let home = machine.home.path().to_path_buf();
+    let address = vault_address(&home);
+    let project_id = fake.project_ids().pop().expect("project resolved");
+    let first = fake.add_task(&project_id, "Run the E2E", "Both instances pass");
+    let second = fake.add_task(&project_id, "Run it again", "Both pass again");
+    fake.set_task_role(&project_id, first, "tester");
+    fake.set_task_role(&project_id, second, "tester");
+    let mut optin: serde_json::Value = serde_json::from_str(include_str!(
+        "../../crates/lean-ctx-protocol/tests/fixtures/hive/instance_optin.response.json"
+    ))
+    .unwrap();
+    optin["vaults"] = serde_json::json!([project_id]);
+    optin["used_today"]["day"] =
+        serde_json::json!(chrono::Utc::now().format("%Y-%m-%d").to_string());
+    fake.set_optin(optin);
+
+    let mut tester = McpSession::start(&machine, &project);
+    let registered = tester.call(
+        "ctx_agent",
+        &serde_json::json!({"action": "register", "agent_type": "claude", "role": "tester"}),
+    );
+    let agent = registered
+        .split("Agent registered: ")
+        .nth(1)
+        .and_then(|rest| rest.split(' ').next())
+        .unwrap_or_else(|| panic!("an agent id in {registered}"))
+        .to_string();
+    // An agent in a checkout no vault is linked to: active, but on no bus.
+    let loose = home.join("loose");
+    std::fs::create_dir_all(&loose).unwrap();
+    let mut stray = McpSession::start(&machine, &loose);
+    let stray_said = stray.call(
+        "ctx_agent",
+        &serde_json::json!({"action": "register", "agent_type": "claude", "role": "stray"}),
+    );
+    assert!(stray_said.contains("Agent registered"), "{stray_said}");
+
+    let claim = |number: u64| {
+        machine.run_in(
+            &project,
+            &[
+                "hive",
+                "tasks",
+                "claim",
+                &number.to_string(),
+                "--agent",
+                &agent,
+            ],
+        )
+    };
+    // Before any relay: not present, refused with the presence check.
+    let before = claim(first);
+    assert_eq!(before.status.code(), Some(1), "{before:?}");
+    assert!(
+        text(&before.stderr).contains("[check: presence]"),
+        "{before:?}"
+    );
+
+    let relay = relay_command(&home, "12")
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let present = || {
+        fake.bus_presence()
+            .iter()
+            .any(|((to, _), (_, role))| to == &address && role == "tester")
+    };
+    wait_for("the tester present on the vault address", present);
+    let granted = claim(first);
+    assert!(granted.status.success(), "{granted:?}");
+    assert!(
+        text(&granted.stdout).starts_with(&format!("Claimed task #{first} until ")),
+        "{granted:?}"
+    );
+
+    let output = relay.wait_with_output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let said = text(&output.stdout);
+    assert!(
+        said.contains(&format!(
+            "bus relay: connected to Hive; announced on {address}:"
+        )),
+        "the relay says where it announced: {said}"
+    );
+    let worker_line = said
+        .lines()
+        .find(|line| line.contains(&format!("(agent {agent} in ")))
+        .unwrap_or_else(|| panic!("a line for {agent}: {said}"));
+    assert!(
+        worker_line.trim_start().starts_with("wkr_") && worker_line.contains("· tester ·"),
+        "{worker_line}"
+    );
+    assert!(
+        said.lines().any(|line| line.contains("stray")
+            && line.contains("not on a bus: its checkout is not linked to a Hive vault")),
+        "the relay says why the stray agent is on no bus: {said}"
+    );
+    assert!(
+        said.contains("Hive keeps a worker on the bus only while a relay is connected"),
+        "{said}"
+    );
+
+    // The relay is gone: so is the presence, and the next claim is refused.
+    wait_for("the presence dropped", || !present());
+    let after = claim(second);
+    assert_eq!(after.status.code(), Some(1), "{after:?}");
+    assert!(
+        text(&after.stderr).contains("[check: presence]"),
+        "{after:?}"
+    );
 }
 
 /// 24.10. prod deploy: after a Hive restart every presence was gone until

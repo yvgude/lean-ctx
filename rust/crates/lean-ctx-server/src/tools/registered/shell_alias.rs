@@ -23,6 +23,10 @@ impl McpTool for ShellAliasTool {
         "shell"
     }
 
+    fn rights_name(&self) -> &'static str {
+        "ctx_shell"
+    }
+
     fn tool_def(&self) -> Tool {
         tool_def(
             "shell",
@@ -66,7 +70,7 @@ impl McpTool for ShellAliasTool {
         // would answer for a directory the command may never run in, and a
         // second copy of the rule is a second answer waiting to drift from the
         // first. The delegate refuses, with its own message, before executing.
-        if let Err(msg) = lean_ctx::core::shell_allowlist::check_shell_allowlist(&command) {
+        if let Err(msg) = lean_ctx_shell_policy::check_shell_allowlist(&command) {
             return Ok(ToolOutput::simple(msg.to_string()));
         }
 

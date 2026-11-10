@@ -10,9 +10,9 @@ use crate::transport::HiveClient;
 use lean_ctx_protocol::ValidationError;
 use lean_ctx_protocol::hive::tasks::{
     TASK_ACK_SCHEMA, TASK_CLAIM_ACK_SCHEMA, TaskAckV1, TaskClaimAckV1, TaskClaimRenewRequestV1,
-    TaskClaimRequestV1, TaskListV1, TaskProposeRequestV1, TaskReleaseRequestV1,
-    TaskResultRequestV1, TaskState, TaskUpdateRequestV1, TaskV1, TaskVerifyRequestV1,
-    validate_role,
+    TaskClaimRequestV1, TaskFieldsRequestV1, TaskListV1, TaskPriority, TaskProposeRequestV1,
+    TaskReleaseRequestV1, TaskResultRequestV1, TaskState, TaskUpdateRequestV1, TaskV1,
+    TaskVerifyRequestV1, validate_role,
 };
 
 /// `GET …/tasks` filters.
@@ -21,6 +21,8 @@ pub struct ListFilter {
     pub state: Option<TaskState>,
     pub role: Option<String>,
     pub mine: bool,
+    /// Hive's `priority=` filter: only the tasks of this priority.
+    pub priority: Option<TaskPriority>,
 }
 
 impl ListFilter {
@@ -41,6 +43,10 @@ impl ListFilter {
         }
         if self.mine {
             parts.push("mine=true".into());
+        }
+        if let Some(priority) = self.priority {
+            let word = super::fields::priority_word(Some(priority));
+            parts.push(format!("priority={word}"));
         }
         Ok(if parts.is_empty() {
             String::new()
@@ -203,6 +209,27 @@ impl TasksApi<'_> {
             &encode(request)?,
             idempotency_key,
         )?;
+        self.ack(answer, Some(number))
+    }
+
+    /// C0 2.2 E47 `PATCH …/{number}`: priority and labels at
+    /// `base_version` (`409 stale_base` when another write came first).
+    pub(super) fn fields(
+        &self,
+        number: u64,
+        request: &TaskFieldsRequestV1,
+    ) -> Result<TaskAckV1, HiveError> {
+        request.validate().map_err(|e| invalid(&e))?;
+        let answer = self
+            .client
+            .send(
+                "PATCH",
+                &self.path(&format!("/{number}")),
+                Some(&encode(request)?),
+                &[],
+                lean_ctx_protocol::hive::MAX_BODY_BYTES,
+            )?
+            .body;
         self.ack(answer, Some(number))
     }
 }

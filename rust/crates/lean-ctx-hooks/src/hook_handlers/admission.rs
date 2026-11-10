@@ -80,7 +80,12 @@ pub(super) fn admit_payload(input: &str) -> PayloadAdmission {
 /// Restricted content is never persisted, and every derivation of a hook
 /// payload is a persisted artefact.
 fn admit_storable(text: &str) -> Result<String, Withheld> {
-    let admission = admit_carrier_text(text)?;
+    // A hook payload is the host's text about a tool call — commands,
+    // fetched content, foreign output — of no class the hook can prove.
+    let admission = admit_carrier_text(
+        text,
+        &lean_ctx::core::context_admission::origin::SourceClass::Unclassified { tool: "hook" },
+    )?;
     if admission.storable {
         Ok(admission.text)
     } else {

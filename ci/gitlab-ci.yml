@@ -3,9 +3,29 @@
 # GitHub Actions remains the public release CI authority.
 
 workflow:
+  # A new commit on an MR branch (rebase worker push) cancels the superseded
+  # pipeline, including running interruptible jobs.
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
+    # CI_LANE_TAG picks the project's runner lane (see `variables` below):
+    # merge trains test what lands, so they take the main lane; every other
+    # merge request pipeline takes the MR lane.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"'
+      variables:
+        CI_LANE_TAG: lane-p5-main
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      variables:
+        CI_LANE_TAG: lane-p5-mr
+    # Post-merge pipelines: merges land as pushed merge commits, so the
+    # combined result is only tested here. Every merge keeps its own verdict,
+    # so a later push never cancels the previous post-merge run.
+    - if: '$CI_COMMIT_BRANCH =~ /^integration\//'
+      auto_cancel:
+        on_new_commit: none
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      auto_cancel:
+        on_new_commit: none
     - when: never
 
 stages:
@@ -19,7 +39,31 @@ include:
           - ee/ci/scope-register.yml
 
 variables:
+  # Per-project runner lane for the heavy jobs (owner 10.11.): lane-p5-main
+  # for integration/*, default-branch and merge-train pipelines, lane-p5-mr
+  # for merge requests (workflow rules above). The lane runners take only
+  # their own tag; the light jobs stay on `light`.
+  CI_LANE_TAG: lane-p5-main
+  # Checkout (measured 09.11. over 20 green pipelines: get_sources median
+  # 2-6 s per job, of which the fetch itself is under 1 s). The runner keeps
+  # one clone per concurrent slot in a persistent volume and only fetches new
+  # objects into it; spelled out here so a runner or project default cannot
+  # turn it into a fresh clone per job.
+  GIT_STRATEGY: fetch
+  # Full history on purpose. v4-provenance (history-policy-gate, rev-list
+  # --all) and scope-register (fixed baseline commit) refuse a shallow clone,
+  # and mr-quick diffs against the MR base. All jobs of a slot share the one
+  # clone, so a shallow job would make the next full-history job deepen it
+  # again, which costs more than the fetch of new objects it saves.
   GIT_DEPTH: "0"
+  # No submodules in this repository; skip the submodule pass explicitly.
+  GIT_SUBMODULE_STRATEGY: none
+  # The runner default, spelled out: every job removes untracked and ignored
+  # files, including rust/target/ (restored crates, owned by the previous
+  # job's user). The Rust jobs rely on starting from that clean state: a
+  # cached tree left by an untrusted MR job must never reach the post-merge
+  # run that writes the shared compiler cache. Do not add -e exclusions.
+  GIT_CLEAN_FLAGS: -ffdx
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 # IP09: an agent checkout without the reviewed IP-governance skill and root rule
@@ -30,7 +74,11 @@ variables:
 ip-boundary-skill-installed:
   stage: verify
   image: python:3.12-slim
+  # Python only: run on the small runner (2 CPU / 4 GB slots), so the job does
+  # not queue behind Rust builds for a 12-CPU slot.
+  tags: [light]
   timeout: 5 minutes
+  interruptible: true
   rules:
     - if: '$CI_PROJECT_PATH == "root/lean-ctx"'
   script:
@@ -53,53 +101,133 @@ ip-boundary-skill-installed:
       done
       echo "tampered skill refused: PASS"
 
-# The provenance job does not execute Rust. Keep this non-optional gate on
-# every eligible pipeline so a green private integration MR also has runtime
-# evidence. This is not a replacement for product E2E or release approval.
+# Full Rust validation, post-merge only (owner 08.11.: merge fast, test the
+# combined result). Merge requests get the fast `mr-quick` gate below; this
+# job runs on every integration/* and default-branch push and is the only
+# writer of the shared build cache. A red run is fixed forward at once.
+# This is not a replacement for product E2E or release approval.
 v4-runtime:
   stage: verify
-  image: rust:1.99.1-bookworm
+  # Prebuilt on the runner host (ci/images/rust/build.sh; the tag hashes its
+  # inputs): the apt packages, stable with clippy/rustfmt, sccache. The
+  # registry is disabled, so the image is only ever local.
+  image:
+    name: lean-ctx-ci-rust:65e3bbf776c5
+    pull_policy: if-not-present
+  # The project's lane runner (CI_LANE_TAG above); mr-quick and mr-lint
+  # inherit it.
+  tags: ["$CI_LANE_TAG"]
   timeout: 3 hours
-  resource_group: v4-rust-validation
+  interruptible: true
+  # Start only after the fast provenance gate passed: a red provenance makes
+  # the pipeline fail anyway.
+  needs:
+    - job: v4-provenance
+      artifacts: false
+  # One run per branch at a time. Pushes that land while a run is going wait
+  # here; once admitted, a run whose commit is no longer the branch tip stops
+  # as "superseded" (see before_script), so only the newest commit is tested.
+  resource_group: v4-rust-$CI_COMMIT_REF_SLUG
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^integration\// || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  # Exit 75 is used only by the superseded check and shows as a warning, not
+  # as a pass: that commit's content is tested by the newer run.
+  allow_failure:
+    exit_codes:
+      - 75
+  # Compiled output is no longer zipped (owner 08.11.: extracting and
+  # re-archiving rust/target/debug on every job saturated the host disk).
+  # Compilations come from sccache on a host directory instead (see
+  # before_script); this zip cache keeps only the downloaded crates and git
+  # dependencies, without their unpacked sources.
   cache:
-    key:
-      prefix: "v4-cargo-${CI_PROJECT_ID}-${CI_COMMIT_REF_SLUG}-${CI_JOB_NAME}-runner${CI_RUNNER_ID}"
-      files:
-        - rust/Cargo.lock
-    paths:
-      - rust/target/debug/
-      - rust/target/ci-cargo-home/registry/
-      - rust/target/ci-cargo-home/git/
-    policy: pull-push
-    # A failed test must not discard an expensive successful compilation.
-    when: always
+    # Keyed on the lockfile and image only (MinIO is shared, so no ref slug
+    # or runner id). The job name is spelled out so `mr-quick` reads the same
+    # cache; MR jobs only pull, so MR branches never poison it.
+    - key:
+        prefix: "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-rust1.99.1"
+        files:
+          - rust/Cargo.lock
+      # A Cargo.lock change starts from the latest post-merge download.
+      fallback_keys:
+        - "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-rust1.99.1-tip"
+      paths:
+        - rust/target/ci-cargo-home/registry/index/
+        - rust/target/ci-cargo-home/registry/cache/
+        - rust/target/ci-cargo-home/git/db/
+      policy: $V4_CACHE_POLICY
+      when: always
+    # The rolling fallback above, written only by this job.
+    - key: $V4_TIP_CACHE_KEY
+      paths:
+        - rust/target/ci-cargo-home/registry/index/
+        - rust/target/ci-cargo-home/registry/cache/
+        - rust/target/ci-cargo-home/git/db/
+      policy: $V4_TIP_CACHE_POLICY
+      when: always
   variables:
-    # A single optimized lib-test rustc used about 9 GiB in pipeline 5314.
-    # Serialize compilation within the 16-GiB cgroup; keep both full suites.
-    CARGO_BUILD_JOBS: "1"
+    V4_CACHE_POLICY: pull-push
+    V4_TIP_CACHE_KEY: "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-rust1.99.1-tip"
+    V4_TIP_CACHE_POLICY: push
+    # Only this post-merge job may add to the shared compiler cache; mr-quick
+    # sets `read`. Writing also needs a protected branch push (before_script).
+    V4_SCCACHE_MODE: write
+    # The runner mounts the host directory /srv/ci-cache/sccache (owned by
+    # uid 10999, the job's ci-runner) here. Without the mount, jobs compile
+    # uncached.
+    V4_SCCACHE_MOUNT: /sccache
+    SCCACHE_CACHE_SIZE: 60G
+    # The server lives as long as the job's container.
+    SCCACHE_IDLE_TIMEOUT: "0"
+    # sccache cannot cache incremental compilations.
+    CARGO_INCREMENTAL: "0"
+    # The runner gives each job a 12-CPU / 20-GiB cgroup (all jobs share the
+    # host's 24-CPU / 64-GiB CI slice); more jobs than CPUs gain nothing. The
+    # two ~9-GiB engine rustc (lib, lib test) dominate and fit side by side.
+    CARGO_BUILD_JOBS: "12"
     CARGO_PROFILE_DEV_DEBUG: line-tables-only
     CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    # opt-level 0 (CARGO_HOME config, before_script) uses more stack per frame than the
+    # opt-level 1 the tests ran at; give test threads the main thread's 8 MiB.
+    RUST_MIN_STACK: "8388608"
     PROPTEST_CASES: "64"
-    # Preserve ZIP compatibility; bound cache work within the four-CPU cgroup.
+    # Preserve ZIP compatibility; bound cache work within the job's cgroup.
     FF_USE_FASTZIP: "true"
     CACHE_COMPRESSION_LEVEL: "fast"
-    FASTZIP_ARCHIVER_CONCURRENCY: "2"
-    FASTZIP_EXTRACTOR_CONCURRENCY: "2"
+    FASTZIP_ARCHIVER_CONCURRENCY: "3"
+    FASTZIP_EXTRACTOR_CONCURRENCY: "3"
   before_script:
-    - apt-get update -qq
-    - apt-get install -y --no-install-recommends git ca-certificates python3 cmake clang pkg-config libssl-dev mold nodejs npm passwd util-linux
-    # Match the existing GitHub stable-toolchain policy; record the resolved
-    # compiler version with the evidence rather than pretending it is pinned.
-    - rustup toolchain install stable --profile minimal --component clippy --component rustfmt
+    - |
+      # Branch runs only: a newer push to this branch makes this run redundant.
+      if test -n "${CI_COMMIT_BRANCH:-}"; then
+        tip="$(git ls-remote origin "refs/heads/$CI_COMMIT_BRANCH" | cut -f1)"
+        if test -n "$tip" && test "$tip" != "$CI_COMMIT_SHA"; then
+          echo "superseded: $CI_COMMIT_BRANCH is at $tip; that run tests this commit too" >&2
+          exit 75
+        fi
+      fi
+    # The image carries every tool; nothing is installed at job time. The
+    # resolved compiler version is recorded with the evidence.
+    - |
+      for ci_tool in git python3 cmake clang mold node npm useradd runuser mount mountpoint sccache cargo-clippy cargo-nextest rustfmt; do
+        command -v "$ci_tool" >/dev/null || { echo "CI image lacks $ci_tool" >&2; exit 1; }
+      done
     - |
       case "${CI_PROJECT_DIR:-}" in /builds/*) ;; *) echo "unexpected CI_PROJECT_DIR" >&2; exit 1;; esac
     - test "$(git -C "$CI_PROJECT_DIR" rev-parse --show-toplevel)" = "$CI_PROJECT_DIR"
     - if id ci-runner >/dev/null 2>&1; then echo "unexpected pre-existing ci-runner identity" >&2; exit 1; fi
-    - useradd --system --user-group --no-create-home --home-dir "$CI_PROJECT_DIR/rust/target/ci-home" --shell /bin/bash ci-runner
+    # HOME stays outside the checkout: the suites run in $CI_PROJECT_DIR/rust,
+    # and the shell allowlist rightly refuses git writes in a directory at or
+    # above lean-ctx's own state ($HOME/.config/lean-ctx).
+    - if test -e /home/ci-runner; then echo "unexpected pre-existing ci-runner home" >&2; exit 1; fi
+    # A fixed uid, so the host's compiler cache stays owned by this identity
+    # across jobs. It is no host user and not in the docker socket's group.
+    - useradd --system --uid 10999 --user-group --no-create-home --home-dir /home/ci-runner --shell /bin/bash ci-runner
+    - test "$(id -u ci-runner)" = 10999
     - test "$(id -u ci-runner)" -gt 0
     - test "$(id -g ci-runner)" -gt 0
     - |
-      test "$(getent passwd ci-runner | cut -d: -f6)" = "$CI_PROJECT_DIR/rust/target/ci-home"
+      test "$(getent passwd ci-runner | cut -d: -f6)" = /home/ci-runner
     - test -n "${RUSTUP_HOME:-}"
     - test -d "$RUSTUP_HOME/toolchains"
     - |
@@ -112,15 +240,57 @@ v4-runtime:
         \( -path "$CI_PROJECT_DIR/rust/target" -o -path "$CI_PROJECT_DIR/runtime-evidence" \) -prune -o \
         \( -type d -o -type f \) -exec chmod go-w {} +
     - install -d -m 0755 -o ci-runner -g ci-runner "$CI_PROJECT_DIR/rust/target" "$CI_PROJECT_DIR/runtime-evidence"
-    - install -d -m 0700 -o ci-runner -g ci-runner "$CI_PROJECT_DIR/rust/target/ci-home" "$CI_PROJECT_DIR/rust/target/ci-cargo-home"
+    - install -d -m 0700 -o ci-runner -g ci-runner /home/ci-runner "$CI_PROJECT_DIR/rust/target/ci-cargo-home"
+    # Linux-only profile overrides as CARGO_HOME config (config profiles take
+    # precedence over Cargo.toml). Cargo.toml builds the Engine and the binary
+    # package at opt-level 1 for Apple's compact-unwind limit (macOS linker
+    # only); on Linux that roughly triples their compile time (08.11.: Engine
+    # lib 133 s -> 47 s, lean-ctx lib 36 s -> 12 s, no cache), and their test
+    # harnesses never come from the cache. Root-owned, read-only.
+    - |
+      printf '%s\n' '[profile.dev.package.lean-ctx-engine]' 'opt-level = 0' '[profile.dev.package.lean-ctx]' 'opt-level = 0' \
+        > "$CI_PROJECT_DIR/rust/target/ci-cargo-home/config.toml"
+      chmod 0644 "$CI_PROJECT_DIR/rust/target/ci-cargo-home/config.toml"
     - |
       # Restored cache files belong to the helper user. Restrict ownership
       # changes to the validated output roots; never follow cached symlinks.
-      for ci_cache_path in "$CI_PROJECT_DIR/rust/target/debug" "$CI_PROJECT_DIR/rust/target/ci-cargo-home/registry" "$CI_PROJECT_DIR/rust/target/ci-cargo-home/git"; do
+      for ci_cache_path in "$CI_PROJECT_DIR/rust/target/ci-cargo-home/registry" "$CI_PROJECT_DIR/rust/target/ci-cargo-home/git"; do
         if test -d "$ci_cache_path"; then
           chown -hR -P -- ci-runner:ci-runner "$ci_cache_path"
         fi
       done
+    - |
+      # Compiler cache. sccache keys every entry by a hash of the compiler,
+      # its arguments, the environment and every input file, so a hit is the
+      # output those exact inputs produce. Only a protected post-merge push
+      # writes the host directory. Every other job sees it through a
+      # read-only remount under an overlay whose upper layer is a job-local
+      # tmpfs (sccache still updates file times on a hit; metacopy keeps that
+      # to metadata). Code run by the build as ci-runner therefore cannot
+      # change what a trusted run reads. A host directory that cannot be made
+      # read-only fails the job; a failed overlay means uncached.
+      unset RUSTC_WRAPPER SCCACHE_DIR SCCACHE_LOCAL_RW_MODE
+      ci_sccache="${V4_SCCACHE_MOUNT:-}"
+      if test -n "$ci_sccache" && test -d "$ci_sccache" && ! test -L "$ci_sccache" && mountpoint -q "$ci_sccache"; then
+        if test "${V4_SCCACHE_MODE:-}" = write && test "${CI_COMMIT_REF_PROTECTED:-}" = true && test "${CI_PIPELINE_SOURCE:-}" = push && test "$(stat -c %u "$ci_sccache")" = 10999; then
+          export SCCACHE_DIR="$ci_sccache" SCCACHE_LOCAL_RW_MODE=READ_WRITE RUSTC_WRAPPER=sccache
+        else
+          if ! mount -o remount,bind,ro "$ci_sccache"; then echo "sccache: cannot make $ci_sccache read-only" >&2; exit 1; fi
+          if runuser --user ci-runner -- touch "$ci_sccache/.ci-write-probe" 2>/dev/null; then echo "sccache: $ci_sccache is still writable" >&2; exit 1; fi
+          if install -d -m 0700 /run/ci-sccache-upper /run/ci-sccache \
+            && mount -t tmpfs -o size=1g,mode=0700 ci-sccache-upper /run/ci-sccache-upper \
+            && install -d -m 0700 -o ci-runner -g ci-runner /run/ci-sccache-upper/upper \
+            && install -d -m 0700 /run/ci-sccache-upper/work \
+            && mount -t overlay ci-sccache -o "lowerdir=$ci_sccache,upperdir=/run/ci-sccache-upper/upper,workdir=/run/ci-sccache-upper/work,metacopy=on" /run/ci-sccache; then
+            export SCCACHE_DIR=/run/ci-sccache SCCACHE_LOCAL_RW_MODE=READ_ONLY RUSTC_WRAPPER=sccache
+          else
+            echo "sccache: read-only overlay failed; compiling uncached" >&2
+          fi
+        fi
+      else
+        echo "sccache: no host cache mounted at ${ci_sccache:-<unset>}; compiling uncached" >&2
+      fi
+      echo "sccache: ${SCCACHE_DIR:-off} ${SCCACHE_LOCAL_RW_MODE:-}"
   script:
     - set -o pipefail
     - |
@@ -129,7 +299,8 @@ v4-runtime:
         # tempfile uses platform-default directory modes. Keep fixtures private
         # even when the runner inherits a group-writable checkout umask.
         umask 077
-        export HOME="$CI_PROJECT_DIR/rust/target/ci-home"
+        export HOME=/home/ci-runner
+        case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
         export CARGO_TARGET_DIR="$CI_PROJECT_DIR/rust/target"
         test "$(id -un)" = ci-runner
@@ -146,28 +317,202 @@ v4-runtime:
         git config --global --add safe.directory "$CI_PROJECT_DIR"
         git -C "$CI_PROJECT_DIR" rev-parse HEAD | tee "$CI_PROJECT_DIR/runtime-evidence/commit.txt"
         rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
+        echo "${SCCACHE_DIR:-off} ${SCCACHE_LOCAL_RW_MODE:-}" | tee "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"
         cd "$CI_PROJECT_DIR/rust"
         cargo +stable fmt --all --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/fmt.log"
         cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
-        # all-features includes the CLI no-jail opt-out; the normal shipping
-        # feature set needs its own security/functional run, not just that build.
-        mold -run cargo +stable test --locked --workspace --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests-default.log"
-        mold -run cargo +stable test --locked --workspace --all-features --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests-all-features.log"
+        # One test pass with every feature except no-jail (owner 08.11.: the
+        # second full pass doubled the run for little extra signal). no-jail
+        # compiles PathJail and its tests out, so it is type-checked by clippy
+        # above and never tested. The list comes from the same helper as the
+        # MR build, so both share one cache. The shipping (default) feature
+        # set must still compile on its own, which the type check below proves.
+        test_features="$(python3 -I "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --print-test-features)"
+        test -n "$test_features"
+        echo "$test_features" | tee "$CI_PROJECT_DIR/runtime-evidence/test-features.txt"
+        # cargo-nextest (owner 08.11.): one process per test on every CPU of
+        # the job, profile ci of rust/.config/nextest.toml (no retries, a test
+        # over 5 minutes fails, JUnit report). Every test still runs when one
+        # fails; the job fails after the doctests and the default-feature
+        # check have run too.
+        # The pz21 origin scan (lean-ctx-server --test input_check) judges the
+        # diff of this pipeline: the MR diff base, else the first parent.
+        INPUT_CHECK_COMMIT="$(git -C "$CI_PROJECT_DIR" rev-parse HEAD)"
+        INPUT_CHECK_SPEC_COMMIT="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$(git -C "$CI_PROJECT_DIR" rev-parse HEAD^1)}"
+        export INPUT_CHECK_COMMIT INPUT_CHECK_SPEC_COMMIT
+        nextest_rc=0
+        mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
+        if test -f "$CARGO_TARGET_DIR/nextest/ci/junit.xml"; then cp "$CARGO_TARGET_DIR/nextest/ci/junit.xml" "$CI_PROJECT_DIR/runtime-evidence/junit.xml"; fi
+        # nextest does not run doctests.
+        doc_rc=0
+        mold -run cargo +stable test --locked --doc --workspace --features "$test_features" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/doctests.log" || doc_rc=$?
+        cargo +stable check --locked --workspace --all-targets 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-default.log"
+        # Stopping the server flushes pending cache writes and prints its stats.
+        if test -n "${RUSTC_WRAPPER:-}"; then sccache --stop-server 2>&1 | tee -a "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"; fi
         GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
-      '
+        if test "$nextest_rc" != 0 || test "$doc_rc" != 0; then echo "tests failed: nextest exit $nextest_rc, doctests exit $doc_rc" >&2; exit 1; fi
+      ' || { rc=$?; if test "$rc" = 75; then echo "a check exited 75; reported as a failure, not as superseded" >&2; rc=1; fi; exit "$rc"; }
   artifacts:
     when: always
     expire_in: 30 days
     paths:
       - runtime-evidence/
+    # nextest's JUnit report (profile ci), shown in the MR and pipeline.
+    reports:
+      junit: runtime-evidence/junit.xml
+
+# Fast merge-request gate (owner 08.11., target <= 10 minutes on a warm cache):
+# format, the same clippy run as v4-runtime, a build of every workspace test
+# target (which type-checks all code), and then only the tests of the crates,
+# engine modules and test modules the MR changes, as one cargo-nextest
+# filterset over that build (scripts/ci/mr_quick.py, profile ci). It reuses the
+# post-merge build cache of v4-runtime with identical flags, so only changed
+# code compiles. The full suite runs after the merge.
+mr-quick:
+  extends: v4-runtime
+  timeout: 45 minutes
+  needs: []
+  # One run per merge request: a newer push to the same MR waits here (and
+  # auto_cancel stops the superseded run). Merge requests do not queue behind
+  # each other; the runner's concurrent limit bounds the host load (owner
+  # 08.11.: the IID-digit lanes piled four MRs on one lane while two idled).
+  resource_group: mr-quick-$CI_MERGE_REQUEST_IID
+  rules:
+    # Rust tests also read fixtures and contracts outside rust/ (docs/,
+    # tests/, packages/, kits/, product/, ...), so every such tree counts as
+    # an input. MRs that touch none of them skip this job.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        paths:
+          - "*"
+          - rust/**/*
+          - .cargo/**/*
+          - ci/**/*
+          - docs/**/*
+          - tests/**/*
+          - packages/**/*
+          - kits/**/*
+          - product/**/*
+          - scripts/**/*
+          - security/**/*
+          - skills/**/*
+          - integrations/**/*
+  allow_failure: false
+  variables:
+    V4_CACHE_POLICY: pull
+    # MR jobs read the tip only through fallback_keys; this key is never written.
+    V4_TIP_CACHE_KEY: "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-mr-no-tip"
+    V4_TIP_CACHE_POLICY: pull
+    # Hits from the post-merge compiler cache, never writes (before_script).
+    V4_SCCACHE_MODE: read
+  script:
+    - set -o pipefail
+    - |
+      runuser --user ci-runner --preserve-environment -- /bin/bash -c '
+        set -euo pipefail
+        umask 077
+        export HOME=/home/ci-runner
+        case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
+        export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
+        export CARGO_TARGET_DIR="$CI_PROJECT_DIR/rust/target"
+        test "$(id -un)" = ci-runner
+        test "$(id -u)" -gt 0
+        test "$(id -g)" -gt 0
+        id -u | tee "$CI_PROJECT_DIR/runtime-evidence/uid.txt"
+        writable_source="$(find "$CI_PROJECT_DIR" \
+          \( -path "$CI_PROJECT_DIR/rust/target" -o -path "$CI_PROJECT_DIR/runtime-evidence" \) -prune -o \
+          \( -type d -o -type f \) -writable -print -quit)"
+        if test -n "$writable_source"; then echo "CI source remains writable" >&2; exit 1; fi
+        git config --global --add safe.directory "$CI_PROJECT_DIR"
+        git -C "$CI_PROJECT_DIR" rev-parse HEAD | tee "$CI_PROJECT_DIR/runtime-evidence/commit.txt"
+        rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
+        echo "${SCCACHE_DIR:-off} ${SCCACHE_LOCAL_RW_MODE:-}" | tee "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"
+        cd "$CI_PROJECT_DIR/rust"
+        # The pz21 origin scan (lean-ctx-server --test input_check) judges the MR diff.
+        INPUT_CHECK_COMMIT="$(git -C "$CI_PROJECT_DIR" rev-parse HEAD)"
+        INPUT_CHECK_SPEC_COMMIT="$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+        export INPUT_CHECK_COMMIT INPUT_CHECK_SPEC_COMMIT
+        python3 -I -u "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --evidence "$CI_PROJECT_DIR/runtime-evidence" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/mr-quick.log"
+        # Stopping the server flushes pending cache writes and prints its stats.
+        if test -n "${RUSTC_WRAPPER:-}"; then sccache --stop-server 2>&1 | tee -a "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"; fi
+        GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
+      '
+
+# The lint half of the merge-request gate, in its own job beside mr-quick
+# (owner 08.11.: builds and merges first). Format and the same clippy run as
+# v4-runtime used to run before the test build and added 1.5-3 minutes to
+# every MR; in a separate job they overlap with it. Same paths as every v4
+# job, so the post-merge compiler cache applies; its own container keeps the
+# check build out of mr-quick's memory. Blocking like mr-quick.
+mr-lint:
+  extends: mr-quick
+  timeout: 30 minutes
+  resource_group: mr-lint-$CI_MERGE_REQUEST_IID
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - runtime-evidence/
+  script:
+    - set -o pipefail
+    - |
+      runuser --user ci-runner --preserve-environment -- /bin/bash -c '
+        set -euo pipefail
+        umask 077
+        export HOME=/home/ci-runner
+        case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
+        export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
+        export CARGO_TARGET_DIR="$CI_PROJECT_DIR/rust/target"
+        test "$(id -un)" = ci-runner
+        test "$(id -u)" -gt 0
+        test "$(id -g)" -gt 0
+        id -u | tee "$CI_PROJECT_DIR/runtime-evidence/uid.txt"
+        writable_source="$(find "$CI_PROJECT_DIR" \
+          \( -path "$CI_PROJECT_DIR/rust/target" -o -path "$CI_PROJECT_DIR/runtime-evidence" \) -prune -o \
+          \( -type d -o -type f \) -writable -print -quit)"
+        if test -n "$writable_source"; then echo "CI source remains writable" >&2; exit 1; fi
+        git config --global --add safe.directory "$CI_PROJECT_DIR"
+        git -C "$CI_PROJECT_DIR" rev-parse HEAD | tee "$CI_PROJECT_DIR/runtime-evidence/commit.txt"
+        rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
+        echo "${SCCACHE_DIR:-off} ${SCCACHE_LOCAL_RW_MODE:-}" | tee "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"
+        cd "$CI_PROJECT_DIR/rust"
+        cargo +stable fmt --all --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/fmt.log"
+        cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
+        # Stopping the server flushes pending cache writes and prints its stats.
+        if test -n "${RUSTC_WRAPPER:-}"; then sccache --stop-server 2>&1 | tee -a "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"; fi
+        GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
+      '
 
 v4-provenance:
   stage: verify
-  image: rust:1.99.1-bookworm
+  image:
+    name: lean-ctx-ci-rust:65e3bbf776c5
+    pull_policy: if-not-present
+  # Python checks plus `cargo fetch`, no compilation: small runner (see
+  # ip-boundary-skill-installed).
+  tags: [light]
   timeout: 15 minutes
+  interruptible: true
+  # `cargo fetch` below downloaded every crate from crates.io on each run
+  # (measured 09.11.: 7-11 s). Read the crates v4-runtime already keeps in the
+  # shared cache instead (same key, pull only, so this job never writes it);
+  # only crates missing from it are downloaded. git clean removes the
+  # directory again before the next job.
+  cache:
+    - key:
+        prefix: "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-rust1.99.1"
+        files:
+          - rust/Cargo.lock
+      fallback_keys:
+        - "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-rust1.99.1-tip"
+      paths:
+        - rust/target/ci-cargo-home/registry/index/
+        - rust/target/ci-cargo-home/registry/cache/
+        - rust/target/ci-cargo-home/git/db/
+      policy: pull
+  variables:
+    CARGO_HOME: "$CI_PROJECT_DIR/rust/target/ci-cargo-home"
   before_script:
-    - apt-get update -qq
-    - apt-get install -y --no-install-recommends git ca-certificates python3
     - git fetch origin refs/heads/cla-signatures:refs/remotes/origin/cla-signatures
     - cargo fetch --locked --manifest-path rust/Cargo.toml
   script:
@@ -180,7 +525,22 @@ v4-provenance:
     - python3 scripts/check-local-free.py --root .
     - python3 -m unittest tests/delivery/test_check_local_free.py
     - python3 scripts/generate-third-party-notices.py --root . --check
-    - python3 scripts/ip-provenance-audit.py --root . --output ip-provenance-gitlab-report.json
+    - |
+      # The audit describes the public tree. The private mirror also carries
+      # parts the publish manifest never selects (ee/, sdk/, agent skills), so
+      # there it audits the positive public export of HEAD, as the release gate
+      # (publish-gate R03, ee/delivery/tools/r05-export-build.sh) does.
+      if test -d ee; then
+        export_dir="$(mktemp -d)/tree"
+        python3 scripts/public-export.py export --repo . --source-commit "$(git rev-parse HEAD)" --manifest PUBLISH_MANIFEST.toml --out "$export_dir"
+        rm -f "$export_dir/PUBLIC-EXPORT-RECEIPT.json"
+        git -C "$export_dir" init -q
+        git -C "$export_dir" -c user.name=export -c user.email=export@localhost add -A
+        git -C "$export_dir" -c user.name=export -c user.email=export@localhost commit -q -m "public export"
+        (cd "$export_dir" && python3 scripts/ip-provenance-audit.py --root . --export --output "$CI_PROJECT_DIR/ip-provenance-gitlab-report.json")
+      else
+        python3 scripts/ip-provenance-audit.py --root . --output ip-provenance-gitlab-report.json
+      fi
     - python3 scripts/history-policy-gate.py gate --root . --policy security/history-policy-v1.json --output history-delta-gitlab-report.json
     - if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then git diff --check "$CI_MERGE_REQUEST_DIFF_BASE_SHA" HEAD; else git diff --check HEAD^ HEAD; fi
   artifacts:

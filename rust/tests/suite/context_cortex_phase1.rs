@@ -61,6 +61,7 @@ fn content_chunk_to_code_chunk_drops_extra_fields() {
 #[test]
 fn code_chunk_to_content_chunk_defaults_to_file_source() {
     let code = CodeChunk {
+        input_origin: None,
         file_path: "src/main.rs".into(),
         symbol_name: "main".into(),
         kind: ChunkKind::Function,
@@ -230,7 +231,7 @@ fn bm25_mixed_code_and_provider_chunks() {
     };
 
     index.ingest_content_chunks(vec![
-        ContentChunk::from(CodeChunk {
+        ContentChunk::from(CodeChunk { input_origin: None,
             file_path: "src/auth.rs".into(),
             symbol_name: "validate_token".into(),
             kind: ChunkKind::Function,
@@ -282,6 +283,7 @@ fn bm25_external_chunk_count_accurate() {
 
     index.ingest_content_chunks(vec![
         ContentChunk::from(CodeChunk {
+            input_origin: None,
             file_path: "src/lib.rs".into(),
             symbol_name: "lib".into(),
             kind: ChunkKind::Module,

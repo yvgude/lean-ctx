@@ -245,7 +245,39 @@ fn build_shell_hook_step(opts: &SetupOptions, _binary: &str) -> SetupStepReport 
 }
 
 fn build_daemon_step() -> SetupStepReport {
+    use lean_ctx::daemon_autostart::{self as autostart, Supervision};
     let mut daemon_step = setup_step("daemon");
+    // Supervised where the platform has a supervisor: the daemon starts at
+    // login and restarts after a crash, so Hive's background sync never
+    // depends on a daemon started by hand. A supervised daemon is
+    // restarted to load this build.
+    let supervision = if cfg!(test) {
+        Supervision::Skipped
+    } else {
+        autostart::ensure_supervised(true)
+    };
+    match supervision {
+        Supervision::Already | Supervision::Installed => {
+            daemon_step.items.push(SetupItem {
+                name: "serve --daemon".to_string(),
+                status: if supervision == Supervision::Already {
+                    "restarted"
+                } else {
+                    "supervised"
+                }
+                .to_string(),
+                path: autostart::service_file_path().map(|p| p.display().to_string()),
+                note: Some(autostart::supervision_line(supervision).unwrap_or_else(|| {
+                    "supervised: starts at login and restarts after a crash".to_string()
+                })),
+            });
+            return daemon_step;
+        }
+        Supervision::Failed => daemon_step.warnings.push(
+            "the daemon could not be set up to start by itself (run `lean-ctx daemon enable`); started without supervision".to_string(),
+        ),
+        Supervision::Skipped => {}
+    }
     let was_running = lean_ctx::daemon::is_daemon_running();
     if was_running {
         let _ = lean_ctx::daemon::stop_daemon();

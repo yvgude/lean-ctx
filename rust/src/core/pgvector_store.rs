@@ -520,6 +520,7 @@ mod tests {
 
     fn chunk(file: &str, name: &str, start: usize, end: usize, kind: ChunkKind) -> CodeChunk {
         CodeChunk {
+            input_origin: None,
             file_path: file.to_string(),
             symbol_name: name.to_string(),
             kind,

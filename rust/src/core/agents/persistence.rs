@@ -116,14 +116,20 @@ pub(super) fn generate_short_id() -> String {
 
 pub struct FileLock {
     file: std::fs::File,
+    // Dropped after `Drop` unlocked `file`: the next thread of this process
+    // in line only starts once the file lock is free.
+    _turn: crate::core::file_lock::Turn,
 }
 
-/// How long [`FileLock::acquire`] waits. The lock is polled (25 ms steps),
-/// not a fair queue (GitLab #1295): under load a waiter behind writers that
-/// take it back to back could pass the former 750 ms and fail its tool call.
+/// How long [`FileLock::acquire`] waits without progress. Threads of this
+/// process queue for a [`crate::core::file_lock::Turn`] first, and that wait
+/// restarts at every handover, so a moving queue never times out; the file
+/// lock itself is then polled (25 ms steps) for at most this long, which
+/// bounds other processes. Before (GitLab #1295) a waiter behind writers that
+/// took it back to back could pass the former 750 ms and fail its tool call.
 /// A dead holder's lock is released by the OS, so waiting longer never makes
 /// a stale lock permanent; it only lets a contended call through.
-pub(crate) const ACQUIRE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+pub const ACQUIRE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl FileLock {
     pub fn acquire(path: &std::path::Path) -> Result<Self, String> {
@@ -138,6 +144,16 @@ impl FileLock {
 
         const RETRY: std::time::Duration = std::time::Duration::from_millis(25);
 
+        // Threads of this process queue in arrival order and wait only as
+        // long as the queue stands still; other processes are bounded by
+        // the polled file lock below.
+        let turn = crate::core::file_lock::take_turn(path, timeout).ok_or_else(|| {
+            format!(
+                "lock {} timed out after {}ms",
+                path.display(),
+                timeout.as_millis()
+            )
+        })?;
         let mut options = std::fs::OpenOptions::new();
         options.create(true).truncate(false).read(true).write(true);
         #[cfg(unix)]
@@ -153,7 +169,9 @@ impl FileLock {
         let deadline = std::time::Instant::now() + timeout;
         loop {
             match file.try_lock_exclusive() {
-                Ok(()) => return Ok(Self { file }),
+                Ok(()) => {
+                    return Ok(Self { file, _turn: turn });
+                }
                 Err(error)
                     if crate::core::file_lock::is_contended(&error)
                         && std::time::Instant::now() < deadline =>
@@ -229,5 +247,34 @@ mod lock_tests {
         );
         assert_eq!(ACQUIRE_TIMEOUT, Duration::from_secs(5));
         holder.join().unwrap();
+    }
+
+    /// Threads that take the lock back to back fail none of their waiters as
+    /// long as the lock changes hands within the timeout: the polled file lock
+    /// counted every holder ahead of a waiter against its timeout, so the
+    /// eighth of eight publishers whose writes took a second each failed after
+    /// five seconds (#2214, `knowledge_bridge` on Windows).
+    #[test]
+    fn a_queue_that_keeps_moving_fails_no_waiter() {
+        const THREADS: usize = 8;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bridge.lock");
+        let timeout = Duration::from_millis(400);
+        let start = std::sync::Arc::new(std::sync::Barrier::new(THREADS));
+        let waiters: Vec<_> = (0..THREADS)
+            .map(|_| {
+                let (path, start) = (path.clone(), std::sync::Arc::clone(&start));
+                std::thread::spawn(move || {
+                    start.wait();
+                    let lock = FileLock::acquire_with_timeout(&path, timeout)?;
+                    std::thread::sleep(Duration::from_millis(100));
+                    drop(lock);
+                    Ok::<(), String>(())
+                })
+            })
+            .collect();
+        for waiter in waiters {
+            assert_eq!(waiter.join().unwrap(), Ok(()));
+        }
     }
 }

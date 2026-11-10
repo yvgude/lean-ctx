@@ -130,28 +130,32 @@ pub(super) async fn plan(
     context
         .autopilot_planning_attempts()
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    // The planning reads admit on the call's behalf: carry its capture.
+    let carried = lean_ctx::core::context_admission::capture::carry();
     let mut worker = tokio::task::spawn_blocking(move || {
-        let PlanningInputs {
-            query,
-            root,
-            budget,
-            explicit_mode,
-        } = inputs;
-        let budget = match budget {
-            Budget::Compose => crate::tools::ctx_compose::kernel_supplement_budget(&root),
-            Budget::Semantic => 100,
-            Budget::BatchRead => lean_ctx::core::context_kernel::activation::supplement_budget(
-                &lean_ctx::core::context_kernel::activation::load_config(&root),
-            ),
-        };
-        PreparedKernelContext::plan_for_envelope(
-            envelope,
-            query,
-            root,
-            budget,
-            task_class,
-            explicit_mode,
-        )
+        carried.enter(|| {
+            let PlanningInputs {
+                query,
+                root,
+                budget,
+                explicit_mode,
+            } = inputs;
+            let budget = match budget {
+                Budget::Compose => crate::tools::ctx_compose::kernel_supplement_budget(&root),
+                Budget::Semantic => 100,
+                Budget::BatchRead => lean_ctx::core::context_kernel::activation::supplement_budget(
+                    &lean_ctx::core::context_kernel::activation::load_config(&root),
+                ),
+            };
+            PreparedKernelContext::plan_for_envelope(
+                envelope,
+                query,
+                root,
+                budget,
+                task_class,
+                explicit_mode,
+            )
+        })
     });
     // Providers are read-only here. Timeout bounds MCP latency; a started blocking
     // read may finish later, but its unadmitted result is never attached or used.

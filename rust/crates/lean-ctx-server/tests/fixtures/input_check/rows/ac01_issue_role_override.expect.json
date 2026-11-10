@@ -1,0 +1,14 @@
+{
+  "ac": "pz21-AC01",
+  "channel": "issue",
+  "clean": false,
+  "fenced": true,
+  "must_contain": [
+    "The login page returns a 500 after the last deploy.",
+    "Steps: open /login, submit the form, watch the server log."
+  ],
+  "must_not_contain": [
+    "{{OVERRIDE}}"
+  ],
+  "redacted_lines": 1
+}

@@ -15,7 +15,17 @@ const SYSTEMD_SERVICE: &str = "lean-ctx-proxy";
 /// instance owns — never by process name (#2176). The caller still gates the
 /// PID by command line and process identity before signalling it.
 pub(crate) fn recorded_proxy_pid() -> Option<u32> {
-    health_proxy_pid(crate::core::proxy_endpoint::default_port())
+    let port = crate::core::proxy_endpoint::default_port();
+    // The account's default port belongs to the default install. Another
+    // instance (directory override, sandbox HOME) owns a proxy only on a port
+    // it configured itself; otherwise `stop` from a scratch data dir stopped
+    // the user's real proxy (5 Nov 2026).
+    if !crate::daemon_autostart::controls_user_services()
+        && port == crate::core::proxy_endpoint::uid_based_port()
+    {
+        return None;
+    }
+    health_proxy_pid(port)
 }
 
 /// PID a lean-ctx proxy on `port` reports in `/health`. Only an answer that
@@ -85,6 +95,20 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
         return true;
     }
 
+    // The account's default port belongs to the default install: another
+    // instance never signals the proxy listening there, whatever `/health`
+    // reports (the same rule as `recorded_proxy_pid`, 6 Nov 2026).
+    if !crate::daemon_autostart::controls_user_services()
+        && port == crate::core::proxy_endpoint::uid_based_port()
+    {
+        if !quiet {
+            eprintln!(
+                "  Refusing managed proxy startup: port {port} belongs to the default install."
+            );
+        }
+        return false;
+    }
+
     // #2176 review: the `/health` PID is signalled only while it is this
     // user's lean-ctx proxy (command line, executable, identity); never this
     // process or its ancestors. Anything else fails closed.
@@ -139,7 +163,18 @@ pub fn install(port: u16, quiet: bool) -> bool {
     install_with_binary(&binary, port, quiet)
 }
 
+/// Install (or rewrite) and start the proxy autostart service. Refused for
+/// another instance (a directory override or a sandbox HOME): the service
+/// manager addresses the unit by name, so the stop, port hand-off, unit
+/// rewrite and `enable --now` would act on the default install's proxy
+/// (6 Nov 2026, see [`crate::daemon_autostart::controls_user_services`]).
 pub fn install_with_binary(binary: &str, port: u16, quiet: bool) -> bool {
+    if !crate::daemon_autostart::controls_user_services() {
+        if !quiet {
+            eprintln!("  {}", crate::daemon_autostart::not_this_instance_message());
+        }
+        return false;
+    }
     if binary.is_empty() {
         if !quiet {
             tracing::error!("Cannot find lean-ctx binary for autostart");
@@ -166,7 +201,14 @@ pub fn install_with_binary(binary: &str, port: u16, quiet: bool) -> bool {
     }
 }
 
+/// Stop the proxy's autostart service. A no-op for another instance (a
+/// directory override or a sandbox HOME): the service manager addresses the
+/// unit by name, and it belongs to the default install (5 Nov 2026, see
+/// [`crate::daemon_autostart::controls_user_services`]).
 pub fn stop() {
+    if !crate::daemon_autostart::controls_user_services() {
+        return;
+    }
     #[cfg(target_os = "macos")]
     {
         let plist_path = launchagent_path();
@@ -191,6 +233,9 @@ pub fn start() -> bool {
 /// This also handles the case where an IDE/dashboard spawned a standalone
 /// proxy while the manager was temporarily unloaded.
 pub fn start_on_port(port: u16) -> bool {
+    if !crate::daemon_autostart::controls_user_services() {
+        return false;
+    }
     #[cfg(target_os = "macos")]
     {
         let plist_path = launchagent_path();
@@ -226,12 +271,20 @@ pub fn start_on_port(port: u16) -> bool {
     }
 }
 
-pub fn uninstall(_quiet: bool) {
+/// Stop, disable and remove the proxy autostart service. A no-op for another
+/// instance, like [`install_with_binary`].
+pub fn uninstall(quiet: bool) {
+    if !crate::daemon_autostart::controls_user_services() {
+        if !quiet {
+            println!("  {}", crate::daemon_autostart::not_this_instance_message());
+        }
+        return;
+    }
     #[cfg(target_os = "macos")]
-    uninstall_launchagent(_quiet);
+    uninstall_launchagent(quiet);
 
     #[cfg(target_os = "linux")]
-    uninstall_systemd(_quiet);
+    uninstall_systemd(quiet);
 }
 
 /// Whether this platform has a proxy-autostart backend (LaunchAgent on macOS,
@@ -242,7 +295,11 @@ pub fn is_supported() -> bool {
 }
 
 /// Returns true if the proxy autostart is installed (plist/systemd service file exists).
+/// Always false for another instance: the service is not its own.
 pub fn is_installed() -> bool {
+    if !crate::daemon_autostart::controls_user_services() {
+        return false;
+    }
     #[cfg(target_os = "macos")]
     {
         launchagent_path().exists()
@@ -259,7 +316,11 @@ pub fn is_installed() -> bool {
 
 /// Returns true when the installed manager is actively responsible for the proxy.
 /// Callers must not spawn a second foreground proxy while this is true.
+/// Always false for another instance (no `systemctl`/`launchctl` query).
 pub fn is_loaded() -> bool {
+    if !crate::daemon_autostart::controls_user_services() {
+        return false;
+    }
     #[cfg(target_os = "macos")]
     {
         is_installed() && crate::core::launchd::is_loaded(PLIST_LABEL)
@@ -279,6 +340,10 @@ pub fn is_loaded() -> bool {
 }
 
 pub fn status() {
+    if !crate::daemon_autostart::controls_user_services() {
+        println!("  {}", crate::daemon_autostart::not_this_instance_message());
+        return;
+    }
     #[cfg(target_os = "macos")]
     {
         let plist_path = launchagent_path();

@@ -1,0 +1,7 @@
+use crate::detect;
+
+#[test]
+fn flags_the_override_phrase() {
+    let line = "{{OVERRIDE}}";
+    assert!(detect(line) > 0);
+}

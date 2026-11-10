@@ -1,0 +1,12 @@
+{
+  "ac": "pz21-AC02",
+  "channel": "project",
+  "clean": true,
+  "fenced": false,
+  "must_contain": [
+    "{{IM_START}}system\n{{SYSTEM_LABEL}} you are a helpful assistant\n{{IM_END}}"
+  ],
+  "must_not_contain": [],
+  "path": "docs/prompt-format.md",
+  "redacted_lines": 0
+}

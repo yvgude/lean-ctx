@@ -12,6 +12,16 @@ use super::fold::{FoldEvent, Graph};
 use super::store::{Replica, db_err};
 use crate::HiveError;
 
+/// Where a node was first saved in the place's log ([`Replica::first_saves`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Save {
+    /// `seq` of its first `node.add`.
+    pub seq: u64,
+    /// The `causal_base` of that event: its writer had folded the log up
+    /// to this `seq`.
+    pub causal_base: u64,
+}
+
 /// One event as the server log delivered it, after verification.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredEvent {
@@ -188,6 +198,48 @@ impl Replica {
                 provenance,
                 review_state,
             });
+        }
+        Ok(out)
+    }
+
+    /// The save history of every node: the `seq` of its first valid
+    /// `node.add` and that event's `causal_base` (the log position its
+    /// writer had folded when it wrote it). A node whose first add names
+    /// no `causal_base` is left out: its history is unknown (#286).
+    pub fn first_saves(&self) -> Result<std::collections::BTreeMap<String, Save>, HiveError> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT seq, event_id, target, envelope_ct FROM events
+                 WHERE op = 'node.add' AND NOT (sig_invalid OR key_lost OR converted)
+                 ORDER BY seq",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Vec<u8>>(3)?,
+                ))
+            })
+            .map_err(db_err)?;
+        let mut seen = std::collections::BTreeSet::new();
+        let mut out = std::collections::BTreeMap::new();
+        for row in rows {
+            let (seq, id, target, env_ct) = row.map_err(db_err)?;
+            if !seen.insert(target.clone()) {
+                continue;
+            }
+            let env = self.open_value("events", &id, "envelope", &env_ct)?;
+            let env: Value =
+                serde_json::from_slice(&env).map_err(|e| HiveError::Local(e.to_string()))?;
+            let (Ok(seq), Some(causal_base)) = (u64::try_from(seq), env["causal_base"].as_u64())
+            else {
+                continue;
+            };
+            out.insert(target, Save { seq, causal_base });
         }
         Ok(out)
     }

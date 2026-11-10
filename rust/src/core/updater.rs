@@ -135,6 +135,10 @@ fn print_help(mode: UpdateMode) {
     println!("  --schedule status      show the update schedule");
     println!("  --schedule off|disable disable automatic updates");
     println!("  -h, --help             show this help");
+    println!();
+    println!("  The schedule (LaunchAgent, systemd timer, crontab, scheduled task) and the");
+    println!("  managed proxy restart belong to the default install; with LEAN_CTX_DATA_DIR,");
+    println!("  another directory override or another HOME they are left alone.");
 }
 
 fn run_with_mode(args: &[String], mode: UpdateMode, setup: &dyn SetupRefresh) {

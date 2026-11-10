@@ -1,0 +1,60 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 4,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "skip_added"
+    },
+    {
+      "line": 10,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "skip_added"
+    },
+    {
+      "line": 15,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "skip_added"
+    },
+    {
+      "line": 21,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "skip_added"
+    },
+    {
+      "line": 26,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "skip_added"
+    },
+    {
+      "line": 4,
+      "path": "rust/crates/demo/tests/test_b.py",
+      "rule": "skip_added"
+    },
+    {
+      "line": 1,
+      "path": "web/a.test.js",
+      "rule": "skip_added"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "test_count_dropped"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/test_b.py",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "web/a.test.js",
+      "rule": "test_or_grader_touched"
+    }
+  ]
+}

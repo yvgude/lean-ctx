@@ -307,6 +307,10 @@ pub fn cmd_ledger(args: &[String]) {
     // The MCP tool `ctx_ledger` was retired in 3.12.0, so the daemon cannot
     // serve these actions; they work on the persisted ledger directly.
     match action {
+        // Local Read v1: the savings ledger's chain verdict (`ledger.verify`).
+        "verify" if super::local_read::wants_json(args) => {
+            super::local_read::kinds::run("ledger.verify", args);
+        }
         "push" => cmd_push(&args[1..]),
         "status" => {
             let ledger = ContextLedger::load();

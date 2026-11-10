@@ -3,7 +3,10 @@
 //! verification of snapshot and tail records, the push of own events, and
 //! the driver that clones, tails and pushes a replica.
 
+pub mod auto;
+pub(crate) mod budget;
 pub mod driver;
+pub mod on_write;
 pub mod place;
 pub mod purge;
 pub mod push;

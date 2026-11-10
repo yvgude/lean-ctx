@@ -230,34 +230,70 @@ pub fn collect_v1(sources: ProofSources, opts: ProofOptions) -> ContextProofV1 {
     }
 }
 
+/// A checked destination for a proof artifact: `<project>/.lean-ctx/proofs/<name>`.
+///
+/// Every proof-shaped artifact (context proof, context IR, architecture
+/// overview, A2A snapshot, handoff bundle) is written through here.
+/// `.lean-ctx`, `proofs` and the file itself must not be symlinks, and the
+/// write walks the path without following one (see
+/// [`crate::core::pathjail_write`]).
+#[derive(Debug, Clone)]
+pub struct ProofDestination {
+    project_root: PathBuf,
+    rel: PathBuf,
+    path: PathBuf,
+}
+
+impl ProofDestination {
+    /// The path the artifact is written to.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Write `content`; refuses (writes nothing) when a component is or
+    /// became a symlink.
+    pub fn write(&self, content: &str) -> Result<PathBuf, String> {
+        crate::core::pathjail_write::write_project_data(
+            &self.project_root,
+            &self.rel,
+            content.as_bytes(),
+        )
+    }
+}
+
+/// The destination for the proof artifact `name` of `project_root`.
+///
+/// `name` comes from tool callers: only a bare file name is accepted
+/// (`Path::join` drops the base for an absolute path, and `..` would walk out
+/// of `proofs/`).
+pub fn proof_destination(project_root: &Path, name: &str) -> Result<ProofDestination, String> {
+    let mut components = Path::new(name).components();
+    match (components.next(), components.next()) {
+        (Some(std::path::Component::Normal(_)), None) => {}
+        _ => return Err(format!("filename must be a plain file name: {name}")),
+    }
+    let rel = Path::new("proofs").join(name);
+    let path = crate::core::pathjail_write::project_data_destination(project_root, &rel)?;
+    Ok(ProofDestination {
+        project_root: project_root.to_path_buf(),
+        rel,
+        path,
+    })
+}
+
 pub fn write_project_proof(
     project_root: &Path,
     proof: &ContextProofV1,
     filename: Option<&str>,
 ) -> Result<PathBuf, String> {
-    let proofs_dir = crate::core::pathutil::safe_project_data_dir(project_root)?.join("proofs");
-    std::fs::create_dir_all(&proofs_dir).map_err(|e| e.to_string())?;
-
     let ts = chrono::Utc::now().format("%Y-%m-%d_%H%M%S");
-    let name = match filename {
-        None => format!("context-proof-v1_{ts}.json"),
-        // `filename` comes from the ctx_proof caller. Only a bare file name may
-        // be joined onto proofs/: `Path::join` drops the base for an absolute
-        // path, and `..` would walk out of it.
-        Some(f) => {
-            let mut components = Path::new(f).components();
-            match (components.next(), components.next()) {
-                (Some(std::path::Component::Normal(_)), None) => f.to_string(),
-                _ => return Err(format!("filename must be a plain file name: {f}")),
-            }
-        }
-    };
-    let path = proofs_dir.join(name);
+    let name = filename.map_or_else(|| format!("context-proof-v1_{ts}.json"), str::to_string);
+    let destination = proof_destination(project_root, &name)?;
 
     let json = serde_json::to_string_pretty(proof).map_err(|e| e.to_string())?;
     // Proof artifacts may be attached to CI logs; always redact (even for admin).
     let json = crate::core::redaction::redact_text(&json);
-    crate::config_io::write_atomic(&path, &json)?;
+    let path = destination.write(&json)?;
 
     PROOFS_WRITTEN.fetch_add(1, Ordering::Relaxed);
     let ms = std::time::SystemTime::now()
@@ -347,5 +383,94 @@ mod tests {
         let path = write_project_proof(&project, &proof, Some("named.json")).unwrap();
         assert_eq!(path.file_name().unwrap(), "named.json");
         assert!(path.parent().unwrap().ends_with("proofs"));
+    }
+
+    #[cfg(unix)]
+    fn sample_proof(project: &Path) -> ContextProofV1 {
+        collect_v1(
+            ProofSources {
+                project_root: Some(project.to_string_lossy().to_string()),
+                ..Default::default()
+            },
+            ProofOptions {
+                max_evidence: 1,
+                max_ledger_files: 1,
+            },
+        )
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_project_proof_refuses_a_symlinked_proofs_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        let outside = dir.path().join("outside");
+        std::fs::create_dir_all(project.join(".lean-ctx")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, project.join(".lean-ctx/proofs")).unwrap();
+        let proof = sample_proof(&project);
+        let err = write_project_proof(&project, &proof, Some("p.json")).unwrap_err();
+        assert!(err.contains("symlink"), "{err}");
+        assert!(!outside.join("p.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_project_proof_refuses_a_symlinked_target_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        std::fs::create_dir_all(project.join(".lean-ctx/proofs")).unwrap();
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, "keep").unwrap();
+        std::os::unix::fs::symlink(&victim, project.join(".lean-ctx/proofs/p.json")).unwrap();
+        let proof = sample_proof(&project);
+        // The victim lies inside $HOME: the dotfile write-through rule of
+        // config writes must not apply to project data.
+        let _guard = crate::core::data_dir::test_env_lock();
+        let previous = std::env::var_os("HOME");
+        crate::test_env::set_var("HOME", dir.path());
+        let result = write_project_proof(&project, &proof, Some("p.json"));
+        match previous {
+            Some(home) => crate::test_env::set_var("HOME", home),
+            None => crate::test_env::remove_var("HOME"),
+        }
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_project_proof_refuses_a_dangling_data_dir_link() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let missing = dir.path().join("not-yet");
+        std::os::unix::fs::symlink(&missing, project.join(".lean-ctx")).unwrap();
+        let proof = sample_proof(&project);
+        assert!(write_project_proof(&project, &proof, Some("p.json")).is_err());
+        assert!(
+            !missing.exists(),
+            "a dangling link must not be created through"
+        );
+
+        // A dangling target-file link into $HOME is not created through
+        // either (the dotfile write-through rule of config writes would).
+        let project = dir.path().join("proj2");
+        std::fs::create_dir_all(project.join(".lean-ctx/proofs")).unwrap();
+        let planted = dir.path().join("planted.json");
+        std::os::unix::fs::symlink(&planted, project.join(".lean-ctx/proofs/p.json")).unwrap();
+        let _guard = crate::core::data_dir::test_env_lock();
+        let previous = std::env::var_os("HOME");
+        crate::test_env::set_var("HOME", dir.path());
+        let result = write_project_proof(&project, &proof, Some("p.json"));
+        match previous {
+            Some(home) => crate::test_env::set_var("HOME", home),
+            None => crate::test_env::remove_var("HOME"),
+        }
+        assert!(result.is_err());
+        assert!(
+            !planted.exists(),
+            "a dangling file link must not be created through"
+        );
     }
 }

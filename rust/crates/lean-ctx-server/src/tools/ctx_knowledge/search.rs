@@ -431,7 +431,7 @@ pub(crate) fn format_facts_with_annotations(
             }
         }
     }
-    out
+    super::with_not_truth_note(out)
 }
 
 pub(crate) fn short_path(path: &str) -> String {

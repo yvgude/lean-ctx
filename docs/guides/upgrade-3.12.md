@@ -84,7 +84,7 @@ file in the LeanCTX data directory stay where they are and keep working without 
 account.
 
 - **Decision receipts** (`<data_dir>/gateway`) are now kept 30 days and below the
-  store's ceiling (1024 MB unless `LEAN_CTX_GATEWAY_STORE_MAX_MB` or `max_disk_mb`
+  store's ceiling (4096 MB unless `LEAN_CTX_GATEWAY_STORE_MAX_MB` or `max_disk_mb`
   says otherwise). On the first start after the update a long-used store is packed
   and its oldest receipts beyond that are removed in the background; the last
   24 hours, each project's latest receipts and those of tasks in progress are always

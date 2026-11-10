@@ -141,7 +141,9 @@ fn admitted_diff(diff: &str) -> Result<String, String> {
     if diff.trim().is_empty() {
         return Ok(diff.to_string());
     }
-    crate::tools::admitted_sources::admit_remote_text(diff, "ctx_checkpoint")
+    // A diff of this checkout: the project's own text.
+    lean_ctx::core::context_admission::admit_instance_context_source(diff)
+        .map_err(|error| error.to_string())
         .map(|admission| admission.text)
 }
 

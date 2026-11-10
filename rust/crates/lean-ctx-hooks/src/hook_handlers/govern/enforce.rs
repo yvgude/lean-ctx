@@ -42,6 +42,16 @@ pub(crate) fn enforce_decision(input: &str, binary: &str) -> String {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
         return pass_through();
     };
+    // The allowlist reads the line for the shell the host tool runs it with.
+    let dialect = payload::resolve_tool_name(&v)
+        .map_or(lean_ctx_shell_policy::Dialect::Posix, |tool| {
+            crate::hook_handlers::powershell_rewrite::dialect_for_tool(&tool)
+        });
+    lean_ctx_shell_policy::with_dialect(dialect, || enforce_payload(&v, binary))
+}
+
+fn enforce_payload(v: &serde_json::Value, binary: &str) -> String {
+    let v = v.clone();
     let Some(tool_name) = payload::resolve_tool_name(&v) else {
         return pass_through();
     };
@@ -106,7 +116,7 @@ pub(crate) fn enforce_decision(input: &str, binary: &str) -> String {
     // Not delivered: the original runs natively under the host's own
     // approval, so the allowlist the wrap would have enforced applies here.
     deliver_rewrite(&tool_name, &cmd, tool_args.as_ref(), &rewrite, &v).unwrap_or_else(|| {
-        match lean_ctx::core::shell_allowlist::check_shell_allowlist(&cmd) {
+        match lean_ctx_shell_policy::check_shell_allowlist(&cmd) {
             Err(msg) => crate::hook_handlers::build_deny_output(&msg.to_string(), &v),
             Ok(()) => pass_through(),
         }

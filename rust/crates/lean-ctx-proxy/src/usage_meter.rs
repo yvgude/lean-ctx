@@ -21,7 +21,7 @@ use lean_ctx::core::gain::model_pricing::ModelPricing;
 use lean_ctx::core::ocla::{OclaRegistry, UsageSink};
 pub use lean_ctx::core::proxy_usage::{CohortUsage, load_persisted};
 use lean_ctx::core::proxy_usage::{
-    LastModel, MeasuredSlice, ModelUsage, PersistedUsage, usage_path,
+    LastModel, MeasuredSlice, ModelUsage, PersistedUsage, SessionUsage, usage_path,
 };
 
 /// Projects one managed, provider-measured turn into the OCLA usage sink.
@@ -151,6 +151,38 @@ fn cohort_store() -> &'static Mutex<HashMap<String, CohortUsage>> {
     STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// App sessions kept apart; the least recently seen one gives way.
+const MAX_TRACKED_SESSIONS: usize = 256;
+
+fn session_store() -> &'static Mutex<HashMap<String, SessionUsage>> {
+    static STORE: OnceLock<Mutex<HashMap<String, SessionUsage>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Book `u` (model bucket `key`) on app session `session` at `now`; when
+/// the map is full the least recently seen session (ties: smallest id) is
+/// dropped first.
+fn add_session_turn(
+    sessions: &mut HashMap<String, SessionUsage>,
+    session: &str,
+    key: &str,
+    u: &super::usage::RealUsage,
+    now: u64,
+) {
+    if !sessions.contains_key(session) && sessions.len() >= MAX_TRACKED_SESSIONS {
+        let oldest = sessions
+            .iter()
+            .min_by(|a, b| a.1.last_seen.cmp(&b.1.last_seen).then_with(|| a.0.cmp(b.0)))
+            .map(|(id, _)| id.clone());
+        if let Some(oldest) = oldest {
+            sessions.remove(&oldest);
+        }
+    }
+    let entry = sessions.entry(session.to_owned()).or_default();
+    entry.last_seen = entry.last_seen.max(now);
+    entry.models.entry(key.to_owned()).or_default().add(u);
+}
+
 /// Seeds the in-memory totals from `proxy_usage.json`. Call once on proxy
 /// startup so measured spend is cumulative across restarts. Idempotent-ish: it
 /// merges the persisted totals into whatever is in memory (normally empty).
@@ -178,6 +210,15 @@ pub fn resume_from_disk() {
         merge_models(projects.entry(project).or_default(), models);
     }
     drop(projects);
+    let mut sessions = session_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for (session, usage) in persisted.sessions {
+        let entry = sessions.entry(session).or_default();
+        entry.last_seen = entry.last_seen.max(usage.last_seen);
+        merge_models(&mut entry.models, usage.models);
+    }
+    drop(sessions);
     let mut cohorts = cohort_store()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -325,10 +366,20 @@ pub fn record(u: &super::usage::RealUsage) {
                 projects
                     .entry(project.to_string())
                     .or_default()
-                    .entry(key)
+                    .entry(key.clone())
                     .or_default()
                     .add(u);
             }
+        }
+        if let Some(session) = u.wire.as_deref().and_then(|w| w.app_session.as_deref()) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let mut sessions = session_store()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            add_session_turn(&mut sessions, session, &key, u, now);
         }
     }
     if u.cohort.output.is_some() || u.cohort.compression.is_some() {
@@ -500,6 +551,10 @@ fn persist() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
+    let sessions = session_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     let payload = PersistedUsage {
         ts: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -509,6 +564,7 @@ fn persist() {
         cohorts,
         last_model,
         projects,
+        sessions,
     };
     let Ok(json) = serde_json::to_string(&payload) else {
         return;
@@ -554,6 +610,15 @@ pub fn persisted_projects() -> Vec<(String, Vec<ModelSpend>)> {
     rows
 }
 
+/// Priced spend of one app session, read from disk; `None` when the proxy
+/// saw no turn of it (or keeps it no longer).
+pub fn persisted_session(session: &str) -> Option<Vec<ModelSpend>> {
+    load_persisted()?
+        .sessions
+        .get(session)
+        .map(|usage| price_models(&usage.models))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,6 +641,26 @@ mod tests {
     /// #895: resuming from disk must carry the sums of squares and prompt
     /// totals; dropping them zeroed the variance after every proxy restart and
     /// turned the CI into a zero-width "measurement".
+    #[test]
+    fn app_sessions_are_bounded_and_the_least_recent_gives_way() {
+        let mut sessions = HashMap::new();
+        let turn = usage("claude-sonnet-4.5", 100, 10, 0);
+        for i in 0..MAX_TRACKED_SESSIONS as u64 {
+            add_session_turn(&mut sessions, &format!("s{i}"), "m", &turn, 1_000 + i);
+        }
+        // s0 is touched again: it is no longer the least recently seen.
+        add_session_turn(&mut sessions, "s0", "m", &turn, 9_000);
+        add_session_turn(&mut sessions, "new", "m", &turn, 9_001);
+        assert_eq!(sessions.len(), MAX_TRACKED_SESSIONS);
+        assert!(
+            !sessions.contains_key("s1"),
+            "the least recent session gives way"
+        );
+        assert_eq!(sessions["s0"].models["m"].requests, 2);
+        assert_eq!(sessions["s0"].last_seen, 9_000);
+        assert!(sessions.contains_key("new"));
+    }
+
     #[test]
     fn cohort_merge_keeps_every_running_total() {
         let mut persisted = CohortUsage::default();

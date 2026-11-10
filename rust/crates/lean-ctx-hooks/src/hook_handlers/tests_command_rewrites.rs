@@ -754,8 +754,7 @@ fn command_beyond_the_validation_limits_is_denied() {
     let long = format!("echo {}", "a".repeat(70 * 1024));
     let (checked, hooked) = with_test_allowlist(|| {
         lean_ctx::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
-        let checked =
-            [&deep, &long].map(|c| lean_ctx::core::shell_allowlist::check_shell_allowlist(c));
+        let checked = [&deep, &long].map(|c| lean_ctx_shell_policy::check_shell_allowlist(c));
         let hooked =
             [&deep, &long].map(|c| file_rewrite::unwrappable_allowlist_denial(c, "lean-ctx"));
         lean_ctx::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
@@ -844,8 +843,7 @@ fn every_rewrite_output_passes_the_gate() {
                 // purpose; only the compression rewrites must pass.
                 let emitted = file_rewrite::classify_rewrite(cmd, binary).map(|r| r.command);
                 if let Some(emitted) = emitted
-                    && let Err(err) =
-                        lean_ctx::core::shell_allowlist::check_shell_allowlist(&emitted)
+                    && let Err(err) = lean_ctx_shell_policy::check_shell_allowlist(&emitted)
                 {
                     failures.push(format!("{cmd} → {emitted}: {err}"));
                 }
@@ -857,30 +855,30 @@ fn every_rewrite_output_passes_the_gate() {
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
-/// #2194: `excluded_commands` keeps a command out of the rewrite, so an
-/// isolation guard that refuses anything not plainly git sees `git …` as
-/// typed. Other commands are still rewritten.
+/// The hook reads a line for the shell its tool runs it with, not the one the
+/// hook process resolves: the PowerShell tool keeps `$x = Get-Content` under a
+/// bash process, and the Bash tool refuses `$BASH = cargo` under a PowerShell
+/// process (bash would run `$BASH` with the arguments `= cargo`).
 #[test]
-fn excluded_commands_are_not_rewritten() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
-    let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(
-        dir.path().join("config.toml"),
-        "excluded_commands = [\"git\"]\n",
-    )
-    .expect("write config");
-    let _config = lean_ctx::test_env::VarGuard::set("LEAN_CTX_CONFIG_DIR", dir.path());
-    for cmd in [
-        "git rev-parse HEAD",
-        "git status",
-        "GIT_PAGER=cat git log -1",
-        "cd /tmp && git status",
-    ] {
-        assert_eq!(rewrite_candidate(cmd, "lean-ctx"), None, "{cmd}");
-    }
-    assert_eq!(
-        rewrite_skip_reason("git status", "lean-ctx"),
-        "listed in excluded_commands"
-    );
-    assert!(rewrite_candidate("cat notes.md", "lean-ctx").is_some());
+fn hook_dialect_follows_the_tool_not_the_process() {
+    let verdicts = with_test_allowlist(|| {
+        lean_ctx::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        let decide = |tool: &str, cmd: &str| {
+            let payload = serde_json::json!({
+                "hook_event_name": "PreToolUse",
+                "tool_name": tool,
+                "tool_input": { "command": cmd },
+            });
+            file_rewrite::compute_rewrite_for(&payload.to_string(), "lean-ctx")
+        };
+        lean_ctx::test_env::set_var("LEAN_CTX_SHELL", "/bin/bash");
+        let powershell_tool = decide("PowerShell", "$x = Get-Content a.txt");
+        lean_ctx::test_env::set_var("LEAN_CTX_SHELL", "pwsh");
+        let bash_tool = decide("Bash", "$BASH = cargo");
+        lean_ctx::test_env::remove_var("LEAN_CTX_SHELL");
+        lean_ctx::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
+        (powershell_tool, bash_tool)
+    });
+    assert!(!verdicts.0.contains("\"deny\""), "{}", verdicts.0);
+    assert!(verdicts.1.contains("\"deny\""), "{}", verdicts.1);
 }

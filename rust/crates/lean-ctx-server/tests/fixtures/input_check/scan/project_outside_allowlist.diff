@@ -1,0 +1,9 @@
+diff --git a/rust/src/core/zz_reader.rs b/rust/src/core/zz_reader.rs
+index 1111111..2222222 100644
+--- a/rust/src/core/zz_reader.rs
++++ b/rust/src/core/zz_reader.rs
+@@ -10,2 +10,4 @@ fn read_remote(text: &str) -> String {
+     let policy = AdmissionPolicy::current();
++    // a remote body admitted as if it were a project file
++    let class = SourceClass::Project;
+     admit(text, None, class, &policy)

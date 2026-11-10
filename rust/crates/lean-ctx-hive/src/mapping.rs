@@ -35,8 +35,9 @@ use super::vault::{VaultRecord, identity_digest, resolve_request};
 use super::{HiveError, HiveStore};
 use lean_ctx_protocol::hive::vault::{VaultRefV1, VaultV1};
 
-pub const MATCH_REQUEST_SCHEMA: &str = "leanctx.hive.vault-match-request/v1";
-pub const MATCH_SCHEMA: &str = "leanctx.hive.vault-match/v1";
+pub use lean_ctx_protocol::hive::vault::{
+    VAULT_MATCH_REQUEST_SCHEMA as MATCH_REQUEST_SCHEMA, VAULT_MATCH_SCHEMA as MATCH_SCHEMA,
+};
 /// A remembered "no match route" is checked again after this long.
 const REPROBE_SECONDS: i64 = 24 * 60 * 60;
 /// Workspace part of the consent address of a vault Hive may create.
@@ -437,6 +438,22 @@ fn confirm_move(
         )?;
     }
     Ok(vault)
+}
+
+/// The vault Hive binds the checkout at `root` to when that is not `ours`:
+/// another Instance of the workspace resolved the repository there.
+/// `None` when both agree, on a Hive without the match route, or when
+/// Hive cannot be asked (a warning only, connect goes on).
+pub fn bound_elsewhere(session: &Session, root: &Path, ours: &VaultRefV1) -> Option<VaultRefV1> {
+    let now = Utc::now().timestamp();
+    if !match_available(&session.store, now) {
+        return None;
+    }
+    let salt = super::knowledge::pull::org_salt(session).ok()?;
+    match ask_match(session, &salt.0, &match_candidates(root, &salt.1), now) {
+        Ok(Some(Step::Mapped(vault))) if vault.vault != *ours => Some(vault.vault),
+        _ => None,
+    }
 }
 
 /// `POST /v1/vaults/match`; `None` when this Hive has no such route.

@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Please add a Windows ARM64 build to the release assets."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

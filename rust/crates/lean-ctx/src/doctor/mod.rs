@@ -109,6 +109,31 @@ fn daemon_outcome(running_pid: Option<u32>, autostart: &DaemonAutostart) -> Outc
     Outcome { ok: true, line }
 }
 
+/// Doctor's line for Hive's background sync, which runs in the daemon: on a
+/// machine connected to Hive the daemon must be supervised (start at login,
+/// restart after a crash), or nothing syncs until someone starts it by
+/// hand. `None` when not connected or no supervisor exists. Pure.
+fn hive_sync_outcome(hive_connected: bool, autostart: &DaemonAutostart) -> Option<Outcome> {
+    if !hive_connected {
+        return None;
+    }
+    match autostart {
+        DaemonAutostart::On(_) => Some(Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Hive sync{RST}  {GREEN}in the background (supervised daemon){RST}"
+            ),
+        }),
+        DaemonAutostart::Off => Some(Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}Hive sync{RST}  {YELLOW}needs a supervised daemon{RST}  {DIM}(run: lean-ctx daemon enable){RST}"
+            ),
+        }),
+        DaemonAutostart::Unsupported => None,
+    }
+}
+
 /// Accumulates doctor checks so the rendered ✓/✗ list and the summary tally can
 /// never diverge (#433): every scored check is counted exactly once via
 /// [`Scoreboard::check`]; only explicitly-optional advisories (LSP, "not
@@ -245,8 +270,10 @@ fn request_ledger_outcomes(
 /// than printed, so the caller decides between text and JSON.
 fn daemon_diagnostic_notes() -> Vec<Outcome> {
     let mut notes = Vec::new();
+    // The unit is the default install's: an instance with a directory
+    // override or a sandbox HOME neither asks about it nor reports it.
     #[cfg(target_os = "linux")]
-    {
+    if lean_ctx::daemon_autostart::controls_user_services() {
         if let Ok(o) = std::process::Command::new("systemctl")
             .args(["--user", "is-active", "lean-ctx-daemon.service"])
             .output()
@@ -680,7 +707,12 @@ fn run_inner(json: bool) -> u32 {
 
     // Daemon status — on every platform: Windows runs the daemon too (GL
     // #545); only the autostart service is macOS/Linux-specific (#2176).
-    let daemon_autostart = if lean_ctx::daemon_autostart::is_supported() {
+    // An instance with a directory override or a sandbox HOME has no
+    // autostart service of its own: the user-wide one runs the default
+    // install's daemon, so doctor neither reports it nor advises enabling it.
+    let daemon_autostart = if lean_ctx::daemon_autostart::is_supported()
+        && lean_ctx::daemon_autostart::controls_user_services()
+    {
         if lean_ctx::daemon_autostart::is_installed() {
             DaemonAutostart::On(lean_ctx::daemon_autostart::service_file_path())
         } else {
@@ -693,6 +725,11 @@ fn run_inner(json: bool) -> u32 {
     // PID can be reused by any process (#2176 review #1).
     let daemon_pid = lean_ctx::daemon::verified_daemon().map(|daemon| daemon.pid);
     board.check(&daemon_outcome(daemon_pid, &daemon_autostart));
+    let hive_connected =
+        lean_ctx_hive::HiveStore::open().is_ok_and(|store| matches!(store.instance(), Ok(Some(_))));
+    if let Some(sync) = hive_sync_outcome(hive_connected, &daemon_autostart) {
+        board.check(&sync);
+    }
     if let Some(unrecorded) =
         unrecorded_services_outcome(lean_ctx::daemon::unrecorded_services_warning())
     {
@@ -755,9 +792,15 @@ fn run_inner(json: bool) -> u32 {
     // 12) Build integrity (canary / origin check)
     let integrity = lean_ctx::core::integrity::check();
     let integrity_ok = integrity.seed_ok && integrity.origin_ok;
-    let integrity_line = if integrity_ok {
+    let integrity_line = if integrity_ok && integrity.build.is_official() {
         format!(
             "{BOLD}Build origin{RST}  {GREEN}official{RST}  {DIM}{}{RST}",
+            integrity.repo
+        )
+    } else if integrity_ok {
+        format!(
+            "{BOLD}Build origin{RST}  {YELLOW}{}{RST}  {DIM}not a release build, {}{RST}",
+            integrity.build.label(),
             integrity.repo
         )
     } else {
@@ -978,6 +1021,7 @@ fn run_inner(json: bool) -> u32 {
     if json {
         let output = serde_json::json!({
             "version": env!("CARGO_PKG_VERSION"),
+            "build": lean_ctx::core::integrity::build().to_json(),
             "passed": passed,
             "total": total,
             "needs_attention": needs_attention,
@@ -1145,8 +1189,22 @@ fn config_migration_pause_outcome(config: &std::path::Path) -> Option<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::is_active_shell_impl;
-    use super::{DaemonAutostart, daemon_outcome, unrecorded_services_outcome};
+    use super::{DaemonAutostart, daemon_outcome, hive_sync_outcome, unrecorded_services_outcome};
     use super::{request_ledger_outcomes, strip_ansi};
+
+    #[test]
+    fn hive_sync_needs_a_supervised_daemon_when_connected() {
+        assert!(hive_sync_outcome(false, &DaemonAutostart::Off).is_none());
+        assert!(hive_sync_outcome(true, &DaemonAutostart::Unsupported).is_none());
+        let off = hive_sync_outcome(true, &DaemonAutostart::Off).unwrap();
+        assert!(!off.ok);
+        assert!(off.line.contains("lean-ctx daemon enable"), "{}", off.line);
+        assert!(
+            hive_sync_outcome(true, &DaemonAutostart::On(None))
+                .unwrap()
+                .ok
+        );
+    }
 
     /// #2197: doctor names each running server's counters, its oldest
     /// pending request with age and stage, and its last tool completion, and

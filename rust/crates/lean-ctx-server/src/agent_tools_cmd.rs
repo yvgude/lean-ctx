@@ -533,8 +533,11 @@ impl Session {
         // with what the capture knows about its completeness: a truncated,
         // timed-out or abandoned capture is decided by the gateway's mode
         // instead of being compressed as if it were whole.
-        let admission =
-            lean_ctx::core::context_admission::admit_tool_output(&raw_output, completeness);
+        let admission = lean_ctx::core::context_admission::admit_tool_output_as(
+            &raw_output,
+            completeness,
+            &lean_ctx::core::patterns::output_class(display),
+        );
         let Some(admitted) = admission.text.as_deref() else {
             return Err(output_withheld());
         };

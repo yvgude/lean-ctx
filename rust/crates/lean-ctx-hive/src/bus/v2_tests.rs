@@ -274,6 +274,30 @@ fn frames_the_engine_reads_parse() {
         parse_frame(&text("frame.lease_granted")).unwrap(),
         Inbound::Other(_)
     ));
+    assert!(matches!(
+        parse_frame(&text("frame.log_advanced")).unwrap(),
+        Inbound::LogAdvanced { purge: false, ref place } if place.starts_with("vault:")
+    ));
+    assert!(matches!(
+        parse_frame(&text("frame.log_advanced.purge")).unwrap(),
+        Inbound::LogAdvanced { purge: true, .. }
+    ));
+    assert!(matches!(
+        parse_frame(&text("frame.trust_advanced")).unwrap(),
+        Inbound::TrustAdvanced { .. }
+    ));
+}
+
+/// `policy.advanced` (proposed C0 frame, no fixture yet): a version, and a
+/// frame without one is invalid rather than a nudge for nothing.
+#[test]
+fn policy_advanced_carries_a_version() {
+    assert!(matches!(
+        parse_frame(r#"{"t":"policy.advanced","version":7,"digest":"ab"}"#).unwrap(),
+        Inbound::PolicyAdvanced { version: 7 }
+    ));
+    assert!(parse_frame(r#"{"t":"policy.advanced"}"#).is_err());
+    assert!(parse_frame(r#"{"t":"log.advanced","seq":1}"#).is_err());
 }
 
 #[test]

@@ -538,8 +538,9 @@ impl Config {
 
     /// Effective on-disk ceiling (MB) of the Context Gateway evidence store
     /// (`<data>/gateway`: receipts, trace sidecars, observations, egress
-    /// records). `0` means no ceiling. The store refuses new receipts at the
-    /// ceiling and deletes nothing (`receipt_store::capacity`, G09).
+    /// records). `0` means no ceiling. Retention keeps the store below it
+    /// (`receipt_store::retention`); a new receipt is refused only while the
+    /// store stays full (`receipt_store::capacity`, G09).
     ///
     /// Priority: `LEAN_CTX_GATEWAY_STORE_MAX_MB` › `max_disk_mb` budget (10%) ›
     /// `receipt_store::capacity::DEFAULT_STORE_MB`.

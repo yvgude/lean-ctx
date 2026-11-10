@@ -3,12 +3,19 @@ use lean_ctx_server::tools::ctx_knowledge;
 
 pub(crate) fn cmd_knowledge(args: &[String]) {
     let project_root = super::common::detect_project_root(args);
-    let action = args
-        .iter()
-        .find(|a| !a.starts_with("--"))
-        .map(String::as_str);
+    let action = action_of(args);
 
     match action {
+        Some(verb @ ("remember" | "edit" | "relate" | "remove"))
+            if super::local_read::wants_json(args) =>
+        {
+            super::local_read::knowledge_write::run(verb, args);
+        }
+        Some(verb @ ("edit" | "relate")) => {
+            eprintln!("lean-ctx knowledge {verb} needs --json (Local Read v1)");
+            std::process::exit(2);
+        }
+        Some("list") => super::local_read::knowledge::run(args),
         Some("remember") => cmd_remember(args, &project_root),
         Some("recall") => cmd_recall(args, &project_root),
         Some("search") => cmd_search(args, &project_root),
@@ -18,9 +25,15 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
         Some("import") => cmd_import(args, &project_root),
         Some("consolidate") => cmd_consolidate(args, &project_root),
         Some("restore") => cmd_restore(args, &project_root),
+        Some("gc") => cmd_gc(args),
+        Some("related") => super::knowledge_graph_cmd::cmd_related(args),
+        Some("graph") => super::knowledge_graph_cmd::cmd_graph(args),
         Some("status") => print_report(&project_root, "status"),
         Some("health") => print_report(&project_root, "health"),
         Some("lifecycle") => print_report(&project_root, "lifecycle_report"),
+        Some(action @ ("stale" | "verify" | "dedupe" | "outdated" | "conflicts")) => {
+            super::knowledge_freshness_cmd::run(action, args);
+        }
         Some(action @ ("contradict" | "retract")) => {
             match super::hive_curate_cmd::run(action, args, &project_root) {
                 Ok(lines) => {
@@ -40,6 +53,14 @@ pub(crate) fn cmd_knowledge(args: &[String]) {
             }
         }
     }
+}
+
+/// The subcommand: the first argument that is neither a flag nor a flag's
+/// value, by the shared Local Read rule (so `knowledge --project-root P
+/// graph` and `knowledge --contract local-read/1 related X` name their
+/// command, not the flag's value).
+fn action_of(args: &[String]) -> Option<&str> {
+    super::local_read::positionals(args).first().copied()
 }
 
 /// One `ctx_knowledge` call on behalf of the CLI.
@@ -245,50 +266,12 @@ fn cmd_remember(args: &[String], project_root: &str) {
 }
 
 /// On a machine connected to Hive: say in plain words whether the fact
-/// just remembered goes to the team, and if not, why and how to fix it.
-/// The capture gate makes the final decision at sync (it also checks that
-/// each reference exists); this note covers what a person can fix now.
+/// just remembered goes to the team, and if not, why and how to fix it
+/// (`lean_ctx_hive::capture::sharing`, the same line `ctx_knowledge
+/// remember` gives).
 fn sharing_note(project_root: &str, value: &str, has_ref: bool) {
-    use lean_ctx_hive::capture::{ReasonCode, rules};
-    let Some(store) = lean_ctx_hive::HiveStore::open().ok() else {
-        return;
-    };
-    let Some(instance) = store.instance().ok().flatten() else {
-        return;
-    };
-    let org = &instance.org_name;
-    // A fact LeanCTX anchored to code carries that reference itself.
-    let anchored =
-        lean_ctx::core::knowledge::ProjectKnowledge::load(project_root).is_some_and(|k| {
-            k.facts
-                .iter()
-                .any(|f| f.is_current() && f.value == value && !f.anchors.is_empty())
-        });
-    let problem = rules::check_statement(value.trim())
-        .err()
-        .or((!has_ref && !anchored).then_some(ReasonCode::NoReference));
-    if let Some(reason) = problem {
-        println!(
-            "Saved on this machine only. Not shared with {org}: {}.",
-            reason.plain()
-        );
-        return;
-    }
-    if !lean_ctx_hive::sync::place::capture_allowed(&lean_ctx::core::config::Config::load().hive) {
-        println!(
-            "Saved on this machine only: sharing knowledge with {org} is switched off on this machine (`hive.auto_capture`)."
-        );
-        return;
-    }
-    let map = lean_ctx_hive::vault::VaultMap::load(store.data_dir());
-    match map.for_root(project_root) {
-        Some(vault) => println!(
-            "Goes to {}/{} with the next sync (once its source checks out).",
-            vault.ns, vault.name
-        ),
-        None => println!(
-            "Ready to share, but this project is not shared with {org} yet: run `lean-ctx hive connect` here."
-        ),
+    if let Some(line) = lean_ctx_hive::capture::sharing::note(project_root, value, has_ref) {
+        println!("{line}");
     }
 }
 
@@ -498,8 +481,8 @@ fn cmd_export(args: &[String], project_root: &str) {
     } else if format == "jsonl" && !content.is_empty() {
         // `jsonl` is one released document — one receipt — per line: each
         // line is written right after it was prepared, so every hand-over is
-        // observed (G08). Together the lines are the bytes the joined text
-        // and its final newline were.
+        // observed (G08). A line the release withholds is left out and
+        // counted on stderr; the export goes on.
         let run = super::common::CliToolRun::new("ctx_knowledge", project_root, None);
         if let Err(reason) = release_jsonl(&run, &content, |line| {
             super::common::print_released(&line);
@@ -515,22 +498,51 @@ fn cmd_export(args: &[String], project_root: &str) {
 }
 
 /// Release a `jsonl` export line by line, each line as its own document, and
-/// hand every released line to `emit` before the next one is prepared. The
-/// first withheld line ends the export with its content-free reason.
+/// hand every released line to `emit` before the next one is prepared. A
+/// line the release withholds is left out and counted, as a withheld fact of
+/// a `json` or `simple` export is (#1298), and so is a line that still
+/// carries a text the release masks or withholds in another line. The count
+/// goes to stderr as the content-free notice. `Err`: the texts to look for
+/// could not be asked under the run's policy view (nothing was emitted), or
+/// a line that passed the release could not be delivered — its receipt was
+/// not stored (G08). That ends the export, as it did before #1298: a receipt
+/// store that is down must not turn into an export that is silently empty.
 fn release_jsonl(
     run: &super::common::CliToolRun<'_>,
     content: &str,
     mut emit: impl FnMut(String),
-) -> Result<(), String> {
+) -> Result<usize, String> {
+    // First every line is released without a receipt, and what the release
+    // masks or withholds in it is collected; only then is it decided which
+    // lines are delivered, so no receipt binds a line that is left out.
+    let mut hidden = Vec::new();
+    let mut previews = Vec::new();
     for line in content.lines() {
+        hidden.extend(run.masked_values_of(line)?);
+        previews.push(run.released_preview(line.to_string()).ok());
+    }
+    let mut withheld = 0usize;
+    for (line, preview) in content.lines().zip(previews) {
+        let releasable = preview.is_some_and(|released| {
+            !super::common::still_carries_a_masked_value(&released, &hidden)
+        });
+        if !releasable {
+            withheld += 1;
+            continue;
+        }
+        // Only the release's own decision withholds a line; a delivery that
+        // fails after the preview passed is not a withheld record.
         emit(run.deliver_json(|| line.to_string())?);
     }
-    Ok(())
+    if withheld > 0 {
+        eprintln!("{}", super::common::withheld_records_notice(withheld));
+    }
+    Ok(withheld)
 }
 
 /// The export document for stdout, released without breaking it: `json` and
 /// `simple` are one document, `jsonl` is one document per line. A masked
-/// value stands in its place; a withheld document ends the export.
+/// value stands in its place; a withheld fact (or line) is left out and counted.
 fn released_export(project_root: &str, format: &str, content: String) -> Result<String, String> {
     let run = super::common::CliToolRun::new("ctx_knowledge", project_root, None);
     if format == "jsonl" {
@@ -538,7 +550,11 @@ fn released_export(project_root: &str, format: &str, content: String) -> Result<
         release_jsonl(&run, &content, |line| lines.push(line))?;
         Ok(lines.join("\n"))
     } else {
-        run.deliver_json(|| content)
+        // Every fact is released on its own (#1298): a fact the release
+        // would withhold is left out, and the notice on stderr counts it.
+        let path: &'static [&'static str] = if format == "json" { &["facts"] } else { &[] };
+        run.per_record(super::common::Records { path, report: None })
+            .deliver_json(|| content)
     }
 }
 
@@ -920,7 +936,88 @@ fn facts_to_json(
     serde_json::to_string(&out).unwrap_or_else(|_| "[]".to_string())
 }
 
-fn cli_session_id() -> String {
+/// `lean-ctx knowledge gc [--apply]`: knowledge store directories that
+/// hold no data.
+///
+/// Test runs and short-lived temp projects each left a store directory
+/// behind (36,148 of 37,503 on one machine, almost all empty). Without
+/// `--apply` this only reports, and writes the exact list `--apply` would
+/// remove to `knowledge-gc-plan.txt` in the data directory. With it, only
+/// directories that hold no data are removed: an empty store whose project
+/// is gone, or a directory without a store file. A store that holds anything
+/// is kept, whether or not its project still exists; linked directories are
+/// reported and never followed. Removal is not reversible.
+fn cmd_gc(args: &[String]) {
+    use lean_ctx::core::knowledge::maintenance::{apply_gc_in, plan_gc_in};
+    let apply = args.iter().any(|a| a == "--apply");
+    let data_dir = match lean_ctx::core::data_dir::lean_ctx_data_dir() {
+        Ok(dir) => dir,
+        Err(error) => {
+            eprintln!("lean-ctx knowledge gc: {error}");
+            std::process::exit(1);
+        }
+    };
+    let knowledge_dir = data_dir.join("knowledge");
+    let plan = plan_gc_in(&data_dir);
+    println!(
+        "{} store directories; {} hold no data ({:.1} MB).",
+        plan.scanned,
+        plan.removable.len(),
+        plan.removable_bytes as f64 / 1_048_576.0
+    );
+    if !plan.kept_orphans.is_empty() {
+        let facts: usize = plan.kept_orphans.iter().map(|(_, facts)| facts).sum();
+        println!(
+            "{} stores of projects that are gone still hold data ({facts} facts) and are kept:",
+            plan.kept_orphans.len()
+        );
+        for (root, facts) in &plan.kept_orphans {
+            println!("  {root} ({facts} facts)");
+        }
+    }
+    if !plan.symlinks.is_empty() {
+        println!(
+            "{} linked entries are not followed and kept:",
+            plan.symlinks.len()
+        );
+        for link in &plan.symlinks {
+            println!("  {}", link.display());
+        }
+    }
+    if apply {
+        let removed = apply_gc_in(&data_dir, &plan);
+        println!("Removed {removed} store directories that held no data.");
+        return;
+    }
+    if plan.removable.is_empty() {
+        return;
+    }
+    let list = data_dir.join("knowledge-gc-plan.txt");
+    let mut lines = plan
+        .removable
+        .iter()
+        .map(|dir| dir.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    lines.push('\n');
+    match lean_ctx::core::atomic_fs::try_atomic_write(&list, lines.as_bytes(), None) {
+        Ok(()) => println!(
+            "Dry run: nothing removed. The {} directories --apply would remove are listed in {}.",
+            plan.removable.len(),
+            list.display()
+        ),
+        Err(error) => println!(
+            "Dry run: nothing removed. The list could not be written to {}: {error}",
+            list.display()
+        ),
+    }
+    println!(
+        "Before --apply: back up {} (removal is not reversible), and run it only with a merged and installed build.",
+        knowledge_dir.display()
+    );
+}
+
+pub(super) fn cli_session_id() -> String {
     format!("cli-{}", uuid_short())
 }
 
@@ -983,6 +1080,9 @@ Usage:
   lean-ctx knowledge remember <value> --category <cat> --key <key> [--confidence <0-1>]
   lean-ctx knowledge recall [query] [--category <cat>] [--mode auto|semantic|hybrid] [--as-of <date>]
   lean-ctx knowledge search <query>
+  lean-ctx knowledge list --json [--category <cat>]… [--query <q>] [--limit N] [--include-noise]
+    local facts, gotchas and the linked vault's knowledge as JSON (local-read/1);
+    automatic read-noise is left out unless --include-noise
   lean-ctx knowledge export [--format json|jsonl|simple|okf] [--output <path|dir>]
   lean-ctx knowledge import <path|dir> [--merge replace|append|skip-existing] [--dry-run]
   lean-ctx knowledge export-agents-md [--write] [--file <path>] [--include-hive]
@@ -997,6 +1097,25 @@ Usage:
   lean-ctx knowledge status
   lean-ctx knowledge health
   lean-ctx knowledge lifecycle
+  lean-ctx knowledge gc [--apply]
+    store directories that hold no data (left by test runs and temp
+    projects); a dry run that lists them unless --apply, which removes only
+    those. Back up ~/.local/share/lean-ctx/knowledge first (not reversible),
+    and use --apply only with a merged and installed build.
+  lean-ctx knowledge stale --json [--limit N]
+    facts that are not current truth: anchored code changed, moved or gone, contradicted
+  lean-ctx knowledge verify <category>/<key> --json
+    checked and still true: re-anchor to the code as it is, clear the mark
+  lean-ctx knowledge dedupe --json [--threshold 0.5-1.0] [--apply --project-root <dir>]
+    exact and near duplicates; a dry run unless --apply names the project
+  lean-ctx knowledge outdated --json [--days N] [--limit N]
+    superseded facts and facts nobody confirmed for N days (default 90)
+  lean-ctx knowledge conflicts --json
+    contradictions to show a person
+  lean-ctx knowledge related <id> [--json] [--depth N] [--direction in|out|both] [--limit N] [--include-noise]
+    the relations of one fact (category/key) or code node (code:path, code:path#symbol)
+  lean-ctx knowledge graph [--json] [--limit N] [--include-noise]
+    the project's facts, anchors and typed relations (contract local-read/1)
 {}
 
 Examples:
@@ -1190,6 +1309,118 @@ mod tests {
                 "{line}"
             );
         }
+
+        // A long fact key is a slug, not a secret: it was masked (all such
+        // keys to one marker) and then withheld the whole export (Hive
+        // Desktop: "Unknown"). It is now kept as it is.
+        let slug = "governor-design-pull-forward-2026-10-29";
+        let slugged = serde_json::json!([{
+            "category": "decision",
+            "key": slug,
+            "content": "Design first, code after the owner's OK.",
+        }])
+        .to_string();
+        assert_eq!(
+            released_export(&root, "simple", slugged.clone()).as_deref(),
+            Ok(slugged.as_str())
+        );
+
+        // A value that is a secret only by the name in front of it is masked
+        // where it stands ...
+        let secret = ["Zx8Qp2Lm9R", "t4Vb7Nc1Kd", "6Hf3Jg5Ws0", "Ya2Ue7Io4P"].concat();
+        let named = serde_json::json!({"token": secret, "note": "kept"}).to_string();
+        let released = released_export(&root, "simple", named).expect("masked, not withheld");
+        assert!(!released.contains(&secret), "{released}");
+        let document: serde_json::Value = serde_json::from_str(&released).expect("valid JSON");
+        assert_eq!(document["note"], "kept");
+        // ... and the same text anywhere else — under another name, or
+        // inside another value such as a fact id — withholds the document.
+        for leaking in [
+            serde_json::json!({"token": secret, "copy": secret}),
+            // Only part of a value is masked: that part is looked for.
+            serde_json::json!({"key": format!("{secret} tail"), "copy": secret}),
+            serde_json::json!({"note": format!("token: {secret}"), "copy": secret}),
+        ] {
+            let outcome = released_export(&root, "simple", leaking.to_string());
+            match outcome {
+                Err(reason) => assert!(!reason.contains(&secret), "{reason}"),
+                Ok(leaked) => panic!("a masked value left in place: {leaked}"),
+            }
+        }
+        // In an export of facts the leak is per fact (#1298): that fact is
+        // withheld, the export is not.
+        for leaking in [
+            serde_json::json!([{"id": format!("decision/{secret}"), "key": secret}]),
+            serde_json::json!([{"key": format!("{secret} v2"), "id": format!("decision/{secret}")}]),
+        ] {
+            let released = released_export(&root, "simple", leaking.to_string())
+                .expect("the fact is withheld, not the export");
+            assert!(!released.contains(&secret), "{released}");
+            assert_eq!(released, "[]", "the leaking fact is dropped");
+        }
+        // What a withheld fact had masked stays hidden in the facts that are
+        // released: another fact naming it where no rule fires is withheld too.
+        let tripping = serde_json::json!({"key": secret, "id": format!("session/{secret}")});
+        let naming = serde_json::json!({"key": "b", "value": format!("ref {secret}")});
+        let clean = serde_json::json!({"key": "c", "value": "kept"});
+        let facts = serde_json::json!([tripping, naming, clean]).to_string();
+        let released = released_export(&root, "simple", facts).expect("not withheld as a whole");
+        assert!(!released.contains(&secret), "{released}");
+        assert_eq!(released, serde_json::json!([clean]).to_string());
+
+        // `jsonl`: a withheld line is left out and counted, the export goes
+        // on, and the same holds across lines.
+        let lines = [&tripping, &naming, &clean]
+            .map(ToString::to_string)
+            .join("\n");
+        let released = released_export(&root, "jsonl", lines).expect("not withheld as a whole");
+        assert!(!released.contains(&secret), "{released}");
+        assert_eq!(released, clean.to_string());
+    }
+
+    /// #1298 review: a `jsonl` line that passed the release but whose
+    /// receipt could not be stored turned into a "withheld" line, so an
+    /// export with the receipt store down came out empty with exit 0. It
+    /// ends the export with the `receipt.not_persisted` reason again (exit 1
+    /// through `exit_withheld`), like the `json` and `simple` exports.
+    #[test]
+    fn an_export_whose_receipt_is_not_stored_is_refused_not_emptied() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let (_project, root) = project();
+        let line = serde_json::json!({
+            "category": "auth",
+            "key": "token-type",
+            "content": "Uses JWT RS256",
+        })
+        .to_string();
+        let lines = format!("{line}\n{line}");
+        assert_eq!(
+            released_export(&root, "jsonl", lines.clone()).as_deref(),
+            Ok(lines.as_str()),
+            "with a working store every line is delivered"
+        );
+
+        // The store cannot persist: a regular file where its directory would be.
+        let data = lean_ctx::core::data_dir::lean_ctx_data_dir().expect("data directory");
+        std::fs::create_dir_all(&data).expect("data directory");
+        let gateway = data.join("gateway");
+        if gateway.is_dir() {
+            std::fs::remove_dir_all(&gateway).expect("the store of the first export");
+        }
+        std::fs::write(&gateway, b"not a directory").expect("blocked store");
+        let not_persisted =
+            lean_ctx::core::context_admission::receipt_store::not_persisted_notice();
+        assert_eq!(
+            released_export(&root, "jsonl", lines),
+            Err(not_persisted.clone()),
+            "a missing receipt is not a withheld line"
+        );
+        assert_eq!(
+            released_export(&root, "simple", format!("[{line}]")),
+            Err(not_persisted)
+        );
     }
 
     /// `recall --json` on a project without knowledge is the empty array,
@@ -1233,5 +1464,51 @@ mod export_target_tests {
         assert!(super::export_target_ok(root, &root.join("docs/AGENTS.md")).is_ok());
         std::os::unix::fs::symlink(outside.path(), root.join("linked")).unwrap();
         assert!(super::export_target_ok(root, &root.join("linked/AGENTS.md")).is_err());
+    }
+
+    /// #1298: a fact keyed by its session id (masked under `"key"`, but
+    /// still carried by `source_session`) withheld the whole export. Now the
+    /// `json` and `simple` exports leave out only that fact and release the
+    /// clean ones; the session id is delivered nowhere.
+    #[test]
+    fn an_export_withholds_only_the_fact_that_trips_the_release() {
+        use super::released_export;
+        use crate::cli::common::carrier_tests_support::{governed, project};
+        const SESSION_KEY: &str = "wake-mcp-9fK2xQ7vT4bL8nR3cW6yH1mJ5pD0sGz";
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let policy = lean_ctx::core::memory_policy::MemoryPolicy::default();
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k =
+            lean_ctx::core::knowledge::ProjectKnowledge::new(k_root.path().to_str().unwrap());
+        k.remember("architecture", "auth", "JWT RS256", "s1", 0.9, &policy);
+        k.remember("api", "rate-limit", "100/min", "s1", 0.8, &policy);
+        governed();
+        let (_project, root) = project();
+        let mut tripping = k.facts[0].clone();
+        tripping.category = "session".into();
+        tripping.key = SESSION_KEY.into();
+        tripping.source_session = SESSION_KEY.into();
+        tripping.value = "Queen wake record".into();
+        k.facts.push(tripping);
+
+        let json = serde_json::to_string_pretty(&k).expect("json");
+        let document = released_export(&root, "json", json).expect("released, not withheld");
+        assert!(!document.contains(SESSION_KEY), "{document}");
+        let value: serde_json::Value = serde_json::from_str(&document).expect("valid JSON");
+        let mut keys: Vec<&str> = value["facts"]
+            .as_array()
+            .expect("facts")
+            .iter()
+            .filter_map(|fact| fact["key"].as_str())
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, ["auth", "rate-limit"]);
+
+        let simple = serde_json::to_string_pretty(&k.export_simple()).expect("simple");
+        let document = released_export(&root, "simple", simple).expect("released, not withheld");
+        assert!(!document.contains(SESSION_KEY), "{document}");
+        let value: serde_json::Value = serde_json::from_str(&document).expect("valid JSON");
+        assert_eq!(value.as_array().map(Vec::len), Some(2), "{document}");
     }
 }

@@ -144,6 +144,21 @@ const TASK_FILLER_WORDS: &[&str] = &[
     "write",
 ];
 
+/// The terms of an explicit knowledge query, lowercased and split exactly
+/// like the knowledge index splits facts (on whitespace, `-`, `_`, `/`,
+/// `.`), deduplicated in order. A whitespace-only split missed every
+/// hyphenated word: "Local-Read" was looked up as "local-read", a token the
+/// index never holds.
+fn query_terms(query: &str) -> Vec<String> {
+    let mut terms: Vec<String> = Vec::new();
+    for token in super::ranking::tokenize_lower(query) {
+        if !terms.contains(&token) {
+            terms.push(token);
+        }
+    }
+    terms
+}
+
 /// The task's content words, lowercased and split like the knowledge index
 /// splits facts, with surrounding punctuation trimmed ("validation." →
 /// "validation") and filler words dropped. Order-preserving and deduplicated.
@@ -193,8 +208,7 @@ impl ProjectKnowledge {
     }
 
     pub fn recall(&self, query: &str) -> Vec<&KnowledgeFact> {
-        let q = query.to_lowercase();
-        let terms: Vec<&str> = q.split_whitespace().collect();
+        let terms = query_terms(query);
         if terms.is_empty() {
             return Vec::new();
         }
@@ -251,8 +265,7 @@ impl ProjectKnowledge {
     }
 
     pub fn recall_at_time(&self, query: &str, at: DateTime<Utc>) -> Vec<&KnowledgeFact> {
-        let q = query.to_lowercase();
-        let terms: Vec<&str> = q.split_whitespace().collect();
+        let terms = query_terms(query);
         if terms.is_empty() {
             return Vec::new();
         }
@@ -305,7 +318,7 @@ impl ProjectKnowledge {
 
     pub fn recall_for_output(&mut self, query: &str, limit: usize) -> (Vec<KnowledgeFact>, usize) {
         let q = query.to_lowercase();
-        let terms: Vec<&str> = q.split_whitespace().filter(|t| !t.is_empty()).collect();
+        let terms = query_terms(query);
         if terms.is_empty() {
             return (Vec::new(), 0);
         }

@@ -96,9 +96,9 @@ impl KnowledgeAdmission {
     /// If they disagree, fail closed instead of losing a rule's original signal.
     pub(crate) fn admit_text(&self, original: &str) -> Option<String> {
         let project_original = self.apply_project(original)?;
-        let gateway_original = self.gateway.admit_text(original)?;
+        let gateway_original = self.gateway.admit_instance_text(original)?;
         let gateway_then_project = self.apply_project(&gateway_original)?;
-        let project_then_gateway = self.gateway.admit_text(&project_original)?;
+        let project_then_gateway = self.gateway.admit_instance_text(&project_original)?;
         (gateway_then_project == project_then_gateway).then_some(gateway_then_project)
     }
 

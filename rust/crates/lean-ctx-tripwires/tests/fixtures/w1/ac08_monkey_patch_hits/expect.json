@@ -1,0 +1,45 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 1,
+      "path": "rust/crates/demo/src/clock.rs",
+      "rule": "monkey_patch"
+    },
+    {
+      "line": 8,
+      "path": "rust/crates/demo/src/clock.rs",
+      "rule": "monkey_patch"
+    },
+    {
+      "line": 5,
+      "path": "rust/crates/demo/tests/test_clock.py",
+      "rule": "monkey_patch"
+    },
+    {
+      "line": 8,
+      "path": "rust/crates/demo/tests/test_clock.py",
+      "rule": "monkey_patch"
+    },
+    {
+      "line": 2,
+      "path": "web/clock.test.js",
+      "rule": "monkey_patch"
+    },
+    {
+      "line": 3,
+      "path": "web/clock.test.js",
+      "rule": "monkey_patch"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/test_clock.py",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "web/clock.test.js",
+      "rule": "test_or_grader_touched"
+    }
+  ]
+}

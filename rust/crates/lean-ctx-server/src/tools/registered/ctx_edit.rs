@@ -215,6 +215,10 @@ pub(crate) fn observe_mcp_edit(
     before: &[u8],
     after: &[u8],
 ) {
+    if before != after && !ctx.project_root.is_empty() {
+        // Facts anchored to this file are to verify once its code moved.
+        crate::tools::ctx_knowledge::freshness::mark_edited(&ctx.project_root, path);
+    }
     let config = lean_ctx::core::config::Config::load();
     if !config.provenance.enabled || !config.provenance.capture_mcp_edits || before == after {
         return;

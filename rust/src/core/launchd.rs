@@ -65,6 +65,27 @@ pub(crate) fn bootstrap(label: &str, plist: &Path) -> bool {
     launchctl(&["bootstrap", &gui_domain(), &plist.to_string_lossy()]).unwrap_or(false)
 }
 
+/// The PID of the running job `label` in the gui domain (`pid = N` in
+/// `launchctl print`), or `None` when it is not loaded or runs nothing.
+/// Read-only and timeout-protected.
+pub(crate) fn service_pid(label: &str) -> Option<u32> {
+    let mut cmd = Command::new("launchctl");
+    cmd.args(["print", &service_target(label)]);
+    let out = crate::ipc::process::run_with_timeout(cmd, LAUNCHCTL_TIMEOUT)?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_print_pid(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// The top-level `pid = N` line of `launchctl print` output.
+fn parse_print_pid(text: &str) -> Option<u32> {
+    text.lines()
+        .filter_map(|line| line.trim().strip_prefix("pid = "))
+        .find_map(|value| value.trim().parse::<u32>().ok())
+        .filter(|pid| *pid != 0)
+}
+
 /// Returns `true` if the service is currently registered in the gui domain.
 pub(crate) fn is_loaded(label: &str) -> bool {
     launchctl(&["print", &service_target(label)]).unwrap_or(false)

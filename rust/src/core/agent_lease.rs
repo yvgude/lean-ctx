@@ -544,6 +544,36 @@ pub fn acquire_shared(
     with_shared_registry(|registry, now| registry.acquire(request, now))
 }
 
+/// The active leases of the machine-wide registry, soonest expiry first
+/// (then by `lease_ref`). Read only: the store is written atomically.
+pub fn active_shared() -> Result<Vec<AgentLeaseV1>, AgentLeaseError> {
+    let registry = load_registry(&shared_dir()?.join("leases.json"))?;
+    let now = now_epoch_ms();
+    let mut leases: Vec<AgentLeaseV1> = registry
+        .leases
+        .into_values()
+        .filter(|lease| lease.is_active_at(now))
+        .collect();
+    leases.sort_by(|a, b| {
+        a.expires_at_epoch_ms
+            .cmp(&b.expires_at_epoch_ms)
+            .then_with(|| a.lease_ref.cmp(&b.lease_ref))
+    });
+    Ok(leases)
+}
+
+/// The project-relative path a `project-path:` resource of `project_root`
+/// names (lower-cased where paths fold, percent escapes kept); `None` for
+/// other resources.
+pub fn project_path_of(project_root: &str, resource_ref: &str) -> Option<String> {
+    let scope = crate::core::project_hash::hash_project_root(project_root);
+    resource_ref
+        .strip_prefix(PROJECT_PATH_SCHEME)?
+        .strip_prefix(&scope)?
+        .strip_prefix('/')
+        .map(str::to_owned)
+}
+
 /// Releases a lease from the machine-wide registry.
 pub fn release_shared(
     resource_kind: AgentLeaseResourceKindV1,

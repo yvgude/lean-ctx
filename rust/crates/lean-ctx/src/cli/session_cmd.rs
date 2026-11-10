@@ -8,6 +8,14 @@ use super::common::{format_tokens_cli, load_shell_history};
 pub fn cmd_session_action(args: &[String]) {
     let action = args.first().map(String::as_str);
 
+    // Local Read v1: an app session's counters and cost as JSON.
+    if let Some(kind @ ("stats" | "cost")) = action
+        && super::local_read::wants_json(args)
+    {
+        super::local_read::session::run(kind, &args[1..]);
+        return;
+    }
+
     match action {
         Some("task") => {
             let desc = args.get(1).map_or("(no description)", String::as_str);

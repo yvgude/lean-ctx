@@ -1,0 +1,2 @@
+Docker image is 1.2 GB; could the runtime stage use a slim base?
+Most of the size seems to be build tools that are not needed at runtime.

@@ -1,0 +1,20 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 0,
+      "path": "rust/crates/demo/src/x.rs",
+      "rule": "test_count_dropped"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/src/x.rs",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/outside/x_tests.rs",
+      "rule": "test_or_grader_touched"
+    }
+  ]
+}

@@ -37,6 +37,7 @@ use lean_ctx_server::tools::LeanCtxServer;
 mod config;
 mod discovery;
 mod handlers;
+mod local_service;
 mod relay_rate;
 mod relay_replay;
 mod relay_replay_async;
@@ -422,6 +423,11 @@ struct ToolCallBody {
     /// never in the session of whichever project the daemon served last.
     #[serde(default)]
     project_root: Option<String>,
+    /// The calling session's `LEAN_CTX_RIGHTS_FILE` (process-v1 §9). Honoured
+    /// only on the local daemon socket: the call runs under that session's
+    /// rights, never under the daemon's own environment.
+    #[serde(default)]
+    rights_file: Option<String>,
     #[serde(default)]
     _workspace_id: Option<String>,
     #[serde(default)]
@@ -538,10 +544,21 @@ async fn v1_tool_call(
             }
         },
     };
+    if body.rights_file.is_some() && !state.local_ipc {
+        return json_error(
+            StatusCode::BAD_REQUEST,
+            "rights_file_refused",
+            "only the local daemon socket names a session's rights file",
+        )
+        .into_response();
+    }
+    // Every forwarded call runs under the sender's rights; without a rights
+    // file the sender has no session profile (the Instance's rules apply).
+    let rights = lean_ctx::core::session_rights::from_file_arg(body.rights_file.as_deref());
     let engine = ContextEngine::from_server(server);
     match tokio::time::timeout(
         state.timeout,
-        engine.call_tool_value(&body.name, body.arguments),
+        engine.call_tool_value_with_rights(&body.name, body.arguments, rights),
     )
     .await
     {
@@ -1128,6 +1145,14 @@ fn build_router(
         _ => lean_ctx::core::ocla::wire_api::ocla_router(),
     };
 
+    // Local Service v1 (Local Read routes, live events): the daemon socket
+    // only — its 0600 mode is the guard; a TCP server never serves them.
+    let local_routes = if local_ipc {
+        local_service::router()
+    } else {
+        Router::new()
+    };
+
     Router::new()
         .route("/health", get(health))
         .route("/v1/health", get(v1_health))
@@ -1187,6 +1212,7 @@ fn build_router(
             axum::routing::post(kernel_api::reset_state),
         )
         .merge(ocla.with_state(()))
+        .merge(local_routes)
         .fallback_service(mcp_http)
         .layer(axum::extract::DefaultBodyLimit::max(cfg.max_body_bytes))
         .layer(middleware::from_fn_with_state(

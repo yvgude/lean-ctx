@@ -1,0 +1,50 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 5,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "assert_weakened"
+    },
+    {
+      "line": 12,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "assert_weakened"
+    },
+    {
+      "line": 17,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "assert_weakened"
+    },
+    {
+      "line": 23,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "assert_weakened"
+    },
+    {
+      "line": 27,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "assert_weakened"
+    },
+    {
+      "line": 32,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "assert_weakened"
+    },
+    {
+      "line": 1,
+      "path": "rust/crates/demo/tests/c.rs",
+      "rule": "assert_weakened"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/c.rs",
+      "rule": "test_or_grader_touched"
+    }
+  ]
+}

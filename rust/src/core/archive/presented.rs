@@ -332,12 +332,16 @@ pub struct IssuedCapability {
 /// written — then no capability exists.
 #[must_use]
 pub fn issue(ttl_seconds: u32) -> Option<IssuedCapability> {
+    issue_at(ttl_seconds, now())
+}
+
+/// [`issue`] on the register clock `now`.
+fn issue_at(ttl_seconds: u32, now: i64) -> Option<IssuedCapability> {
     let ttl = i64::from(ttl_seconds);
     if !(1..=MAX_CAPABILITY_TTL_SECONDS).contains(&ttl) {
         return None;
     }
     let capability = PresenterCapability::mint()?;
-    let now = now();
     let expires_at = now.checked_add(ttl)?;
     PRESENTERS
         .update::<PresenterRecord>(&capability.id(), now, |known| {
@@ -987,7 +991,11 @@ mod tests {
         // Bound: issued presenters per source. The set fills; a further one
         // is not recorded and displaces nobody.
         let issued: Vec<IssuedCapability> = (0..=MAX_PRESENTERS_PER_SOURCE)
-            .map(|_| issue(60).expect("issued"))
+            // On the clock the presentations below are recorded at: a
+            // capability put on record later by the wall clock (a test
+            // past 10 s on a loaded runner) was "recorded in the future",
+            // not fresh, and its presentation refused (#2214).
+            .map(|_| issue_at(60, start + 10).expect("issued"))
             .collect();
         let recorded: Vec<bool> = issued
             .iter()

@@ -93,9 +93,14 @@ impl Sandbox {
     }
 
     fn run(&self, cmd: &str, flag: &str) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
-            .arg(cmd)
-            .arg(flag)
+        self.command(&[cmd, flag]).output().expect("spawn lean-ctx")
+    }
+
+    /// The binary with `args`, isolated in this sandbox.
+    fn command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+        command
+            .args(args)
             .current_dir(self.dir("work"))
             .env("HOME", self.dir("home"))
             .env("LEAN_CTX_DATA_DIR", self.dir("data"))
@@ -110,9 +115,8 @@ impl Sandbox {
             // another test in this process has pointed these at.
             .env_remove("LEAN_CTX_STATE_DIR")
             .env_remove("LEAN_CTX_CONFIG_DIR")
-            .env_remove("LEAN_CTX_CACHE_DIR")
-            .output()
-            .expect("spawn lean-ctx")
+            .env_remove("LEAN_CTX_CACHE_DIR");
+        command
     }
 
     /// Like `run`, but with a terminal on stdin and stderr — a person typing
@@ -269,6 +273,69 @@ fn guarded_command_prints_reference_usage_instead_of_running() {
     {
         let found = &files_under(&sandbox.dir("home"));
         assert!(found.is_empty(), "{found:?}");
+    }
+}
+
+/// `serve` with a flag or argument it does not know exits 2 with the reason
+/// and starts nothing. 3.12.1 skipped `--print-socket` and served HTTP on
+/// port 8080; a server that starts here would outlive the deadline.
+/// `--help` after other flags prints every serve flag.
+#[test]
+fn serve_refuses_unknown_arguments_and_starts_nothing() {
+    let sandbox = Sandbox::new();
+    for (args, reason) in [
+        (
+            &["serve", "--print-sockets"][..],
+            "unknown flag --print-sockets",
+        ),
+        (&["serve", "start"], "unexpected argument \"start\""),
+        (&["serve", "--port", "nope"], "--port needs a number"),
+    ] {
+        let mut child = OwnedChild(
+            sandbox
+                .command(args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("spawn lean-ctx"),
+        );
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let status = loop {
+            if let Some(status) = child.0.try_wait().expect("wait") {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{args:?} kept running: it started"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        let mut stderr = String::new();
+        child
+            .0
+            .stderr
+            .take()
+            .expect("stderr")
+            .read_to_string(&mut stderr)
+            .expect("read stderr");
+        assert_eq!(status.code(), Some(2), "{args:?}: {stderr}");
+        assert!(stderr.contains(reason), "{args:?}: {stderr}");
+    }
+
+    let out = sandbox
+        .command(&["serve", "--port", "9", "--help"])
+        .output()
+        .expect("spawn lean-ctx");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{}", out.status);
+    for flag in [
+        "--print-socket",
+        "--a2a-peers",
+        "--request-timeout-ms",
+        "--disable-host-check",
+    ] {
+        assert!(stdout.contains(flag), "{flag} missing:\n{stdout}");
     }
 }
 

@@ -1386,16 +1386,36 @@ jobs:
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi
+          # lean-ctx-activity (used by the Engine) and lean-ctx-tasks (used by the
+          # Hive connector, the MCP server and the binary) build on lean-ctx-fs and
+          # lean-ctx-protocol, so they go after those and before the Engine.
+          ACTIVITY_VERSION="$(grep -m1 '^version' crates/lean-ctx-activity/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-activity/${ACTIVITY_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-activity ${ACTIVITY_VERSION} to crates.io first..."
+            publish lean-ctx-activity
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          TASKS_VERSION="$(grep -m1 '^version' crates/lean-ctx-tasks/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-tasks/${TASKS_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-tasks ${TASKS_VERSION} to crates.io first..."
+            publish lean-ctx-tasks
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
           # `cargo package` verifies the engine from its packaged source after
           # its published protocol dependencies are available and local
           # `[patch.crates-io]` entries have been stripped. Packaging the
           # Engine library (lean-ctx-engine) together with the `lean-ctx`
           # binary crate verifies the binary against the just-packaged Engine.
           # This must pass before we promise that `cargo install lean-ctx` works.
-          cargo package --locked -p lean-ctx-engine -p lean-ctx-hooks -p lean-ctx-hive -p lean-ctx-server -p lean-ctx-proxy -p lean-ctx
+          cargo package --locked -p lean-ctx-engine -p lean-ctx-shell-policy -p lean-ctx-hooks -p lean-ctx-hive -p lean-ctx-server -p lean-ctx-proxy -p lean-ctx
           # Verification is intentionally mandatory: source packages cannot rely
           # on this repository's local `[patch.crates-io]` entries.
-          # Release order: the Engine first, then the agent hooks and the Hive
+          # Release order: the Engine first, then the shell-allowlist policy above
+          # it, then the agent hooks and the Hive
           # connector above it, the MCP server (which uses both) and the proxy
           # (whose tests use the server), then the binary crate on top of all.
           ENGINE_VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
@@ -1403,6 +1423,14 @@ jobs:
                "https://crates.io/api/v1/crates/lean-ctx-engine/${ENGINE_VERSION}" >/dev/null 2>&1; then
             echo "Publishing lean-ctx-engine ${ENGINE_VERSION} to crates.io first..."
             publish lean-ctx-engine
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          POLICY_VERSION="$(grep -m1 '^version' crates/lean-ctx-shell-policy/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/lean-ctx-shell-policy/${POLICY_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing lean-ctx-shell-policy ${POLICY_VERSION} to crates.io..."
+            publish lean-ctx-shell-policy
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi

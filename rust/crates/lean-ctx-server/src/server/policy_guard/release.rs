@@ -25,6 +25,7 @@ use lean_ctx::core::policy::content::{
 use serde_json::Value;
 
 mod gateway;
+mod origin;
 
 /// The release point for both channels of a tool call. Under an active pack
 /// the dispatcher replaces every error with a fixed text; without one the
@@ -36,6 +37,11 @@ pub fn release_outcome(
     outcome
         .map(|result| release_result(tool, result))
         .map_err(gateway::release_error)
+}
+
+/// The error channel of the release point.
+pub fn release_error(error: rmcp::ErrorData) -> rmcp::ErrorData {
+    gateway::release_error(error)
 }
 
 pub fn release_result(tool: &str, result: CallToolResult) -> CallToolResult {

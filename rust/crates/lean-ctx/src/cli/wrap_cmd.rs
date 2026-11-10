@@ -375,6 +375,14 @@ fn ensure_proxy_running(port: u16) -> Result<(), String> {
     if crate::proxy_setup::is_proxy_reachable(port) {
         return Ok(());
     }
+    // The proxy service belongs to the default install; another instance
+    // neither queries nor (re)installs it.
+    if !lean_ctx::daemon_autostart::controls_user_services() {
+        return Err(format!(
+            "no proxy on port {port}. {}",
+            lean_ctx::daemon_autostart::not_this_instance_message()
+        ));
+    }
 
     let loaded = lean_ctx::proxy_autostart::is_loaded();
     if loaded {

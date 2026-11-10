@@ -221,6 +221,7 @@ impl SessionState {
             save_gate: Default::default(),
             last_save_failed: false,
             id: generate_session_id(),
+            app_session_id: crate::core::activity::session_id_from_env(),
             version: 0,
             started_at: now,
             updated_at: now,
@@ -246,6 +247,7 @@ impl SessionState {
             live_zone: super::types::LiveZoneSessionState::default(),
             playbook: super::playbook::Playbook::default(),
             last_semantic_query: None,
+            taint: Default::default(),
             last_flush: None,
         }
         .with_compression_from_config()

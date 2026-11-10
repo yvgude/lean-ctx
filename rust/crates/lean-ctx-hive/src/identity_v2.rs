@@ -164,9 +164,14 @@ pub fn sendable(mut candidates: Vec<Candidate>, legacy: Option<&str>) -> Vec<Can
 /// Read the parts of the checkout at `root`. A linked worktree reads the
 /// remote and the commits of its repository (`git -C` follows `.git`).
 pub fn read_parts(root: &Path) -> IdentityParts {
+    let remote = origin_remote(root);
+    // A `.lean-ctx-id` an earlier `hive link` wrote next to an origin is
+    // per checkout, not per repository: left out, like the v1 identity
+    // leaves it out ([`super::vault::project_identity`]).
+    let id = read_id_file(root).filter(|id| remote.is_none() || !super::vault::link_made_id(id));
     IdentityParts {
-        id: read_id_file(root),
-        remote: origin_remote(root),
+        id,
+        remote,
         root: root_commit(root),
     }
 }

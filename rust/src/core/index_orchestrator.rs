@@ -322,6 +322,16 @@ pub fn ensure_all_background(project_root: &str) {
 /// own the threading. Requires the caller to have claimed the worker slot via
 /// [`try_claim_worker`]; releases it on exit.
 fn run_build_worker(root: &str) {
+    // The build's project is the root it indexes: its files are the
+    // project's own, not unknown stored text (pz21 §1.4), whatever the
+    // process directory of the detached worker is.
+    crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+        std::cell::RefCell::new(Some(std::path::PathBuf::from(root))),
+        || run_build_worker_in_project(root),
+    );
+}
+
+fn run_build_worker_in_project(root: &str) {
     // Released on every exit, a panic outside the per-phase `catch_unwind`
     // included: `index build` waits for the slot without a deadline, so a slot
     // left claimed would hang the CLI instead of reporting the failure.

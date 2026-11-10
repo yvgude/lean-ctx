@@ -229,10 +229,10 @@ mod tests {
         std::fs::create_dir_all(&vault).unwrap();
         std::fs::write(vault.join("note.md"), "# Vault note\nrotation policy").unwrap();
 
-        // serde_json escapes the path: a Windows path's backslashes are not
-        // valid JSON escapes when formatted into the string verbatim.
         write_registry(
             project.path(),
+            // Serialized, not spliced: a Windows path (`C:\Users\...`) is
+            // full of backslashes that are invalid JSON escapes (#2214).
             &serde_json::json!({
                 "artifacts": [{"name": "vault", "path": vault, "description": "notes"}]
             })

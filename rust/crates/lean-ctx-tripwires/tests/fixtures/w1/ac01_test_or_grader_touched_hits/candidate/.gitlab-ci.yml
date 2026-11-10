@@ -1,0 +1,4 @@
+stages:
+  - test
+test:
+  script: cargo test --quiet

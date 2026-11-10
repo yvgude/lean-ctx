@@ -1,0 +1,2 @@
+[rules]
+disable = ["assert_removed", "test_or_grader_touched"]

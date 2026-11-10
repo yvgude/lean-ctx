@@ -609,6 +609,55 @@ fn over_former_mutating_cap_session_keeps_its_real_role() {
     assert_eq!(registry.list_active(None).len(), 5);
 }
 
+#[test]
+fn an_app_session_keeps_its_bus_id_per_role_across_mcp_restarts() {
+    let _isolated = crate::core::data_dir::isolated_data_dir();
+    let mut reg = AgentRegistry::new();
+    // A presence of the session without a process identity: it may be
+    // live, so it is never taken over.
+    let mut unknown = test_entry("claude-999998-live", "/p", 999_998);
+    unknown.process_identity = None;
+    unknown.role = Some("tester".into());
+    unknown.app_session_id = Some("app-1".into());
+    // The session's earlier MCP process: finished.
+    let mut gone = unknown.clone();
+    gone.agent_id = "claude-999999-old".into();
+    gone.status = AgentStatus::Finished;
+    let mut other_role = gone.clone();
+    other_role.agent_id = "claude-999999-other".into();
+    other_role.role = Some("coder".into());
+    reg.agents.push(unknown);
+    reg.agents.push(gone);
+    reg.agents.push(other_role);
+
+    let fresh = reg.register("claude", Some("tester"), "/p", None).unwrap();
+    assert_ne!(fresh, "claude-999999-old", "no app session: a new id");
+    let index = reg.agents.iter().position(|a| a.agent_id == fresh).unwrap();
+    reg.agents[index].app_session_id = Some("app-1".into());
+
+    let kept = reg.adopt_app_session_identity(index);
+    assert_eq!(
+        kept, "claude-999999-old",
+        "the session's id for the role is reused"
+    );
+    let ids: Vec<&str> = reg.agents.iter().map(|a| a.agent_id.as_str()).collect();
+    assert_eq!(
+        ids.len(),
+        3,
+        "the old entry is taken over, not duplicated: {ids:?}"
+    );
+    assert!(
+        ids.contains(&"claude-999998-live"),
+        "a presence without identity is never taken over"
+    );
+    assert!(
+        ids.contains(&"claude-999999-other"),
+        "another role stays its own"
+    );
+    let own = reg.agents.iter().find(|a| a.agent_id == kept).unwrap();
+    assert_eq!(own.pid, std::process::id(), "now held by this process");
+}
+
 fn test_entry(agent_id: &str, project_root: &str, pid: u32) -> AgentEntry {
     let now = Utc::now();
     AgentEntry {
@@ -626,6 +675,8 @@ fn test_entry(agent_id: &str, project_root: &str, pid: u32) -> AgentEntry {
         transport: None,
         role_source: None,
         parent: None,
+        app_session_id: None,
+        display_name: None,
     }
 }
 
@@ -781,6 +832,8 @@ fn legacy_identity_recovery_requires_the_original_lean_ctx_process() {
         transport: None,
         role_source: None,
         parent: None,
+        app_session_id: None,
+        display_name: None,
     };
     let registered_after_boot = crate::ipc::process::ProcessIdentity {
         start_marker: u64::try_from(started_at.timestamp_micros() - 1_000_000)
@@ -829,6 +882,8 @@ fn only_the_known_legacy_false_positive_is_recoverable() {
         transport: None,
         role_source: None,
         parent: None,
+        app_session_id: None,
+        display_name: None,
     };
     assert!(super::is_recoverable_legacy_finished(&agent));
 
@@ -876,6 +931,8 @@ fn mutate_locked_survives_concurrent_writers() {
                             transport: None,
                             role_source: None,
                             parent: None,
+                            app_session_id: None,
+                            display_name: None,
                         });
                     });
                     match outcome {

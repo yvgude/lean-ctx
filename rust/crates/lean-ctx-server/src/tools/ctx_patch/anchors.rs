@@ -41,9 +41,10 @@ pub enum AnchorOp {
         end_line: usize,
         end_hash: String,
     },
-    /// Create a NEW file with `new_text` as its content. No anchors — the file
-    /// must not exist yet (strict, unlike `ctx_edit create=true` which
-    /// overwrites). Handled before the preimage read; cannot be mixed with
+    /// Create a file with `new_text` as its content. No anchors — the file
+    /// must not exist yet or be an empty regular file (strict, unlike
+    /// `ctx_edit create=true` which overwrites). Handled before the preimage
+    /// read; cannot be mixed with
     /// anchored ops in one call (a batch shares a single existing preimage).
     Create { new_text: String },
 }

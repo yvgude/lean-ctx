@@ -63,6 +63,10 @@ pub struct ContentChunk {
     pub metadata: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<super::providers::provenance::ProviderOrigin>,
+    /// The untrusted origin of provider text (pz21 §1.6). `None` for a
+    /// project file; a `scheme://` chunk without it is read as unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_origin: Option<super::context_admission::origin::InputOrigin>,
 }
 
 impl ContentChunk {
@@ -94,6 +98,14 @@ impl ContentChunk {
             references,
             metadata,
             origin: None,
+            input_origin: super::context_admission::origin::provider_input_kind(resource_type).map(
+                |kind| {
+                    super::context_admission::origin::InputOrigin::new(
+                        kind,
+                        format!("{provider_id}:{resource_type}/{item_id}"),
+                    )
+                },
+            ),
         }
     }
 
@@ -120,6 +132,7 @@ impl From<ContentChunk> for CodeChunk {
             content: c.content,
             tokens: c.tokens,
             token_count: c.token_count,
+            input_origin: c.input_origin,
         }
     }
 }
@@ -139,6 +152,7 @@ impl From<CodeChunk> for ContentChunk {
             references: Vec::new(),
             metadata: None,
             origin: None,
+            input_origin: c.input_origin,
         }
     }
 }
@@ -204,6 +218,7 @@ mod tests {
     #[test]
     fn code_chunk_to_content_chunk() {
         let code = CodeChunk {
+            input_origin: None,
             file_path: "src/main.rs".into(),
             symbol_name: "main".into(),
             kind: ChunkKind::Function,

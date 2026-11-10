@@ -285,21 +285,29 @@ where
 }
 
 /// The governor decision for one hook payload. Pure apart from the
-/// per-session record files under the temp dir.
+/// per-session record files under the temp dir and, on a compaction or clear,
+/// the data dir's `last_compaction.json` marker.
 pub(crate) fn decide(input: &str, policy: &Policy) -> Decision {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(input) else {
         return Decision::default();
     };
     let session_id = v.get("session_id").and_then(|s| s.as_str()).unwrap_or("");
     match v.get("hook_event_name").and_then(|e| e.as_str()) {
+        // Under the governor these events reach `hook govern`, never `hook
+        // observe`, so the compaction marker the MCP server watches is written
+        // here as well; without it the next read stays an `[unchanged]` stub.
         Some("PreCompact" | "PostCompact") => {
             purge(session_id);
+            super::observe::record_compaction_now();
             return Decision::default();
         }
         Some("SessionStart") => {
             let source = v.get("source").and_then(|s| s.as_str()).unwrap_or("");
             if matches!(source, "clear" | "compact" | "resume") {
                 purge(session_id);
+            }
+            if matches!(source, "clear" | "compact") {
+                super::observe::record_compaction_now();
             }
             return Decision::default();
         }

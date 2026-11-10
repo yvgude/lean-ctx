@@ -185,8 +185,9 @@ async fn forwarded_task_response_that_needs_redaction_is_refused_not_altered() {
     let _data = lean_ctx::core::data_dir::isolated_data_dir();
     let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
     let raw = format!("{{\"output\": \"let aws_key = \\\"{AWS_KEY}\\\";\"}}");
-    let admitted = lean_ctx::core::context_admission::carrier::admit_carrier_text(&raw)
-        .expect("developer mode delivers a masked text");
+    let admitted =
+        lean_ctx::core::context_admission::carrier::admit_carrier_text(&raw, &peer_class())
+            .expect("developer mode delivers a masked text");
     assert_ne!(admitted.text, raw, "precondition: the gateway redacts this");
 
     let response = forwarded_delivery_response(
@@ -631,13 +632,42 @@ async fn replay_primary_and_legacy_alias_transition_atomically() {
 #[test]
 fn handoff_files_publish_atomically_and_idempotently() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("delivery.json");
-    persist_handoff_file(&path, b"payload", Some("delivery")).expect("publish");
+    let rel = std::path::Path::new(".lean-ctx/handoffs/delivery.json");
+    let path = dir.path().join(rel);
+    persist_handoff_file(dir.path(), rel, b"payload", Some("delivery")).expect("publish");
     assert_eq!(std::fs::read(&path).expect("read payload"), b"payload");
-    assert!(!path.with_extension("json.tmp").exists());
-    persist_handoff_file(&path, b"payload", Some("delivery")).expect("idempotent retry");
-    assert!(persist_handoff_file(&path, b"different", Some("delivery")).is_err());
+    assert_eq!(
+        std::fs::read_dir(path.parent().unwrap()).unwrap().count(),
+        1,
+        "no staged temp left"
+    );
+    persist_handoff_file(dir.path(), rel, b"payload", Some("delivery")).expect("idempotent retry");
+    assert!(persist_handoff_file(dir.path(), rel, b"different", Some("delivery")).is_err());
     assert_eq!(std::fs::read(&path).expect("original remains"), b"payload");
+}
+
+/// A symlinked `.lean-ctx/handoffs` directory must not carry a received
+/// handoff, or the eviction of old ones, outside the project.
+#[cfg(unix)]
+#[test]
+fn handoff_files_reject_a_symlinked_handoff_directory() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project = dir.path().join("project");
+    let outside = dir.path().join("outside");
+    std::fs::create_dir_all(project.join(".lean-ctx")).expect("project");
+    std::fs::create_dir_all(&outside).expect("outside");
+    std::fs::write(outside.join("keep.json"), b"keep").expect("outside file");
+    symlink(&outside, project.join(".lean-ctx/handoffs")).expect("symlink");
+    let rel = std::path::Path::new(".lean-ctx/handoffs/received-x.json");
+    assert!(persist_handoff_file(&project, rel, b"payload", None).is_err());
+    assert!(!outside.join("received-x.json").exists());
+    evict_oldest_files(&project, std::path::Path::new(".lean-ctx/handoffs"), 1);
+    assert!(
+        outside.join("keep.json").exists(),
+        "eviction stays in the project"
+    );
 }
 
 #[cfg(unix)]
@@ -650,7 +680,15 @@ fn handoff_files_reject_symlink_destinations() {
     std::fs::write(&target, b"original").expect("target");
     let path = dir.path().join("delivery.json");
     symlink(&target, &path).expect("symlink");
-    assert!(persist_handoff_file(&path, b"payload", Some("delivery")).is_err());
+    assert!(
+        persist_handoff_file(
+            dir.path(),
+            std::path::Path::new("delivery.json"),
+            b"payload",
+            Some("delivery")
+        )
+        .is_err()
+    );
     assert_eq!(
         std::fs::read(&target).expect("target unchanged"),
         b"original"

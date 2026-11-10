@@ -57,9 +57,13 @@ pub fn load_shell_history() -> Vec<String> {
 /// all. Redaction keeps the line structure, so the per-line parsing below is
 /// unaffected for clean history. Nothing is written back.
 fn admitted_history(raw: &str) -> String {
-    crate::core::context_admission::carrier::admit_carrier_text(raw)
-        .map(|admission| admission.text)
-        .unwrap_or_default()
+    crate::core::context_admission::carrier::admit_carrier_text(
+        raw,
+        // Lines the user typed: the user's own text.
+        &crate::core::context_admission::carrier::INSTANCE,
+    )
+    .map(|admission| admission.text)
+    .unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -4,6 +4,7 @@ use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_int, get_str};
+use lean_ctx::core::context_admission::origin::{InputKind, InputOrigin};
 use lean_ctx::core::protocol::append_savings;
 use lean_ctx::core::tokens::count_tokens;
 use lean_ctx::core::web::{self, ReadMode, ReadOptions};
@@ -83,20 +84,43 @@ impl McpTool for CtxUrlReadTool {
         // Admission runs twice, on purpose: on the extracted source text
         // BEFORE any mode distils it (`read_url_admitted`), and on the text
         // that is finally delivered, footer included (`admitted`).
-        let result = tokio::task::block_in_place(|| {
-            web::read_url_admitted(&opts, &admit_extracted).and_then(admitted)
-        });
+        let result = tokio::task::block_in_place(|| read_noted(&opts));
 
         result.map_err(|e| ErrorData::invalid_params(format!("ctx_url_read failed: {e}"), None))
     }
+}
+
+/// Fetch and admit `opts.url`. The page's origin is noted on the call before
+/// anything is fetched (review 22480 finding 5): a fetch error names the URL
+/// and text the server sent (a content type, a status line), and the release
+/// point fences an error only for a call whose ledger is not empty.
+fn read_noted(opts: &ReadOptions<'_>) -> Result<ToolOutput, String> {
+    let origin = web_origin(opts.url);
+    lean_ctx::core::context_admission::capture::note_origin(
+        &lean_ctx::core::context_admission::origin::SourceClass::External(origin.clone()),
+    );
+    web::read_url_admitted(opts, &|text: &str| admit_extracted_as(text, &origin)).and_then(admitted)
 }
 
 /// Admission of the extracted source text (page Markdown, PDF text,
 /// transcript, rendered link list, title), applied by `core::web` before it
 /// renders, ranks or summarizes anything (G01). A fetched body is a source
 /// that is not a file: project policy on the text, then the gateway.
+#[cfg(test)]
 fn admit_extracted(text: &str) -> Result<String, String> {
     crate::tools::admitted_sources::admit_remote_text(text, "ctx_url_read")
+        .map(|admission| admission.text)
+}
+
+/// The origin of a fetched page (pz21 §1.1, `web`): its URL without query
+/// and fragment, content-free.
+fn web_origin(url: &str) -> InputOrigin {
+    InputOrigin::new(InputKind::Web, source_reference(url))
+}
+
+/// [`admit_extracted`] for a page of known origin: untrusted, fenced.
+fn admit_extracted_as(text: &str, origin: &InputOrigin) -> Result<String, String> {
+    crate::tools::admitted_sources::admit_remote_text_as(text, "ctx_url_read", origin)
         .map(|admission| admission.text)
 }
 
@@ -123,8 +147,12 @@ fn source_reference(url: &str) -> String {
 /// empty or partial success. A body `core::web` cannot extract as text (an
 /// unsupported content type) is refused there, in every mode.
 fn admitted(read: web::ReadResult) -> Result<ToolOutput, String> {
-    let content =
-        crate::tools::admitted_sources::admit_remote_text(&read.content, "ctx_url_read")?.text;
+    let content = crate::tools::admitted_sources::admit_remote_text_as(
+        &read.content,
+        "ctx_url_read",
+        &web_origin(&read.final_url),
+    )?
+    .text;
     lean_ctx::core::context_admission::capture::note_source_id(&source_reference(&read.final_url));
     let sent = count_tokens(&content);
     let saved = read.original_tokens.saturating_sub(sent);
@@ -144,6 +172,35 @@ fn admitted(read: web::ReadResult) -> Result<ToolOutput, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Review 22480 finding 5: the origin was noted only after extraction
+    /// succeeded, so a fetch error was released raw.
+    #[test]
+    fn a_failed_fetch_is_noted_as_outside_input() {
+        use lean_ctx::core::context_admission::capture::{ADMISSIONS, AdmissionCapture};
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let capture = AdmissionCapture::new();
+        let opts = ReadOptions {
+            url: "http://127.0.0.1:9/refused?token=secret",
+            mode: ReadMode::Text,
+            query: None,
+            max_tokens: web::DEFAULT_MAX_TOKENS,
+            max_items: web::DEFAULT_MAX_ITEMS,
+            timeout_secs: 1,
+        };
+        let result = ADMISSIONS.sync_scope(Some(capture.clone()), || read_noted(&opts));
+        assert!(result.is_err(), "a private address is refused");
+        let ledger = capture.origin_ledger();
+        assert!(!ledger.is_empty(), "the failed fetch left no origin");
+        assert!(
+            ledger
+                .refs
+                .iter()
+                .all(|input| !format!("{input:?}").contains("secret")),
+            "{:?}",
+            ledger.refs
+        );
+    }
 
     const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
 

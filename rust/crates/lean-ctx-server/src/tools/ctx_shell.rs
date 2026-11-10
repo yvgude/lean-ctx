@@ -118,7 +118,7 @@ pub(crate) fn validate_command_in_cwd(
 
     // #931: strip heredoc bodies before the redirect scanner — a `>` inside a
     // heredoc body is opaque data, not a file-write redirect.
-    let cmd_no_heredoc = lean_ctx::core::shell_allowlist::strip_all_heredoc_bodies(command);
+    let cmd_no_heredoc = lean_ctx_shell_policy::strip_all_heredoc_bodies(command);
     // #1850: a relative target lands where its own command runs, and a `cd`
     // earlier in the line moves that. Judging every target against the call's
     // `cwd` blocked `cd /tmp && echo x > out.txt` and let `cd <project> && echo
@@ -351,7 +351,7 @@ fn disallowed_download(
                         None,
                     ))
         };
-        let tokens = lean_ctx::core::shell_allowlist::shell_tokenize(seg.trim());
+        let tokens = lean_ctx_shell_policy::shell_tokenize(seg.trim());
         let Some(first) = tokens.first() else {
             continue;
         };
@@ -364,13 +364,11 @@ fn disallowed_download(
             // reads (`curl -K`, `wget --config`) may name any file: refused
             // wherever the call runs.
             "curl" | "wget" => {
-                if let Some(target) =
-                    lean_ctx::core::shell_allowlist::download_targets(base, &tokens[1..])
-                        .into_iter()
-                        .find(|target| {
-                            target == lean_ctx::core::shell_allowlist::UNKNOWN_DOWNLOAD_TARGET
-                                || !allowed(target)
-                        })
+                if let Some(target) = lean_ctx_shell_policy::download_targets(base, &tokens[1..])
+                    .into_iter()
+                    .find(|target| {
+                        target == lean_ctx_shell_policy::UNKNOWN_DOWNLOAD_TARGET || !allowed(target)
+                    })
                 {
                     return Some(format!("{base} writes {target}"));
                 }
@@ -525,10 +523,10 @@ fn resolve_path_for_comparison(path: &std::path::Path) -> std::path::PathBuf {
 }
 
 fn tee_targets(command: &str) -> Vec<String> {
-    lean_ctx::core::shell_allowlist::extract_all_commands_pub(command)
+    lean_ctx_shell_policy::extract_all_commands_pub(command)
         .into_iter()
         .filter_map(|segment| {
-            let tokens = lean_ctx::core::shell_allowlist::shell_tokenize(segment.trim());
+            let tokens = lean_ctx_shell_policy::shell_tokenize(segment.trim());
             let first = tokens.first()?;
             if first.rsplit('/').next().unwrap_or(first) != "tee" {
                 return None;

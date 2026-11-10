@@ -277,6 +277,8 @@ impl AgentRegistry {
             transport: None,
             role_source: Some(RoleSource::Declared),
             parent: Some(parent_id.to_string()),
+            app_session_id: crate::core::activity::session_id_from_env(),
+            display_name: crate::core::activity::session_name_from_env(),
         });
         self.updated_at = now;
         crate::core::events::emit_agent_action(&agent_id, "register", None);
@@ -304,6 +306,18 @@ impl AgentRegistry {
                 && a.process_identity.is_some()
                 && a.process_identity == identity
         })
+    }
+
+    /// Set the display name of `agent_id` (a re-register takes over the new
+    /// one); `false` when no such agent is known.
+    pub fn set_display_name(&mut self, agent_id: &str, name: &str) -> bool {
+        match self.agents.iter_mut().find(|a| a.agent_id == agent_id) {
+            Some(agent) => {
+                agent.display_name = Some(name.to_owned());
+                true
+            }
+            None => false,
+        }
     }
 
     /// The declared role of `agent_id`, if it has one.
@@ -412,7 +426,13 @@ impl AgentRegistry {
             if existing.durable_identity_id.is_none() {
                 existing.durable_identity_id = durable_identity_id.map(str::to_string);
             }
-            return Ok(existing.agent_id.clone());
+            if existing.app_session_id.is_none() {
+                existing.app_session_id = crate::core::activity::session_id_from_env();
+            }
+            if let Some(name) = crate::core::activity::session_name_from_env() {
+                existing.display_name = Some(name);
+            }
+            return Ok(self.adopt_app_session_identity(existing_index));
         }
 
         // A legacy record or a PID-reused record can share this numeric PID.
@@ -447,11 +467,56 @@ impl AgentRegistry {
             transport: meta.transport,
             role_source: meta.role_source,
             parent: None,
+            app_session_id: crate::core::activity::session_id_from_env(),
+            display_name: crate::core::activity::session_name_from_env(),
         });
+        let agent_id = self.adopt_app_session_identity(self.agents.len() - 1);
 
         self.updated_at = Utc::now();
         crate::core::events::emit_agent_action(&agent_id, "register", None);
         Ok(agent_id)
+    }
+
+    /// One app session keeps one bus identity per role across MCP restarts:
+    /// when the presence at `index` (this process, top level) holds a role
+    /// under an app session id, and an earlier presence of the same app
+    /// session held that role in a process that is gone (or finished), the
+    /// presence at `index` takes over that id (and its start), so messages
+    /// and leases addressed to it keep reaching the session. A presence of
+    /// another live process, a child presence, or one bound to another
+    /// durable identity is never taken. Returns the id the presence holds.
+    fn adopt_app_session_identity(&mut self, index: usize) -> String {
+        let current = &self.agents[index];
+        let (Some(app), Some(role)) = (current.app_session_id.clone(), current.role.clone()) else {
+            return current.agent_id.clone();
+        };
+        if role == PLACEHOLDER_ROLE || current.parent.is_some() {
+            return current.agent_id.clone();
+        }
+        let binding = current.durable_identity_id.clone();
+        let earlier = self.agents.iter().enumerate().position(|(i, a)| {
+            i != index
+                && a.parent.is_none()
+                && a.app_session_id.as_deref() == Some(app.as_str())
+                && a.role.as_deref() == Some(role.as_str())
+                && (a.durable_identity_id.is_none() || a.durable_identity_id == binding)
+                && (a.status == AgentStatus::Finished
+                    || a.process_identity.as_ref().is_some_and(|identity| {
+                        !crate::ipc::process::matches_identity(a.pid, identity)
+                    }))
+        });
+        let Some(earlier) = earlier else {
+            return self.agents[index].agent_id.clone();
+        };
+        let old = self.agents.remove(earlier);
+        let index = if earlier < index { index - 1 } else { index };
+        let current = &mut self.agents[index];
+        current.agent_id = old.agent_id;
+        current.started_at = old.started_at;
+        if current.durable_identity_id.is_none() {
+            current.durable_identity_id = old.durable_identity_id;
+        }
+        current.agent_id.clone()
     }
 
     /// Atomically registers this MCP process in the shared on-disk registry.
@@ -1039,6 +1104,33 @@ impl AgentRegistry {
             .any(|e| unread_for(e, agent_id, Some(project_root), now, floor))
     }
 
+    /// The unread messages of `agent_id` in `project_root` in scratchpad
+    /// order (oldest first), without marking them read.
+    pub fn unread_scoped(&self, agent_id: &str, project_root: &str) -> Vec<&ScratchpadEntry> {
+        let now = Utc::now();
+        let floor = self.broadcast_floor(agent_id);
+        self.scratchpad
+            .iter()
+            .filter(|e| unread_for(e, agent_id, Some(project_root), now, floor))
+            .collect()
+    }
+
+    /// Record `agent_id` as a reader of the messages `ids`; returns how many
+    /// were not read by it yet.
+    pub fn mark_read(&mut self, agent_id: &str, ids: &[String]) -> usize {
+        let mut marked = 0;
+        for entry in self.scratchpad.iter_mut().filter(|e| ids.contains(&e.id)) {
+            if !entry.read_by.iter().any(|reader| reader == agent_id) {
+                entry.read_by.push(agent_id.to_owned());
+                marked += 1;
+            }
+        }
+        if marked > 0 {
+            self.updated_at = Utc::now();
+        }
+        marked
+    }
+
     /// Block until `agent_id` has a message waiting in `project_root`
     /// (`true`) or `timeout` passed (`false`). Looks at the registry only when
     /// its file changed (polled every `WAIT_POLL`); `on_poll` runs about every
@@ -1249,6 +1341,15 @@ impl AgentRegistry {
 
     pub fn load_or_create() -> Self {
         Self::load().unwrap_or_default()
+    }
+
+    /// The registry, read strictly: no file yet is an empty registry, but a
+    /// file that cannot be read or parsed is an error rather than "no
+    /// agents" (for callers that must fail closed, e.g. a worker sweep that
+    /// would otherwise take every live session's worker for idle).
+    pub fn load_checked() -> Result<Self, String> {
+        let dir = agents_dir()?;
+        Ok(load_registry_file(&dir.join("registry.json"))?.unwrap_or_default())
     }
 
     /// Atomically load, mutate, and persist the registry under a single file

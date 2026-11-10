@@ -156,8 +156,25 @@ impl SafeUrl {
     }
 }
 
+/// Test seam for a local fixture web server: with `test-support` compiled in
+/// and `LEAN_CTX_URL_GUARD_ALLOW_LOOPBACK=1` set, `127.0.0.1` passes the URL
+/// guard and the SSRF-safe resolver. Never compiled into a release build.
+#[cfg(feature = "test-support")]
+fn loopback_allowed(ip: IpAddr) -> bool {
+    ip == IpAddr::V4(Ipv4Addr::LOCALHOST)
+        && std::env::var("LEAN_CTX_URL_GUARD_ALLOW_LOOPBACK").is_ok_and(|v| v == "1")
+}
+
+#[cfg(not(feature = "test-support"))]
+fn loopback_allowed(_ip: IpAddr) -> bool {
+    false
+}
+
 /// True for addresses an outbound fetch must never reach (SSRF guard).
 pub fn ip_is_blocked(ip: IpAddr) -> bool {
+    if loopback_allowed(ip) {
+        return false;
+    }
     match ip {
         IpAddr::V4(v4) => v4_is_blocked(v4),
         IpAddr::V6(v6) => {

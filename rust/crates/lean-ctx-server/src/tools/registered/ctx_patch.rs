@@ -538,7 +538,9 @@ fn build_unique_edit_args(args: &Map<String, Value>) -> Result<Map<String, Value
         .or_else(|| get_str(args, "old_string"))
         .filter(|text| !text.is_empty())
         .ok_or_else(|| {
-            "replace_unique requires non-empty old_text (old_string also accepted)".to_string()
+            "replace_unique requires non-empty old_text (old_string also accepted); \
+             to fill an empty file use op=create"
+                .to_string()
         })?;
     let new_text = get_str(args, "new_text")
         .or_else(|| get_str(args, "new_string"))

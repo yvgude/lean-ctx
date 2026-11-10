@@ -56,6 +56,18 @@ pub struct PolicySet {
     pub policies: Vec<ContextPolicy>,
 }
 
+/// Where an effective policy comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PolicySource {
+    /// A security default: always first, never removed or redefined.
+    SecurityDefault,
+    /// A built-in default, in effect while the project has no policy file.
+    Default,
+    /// The project's `.lean-ctx/policies.json`.
+    Project,
+}
+
 impl PolicySet {
     pub fn new() -> Self {
         Self::default()
@@ -237,34 +249,56 @@ impl PolicySet {
     /// redefined by the project file: a project policy reusing one of their
     /// names is dropped.
     pub fn load_project(project_root: &std::path::Path) -> Self {
-        if crate::core::pathutil::is_data_dir_collision(project_root) {
-            return Self::defaults();
-        }
-        let path = project_root.join(".lean-ctx").join("policies.json");
-        let Some(project) = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|s| serde_json::from_str::<Self>(&s).ok())
-        else {
-            return Self::defaults();
-        };
-        let mut policies = Self::security_defaults().policies;
-        let reserved: Vec<String> = policies.iter().map(|p| p.name.clone()).collect();
-        policies.extend(
-            project
-                .policies
+        Self {
+            policies: Self::load_project_sourced(project_root)
                 .into_iter()
-                .filter(|p| !reserved.contains(&p.name)),
-        );
-        Self { policies }
+                .map(|(policy, _)| policy)
+                .collect(),
+        }
+    }
+
+    /// [`Self::load_project`] with where each policy comes from, in effect
+    /// order: the security defaults, then the project file's policies (or,
+    /// without a readable project file, the built-in defaults).
+    pub fn load_project_sourced(
+        project_root: &std::path::Path,
+    ) -> Vec<(ContextPolicy, PolicySource)> {
+        let tagged =
+            |set: Self, source: PolicySource| set.policies.into_iter().map(move |p| (p, source));
+        let project = (!crate::core::pathutil::is_data_dir_collision(project_root))
+            .then(|| project_root.join(".lean-ctx").join("policies.json"))
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|s| serde_json::from_str::<Self>(&s).ok());
+        let mut out: Vec<(ContextPolicy, PolicySource)> =
+            tagged(Self::security_defaults(), PolicySource::SecurityDefault).collect();
+        match project {
+            None => out.extend(tagged(
+                Self::attach_compat_defaults(),
+                PolicySource::Default,
+            )),
+            Some(project) => {
+                let reserved: Vec<String> = out.iter().map(|(p, _)| p.name.clone()).collect();
+                out.extend(
+                    project
+                        .policies
+                        .into_iter()
+                        .filter(|p| !reserved.contains(&p.name))
+                        .map(|p| (p, PolicySource::Project)),
+                );
+            }
+        }
+        out
     }
 
     /// Save policies to a project's .lean-ctx/policies.json file.
     pub fn save_project(&self, project_root: &std::path::Path) -> Result<(), String> {
-        let dir = crate::core::pathutil::safe_project_data_dir(project_root)?;
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let path = dir.join("policies.json");
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        crate::config_io::write_atomic(&path, &json)
+        crate::core::pathjail_write::write_project_data(
+            project_root,
+            std::path::Path::new("policies.json"),
+            json.as_bytes(),
+        )
+        .map(|_| ())
     }
 }
 

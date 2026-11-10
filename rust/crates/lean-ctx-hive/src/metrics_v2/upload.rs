@@ -42,6 +42,8 @@ const BACKFILL_DAYS: i64 = 30;
 const DEBOUNCE_SECS: i64 = 3_600;
 const BACKOFF_START: i64 = 60;
 const BACKOFF_MAX: i64 = 3_600;
+/// Seconds until a 404 for the hours upload is tried again.
+const NOT_FOUND_BACKOFF: i64 = 6 * 3_600;
 
 /// Whether this engine may collect and send to the Hive at `origin`.
 pub fn released(origin: &str) -> bool {
@@ -282,6 +284,44 @@ fn level_of(raw: Option<&str>) -> Option<PolicyLevel> {
     raw.and_then(PolicyLevel::from_wire)
 }
 
+/// Whether this pass sends nothing yet: a back-off after 429/5xx (a manual
+/// sync tries anyway), or a feature Hive switched off, which a manual sync
+/// does not retry either (it would only print the same refusal each time).
+pub(super) fn held_back(state: &State, now: DateTime<Utc>, force: bool) -> Option<MetricsV2Run> {
+    if state.retry_at.is_none_or(|at| now.timestamp() >= at) {
+        return None;
+    }
+    if state.switched_off.is_some() {
+        Some(MetricsV2Run::NotDue)
+    } else {
+        (!force).then_some(MetricsV2Run::Waiting)
+    }
+}
+
+/// Hive switched the feature off (`404 feature_disabled`): keep the hours
+/// (they stay valid once the operator switches it on), try again after
+/// [`BACKOFF_MAX`], and stay quiet; `hive status` says it.
+pub(super) fn switched_off(
+    hive_data: &Path,
+    state: &mut State,
+    feature: Option<String>,
+    now: DateTime<Utc>,
+) -> Result<MetricsV2Run, HiveError> {
+    if state.switched_off.is_none() {
+        tracing::info!(
+            "hive: {}; retried in {} min",
+            HiveError::FeatureDisabled {
+                feature: feature.clone()
+            },
+            BACKOFF_MAX / 60
+        );
+    }
+    state.switched_off = Some(feature.unwrap_or_else(|| "instance_metrics".into()));
+    state.retry_at = Some(now.timestamp().saturating_add(BACKOFF_MAX));
+    state.store(hive_data)?;
+    Ok(MetricsV2Run::NotDue)
+}
+
 /// Stop: record the refusal and drop everything buffered.
 fn refused(
     hive_data: &Path,
@@ -422,8 +462,8 @@ pub fn run(
     state.last_run = Some(now.timestamp());
     state.store(hive_data)?;
 
-    if state.retry_at.is_some_and(|at| now.timestamp() < at) && !force {
-        return Ok(MetricsV2Run::Waiting);
+    if let Some(held) = held_back(&state, now, force) {
+        return Ok(held);
     }
     let requests = batches(pending(&buffer, &allowed));
     if requests.is_empty() {
@@ -454,6 +494,7 @@ pub fn run(
                 state.last_sent_at = Some(now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
                 state.retry_at = None;
                 state.attempts = 0;
+                state.switched_off = None;
                 let off = ack.sharing.state != SharingValue::On;
                 state.sharing = Some(ack.sharing);
                 if off {
@@ -510,6 +551,23 @@ pub fn run(
                     lease,
                     now,
                 )));
+            }
+            // A Hive without the route (or one that does not know this
+            // instance's slice) answers 404: not an error of this sync. The
+            // hours stay buffered and are offered again much later, quietly.
+            Err(HiveError::NotFound) => {
+                if state.retry_at.is_none() {
+                    tracing::info!(
+                        "hive: instance metrics route not served by this Hive; retried in {}h",
+                        NOT_FOUND_BACKOFF / 3_600
+                    );
+                }
+                state.retry_at = Some(now.timestamp().saturating_add(NOT_FOUND_BACKOFF));
+                state.store(hive_data)?;
+                return Ok(MetricsV2Run::Waiting);
+            }
+            Err(HiveError::FeatureDisabled { feature }) => {
+                return switched_off(hive_data, &mut state, feature, now);
             }
             Err(error) if error.is_transient() => {
                 state.attempts = state.attempts.saturating_add(1);
@@ -598,6 +656,9 @@ pub struct MetricsV2Status {
     pub last_sent_at: Option<String>,
     pub buffered: u64,
     pub dropped: u64,
+    /// The feature Hive switched off (`feature_disabled`), shown once here
+    /// instead of on every sync.
+    pub switched_off: Option<String>,
 }
 
 impl MetricsV2Status {
@@ -625,6 +686,14 @@ impl MetricsV2Status {
         }
         if self.dropped > 0 {
             line.push_str(&format!(" · {} hours dropped (buffer full)", self.dropped));
+        }
+        if let Some(feature) = &self.switched_off {
+            line.push_str(&format!(
+                " · {} (hours kept until it is on)",
+                crate::HiveError::FeatureDisabled {
+                    feature: Some(feature.clone())
+                }
+            ));
         }
         line
     }
@@ -665,6 +734,7 @@ pub fn status(
         last_sent_at: state.last_sent_at,
         buffered: Buffer::at(store.data_dir()).pending() as u64,
         dropped: state.dropped_buckets,
+        switched_off: state.switched_off,
     }
 }
 

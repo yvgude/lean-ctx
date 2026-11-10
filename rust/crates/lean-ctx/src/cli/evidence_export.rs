@@ -17,6 +17,11 @@ pub(crate) fn cmd_evidence_export(args: &[String]) {
         usage();
         return;
     }
+    // Local Read v1 (`evidence.export`): the package with each file's digest.
+    if super::local_read::wants_json(args) {
+        super::local_read::kinds::run("evidence.export", args);
+        return;
+    }
     match export(args) {
         Ok((dir, format)) if format == "json" => {
             print_released(json!({"output": dir}).to_string(), true);
@@ -47,8 +52,17 @@ fn print_released(line: String, document: bool) {
     super::common::print_released(&released);
 }
 
+/// The files one export writes, in its package directory.
+pub(crate) const EXPORTED_FILES: [&str; 5] = [
+    "value_assessments.json",
+    "shadow_report.json",
+    "savings_summary.json",
+    "gold_set_stats.json",
+    "evidence_summary.md",
+];
+
 #[rustfmt::skip]
-fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
+pub(crate) fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
     let (dir, format) = parse(args)?;
     fs::create_dir_all(&dir)?;
     let assessments = Value::Array(
@@ -70,10 +84,10 @@ fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
     let gold_json = json!({"total":gold.total,"correct":gold.correct,"accuracy":gold.accuracy,
         "intent_distribution":gold.per_intent});
     for (name, value) in [
-        ("value_assessments.json", &assessments),
-        ("shadow_report.json", &shadow),
-        ("savings_summary.json", &savings),
-        ("gold_set_stats.json", &gold_json),
+        (EXPORTED_FILES[0], &assessments),
+        (EXPORTED_FILES[1], &shadow),
+        (EXPORTED_FILES[2], &savings),
+        (EXPORTED_FILES[3], &gold_json),
     ] {
         write_json(&dir, name, value)?;
     }
@@ -85,7 +99,7 @@ fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
         .and_then(Value::as_bool)
         .map_or_else(|| String::from("No data"), |value| String::from(if value { "YES" } else { "NO" }));
     fs::write(
-        dir.join("evidence_summary.md"),
+        dir.join(EXPORTED_FILES[4]),
         format!(
             "# LeanCTX Evidence Package\n\nVersion: lean-ctx {}\n\n## Value Gate\n- Total Tasks Tracked: {}\n- Accepted Rate: {:.2}%\n- Average CPAO: {}\n- Total Cost Saved: {}\n\n## Shadow Analysis\n- Baseline Cost: {}\n- Treatment Cost: {}\n- Savings: {} ({}%)\n- Outcome Acceptance Not Below Simulated Baseline: {}\n\n## Model Readiness\n- Gold Validation Set: {} tasks\n- Rules Baseline Accuracy: {:.2}%\n",
             env!("CARGO_PKG_VERSION"),
@@ -161,7 +175,7 @@ fn money(value: Option<u64>) -> String { value.map_or_else(|| "No data".into(), 
 #[cfg(test)] #[rustfmt::skip]
 mod tests { use super::*; use std::path::Path; fn args(dir: &Path) -> Vec<String> { vec!["--output".into(), dir.display().to_string()] }
     #[test] fn test_parse_rejects_missing_or_unknown_options() { assert!(parse(&["--output".into()]).is_err()); assert!(parse(&["--unknown".into()]).is_err()); }
-    #[test] fn test_export_creates_directory() { let dir = std::env::temp_dir().join("evidence-export-dir"); let _ = fs::remove_dir_all(&dir); export(&args(&dir)).unwrap(); assert!(dir.is_dir()); }
-    #[test] fn test_export_creates_summary() { let dir = std::env::temp_dir().join("evidence-export-summary"); export(&args(&dir)).unwrap(); assert!(dir.join("evidence_summary.md").is_file()); }
-    #[test] fn test_export_json_valid() { let dir = std::env::temp_dir().join("evidence-export-json"); export(&args(&dir)).unwrap(); for name in ["value_assessments.json","shadow_report.json","savings_summary.json","gold_set_stats.json"] { assert!(serde_json::from_slice::<Value>(&fs::read(dir.join(name)).unwrap()).is_ok()); } }
+    #[test] fn test_export_creates_directory() { let tmp = tempfile::tempdir().unwrap(); let dir = tmp.path().join("evidence-export-dir"); export(&args(&dir)).unwrap(); assert!(dir.is_dir()); }
+    #[test] fn test_export_creates_summary() { let tmp = tempfile::tempdir().unwrap(); let dir = tmp.path().join("evidence-export-summary"); export(&args(&dir)).unwrap(); assert!(dir.join("evidence_summary.md").is_file()); }
+    #[test] fn test_export_json_valid() { let tmp = tempfile::tempdir().unwrap(); let dir = tmp.path().join("evidence-export-json"); export(&args(&dir)).unwrap(); for name in ["value_assessments.json","shadow_report.json","savings_summary.json","gold_set_stats.json"] { assert!(serde_json::from_slice::<Value>(&fs::read(dir.join(name)).unwrap()).is_ok()); } }
 }

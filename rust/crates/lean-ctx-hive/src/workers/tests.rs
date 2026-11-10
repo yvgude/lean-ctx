@@ -4,6 +4,39 @@
 
 use super::attach::{WORKER_CAP, attach_in, detect_host_app, host_display};
 
+/// Task #21: a role is made per app session, stays a valid normalised role
+/// (so Hive recomputes the same `wkr_` id from it) and is stable.
+#[test]
+fn a_session_role_is_per_session_stable_and_a_valid_role() {
+    use super::{normalize_role, session_role};
+    assert_eq!(session_role("Coder", None), "coder");
+    assert_eq!(
+        session_role("coder", Some("  ")),
+        "coder",
+        "blank: no session"
+    );
+    let a = session_role("coder", Some("sess-a"));
+    assert_eq!(a, session_role("coder", Some("sess-a")), "stable");
+    assert_ne!(a, session_role("coder", Some("sess-b")), "per session");
+    assert_ne!(a, session_role("reviewer", Some("sess-a")), "per role");
+    assert!(
+        a.starts_with("coder-s") && a.len() == "coder-s".len() + 8,
+        "{a}"
+    );
+    let long = session_role("a-very-long-role-name-that-goes-past-32", Some("sess-a"));
+    assert!(long.len() <= 32, "{long}");
+    let cut_on_dash = session_role("abcdefghijklmnopqrstu-wxyz", Some("sess-a"));
+    assert!(!cut_on_dash.contains("--"), "{cut_on_dash}");
+    for role in [a, long, cut_on_dash, session_role("", Some("x"))] {
+        assert_eq!(normalize_role(&role), role, "already normalised");
+    }
+    let instance = "0a80ace1-52f1-49c2-85f7-6991bada0099";
+    assert_ne!(
+        workspace_worker_id(instance, "claude-code", &session_role("coder", Some("w"))),
+        workspace_worker_id(instance, "claude-code", &session_role("coder", Some("r"))),
+    );
+}
+
 /// Dogfood finding 25.10.: a 1.x enrolment stores `inst_<32 hex>`, the
 /// server hashes the dashed UUID; both spellings give the server's id.
 #[test]
@@ -449,6 +482,8 @@ fn session(
         transport: None,
         role_source: None,
         parent: None,
+        app_session_id: None,
+        display_name: None,
     }
 }
 
@@ -506,4 +541,86 @@ fn cards_stay_within_the_contract_bounds() {
         self_reported_model([("CODEX_MODEL", "gpt"), ("ANTHROPIC_MODEL", "opus")]),
         Some("opus".to_string())
     );
+}
+
+/// Review 5!246 #1: `hive worker retire <wkr>` refuses a worker an active
+/// session holds (Hive would delete a worker that keeps posting), also when
+/// the book does not have it; `--force` retires it anyway.
+#[test]
+fn retiring_a_worker_in_use_is_refused_unless_forced() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let store = HiveStore::at(dir.path().join("c"), dir.path().join("d"));
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().into_owned();
+    let mut registry = lean_ctx::core::agents::AgentRegistry::new();
+    let agent = registry
+        .register("claude", Some("queen"), &root, None)
+        .unwrap();
+    registry.save().unwrap();
+    let entry = registry
+        .agents
+        .iter()
+        .find(|a| a.agent_id == agent)
+        .unwrap();
+    let (host, role) = attach::agent_worker_key(entry);
+    let held = attach::attach(&store, INSTANCE_A, &host, &role)
+        .unwrap()
+        .worker;
+    attach::update_book(&store, INSTANCE_A, |workers| {
+        for w in workers.iter_mut() {
+            w.registered_at = Some(1);
+        }
+    })
+    .unwrap();
+    let ids = vec![held.worker_id.clone()];
+
+    let refused = attach::give_up(&store, INSTANCE_A, &ids, false).unwrap_err();
+    assert!(refused.to_string().contains("in use"), "{refused}");
+    assert_eq!(attach::list(&store, INSTANCE_A).unwrap().len(), 1);
+    assert!(attach::retired(&store, INSTANCE_A).unwrap().is_empty());
+
+    // Not in the book: the id is still the live session's worker.
+    attach::update_book(&store, INSTANCE_A, Vec::clear).unwrap();
+    assert!(attach::give_up(&store, INSTANCE_A, &ids, false).is_err());
+    assert!(attach::retired(&store, INSTANCE_A).unwrap().is_empty());
+
+    assert_eq!(
+        attach::give_up(&store, INSTANCE_A, &ids, true).unwrap(),
+        ids
+    );
+    assert_eq!(attach::retired(&store, INSTANCE_A).unwrap(), ids);
+}
+
+/// Review 5!246 #2: an agent registry that cannot be parsed is not "no
+/// session": the idle sweeps and an explicit retirement give up nothing.
+#[test]
+fn sweeps_retire_nothing_when_the_agent_registry_is_unreadable() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let store = HiveStore::at(dir.path().join("c"), dir.path().join("d"));
+    let id = attach::attach(&store, INSTANCE_A, "codex", "reviewer")
+        .unwrap()
+        .worker
+        .worker_id;
+    attach::update_book(&store, INSTANCE_A, |workers| {
+        for w in workers.iter_mut() {
+            w.registered_at = Some(1);
+            w.last_attached = Some(1);
+            w.per_session = true;
+        }
+    })
+    .unwrap();
+    let agents = lean_ctx::core::data_dir::lean_ctx_data_dir()
+        .unwrap()
+        .join("agents");
+    std::fs::create_dir_all(&agents).unwrap();
+    std::fs::write(agents.join("registry.json"), b"{ not json").unwrap();
+
+    let idle = std::time::Duration::ZERO;
+    assert!(attach::give_up_idle(&store, INSTANCE_A, idle, false).is_err());
+    assert!(attach::give_up_idle(&store, INSTANCE_A, idle, true).is_err());
+    assert!(attach::give_up(&store, INSTANCE_A, &[id], false).is_err());
+    assert_eq!(attach::list(&store, INSTANCE_A).unwrap().len(), 1);
+    assert!(attach::retired(&store, INSTANCE_A).unwrap().is_empty());
 }

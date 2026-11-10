@@ -520,7 +520,12 @@ pub fn candidate(
             }
         }
     }
-    let admission = match crate::core::context_admission::admit_context_source(&source.content) {
+    let admission = match crate::core::context_admission::admit_context_source(
+        &source.content,
+        &crate::core::context_admission::origin::SourceClass::Unclassified {
+            tool: "context_plan",
+        },
+    ) {
         Ok(admission) => admission,
         // Withheld sources do not enter selection. The admission layer records
         // the content-free decision; the plan never echoes the rejected body.

@@ -4,7 +4,7 @@
 # the Engine sit between the two. The Engine is published first.
 [package]
 name = "lean-ctx"
-version = "3.12.2"
+version = "3.12.3"
 edition = "2024"
 autobins = false
 description = "LeanCTX | OSS: the open-source runtime for the Context Gateway for AI agents. CLI, MCP server, and supported proxy integrations."
@@ -17,6 +17,9 @@ categories = ["command-line-utilities", "development-tools"]
 # The integration tests read the Engine's tree (rust/): they cannot run from
 # the published package.
 exclude = ["tests/"]
+# Integration tests are listed below: one binary instead of one per
+# tests/*.rs file (each would link the whole Engine).
+autotests = false
 
 [package.metadata.binstall]
 bin-dir = "{ bin }{ binary-ext }"
@@ -36,6 +39,25 @@ path = "src/main.rs"
 # rustdoc would write the binary to doc/lean_ctx/ as well, colliding with the
 # Engine library (lib name lean_ctx); the binary has no public API to document.
 doc = false
+
+# The merged suite in rust/tests/suite (see tests/main.rs).
+[[test]]
+name = "main"
+path = "tests/main.rs"
+
+# This package's other integration tests as modules (see tests/integration.rs).
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+
+# These need a process of their own (see tests/integration.rs).
+[[test]]
+name = "codex_proxy_554"
+path = "tests/codex_proxy_554.rs"
+
+[[test]]
+name = "issue_326_parallel_knowledge"
+path = "tests/issue_326_parallel_knowledge.rs"
 
 # Same feature set as the Engine; each feature maps onto the Engine's feature
 # of the same name, so `--features`/`--no-default-features` keep their meaning
@@ -80,9 +102,10 @@ wasm = ["lean-ctx-engine/wasm"]
 [dependencies]
 # Used directly by the composition root moved out of the Engine.
 md-5 = "0.11"
-lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.1.0" }
-lean-ctx-ocla = { path = "../lean-ctx-ocla", version = "5.0.0" }
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
+lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.2.0" }
+lean-ctx-tasks = { path = "../lean-ctx-tasks", version = "0.1.0" }
+lean-ctx-ocla = { path = "../lean-ctx-ocla", version = "6.0.0" }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.6.0" }
 rmcp = { version = "3", features = [
   "server",
   "client",
@@ -154,11 +177,12 @@ blake3 = "1.8"
 rayon = "1.12"
 fs2 = "0.4"
 gethostname = "1.1"
-lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false }
-lean-ctx-hooks = { path = "../lean-ctx-hooks", version = "=3.12.2", default-features = false }
-lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.2", default-features = false }
-lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.2", default-features = false }
-lean-ctx-proxy = { path = "../lean-ctx-proxy", version = "=3.12.2", default-features = false }
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false }
+lean-ctx-shell-policy = { path = "../lean-ctx-shell-policy", version = "=3.12.3", default-features = false }
+lean-ctx-hooks = { path = "../lean-ctx-hooks", version = "=3.12.3", default-features = false }
+lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.3", default-features = false }
+lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.3", default-features = false }
+lean-ctx-proxy = { path = "../lean-ctx-proxy", version = "=3.12.3", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -171,9 +195,9 @@ tikv-jemalloc-ctl = { version = "0.7", optional = true, features = ["stats"] }
 filetime = "0.2"
 tokio-rustls = "0.26"
 # The Engine's test helpers for this crate's unit tests (see core::test_mode).
-lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false, features = ["test-support"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false, features = ["test-support"] }
 # The server's fixtures (isolation canary, work-graph delivery API) for this crate's tests.
-lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.2", default-features = false, features = ["test-support"] }
+lean-ctx-server = { path = "../lean-ctx-server", version = "=3.12.3", default-features = false, features = ["test-support"] }
 lean-ctx-ocla = { path = "../lean-ctx-ocla" }
 lean-ctx-protocol = { path = "../lean-ctx-protocol" }
 axum = { version = "0.8", features = ["ws"] }

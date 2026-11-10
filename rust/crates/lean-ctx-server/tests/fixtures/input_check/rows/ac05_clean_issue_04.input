@@ -1,0 +1,3 @@
+After upgrading to 3.12 the search results lost their line numbers.
+The output still has the file path but every hit starts at line 0.
+Downgrading to 3.11.4 brings them back.

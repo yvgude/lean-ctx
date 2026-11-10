@@ -184,6 +184,15 @@ fn render_message(m: &ScratchpadEntry, project_root: &str) -> String {
     // A new delivery: re-authorized under the current policy. One from
     // another instance carries its sender and kind inside the fence.
     if lean_ctx_hive::bus::relay_v2::is_inbound(m) {
+        // Text from another Instance: untrusted by origin (pz21 §1.1).
+        lean_ctx::core::context_admission::capture::note_origin(
+            &lean_ctx::core::context_admission::origin::SourceClass::External(
+                lean_ctx::core::context_admission::origin::InputOrigin::new(
+                    lean_ctx::core::context_admission::origin::InputKind::BusMessage,
+                    format!("hive:{}", m.id),
+                ),
+            ),
+        );
         return format!(
             "  [hive] ({age}m ago):\n{}\n",
             m.served_message(Some(project_root))
@@ -322,6 +331,100 @@ pub fn handle_wait(
     )
 }
 
+/// What `register` stores from the caller's `role` and `name`: `role` is a
+/// role id ([`lean_ctx::core::agents::role_id`]), `name` the display name
+/// (a bounded single line). Free text given as `role` is never stored as a
+/// role; it becomes the display name when no `name` is given. The warnings
+/// say what was not taken as asked.
+pub fn role_and_name(
+    role: Option<&str>,
+    name: Option<&str>,
+) -> (Option<String>, Option<String>, Vec<String>) {
+    let mut warnings = Vec::new();
+    let mut display = None;
+    if let Some(raw) = name {
+        display = lean_ctx::core::activity::session_name(raw);
+        if display.is_none() {
+            warnings.push("warning: name ignored (1-128 characters, one line)".to_owned());
+        }
+    }
+    let role_id = role.and_then(lean_ctx::core::agents::role_id);
+    if let (Some(raw), None) = (role, &role_id) {
+        warnings.push(format!(
+            "warning: unknown_role: {:?} is not a role id (coder, reviewer, tester, …); \
+             pass a display name as name=",
+            raw.chars().take(64).collect::<String>()
+        ));
+        if display.is_none() {
+            display = lean_ctx::core::activity::session_name(raw);
+        }
+    }
+    (role_id, display, warnings)
+}
+
+/// `register`: register (or refresh) this process's presence with `role`
+/// and `name` and answer exactly what was stored. A re-register on the same
+/// presence takes over the new role and name.
+pub fn register(
+    agent_type: Option<&str>,
+    role: Option<&str>,
+    name: Option<&str>,
+    durable_identity_id: Option<&str>,
+    project_root: &str,
+) -> String {
+    let atype = agent_type.unwrap_or("unknown");
+    let (role, name, warnings) = role_and_name(role, name);
+    let stored = AgentRegistry::mutate_locked(|registry| {
+        registry.cleanup_stale(presence_ttl_hours());
+        let agent_id =
+            registry.register(atype, role.as_deref(), project_root, durable_identity_id)?;
+        if let Some(name) = &name {
+            registry.set_display_name(&agent_id, name);
+        }
+        let entry = registry.agents.iter().find(|a| a.agent_id == agent_id);
+        Ok((
+            agent_id.clone(),
+            entry.and_then(|a| a.role.clone()),
+            entry.and_then(|a| a.display_name.clone()),
+        ))
+    })
+    .and_then(|(_, stored)| stored);
+    match stored {
+        Ok((agent_id, role, name)) => {
+            // The relay announces the agent (and its role) now, not on its
+            // next tick: a claim right after register finds it.
+            lean_ctx_hive::bus::presence::request_announce();
+            // Callers take the id from the text after the first ':'; the
+            // warnings and the note come after the stored values.
+            let mut text = format!(
+                "Agent registered: {agent_id} (type: {atype}, role: {}, name: {})",
+                role.as_deref().unwrap_or("none"),
+                name.as_deref().unwrap_or("none"),
+            );
+            for warning in warnings {
+                text.push('\n');
+                text.push_str(&warning);
+            }
+            if let Some(note) = lean_ctx::core::binary_identity::replaced_note() {
+                text.push('\n');
+                text.push_str(note.trim_end());
+            }
+            text
+        }
+        Err(e) => format!("Registration failed: {e}"),
+    }
+}
+
+/// The Queen-network fields of a `post` (QN0): its kind (one of the
+/// fourteen Queen kinds, posted only by the registered Queen), the task it
+/// belongs to and its conversation.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PostFields<'a> {
+    pub kind: Option<&'a str>,
+    pub task_id: Option<&'a str>,
+    pub thread: Option<&'a str>,
+}
+
 /// A `ctx_agent` call. What Hive answered to this agent's earlier lease
 /// requests (asked off the tool call) comes in front of the answer, except
 /// for `read`, whose answer is a delivery of its sources only.
@@ -345,6 +448,95 @@ pub fn handle(
     filename: Option<&str>,
     request_id: Option<&str>,
 ) -> String {
+    handle_with(
+        action,
+        agent_type,
+        role,
+        durable_identity_id,
+        project_root,
+        current_agent_id,
+        message,
+        category,
+        to_agent,
+        status,
+        privacy,
+        priority,
+        ttl_hours,
+        format,
+        write,
+        filename,
+        request_id,
+        PostFields::default(),
+    )
+}
+
+/// A post's Queen-network fields as the bus stores them: the task id and
+/// the entry metadata (kind, thread). Refused: an unknown kind (with the
+/// list), priority high or critical with a kind other than conflict,
+/// escalate or stop, a malformed task id or thread, and a kind from a sender
+/// that is no registered Queen (`not_queen`) or over its minute's budget
+/// (`rate_limited`).
+fn checked_post_fields(
+    registry: &AgentRegistry,
+    sender: &str,
+    post: PostFields<'_>,
+    priority: &MessagePriority,
+) -> Result<(Option<String>, std::collections::BTreeMap<String, String>), String> {
+    use lean_ctx_hive::bus::queen_kinds::{self, QueenKind, SenderRefusal};
+    let kind = QueenKind::from_input(post.kind)?;
+    if let Some(task_id) = post.task_id {
+        queen_kinds::check_task_id(task_id)?;
+    }
+    if let Some(thread) = post.thread {
+        queen_kinds::check_thread(thread)?;
+    }
+    if let Some(kind) = kind
+        && matches!(priority, MessagePriority::High | MessagePriority::Critical)
+        && !kind.allows_high()
+    {
+        return Err(format!(
+            "priority high is only for kinds conflict, escalate and stop, not {}",
+            kind.as_str()
+        ));
+    }
+    // Every post counts against its sender's budget, as on the CLI; a
+    // kind also needs the registered Queen.
+    let now = chrono::Utc::now().timestamp_millis();
+    queen_kinds::check_sender(registry, sender, kind, now).map_err(|refused| match refused {
+        SenderRefusal::NotQueen(why) | SenderRefusal::RateLimited(why) => why,
+    })?;
+    let mut metadata = std::collections::BTreeMap::new();
+    if let Some(kind) = kind {
+        metadata.insert(queen_kinds::KIND_KEY.to_owned(), kind.as_str().to_owned());
+    }
+    if let Some(thread) = post.thread {
+        metadata.insert(queen_kinds::THREAD_KEY.to_owned(), thread.to_owned());
+    }
+    Ok((post.task_id.map(str::to_owned), metadata))
+}
+
+/// [`handle`] with a post's Queen-network fields.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_with(
+    action: &str,
+    agent_type: Option<&str>,
+    role: Option<&str>,
+    durable_identity_id: Option<&str>,
+    project_root: &str,
+    current_agent_id: Option<&str>,
+    message: Option<&str>,
+    category: Option<&str>,
+    to_agent: Option<&str>,
+    status: Option<&str>,
+    privacy: Option<&str>,
+    priority: Option<&str>,
+    ttl_hours: Option<u64>,
+    format: Option<&str>,
+    write: bool,
+    filename: Option<&str>,
+    request_id: Option<&str>,
+    post: PostFields<'_>,
+) -> String {
     let earlier = current_agent_id.filter(|_| action != "read").map(|agent| {
         lean_ctx_hive::background::earlier(&lean_ctx_hive::bus::leases::caller(agent))
     });
@@ -366,6 +558,7 @@ pub fn handle(
         write,
         filename,
         request_id,
+        post,
     );
     match earlier {
         Some(earlier) => earlier.present(answer),
@@ -392,6 +585,7 @@ fn handle_action(
     write: bool,
     filename: Option<&str>,
     request_id: Option<&str>,
+    post: PostFields<'_>,
 ) -> String {
     // The caller's text is admitted once, before any action stores, routes,
     // derives from or echoes it (post, handoff, status, diary, knowledge,
@@ -406,31 +600,7 @@ fn handle_action(
     };
     let message = admitted_message.as_deref();
     match action {
-        "register" => {
-            let atype = agent_type.unwrap_or("unknown");
-            match AgentRegistry::mutate_locked(|registry| {
-                registry.cleanup_stale(presence_ttl_hours());
-                registry.register(atype, role, project_root, durable_identity_id)
-            })
-            .and_then(|(_, agent_id)| agent_id)
-            {
-                Ok(agent_id) => {
-                    // The relay announces the agent (and its role) now, not
-                    // on its next tick: a claim right after register finds it.
-                    lean_ctx_hive::bus::presence::request_announce();
-                    // The note goes last: callers take the id from the
-                    // text after the first ':'.
-                    format!(
-                        "Agent registered: {agent_id} (type: {atype}, role: {}){}",
-                        role.unwrap_or("none"),
-                        lean_ctx::core::binary_identity::replaced_note()
-                            .map(|note| format!("\n{}", note.trim_end()))
-                            .unwrap_or_default()
-                    )
-                }
-                Err(e) => format!("Registration failed: {e}"),
-            }
-        }
+        "register" => register(agent_type, role, None, durable_identity_id, project_root),
 
         "list" => {
             let registry = match AgentRegistry::mutate_locked(|registry| {
@@ -491,6 +661,40 @@ fn handle_action(
             if msg_privacy == PrivacyLevel::Private && to_agent.is_none() {
                 return "Error: private messages require to_agent".to_string();
             }
+            let registry = AgentRegistry::load_or_create();
+            // `queen` reaches the registered Queen (QN0), never an agent that
+            // only took the role name.
+            let to_agent = match to_agent
+                .map(|t| lean_ctx_hive::bus::queen_kinds::resolve_to(&registry, t))
+                .transpose()
+            {
+                Ok(to) => to,
+                Err(refused) => return format!("Error: not posted: {refused}"),
+            };
+            let to_agent = to_agent.as_deref();
+            let (task_id, metadata) =
+                match checked_post_fields(&registry, from, post, &msg_priority) {
+                    Ok(fields) => fields,
+                    Err(refused) => return format!("Error: not posted: {refused}"),
+                };
+            // No approval in a person's name (refused), and only the
+            // registered Queen appears as the Queen (process v1 §7): another
+            // sender is refused (`enforce`) or marked for its receivers (`warn`).
+            let msg = {
+                // The sender among the active presences; a question, offer or
+                // handoff that passes on a refused action is refused too.
+                match lean_ctx_hive::bus::person_rules::check_local_post(
+                    &registry,
+                    current_agent_id,
+                    cat,
+                    to_agent,
+                    msg,
+                ) {
+                    Ok(text) => text,
+                    Err(refused) => return format!("Error: not posted: {refused}"),
+                }
+            };
+            let msg = msg.as_str();
             let request = AgentMessageRequest {
                 project_root: project_root.to_string(),
                 from_agent_id: from.to_string(),
@@ -501,6 +705,8 @@ fn handle_action(
                 priority: msg_priority,
                 ttl_hours,
                 request_id: request_id.map(str::to_string),
+                task_id,
+                metadata,
             };
             match OclaRegistry::global().agent_gateway.route_message(&request) {
                 Ok(msg_id) => {
@@ -1097,28 +1303,15 @@ fn handle_action(
             let json = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| "{}".to_string());
 
             if write {
-                let proofs_dir = std::path::Path::new(project_root)
-                    .join(".lean-ctx")
-                    .join("proofs");
-                if let Err(e) = std::fs::create_dir_all(&proofs_dir) {
-                    return format!("Error: create proofs dir: {e}");
-                }
-
-                let name = if let Some(f) = filename {
-                    let p = std::path::Path::new(f);
-                    if p.components().count() != 1 {
-                        return "Error: filename must be a plain file name (no directories)"
-                            .to_string();
-                    }
-                    f.to_string()
-                } else {
-                    format!("a2a-snapshot-v1_{}.json", now.format("%Y%m%d_%H%M%S"))
-                };
-
-                let out_path = proofs_dir.join(name);
-                if let Err(e) = std::fs::write(&out_path, &json) {
-                    return format!("Error: write snapshot: {e}");
-                }
+                let name = filename.map_or_else(
+                    || format!("a2a-snapshot-v1_{}.json", now.format("%Y%m%d_%H%M%S")),
+                    str::to_string,
+                );
+                let out_path =
+                    match write_a2a_snapshot(std::path::Path::new(project_root), &name, &json) {
+                        Ok(path) => path,
+                        Err(e) => return format!("Error: write snapshot: {e}"),
+                    };
 
                 return format!(
                     "A2A snapshot exported: {}\n  agents: {}\n  messages: {}\n  tasks: {}",
@@ -1318,6 +1511,17 @@ fn handle_action(
 
         _ => format!("Unknown action: {action}. Use: {}", ACTIONS.join(", ")),
     }
+}
+
+/// Write an exported A2A snapshot to `<project>/.lean-ctx/proofs/<name>` through
+/// the shared proof destination: a plain file name only, and no symlinked
+/// `.lean-ctx`, `proofs` or target file.
+fn write_a2a_snapshot(
+    project_root: &std::path::Path,
+    name: &str,
+    json: &str,
+) -> Result<std::path::PathBuf, String> {
+    lean_ctx::core::context_proof::proof_destination(project_root, name)?.write(json)
 }
 
 #[cfg(test)]

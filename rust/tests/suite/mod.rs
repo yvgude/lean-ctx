@@ -4,8 +4,11 @@
 //! holds one linked test artifact instead of ~100 (was 17-25 GB of disk).
 //! Add new integration tests as modules here, NOT as new tests/*.rs files —
 //! unless the test mutates process env (set_var) or depends on exclusive
-//! process-global state (Config cache, graph-idx lock): those need their own
-//! process and stay as standalone tests/*.rs binaries.
+//! process-global state (Config cache, graph-idx lock): those go into the
+//! Engine's `engine` binary (rust/tests/engine.rs) or this package's
+//! `integration` binary (crates/lean-ctx/tests/integration.rs), which run one
+//! thread under libtest and one process per test under nextest. Only a test
+//! that needs a process no other test touched gets a `[[test]]` of its own.
 //!
 //! The whole binary runs against a throwaway data dir with the ambient agent
 //! scope removed — see `hermetic_env`.
@@ -45,6 +48,7 @@ mod evidence_bundle_v2_contract;
 mod execution_receipt_roundtrip;
 mod gateway_e2e;
 mod glob_cli_556;
+mod govern_compaction_reread;
 mod graph_export_contract;
 mod hardening_ir_traits;
 mod hermetic_env;
@@ -53,6 +57,7 @@ mod hive_bus_cross_instance;
 mod hive_connector_cli;
 mod hive_contract_fake;
 mod hive_fake_wire_conformance;
+mod hive_vault_resolution;
 mod hn_hardening_scenarios;
 mod hook_connect_only_566;
 mod http_server_streamable;
@@ -111,6 +116,8 @@ mod secret_scan_artifacts;
 mod security_hardening;
 mod security_resolve_path_guard;
 mod sensitivity_floor;
+mod serve_stop_scoped;
+mod service_guards_scoped;
 mod session_lock_timeout_scenarios;
 mod setup_ci_smoke;
 mod setup_dry_run;

@@ -1,0 +1,11 @@
+diff --git a/rust/src/core/zz_index.rs b/rust/src/core/zz_index.rs
+index 8888888..9999999 100644
+--- a/rust/src/core/zz_index.rs
++++ b/rust/src/core/zz_index.rs
+@@ -30,4 +30,4 @@ fn build(files: &[PathBuf], admission: &StoreAdmission) -> Vec<String> {
+     files
+-        .iter()
+-        .filter_map(|f| admission.admit(&read(f), f, None))
++        .par_iter()
++        .filter_map(|f| admission.admit(&read(f), f, None))
+         .collect()

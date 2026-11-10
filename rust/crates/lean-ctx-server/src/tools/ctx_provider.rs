@@ -577,7 +577,15 @@ fn handle_registry_chunks(
                 ));
             }
             // References are provider data too (URLs can carry tokens).
-            deliver_source_data(&out, &format!("provider:{provider_id}/{resource}"))
+            deliver_source_data(
+                &out,
+                &format!("provider:{provider_id}/{resource}"),
+                &lean_ctx::core::context_admission::origin::provider_class(
+                    provider_id,
+                    resource,
+                    "*",
+                ),
+            )
         }
         Err(e) => format!("Error: {e}"),
     }
@@ -674,7 +682,11 @@ fn consolidate_to_session(
         ..consolidation::PrunePrior::default()
     };
     std::thread::spawn(move || {
-        consolidation::apply_artifacts_to_stores(&artifacts, &project_root, &prune);
+        // Detached store write, outlives the call (pz21 §1.5 4a): its text
+        // reaches an agent only through a reader, which admits it again.
+        lean_ctx::core::context_admission::capture::outside_call(|| {
+            consolidation::apply_artifacts_to_stores(&artifacts, &project_root, &prune);
+        });
     });
 }
 
@@ -855,9 +867,17 @@ fn format_result_with(
     for item in &result.items {
         let item_origin = format!("{origin}/{}", item.id);
         let text = lean_ctx::core::redaction::redact_text_if_enabled(&render(item));
-        if let Ok(admitted) =
-            lean_ctx::core::context_admission::admit_source(&text, &item_origin, false)
-        {
+        if let Ok(admitted) = lean_ctx::core::context_admission::admit_source(
+            &text,
+            &item_origin,
+            false,
+            // Untrusted by origin (pz21 §1.3 item 4), mapped by resource.
+            &lean_ctx::core::context_admission::origin::provider_class(
+                &result.provider,
+                &result.resource_type,
+                &item.id,
+            ),
+        ) {
             lean_ctx::core::context_admission::capture::note_source_id(&item_origin);
             items.push_str(&admitted);
             delivered += 1;
@@ -866,7 +886,15 @@ fn format_result_with(
     let header = result.compact_header(delivered);
     if delivered == 0 {
         // No item decided these bytes: the list line is admitted itself.
-        return deliver_source_data(&header, &origin);
+        return deliver_source_data(
+            &header,
+            &origin,
+            &lean_ctx::core::context_admission::origin::provider_class(
+                &result.provider,
+                &result.resource_type,
+                "*",
+            ),
+        );
     }
     fenced_source_data(&format!("{header}{items}"), &origin)
 }
@@ -876,8 +904,12 @@ fn format_result_with(
 /// then reaches the model as data (K06): inside a fence its author cannot
 /// produce, so text in an issue or an MCP answer cannot close the block and
 /// pose as an instruction, whatever the injection detectors found.
-fn deliver_source_data(text: &str, origin: &str) -> String {
-    match lean_ctx::core::context_admission::admit_source(text, origin, false) {
+fn deliver_source_data(
+    text: &str,
+    origin: &str,
+    class: &lean_ctx::core::context_admission::origin::SourceClass,
+) -> String {
+    match lean_ctx::core::context_admission::admit_source(text, origin, false, class) {
         Ok(admitted) => fenced_source_data(&admitted, origin),
         Err(error) => format!("ERROR: {error}"),
     }

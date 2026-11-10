@@ -407,7 +407,7 @@ fn content_exclusion(target: &Path) -> Option<Exclusion> {
     // Same store admission the build applies (G5): a file the gateway keeps
     // out of every index must be explained as such, not reported as missing.
     crate::core::context_admission::stores::StoreAdmission::current()
-        .admit(&content, target)
+        .admit(&content, target, None)
         .is_none()
         .then_some(Exclusion::WithheldByGateway)
 }

@@ -1,0 +1,39 @@
+diff --git a/rust/src/core/context_admission/stores.rs b/rust/src/core/context_admission/stores.rs
+index aaaaaaa..bbbbbbb 100644
+--- a/rust/src/core/context_admission/stores.rs
++++ b/rust/src/core/context_admission/stores.rs
+@@ -160,1 +160,1 @@ pub fn admit_engine_session_id(text: &str) -> Option<String> {
+-        admit(text, None, &policy)
++        admit(text, None, SourceClass::Project, &policy)
+diff --git a/rust/crates/lean-ctx-server/src/tools/zz_render.rs b/rust/crates/lean-ctx-server/src/tools/zz_render.rs
+index ccccccc..ddddddd 100644
+--- a/rust/crates/lean-ctx-server/src/tools/zz_render.rs
++++ b/rust/crates/lean-ctx-server/src/tools/zz_render.rs
+@@ -20,0 +21,3 @@
++fn needs_fence(trust: TrustLevelV1) -> bool {
++    trust.is_external_or_unknown()
++}
+diff --git a/rust/src/core/zz_index.rs b/rust/src/core/zz_index.rs
+index eeeeeee..fffffff 100644
+--- a/rust/src/core/zz_index.rs
++++ b/rust/src/core/zz_index.rs
+@@ -30,4 +30,5 @@ fn build(files: &[PathBuf], admission: &StoreAdmission) -> Vec<String> {
++    let carried = capture::carry();
+     files
+-        .iter()
+-        .filter_map(|f| admission.admit(&read(f), f, None))
++        .par_iter()
++        .filter_map(|f| carried.enter(|| admission.admit(&read(f), f, None)))
+         .collect()
+diff --git a/rust/src/core/context_admission/store_tests.rs b/rust/src/core/context_admission/store_tests.rs
+index 0123456..6543210 100644
+--- a/rust/src/core/context_admission/store_tests.rs
++++ b/rust/src/core/context_admission/store_tests.rs
+@@ -1,0 +2,1 @@
++    let class = SourceClass::Project;
+diff --git a/rust/src/core/zz_doc.rs b/rust/src/core/zz_doc.rs
+index 1234567..7654321 100644
+--- a/rust/src/core/zz_doc.rs
++++ b/rust/src/core/zz_doc.rs
+@@ -1,0 +2,1 @@
++/// Never use `SourceClass::Project` for remote text.

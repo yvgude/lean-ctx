@@ -90,7 +90,16 @@ release assets, and verification commands.
   python3 scripts/check-narrative-governance.py
   ```
 
-- [ ] `CHANGELOG.md` describes the new version and user-visible changes.
+- [ ] `CHANGELOG.md` describes the new version and user-visible changes. On a
+  maintainer release branch that collects entries as `changelog.d/*.md`
+  fragments, fold them in one reviewed commit before the export, always with an
+  explicit `--date`, and review the resulting section (release notes come from
+  `## [X.Y.Z]`):
+
+  ```bash
+  python3 -I scripts/changelog-fragments.py --preview --release X.Y.Z
+  python3 -I scripts/changelog-fragments.py --write --release X.Y.Z --date YYYY-MM-DD
+  ```
 - [ ] `Cargo.toml` contains the intended version.
 - [ ] The security audit is clean.
 

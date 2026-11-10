@@ -9,6 +9,10 @@ use super::{Config, ConfigCacheSlot, default_shell_allowlist};
 
 const CONFIG_PROFILE_ENV: &str = "LEAN_CTX_CONFIG_PROFILE";
 
+/// Advances each time [`Config::load_arc`] builds a new value: the global or
+/// project config, the profile or the project's trust changed (#2195).
+static CONFIG_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 thread_local! {
     /// Set while the shell-security policy is merged: no environment-selected
     /// profile applies to it (`shell_policy`).
@@ -461,6 +465,13 @@ impl Config {
     /// global and project-local files are still read and content-hashed on
     /// every call (#406); only the cache payload became an `Arc`, so a cache
     /// hit is a cheap `Arc::clone`.
+    /// The config generation: it advances whenever a load sees a changed
+    /// config (content, project, profile or trust), so a cache derived from
+    /// the config can key on it instead of re-reading the config (#2195).
+    pub fn generation() -> u64 {
+        CONFIG_GENERATION.load(std::sync::atomic::Ordering::Acquire)
+    }
+
     pub fn load_arc() -> Arc<Self> {
         static CACHE: Mutex<ConfigCacheSlot> = Mutex::new(None);
         Self::load_arc_with(Self::find_project_root().as_deref(), &CACHE)
@@ -594,6 +605,7 @@ impl Config {
                 trusted,
             ));
         }
+        CONFIG_GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
 
         note_gateway_store_ceiling(&cfg);
         cfg

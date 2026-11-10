@@ -102,7 +102,8 @@ fn apply_hooks(root: &mut serde_json::Value) {
         &govern,
         Some(timeout),
     );
-    // CodeBuddy's lifecycle events (no PostCompact): purge only, no stdout.
+    // CodeBuddy's lifecycle events (no PostCompact): purge, plus the compaction marker on
+    // PreCompact / SessionStart compact|clear; no stdout.
     for name in ["PreCompact", "SessionStart"] {
         ensure_group_hook(event(hooks, name), ".*", &govern, Some(timeout));
     }

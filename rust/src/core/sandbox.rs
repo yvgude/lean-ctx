@@ -152,9 +152,17 @@ pub fn execute_in(
 }
 
 pub fn batch_execute(items: &[(String, String)]) -> Vec<SandboxResult> {
+    batch_execute_in(items, None)
+}
+
+/// Same as [`batch_execute`], but every task runs in `cwd`.
+pub fn batch_execute_in(
+    items: &[(String, String)],
+    cwd: Option<&std::path::Path>,
+) -> Vec<SandboxResult> {
     items
         .iter()
-        .map(|(lang, code)| execute(lang, code, None))
+        .map(|(lang, code)| execute_in(lang, code, None, cwd))
         .collect()
 }
 
@@ -998,19 +1006,19 @@ pub mod tests {
             Some(20),
         );
         assert_eq!(result.exit_code, 0, "{}", result.stderr);
-        let pid: libc::pid_t = result
-            .stdout
-            .lines()
-            .find_map(|line| line.strip_prefix("LEFT "))
-            .expect("the snippet names its background child")
-            .trim()
-            .parse()
-            .unwrap();
+        let pid = crate::ipc::process::parse_pid_file(
+            result
+                .stdout
+                .lines()
+                .find_map(|line| line.strip_prefix("LEFT "))
+                .expect("the snippet names its background child"),
+        )
+        .expect("the snippet printed a valid PID");
         // The guard has finished before `execute` returns; what remains is the
         // reap of the killed child by the system.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        // SAFETY: signal 0 only probes for existence.
-        while unsafe { libc::kill(pid, 0) } == 0 {
+        // Validated probe: a 0 or wrapped PID is never handed to kill(2).
+        while crate::ipc::process::is_alive(pid) {
             assert!(
                 std::time::Instant::now() < deadline,
                 "a background child of the snippet outlived the run"

@@ -1,0 +1,2 @@
+Regression: the progress bar no longer updates in non-interactive terminals.
+In CI logs I only see 0% and then 100%.

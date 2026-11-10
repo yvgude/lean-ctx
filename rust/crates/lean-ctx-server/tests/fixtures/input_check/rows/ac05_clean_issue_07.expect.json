@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Memory grows by about 40 MB per hour while idle."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

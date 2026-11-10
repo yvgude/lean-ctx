@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Could the log level be set per module?"
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

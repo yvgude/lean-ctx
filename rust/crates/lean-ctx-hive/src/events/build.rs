@@ -20,7 +20,7 @@ use lean_ctx::core::knowledge::NodeType;
 
 pub const EVENT_SCHEMA: &str = "leanctx.hive.event/v2";
 /// `applies_to` limits of a v4 claim body.
-const MAX_APPLIES_TO: usize = 5;
+pub const MAX_APPLIES_TO: usize = 5;
 const MAX_APPLIES_TO_CHARS: usize = 120;
 /// Anchors per node.
 const MAX_ANCHORS: usize = 16;
@@ -94,11 +94,21 @@ pub fn reasons_passed_hash(node_type: NodeType) -> String {
 
 /// `applies_to` and the code anchors for a candidate's valid references.
 pub fn applies_and_anchors(refs: &[String], checkout: &mut Checkout) -> (Vec<String>, Vec<Value>) {
+    applies_and_anchors_within(refs, checkout, MAX_APPLIES_TO)
+}
+
+/// [`applies_and_anchors`] with at most `max` `applies_to` entries: a fact
+/// keeps one slot for its subject reference ([`crate::capture::conflicts`]).
+pub fn applies_and_anchors_within(
+    refs: &[String],
+    checkout: &mut Checkout,
+    max: usize,
+) -> (Vec<String>, Vec<Value>) {
     let head = checkout.head();
     let mut applies = Vec::new();
     let mut anchors = Vec::new();
     for raw in refs {
-        if applies.len() == MAX_APPLIES_TO {
+        if applies.len() >= max {
             break;
         }
         let Some(r) = crate::capture::refs::parse(raw) else {
@@ -259,6 +269,23 @@ pub fn edge_add(
     stamp: Stamp,
     signer: &Signer<'_>,
 ) -> Result<Value, HiveError> {
+    let edge_id = ids::new_random_id("e")?;
+    edge_add_at(&edge_id, kind, from, to, evidence, place, stamp, signer)
+}
+
+/// [`edge_add`] with the edge id `edge_id` (the sync's conflict detection
+/// names its `supersedes` edges deterministically, [`crate::capture::conflicts`]).
+#[allow(clippy::too_many_arguments)]
+pub fn edge_add_at(
+    edge_id: &str,
+    kind: &str,
+    from: &str,
+    to: &str,
+    evidence: &str,
+    place: &Place,
+    stamp: Stamp,
+    signer: &Signer<'_>,
+) -> Result<Value, HiveError> {
     let body = json!({
         "body_nonce": sign::new_body_nonce()?,
         "from": from,
@@ -271,7 +298,7 @@ pub fn edge_add(
         "event_id": ids::new_event_id(stamp.wall_ms)?,
         "place": {"kind": place.kind, "id": place.id},
         "op": "edge.add",
-        "target": ids::new_random_id("e")?,
+        "target": edge_id,
         "body": body,
         "body_commit": body_commit,
         "hlc": {"wall_ms": stamp.wall_ms, "counter": stamp.counter, "node": signer.hlc_node},

@@ -3,7 +3,7 @@
 //! name, through MCP form elicitation, before the command is dispatched.
 //!
 //! Only a command whose sole refusal is unlisted programs is asked about
-//! ([`lean_ctx::core::shell_allowlist::approval_request`]); a hard block never
+//! ([`lean_ctx_shell_policy::approval_request`]); a hard block never
 //! reaches the user. The answer becomes a grant that names those programs and
 //! nothing else: the handler checks the command again with exactly them
 //! counted as listed ([`SHELL_GRANT`]).
@@ -38,7 +38,7 @@ use rmcp::service::ElicitationMode;
 use serde_json::Value;
 
 use crate::tools::LeanCtxServer;
-use lean_ctx::core::shell_allowlist::ApprovalRequest;
+use lean_ctx_shell_policy::ApprovalRequest;
 
 tokio::task_local! {
     /// Programs the user approved for the `ctx_shell` call being dispatched.
@@ -477,7 +477,7 @@ impl LeanCtxServer {
         {
             return Outcome::NotNeeded;
         }
-        let Some(request) = lean_ctx::core::shell_allowlist::approval_request(command) else {
+        let Some(request) = lean_ctx_shell_policy::approval_request(command) else {
             return Outcome::NotNeeded;
         };
         self.ask(Ask {
@@ -512,7 +512,7 @@ impl LeanCtxServer {
                 .collect::<Vec<_>>()
                 .join("\n");
             let request = ApprovalRequest {
-                misses: vec![lean_ctx::core::shell_allowlist::ApprovalMiss {
+                misses: vec![lean_ctx_shell_policy::ApprovalMiss {
                     program: crate::tools::ctx_execute::approval_key(language),
                     once_only: false,
                 }],
@@ -617,9 +617,9 @@ impl LeanCtxServer {
             };
             let persisted = tokio::task::spawn_blocking(move || {
                 if execute {
-                    lean_ctx::core::shell_allowlist::allow_execute_languages(&to_add)
+                    lean_ctx_shell_policy::allow_execute_languages(&to_add)
                 } else {
-                    lean_ctx::core::shell_allowlist::allow_programs(&to_add)
+                    lean_ctx_shell_policy::allow_programs(&to_add)
                 }
             })
             .await

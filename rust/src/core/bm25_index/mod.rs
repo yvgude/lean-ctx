@@ -91,6 +91,10 @@ pub struct CodeChunk {
     #[serde(default)]
     pub tokens: Vec<String>,
     pub token_count: usize,
+    /// The untrusted origin of a provider chunk (pz21 §1.6). An index
+    /// written before it reads `None`: the chunk is then unknown.
+    #[serde(default)]
+    pub input_origin: Option<crate::core::context_admission::origin::InputOrigin>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -706,7 +710,7 @@ impl BM25Index {
                 continue;
             }
             // Derived store: only admitted text, never restricted (E3).
-            let Some(content) = admission.admit(&content, &abs) else {
+            let Some(content) = admission.admit(&content, &abs, None) else {
                 continue;
             };
             // #1739: see `build::prepare_file` — same predicate, same position.

@@ -80,6 +80,9 @@ pub(crate) fn integration_generic(
         lean_ctx::core::editor_registry::types::ConfigType::HermesYaml => {
             checks.push(check_hermes_yaml(&target.config_path, binary, data_dir));
         }
+        lean_ctx::core::editor_registry::types::ConfigType::GooseYaml => {
+            checks.push(check_goose_yaml(&target.config_path, binary));
+        }
         lean_ctx::core::editor_registry::types::ConfigType::GeminiSettings => {
             checks.push(check_mcp_json(&target.config_path, binary, data_dir));
             checks.push(check_gemini_trust_and_hooks(home, binary));

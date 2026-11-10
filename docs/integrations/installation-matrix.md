@@ -69,9 +69,9 @@ Legend:
 | VS Code (`vscode`) | `~/Library/Application Support/Code/User/mcp.json` (macOS) · `~/.config/Code/User/mcp.json` (Linux) — native MCP, written by `setup` | `~/Library/Application Support/Code/User/.../copilot-instructions.md` | — | — |
 | GitHub Copilot CLI (`copilot`) | `~/.copilot/mcp-config.json` | (Copilot CLI reads MCP server instructions) | `~/.copilot` Bash hook (Hybrid) | — |
 | JetBrains (`jetbrains`) | `~/.jb-mcp.json` (snippet — **manual paste**, no auto-wiring) | `~/.jb-rules/lean-ctx.md` | — | — |
-| Cline (`cline`) | Cline MCP settings JSON | `~/.cline/rules/lean-ctx.md` | — | — |
+| Cline (`cline`) | Cline MCP settings JSON | `~/.cline/rules/lean-ctx.md` | `~/.cline/hooks/PreToolUse` → `hook cline-enforce` (macOS/Linux; never replaces a script of your own) | — |
 | Roo (`roo`) | Roo MCP settings JSON | `~/.roo/rules/lean-ctx.md` | — | — |
-| Kiro (`kiro`) | `~/.kiro/settings/mcp.json` | `~/.kiro/steering/lean-ctx.md` | — | — |
+| Kiro (`kiro`) | `~/.kiro/settings/mcp.json` | `~/.kiro/steering/lean-ctx.md` | `~/.kiro/hooks/lean-ctx.json` (`PreToolUse` → `hook kiro-enforce`) | — |
 | Gemini (`gemini`) | `~/.gemini/settings.json` | `~/.gemini/GEMINI.md` | Gemini hooks (if present) | — |
 | Antigravity (`antigravity`) | `~/.gemini/antigravity/mcp_config.json` | `~/.gemini/antigravity/rules/lean-ctx.md` | — | — |
 | Crush (`crush`) | `~/.config/crush/crush.json` (MCP enabled — Hybrid) | `~/.config/crush/rules/lean-ctx.md` | — | — |
@@ -87,6 +87,7 @@ Legend:
 | Zed (`zed`) | `~/Library/Application Support/Zed/settings.json` (macOS) · `~/.config/zed/settings.json` (Linux) — `context_servers` entry | `<zed-config-dir>/rules/lean-ctx.md` (same OS-aware dir as the settings file) | — | — |
 | Qoder (`qoder`) | `~/.qoder/settings.json` | `~/.qoder/rules/lean-ctx.md` (Hybrid mode) | `~/.qoder/settings.json` Bash hook | — |
 | Aider (`aider`) | `~/.aider/mcp.json` | — (MCP instructions) | — | — |
+| Goose (`goose`) | `~/.config/goose/config.yaml` (Windows: `%APPDATA%\Block\goose\config\config.yaml`) — stdio entry under `extensions` | — (MCP instructions) | — | — |
 | Neovim (`neovim`, mcphub.nvim) | `~/.config/mcphub/servers.json` | — (MCP instructions) | — | — |
 | Emacs (`emacs`, mcp.el) | `~/.emacs.d/mcp.json` | — (MCP instructions) | — | — |
 | Sublime Text (`sublime`) | `~/.config/sublime-text/mcp.json` | — (MCP instructions) | — | — |
@@ -114,7 +115,7 @@ location:
   Zed, Cline, Roo, Continue, Amp, JetBrains, …). See the `build_rules_targets`
   list in `rust/src/rules_inject.rs`.
 - **MCP server instructions** — for MCP-bridge agents that have **no** standard
-  global rules-file convention (**Aider, Neovim/mcphub, Emacs/mcp.el, Sublime**).
+  global rules-file convention (**Aider, Goose, Neovim/mcphub, Emacs/mcp.el, Sublime**).
   These receive the same guidance through the MCP server's `instructions` field
   and tool descriptions, so no (non-functional) rules file is written for them.
   This is intentional, not a gap: writing a rules file an agent never reads

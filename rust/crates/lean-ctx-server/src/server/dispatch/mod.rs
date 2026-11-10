@@ -645,6 +645,7 @@ impl LeanCtxServer {
         // the handler (I07): never the project's latest saved session.
         let caller = ctx.session.clone();
         let workspace = lean_ctx::core::workspace_authority::current();
+        let session_rights = lean_ctx::core::session_rights::current();
         // The user's approval of this ctx_shell call (server::shell_approval).
         let shell_grant = crate::server::shell_approval::current_grant();
         let write_roots: Vec<String> = std::iter::once(ctx.project_root.clone())
@@ -707,7 +708,9 @@ impl LeanCtxServer {
             // Security events are counted once per tool result: the collector
             // sees exactly this handler, and the tally is recorded (audit trail +
             // session counters) before `record_call` publishes the value snapshot.
-            let (result, tally) = lean_ctx::core::security_events::collect_call(handle);
+            let (result, tally) = lean_ctx::core::security_events::collect_call(|| {
+                lean_ctx::core::session_rights::sync_scope(session_rights, handle)
+            });
             lean_ctx::core::security_events::record_call(&tool_name, &agent_id, &tally);
             result
         });

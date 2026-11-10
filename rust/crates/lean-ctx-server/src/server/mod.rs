@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+pub(crate) mod activity;
 pub mod background_shell;
 pub use lean_ctx::core::bounded_lock;
 pub use lean_ctx::core::bypass_hint;

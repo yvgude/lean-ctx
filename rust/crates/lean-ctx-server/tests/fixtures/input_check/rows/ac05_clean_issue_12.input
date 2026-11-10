@@ -1,0 +1,2 @@
+The installer overwrote my existing shell alias for `ls`.
+It would be nice if it asked first or kept a backup of the old line.

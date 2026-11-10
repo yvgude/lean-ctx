@@ -260,14 +260,27 @@ pub(crate) fn catch_up(map: &VaultMap, subscribed: &[String]) -> (Vec<TaskEvent>
                 state: Some(state),
                 ..ListFilter::default()
             };
-            let list = match crate::tasks::list(root, &filter) {
-                Ok(list) => list,
+            // Only a current list: tasks of a stale one (429, Hive not
+            // reachable) may since be claimed or closed and would wake
+            // Queens as "opened" (review 5!246).
+            let list = match crate::tasks::list_read(root, &filter) {
+                Ok(read) if read.stale.is_none() => read.value,
+                Ok(read) => {
+                    let note = read.stale.map(|s| s.note()).unwrap_or_default();
+                    errors.push(format!("{vault}: {note}"));
+                    continue;
+                }
                 Err(error) => {
                     errors.push(format!("{vault}: {error}"));
                     continue;
                 }
             };
-            for task in list.tasks.into_iter().filter(|task| task.state == state) {
+            for task in list
+                .list
+                .tasks
+                .into_iter()
+                .filter(|task| task.state == state)
+            {
                 // A result's worker gets no request to check its own work.
                 let worker_id = (kind == TaskEventKind::Submitted)
                     .then(|| crate::tasks::show(root, task.number).ok())

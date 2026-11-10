@@ -666,7 +666,7 @@ fn exercise_session_load_process(root: &Path, id: &str) {
         .env("LEAN_CTX_SESSION_LOAD_FIXTURE", id)
         .args([
             "--exact",
-            "host_checkpoint_binds_real_receipts_and_requires_distinct_signing_authority",
+            "v4_checkpoint_package::host_checkpoint_binds_real_receipts_and_requires_distinct_signing_authority",
             "--nocapture",
         ])
         .output()
@@ -1108,7 +1108,7 @@ fn exercise_writer_process(root: &Path, fixture: &Path) {
         .env("LEAN_CTX_CHECKPOINT_WRITER_FIXTURE", fixture)
         .args([
             "--exact",
-            "host_checkpoint_binds_real_receipts_and_requires_distinct_signing_authority",
+            "v4_checkpoint_package::host_checkpoint_binds_real_receipts_and_requires_distinct_signing_authority",
             "--nocapture",
         ])
         .output()

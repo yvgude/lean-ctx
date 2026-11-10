@@ -40,7 +40,6 @@ use crate::HiveError;
 use crate::auth::Session;
 use crate::config::{HiveBusMode, HiveConfig};
 use crate::state::{HiveStore, load_or_quarantine, lock_state, write_private};
-use crate::vault::VaultMap;
 use lean_ctx_protocol::hive::bus::{
     BUS_LEASE_RENEW_REQUEST_SCHEMA, BUS_LEASE_REQUEST_SCHEMA, BusLeaseV1, MAX_BUS_LEASE_MS,
 };
@@ -240,10 +239,9 @@ fn connected_with(
         .ok()
         .flatten()
         .ok_or_else(|| "this machine is not connected to Hive".to_string())?;
-    let root = project_root.to_string_lossy();
-    let vault_id = VaultMap::load(store.data_dir())
-        .for_root(&root)
-        .map(|p| p.vault_id.clone())
+    let vault_id = crate::resolution::vault_for_root(store.data_dir(), project_root)
+        .map_err(|e| e.to_string())?
+        .map(|p| p.vault_id)
         .ok_or_else(|| "this repository is not linked to a vault".to_string())?;
     let session = config
         .root_key(&instance.url)

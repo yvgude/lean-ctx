@@ -1,0 +1,12 @@
+{
+  "ac": "pz21-AC06",
+  "channel": "project",
+  "clean": true,
+  "fenced": false,
+  "must_contain": [
+    "#!/bin/sh\nset -eu\ncargo fmt --check\ncargo test --quiet"
+  ],
+  "must_not_contain": [],
+  "path": "scripts/check.sh",
+  "redacted_lines": 0
+}

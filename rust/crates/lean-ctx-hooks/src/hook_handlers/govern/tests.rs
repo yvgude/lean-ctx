@@ -938,3 +938,52 @@ fn enforce_hook_denies_powershell_that_fails_the_allowlist() {
         "{out}"
     );
 }
+
+/// GitHub #2147 (governor profile): PreCompact/PostCompact reach `hook govern`,
+/// not `hook observe`. The MCP server only learns of a compaction from the
+/// `last_compaction.json` marker, so govern must write it too — otherwise
+/// `ctx_read` keeps answering "unchanged" for content the model lost.
+#[test]
+fn governed_compaction_events_write_the_compaction_marker() {
+    let iso = lean_ctx::core::data_dir::isolated_data_dir();
+    let marker = iso.path().join("last_compaction.json");
+    let s = unique_session("compact-marker");
+    for (name, extra) in [
+        ("PreCompact", serde_json::json!({ "trigger": "auto" })),
+        ("PostCompact", serde_json::json!({ "trigger": "manual" })),
+        ("SessionStart", serde_json::json!({ "source": "compact" })),
+        ("SessionStart", serde_json::json!({ "source": "clear" })),
+    ] {
+        let _ = std::fs::remove_file(&marker);
+        let before = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let d = decide(&event(&s, name, &extra), &ALL_ON);
+        assert!(d.output.is_empty(), "{name}: lifecycle events stay silent");
+        let raw = std::fs::read_to_string(&marker)
+            .unwrap_or_else(|e| panic!("{name} {extra}: no compaction marker ({e})"));
+        let ts = serde_json::from_str::<serde_json::Value>(&raw).unwrap()["ts"]
+            .as_u64()
+            .expect("marker ts");
+        assert!(ts >= before, "{name}: marker ts {ts} older than {before}");
+    }
+
+    // A fresh start, a resume (which purges), a start without a source or an
+    // ordinary tool call is no compaction.
+    for extra in [
+        serde_json::json!({ "source": "startup" }),
+        serde_json::json!({ "source": "resume" }),
+        serde_json::json!({}),
+    ] {
+        let _ = std::fs::remove_file(&marker);
+        drop(decide(&event(&s, "SessionStart", &extra), &ALL_ON));
+        assert!(
+            !marker.exists(),
+            "SessionStart {extra}: no marker without a compaction"
+        );
+    }
+    let _ = std::fs::remove_file(&marker);
+    drop(decide(&edit(&s), &ALL_ON));
+    assert!(!marker.exists(), "Edit: no marker without a compaction");
+}

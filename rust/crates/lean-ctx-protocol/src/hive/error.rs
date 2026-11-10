@@ -30,6 +30,10 @@ pub enum HiveErrorCode {
     UploadDisabled,
     /// 404: unknown instance, vault, proposal or lease.
     NotFound,
+    /// 404 with `feature` (Hive API.md "feature switches"): the operator
+    /// switched this feature off on this Hive (`instance_metrics` while
+    /// `HIVE_ENGINE_METRICS` is off). The route exists; try again much later.
+    FeatureDisabled,
     /// 409 with `limit`/`used`: every instance seat is taken.
     InstanceLimit,
     /// 409 with `expected`/`actual`: knowledge moved on.
@@ -78,7 +82,7 @@ impl HiveErrorCode {
             Self::Unauthorized | Self::LeaseExpired | Self::InstanceRevoked => 401,
             Self::PlanRequired => 402,
             Self::ForbiddenRight | Self::UploadDisabled | Self::PolicyDenied => 403,
-            Self::NotFound => 404,
+            Self::NotFound | Self::FeatureDisabled => 404,
             Self::InstanceLimit | Self::RevisionConflict | Self::InvalidState => 409,
             Self::ScreeningRequired => 422,
             Self::UpgradeRequired => 426,
@@ -161,6 +165,8 @@ pub struct HiveErrorDetailV1 {
     /// 2.x `plan_required`: the feature the plan lacks (`repos`,
     /// `internal_vaults`, …; absent from a 1.x Hive, where it means Hive
     /// itself). `limit`/`used` carry a counted feature's numbers.
+    /// `feature_disabled`: the feature switched off on this Hive
+    /// (`instance_metrics`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feature: Option<String>,
     /// 2.x `plan_required`: the lowest plan that includes `feature`
@@ -226,6 +232,19 @@ mod tests {
             serde_json::from_str(r#"{"error":{"code":"brand_new","message":"x","extra":1}}"#)
                 .unwrap();
         assert_eq!(body.error.code, HiveErrorCode::Unknown);
+    }
+
+    /// Hive answers `POST /v1/metrics/hours` with this while
+    /// `HIVE_ENGINE_METRICS` is off (dogfood 05.11.: decoded as `unknown`).
+    #[test]
+    fn feature_disabled_decodes_with_its_feature() {
+        let body: HiveErrorBody = serde_json::from_str(
+            r#"{"error":{"code":"feature_disabled","message":"this feature is switched off on this Hive","feature":"instance_metrics"}}"#,
+        )
+        .unwrap();
+        assert_eq!(body.error.code, HiveErrorCode::FeatureDisabled);
+        assert_eq!(body.error.code.http_status(), 404);
+        assert_eq!(body.error.feature.as_deref(), Some("instance_metrics"));
     }
 
     /// C0 2.0 `routes/instance_revoked.error.json` decodes to its own code

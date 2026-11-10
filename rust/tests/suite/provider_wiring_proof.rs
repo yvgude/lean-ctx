@@ -46,9 +46,11 @@ fn proof_consolidate_produces_all_four_artifact_types() {
         !artifacts.edges.is_empty(),
         "WIRING BROKEN: consolidate() produces no graph edges"
     );
+    // An issue is outside text: it never becomes a knowledge fact (pz21).
     assert!(
-        !artifacts.facts.is_empty(),
-        "WIRING BROKEN: consolidate() produces no knowledge facts"
+        artifacts.facts.is_empty(),
+        "outside text became knowledge facts: {:?}",
+        artifacts.facts
     );
     assert!(
         !artifacts.cache_entries.is_empty(),
@@ -422,7 +424,8 @@ fn proof_end_to_end_provider_data_searchable() {
         "WIRING BROKEN: No cross-source hints for src/websocket.rs after full pipeline"
     );
 
-    // Knowledge should have extracted facts
+    // Provider chunks carry an outside origin (pz21): no knowledge facts are
+    // extracted from them, so a recall can never serve them as the project's.
     // A real project root (see `proof_knowledge_facts_roundtrip`).
     let project = tempfile::tempdir().expect("project root");
     let mut knowledge = ProjectKnowledge::new(project.path().to_str().expect("utf-8 root"));
@@ -439,8 +442,8 @@ fn proof_end_to_end_provider_data_searchable() {
     }
     let bugs = knowledge.recall_by_category("known_bugs");
     assert!(
-        !bugs.is_empty(),
-        "WIRING BROKEN: No known_bugs facts after full pipeline"
+        bugs.is_empty(),
+        "an outside provider chunk became a project fact: {bugs:?}"
     );
 
     // Cache should have entries
@@ -458,9 +461,10 @@ fn proof_end_to_end_provider_data_searchable() {
         result.edges_created > 0,
         "WIRING BROKEN: edges_created is 0"
     );
-    assert!(
-        result.facts_extracted > 0,
-        "WIRING BROKEN: facts_extracted is 0"
+    // Outside provider chunks never become facts (pz21).
+    assert_eq!(
+        result.facts_extracted, 0,
+        "an outside provider chunk became a project fact"
     );
 }
 

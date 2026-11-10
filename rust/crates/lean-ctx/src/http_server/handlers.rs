@@ -722,6 +722,12 @@ async fn check_relay_quota(
     }
 }
 
+/// The class of a task response a peer relays back (pz21 §1.1).
+fn peer_class() -> lean_ctx::core::context_admission::origin::SourceClass {
+    use lean_ctx::core::context_admission::origin::{InputKind, InputOrigin, SourceClass};
+    SourceClass::External(InputOrigin::new(InputKind::BusMessage, "a2a:task_response"))
+}
+
 fn forwarded_delivery_response(
     receipt: lean_ctx::core::a2a::remote_transport::DeliveryReceipt,
     content_type: &lean_ctx::core::a2a_transport::TransportContentType,
@@ -748,7 +754,11 @@ fn forwarded_delivery_response(
         // altered — a redacted signed transcript fails at the origin anyway
         // and would look like a fault of the peer. Both refusals carry reason
         // codes only.
-        return match lean_ctx::core::context_admission::carrier::admit_carrier_text(&raw) {
+        // The peer's bytes are another Instance's text (pz21 §1.1). They are
+        // forwarded, not delivered to an agent here: no call's ledger.
+        let admitted =
+            lean_ctx::core::context_admission::carrier::admit_relayed_text(&raw, &peer_class());
+        return match admitted {
             Ok(admitted) if admitted.text == raw => task_response_bytes(raw),
             Ok(_) => {
                 withheld_task_response(&lean_ctx::core::context_admission::carrier::Withheld::new(
@@ -1140,24 +1150,21 @@ fn a2a_handoff_inner(
             {
                 return reject_untrusted_signer(&envelope.sender.agent_id, &fingerprint);
             }
-            let dir = std::path::Path::new(&state.project_root)
-                .join(".lean-ctx")
-                .join("handoffs")
-                .join("packages");
-            let _ = std::fs::create_dir_all(&dir);
+            let root = std::path::Path::new(&state.project_root);
+            let rel_dir = std::path::Path::new(".lean-ctx/handoffs/packages");
             let name = delivery_id.map_or_else(
                 || chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string(),
                 str::to_string,
             );
-            let out = dir.join(format!(
+            let rel = rel_dir.join(format!(
                 "ctx-{name}.{}",
                 lean_ctx::core::contracts::PACKAGE_EXTENSION
             ));
-            if !out.exists() {
-                evict_oldest_files(&dir, MAX_HANDOFF_FILES);
+            if !root.join(&rel).exists() {
+                evict_oldest_files(root, rel_dir, MAX_HANDOFF_FILES);
             }
             if let Err(e) =
-                persist_handoff_file(&out, envelope.payload_json.as_bytes(), delivery_id)
+                persist_handoff_file(root, &rel, envelope.payload_json.as_bytes(), delivery_id)
             {
                 tracing::error!("a2a handoff write failed: {e}");
                 return (
@@ -1255,20 +1262,18 @@ fn a2a_handoff_inner(
                     }
                 };
 
-            let dir = std::path::Path::new(&state.project_root)
-                .join(".lean-ctx")
-                .join("handoffs");
-            let _ = std::fs::create_dir_all(&dir);
+            let root = std::path::Path::new(&state.project_root);
+            let rel_dir = std::path::Path::new(".lean-ctx/handoffs");
             let name = delivery_id.map_or_else(
                 || chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string(),
                 str::to_string,
             );
-            let out = dir.join(format!("received-{name}.json"));
-            if !out.exists() {
-                evict_oldest_files(&dir, MAX_HANDOFF_FILES);
+            let rel = rel_dir.join(format!("received-{name}.json"));
+            if !root.join(&rel).exists() {
+                evict_oldest_files(root, rel_dir, MAX_HANDOFF_FILES);
             }
             if let Err(e) =
-                persist_handoff_file(&out, envelope.payload_json.as_bytes(), delivery_id)
+                persist_handoff_file(root, &rel, envelope.payload_json.as_bytes(), delivery_id)
             {
                 tracing::error!("a2a handoff write failed: {e}");
                 return (
@@ -1328,15 +1333,12 @@ fn a2a_handoff_inner(
                     Json(serde_json::json!({"error": "invalid_evidence_bundle"})),
                 );
             }
-            let dir = std::path::Path::new(&state.project_root)
-                .join(".lean-ctx")
-                .join("handoffs")
-                .join("evidence");
-            let _ = std::fs::create_dir_all(&dir);
+            let root = std::path::Path::new(&state.project_root);
             let name = delivery_id.unwrap_or("legacy-evidence");
-            let out = dir.join(format!("evidence-{name}.json"));
+            let rel = std::path::Path::new(".lean-ctx/handoffs/evidence")
+                .join(format!("evidence-{name}.json"));
             if let Err(error) =
-                persist_handoff_file(&out, envelope.payload_json.as_bytes(), delivery_id)
+                persist_handoff_file(root, &rel, envelope.payload_json.as_bytes(), delivery_id)
             {
                 tracing::error!("a2a evidence write failed: {error}");
                 return (

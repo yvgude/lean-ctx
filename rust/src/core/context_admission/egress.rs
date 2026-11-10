@@ -875,7 +875,8 @@ pub fn admit_text(
     if text.is_empty() || !policy.enabled_effective() {
         return TextVerdict::Delivered;
     }
-    let admission = admit(text, None, &policy);
+    // Egress (pz21 §1.4): never delivered to the agent, never taints.
+    let admission = as_egress(|| admit(text, None, &super::origin::EGRESS, &policy));
     let mut reason_codes = admission.decision.reason_codes;
     match admission.text {
         None => TextVerdict::Withheld { reason_codes },
@@ -892,6 +893,14 @@ pub fn admit_text(
             reason_codes,
         },
     }
+}
+
+/// Run an egress check (text leaving the Instance: a model request, a
+/// downstream tool's arguments) outside the open call (pz21 §1.5 4a): it is
+/// never delivered to the agent, so it neither taints the session nor has
+/// its injection action raised (NB-1, NB-2).
+pub(crate) fn as_egress<R>(check: impl FnOnce() -> R) -> R {
+    super::capture::egress_check(check)
 }
 
 fn combined_policy_fingerprint(gateway: &[u8], project: &[u8]) -> Vec<u8> {

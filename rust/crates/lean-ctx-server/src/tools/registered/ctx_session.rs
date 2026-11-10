@@ -7,22 +7,42 @@ use std::time::Duration;
 use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_str};
 use lean_ctx::tool_defs::tool_def;
 
-/// #1570 P1: `compact` records a directive (summary in `value`); the proxy
-/// replaces the pre-cut span on every request until `restore` clears it —
+/// #1570 P1: `compact` records a directive (summary in `value`) for this
+/// server's app session (`LEAN_CTX_SESSION_ID`); the proxy replaces the
+/// pre-cut span on that session's requests until `restore` clears it —
 /// lossless by construction since the client resends full history each turn.
+/// The reply says "armed" only when a proxy carries the session; otherwise
+/// nothing is armed and the reply says why.
 fn handle_compact_action(
     action: &str,
     value: Option<&str>,
     args: &Map<String, Value>,
 ) -> ToolOutput {
+    let session = lean_ctx::core::activity::session_id_from_env();
     let text = if action == "restore" {
-        if lean_ctx::core::compact_directive::clear() {
-            "Compaction cleared — the next request carries the full original history again."
-                .to_string()
-        } else {
-            "No active compaction to restore.".to_string()
+        match session.as_deref() {
+            Some(session) if lean_ctx::core::compact_directive::clear(session) => {
+                "Compaction cleared — the next request carries the full original history again."
+                    .to_string()
+            }
+            _ => "No active compaction to restore.".to_string(),
         }
+    } else if session.is_none() && value.is_some_and(|v| !v.is_empty()) {
+        "Compaction not armed: this MCP server has no app session id \
+         (LEAN_CTX_SESSION_ID), so no proxy can key a compaction to your session. \
+         Your context stays as it is."
+            .to_string()
+    } else if let Some(session) = session.as_deref()
+        && value.is_some_and(|v| !v.is_empty())
+        && !lean_ctx::core::compact_directive::is_carried(session)
+    {
+        "Compaction not armed: no proxy carries this session (no request with its \
+         session id reached a LeanCTX proxy recently), and only a proxy can shorten \
+         the conversation. Run the agent through the proxy, then compact again. \
+         Your context stays as it is."
+            .to_string()
     } else {
+        let session = session.unwrap_or_default();
         let keep = args
             .get("keep_recent_turns")
             .and_then(serde_json::Value::as_u64)
@@ -35,7 +55,8 @@ fn handle_compact_action(
                  requests verbatim; drop dead-end exploration."
                 .to_string(),
             Some(summary) => {
-                match lean_ctx::core::compact_directive::create(keep, summary.to_string()) {
+                match lean_ctx::core::compact_directive::create(&session, keep, summary.to_string())
+                {
                     Ok(()) => format!(
                         "Compaction armed (keeps last {keep} user turns verbatim). It applies \
                          to your NEXT request onward, only outside the provider-cached \

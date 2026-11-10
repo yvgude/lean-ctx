@@ -30,6 +30,21 @@ impl PageStatus {
     }
 }
 
+/// C0 2.2 slug: `seg(/seg){0,7}`, seg `[a-z0-9]+(-[a-z0-9]+)*`, ≤ 128 bytes.
+pub fn valid_slug(slug: &str) -> bool {
+    let segs: Vec<&str> = slug.split('/').collect();
+    slug.len() <= 128
+        && segs.len() <= 8
+        && segs.iter().all(|s| {
+            !s.is_empty()
+                && !s.starts_with('-')
+                && !s.ends_with('-')
+                && !s.contains("--")
+                && s.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        })
+}
+
 /// One stretch of a page body.
 ///
 /// `text` is raw markdown and includes the section's own heading line when it

@@ -30,6 +30,10 @@ use crate::ValidationError;
 pub const ORG_SALT_SCHEMA: &str = "leanctx.hive.org-salt/v1";
 pub const VAULT_RESOLVE_REQUEST_SCHEMA: &str = "leanctx.hive.vault-resolve-request/v1";
 pub const VAULT_SCHEMA: &str = "leanctx.hive.vault/v1";
+/// Request body of `POST /v1/vaults/match` (C0 fixtures `routes/vault_match.*`).
+pub const VAULT_MATCH_REQUEST_SCHEMA: &str = "leanctx.hive.vault-match-request/v1";
+/// Answer of `POST /v1/vaults/match`.
+pub const VAULT_MATCH_SCHEMA: &str = "leanctx.hive.vault-match/v1";
 
 /// Why a vault that says it is sealed is refused.
 pub const SEALED_VAULT_UNSUPPORTED: &str = "Hive sent a sealed vault, but sealed vaults are not \

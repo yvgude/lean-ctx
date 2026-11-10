@@ -313,22 +313,16 @@ pub fn parse_bundle_v1(json: &str) -> Result<HandoffTransferBundleV1, String> {
     Ok(b)
 }
 
-pub fn write_bundle_v1(path: &Path, json: &str) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| "ERROR: invalid path".to_string())?;
-    if !parent.exists() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let tmp = parent.join(format!(
-        ".{}.tmp",
-        path.file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("bundle")
-    ));
-    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
-    Ok(())
+/// Write a bundle to `requested` (jail-resolved as `jailed`) below the
+/// project `root`, refusing every symlinked component below the root.
+pub fn write_bundle_v1(
+    root: &Path,
+    requested: &Path,
+    jailed: &Path,
+    json: &str,
+) -> Result<(), String> {
+    crate::core::pathjail_write::write_requested_below(root, requested, jailed, json.as_bytes())
+        .map(|_| ())
 }
 
 pub fn read_bundle_v1(path: &Path) -> Result<HandoffTransferBundleV1, String> {

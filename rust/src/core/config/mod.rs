@@ -55,7 +55,8 @@ pub use model::*;
 pub use render::{SIMPLIFIED_TEMPLATE, render_annotated_config};
 pub use sections::*;
 
-pub(crate) use defaults_allowlist::{cloud_infra_commands, default_shell_allowlist};
+#[doc(hidden)]
+pub use defaults_allowlist::{cloud_infra_commands, default_shell_allowlist};
 pub use enterprise::EnterpriseConfig;
 pub use enums::{
     CompressionLevel, Effort, OutputDensity, PermissionInheritance, RecoveryHints,
@@ -71,7 +72,8 @@ pub use loader::{ConfigMigrationPause, config_migration_pause_status};
 pub use memory::{
     CompressionAnnotation, MemoryCleanup, MemoryGuardConfig, MemoryProfile, SavingsFooter,
 };
-pub(crate) use merge::is_project_key;
+#[doc(hidden)]
+pub use merge::is_project_key;
 pub use provenance::{ConfigProvenance, EnvOverride};
 pub use proxy::{
     BaselineConfig, DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK, HistoryMode, PipelineConfig, ProseRanker,

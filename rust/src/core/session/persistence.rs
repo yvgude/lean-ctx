@@ -713,7 +713,13 @@ impl SessionState {
         let dir = sessions_dir()?;
         let path = dir.join(format!("{id}.json"));
         let json = std::fs::read_to_string(&path).ok()?;
-        Self::from_storage_json(&json).ok()
+        let mut session = Self::from_storage_json(&json).ok()?;
+        // The taint is written through on its own (pz21 §1.7): a crash
+        // between the taint and the next session save must not untaint.
+        if let Some(taint) = super::taint::load_sidecar(&session.id) {
+            session.taint.merge(&taint);
+        }
+        Some(session)
     }
 
     /// Loads a specific session only when its persisted root already matches
@@ -827,6 +833,33 @@ impl SessionState {
 
         summaries.sort_by_key(|x| std::cmp::Reverse(x.updated_at));
         summaries
+    }
+
+    /// The saved sessions `id` names: the session with that id and every
+    /// session opened under the app session id `id` (`app_session_id`),
+    /// oldest first (then by id).
+    pub fn load_attributed(id: &str) -> Vec<Self> {
+        let Some(dir) = sessions_dir() else {
+            return Vec::new();
+        };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return Vec::new();
+        };
+        let mut out: Vec<Self> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("json"))
+            .filter(|path| path.file_name().and_then(|n| n.to_str()) != Some("latest.json"))
+            .filter_map(|path| std::fs::read_to_string(path).ok())
+            .filter_map(|json| Self::from_storage_json(&json).ok())
+            .filter(|s| s.id == id || s.app_session_id.as_deref() == Some(id))
+            .collect();
+        out.sort_by(|a, b| {
+            a.started_at
+                .cmp(&b.started_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        out
     }
 
     /// Scans all saved sessions for contaminated ones — those rooted at a

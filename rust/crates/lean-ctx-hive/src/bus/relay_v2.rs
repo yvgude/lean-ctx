@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 use super::address::Address;
 use super::v2::{
     BUS_SCHEMA, Control, ControlAction, ControlKeys, ControlRejection, ControlTarget, MessageType,
-    PresenceEntry, PresenceState, Publish, ulid_for,
+    PERSON_VALIDATION_WORKER, PresenceEntry, PresenceState, Publish, ulid_for,
 };
 use crate::HiveError;
 use crate::knowledge::screening::Screen;
@@ -92,10 +92,50 @@ pub struct StateV2 {
     /// (`note_replay`). Local work goes on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rebuild_pending: Option<u64>,
+    /// The Hive accepts a person's publish (`hello.ack` lists the feature
+    /// [`PERSON_PUBLISH`]): the person's local posts to a vault bus leave
+    /// the machine, attributed by the Hive to this Instance's owner. Until
+    /// then they wait.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub person_publish: bool,
+    /// Publishes per worker in the last minute (QN0 rate limit). Not
+    /// stored: a restart forgives the last minute.
+    #[serde(skip)]
+    pub budget: super::queen_kinds::RelayBudget,
 }
 
 fn is_zero(n: &u32) -> bool {
     *n == 0
+}
+
+/// The local bus sender of a person's post (`lean-ctx bus post`, Hive
+/// Desktop): no registered agent, no worker id.
+pub const PERSON_SENDER: &str = "hive-person";
+/// The `hello.ack` feature that says the Hive accepts a person's publish.
+pub const PERSON_PUBLISH: &str = "person_publish";
+
+/// The hello feature that asks Hive for `hello.ack.policy_version` and the
+/// `policy.advanced` nudge.
+pub const POLICY_ADVANCED: &str = "policy_advanced";
+/// The hello feature for the `policy.applied` frame: the Instance sends it
+/// only when `hello.ack.features` names it too.
+pub const POLICY_APPLIED: &str = "policy_applied";
+/// The features this Instance names in its hello (Hive answers with the
+/// ones it speaks too).
+pub const HELLO_FEATURES: &[&str] = &[POLICY_ADVANCED, POLICY_APPLIED];
+
+/// Whether a `hello.ack` names `feature` among its `features`.
+pub fn acks_feature(ack: &Value, feature: &str) -> bool {
+    ack["features"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|f| f.as_str() == Some(feature))
+}
+
+/// Whether a `hello.ack` names [`PERSON_PUBLISH`] among its `features`.
+pub fn acks_person_publish(ack: &Value) -> bool {
+    acks_feature(ack, PERSON_PUBLISH)
 }
 
 impl StateV2 {
@@ -164,6 +204,16 @@ impl StateV2 {
         self.decided.iter().any(|id| id == entry_id)
     }
 
+    /// A new socket starts: nothing is in flight on it (what the last one
+    /// sent without `message.stored` goes again; Hive deduplicates by
+    /// client_msg_id), and a person's post waits for THIS connection's
+    /// `hello.ack` to say the Hive accepts it — the flag of an earlier
+    /// connection never lets one leave.
+    pub fn begin_connection(&mut self) {
+        self.in_flight.clear();
+        self.person_publish = false;
+    }
+
     /// `message.stored`: the post is out.
     pub fn stored(&mut self, client_msg_id: &str) {
         if let Some(entry) = self.in_flight.remove(client_msg_id) {
@@ -218,6 +268,13 @@ impl StateV2 {
                 ControlTarget::Worker => c.worker_id.as_deref() == Some(worker_id),
             })
             .max_by_key(|c| (c.action == ControlAction::Stop, c.created_at))
+    }
+
+    /// Whether a person's post waits under a hold: a bus-wide hold or
+    /// stop (`outgoing` skips it), or a pending rebuild (Hive traffic
+    /// waits until the control replay is complete, M12).
+    pub fn holds_person_posts(&self) -> bool {
+        self.rebuild_pending.is_some() || self.held(None, PERSON_VALIDATION_WORKER).is_some()
     }
 
     /// The veto on `ref_id` (a claim, handoff or lease), if any.
@@ -356,6 +413,15 @@ pub(crate) fn queued_frames(data_dir: &Path, state: &mut StateV2) -> Vec<Value> 
     out
 }
 
+/// The worker of a queued publish, by its `client_msg_id`.
+pub(crate) fn queued_worker(data_dir: &Path, client_msg_id: &str) -> Option<String> {
+    read_queue(data_dir)
+        .items
+        .into_iter()
+        .find(|p| p.client_msg_id == client_msg_id)
+        .map(|p| p.worker_id)
+}
+
 /// Drop a queued publish Hive stored or refused for good.
 pub(crate) fn settle_queued(data_dir: &Path, client_msg_id: &str) -> Result<bool, HiveError> {
     change_queue(data_dir, |queue| {
@@ -427,7 +493,7 @@ pub fn address_of(record: &VaultRecord) -> String {
     format!("#{}/{}", record.ns, record.name)
 }
 
-fn record_for<'a>(map: &'a VaultMap, root: &str) -> Option<&'a VaultRecord> {
+pub(crate) fn record_for<'a>(map: &'a VaultMap, root: &str) -> Option<&'a VaultRecord> {
     map.vaults.values().find(|record| {
         record
             .roots
@@ -451,7 +517,8 @@ pub(crate) fn subscriptions(map: &VaultMap, agents: &[&AgentEntry]) -> Vec<Strin
 }
 
 /// The C0 2.0 hello: subscriptions, their cursors, and the presence of the
-/// local workers (`held` while a control holds them).
+/// local workers (`held` while a control holds them), and the
+/// [`HELLO_FEATURES`] this Instance speaks.
 pub fn hello(subscribe: &[String], state: &StateV2, presence: &[PresenceEntry]) -> Value {
     let cursors: BTreeMap<&String, u64> = subscribe
         .iter()
@@ -463,6 +530,7 @@ pub fn hello(subscribe: &[String], state: &StateV2, presence: &[PresenceEntry]) 
         "subscribe": subscribe,
         "cursors": cursors,
         "presence": presence,
+        "features": HELLO_FEATURES,
     })
 }
 
@@ -481,11 +549,12 @@ pub fn presence_state(state: &StateV2, worker_id: &str, any_active: bool) -> Pre
 /// A publish built from a local post, or why it stays local.
 fn publish_for(
     entry: &lean_ctx::core::agents::ScratchpadEntry,
+    text: &str,
     to: &str,
     worker_id: &str,
 ) -> Option<Publish> {
     let kind = MessageType::parse(&entry.category.to_ascii_lowercase());
-    let text = entry.message.trim();
+    let text = text.trim();
     let (kind, body) = match kind {
         Some(MessageType::Question) => (MessageType::Question, json!({"text": text})),
         // Answers need `reply_to`, findings refs and an evidence level,
@@ -537,8 +606,10 @@ pub(crate) fn outgoing(
     state: &mut StateV2,
     screen: &mut Screen,
     worker_of: &dyn Fn(&AgentEntry) -> Option<String>,
+    records: &super::person_rules::Records,
 ) -> Vec<OutgoingV2> {
     let now = chrono::Utc::now();
+    let queen_mode = super::person_rules::QueenMode::current();
     let mut entries: Vec<_> = registry
         .scratchpad
         .iter()
@@ -550,13 +621,14 @@ pub(crate) fn outgoing(
     entries.sort_by_key(|e| e.timestamp);
     let mut out = Vec::new();
     for entry in entries {
-        let Some(agent) = registry
+        let agent = registry
             .agents
             .iter()
-            .find(|a| a.agent_id == entry.from_agent)
-        else {
+            .find(|a| a.agent_id == entry.from_agent);
+        let person = agent.is_none() && entry.from_agent == PERSON_SENDER;
+        if agent.is_none() && !person {
             continue;
-        };
+        }
         let record = match Address::parse(entry.to_agent.as_deref()) {
             Ok(Address::Vault { workspace, vault }) => map
                 .vaults
@@ -577,25 +649,112 @@ pub(crate) fn outgoing(
             state.withheld += 1;
             continue;
         };
-        let Some(worker_id) = worker_of(agent) else {
+        // HN0: of this Instance's agents only the Queen the app registered
+        // speaks on a vault's bus; every other worker's post stays on the
+        // local bus (one carrying a Queen kind is counted as withheld).
+        if let Some(agent) = agent
+            && !super::person_rules::Speaker::of_registry(registry, Some(&agent.agent_id))
+                .registered_queen
+        {
+            state.decide(&entry.id);
+            if entry.metadata.contains_key(super::queen_kinds::KIND_KEY) {
+                state.withheld += 1;
+            }
             continue;
+        }
+        // A person's post waits until the Hive accepts it; an agent's until
+        // its worker is registered.
+        let worker_id = match agent {
+            Some(agent) => match worker_of(agent) {
+                Some(worker_id) => worker_id,
+                None => continue,
+            },
+            None if state.person_publish => PERSON_VALIDATION_WORKER.to_owned(),
+            None => continue,
         };
+        // A bus-wide hold holds a person's post too.
         if state.held(None, &worker_id).is_some() {
             continue;
         }
-        if screen.check(&entry.message).is_err() {
-            state.decide(&entry.id);
-            state.withheld += 1;
-            continue;
+        // Only the registered Queen appears as the Queen (process v1 §7);
+        // `ctx_agent post` checks and logs it first. Here an older post is
+        // kept local (`enforce`) or leaves with the receiver's mark (`warn`).
+        let queen = agent.map_or(Ok(None), |agent| {
+            let sender = super::person_rules::Speaker::of_registry(registry, Some(&agent.agent_id));
+            super::person_rules::queen_rule(sender, &[&entry.message], queen_mode)
+        });
+        // No refused action passed on (process v1 §7), as for `ctx_agent
+        // send`: a refused one stays local; unreadable records make it wait.
+        if let Some(agent) = agent
+            && let Some((kind, body)) =
+                super::person_rules::post_body(&entry.category, &entry.message)
+            && super::person_rules::asks_to_act(kind)
+        {
+            let Some(ledger) = &records.ledger else {
+                continue;
+            };
+            let refused = super::person_rules::Refused::for_sender(
+                state,
+                &records.handoffs,
+                ledger,
+                map,
+                &agent.agent_id,
+                &worker_id,
+            );
+            if super::person_rules::check_forwarding(kind, &[], &body, &refused).is_err() {
+                state.decide(&entry.id);
+                state.withheld += 1;
+                continue;
+            }
         }
-        let Some(publish) = publish_for(entry, &address_of(record), &worker_id) else {
+        let (Ok(queen), Ok(())) = (queen, screen.check(&entry.message)) else {
             state.decide(&entry.id);
             state.withheld += 1;
             continue;
         };
+        let text = queen.map_or_else(
+            || entry.message.clone(),
+            |mark| super::person_rules::marked(&mark, &entry.message),
+        );
+        // A question queued before its sending tool checked the length (or
+        // marked here only) is delivered shortened, with a visible note of
+        // the cut, never withheld for its length.
+        let text = if MessageType::parse(&entry.category.trim().to_ascii_lowercase())
+            == Some(MessageType::Question)
+        {
+            super::person_rules::cut_to_fit(text.trim(), super::v2::TEXT_MAX)
+        } else {
+            text
+        };
+        let Some(publish) = publish_for(entry, &text, &address_of(record), &worker_id) else {
+            state.decide(&entry.id);
+            state.withheld += 1;
+            continue;
+        };
+        // Over its worker's budget for the minute, a post waits.
+        if !state.budget.take(&worker_id, now.timestamp_millis()) {
+            continue;
+        }
         let Ok(Value::Object(mut frame)) = serde_json::to_value(&publish) else {
             continue;
         };
+        // QN0: a post carries its kind, task and thread, each when it has one.
+        if let Some(fields) = super::queen_kinds::frame_fields(
+            &entry.metadata,
+            entry.task_id.as_deref(),
+            entry
+                .metadata
+                .get(super::queen_kinds::THREAD_KEY)
+                .map(String::as_str),
+        ) {
+            frame.extend(fields);
+        }
+        if person {
+            // The Hive attributes it to the account that owns this
+            // Instance; the frame names no worker and no user.
+            frame.remove("worker_id");
+            frame.insert("sender".into(), json!({"kind": "person"}));
+        }
         frame.insert("t".into(), "place.publish".into());
         state
             .in_flight
@@ -635,13 +794,21 @@ fn sender_label(message: &Value) -> String {
 /// Write a `message.deliver` into the local bus. Returns its `(address,
 /// seq)`; an unknown vault, an older seq or a message naming a local agent
 /// as sender changes nothing but the cursor.
+///
+/// A message for one worker (`body.to_worker`) goes to the sessions of
+/// that worker alive in `registry` now, each its own addressed copy:
+/// `worker_of` maps a live agent to its worker at delivery time, not when
+/// the relay connected, so a session that reconnected under a new id gets
+/// it and a finished one does not (#28). A worker of this machine without
+/// a live session keeps the message as a vault post; another machine's
+/// worker gets nothing here.
 pub(crate) fn apply_delivery(
     registry: &mut AgentRegistry,
     map: &VaultMap,
     state: &mut StateV2,
     message: &Value,
     local_workers: &BTreeSet<String>,
-    agents_of: &BTreeMap<String, Vec<String>>,
+    worker_of: &dyn Fn(&AgentEntry) -> Option<String>,
 ) -> Result<Option<(String, u64)>, String> {
     let address = message["to"]
         .as_str()
@@ -670,25 +837,35 @@ pub(crate) fn apply_delivery(
         let kind = message["type"].as_str().unwrap_or("progress");
         let key = format!("{INBOUND_KEY_PREFIX}{address}:{seq}");
         let text = delivered_text(message);
-        // A message for one of this machine's workers goes to the local
-        // agents that are that worker; everything else to every agent of
-        // the project, as a vault post.
-        let addressed: &[String] = message["body"]["to_worker"]
-            .as_str()
-            .and_then(|w| agents_of.get(w))
-            .map_or(&[], Vec::as_slice);
-        let targets: Vec<Option<&str>> = if addressed.is_empty() {
-            vec![None]
-        } else {
-            addressed.iter().map(|a| Some(a.as_str())).collect()
+        let (queen_kind, task_id, thread) = super::queen_kinds::delivered_fields(message);
+        let to_worker = message["body"]["to_worker"].as_str();
+        let addressed: Vec<String> = to_worker.map_or_else(Vec::new, |w| {
+            registry
+                .list_active(None)
+                .into_iter()
+                .filter(|agent| worker_of(agent).as_deref() == Some(w))
+                .map(|agent| agent.agent_id.clone())
+                .collect()
+        });
+        let targets: Vec<Option<&str>> = match to_worker {
+            None => vec![None],
+            Some(_) if !addressed.is_empty() => {
+                addressed.iter().map(|a| Some(a.as_str())).collect()
+            }
+            Some(w) if local_workers.contains(w) => vec![None],
+            Some(_) => Vec::new(),
         };
-        for (i, to) in targets.into_iter().enumerate() {
-            let key = if i == 0 {
-                key.clone()
-            } else {
-                format!("{key}:{i}")
-            };
-            registry.post_message_keyed(
+        // A copy per session is keyed by that session, not by its place in
+        // the list: a replay with another set of live sessions must not
+        // take a later session's copy for one already posted (#28 review).
+        // The suffix holds no ':', so `hive_inbound_address` (split at the
+        // last ':') still reads `hive:<address>:<seq>@<agent>` right.
+        for to in targets {
+            let key = to.map_or_else(
+                || key.clone(),
+                |agent| format!("{key}@{}", agent.replace(':', "_")),
+            );
+            let id = registry.post_message_keyed(
                 Some(root),
                 &from,
                 to,
@@ -699,6 +876,23 @@ pub(crate) fn apply_delivery(
                 None,
                 Some(&key),
             )?;
+            // QN0: the kind, task and thread travel end to end.
+            if let Some(entry) = registry.scratchpad.iter_mut().find(|e| e.id == id) {
+                if let Some(queen_kind) = queen_kind {
+                    entry.metadata.insert(
+                        super::queen_kinds::KIND_KEY.into(),
+                        queen_kind.as_str().into(),
+                    );
+                }
+                if let Some(thread) = &thread {
+                    entry
+                        .metadata
+                        .insert(super::queen_kinds::THREAD_KEY.into(), thread.clone());
+                }
+                if task_id.is_some() {
+                    entry.task_id.clone_from(&task_id);
+                }
+            }
         }
     }
     state.cursors.insert(address.clone(), seq);

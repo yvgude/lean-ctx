@@ -51,6 +51,36 @@ pub fn anchor_value(a: &Anchor) -> Value {
     Value::Object(m)
 }
 
+/// The anchor of a wire value [`anchor_value`] wrote; `None` for an unknown
+/// scheme.
+pub fn anchor_from_value(a: &Value) -> Option<Anchor> {
+    use crate::anchor::AnchorKind;
+    let (scheme, path) = a.get("ref")?.as_str()?.split_once(':')?;
+    let kind = match scheme {
+        "file" => AnchorKind::File,
+        "dir" => AnchorKind::Dir,
+        "glob" => AnchorKind::Glob,
+        _ => return None,
+    };
+    let text = |k: &str| a.get(k).and_then(Value::as_str);
+    Some(Anchor {
+        kind,
+        mode: if text("mode") == Some("shape") {
+            AnchorMode::Shape
+        } else {
+            AnchorMode::Content
+        },
+        role: if text("role") == Some("cites") {
+            AnchorRole::Cites
+        } else {
+            AnchorRole::Derived
+        },
+        path: path.to_owned(),
+        digest: text("digest").unwrap_or_default().to_owned(),
+        commit: text("commit").map(str::to_owned),
+    })
+}
+
 fn status_str(s: PageStatus) -> &'static str {
     match s {
         PageStatus::Draft => "draft",

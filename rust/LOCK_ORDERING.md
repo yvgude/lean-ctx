@@ -167,16 +167,22 @@ All `std::sync::Mutex` unless noted otherwise.
 | L140 | `REFRESHING` | `core/bm25_cache.rs:104` | `Mutex<Vec<PathBuf>>` | Roots whose background BM25 reload is running, so a stale entry starts at most one reload per root; held only to check, push or remove a root, never across the reload; independent leaf lock, never nested |
 | L141 | `QUEUE` | `core/hive/background.rs:36` | `Mutex<Option<Queue>>` (with `WAKE: Condvar`) | Hive background request queue (pending lease, renew, release and task calls) and the answers waiting per caller; the worker takes a job and releases the lock before running it, so no Hive request runs under it; independent leaf lock, never nested |
 | L142 | `RUNNING` | `core/phase_timing.rs:19` | `Mutex<BTreeMap<u64, (&'static str, Instant)>>` | Phase timers still running, one entry per guard, so `current()` names the newest; held only to insert, remove or read one entry; independent leaf lock, never nested |
-| L143 | `LEDGER` | `core/request_ledger.rs:134` | `Mutex<Ledger>` | Request ledger of a serving process (#2197): pending requests by id with method and stage, last tool completion, last initialize; held only to insert, update, remove or copy entries, released before `phase_timing::current()` (L142) or any I/O; independent leaf lock, never nested |
-| L144 | `VALIDATED_TIPS` | `core/ocla/unified_ledger.rs:273` | `Mutex<Vec<ValidatedTip>>` | Per ledger path, the prefix of the unified savings ledger this process already validated (#2196), so an append parses only newer records; taken only while the ledger's OS file lock is held, to copy, replace or drop one entry, never across I/O; independent leaf lock, never nested |
-| L145 | `HOME_ALLOW_DIRS_CACHE` | `core/pathjail.rs:422` | `Mutex<Option<(PathBuf, Instant, Vec<PathBuf>)>>` | IDE allow-dirs of one home with a 300 s TTL (#2195); only reached when IDE dirs are opt-in enabled. Held across the editor-registry probe on purpose as its single flight: every waiter needs the same list, so it never multiplies the probe nor serves an expired list. Any lock its callees (opencode config, detect resolvers, PATH lookups) take nests under L145 and must be recorded here |
+| L143 | `IDE_TARGETS` | `core/pathjail_ide_dirs.rs:78` | `Mutex<Option<TargetsEntry>>` | Editor targets behind the PathJail IDE config allow dirs (#2195), keyed on home + config generation + editor env, 60 s TTL; held only to read or replace the entry (the targets are built without it); independent leaf lock, never nested |
+| L144 | `LEDGER` | `core/request_ledger.rs:134` | `Mutex<Ledger>` | Request ledger of a serving process (#2197): pending requests by id with method and stage, last tool completion, last initialize; held only to insert, update, remove or copy entries, released before `phase_timing::current()` (L142) or any I/O; independent leaf lock, never nested |
+| L145 | `VALIDATED_TIPS` | `core/ocla/unified_ledger.rs:273` | `Mutex<Vec<ValidatedTip>>` | Per ledger path, the prefix of the unified savings ledger this process already validated (#2196), so an append parses only newer records; taken only while the ledger's OS file lock is held, to copy, replace or drop one entry, never across I/O; independent leaf lock, never nested |
+| L146 | `QUEUES` (file-lock turns) | `crates/lean-ctx-fs/src/file_lock.rs:96` | `OnceLock<Mutex<HashMap<PathBuf, Arc<Queue>>>>` | Per lock path, the in-process FIFO queue behind `file_lock::Turn` (#2214). Held only to get or insert a path's queue and draw a ticket (`take_turn`), or to advance and remove an idle queue (`Turn::drop`); L147 is taken under it, nothing else; never held while waiting, across I/O or across a file lock. Poison is recovered. See "File-lock turns" in Section 3 |
+| L147 | `Queue.line` (per path, not static) | `crates/lean-ctx-fs/src/file_lock.rs:69` | `Mutex<Line>` (with `moved: Condvar`) | The ticket counters (`next`, `serving`) and abandoned tickets of one lock path's turn queue. Taken under L146 to draw a ticket or to advance, and alone while a waiter sleeps on `moved` (the condvar releases it). Takes no other lock; no I/O while held. Poison is recovered |
+| L148 | `ACTIVE` (session taint) | `core/session/taint.rs:42` | `LazyLock<Arc<tokio::sync::RwLock<Option<Active>>>>` (bounded lock) | The bound session id and its in-memory input taint (pz21). Taken through `bounded_lock::{read_for,write_for}` with a 2 s budget, only to merge or copy the taint; a timeout fails closed (the taint reads as overflowed). Sidecar reads and writes run after it is released; independent leaf lock, never nested |
 
 ### CLI cache transaction file lock
 
 `core::cli_cache::CacheTransaction` acquires the existing bounded `agents::FileLock`
 on `<data_dir>/cli-cache/cache.lock` before loading `cache.json` and retains it
 through mutation and atomic replacement. Read, invalidate, clear, project reset,
-and statistics use this same authority. Acquisition waits at most 750 ms. Cache
+and statistics use this same authority. Acquisition takes a file-lock turn first
+(L146/L147): a timeout (`agents::ACQUIRE_TIMEOUT`, 5 s) means no handover for that
+long, so the total wait is unbounded while the in-process queue keeps moving; the
+polled OS file lock is then bounded by the same timeout. Cache
 failure returns full content for reads and an error for explicit cache commands
 or post-refactor eviction; it never permits an unlocked write. No callbacks,
 network, awaits, or nested cache transactions occur while held. Refactor callers
@@ -420,6 +426,31 @@ because `Config::CACHE` is a self-contained cache lock — always released insid
 `Config::load` and **never** held while acquiring `BACKENDS`, so no cycle exists.
 Rule: never acquire L4 and then L22.
 
+### File-lock turns (L146 → L147) before file locks
+
+`lean-ctx-fs::file_lock::take_turn` queues the threads of one process per lock
+path in arrival order. Its two locks nest only as **L146 (`QUEUES`) → L147
+(`Queue.line`)**: a ticket is drawn, and a release advances the line and removes
+an idle queue, with both held; a waiter then sleeps on `moved` holding L147 alone.
+Neither is held once `take_turn` returns or `Turn::drop` notifies. The `Turn`
+itself is held across the file lock it guards, so the order is:
+
+```
+Turn(P)  (L146 → L147, both released on return)
+ └─► agents::FileLock(P) OS file lock (polled, bounded by the timeout)
+
+Turn(<knowledge dir>/.knowledge.lock)
+ └─► L41 KNOWLEDGE_LOCKS (per-project in-process mutex, polled)
+      └─► .knowledge.lock OS file lock (polled)
+```
+
+Release runs in reverse: the OS file lock is unlocked and its file closed before
+the turn passes on (`FileLock` field order `file`, `_turn`; knowledge:
+`file`, `_guard`, `lock`, `_turn`). Never take a turn while holding the file lock
+or L41 for the same path. A waiter's timeout counts only time without a
+handover; a waiter that times out leaves an abandoned ticket the next release
+skips.
+
 ### Worker Thread Tuning
 
 The Tokio runtime worker thread count defaults to `available_parallelism().clamp(1, 4)`.
@@ -429,7 +460,7 @@ is always `worker_threads * 4`, clamped to `[8, 32]`.
 
 ### Independent Static Locks (L3–L137)
 
-All other static locks (L3–L137) — **except the L22 → L4 pair documented above** — are
+All other static locks (L3–L137) — **except the L22 → L4 and L146 → L147 pairs documented above** — are
 **independent singletons**: they protect isolated subsystem state and are never nested inside
 each other. Each should be acquired in isolation:
 

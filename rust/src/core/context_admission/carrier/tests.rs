@@ -49,7 +49,12 @@ fn the_environment_kill_switch_cannot_disable_a_governed_or_sovereign_gateway() 
         assert_eq!(gateway.kill_switch(), KillSwitch::Ignored);
         assert!(gateway.enabled_effective(), "{mode:?} stays protected");
         let policy = AdmissionPolicy::builtin(gateway, SecretDetectionConfig::default());
-        let admitted = admit(&leaking, None, &policy);
+        let admitted = admit(
+            &leaking,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &policy,
+        );
         assert!(
             !admitted.text.is_some_and(|text| text.contains(AWS_KEY)),
             "{mode:?}: the old code delivered the key with `gateway.disabled`"
@@ -59,7 +64,12 @@ fn the_environment_kill_switch_cannot_disable_a_governed_or_sovereign_gateway() 
     let developer = ContextGatewayConfig::default();
     assert_eq!(developer.kill_switch(), KillSwitch::Honoured);
     let policy = AdmissionPolicy::builtin(developer, SecretDetectionConfig::default());
-    let admitted = admit(&leaking, None, &policy);
+    let admitted = admit(
+        &leaking,
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    );
     assert_eq!(admitted.text.as_deref(), Some(leaking.as_str()));
     assert_eq!(
         admitted.decision.reason_codes[0].as_str(),
@@ -86,7 +96,12 @@ fn a_snapshot_whose_global_configuration_failed_to_load_admits_nothing() {
         assert_eq!(crate::core::config::last_config_parse_error(), None);
         let policy = AdmissionPolicy::from_config(&snapshot);
         assert!(policy.config_unloadable() && policy.enabled_effective());
-        let admitted = admit("fn clean() {}\n", None, &policy);
+        let admitted = admit(
+            "fn clean() {}\n",
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &policy,
+        );
         assert!(admitted.text.is_none(), "{failure:?} must refuse");
         let codes: Vec<&str> = admitted
             .decision
@@ -99,7 +114,14 @@ fn a_snapshot_whose_global_configuration_failed_to_load_admits_nothing() {
     let loaded = AdmissionPolicy::from_config(&Config::default());
     assert!(!loaded.config_unloadable());
     assert_eq!(
-        admit("fn clean() {}\n", None, &loaded).text.as_deref(),
+        admit(
+            "fn clean() {}\n",
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &loaded
+        )
+        .text
+        .as_deref(),
         Some("fn clean() {}\n")
     );
 }
@@ -120,11 +142,22 @@ fn readmitting_masked_text_is_idempotent() {
         format!("config:\n  token: {AWS_KEY}\n  region: eu\n"),
         "card 4111 1111 1111 1111 on file\n".to_owned(),
     ] {
-        let once = admit(&original, None, &policy)
-            .text
-            .expect("developer mode masks and delivers");
+        let once = admit(
+            &original,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &policy,
+        )
+        .text
+        .expect("developer mode masks and delivers");
         assert_ne!(once, original, "the fixture must be masked at all");
-        let twice = admit(&once, None, &policy).text;
+        let twice = admit(
+            &once,
+            None,
+            &crate::core::context_admission::origin::SourceClass::Project,
+            &policy,
+        )
+        .text;
         assert_eq!(twice.as_deref(), Some(once.as_str()), "second rewrite");
         assert_eq!(ReleaseGate::current().text(&once), Release::Unchanged);
     }
@@ -160,9 +193,14 @@ fn semantically_redacted_text_passes_the_release_point() {
         SecretDetectionConfig::default(),
     );
     policy.semantic = Some(SemanticDetector::fixed(first_word));
-    let admitted = admit("Anna unterschrieb in Zürich\n", None, &policy)
-        .text
-        .expect("developer mode masks and delivers");
+    let admitted = admit(
+        "Anna unterschrieb in Zürich\n",
+        None,
+        &crate::core::context_admission::origin::SourceClass::Project,
+        &policy,
+    )
+    .text
+    .expect("developer mode masks and delivers");
     assert!(admitted.starts_with("[REDACTED:pii]"), "{admitted}");
     assert_eq!(
         ReleaseGate::with(policy).text(&admitted),
@@ -224,4 +262,49 @@ fn downstream_arguments_follow_the_detector_actions_per_mode() {
     let withheld = admitted("this is = not [valid toml", json!({"q": "release notes"}))
         .expect_err("an unusable configuration sends nothing");
     assert!(withheld.has("gateway.config_unloadable"), "{withheld}");
+}
+
+/// Review 22480 finding 7: carrier text and unclassified tool output were
+/// admitted as `Project`, so a peer response, piped input, a hook payload or
+/// the output of a command nobody classified reached the agent unfenced and
+/// left the session untainted. The class is now the caller's to name, and an
+/// unnamed one is unknown.
+#[test]
+fn carrier_text_and_unclassified_output_are_never_assumed_project() {
+    use crate::core::context_admission::capture::{ADMISSIONS, AdmissionCapture};
+    use crate::core::context_admission::origin::SourceClass;
+    use crate::core::context_admission::{OutputCompleteness, admit_tool_output};
+
+    let _data = isolated("");
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+
+    let capture = AdmissionCapture::new();
+    ADMISSIONS.sync_scope(Some(capture.clone()), || {
+        admit_tool_output("plain output", OutputCompleteness::complete());
+    });
+    assert!(
+        !capture.origin_ledger().is_empty(),
+        "output of an unclassified command was taken as the project's"
+    );
+
+    // A classified project command stays clean.
+    let capture = AdmissionCapture::new();
+    ADMISSIONS.sync_scope(Some(capture.clone()), || {
+        capture.set_output_class(SourceClass::Project);
+        admit_tool_output("plain output", OutputCompleteness::complete());
+    });
+    assert!(capture.origin_ledger().is_empty());
+
+    let capture = AdmissionCapture::new();
+    ADMISSIONS.sync_scope(Some(capture.clone()), || {
+        admit_carrier_text("piped", &SourceClass::Unclassified { tool: "compress" })
+            .expect("admitted");
+    });
+    assert!(!capture.origin_ledger().is_empty(), "carrier text unnoted");
+
+    let capture = AdmissionCapture::new();
+    ADMISSIONS.sync_scope(Some(capture.clone()), || {
+        admit_carrier_text("history", &SourceClass::Project).expect("admitted");
+    });
+    assert!(capture.origin_ledger().is_empty());
 }

@@ -150,7 +150,7 @@ fn build_full(project_root: &Path, files: &[String], warnings: &mut Vec<String>)
             }
         };
         // Derived store: only admitted text, never restricted.
-        let Some(content) = admission.admit(&content, &abs) else {
+        let Some(content) = admission.admit(&content, &abs, None) else {
             continue;
         };
         if let Some(origin) = origin {
@@ -234,7 +234,7 @@ fn rebuild_incremental(
                 continue;
             }
         };
-        let Some(content) = admission.admit(&content, &abs) else {
+        let Some(content) = admission.admit(&content, &abs, None) else {
             continue;
         };
         if let Some(origin) = origin {
@@ -488,6 +488,7 @@ fn extract_artifact_chunks(file_path: &str, content: &str) -> Vec<CodeChunk> {
             let start_line = 1 + bytecount::count(&bytes[..c.offset], b'\n');
             let end_line = start_line + bytecount::count(slice, b'\n');
             out.push(CodeChunk {
+                input_origin: None,
                 file_path: file_path.to_string(),
                 symbol_name: format!("{file_path}#chunk-{idx}"),
                 kind: ChunkKind::Other,
@@ -509,6 +510,7 @@ fn extract_artifact_chunks(file_path: &str, content: &str) -> Vec<CodeChunk> {
         .collect::<Vec<_>>()
         .join("\n");
     vec![CodeChunk {
+        input_origin: None,
         file_path: file_path.to_string(),
         symbol_name: file_path.to_string(),
         kind: ChunkKind::Other,

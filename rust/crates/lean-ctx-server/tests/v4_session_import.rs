@@ -59,7 +59,7 @@ fn session_import_is_scoped_and_preserves_existing_archives() {
                 .current_dir(&root)
                 .args([
                     "--exact",
-                    "session_import_is_scoped_and_preserves_existing_archives",
+                    "v4_session_import::session_import_is_scoped_and_preserves_existing_archives",
                     "--nocapture",
                 ])
                 .env("V4_SESSION_IMPORT_CHILD", "1")

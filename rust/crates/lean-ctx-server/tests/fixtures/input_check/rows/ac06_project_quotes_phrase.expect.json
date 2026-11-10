@@ -1,0 +1,12 @@
+{
+  "ac": "pz21-AC06",
+  "channel": "project",
+  "clean": true,
+  "fenced": false,
+  "must_contain": [
+    "    let line = \"{{OVERRIDE}}\";\n    assert!(detect(line) > 0);"
+  ],
+  "must_not_contain": [],
+  "path": "src/filter_tests.rs",
+  "redacted_lines": 0
+}

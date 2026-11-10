@@ -49,10 +49,17 @@ USAGE:
   lean-ctx hive maintain <workspace>/<vault> --stale --confirm <node_id>
   lean-ctx hive runtime install [--yes]
   lean-ctx hive bus relay [--for <seconds>]
-  lean-ctx hive worker [status|pause|resume|stop|list|rename <wkr> <name>|register --cli <host> [--role <role>]]
+  lean-ctx hive worker [status|pause|resume|stop|list|rename <wkr> <name>|register --cli <host> [--role <role>]|retire <wkr> [--force]|retire --idle <dur>]
   lean-ctx hive graph publish
   lean-ctx hive tasks [list|show|claim|update|submit|release|propose] …
-  lean-ctx hive status [--json]
+  lean-ctx hive status [--json [--contract local-read/1]]
+  lean-ctx hive sync status --json
+  lean-ctx hive policy sessions --json | session --session <id> --json
+  lean-ctx hive presence --json
+  lean-ctx hive docs list|show <id> --json [--project-root <p>]
+  lean-ctx hive tasks list|show <n> --json
+  lean-ctx hive vaults --json [--project-root <p>]
+  lean-ctx hive link --vault <workspace>/<vault> --json [--project-root <p>] [--dry-run]
 
 metrics     Instance metrics for the workspace (hourly counts, including full
             re-fetches of shortened output, the names of known programs and
@@ -99,7 +106,17 @@ worker      Worker mode: your agents pull tasks you opted in for on the web,
 tasks       The vault's tasks: read them, work one under a claim (worker
             mode), report, submit a result with evidence, or propose one
             (`lean-ctx hive tasks --help`).
-status      --json prints the cockpit shape.
+status      --json prints the cockpit shape; --json --contract local-read/1
+            adds the Local Read v1 fields (plan, lease, rights, capture).
+presence    --json: the workers of other machines on this machine's vault
+            buses, as the relay last recorded them.
+--json      on presence, docs list|show, tasks list|show, vaults and link
+            (and status with --contract local-read/1): one JSON object with
+            \"contract\": \"local-read/1\" (Local Read v1,
+            docs/contracts/local-read-v1.md), for local readers such as
+            Hive Desktop. Read only (docs come from the local replica), except
+            link, which writes the link file and shares the project at once
+            under the usual consent rules (--dry-run writes nothing).
 ";
 
 // Declared here, not in cli/mod.rs (frozen for the crate split).
@@ -152,6 +169,37 @@ pub(crate) fn cmd_hive(args: &[String]) {
         eprintln!("{}", lean_ctx_hive::NOT_AVAILABLE);
         std::process::exit(1);
     }
+    // Local Read v1: the reads a local reader (Hive Desktop) makes, after
+    // the same release gate as every other hive command.
+    if super::local_read::wants_json(rest) {
+        let reads = matches!(
+            super::local_read::positionals(rest).first().copied(),
+            None | Some("list" | "show")
+        );
+        let fields = matches!(
+            super::local_read::positionals(rest).first().copied(),
+            Some("priority" | "labels")
+        );
+        if sub == "tasks" && fields {
+            return super::local_read::tasks::run(rest);
+        }
+        match sub {
+            "docs" if reads => return super::local_read::docs::run(rest),
+            "tasks" if reads => return super::local_read::tasks::run(rest),
+            "presence" => return super::local_read::presence::run(rest),
+            "sync" if reads_status(rest) => return super::local_read::sync::run_sync_status(rest),
+            "policy" => return super::local_read::sync::run_policy(rest),
+            "vaults" => return super::local_read::vaults::run(rest),
+            "link" => return super::local_read::link::run(rest),
+            _ => {}
+        }
+    }
+    // `hive sync status` and `hive policy …` read local files only, as JSON;
+    // a plain `hive sync status` never falls through to a manual sync.
+    if (sub == "sync" && reads_status(rest)) || sub == "policy" {
+        eprintln!("hive {sub}: only --json is supported");
+        std::process::exit(2);
+    }
     let result = match sub {
         "connect" => super::hive_connect_cmd::run(&config, rest),
         "status" => status(&config, rest),
@@ -170,6 +218,16 @@ pub(crate) fn cmd_hive(args: &[String]) {
         "graph" if rest.first().map(String::as_str) == Some("publish") => publish_graph(&config),
         "tasks" => super::hive_tasks_cmd::run(rest),
         "docs" => docs(rest),
+        "presence" => {
+            eprintln!("hive presence: only --json is supported (`ctx_agent list` shows the rows)");
+            std::process::exit(2);
+        }
+        "vaults" => {
+            eprintln!(
+                "hive vaults: only --json is supported (`lean-ctx hive status` names the workspace)"
+            );
+            std::process::exit(2);
+        }
         "consent" => super::hive_consent_cmd::run(&config, rest),
         other => {
             eprintln!("hive: unknown subcommand '{other}'\n");
@@ -181,6 +239,11 @@ pub(crate) fn cmd_hive(args: &[String]) {
         eprintln!("hive: {error}");
         std::process::exit(1);
     }
+}
+
+/// `hive sync status`: the background sync's state, not a sync.
+fn reads_status(rest: &[String]) -> bool {
+    super::local_read::positionals(rest).first().copied() == Some("status")
 }
 
 /// The release switch ([`lean_ctx_hive::HIVE_AVAILABLE`]) for the two
@@ -239,8 +302,15 @@ fn status(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
     let store = HiveStore::open()?;
     let current = report(&store, config, Utc::now());
     if args.iter().any(|a| a == "--json") {
-        let json = serde_json::to_string(&current.cli_status())
-            .map_err(|e| HiveError::Local(e.to_string()))?;
+        // Local Read v1 only on explicit opt-in: plain `--json` stays the
+        // cockpit shape, which its readers decode strictly.
+        if super::local_read::status::opted_in(args) {
+            super::local_read::status::print(&current, store.data_dir(), config.auto_capture, args);
+            return Ok(());
+        }
+        let mut status = current.cli_status();
+        status.vault_mismatch = stale_here(&store).map(|stale| stale.wire());
+        let json = serde_json::to_string(&status).map_err(|e| HiveError::Local(e.to_string()))?;
         println!("{json}");
         return Ok(());
     }
@@ -279,6 +349,14 @@ fn status(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
     Ok(())
 }
 
+/// The stale vault resolution of the project here, if any (local files).
+fn stale_here(store: &HiveStore) -> Option<lean_ctx_hive::resolution::Stale> {
+    let cwd = std::env::current_dir().ok()?;
+    let root = lean_ctx::core::protocol::detect_project_root_or_cwd(&cwd.to_string_lossy());
+    let map = lean_ctx_hive::vault::VaultMap::load(store.data_dir());
+    lean_ctx_hive::resolution::stale_for_root(&map, std::path::Path::new(&root))
+}
+
 /// Whether the project here is shared, in one line: its vault, a first
 /// share that waits for the person, or not set up yet. `None` outside a
 /// project LeanCTX can identify.
@@ -290,6 +368,14 @@ fn project_line() -> Option<String> {
     let name = root.file_name()?.to_string_lossy().into_owned();
     let store = HiveStore::open().ok()?;
     let map = lean_ctx_hive::vault::VaultMap::load(store.data_dir());
+    // Dogfood 5.11.: a resolution the link file or identity no longer
+    // backs is never shown as "shared" (connect and sync drop it).
+    if let Some(stale) = lean_ctx_hive::resolution::stale_for_root(&map, root) {
+        return Some(format!(
+            "{name} → MISMATCH: {}. That vault is not used; run `lean-ctx hive connect` here to resolve the project again",
+            stale.describe()
+        ));
+    }
     if let Some(record) = map.for_root(&root.to_string_lossy()) {
         return Some(format!("{name} → {}/{} (shared)", record.ns, record.name));
     }
@@ -548,8 +634,7 @@ fn maintain(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
     let cwd = std::env::current_dir().map_err(|e| HiveError::Local(e.to_string()))?;
     let root = lean_ctx::core::protocol::detect_project_root_or_cwd(&cwd.to_string_lossy());
     let map = lean_ctx_hive::vault::VaultMap::load(store.data_dir());
-    let record = map
-        .for_root(&root)
+    let record = lean_ctx_hive::resolution::vault_in(&map, std::path::Path::new(&root))?
         .filter(|r| r.ns == ns && r.name == name)
         .cloned()
         .ok_or_else(|| {
@@ -925,12 +1010,20 @@ fn sync(config: &HiveConfig) -> Result<(), HiveError> {
     };
     match (&bound, v2) {
         (Some(record), true) => {
-            match lean_ctx_hive::sync::place::sync_vault(
+            // The daemon's background sync of this vault finishes first.
+            let _lock = lean_ctx_hive::sync::auto::lock_vault(
+                session.store.data_dir(),
+                &record.vault_id,
+                true,
+            )?;
+            let synced = lean_ctx_hive::sync::place::sync_vault(
                 &session,
                 record,
                 std::path::Path::new(&root),
                 &mut screen,
-            ) {
+            );
+            lean_ctx_hive::sync::auto::note_manual(&session.store, record, synced.as_ref());
+            match synced {
                 Ok(done) => {
                     println!(
                         "Vault @{}/{}: {} event(s) stored{}, {} captured, {} episode(s), {} pushed{}; capture gate: {}",
@@ -996,6 +1089,10 @@ fn sync(config: &HiveConfig) -> Result<(), HiveError> {
             lean_ctx_hive::policy::PolicyPull::Refused(format!("not fetched: {error}"))
         }) {
             lean_ctx_hive::policy::PolicyPull::Accepted(state) => {
+                lean_ctx_hive::policy::note_pull(
+                    session.store.data_dir(),
+                    lean_ctx_hive::policy::PulledVia::Manual,
+                );
                 println!(
                     "Policy bundle verified ({} filter packs).",
                     state.filter_packs.len()
@@ -1011,7 +1108,10 @@ fn sync(config: &HiveConfig) -> Result<(), HiveError> {
                     }
                 ));
             }
-            lean_ctx_hive::policy::PolicyPull::Unchanged => {}
+            lean_ctx_hive::policy::PolicyPull::Unchanged => lean_ctx_hive::policy::note_pull(
+                session.store.data_dir(),
+                lean_ctx_hive::policy::PulledVia::Manual,
+            ),
         }
     }
     for number in &report.drafts_sent {
@@ -1097,32 +1197,122 @@ fn bus(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
         None => u64::MAX / 4,
     };
     // The daemon runs the same relay in the background; this runs it in
-    // the foreground (watch it, or relay without a daemon).
-    if !lean_ctx_hive::bus::run_for(config.clone(), std::time::Duration::from_secs(seconds))? {
+    // the foreground (watch it, or relay without a daemon). Either way it
+    // says what was sent, or why nothing was (#252).
+    let report = lean_ctx_hive::bus::Report::to(|line| println!("{line}"));
+    if lean_ctx_hive::bus::run_for(
+        config.clone(),
+        std::time::Duration::from_secs(seconds),
+        report,
+    )? {
         println!(
-            "A bus relay is already running on this machine; it was asked to announce this machine's agents (and their roles) now."
+            "bus relay: stopped after {seconds} s. Hive keeps a worker on the bus only while a relay is connected; the daemon's relay takes over when the daemon runs."
         );
+        return Ok(());
+    }
+    println!(
+        "A bus relay is already running on this machine; it was asked to announce this machine's agents (and their roles) now."
+    );
+    match lean_ctx_hive::bus::presence::announce_and_wait(std::time::Duration::from_secs(
+        ANNOUNCE_WAIT_SECS.min(seconds.max(1)),
+    )) {
+        Some(text) => print!("{text}"),
+        None => println!(
+            "bus relay: the running relay sent no fresh hello within {} s: it is not connected to Hive right now (see the last error in `lean-ctx hive status`).",
+            ANNOUNCE_WAIT_SECS.min(seconds.max(1))
+        ),
     }
     Ok(())
 }
+
+/// How long `hive bus relay` waits for the running relay's fresh hello.
+const ANNOUNCE_WAIT_SECS: u64 = 15;
 
 fn link_project(args: &[String]) -> Result<(), HiveError> {
-    let repo = args
-        .first()
-        .ok_or_else(|| HiveError::Config("usage: lean-ctx hive link <workspace>/<vault>".into()))?;
     let cwd = std::env::current_dir().map_err(|e| HiveError::Local(e.to_string()))?;
     let root = lean_ctx::core::protocol::detect_project_root_or_cwd(&cwd.to_string_lossy());
-    let outcome = link::link(std::path::Path::new(&root), repo)?;
-    println!("Linked {root} to {repo} ({}).", outcome.file.display());
-    if outcome.created_identity {
+    for line in link_project_at(std::path::Path::new(&root), args)? {
+        println!("{line}");
+    }
+    // Dogfood 5.11.: after a connect this machine may have resolved the
+    // project to another vault. That resolution is dropped, so neither
+    // status nor sync keeps using it; connect resolves it again.
+    let store = HiveStore::open()?;
+    if store.instance()?.is_some()
+        && let Some(stale) = lean_ctx_hive::resolution::forget_stale_at(
+            store.data_dir(),
+            std::path::Path::new(&root),
+        )?
+    {
         println!(
-            "Created .lean-ctx-id so the project keeps its identity when it moves; commit both files."
+            "Before this link, {}. That resolution is dropped and never used again: run `lean-ctx hive connect` here to resolve the project to {} (sync does the same; both ask for your yes where a first share needs it).",
+            stale.describe(),
+            stale.linked().unwrap_or("the linked vault")
         );
     }
     Ok(())
 }
 
-/// `hive worker [status|pause|resume|stop]`.
+/// `hive link <workspace>/<vault> [--leave-unsettled-local]` for the
+/// project at `root`: refused while local tasks are unsettled (they would
+/// be stranded once the project's tasks are Hive's), unless the person
+/// leaves them local on purpose.
+fn link_project_at(root: &std::path::Path, args: &[String]) -> Result<Vec<String>, HiveError> {
+    use lean_ctx_hive::bring_local;
+    let repo = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .ok_or_else(|| HiveError::Config("usage: lean-ctx hive link <workspace>/<vault>".into()))?;
+    let leave = args.iter().any(|a| a == bring_local::LEAVE_UNSETTLED_FLAG);
+    let unsettled = bring_local::link_gate(root, leave).map_err(HiveError::Refused)?;
+    let outcome = link::link(root, repo)?;
+    let mut lines = vec![format!(
+        "Linked {} to {repo} ({}).",
+        root.display(),
+        outcome.file.display()
+    )];
+    if outcome.created_identity {
+        lines.push(
+            "Created .lean-ctx-id so the project keeps its identity when it moves; commit both files."
+                .into(),
+        );
+    }
+    if let Some(note) = bring_local::not_shared_note(&unsettled) {
+        lines.push(note);
+    }
+    Ok(lines)
+}
+
+/// `24h`, `90m`, `7d`, `3600s` (a bare number: hours).
+fn parse_idle(text: &str) -> Option<std::time::Duration> {
+    let text = text.trim();
+    let (number, unit) = match text.char_indices().find(|(_, c)| !c.is_ascii_digit()) {
+        Some((i, _)) => (&text[..i], &text[i..]),
+        None => (text, "h"),
+    };
+    let n: u64 = number.parse().ok()?;
+    let secs = match unit {
+        "s" => n,
+        "m" => n.checked_mul(60)?,
+        "h" => n.checked_mul(3600)?,
+        "d" => n.checked_mul(86_400)?,
+        _ => return None,
+    };
+    Some(std::time::Duration::from_secs(secs))
+}
+
+/// `ms` as a short age: `40s ago`, `12m ago`, `5h ago`, `3d ago`.
+fn seen_ago(ms: u64) -> String {
+    let s = ms / 1000;
+    match s {
+        0..60 => format!("{s}s ago"),
+        60..3600 => format!("{}m ago", s / 60),
+        3600..86_400 => format!("{}h ago", s / 3600),
+        _ => format!("{}d ago", s / 86_400),
+    }
+}
+
+/// `hive worker [status|pause|resume|stop|list|rename|register|retire]`.
 fn worker(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
     use lean_ctx_hive::worker;
     let store = HiveStore::open()?;
@@ -1131,6 +1321,7 @@ fn worker(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
             use lean_ctx_hive::workers::attach;
             let instance = store.instance()?.ok_or(HiveError::NotConnected)?;
             let workers = attach::list(&store, &instance.instance_id)?;
+            let now_ms = u64::try_from(chrono::Utc::now().timestamp_millis()).unwrap_or_default();
             if workers.is_empty() {
                 println!("No workers yet: one appears when an agent session posts or captures.");
             }
@@ -1147,7 +1338,11 @@ fn worker(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
                 } else {
                     "local"
                 };
-                println!("{}  {name}  ({state})", w.worker_id);
+                let seen = attach::last_seen_ms(&w).map_or_else(
+                    || "never seen".to_string(),
+                    |ms| format!("last seen {}", seen_ago(now_ms.saturating_sub(ms))),
+                );
+                println!("{}  {name}  ({state}, {seen})", w.worker_id);
             }
         }
         "register" => {
@@ -1179,6 +1374,53 @@ fn worker(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
                 ),
             )?;
             println!("{}", worker.worker_id);
+        }
+        "retire" => {
+            // Owner 09.11.: workers that are not active do not count and are
+            // switched off. Out of the book, then `DELETE /v1/workers/{id}`.
+            use lean_ctx_hive::workers::{attach, register};
+            let usage = || {
+                HiveError::Config(
+                    "usage: lean-ctx hive worker retire <wkr_…> [--force] | --idle <dur> (e.g. 24h, 90m, 7d; default 24h)"
+                        .into(),
+                )
+            };
+            let instance = store.instance()?.ok_or(HiveError::NotConnected)?;
+            let gone = if args.iter().any(|a| a == "--idle") {
+                let idle = match flag_value(args, "--idle")? {
+                    Some(text) => parse_idle(text).ok_or_else(usage)?,
+                    None => register::IDLE_RETIRE,
+                };
+                attach::give_up_idle(&store, &instance.instance_id, idle, false)?
+            } else {
+                let id = args
+                    .get(1)
+                    .filter(|a| !a.starts_with("--"))
+                    .ok_or_else(usage)?;
+                if !lean_ctx_hive::bus::address::is_worker_id(id) {
+                    return Err(usage());
+                }
+                // A worker an active session holds is refused unless forced.
+                let force = args.iter().any(|a| a == "--force");
+                attach::give_up(
+                    &store,
+                    &instance.instance_id,
+                    std::slice::from_ref(id),
+                    force,
+                )?
+            };
+            let root = lean_ctx_hive::root_cert::trust_root(&store, config, &instance.url)?;
+            let session = Session::load(store, root)?;
+            let sent = register::retire_evicted(&session);
+            if gone.is_empty() {
+                println!("No worker to retire.");
+            }
+            for id in &gone {
+                println!("Retired {id}");
+            }
+            if let Err(error) = sent {
+                println!("Hive was not told yet ({error}); the next sync retires them there.");
+            }
         }
         "rename" => {
             let (Some(id), Some(name)) = (args.get(1), args.get(2)) else {
@@ -1289,21 +1531,21 @@ fn worker(config: &HiveConfig, args: &[String]) -> Result<(), HiveError> {
 /// `hive graph publish`: the current project's code graph (N1).
 fn publish_graph(config: &HiveConfig) -> Result<(), HiveError> {
     use lean_ctx_hive::knowledge::code_graph;
-    use lean_ctx_hive::vault::VaultMap;
     let store = HiveStore::open()?;
     let instance = store.instance()?.ok_or(HiveError::NotConnected)?;
     let root = lean_ctx_hive::root_cert::trust_root(&store, config, &instance.url)?;
     let session = Session::load(store, root)?;
     let cwd = std::env::current_dir().map_err(|e| HiveError::Local(e.to_string()))?;
     let project_root = lean_ctx::core::protocol::detect_project_root_or_cwd(&cwd.to_string_lossy());
-    let record = VaultMap::load(session.store.data_dir())
-        .for_root(&project_root)
-        .cloned()
-        .ok_or_else(|| {
-            HiveError::Config(
-                "this repository is not linked to a vault (run `lean-ctx hive sync` in it)".into(),
-            )
-        })?;
+    let record = lean_ctx_hive::resolution::vault_for_root(
+        session.store.data_dir(),
+        std::path::Path::new(&project_root),
+    )?
+    .ok_or_else(|| {
+        HiveError::Config(
+            "this repository is not linked to a vault (run `lean-ctx hive sync` in it)".into(),
+        )
+    })?;
     let sent = code_graph::publish(&session, &record, std::path::Path::new(&project_root))?;
     println!(
         "Code graph of {}/{} sent: {} nodes, {} edges{}.",
@@ -1326,4 +1568,71 @@ fn publish_graph(config: &HiveConfig) -> Result<(), HiveError> {
         println!("The checkout exceeds the graph limits; whole files were left out.");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+
+    /// The terminal `hive link` asks the same gate as the JSON one: refused
+    /// while a local task is unsettled, linked with --leave-unsettled-local,
+    /// and then it says which tasks stay local.
+    #[test]
+    fn the_terminal_link_refuses_while_local_tasks_are_unsettled() {
+        let _data = lean_ctx::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path();
+        lean_ctx_hive::tasks::local::write(root, |board, now| {
+            board.propose(
+                &lean_ctx_tasks::Actor::person("person"),
+                lean_ctx_tasks::Proposal {
+                    title: "Proposed only".into(),
+                    goal: None,
+                    acceptance: "It works".into(),
+                    role: None,
+                },
+                now,
+            )
+        })
+        .unwrap();
+        let args = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        let refused = link_project_at(root, &args(&["platform/api"])).unwrap_err();
+        assert!(refused.to_string().contains("#1 (proposed)"), "{refused}");
+        assert!(!root.join(link::LINK_FILE).exists(), "nothing written");
+
+        let lines =
+            link_project_at(root, &args(&["platform/api", "--leave-unsettled-local"])).unwrap();
+        assert!(root.join(link::LINK_FILE).exists());
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("local, not shared: #1 (proposed)")),
+            "{lines:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod worker_retire_tests {
+    use super::{parse_idle, seen_ago};
+    use std::time::Duration;
+
+    #[test]
+    fn idle_durations_read_with_their_unit() {
+        assert_eq!(parse_idle("24h"), Some(Duration::from_secs(86_400)));
+        assert_eq!(parse_idle("90m"), Some(Duration::from_secs(5_400)));
+        assert_eq!(parse_idle("7d"), Some(Duration::from_secs(604_800)));
+        assert_eq!(parse_idle("30s"), Some(Duration::from_secs(30)));
+        assert_eq!(parse_idle("2"), Some(Duration::from_secs(7_200)));
+        assert_eq!(parse_idle("1w"), None);
+        assert_eq!(parse_idle("h"), None);
+    }
+
+    #[test]
+    fn last_seen_reads_as_a_short_age() {
+        assert_eq!(seen_ago(40_000), "40s ago");
+        assert_eq!(seen_ago(12 * 60_000), "12m ago");
+        assert_eq!(seen_ago(5 * 3_600_000), "5h ago");
+        assert_eq!(seen_ago(3 * 86_400_000), "3d ago");
+    }
 }

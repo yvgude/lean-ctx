@@ -746,9 +746,9 @@ mod tests {
         let found = find_on_path("leanctx-fop-probe");
         let missing = find_on_path("leanctx-fop-definitely-missing");
         match old {
-            // SAFETY: serialized by test_env_lock; restores the saved PATH.
+            // SAFETY: still serialized by test_env_lock; restores the saved PATH.
             Some(v) => unsafe { std::env::set_var("PATH", v) },
-            // SAFETY: serialized by test_env_lock; PATH was unset before.
+            // SAFETY: still serialized by test_env_lock; PATH was unset before.
             None => unsafe { std::env::remove_var("PATH") },
         }
 

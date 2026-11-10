@@ -285,31 +285,52 @@ fn cmd_profile_create(name: &str, base: Option<&str>, global: bool) {
     new_profile.profile.inherits = base.map(String::from);
     new_profile.profile.description = String::new();
 
-    let dir = if global {
+    let file_name = format!("{name}.toml");
+    if !matches!(
+        std::path::Path::new(&file_name)
+            .components()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        [std::path::Component::Normal(_)]
+    ) {
+        eprintln!("Profile name must be a plain name without path separators: {name}");
+        std::process::exit(1);
+    }
+    let toml_content = profiles::format_as_toml(&new_profile);
+
+    let written = if global {
         let Ok(data_dir) = lean_ctx::core::data_dir::lean_ctx_data_dir() else {
             eprintln!("Cannot determine global data directory.");
             std::process::exit(1);
         };
-        data_dir.join("profiles")
+        let dir = data_dir.join("profiles");
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            eprintln!("Cannot create directory {}: {e}", dir.display());
+            std::process::exit(1);
+        }
+        let path = dir.join(&file_name);
+        std::fs::write(&path, &toml_content)
+            .map(|()| path.clone())
+            .map_err(|e| format!("Error writing {}: {e}", path.display()))
     } else {
-        std::env::current_dir()
-            .unwrap_or_default()
-            .join(".lean-ctx")
-            .join("profiles")
+        // Project profile: `.lean-ctx/profiles/` inside the working tree must
+        // not be a symlink anywhere below the project root.
+        lean_ctx::core::pathjail_write::write_below(
+            &std::env::current_dir().unwrap_or_default(),
+            &std::path::Path::new(".lean-ctx")
+                .join("profiles")
+                .join(&file_name),
+            toml_content.as_bytes(),
+            0o644,
+        )
     };
-
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("Cannot create directory {}: {e}", dir.display());
-        std::process::exit(1);
-    }
-
-    let path = dir.join(format!("{name}.toml"));
-    let toml_content = profiles::format_as_toml(&new_profile);
-
-    if let Err(e) = std::fs::write(&path, &toml_content) {
-        eprintln!("Error writing {}: {e}", path.display());
-        std::process::exit(1);
-    }
+    let path = match written {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    };
 
     println!("Created profile '{name}' at {}", path.display());
     if let Some(b) = base {

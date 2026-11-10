@@ -4,7 +4,7 @@
 # Published in lockstep with the Engine.
 [package]
 name = "lean-ctx-hooks"
-version = "3.12.2"
+version = "3.12.3"
 edition = "2024"
 license = "Apache-2.0"
 description = "Agent hook handlers and installers of LeanCTX on top of LeanCTX | OSS."
@@ -25,7 +25,8 @@ tree-sitter = ["lean-ctx-engine/tree-sitter"]
 no-jail = ["lean-ctx-engine/no-jail"]
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false }
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false }
+lean-ctx-shell-policy = { path = "../lean-ctx-shell-policy", version = "=3.12.3", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
 regex = "1.12"
@@ -40,7 +41,7 @@ blake3 = "1.8"
 
 [dev-dependencies]
 # The Engine's test helpers for this crate's unit tests (see core::test_mode).
-lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false, features = ["test-support"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false, features = ["test-support"] }
 
 
 [lints]

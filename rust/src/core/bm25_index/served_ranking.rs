@@ -167,7 +167,7 @@ impl BM25Index {
         for source in &sources {
             for &idx in chunks_of.get(source).into_iter().flatten() {
                 let chunk = &self.chunks[idx];
-                if gate.serves(&chunk.file_path, &chunk.content) {
+                if gate.admits_unserved(&chunk.file_path, &chunk.content) {
                     excluded[idx] = false;
                 } else {
                     refused = true;
@@ -179,6 +179,12 @@ impl BM25Index {
         }
         let mut ranked = self.rank(query, Some(&excluded));
         ranked.truncate(top_k);
+        // Only what the result carries is noted in the call's origin ledger.
+        for result in &ranked {
+            if let Some(chunk) = self.chunks.get(result.chunk_idx) {
+                SourceGate::note_served(&chunk.file_path, chunk.input_origin.as_ref());
+            }
+        }
         ranked
     }
 
@@ -224,7 +230,7 @@ impl BM25Index {
                 .get(source)
                 .into_iter()
                 .flatten()
-                .any(|&idx| gate.serves(source, &self.chunks[idx].content));
+                .any(|&idx| gate.admits_unserved(source, &self.chunks[idx].content));
             if served {
                 admitted.insert(source);
             }
@@ -286,11 +292,13 @@ impl BM25Index {
             if served.len() >= top_k {
                 break;
             }
-            if self
-                .chunks
-                .get(result.chunk_idx)
-                .is_some_and(|chunk| gate.serves(&chunk.file_path, &chunk.content))
-            {
+            if self.chunks.get(result.chunk_idx).is_some_and(|chunk| {
+                gate.serves_with(
+                    &chunk.file_path,
+                    &chunk.content,
+                    chunk.input_origin.as_ref(),
+                )
+            }) {
                 served.push(result);
             } else {
                 refused.insert(result.chunk_idx);

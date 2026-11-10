@@ -83,11 +83,19 @@ pub async fn proxy(
     )
     .await;
     let source = format!("mcp://{handle}");
+    // A foreign MCP server authored this text (pz21 §1.1, `tool_output`).
+    let class = crate::core::context_admission::origin::SourceClass::External(
+        crate::core::context_admission::origin::InputOrigin::new(
+            crate::core::context_admission::origin::InputKind::ToolOutput,
+            format!("mcp:{handle}"),
+        ),
+    );
     // Transport failures may contain remote response text, too. Admit them
     // before returning an error rather than treating errors as trusted output.
     let result = call.map_err(|message| {
-        let admitted = crate::core::context_admission::admit_source(&message, &source, false)
-            .unwrap_or_else(|error| error.to_string());
+        let admitted =
+            crate::core::context_admission::admit_source(&message, &source, false, &class)
+                .unwrap_or_else(|error| error.to_string());
         redact_downstream_output(server_name, &admitted)
     })?;
     // Admit before compression, spill or indexing, including tool error text.
@@ -95,6 +103,7 @@ pub async fn proxy(
         &client::result_to_text(&result),
         &source,
         false,
+        &class,
     )
     .map_err(|error| error.to_string())?;
     // GHSA-gvg8-285q-m62g: the configured secret scanner as well, whatever
@@ -111,7 +120,7 @@ pub async fn proxy(
     // downstream output (compress / spill+handle / index). No-op unless any
     // `gateway.*_output` flag is set.
     let text = postprocess::process(cfg, server, tool, scrubbed, project_root);
-    crate::core::context_admission::admit_source(&text, &source, false)
+    crate::core::context_admission::admit_source(&text, &source, false, &class)
         .map_err(|error| error.to_string())
 }
 

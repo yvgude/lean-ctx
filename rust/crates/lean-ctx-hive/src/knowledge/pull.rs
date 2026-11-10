@@ -40,6 +40,19 @@ pub struct SyncReport {
     pub problems: Vec<String>,
 }
 
+/// `GET /org/salt`: the salt id and bytes identity digests are made with.
+pub fn org_salt(session: &Session) -> Result<(String, Vec<u8>), HiveError> {
+    let body = session.with_client(|c| c.get("/org/salt"))?;
+    let salt: OrgSaltV1 =
+        serde_json::from_value(body).map_err(|e| HiveError::Protocol(format!("org salt: {e}")))?;
+    salt.validate()
+        .map_err(|e| HiveError::Protocol(e.to_string()))?;
+    let bytes = B64
+        .decode(&salt.salt)
+        .map_err(|_| HiveError::Protocol("org salt is not base64".into()))?;
+    Ok((salt.org_salt_id, bytes))
+}
+
 struct Resolver<'a> {
     session: &'a Session,
     salt: Option<(String, Vec<u8>)>,
@@ -50,15 +63,7 @@ struct Resolver<'a> {
 impl Resolver<'_> {
     fn salt(&mut self) -> Result<&(String, Vec<u8>), HiveError> {
         if self.salt.is_none() {
-            let body = self.session.with_client(|c| c.get("/org/salt"))?;
-            let salt: OrgSaltV1 = serde_json::from_value(body)
-                .map_err(|e| HiveError::Protocol(format!("org salt: {e}")))?;
-            salt.validate()
-                .map_err(|e| HiveError::Protocol(e.to_string()))?;
-            let bytes = B64
-                .decode(&salt.salt)
-                .map_err(|_| HiveError::Protocol("org salt is not base64".into()))?;
-            self.salt = Some((salt.org_salt_id, bytes));
+            self.salt = Some(org_salt(self.session)?);
         }
         Ok(self.salt.as_ref().expect("set above"))
     }
@@ -66,6 +71,14 @@ impl Resolver<'_> {
     /// The project for `root`, mapped in Hive when unknown
     /// ([`crate::mapping`]: match, first-share consent, resolve).
     fn resolve(&mut self, stable: &str, root: &Path) -> Result<VaultRecord, MapError> {
+        // A resolution the link file or the identity no longer backs is
+        // never used: it is dropped and the checkout resolves again.
+        if let Some(stale) = crate::resolution::forget_stale(&mut self.map, root) {
+            tracing::info!("hive: resolving again: {}", stale.describe());
+            self.map
+                .save(self.session.store.data_dir())
+                .map_err(|e| HiveError::Local(e.to_string()))?;
+        }
         if let Some(record) = self.map.vaults.get(stable)
             && record.roots.iter().any(|r| Path::new(r) == root)
         {
@@ -82,6 +95,9 @@ impl Resolver<'_> {
             root,
             known.as_ref(),
         )?;
+        // Hive keeps an identity's first binding: an answer that is not the
+        // linked vault is refused, never recorded (fail closed).
+        crate::resolution::refuse_unlinked(root, &project.vault)?;
         self.map.record(stable, &project, root);
         self.map
             .save(self.session.store.data_dir())
@@ -131,10 +147,19 @@ pub fn sync(session: &Session, config: &HiveConfig, cwd_root: Option<&Path>) -> 
         report.problems.push(held.refusal().to_string());
         return report;
     }
+    // Every checkout whose recorded vault its link file or identity no
+    // longer backs is dropped before anything is sent or pulled.
+    let map = match crate::resolution::load_current(&data) {
+        Ok((map, _)) => map,
+        Err(error) => {
+            report.problems.push(error.to_string());
+            return report;
+        }
+    };
     let mut resolver = Resolver {
         session,
         salt: None,
-        map: VaultMap::load(&data),
+        map,
         config,
     };
     if let Some(root) = cwd_root

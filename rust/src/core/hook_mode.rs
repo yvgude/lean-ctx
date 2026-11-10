@@ -122,7 +122,10 @@ pub const HYBRID_AGENTS: &[&str] = &[
 /// tokens; it gets the settings.json MCP entry only.
 /// Membership here does not enable any hook install — it only marks the agent
 /// as genuinely supported by `init --agent` / `setup` so `wrap` can say so.
-pub const MCP_ONLY_AGENTS: &[&str] = &["codewhale", "muse"];
+///
+/// Goose: its hooks are plugin hooks (`~/.agents/plugins/<name>/hooks`), not
+/// a surface LeanCTX installs into yet; the `extensions` entry is the setup.
+pub const MCP_ONLY_AGENTS: &[&str] = &["codewhale", "goose", "muse"];
 
 /// True when `agent` is integrated via `init --agent` / `setup` (hooks, rules,
 /// MCP registration). GH #1520: used by `wrap`'s error path to point users of

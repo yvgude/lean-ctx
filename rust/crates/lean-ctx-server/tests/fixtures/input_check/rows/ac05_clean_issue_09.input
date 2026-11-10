@@ -1,0 +1,3 @@
+The `--json` output of `status` is not valid JSON when a path contains a backslash.
+Example path: C:\work\repo.
+The backslash is not escaped.

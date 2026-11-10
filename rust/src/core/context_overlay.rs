@@ -223,11 +223,14 @@ impl OverlayStore {
     }
 
     pub fn save_project(&self, project_root: &Path) -> Result<(), String> {
-        let project_dir = crate::core::pathutil::safe_project_data_dir(project_root)?;
-        let path = project_dir.join("overlays.json");
         let json =
             serde_json::to_string_pretty(self).map_err(|e| format!("serialize overlays: {e}"))?;
-        crate::config_io::write_atomic(&path, &json)
+        crate::core::pathjail_write::write_project_data(
+            project_root,
+            Path::new("overlays.json"),
+            json.as_bytes(),
+        )
+        .map(|_| ())
     }
 
     pub fn load_project(project_root: &Path) -> Self {

@@ -151,8 +151,13 @@ pub(super) fn print_rewire_plan(skip_rules: bool, setup: &dyn SetupRefresh) {
 /// plists are only generated on install, so an existing install would otherwise
 /// keep the pre-wrapper plist — and the prompt — until the next manual `enable`.
 /// Each `install` / `install_schedule` rewrites the plist and re-bootstraps it.
+/// Another instance (directory override, sandbox HOME) rewrites none of them:
+/// they belong to the default install.
 #[cfg(target_os = "macos")]
 fn rewrap_launchagents_for_tcc() {
+    if !crate::daemon_autostart::controls_user_services() {
+        return;
+    }
     if crate::proxy_autostart::is_installed() {
         crate::proxy_autostart::install(crate::core::proxy_endpoint::default_port(), true);
     }
@@ -208,8 +213,13 @@ fn restart_proxy_if_running() {
 }
 
 /// Restart proxy managed by launchd (macOS) or systemd (Linux).
-/// Returns `true` if a managed service was found and restarted.
+/// Returns `true` if a managed service was found and restarted. Another
+/// instance restarts nothing: `systemctl --user restart lean-ctx-proxy`
+/// addresses the default install's unit by name, whatever HOME says.
 fn restart_managed_proxy() -> bool {
+    if !crate::daemon_autostart::controls_user_services() {
+        return false;
+    }
     #[cfg(target_os = "macos")]
     {
         let plist_path = dirs::home_dir()

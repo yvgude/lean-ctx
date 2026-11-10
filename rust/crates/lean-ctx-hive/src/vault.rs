@@ -49,12 +49,33 @@ pub fn normalize_git_url(url: &str) -> String {
 }
 
 /// The machine-independent identity of the project at `root`, if it has one.
+///
+/// A `.lean-ctx-id` that `hive link` wrote ([`link_made_id`]) gives way to
+/// the git origin: earlier engines wrote one per checkout, so two checkouts
+/// of one origin had two identities and two vaults. Without an origin the
+/// id stays the identity; a hand-written id (a name) always does.
 pub fn project_identity(root: &Path) -> Option<String> {
-    let identity = lean_ctx::core::project_hash::project_identity(&root.to_string_lossy())?;
+    let root_str = root.to_string_lossy();
+    let mut identity = lean_ctx::core::project_hash::project_identity(&root_str)?;
+    if let Some(id) = identity.strip_prefix("explicit:")
+        && link_made_id(id)
+        && let Some(origin) = lean_ctx::core::project_hash::origin_identity(&root_str)
+    {
+        identity = origin;
+    }
     Some(match identity.strip_prefix("git:") {
         Some(url) => format!("git:{}", normalize_git_url(url)),
         None => identity,
     })
+}
+
+/// Whether a `.lean-ctx-id` value has the shape `hive link` writes: 32
+/// lowercase hex characters (16 random bytes).
+pub fn link_made_id(id: &str) -> bool {
+    id.len() == 32
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// `hex(HMAC-SHA256(org_salt, stable_identity))`.

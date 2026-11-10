@@ -141,19 +141,57 @@ pub fn gateway_snapshot() -> super::stores::StoreAdmission {
 /// (agent message, hook payload, foreign tool text): project policy on the
 /// original bytes, then the gateway detectors, composed like `admit_source`.
 /// The decision lands in the current call's receipt when one is open.
-pub fn admit_carrier_text(text: &str) -> Result<SourceAdmission, Withheld> {
-    admit_carrier_text_under(text, None)
+///
+/// The caller names the origin `class` (pz21 §1.1): a carrier has no class
+/// of its own, so none is assumed. Text of an outside or unknown origin (a
+/// peer's response, piped input, a hook payload) is noted in the call's
+/// origin ledger, so the release point fences it.
+pub fn admit_carrier_text(
+    text: &str,
+    class: &super::origin::SourceClass,
+) -> Result<SourceAdmission, Withheld> {
+    capture::note_origin(class);
+    admit_carrier_text_under(text, None, class)
 }
 
 /// [`admit_carrier_text`] under one caller-captured policy snapshot, so the
-/// policy a copy is bound to is the one it was admitted under.
+/// policy a copy is bound to is the one it was admitted under. Notes
+/// nothing: its callers admit text for a store, outside the call's ledger.
 pub(crate) fn admit_carrier_text_under(
     text: &str,
     policy: Option<&AdmissionPolicy>,
+    class: &super::origin::SourceClass,
 ) -> Result<SourceAdmission, Withheld> {
-    admit_source_typed(text, None, false, OutputCompleteness::complete(), policy)
-        .map_err(|reasons| Withheld::from_reasons(&reasons))
+    admit_source_typed(
+        text,
+        None,
+        false,
+        OutputCompleteness::complete(),
+        policy,
+        class,
+    )
+    .map_err(|reasons| Withheld::from_reasons(&reasons))
 }
+
+/// The class of Instance-internal text (design §1.4): what this Instance
+/// assembles from the user's own files and state (rule files, shell
+/// history, session values, the memory view), never an outside origin.
+pub const INSTANCE: super::origin::SourceClass = super::origin::SourceClass::Project;
+
+/// [`admit_carrier_text`] for bytes this process only relays (a peer's task
+/// response forwarded to its caller): checked under their `class`, noted in
+/// no call's ledger, because no agent receives them here.
+pub fn admit_relayed_text(
+    text: &str,
+    class: &super::origin::SourceClass,
+) -> Result<SourceAdmission, Withheld> {
+    admit_carrier_text_under(text, None, class)
+}
+
+/// The class a copy entering or leaving a derived store is checked under:
+/// the store keeps text a reader admitted before; whoever serves it again
+/// admits it under its own class at serve time.
+pub(crate) const STORED: super::origin::SourceClass = super::origin::SourceClass::Project;
 
 /// [`admit_carrier_text`] for text entering a derived store: restricted
 /// content is delivered to its reader but never persisted (E3).
@@ -167,7 +205,7 @@ pub fn admit_for_store_under(
     text: &str,
     policy: Option<&AdmissionPolicy>,
 ) -> Result<String, Withheld> {
-    let admission = admit_carrier_text_under(text, policy)?;
+    let admission = admit_carrier_text_under(text, policy, &STORED)?;
     if admission.storable {
         Ok(admission.text)
     } else {
@@ -335,7 +373,15 @@ impl ArgumentWalk<'_> {
         if !self.gateway_active {
             return Ok((project_original != text).then_some(project_original));
         }
-        let admission = admit(text, None, self.policy);
+        // Egress: outgoing arguments, never delivered to the agent (NB-1).
+        let admission = super::egress::as_egress(|| {
+            admit(
+                text,
+                None,
+                &super::origin::SourceClass::Unclassified { tool: "egress" },
+                self.policy,
+            )
+        });
         record(self.policy, &admission);
         let Some(gateway_output) = admission.text.as_deref() else {
             return Err(Withheld::from_reasons(&admission.decision.reason_codes));
@@ -348,12 +394,15 @@ impl ArgumentWalk<'_> {
             }]));
         }
         let delivered = if self.project_active {
-            super::compose_active_gateway_output(
-                &project_original,
-                gateway_output,
-                self.policy,
-                OutputCompleteness::complete(),
-            )
+            super::egress::as_egress(|| {
+                super::compose_active_gateway_output(
+                    &project_original,
+                    gateway_output,
+                    &super::origin::SourceClass::Unclassified { tool: "egress" },
+                    self.policy,
+                    OutputCompleteness::complete(),
+                )
+            })
             .ok_or_else(|| Withheld::new(&["policy.content_withheld"]))?
         } else {
             gateway_output.to_owned()
@@ -438,7 +487,14 @@ impl ReleaseGate {
         {
             return Release::Unchanged;
         }
-        let admission = admit(text, None, &self.policy);
+        // The release check reads what a tool built; the origin step of the
+        // release point (not this check) decides the fence.
+        let admission = admit(
+            text,
+            None,
+            &super::origin::SourceClass::Project,
+            &self.policy,
+        );
         match admission.text.as_deref() {
             Some(delivered) if delivered == text => {
                 if let Some(key) = key

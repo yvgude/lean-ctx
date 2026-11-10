@@ -1,0 +1,1 @@
+{"checked": 0, "missing": [{"path": "rust/src/core/zz_reader.rs", "line": 2, "call": "carrier_project_alias"}, {"path": "rust/src/core/zz_reader.rs", "line": 13, "call": "carrier_project_alias"}, {"path": "rust/src/core/zz_reader.rs", "line": 14, "call": "carrier_project_alias"}]}

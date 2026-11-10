@@ -1,0 +1,2 @@
+Pasting a path with a trailing space makes the read fail silently.
+Trimming the input or reporting the missing file would be better.

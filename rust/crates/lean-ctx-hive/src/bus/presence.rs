@@ -11,7 +11,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::v2::PresenceState;
+use super::v2::{PresenceNames, PresenceState};
 use crate::HiveError;
 use crate::state::{load_or_quarantine, lock_state, write_private};
 
@@ -83,6 +83,49 @@ pub(crate) fn take_announce(data_dir: &Path) -> bool {
     std::fs::remove_file(data_dir.join("bus").join(ANNOUNCE_FILE)).is_ok()
 }
 
+/// `<data>/hive/bus/announced.txt`: what the relay's last hello announced,
+/// in the words `hive bus relay` prints (#252), so a foreground run that
+/// finds the daemon's relay running can still say what was sent.
+const ANNOUNCED_FILE: &str = "announced.txt";
+
+/// Keep what the hello Hive just acknowledged announced (best effort).
+#[cfg_attr(not(feature = "http-server"), allow(dead_code))]
+pub(crate) fn note_announced(data_dir: &Path, lines: &[String]) {
+    let text = lines.join("\n") + "\n";
+    if let Err(error) = write_private(&data_dir.join("bus"), ANNOUNCED_FILE, text.as_bytes()) {
+        tracing::debug!("hive bus: announced record: {error}");
+    }
+}
+
+/// Ask the running relay to announce now and wait up to `wait` for its
+/// fresh hello's record: what it announced, or `None` when it did not
+/// answer in time (it is not connected to Hive right now).
+pub fn announce_and_wait(wait: std::time::Duration) -> Option<String> {
+    let store = crate::state::HiveStore::open().ok()?;
+    announce_and_wait_in(&store, wait)
+}
+
+fn announce_and_wait_in(
+    store: &crate::state::HiveStore,
+    wait: std::time::Duration,
+) -> Option<String> {
+    // The old record goes first: whatever is there afterwards is the
+    // fresh hello's.
+    let path = store.data_dir().join("bus").join(ANNOUNCED_FILE);
+    let _ = std::fs::remove_file(&path);
+    request_announce_in(store);
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            return Some(text);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}
+
 /// One worker's last reported presence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Presence {
@@ -91,6 +134,10 @@ pub struct Presence {
     pub role: String,
     pub state: PresenceState,
     pub server_time: String,
+    /// The names the Hive relayed with the report (none from a Hive that
+    /// sends only id, role and state).
+    #[serde(default, flatten)]
+    pub names: PresenceNames,
 }
 
 /// `presence.json`: worker id → presence.
@@ -174,6 +221,26 @@ impl PresenceMap {
         state: PresenceState,
         at_ms: u64,
     ) -> bool {
+        self.apply_named(
+            address,
+            worker_id,
+            role,
+            state,
+            at_ms,
+            PresenceNames::default(),
+        )
+    }
+
+    /// [`Self::apply`] with the names the report carried.
+    pub fn apply_named(
+        &mut self,
+        address: &str,
+        worker_id: &str,
+        role: &str,
+        state: PresenceState,
+        at_ms: u64,
+        names: PresenceNames,
+    ) -> bool {
         let Some(at) =
             chrono::DateTime::from_timestamp_millis(i64::try_from(at_ms).unwrap_or(i64::MAX))
         else {
@@ -194,6 +261,7 @@ impl PresenceMap {
                 role: role.to_owned(),
                 state,
                 server_time,
+                names,
             },
         );
         true
@@ -282,6 +350,35 @@ mod tests {
         assert!(!take_announce(store.data_dir()), "taken once");
     }
 
+    /// `hive bus relay` beside a running relay: it asks for a fresh hello
+    /// and prints that hello's record, or says it got none in time.
+    #[test]
+    fn a_fresh_announce_record_is_waited_for_and_an_old_one_is_not_taken() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = crate::state::HiveStore::at(dir.path().join("c"), dir.path().join("d"));
+        crate::bus::control::enroll_for_tests(&store, 1);
+        note_announced(store.data_dir(), &["old hello".into()]);
+        let wait = std::time::Duration::from_millis(400);
+        assert_eq!(
+            announce_and_wait_in(&store, wait),
+            None,
+            "an old record is not an answer"
+        );
+        assert!(take_announce(store.data_dir()), "the unanswered request");
+        let data = store.data_dir().to_path_buf();
+        let relay = std::thread::spawn(move || {
+            while !take_announce(&data) {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            note_announced(&data, &["fresh hello".into()]);
+        });
+        assert_eq!(
+            announce_and_wait_in(&store, std::time::Duration::from_secs(10)).as_deref(),
+            Some("fresh hello\n")
+        );
+        relay.join().unwrap();
+    }
+
     #[test]
     fn the_map_persists_privately() {
         let dir = tempfile::tempdir().unwrap();
@@ -340,6 +437,7 @@ mod tests {
             role: "dev".into(),
             state: PresenceState::Active,
             server_time: server_time.into(),
+            names: PresenceNames::default(),
         };
         map.workers.insert("wkr_b".into(), presence(&recent));
         map.workers.insert("wkr_g".into(), presence("not a time"));

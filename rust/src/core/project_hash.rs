@@ -62,6 +62,13 @@ pub fn project_identity(root: &str) -> Option<String> {
     identity_at(root, Worktrees::Follow)
 }
 
+/// `git:<origin>` of the checkout at `root` (a linked worktree reads its
+/// main checkout's), spelled exactly as [`project_identity`] spells it when
+/// no `.lean-ctx-id` is present. `None` without an origin remote.
+pub fn origin_identity(root: &str) -> Option<String> {
+    git_remote_url(Path::new(root), Worktrees::Follow).map(|url| format!("git:{url}"))
+}
+
 /// Whether a linked worktree's origin is read from its main checkout.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Worktrees {

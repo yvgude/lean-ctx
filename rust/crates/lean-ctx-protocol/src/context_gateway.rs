@@ -613,6 +613,14 @@ pub enum TrustLevelV1 {
     Trusted,
 }
 
+impl TrustLevelV1 {
+    /// Untrusted or unknown: the one test for "handle as untrusted" (Rule U).
+    /// Callers use this instead of comparing against `Untrusted` alone.
+    pub fn is_external_or_unknown(self) -> bool {
+        matches!(self, Self::Untrusted | Self::Unknown)
+    }
+}
+
 /// Security and optimisation metadata that travels with one object. Content
 /// is referenced by digest, never embedded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

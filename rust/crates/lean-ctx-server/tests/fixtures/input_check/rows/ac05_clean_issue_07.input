@@ -1,0 +1,3 @@
+Memory grows by about 40 MB per hour while idle.
+I measured it with `ps -o rss` every ten minutes for a day.
+No tool calls were made in that time.

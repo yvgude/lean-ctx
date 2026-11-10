@@ -241,7 +241,11 @@ pub fn retrieve_recovery_checked(id: &RecoveryId) -> Result<String, RecoveryRefu
 /// withhold is not released, and the bound admission records that as a
 /// refusal (`source.bytes_not_preserved`), never as a redaction.
 fn readmitted(id: &RecoveryId, content: &str) -> bool {
-    let unchanged = crate::core::context_admission::admit_bound_context_source(content).is_ok();
+    let unchanged = crate::core::context_admission::admit_bound_context_source(
+        content,
+        &crate::core::context_admission::origin::SourceClass::Unclassified { tool: "recovery" },
+    )
+    .is_ok();
     if unchanged {
         let reference = format!("recovery:{}", id.as_str());
         crate::core::context_admission::capture::note_source_id(&reference);

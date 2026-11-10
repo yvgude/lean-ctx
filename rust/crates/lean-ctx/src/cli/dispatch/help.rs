@@ -116,8 +116,8 @@ USAGE:
     lean-ctx                       Start MCP server (stdio)
     lean-ctx serve                 Start MCP server (Streamable HTTP)
     lean-ctx serve --daemon        Start as background daemon (Unix Domain Socket)
-    lean-ctx serve --stop          Stop running daemon
-    lean-ctx serve --status        Show daemon status
+    lean-ctx serve --stop          Stop the active data dir's daemon (exit 1 if none)
+    lean-ctx serve --status        Show the active data dir's daemon status
     lean-ctx -t \"command\"          Track command (full output + stats, no compression)
     lean-ctx -c \"command\"          Execute with compressed output (used by AI hooks)
     lean-ctx -c --raw \"command\"    Execute without compression (full output)
@@ -219,6 +219,13 @@ COMMANDS:
     knowledge import <path> [--merge replace|append|skip-existing]   Import knowledge
     knowledge remove --category <c> --key <k>             Remove a fact
     knowledge status               Knowledge base summary
+    tasks [list|show|propose|decide|claim|update|submit|release|verify|stop] [--json]  The project's tasks (local, or its Hive vault)
+    docs list|show|history|write|move|delete [--json]  The project's doc pages (local, or its Hive vault)
+    activity list --json [--session <id>] [--project-root <p>] [--since <ts>] [--kind <k>]  Per-session activity stream
+    agents [--json]                Coding agents on this machine (version, sign-in, LeanCTX attachment, ACP)
+    bus list|read|post|leases|claim|release --json  The local agent bus (agent-bus/1)
+    presence list --json [--all] [--all-projects]  Local agents on the bus with liveness
+    capabilities --json            Local Read kinds and verbs this Instance supports
     overview [task]                Project overview (task-contextualized if given)
     explore <query> [--citation] [--depth=N]  Iterative code exploration → file:line citations
     compress [--signatures]        Context compression checkpoint
@@ -290,6 +297,8 @@ PROJECT & AGENT TOOLS:
     compact [path]                 Compact agent transcripts (default: ~/.claude/projects)
     agent register|list|presence|show|heartbeat|suspend|resume|decommission|check
                                    Agent identities: registered, attested, revocable
+    client fs-read|fs-write|exec --json --session <id> --agent <id>
+                                   ACP client calls through the Instance (jail, allowlist, receipts)
     instructions --client <id> [--profile <name>] [--json] | --list-clients
                                    Print the agent instructions lean-ctx generates for a client
     provider init|auth|logout|list|check|credentials

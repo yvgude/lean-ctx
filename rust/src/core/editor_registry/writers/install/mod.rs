@@ -13,6 +13,7 @@ mod commandcode;
 mod copilot;
 mod crush;
 mod gemini;
+mod goose;
 mod hermes;
 mod jetbrains;
 mod muse;
@@ -45,6 +46,8 @@ pub(crate) use copilot::*;
 pub(crate) use crush::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use gemini::*;
+#[allow(clippy::wildcard_imports)]
+pub(crate) use goose::*;
 #[allow(clippy::wildcard_imports)]
 pub(crate) use hermes::*;
 #[allow(clippy::wildcard_imports)]

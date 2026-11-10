@@ -217,18 +217,20 @@ pub fn load_outcome_signals() -> Result<Vec<OutcomeSignal>, String> {
 }
 
 pub fn store_corrections(project_root: &str, corrections: &[Correction]) -> Result<(), String> {
-    let path = std::path::Path::new(project_root)
-        .join(".lean-ctx")
-        .join("shared-context.jsonl");
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|error| format!("create {}: {error}", parent.display()))?;
+    use lean_ctx::core::pathjail_write::{project_data_destination, write_project_data};
+    let root = std::path::Path::new(project_root);
+    let rel = std::path::Path::new("shared-context.jsonl");
+    // Checked before reading: a symlinked data dir or file is neither read
+    // through nor written through.
+    let path = project_data_destination(root, rel)?;
+    let mut content = match std::fs::read_to_string(&path) {
+        Ok(existing) => existing,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("read {}: {error}", path.display())),
+    };
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
     }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .map_err(|error| format!("open {}: {error}", path.display()))?;
     for correction in corrections {
         let fact = serde_json::json!({
             "category": "correction",
@@ -236,10 +238,10 @@ pub fn store_corrections(project_root: &str, corrections: &[Correction]) -> Resu
             "action": correction.action,
             "priority": correction.priority,
         });
-        use std::io::Write;
-        writeln!(file, "{fact}").map_err(|error| format!("write {}: {error}", path.display()))?;
+        content.push_str(&fact.to_string());
+        content.push('\n');
     }
-    Ok(())
+    write_project_data(root, rel, content.as_bytes()).map(|_| ())
 }
 
 pub(crate) fn cmd_learn(args: &[String]) {

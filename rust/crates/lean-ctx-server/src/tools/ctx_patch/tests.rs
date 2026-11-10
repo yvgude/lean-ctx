@@ -679,6 +679,64 @@ fn create_rejects_existing_file() {
 }
 
 #[test]
+fn create_fills_existing_empty_file() {
+    // #2223: an existing 0-byte file has no lines to anchor and no text for
+    // replace_unique, so create is the op that fills it.
+    let f = make_temp("");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(f.path(), std::fs::Permissions::from_mode(0o640)).unwrap();
+    }
+    let (text, effect) = run_io(
+        &params(
+            f.path(),
+            vec![AnchorOp::Create {
+                new_text: "filled\n".to_string(),
+            }],
+        ),
+        "",
+    );
+    assert!(text.starts_with("created "), "{text}");
+    assert!(matches!(effect, CacheEffect::Invalidate));
+    assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "filled\n");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(f.path()).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o640, "create keeps the empty file's permissions");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn create_rejects_symlink_to_empty_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("empty.txt");
+    std::fs::write(&target, "").unwrap();
+    let link = dir.path().join("link.txt");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let (text, effect) = run_io(
+        &params(
+            &link,
+            vec![AnchorOp::Create {
+                new_text: "through the link".to_string(),
+            }],
+        ),
+        "",
+    );
+    assert!(text.contains("already exists"), "{text}");
+    assert!(matches!(effect, CacheEffect::None));
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "");
+    assert!(
+        std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+#[test]
 fn create_cannot_be_batched_with_anchored_ops() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("mixed.rs");

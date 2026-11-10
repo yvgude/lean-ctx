@@ -66,6 +66,12 @@ pub struct HiveConfig {
     pub runtime_consent: bool,
     /// Worker mode: local caps that only tighten the server opt-in budget.
     pub worker: HiveWorkerConfig,
+    /// How the bus treats a sender presenting as the Queen that is no
+    /// registered Queen session: `warn` (unset: pass, log, mark) or
+    /// `enforce` (refuse); any other value counts as `enforce`. Kept as
+    /// text so a wrong value never breaks the whole config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queen_identity: Option<String>,
 }
 
 impl Default for HiveConfig {
@@ -82,6 +88,7 @@ impl Default for HiveConfig {
             vault_labels: true,
             runtime_consent: false,
             worker: HiveWorkerConfig::default(),
+            queen_identity: None,
         }
     }
 }
@@ -216,6 +223,18 @@ pub fn schema_section() -> crate::core::config::schema::SectionSchema {
                 "Relay the agent bus through Hive (auto) or keep it local (off).",
                 Some(&["auto", "off"]),
             ),
+        ),
+        (
+            "queen_identity",
+            KeySchema {
+                env_override: Some("LEAN_CTX_HIVE_QUEEN_IDENTITY".into()),
+                ..key(
+                    "string",
+                    serde_json::json!("warn"),
+                    "A bus sender presenting as the Queen that is no registered Queen session: warn (pass, log in bus/queen-warnings.json, mark for the receiver) or enforce (refuse); any other value counts as enforce. Enforce only once queen-sessions.json lists every Queen session.",
+                    Some(&["warn", "enforce"]),
+                )
+            },
         ),
         (
             "vault_labels",

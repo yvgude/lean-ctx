@@ -277,8 +277,12 @@ impl AdmittedValue {
 
 /// The admitted form of `text` when it may feed a store, under `rules`.
 fn admitted_text(text: &str, rules: Rules<'_>) -> Result<String, ValueRefusal> {
-    let admission = crate::core::context_admission::carrier::admit_carrier_text_under(text, rules)
-        .map_err(|_| ValueRefusal::Withheld)?;
+    let admission = crate::core::context_admission::carrier::admit_carrier_text_under(
+        text,
+        rules,
+        &crate::core::context_admission::carrier::STORED,
+    )
+    .map_err(|_| ValueRefusal::Withheld)?;
     if admission.storable {
         Ok(admission.text)
     } else {

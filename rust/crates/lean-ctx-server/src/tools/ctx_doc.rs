@@ -13,10 +13,13 @@ use lean_ctx_doc::replica::{DocSpace, PageView};
 use lean_ctx_doc::sections;
 use lean_ctx_doc::state::DocState;
 use lean_ctx_doc::write;
+use lean_ctx_doc::write::field_set as doc_field_set;
 
+use lean_ctx_doc::local::{self, Author};
 use lean_ctx_hive::HiveError;
 use lean_ctx_hive::docs;
 use lean_ctx_hive::knowledge::screening::Screen;
+use lean_ctx_hive::local_docs;
 
 /// The arguments of one call.
 #[derive(Debug, Default)]
@@ -33,11 +36,20 @@ pub struct Args<'a> {
     pub outline: bool,
     /// write: the code the page derives from (`file:`, `dir:`, `glob:`, `shape:`).
     pub anchors: &'a [String],
+    /// move: the new slug.
+    pub to: Option<&'a str>,
+    /// show/list (local docs): the pages as of this revision.
+    pub rev: Option<u64>,
+    /// The author of a local revision (default: an unnamed agent).
+    pub author: Option<Author>,
 }
 
 const USAGE: &str = "ctx_doc actions: list [slug=prefix] | show slug [section=heading-slug] [outline=true] | \
 search query | status | write slug content (whole page, `# Title` first) [type] [status=draft|canonical] | \
-edit slug find replace | note slug content | confirm slug (re-pin after checking the page)";
+edit slug find replace | note slug content | confirm slug (re-pin after checking the page) | \
+local docs (no vault linked) also: history slug | show slug rev=N | move slug to=new-slug | delete slug";
+
+const LOCAL_ONLY: [&str; 3] = ["history", "move", "delete"];
 
 /// Runs one call for the checkout at `root`.
 pub fn handle(root: &str, args: &Args<'_>) -> String {
@@ -49,6 +61,16 @@ pub fn handle(root: &str, args: &Args<'_>) -> String {
 }
 
 fn run(root: &str, args: &Args<'_>) -> Result<String, HiveError> {
+    // A link that cannot be read refuses: a linked checkout never writes local.
+    if !local_docs::is_linked(root).map_err(HiveError::Local)? {
+        return run_local(root, args);
+    }
+    if LOCAL_ONLY.contains(&args.action) || args.rev.is_some() {
+        return Err(HiveError::Config(format!(
+            "action={} and rev apply to local docs; this checkout's docs are in its vault",
+            args.action
+        )));
+    }
     match args.action {
         "list" | "show" | "search" | "status" => {
             docs::with_vault(root, |v| Ok(read(&docs::space(v.target.replica)?, args)))
@@ -85,6 +107,72 @@ fn run(root: &str, args: &Args<'_>) -> Result<String, HiveError> {
         }
         _ => Err(HiveError::Config(USAGE.into())),
     }
+}
+
+/// The docs of a checkout no vault is linked to: the project's local store
+/// on this Instance ([`local_docs`]). A write is one revision, saved at once.
+fn run_local(root: &str, args: &Args<'_>) -> Result<String, HiveError> {
+    let store = local_docs::store(root)?;
+    match args.action {
+        "list" | "show" | "search" | "status" => {
+            let (_, space) = local_docs::read(root, &store, args.rev)?;
+            Ok(read(&space, args))
+        }
+        "history" => history_text(&store.entries()?, args.slug),
+        "write" | "edit" | "note" | "confirm" | "move" | "delete" => {
+            let done = commit_local(root, args)?;
+            Ok(match done.rev {
+                None => "local docs: nothing changed".to_owned(),
+                Some(rev) => format!(
+                    "local docs: saved revision {rev} ({} event(s)); no vault is linked, so the page stays on this Instance",
+                    done.events
+                ),
+            })
+        }
+        _ => Err(HiveError::Config(USAGE.into())),
+    }
+}
+
+/// One local write action (`write`, `edit`, `note`, `confirm`, `move`,
+/// `delete`) as one revision of `root`'s local store, planned under its lock.
+pub fn commit_local(root: &str, args: &Args<'_>) -> Result<local::Committed, HiveError> {
+    if !WRITES.contains(&args.action) {
+        return Err(HiveError::Config(USAGE.into()));
+    }
+    if args.rev.is_some() {
+        return Err(HiveError::Config("rev is for reads".into()));
+    }
+    let author = args
+        .author
+        .clone()
+        .unwrap_or_else(|| Author::agent("agent"));
+    local_docs::store(root)?.commit::<HiveError>(
+        &author,
+        &local_docs::now(),
+        args.action,
+        |space| {
+            let pinned = pins(root, space, args)?;
+            plan_write(space, args, &pinned)
+        },
+    )
+}
+
+const WRITES: [&str; 6] = ["write", "edit", "note", "confirm", "move", "delete"];
+
+/// The revisions of the local page `slug` (also a moved or deleted one).
+fn history_text(entries: &[local::Entry], slug: Option<&str>) -> Result<String, HiveError> {
+    let slug = slug.ok_or_else(|| HiveError::Config("slug is required".into()))?;
+    let id = local::page_id_of(entries, slug)
+        .ok_or_else(|| HiveError::Config(format!("no page {slug}; try action=list")))?;
+    let revs = local::history(entries, &id);
+    let mut out = format!("/{slug}: {} revision(s)\n", revs.len());
+    for r in revs {
+        out.push_str(&format!(
+            "rev {} {} {} {} {}\n",
+            r.rev, r.at, r.author.kind, r.author.label, r.action
+        ));
+    }
+    Ok(out)
 }
 
 fn state_word(p: &PageView) -> &'static str {
@@ -220,20 +308,7 @@ fn search(space: &DocSpace, query: &str) -> String {
     out
 }
 
-/// C0 2.2 slug: `seg(/seg){0,7}`, seg `[a-z0-9]+(-[a-z0-9]+)*`, ≤ 128 bytes.
-pub fn valid_slug(slug: &str) -> bool {
-    let segs: Vec<&str> = slug.split('/').collect();
-    slug.len() <= 128
-        && segs.len() <= 8
-        && segs.iter().all(|s| {
-            !s.is_empty()
-                && !s.starts_with('-')
-                && !s.ends_with('-')
-                && !s.contains("--")
-                && s.bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-        })
-}
+pub use lean_ctx_doc::model::valid_slug;
 
 /// The anchors a write pins: the `anchors` argument for `write`, the page's
 /// own anchors re-pinned for `confirm`; none otherwise.
@@ -289,6 +364,37 @@ pub fn plan_write(
     let mut new_id = docs::new_id;
     let verified_at = chrono::Utc::now().timestamp_millis().unsigned_abs();
     match args.action {
+        "move" => {
+            let page = space
+                .page_by_slug(slug)
+                .ok_or_else(|| refuse("no such page"))?;
+            let to = args.to.ok_or_else(|| refuse("move needs to=<new slug>"))?;
+            if !valid_slug(to) {
+                return Err(refuse(
+                    "slug must be lowercase words joined by - and /, at most 8 segments",
+                ));
+            }
+            if to == slug {
+                return Ok(Vec::new());
+            }
+            if space.by_slug.contains_key(to) {
+                return Err(refuse(&format!("/{to} is taken")));
+            }
+            // A doc page's field event (lean-ctx-doc), not a C0 fact's
+            // `maintain::field_set` that the C0 field guard checks.
+            Ok(vec![doc_field_set(
+                &page.page.id,
+                "slug",
+                serde_json::Value::from(to),
+                &page.page.head,
+            )])
+        }
+        "delete" => {
+            let page = space
+                .page_by_slug(slug)
+                .ok_or_else(|| refuse("no such page"))?;
+            Ok(vec![write::retract(&page.page.id, "page deleted")])
+        }
         "confirm" => {
             let page = space
                 .page_by_slug(slug)

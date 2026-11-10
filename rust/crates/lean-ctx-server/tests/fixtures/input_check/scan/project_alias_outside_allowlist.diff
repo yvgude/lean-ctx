@@ -1,0 +1,14 @@
+diff --git a/rust/src/core/zz_reader.rs b/rust/src/core/zz_reader.rs
+index 1111111..2222222 100644
+--- a/rust/src/core/zz_reader.rs
++++ b/rust/src/core/zz_reader.rs
+@@ -1,1 +1,2 @@
+ use crate::core::context_admission::carrier;
++use crate::core::context_admission::carrier::STORED;
+@@ -10,2 +11,5 @@ fn read_remote(text: &str) -> String {
+     let policy = AdmissionPolicy::current();
++    // a remote body admitted under a Project alias
++    let class = carrier::INSTANCE;
++    let stored = admit_carrier_text(text, &STORED);
++    let INSTANCE_COUNT = 1;
+     admit(text, None, class, &policy)

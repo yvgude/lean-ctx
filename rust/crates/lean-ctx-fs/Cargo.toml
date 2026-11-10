@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "lean-ctx-fs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "Filesystem and environment foundation for LeanCTX | OSS: atomic writes, file locks, hashing, JSONC, home resolution."

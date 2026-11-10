@@ -222,14 +222,26 @@ pub fn config_dir_read_only() -> Result<PathBuf, String> {
 /// [`config_dir`] unifies the base; this helper performs a one-time,
 /// non-destructive adoption so a user who already had config at the old path
 /// keeps it. The canonical location always wins — an existing canonical entry is
-/// never overwritten — and adoption is skipped entirely in tests so it can never
-/// touch a developer's real `~/Library/Application Support`.
+/// never overwritten — and the legacy entry is copied, never moved, so the
+/// user's default config dir always keeps its own copy.
+///
+/// Adoption is skipped entirely in tests and whenever a `LEAN_CTX_*_DIR`
+/// override is active: an override (a sandbox, a temp dir, a test harness) must
+/// never pull files out of the real install's default config dir.
 pub fn config_dir_member(sub: &str) -> Result<PathBuf, String> {
     let canonical = config_dir()?.join(sub);
-    if !super::data_dir::sandboxed() {
-        adopt_legacy_config_member(sub, &canonical);
+    if legacy_adoption_allowed(super::data_dir::sandboxed(), dir_override_active())
+        && let Some(legacy_base) = dirs::config_dir()
+    {
+        adopt_legacy_config_member(&legacy_base.join("lean-ctx").join(sub), &canonical);
     }
     Ok(canonical)
+}
+
+/// Legacy config adoption only runs for the real install: never in a test
+/// sandbox and never while a directory override points this process elsewhere.
+fn legacy_adoption_allowed(sandboxed: bool, override_active: bool) -> bool {
+    !sandboxed && !override_active
 }
 
 /// Decide whether a legacy config member should be adopted: only when the
@@ -242,37 +254,78 @@ fn legacy_adoption_source(legacy: &Path, canonical: &Path) -> Option<PathBuf> {
     Some(legacy.to_path_buf())
 }
 
-/// Move `src` onto `dst` (file or directory). Prefers an atomic rename on the
-/// same filesystem; falls back to a recursive copy for the rare cross-device
-/// case so no config is ever left stranded. The caller guarantees `dst`'s parent
-/// exists.
-fn relocate(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if std::fs::rename(src, dst).is_ok() {
-        return Ok(());
-    }
+/// Recursively copy `src` (file or directory) onto `dst`. The source is never
+/// modified; nested directory symlinks are not followed. The caller guarantees
+/// `dst`'s parent exists.
+fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
     if src.is_dir() {
         std::fs::create_dir_all(dst)?;
         for entry in std::fs::read_dir(src)? {
             let entry = entry?;
-            relocate(&entry.path(), &dst.join(entry.file_name()))?;
+            let child = entry.path();
+            if entry.file_type()?.is_dir() {
+                copy_tree(&child, &dst.join(entry.file_name()))?;
+            } else {
+                std::fs::copy(&child, dst.join(entry.file_name()))?;
+            }
         }
-        std::fs::remove_dir_all(src)?;
     } else {
         std::fs::copy(src, dst)?;
-        std::fs::remove_file(src)?;
     }
     Ok(())
 }
 
+fn remove_entry(path: &Path) -> std::io::Result<()> {
+    if path.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    }
+}
+
+/// Copy `src` onto `dst` without ever touching `src`. The copy is staged in a
+/// sibling and renamed into place, so a failed or partial copy never leaves a
+/// half-written canonical entry that would then win over the intact legacy one.
+fn adopt_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let name = dst
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let staging = dst.with_file_name(format!(".{name}.adopt-{}", std::process::id()));
+    if staging.exists() {
+        remove_entry(&staging)?;
+    }
+    let result = copy_tree(src, &staging).and_then(|()| std::fs::rename(&staging, dst));
+    if result.is_err() && staging.exists() {
+        let _ = remove_entry(&staging);
+    }
+    result
+}
+
+/// A free sibling name for a retired legacy entry: `<name>.adopted`, or
+/// `<name>.adopted-<n>` when an earlier adoption already left one behind.
+fn adopted_name(legacy: &Path) -> Option<PathBuf> {
+    let name = legacy.file_name()?.to_string_lossy().into_owned();
+    (1..=100)
+        .map(|n| {
+            let suffix = if n == 1 {
+                ".adopted".to_string()
+            } else {
+                format!(".adopted-{n}")
+            };
+            legacy.with_file_name(format!("{name}{suffix}"))
+        })
+        .find(|candidate| !candidate.exists() && candidate.symlink_metadata().is_err())
+}
+
 /// One-time adoption of a legacy `dirs::config_dir()/lean-ctx/<sub>` member into
-/// the canonical config dir. Best-effort: any IO failure leaves the legacy copy
-/// in place and resolution simply proceeds against the canonical path.
-fn adopt_legacy_config_member(sub: &str, canonical: &Path) {
-    let Some(legacy_base) = dirs::config_dir() else {
-        return;
-    };
-    let legacy = legacy_base.join("lean-ctx").join(sub);
-    let Some(src) = legacy_adoption_source(&legacy, canonical) else {
+/// the canonical config dir. Best-effort and lossless: the legacy entry is
+/// copied, and only after the copy is in place is the original retired to
+/// `<name>.adopted` (kept, never deleted), so no live stale duplicate can win
+/// over the adopted copy later (e.g. after a `doctor --fix` split). Any IO
+/// failure leaves the legacy entry untouched.
+fn adopt_legacy_config_member(legacy: &Path, canonical: &Path) {
+    let Some(src) = legacy_adoption_source(legacy, canonical) else {
         return;
     };
     if let Some(parent) = canonical.parent()
@@ -280,7 +333,12 @@ fn adopt_legacy_config_member(sub: &str, canonical: &Path) {
     {
         return;
     }
-    let _ = relocate(&src, canonical);
+    if adopt_copy(&src, canonical).is_err() {
+        return;
+    }
+    if let Some(retired) = adopted_name(&src) {
+        let _ = std::fs::rename(&src, retired);
+    }
 }
 
 /// Data directory — sessions, vectors, graphs, knowledge, archives, memory.
@@ -580,35 +638,78 @@ mod tests {
     }
 
     #[test]
-    fn relocate_moves_file_then_directory() {
+    fn legacy_adoption_never_runs_under_an_override_or_sandbox() {
+        assert!(legacy_adoption_allowed(false, false));
+        assert!(!legacy_adoption_allowed(false, true), "dir override");
+        assert!(!legacy_adoption_allowed(true, false), "test sandbox");
+        assert!(!legacy_adoption_allowed(true, true));
+    }
+
+    #[test]
+    fn adoption_copies_then_retires_the_original_as_adopted() {
         let tmp = tempfile::tempdir().unwrap();
 
-        // File: dst parent must be created by the caller (as adopt does).
-        let src_file = tmp.path().join("providers.toml");
+        // File: adoption creates the canonical parent itself.
+        let src_file = tmp.path().join("legacy/providers.toml");
+        std::fs::create_dir_all(src_file.parent().unwrap()).unwrap();
         std::fs::write(&src_file, "id = \"x\"\n").unwrap();
         let dst_file = tmp.path().join("config/lean-ctx/providers.toml");
-        std::fs::create_dir_all(dst_file.parent().unwrap()).unwrap();
-        relocate(&src_file, &dst_file).unwrap();
-        assert!(!src_file.exists(), "source file must be moved, not copied");
+        adopt_legacy_config_member(&src_file, &dst_file);
+        assert!(!src_file.exists(), "no live stale duplicate stays behind");
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("legacy/providers.toml.adopted")).unwrap(),
+            "id = \"x\"\n",
+            "the original is kept as <name>.adopted"
+        );
         assert_eq!(std::fs::read_to_string(&dst_file).unwrap(), "id = \"x\"\n");
 
         // Directory with nested content.
-        let src_dir = tmp.path().join("personas");
+        let src_dir = tmp.path().join("legacy/personas");
         std::fs::create_dir_all(src_dir.join("nested")).unwrap();
         std::fs::write(src_dir.join("a.toml"), "a").unwrap();
         std::fs::write(src_dir.join("nested/b.toml"), "b").unwrap();
         let dst_dir = tmp.path().join("config/lean-ctx/personas");
-        std::fs::create_dir_all(dst_dir.parent().unwrap()).unwrap();
-        relocate(&src_dir, &dst_dir).unwrap();
-        assert!(!src_dir.exists(), "source dir must be moved");
+        adopt_legacy_config_member(&src_dir, &dst_dir);
+        let retired_dir = tmp.path().join("legacy/personas.adopted");
+        assert!(!src_dir.exists());
+        for (rel, body) in [("a.toml", "a"), ("nested/b.toml", "b")] {
+            assert_eq!(
+                std::fs::read_to_string(retired_dir.join(rel)).unwrap(),
+                body
+            );
+            assert_eq!(std::fs::read_to_string(dst_dir.join(rel)).unwrap(), body);
+        }
+
+        // A second legacy copy never overwrites an earlier retired one.
+        std::fs::remove_file(&dst_file).unwrap();
+        std::fs::write(&src_file, "id = \"y\"\n").unwrap();
+        adopt_legacy_config_member(&src_file, &dst_file);
+        assert_eq!(std::fs::read_to_string(&dst_file).unwrap(), "id = \"y\"\n");
         assert_eq!(
-            std::fs::read_to_string(dst_dir.join("a.toml")).unwrap(),
-            "a"
+            std::fs::read_to_string(tmp.path().join("legacy/providers.toml.adopted")).unwrap(),
+            "id = \"x\"\n"
         );
         assert_eq!(
-            std::fs::read_to_string(dst_dir.join("nested/b.toml")).unwrap(),
-            "b"
+            std::fs::read_to_string(tmp.path().join("legacy/providers.toml.adopted-2")).unwrap(),
+            "id = \"y\"\n"
         );
+        std::fs::remove_file(&dst_file).unwrap();
+        std::fs::write(&dst_file, "id = \"x\"\n").unwrap();
+
+        // No staging leftovers next to the canonical entries.
+        let names: Vec<String> = std::fs::read_dir(tmp.path().join("config/lean-ctx"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names.iter().all(|n| !n.contains(".adopt-")),
+            "staging left behind: {names:?}"
+        );
+
+        // An existing canonical entry wins and is never overwritten.
+        std::fs::write(&src_file, "id = \"changed\"\n").unwrap();
+        adopt_legacy_config_member(&src_file, &dst_file);
+        assert_eq!(std::fs::read_to_string(&dst_file).unwrap(), "id = \"x\"\n");
     }
 
     #[test]

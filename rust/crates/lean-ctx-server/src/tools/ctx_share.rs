@@ -242,7 +242,8 @@ fn handle_push(
             not_found.push(*path);
             continue;
         };
-        let Some(content) = admission.admit(&content, std::path::Path::new(&canonical)) else {
+        let Some(content) = admission.admit(&content, std::path::Path::new(&canonical), None)
+        else {
             withheld.push((*path).to_string());
             continue;
         };

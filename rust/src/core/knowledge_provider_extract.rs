@@ -347,6 +347,7 @@ mod tests {
     #[test]
     fn code_chunks_are_skipped() {
         let chunk = ContentChunk::from(crate::core::bm25_index::CodeChunk {
+            input_origin: None,
             file_path: "src/main.rs".into(),
             symbol_name: "main".into(),
             kind: ChunkKind::Function,

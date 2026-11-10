@@ -71,6 +71,10 @@ pub struct VaultSync {
     pub superseded: usize,
     pub retracted: usize,
     pub confirmed: usize,
+    /// Links queued between two Instances' values of one shared fact:
+    /// `supersedes` for a sequential edit, `contradicts` for a conflict
+    /// (#286, [`capture::conflicts`]).
+    pub fact_links: usize,
     /// Doc pages whose anchored code moved since this sync last looked.
     pub docs_behind: usize,
     /// Events the place refused for good: (event id, refusal).
@@ -325,6 +329,9 @@ pub fn sync_vault(
     screen: &mut Screen,
 ) -> Result<VaultSync, HiveError> {
     use crate::throttle::{self, Scope};
+    // Never into a vault the checkout left (a pulled link file, an
+    // identity change): nothing is pulled from or pushed to it.
+    crate::resolution::refuse_stale_record(session.store.data_dir(), record, root)?;
     let now = chrono::Utc::now();
     if let Err(held) = throttle::check(&session.store, Scope::Sync, now) {
         // A used-up transfer still delivers deletions (protected capacity):
@@ -406,11 +413,7 @@ fn sync_vault_once(
         super::purge::mark_sent(&replica, &acks)?;
         return Ok(report);
     }
-    let first = if replica.cursor()?.is_none() {
-        driver::clone_place(&api, &mut replica, &place_ref, &verifier)?
-    } else {
-        driver::tail(&api, &mut replica, &place_ref, &verifier)?
-    };
+    let (first, seen_before_pull) = pull(&api, &mut replica, &place_ref, &verifier)?;
     report.cloned = first.cloned;
     report.stored = first.stored;
     // Events stored unverified get one more check against current keys
@@ -476,15 +479,30 @@ fn sync_vault_once(
         };
         let (since, import_since) = (mark(CAPTURE_SINCE)?, mark(IMPORT_SINCE)?);
         let (plan, import_mark) = plan_capture(&knowledge, since, import_since, &mut run, &graph);
+        // What the gate kept local, per fact, for the sync status (local).
+        capture::sharing::record_rejected(
+            store.data_dir(),
+            &place_id(&record.vault_id),
+            &plan.dropped,
+            chrono::Utc::now(),
+        );
         let place = super::writer::vault_place(record, &replica)?;
         let signer = writer.signer();
         // The checkout's name in `own_sources` (never shared): what the
         // capture lifecycle finds this checkout's own nodes by.
         let project_hash =
             blake3::hash(root.to_string_lossy().as_bytes()).to_hex()[..16].to_owned();
+        // #286: a fact's save names the log position its author could have
+        // seen when it wrote the fact: what this Instance had folded before
+        // this sync's pull. Another Instance's value pulled just now was not
+        // seen, so the two are concurrent (a conflict), not an edit.
+        let fact_place = Place {
+            causal_base: seen_before_pull,
+            ..place.clone()
+        };
         let target = emit::Target {
             replica: &replica,
-            place: &place,
+            place: &fact_place,
             signer: &signer,
             project_hash: &project_hash,
             decision_anchors: crate::bus::relay_v2::speaks_2_2(&session.store),
@@ -567,10 +585,14 @@ fn sync_vault_once(
                 };
                 let mut screen = crate::knowledge::screening::Screen::for_installation();
                 crate::docs::queue_specs_at(&target, specs, &mut screen, now, run_clock)
-                    .map(|_| pages)
+                    .map(|(_, clock)| (pages, clock))
             });
         match docs {
-            Ok(pages) => report.docs_behind = pages,
+            Ok((pages, clock)) => {
+                report.docs_behind = pages;
+                // The conflict edges below continue after the doc events.
+                run_clock = clock;
+            }
             Err(e) => tracing::warn!("hive: doc anchor re-check skipped: {e}"),
         }
     }
@@ -584,7 +606,64 @@ fn sync_vault_once(
     report.failed = pushed.failed;
     let after = driver::tail(&api, &mut replica, &place_ref, &verifier)?;
     report.stored += after.stored;
+
+    // #286: two Instances' values for one shared fact are linked (a
+    // sequential edit `supersedes`, concurrent values `contradicts`), the
+    // edge written by the one Instance the resolution names and pushed at
+    // once so every Instance serves the same state. Detected on
+    // the graph after the tail (own and other Instances' latest nodes); a
+    // failure never fails the sync.
+    if capture_on {
+        match detect_conflicts(record, &replica, &writer, &pk_id, run_clock, now) {
+            Ok(0) => {}
+            Ok(queued) => {
+                report.fact_links = queued;
+                let pushed = driver::push_pending(&api, &replica, &place_ref, &[])?;
+                report.pushed += pushed.logged;
+                report.failed.extend(pushed.failed);
+                report.stored += driver::tail(&api, &mut replica, &place_ref, &verifier)?.stored;
+            }
+            Err(e) => tracing::warn!("hive: conflict detection skipped: {e}"),
+        }
+    }
     Ok(report)
+}
+
+/// Pull the place: a clone on the first sync, a tail otherwise. Also
+/// returns the log position this Instance had folded before the pull (0
+/// before its first clone): the most its facts written since its last sync
+/// could have seen, which their saves carry as `causal_base` (#286).
+pub(super) fn pull(
+    api: &dyn PlaceApi,
+    replica: &mut Replica,
+    place_ref: &str,
+    verifier: &Verifier<'_>,
+) -> Result<(driver::SyncReport, u64), HiveError> {
+    let seen = replica.cursor()?;
+    let report = match seen {
+        None => driver::clone_place(api, replica, place_ref, verifier)?,
+        Some(_) => driver::tail(api, replica, place_ref, verifier)?,
+    };
+    Ok((report, seen.unwrap_or(0)))
+}
+
+/// Queue this Instance's fact links ([`capture::conflicts`]); how many.
+fn detect_conflicts(
+    record: &VaultRecord,
+    replica: &Replica,
+    writer: &super::writer::VaultWriter,
+    pk_id: &[u8; 32],
+    clock: Stamp,
+    now: u64,
+) -> Result<usize, HiveError> {
+    let place = super::writer::vault_place(record, replica)?;
+    let signer = writer.signer();
+    let target = crate::review::maintain::Target {
+        replica,
+        place: &place,
+        signer: &signer,
+    };
+    capture::conflicts::detect(&target, pk_id, clock, now).map(|(queued, _)| queued)
 }
 
 #[cfg(test)]

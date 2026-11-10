@@ -389,6 +389,10 @@ pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
         ("Cline", lean_ctx::core::editor_registry::cline_mcp_path()),
         ("Roo Code", lean_ctx::core::editor_registry::roo_mcp_path()),
         ("Hermes Agent", home.join(".hermes/config.yaml")),
+        (
+            "Goose",
+            lean_ctx::core::editor_registry::goose_config_dir(home).join("config.yaml"),
+        ),
         ("OpenClaw", home.join(".openclaw/openclaw.json")),
         ("Augment CLI", home.join(".augment/settings.json")),
         (
@@ -969,6 +973,19 @@ pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
     } else if lean_ctx_hooks::hooks::agents::uninstall_antigravity_cli_plugin(home) {
         removed = true;
         println!("  ✓ Antigravity CLI plugin removed");
+    }
+
+    // Kiro's hook file and Cline's hook script are LeanCTX's own files.
+    let kiro_cline = lean_ctx_hooks::hooks::agents::kiro_cline_hooks::kiro_hook_installed(home)
+        || lean_ctx_hooks::hooks::agents::kiro_cline_hooks::cline_hook_installed(home);
+    if dry_run {
+        if kiro_cline {
+            removed = true;
+            println!("  Would remove Kiro / Cline hooks");
+        }
+    } else if lean_ctx_hooks::hooks::agents::kiro_cline_hooks::remove_kiro_cline_hooks(home) {
+        removed = true;
+        println!("  ✓ Kiro / Cline hooks removed");
     }
 
     // hooks.json: surgically remove lean-ctx entries instead of deleting

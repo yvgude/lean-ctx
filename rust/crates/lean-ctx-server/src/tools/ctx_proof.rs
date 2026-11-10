@@ -2,7 +2,9 @@
 use std::path::Path;
 
 use lean_ctx::core::context_ir::{ContextIrV1, write_project_context_ir};
-use lean_ctx::core::context_proof::{ProofOptions, ProofSources, collect_v1, write_project_proof};
+use lean_ctx::core::context_proof::{
+    ProofOptions, ProofSources, collect_v1, proof_destination, write_project_proof,
+};
 
 pub fn handle_export(
     project_root: &str,
@@ -64,18 +66,15 @@ pub fn handle_export(
                 Some("json"),
             );
 
-            let proofs_dir = root.join(".lean-ctx").join("proofs");
-            std::fs::create_dir_all(&proofs_dir).map_err(|e| e.to_string())?;
-
-            let json_path = proofs_dir.join(&architecture_json_name);
             let json_redacted = lean_ctx::core::redaction::redact_text(&arch_json);
-            lean_ctx::config_io::write_atomic(&json_path, &json_redacted)?;
+            let json_path =
+                proof_destination(root, &architecture_json_name)?.write(&json_redacted)?;
             written_architecture_json = Some(json_path.to_string_lossy().to_string());
 
             let html = render_architecture_overview_html(&arch_json);
-            let html_path = proofs_dir.join(&architecture_html_name);
             let html_redacted = lean_ctx::core::redaction::redact_text(&html);
-            lean_ctx::config_io::write_atomic(&html_path, &html_redacted)?;
+            let html_path =
+                proof_destination(root, &architecture_html_name)?.write(&html_redacted)?;
             written_architecture_html = Some(html_path.to_string_lossy().to_string());
         }
     }

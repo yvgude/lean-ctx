@@ -674,3 +674,61 @@ async fn a_declared_read_is_registered_and_a_withheld_rule_stays_out_of_its_arch
         "a deleted source admits nothing"
     );
 }
+
+fn keyed(key: &str) -> Arc<CallScope> {
+    Arc::new(CallScope {
+        key: Some(key.to_owned()),
+        lineage: Mutex::new(None),
+    })
+}
+
+/// Review 22480 finding 6: a replay handed out the stored output with an
+/// empty origin ledger, so its release neither fenced nor tainted it. The
+/// dispatch's origins are stored now and noted again in the serving call.
+#[test]
+fn a_replayed_output_brings_its_outside_origins_along() {
+    use lean_ctx::core::context_admission::capture::{ADMISSIONS, AdmissionCapture};
+    use lean_ctx::core::context_admission::origin::{InputKind, InputOrigin, SourceClass};
+
+    let _data = isolated("");
+    let key = "key-outside-origin";
+    let page = SourceClass::External(InputOrigin::new(InputKind::Web, "https://x.test/p"));
+    let first = AdmissionCapture::new();
+    CALL.sync_scope(keyed(key), || {
+        ADMISSIONS.sync_scope(Some(first.clone()), || {
+            capture::note_origin(&page);
+            record(None, ATTESTS);
+        });
+    });
+    assert!(!first.origin_ledger().is_empty());
+
+    let replay = AdmissionCapture::new();
+    let denied = CALL.sync_scope(keyed(key), || {
+        ADMISSIONS.sync_scope(Some(replay.clone()), denial)
+    });
+    assert!(denied.is_none(), "an attested output is replayed");
+    let ledger = replay.origin_ledger();
+    assert!(
+        ledger.refs.contains(&page.input_ref().expect("recordable")),
+        "the replay is released without its origin: {ledger:?}"
+    );
+
+    // No capture to note the origins in: refused, never released unmarked.
+    let refused = CALL
+        .sync_scope(keyed(key), denial)
+        .expect("refused without a capture");
+    let text = refused.content[0].as_text().expect("text").text.clone();
+    assert!(text.contains(UNTRUSTED_REPLAY), "{text}");
+
+    // A project-only output replays without noting anything.
+    let clean = "key-project-only";
+    CALL.sync_scope(keyed(clean), || {
+        ADMISSIONS.sync_scope(Some(AdmissionCapture::new()), || record(None, ATTESTS));
+    });
+    let serving = AdmissionCapture::new();
+    let denied = CALL.sync_scope(keyed(clean), || {
+        ADMISSIONS.sync_scope(Some(serving.clone()), denial)
+    });
+    assert!(denied.is_none());
+    assert!(serving.origin_ledger().is_empty());
+}

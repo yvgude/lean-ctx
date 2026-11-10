@@ -10,12 +10,18 @@ pub(super) fn cmd_stop() {
 
     eprintln!("Stopping lean-ctx services…");
 
+    // The autostart services belong to the default install; another
+    // instance (directory override, sandbox HOME) leaves them alone.
     lean_ctx::proxy_autostart::stop();
     lean_ctx::daemon_autostart::stop();
-    if cfg!(target_os = "macos") {
-        eprintln!("  Unloaded autostart (LaunchAgent).");
-    } else if cfg!(target_os = "linux") {
-        eprintln!("  Unloaded autostart (systemd).");
+    if lean_ctx::daemon_autostart::is_supported() {
+        if !lean_ctx::daemon_autostart::controls_user_services() {
+            eprintln!("  Autostart left alone: it belongs to the default install.");
+        } else if cfg!(target_os = "macos") {
+            eprintln!("  Unloaded autostart (LaunchAgent).");
+        } else {
+            eprintln!("  Unloaded autostart (systemd).");
+        }
     }
 
     // The recorded daemon first (PID file, HTTP shutdown), then every other

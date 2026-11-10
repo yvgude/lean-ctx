@@ -202,6 +202,8 @@ mod tests {
             transport: None,
             role_source: None,
             parent: None,
+            app_session_id: None,
+            display_name: None,
         });
         registry.save().expect("presence registry");
 
@@ -239,6 +241,8 @@ mod tests {
             transport: None,
             role_source: None,
             parent: None,
+            app_session_id: None,
+            display_name: None,
         });
         registry.save().expect("presence registry");
         let missing = list_unified()

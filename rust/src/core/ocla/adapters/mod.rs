@@ -171,7 +171,14 @@ mod tests {
                 budget_tokens: Some(100),
             },
             policy_constraints: Default::default(),
-            timeout_ms: 1_000,
+            // No deadline: this test compares the two observation envelopes,
+            // not latency. With a 1 s deadline the adapter invoked first paid
+            // the process's one-time tokenizer and compressor initialization
+            // inside its measured window and failed on a loaded CI host
+            // ("1235ms > 1000ms", mr-quick job 21704). Deadline enforcement
+            // has its own tests (engine_interface for the bounded native
+            // path, coverage for external processes).
+            timeout_ms: 0,
         }
     }
 

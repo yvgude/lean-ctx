@@ -11,7 +11,8 @@
 // reviewed) data table does not bloat `config/mod.rs`. Users extend this
 // additively via `shell_allowlist_extra` / `lean-ctx allow`.
 
-pub(crate) fn default_shell_allowlist() -> Vec<String> {
+#[doc(hidden)]
+pub fn default_shell_allowlist() -> Vec<String> {
     [
         // VCS
         "git",
@@ -117,7 +118,7 @@ pub(crate) fn default_shell_allowlist() -> Vec<String> {
         "b2sum",
         "xxhsum",
         // NOTE: echo, printf, true, false, test, [, break, continue, return,
-        // cd, pwd are now handled by SHELL_BUILTINS in shell_allowlist/mod.rs
+        // cd, pwd are now handled by SHELL_BUILTINS in lean-ctx-shell-policy enforcement.rs
         // (#1022) and no longer need to appear here.
         "expr",
         // #855: `seq` is the standard way to drive a bounded numeric `for`
@@ -294,7 +295,8 @@ pub(crate) fn default_shell_allowlist() -> Vec<String> {
 /// waiting to happen. Users opt in per tool via `lean-ctx allow <cmd>` or
 /// `shell_allowlist_extra`. The block message points there
 /// (see `shell_allowlist::allowlist_block_message`).
-pub(crate) fn cloud_infra_commands() -> &'static [&'static str] {
+#[doc(hidden)]
+pub fn cloud_infra_commands() -> &'static [&'static str] {
     &[
         "terraform",
         "ansible",

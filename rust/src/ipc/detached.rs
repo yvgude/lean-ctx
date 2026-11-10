@@ -3,7 +3,12 @@
 //! background Cockpit) so it survives the caller and holds nothing of it.
 //!
 //! On Unix a child simply outlives its parent: stdin/stdout are null, stderr
-//! is null or a log file, and the process is spawned as usual.
+//! is null or a log file, and the service leads its own process group
+//! (`process_group(0)`). Without that it stays in the spawner's group: a
+//! terminal's Ctrl-C reaches it, and every later CLI call from the same group
+//! (a script, CI, an app that spawns both `serve --daemon` and `serve --stop`)
+//! counts it among its own protected processes, so `serve --status` called it
+//! not running and `serve --stop` could not verify it.
 //!
 //! On Windows a child created through `std::process::Command` inherits two
 //! things a background service must not keep (#2176):
@@ -96,6 +101,11 @@ pub fn spawn_detached(cmd: &mut Command, stderr: DetachedStderr) -> io::Result<D
         cmd.stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(stderr);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
         let child = cmd.spawn()?;
         Ok(DetachedChild {
             pid: child.id(),
@@ -805,6 +815,26 @@ mod tests {
             let text = String::from_utf8_lossy(&out.stdout);
             assert!(text.contains("/dev/null"), "fd 1 of the service: {text}");
         }
+    }
+
+    /// A detached service leads its own process group, so that the caller's
+    /// group (a terminal job, a script, an app) neither signals it nor counts
+    /// it among the caller's protected processes.
+    #[cfg(unix)]
+    #[test]
+    fn detached_spawn_leads_its_own_process_group() {
+        let mut sleeper = Command::new("sleep");
+        sleeper.arg("30");
+        let mut child = spawn_detached(&mut sleeper, DetachedStderr::Null).expect("spawn sleep");
+        let pid = child.id();
+        let pid_t = libc::pid_t::try_from(pid).expect("pid fits pid_t");
+        // SAFETY: getpgid takes a pid and only reads process state.
+        let child_pgid = unsafe { libc::getpgid(pid_t) };
+        // SAFETY: getpgrp() takes no arguments and cannot fail.
+        let own_pgid = unsafe { libc::getpgrp() };
+        let _ = child.kill();
+        assert_eq!(child_pgid, pid_t, "the service leads its own group");
+        assert_ne!(child_pgid, own_pgid, "the service left the caller's group");
     }
 
     /// The raw Windows spawn runs the program with its arguments, sets the

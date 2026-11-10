@@ -1,0 +1,3 @@
+The dashboard shows yesterday's numbers until I refresh twice.
+Browser: Firefox 141 on Ubuntu.
+The network tab shows a cached 304 for /api/stats.

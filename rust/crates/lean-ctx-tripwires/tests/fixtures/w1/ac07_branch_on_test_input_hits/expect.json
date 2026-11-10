@@ -1,0 +1,30 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 8,
+      "path": "rust/crates/demo/src/lib.rs",
+      "rule": "branch_on_test_input"
+    },
+    {
+      "line": 11,
+      "path": "rust/crates/demo/src/lib.rs",
+      "rule": "branch_on_test_input"
+    },
+    {
+      "line": 18,
+      "path": "rust/crates/demo/src/lib.rs",
+      "rule": "branch_on_test_input"
+    },
+    {
+      "line": 21,
+      "path": "rust/crates/demo/src/lib.rs",
+      "rule": "branch_on_test_input"
+    },
+    {
+      "line": 8,
+      "path": "rust/crates/demo/src/lib.rs",
+      "rule": "fixture_constant"
+    }
+  ]
+}

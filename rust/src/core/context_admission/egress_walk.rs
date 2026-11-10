@@ -186,7 +186,15 @@ impl Walk<'_> {
     /// Both sides use the policies captured for this admission.
     fn compose(&self, project_original: &str, gateway_output: &str) -> Option<String> {
         let project_after_gateway = self.project_protected(gateway_output).ok()?.into_owned();
-        let gateway_after_project = admit(project_original, None, self.policy).text?;
+        let gateway_after_project = crate::core::context_admission::capture::egress_check(|| {
+            admit(
+                project_original,
+                None,
+                &crate::core::context_admission::origin::EGRESS,
+                self.policy,
+            )
+        })
+        .text?;
         (project_after_gateway == gateway_after_project).then_some(project_after_gateway)
     }
 
@@ -230,7 +238,14 @@ impl Walk<'_> {
             if let Ok(admitted) = self.project_protected(text) {
                 Some(admitted)
             } else {
-                let mut admission = admit(text, None, self.policy);
+                let mut admission = crate::core::context_admission::capture::egress_check(|| {
+                    admit(
+                        text,
+                        None,
+                        &crate::core::context_admission::origin::EGRESS,
+                        self.policy,
+                    )
+                });
                 self.observe(admission.classification);
                 mark_policy_withheld(&mut admission, "policy.content_withheld");
                 self.note_withheld(&admission.decision);
@@ -263,7 +278,14 @@ impl Walk<'_> {
             self.record(&decision, AdmissionCounts::default());
             return Verdict::Keep;
         }
-        let mut admission = admit(text, None, self.policy);
+        let mut admission = crate::core::context_admission::capture::egress_check(|| {
+            admit(
+                text,
+                None,
+                &crate::core::context_admission::origin::EGRESS,
+                self.policy,
+            )
+        });
         let mut destination_denied = false;
         // Destination is part of the authorization: restricted content
         // never leaves for a remote model. The block is withheld in place —
@@ -444,7 +466,14 @@ impl Walk<'_> {
             policy.gateway.classification = crate::core::input_filters::FilterAction::Off;
             policy
         });
-        let mut admission = admit(text, None, protocol_policy.as_ref().unwrap_or(self.policy));
+        let mut admission = crate::core::context_admission::capture::egress_check(|| {
+            admit(
+                text,
+                None,
+                &crate::core::context_admission::origin::EGRESS,
+                protocol_policy.as_ref().unwrap_or(self.policy),
+            )
+        });
         let mut restricted =
             self.remote && admission.classification >= ClassificationV1::Restricted;
         if restricted && self.allowed_by_human(&admission.decision) {

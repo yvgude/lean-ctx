@@ -156,6 +156,7 @@ const AGENT_KEYS: &[&str] = &[
     "cursor",
     "emacs",
     "gemini",
+    "goose",
     "grok",
     "hermes",
     "jetbrains",

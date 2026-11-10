@@ -40,6 +40,8 @@ struct Job {
     // text, never in it: storage admission, scrubbing and replacement do not
     // touch it, and every delivery puts it in front once.
     notice: Option<&'static str>,
+    /// The class the command's output is admitted with (pz21 §1.8).
+    class: lean_ctx::core::context_admission::origin::SourceClass,
     // One-shot raw results go only to foreground receivers that are still alive;
     // they are never included in JobState or a pollable snapshot.
     foreground_senders: Vec<mpsc::SyncSender<Arc<crate::server::execute::ShellExecution>>>,
@@ -191,6 +193,7 @@ fn start_inner_with_sender(
                 completeness: lean_ctx::core::context_admission::OutputCompleteness::complete(),
                 output_withheld: false,
                 notice: None,
+                class: lean_ctx::core::patterns::output_class(&command),
                 foreground_senders: output_sender.into_iter().collect(),
                 foreground_waiters: usize::from(foreground),
                 background_owned: !foreground,
@@ -460,6 +463,8 @@ pub(crate) struct JobSnapshot {
     pub(crate) actual_exit_code: i32,
     /// The job's fixed notice, if it has one; not part of the state's text.
     pub(crate) notice: Option<&'static str>,
+    /// The class the command's output is admitted with (pz21 §1.8).
+    pub(crate) class: lean_ctx::core::context_admission::origin::SourceClass,
 }
 
 /// A running job exposes state only; terminal text was storage-admitted before
@@ -476,6 +481,7 @@ pub(crate) fn snapshot(id: &str) -> Option<JobSnapshot> {
         output_withheld: job.output_withheld,
         actual_exit_code: job.actual_exit_code,
         notice: job.notice,
+        class: job.class.clone(),
     })
 }
 
@@ -600,6 +606,7 @@ mod tests {
             completeness: lean_ctx::core::context_admission::OutputCompleteness::complete(),
             output_withheld: false,
             notice: None,
+            class: lean_ctx::core::context_admission::carrier::INSTANCE,
             foreground_senders: Vec::new(),
             foreground_waiters: 0,
             background_owned: true,
@@ -833,6 +840,7 @@ mod tests {
                     completeness: lean_ctx::core::context_admission::OutputCompleteness::complete(),
                     output_withheld: false,
                     notice: None,
+                    class: lean_ctx::core::context_admission::carrier::INSTANCE,
                     foreground_senders: Vec::new(),
                     foreground_waiters: 0,
                     background_owned: true,
@@ -857,6 +865,7 @@ mod tests {
                 completeness: lean_ctx::core::context_admission::OutputCompleteness::complete(),
                 output_withheld: false,
                 notice: None,
+                class: lean_ctx::core::context_admission::carrier::INSTANCE,
                 foreground_senders: Vec::new(),
                 foreground_waiters: 0,
                 background_owned: true,
@@ -893,6 +902,7 @@ mod tests {
                     completeness: lean_ctx::core::context_admission::OutputCompleteness::complete(),
                     output_withheld: false,
                     notice: None,
+                    class: lean_ctx::core::context_admission::carrier::INSTANCE,
                     foreground_senders: Vec::new(),
                     foreground_waiters: 0,
                     background_owned: true,
@@ -1280,6 +1290,7 @@ mod tests {
                 completeness: lean_ctx::core::context_admission::OutputCompleteness::complete(),
                 output_withheld: false,
                 notice: None,
+                class: lean_ctx::core::context_admission::carrier::INSTANCE,
                 foreground_senders: Vec::new(),
                 foreground_waiters: 1,
                 background_owned: false,

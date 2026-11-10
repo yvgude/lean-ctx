@@ -9,6 +9,8 @@
 pub mod agent_tools_cmd;
 /// Low-level Apache in-process tool-execution façade for Engine embedders.
 pub mod engine;
+#[doc(hidden)]
+pub mod input_check_hook;
 pub mod server;
 pub mod tools;
 

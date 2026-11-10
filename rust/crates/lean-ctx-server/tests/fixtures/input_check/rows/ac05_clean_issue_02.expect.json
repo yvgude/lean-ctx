@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "The dashboard shows yesterday's numbers until I refresh twice."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

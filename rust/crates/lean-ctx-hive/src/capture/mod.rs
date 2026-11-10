@@ -8,6 +8,7 @@
 //! with a stable [`ReasonCode`], it never rewrites or splits (E1). A fact
 //! that fails stays in the local knowledge store unchanged.
 
+pub mod conflicts;
 pub mod dedupe;
 pub mod derived;
 pub mod emit;
@@ -15,6 +16,7 @@ pub mod episode;
 pub mod lifecycle;
 pub mod refs;
 pub mod rules;
+pub mod sharing;
 
 use std::collections::BTreeMap;
 use std::path::Path;

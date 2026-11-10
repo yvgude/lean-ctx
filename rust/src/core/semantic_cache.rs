@@ -90,7 +90,7 @@ impl SemanticCacheIndex {
             self.idf.clear();
             self.admission_policy = Some(admission.digest().to_owned());
         }
-        let Some(admitted) = admission.admit(content, Path::new(path)) else {
+        let Some(admitted) = admission.admit(content, Path::new(path), None) else {
             if let Some(position) = self.entries.iter().position(|e| e.path == path) {
                 let dropped = self.entries.swap_remove(position);
                 remove_doc_terms(&mut self.term_document_freq, &dropped.tfidf_vector);

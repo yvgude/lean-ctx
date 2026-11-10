@@ -865,7 +865,19 @@ pub(crate) fn open_sessions_block(project_root: &str) -> Option<String> {
 pub fn admitted_sessions_block(project_root: &str) -> Option<String> {
     let block = open_sessions_block(project_root)?;
     let origin = "provider:emspace/sessions";
-    let admitted = crate::core::context_admission::admit_source(&block, origin, false).ok()?;
+    let admitted = crate::core::context_admission::admit_source(
+        &block,
+        origin,
+        false,
+        // Other sessions wrote this block (pz21 §1.1, `bus_message`).
+        &crate::core::context_admission::origin::SourceClass::External(
+            crate::core::context_admission::origin::InputOrigin::new(
+                crate::core::context_admission::origin::InputKind::BusMessage,
+                "emspace:sessions",
+            ),
+        ),
+    )
+    .ok()?;
     crate::core::context_admission::capture::note_source_id(origin);
     Some(admitted)
 }

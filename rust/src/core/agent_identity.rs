@@ -105,8 +105,9 @@ fn attribution_component(raw: &str, max: usize) -> Option<String> {
 }
 
 /// The agent host this process was spawned by, from the markers each host
-/// sets in its children's environment.
-fn host_from_env(env: impl Fn(&str) -> Option<String>) -> Option<&'static str> {
+/// sets in its children's environment (also the CLI's "runs under an
+/// agent" check of `lean-ctx tasks`).
+pub fn host_from_env(env: impl Fn(&str) -> Option<String>) -> Option<&'static str> {
     let set = |key: &str| env(key).is_some_and(|v| !v.trim().is_empty());
     if set("CLAUDECODE") {
         Some("claude")

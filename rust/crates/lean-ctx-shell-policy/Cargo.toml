@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# The LeanCTX shell-allowlist policy, split upward out of the Engine: it depends
+# on the Engine library (package lean-ctx-engine, lib `lean_ctx`), which keeps the
+# shell lexer, and is used by hooks, server and the composition root.
+[package]
+name = "lean-ctx-shell-policy"
+version = "3.12.3"
+edition = "2024"
+license = "Apache-2.0"
+description = "The LeanCTX shell-allowlist policy: enforcement, approvals and side-door checks on top of the LeanCTX Engine."
+repository = "https://github.com/yvgude/lean-ctx"
+homepage = "https://leanctx.com"
+readme = "../../README.md"
+keywords = ["lean-ctx", "shell", "allowlist", "security"]
+categories = ["development-tools"]
+
+[lib]
+name = "lean_ctx_shell_policy"
+path = "src/lib.rs"
+
+[features]
+default = []
+
+[dependencies]
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false }
+serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
+regex = "1.12"
+tracing = "0.1"
+dirs = "6.0"
+
+[dev-dependencies]
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false, features = ["test-support"] }
+serial_test = "3.5"
+tempfile = "3.27"
+
+[lints]
+workspace = true

@@ -817,6 +817,13 @@ pub struct AgentMessageRequest {
     /// returns the first message's id instead of posting it again.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
+    /// The task the message belongs to, stored on its entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    /// Extra entry metadata stored with the message (for example its Queen
+    /// kind and thread); a key the bus sets itself is never replaced.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, String>,
 }
 
 impl AgentEnvelope {

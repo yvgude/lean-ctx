@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Feature request: allow a custom port for the local server."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

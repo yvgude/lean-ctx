@@ -120,6 +120,26 @@ pub struct HiveCliStatusV1 {
     /// Engine metrics v2 (telemetry SPEC §4); left out when not connected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metrics_v2: Option<HiveStatusMetricsV2>,
+    /// 1.6: the project here was resolved to a vault its link file or its
+    /// identity no longer backs. Left out when they agree, so readers of
+    /// earlier shapes see unchanged output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_mismatch: Option<HiveStatusVaultMismatchV1>,
+}
+
+/// `vault_mismatch` of `hive status --json` (1.6). That resolution is not
+/// used: the next connect or sync resolves the project again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HiveStatusVaultMismatchV1 {
+    /// The checkout root on this machine.
+    pub project_root: String,
+    /// `ns/name` this machine resolved it to.
+    pub resolved: String,
+    /// `ns/name` its link file names; `null` when the identity changed.
+    pub linked: Option<String>,
+    /// `link` or `identity`.
+    pub reason: String,
 }
 
 /// `metrics_v2` of `hive status --json` (telemetry SPEC §4).
@@ -155,6 +175,7 @@ impl HiveCliStatusV1 {
             bus_controls: Vec::new(),
             bus_controls_inactive: None,
             metrics_v2: None,
+            vault_mismatch: None,
         }
     }
 }

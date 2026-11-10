@@ -451,42 +451,13 @@ pub fn pin(
 
 /// The anchors of a page as stored (`anchors` field), parsed back.
 pub fn page_anchors(page: &lean_ctx_doc::replica::PageView) -> Vec<lean_ctx_doc::Anchor> {
-    use lean_ctx_doc::{Anchor, AnchorKind, AnchorMode, AnchorRole};
     page.page
         .fields
         .get("anchors")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|a| {
-            let (scheme, path) = a.get("ref")?.as_str()?.split_once(':')?;
-            let kind = match scheme {
-                "file" => AnchorKind::File,
-                "dir" => AnchorKind::Dir,
-                "glob" => AnchorKind::Glob,
-                _ => return None,
-            };
-            Some(Anchor {
-                kind,
-                mode: if a.get("mode").and_then(Value::as_str) == Some("shape") {
-                    AnchorMode::Shape
-                } else {
-                    AnchorMode::Content
-                },
-                role: if a.get("role").and_then(Value::as_str) == Some("cites") {
-                    AnchorRole::Cites
-                } else {
-                    AnchorRole::Derived
-                },
-                path: path.to_owned(),
-                digest: a
-                    .get("digest")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned(),
-                commit: a.get("commit").and_then(Value::as_str).map(str::to_owned),
-            })
-        })
+        .filter_map(lean_ctx_doc::write::anchor_from_value)
         .collect()
 }
 
@@ -571,9 +542,7 @@ pub fn with_vault<R>(
     use crate::sync::{place, writer};
     let store = crate::HiveStore::open()?;
     let instance = store.instance()?.ok_or(HiveError::NotConnected)?;
-    let record = crate::vault::VaultMap::load(store.data_dir())
-        .for_root(root)
-        .cloned()
+    let record = crate::resolution::vault_for_root(store.data_dir(), std::path::Path::new(root))?
         .ok_or_else(|| {
             HiveError::Config(
                 "this checkout is not linked to a Hive vault (`lean-ctx hive link <workspace>/<vault>`)"
@@ -612,10 +581,10 @@ pub fn push_queued(root: &str) -> Result<String, HiveError> {
     use crate::sync::{driver, place, writer};
     let store = crate::HiveStore::open()?;
     let instance = store.instance()?.ok_or(HiveError::NotConnected)?;
-    let record = crate::vault::VaultMap::load(store.data_dir())
-        .for_root(root)
-        .cloned()
-        .ok_or_else(|| HiveError::Config("this checkout is not linked to a Hive vault".into()))?;
+    let record = crate::resolution::vault_for_root(store.data_dir(), std::path::Path::new(root))?
+        .ok_or_else(|| {
+        HiveError::Config("this checkout is not linked to a Hive vault".into())
+    })?;
     let config = lean_ctx::core::config::Config::load().hive.clone();
     let trust = crate::root_cert::trust_root(&store, &config, &instance.url)?;
     let session = crate::auth::Session::load(store.clone(), trust)?;

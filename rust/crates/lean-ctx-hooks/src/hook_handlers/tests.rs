@@ -33,8 +33,14 @@ mod rewrite_extras;
 #[path = "tests_command_rewrites.rs"]
 mod tests_command_rewrites;
 #[cfg(test)]
+#[path = "tests_excluded_rewrites.rs"]
+pub(super) mod tests_excluded_rewrites;
+#[cfg(test)]
 #[path = "tests_file_rewrites.rs"]
 mod tests_file_rewrites;
+#[cfg(test)]
+#[path = "tests_hook_dialect.rs"]
+mod tests_hook_dialect;
 #[cfg(test)]
 #[path = "tests_parsing_platform.rs"]
 mod tests_parsing_platform;

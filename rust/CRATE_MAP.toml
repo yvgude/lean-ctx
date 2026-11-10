@@ -67,6 +67,24 @@ may_depend_on = []
 # adapter is lean-ctx-hive's docs.rs (replica events in, signed writes out).
 facade = []
 
+[[crate]]
+name = "lean-ctx-activity"
+path = "crates/lean-ctx-activity"
+may_depend_on = ["lean-ctx-fs"]
+# New (not extracted): the per-session activity stream (model, bounded
+# JSONL store, listing). The engine facade core/activity.rs supplies the data
+# dir and the redaction; hooks, MCP and ACP callers record through it.
+facade = []
+
+[[crate]]
+name = "lean-ctx-tasks"
+path = "crates/lean-ctx-tasks"
+may_depend_on = ["lean-ctx-fs"]
+# New (not extracted): local project tasks on Hive's task model and state
+# machine, for projects linked to no vault. The adapter is lean-ctx-hive's
+# tasks/local.rs (store directory, linked check, bus notices).
+facade = []
+
 # ---------------------------------------------------------------- scheduled
 # Order is the planned extraction order. L0 = leaf crates, L1 = foundation,
 # L2 = needs an inversion first (frozen so the knot does not grow).

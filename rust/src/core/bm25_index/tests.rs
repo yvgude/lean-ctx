@@ -81,6 +81,7 @@ fn detect_rust_function() {
 fn bm25_search_finds_relevant() {
     let mut index = BM25Index::new();
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: "auth.rs".into(),
         symbol_name: "validate_token".into(),
         kind: ChunkKind::Function,
@@ -91,6 +92,7 @@ fn bm25_search_finds_relevant() {
         token_count: 8,
     });
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: "db.rs".into(),
         symbol_name: "connect_database".into(),
         kind: ChunkKind::Function,
@@ -114,6 +116,7 @@ fn structural_signals_disambiguate_same_named_cross_subsystem_results() {
         let tokens = tokenize(content);
         let token_count = tokens.len();
         index.add_chunk(CodeChunk {
+            input_origin: None,
             file_path: file.into(),
             symbol_name: symbol.into(),
             kind: ChunkKind::Function,
@@ -165,6 +168,7 @@ fn bm25_search_sorts_ties_deterministically() {
 
     // Insert in reverse path order to ensure the sort tie-break matters.
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: "b.rs".into(),
         symbol_name: "same".into(),
         kind: ChunkKind::Function,
@@ -175,6 +179,7 @@ fn bm25_search_sorts_ties_deterministically() {
         token_count: 2,
     });
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: "a.rs".into(),
         symbol_name: "same".into(),
         kind: ChunkKind::Function,
@@ -254,6 +259,7 @@ fn add_chunk_truncates_content_to_10_lines() {
         .collect::<Vec<_>>()
         .join("\n");
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: "big.rs".into(),
         symbol_name: "big".into(),
         kind: ChunkKind::Function,
@@ -264,6 +270,7 @@ fn add_chunk_truncates_content_to_10_lines() {
         token_count: 0,
     });
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: "small.rs".into(),
         symbol_name: "small".into(),
         kind: ChunkKind::Function,
@@ -306,6 +313,7 @@ fn shrink_resident_trims_long_bodies_keeps_short_and_flags() {
         .collect::<Vec<_>>()
         .join("\n");
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: "long.rs".into(),
         symbol_name: "long".into(),
         kind: ChunkKind::Function,
@@ -316,6 +324,7 @@ fn shrink_resident_trims_long_bodies_keeps_short_and_flags() {
         token_count: 2,
     });
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: "short.rs".into(),
         symbol_name: "short".into(),
         kind: ChunkKind::Function,
@@ -462,6 +471,7 @@ fn save_refuses_oversized_output() {
 
     let mut index = BM25Index::new();
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: "a.rs".into(),
         symbol_name: "a".into(),
         kind: ChunkKind::Function,
@@ -744,6 +754,7 @@ fn persisted_index_tracking_a_secret_like_file_is_stale() {
     let state = IndexedFileState::from_path(&root.join(".env")).expect("state");
     index.files.insert(".env".to_string(), state);
     index.add_chunk(CodeChunk {
+        input_origin: None,
         file_path: ".env".to_string(),
         symbol_name: ".env".to_string(),
         kind: ChunkKind::Module,
@@ -1181,6 +1192,7 @@ fn parallel_build_search_parity() {
 #[test]
 fn search_after_eviction_finds_the_chunk_that_moved() {
     let chunk = |file: &str, symbol: &str, content: &str| CodeChunk {
+        input_origin: None,
         file_path: file.into(),
         symbol_name: symbol.into(),
         kind: ChunkKind::Function,
@@ -1210,6 +1222,7 @@ fn remove_chunks_with_prefix_evicts_only_matching() {
     use crate::core::content_chunk::ContentChunk;
 
     let mut index = BM25Index::from_chunks_for_test(vec![CodeChunk {
+        input_origin: None,
         file_path: "src/lib.rs".into(),
         symbol_name: "main".into(),
         kind: ChunkKind::Function,

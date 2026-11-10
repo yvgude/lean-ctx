@@ -1,0 +1,2 @@
+Could the log level be set per module?
+The network module is very noisy at debug level while I only need the parser output.

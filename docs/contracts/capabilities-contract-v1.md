@@ -34,7 +34,7 @@ contract_version, server, plane, transports, presets, read_modes, tools, feature
 | Key | Type | Meaning |
 |-----|------|---------|
 | `contract_version` | number | This contract's version (`1`). |
-| `server` | object | `{ name, version, persona }` — `version` is the running `lean-ctx` release; `persona` is the active context persona (`persona-spec-v1`, EPIC 12.15). |
+| `server` | object | `{ name, version, build, persona }` — `version` is the running `lean-ctx` release; `build` (additive) is `{ kind, commit, dirty, official }`, stamped at compile time: `kind` is `official` only for the upstream release workflow, else `dogfood`, `dev` or `source`; `commit` is the 40-hex source commit or `null`; `persona` is the active context persona (`persona-spec-v1`, EPIC 12.15). |
 | `plane` | string | Runtime build label. `personal` is the local default; historical `team`/`cloud` labels are not public product availability claims. |
 | `transports` | string[] | Wire transports this instance speaks: `stdio-mcp`, `http-mcp`, `rest`, `sse`. |
 | `presets` | string[] | Built-in context personas (`persona-spec-v1`, EPIC 12.15/12.16). Today: `coding` (the historical default); non-coding presets land in 12.16. |
@@ -50,7 +50,7 @@ contract_version, server, plane, transports, presets, read_modes, tools, feature
 ```json
 {
   "contract_version": 1,
-  "server": { "name": "lean-ctx", "version": "3.7.1", "persona": "coding" },
+  "server": { "name": "lean-ctx", "version": "3.7.1", "build": { "kind": "official", "commit": "…", "dirty": false, "official": true }, "persona": "coding" },
   "plane": "personal",
   "transports": ["stdio-mcp", "http-mcp", "rest", "sse"],
   "presets": ["coding", "data-analysis", "lead-gen", "research", "support"],

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "lean-ctx-tripwires"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+license = "Apache-2.0"
+description = "P4 tripwires of LeanCTX | OSS: a deterministic diff analyzer that flags the documented reward-hacking tricks and routes a hit to a person."
+repository = "https://github.com/yvgude/lean-ctx"
+
+# A pure leaf crate: no I/O, no network, no dependency on the engine. The input
+# is the file pairs of one diff (base..commit) plus the Instance's write counts;
+# the output is a TripwireReportV1 (process-v1 minor 1.1, `p4`). Git reading
+# stays in lean-ctx-hive. `proc-macro2` is syn's own dependency, named here only
+# to turn on `span-locations` so hits carry line numbers.
+[dependencies]
+proc-macro2 = { version = "1.0", default-features = false, features = ["span-locations"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+syn = { version = "2.0", default-features = false, features = ["full", "parsing", "visit", "printing", "clone-impls"] }
+
+[lints.rust]
+unreachable_pub = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+doc_markdown = "allow"
+too_many_lines = "allow"

@@ -11,6 +11,7 @@ pub mod playbook;
 mod save_outcome;
 mod slot;
 mod state;
+pub mod taint;
 pub(crate) use journal::AttachSessionJournalV1;
 #[cfg(any(test, feature = "test-support"))]
 /// `TaskInfo.intent` of a task inferred from the working tree (tests).

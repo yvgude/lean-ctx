@@ -1,0 +1,40 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 13,
+      "path": "rust/crates/demo/src/io.rs",
+      "rule": "error_swallowed"
+    },
+    {
+      "line": 14,
+      "path": "rust/crates/demo/src/io.rs",
+      "rule": "error_swallowed"
+    },
+    {
+      "line": 17,
+      "path": "rust/crates/demo/src/io.rs",
+      "rule": "error_swallowed"
+    },
+    {
+      "line": 19,
+      "path": "rust/crates/demo/src/io.rs",
+      "rule": "error_swallowed"
+    },
+    {
+      "line": 20,
+      "path": "rust/crates/demo/src/io.rs",
+      "rule": "error_swallowed"
+    },
+    {
+      "line": 5,
+      "path": "tools/load.py",
+      "rule": "error_swallowed"
+    },
+    {
+      "line": 4,
+      "path": "web/load.js",
+      "rule": "error_swallowed"
+    }
+  ]
+}

@@ -42,6 +42,12 @@ const SELF_HELP: &[&[&str]] = &[
     &["gateway"],
     &["claude-mod", "claude_mod"],
     &["agent"],
+    &["activity"],
+    &["bus"],
+    &["presence"],
+    &["capabilities"],
+    &["client"],
+    &["agents"],
     &["instructions"],
     &["index"],
     &["semantic-search", "search-code"],
@@ -61,6 +67,8 @@ const SELF_HELP: &[&[&str]] = &[
     &["import"],
     &["checkpoints"],
     &["knowledge"],
+    &["tasks"],
+    &["docs"],
     &["kit", "kits"],
     &["skillify"],
     &["summary"],
@@ -192,8 +200,9 @@ const NON_COMMAND_SECTIONS: &[&str] = &[
 /// [`SELF_HELP`] arms whose handler honours `--help` at *any* position with its
 /// own, richer usage (`init --agent claude --help`, #1849 — covered by the
 /// `init_help_safety_1849` integration test; `hive tasks --help` prints the
-/// tasks usage, `hive worker --help` the hive one).
-const SELF_HELP_ANYWHERE: &[&str] = &["init", "hive"];
+/// tasks usage, `hive worker --help` the hive one; `serve --port 9 --help`
+/// prints every serve flag and starts nothing, `serve_args::parse`).
+const SELF_HELP_ANYWHERE: &[&str] = &["init", "hive", "serve"];
 
 fn group_of<'a>(table: &'a [&'a [&'a str]], cmd: &str) -> Option<&'a [&'a str]> {
     table.iter().copied().find(|group| group.contains(&cmd))

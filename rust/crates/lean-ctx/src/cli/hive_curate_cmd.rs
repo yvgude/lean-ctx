@@ -45,9 +45,7 @@ pub(super) fn run(action: &str, args: &[String], root: &str) -> Result<Vec<Strin
     }
     let store = HiveStore::open()?;
     let instance = store.instance()?.ok_or(HiveError::NotConnected)?;
-    let record = lean_ctx_hive::vault::VaultMap::load(store.data_dir())
-        .for_root(root)
-        .cloned()
+    let record = lean_ctx_hive::resolution::vault_for_root(store.data_dir(), std::path::Path::new(root))?
         .ok_or_else(|| {
             HiveError::Config(
                 "this checkout is not linked to a Hive vault (`lean-ctx hive link <workspace>/<vault>`)"

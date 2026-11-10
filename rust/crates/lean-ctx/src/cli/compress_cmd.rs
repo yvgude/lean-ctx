@@ -172,9 +172,13 @@ fn admitted_file(path: &str) -> Result<String, String> {
 /// Piped input has no source: it is admitted as caller-supplied carrier text
 /// before anything is derived from it or echoed back.
 fn admitted_piped_input(text: &str) -> Result<String, String> {
-    lean_ctx::core::context_admission::carrier::admit_carrier_text(text)
-        .map(|admission| admission.text)
-        .map_err(|withheld| withheld.message("piped input"))
+    lean_ctx::core::context_admission::carrier::admit_carrier_text(
+        text,
+        // Piped from anywhere: its origin is unknown, never the project's.
+        &lean_ctx::core::context_admission::origin::SourceClass::Unclassified { tool: "compress" },
+    )
+    .map(|admission| admission.text)
+    .map_err(|withheld| withheld.message("piped input"))
 }
 
 /// Seed the one-shot cache from one touched file: the admitted text of a

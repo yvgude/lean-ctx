@@ -16,7 +16,8 @@ pub(super) fn confidence_stars(confidence: f32) -> &'static str {
     }
 }
 
-pub(super) fn string_similarity(a: &str, b: &str) -> f32 {
+/// Word-set Jaccard similarity of two texts, case-insensitive.
+pub fn string_similarity(a: &str, b: &str) -> f32 {
     let a_lower = a.to_lowercase();
     let b_lower = b.to_lowercase();
     let a_words: std::collections::HashSet<&str> = a_lower.split_whitespace().collect();
@@ -194,8 +195,9 @@ pub fn find_cross_key_similar(
 
         let sim = string_similarity(new_value, &f.value);
         if sim > 0.35 {
-            let preview = if f.value.len() > 60 {
-                format!("{}...", &f.value[..57])
+            // Char-boundary safe: a byte slice panics inside a multi-byte char.
+            let preview = if f.value.chars().count() > 60 {
+                format!("{}...", f.value.chars().take(57).collect::<String>())
             } else {
                 f.value.clone()
             };
@@ -217,7 +219,8 @@ pub fn find_cross_key_similar(
     results
 }
 
-pub(super) fn fact_version_id_v1(f: &KnowledgeFact) -> String {
+/// The version id a successor's `supersedes` names.
+pub fn fact_version_id_v1(f: &KnowledgeFact) -> String {
     use md5::{Digest, Md5};
     let mut hasher = Md5::new();
     hasher.update(f.category.as_bytes());

@@ -125,40 +125,26 @@ fn write_provider_scaffold(args: &[String]) -> Result<std::path::PathBuf, String
         return Err(format!("`{raw}` has no usable id characters ([a-z0-9-])."));
     };
 
-    let (dir, root) = providers_dir(args)?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Error creating {}: {e}", dir.display()))?;
-    // A symlinked `.lean-ctx` must not carry the write outside the project.
-    if let Some(root) = root {
-        let real = dir
-            .canonicalize()
-            .map_err(|e| format!("cannot resolve {}: {e}", dir.display()))?;
-        if !real.starts_with(&root) {
-            return Err(format!(
-                "{} leads outside {}",
-                dir.display(),
-                root.display()
-            ));
-        }
-    }
-    let path = dir.join(format!("{id}.toml"));
-    if path
-        .symlink_metadata()
-        .is_ok_and(|m| m.file_type().is_symlink())
-    {
-        return Err(format!(
-            "{} is a symbolic link; not writing through it",
-            path.display()
-        ));
-    }
+    let (_, root) = providers_dir(args)?;
+    // A symlinked `.lean-ctx`, `providers` or target file must not carry the
+    // write anywhere else: every component below the root is checked and the
+    // write follows none.
+    let root = root.unwrap_or_else(|| std::path::PathBuf::from("."));
+    let rel = std::path::Path::new(scaffold::PROVIDERS_SUBDIR).join(format!("{id}.toml"));
+    let path = lean_ctx::core::pathjail_write::rebuild_below(&root, &rel)?;
     if path.exists() && !force {
         return Err(format!(
             "{} already exists. Re-run with --force.",
             path.display()
         ));
     }
-    std::fs::write(&path, scaffold::provider_config(&id))
-        .map_err(|e| format!("Error writing {}: {e}", path.display()))?;
-    Ok(path)
+    lean_ctx::core::pathjail_write::write_below(
+        &root,
+        &rel,
+        scaffold::provider_config(&id).as_bytes(),
+        0o644,
+    )
+    .map_err(|e| format!("Error writing {}: {e}", path.display()))
 }
 
 /// `provider init <id>` — scaffold a config-provider TOML in the project-local
@@ -313,6 +299,7 @@ fn provider_check(args: &[String]) {
             account: None,
             scope: None,
             error: Some(e),
+            reason: Some(lean_ctx::core::providers::connection::FailureReason::InvalidInput),
             latency_ms: 0,
         },
         Err(e) => {
@@ -351,6 +338,11 @@ pub(crate) fn cmd_provider(rest: &[String]) {
     use lean_ctx::core::providers::jira_oauth;
 
     let sub = rest.first().map_or("help", std::string::String::as_str);
+    // Local Read v1: the project's providers with status and source.
+    if matches!(sub, "list" | "ls") && crate::cli::local_read::wants_json(rest) {
+        crate::cli::local_read::kinds::run("providers.list", &rest[1..]);
+        return;
+    }
     match sub {
         "init" | "new" => provider_init(&rest[1..]),
         "credentials" | "creds" => provider_credentials(&rest[1..]),

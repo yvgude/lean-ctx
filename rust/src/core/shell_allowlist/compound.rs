@@ -29,7 +29,7 @@ const BODY_INTRO_KEYWORDS: &[&str] = &[
 /// this conservative walker cannot prove safe (`case`/`esac`, `;;`, a subshell
 /// with trailing content, deep nesting) is rejected — it over-blocks, never
 /// under-blocks.
-pub(super) fn expand_to_leaf_segments(command: &str) -> Result<Vec<String>, ShellError> {
+pub fn expand_to_leaf_segments(command: &str) -> Result<Vec<String>, ShellError> {
     let command = rewrite_case_constructs(command)?;
     if find_shell_word(&command, "esac", 0).is_some() || contains_double_semicolon(&command) {
         return Err(format!(
@@ -71,7 +71,7 @@ fn resolve_segment_leaves(
     // neither walk below can claim it.
     if let Some(expr) = arithmetic_command_expr(strip_body_intro_keywords(s)) {
         for inner in arithmetic_substitutions(expr, segment)? {
-            resolve_commands(inner, depth + 1, out)?;
+            resolve_commands(&inner, depth + 1, out)?;
         }
         return Ok(());
     }
@@ -253,7 +253,7 @@ fn resolve_commands(text: &str, depth: usize, out: &mut Vec<String>) -> Result<(
 /// statement and meets a line break or `;` before any target is refused:
 /// PowerShell reports a missing expression there, so this is conservative,
 /// but the text after the break must never pass as a statement of its own.
-pub(super) fn call_operator_segments(text: &str) -> Result<Vec<(String, bool)>, ShellError> {
+pub fn call_operator_segments(text: &str) -> Result<Vec<(String, bool)>, ShellError> {
     let powershell = super::ps_statements::host_is_powershell();
     if powershell && super::tokenizer::has_call_operator_before_break(text) {
         return Err(format!(
@@ -372,7 +372,7 @@ fn resolve_block_body(body: &str, depth: usize, out: &mut Vec<String>) -> Result
 /// a nested quoted `)` — e.g. inside a jq filter — doesn't end the walk early.
 /// Returns `(inner, end)` with `end` just past the matching `)`; `None` if
 /// unbalanced.
-pub(super) fn balanced_paren_at(s: &str, open: usize) -> Option<(&str, usize)> {
+pub fn balanced_paren_at(s: &str, open: usize) -> Option<(&str, usize)> {
     let bytes = s.as_bytes();
     let len = bytes.len();
     let mut depth: i32 = 0;
@@ -455,8 +455,13 @@ fn powershell_property_expression_inner(segment: &str) -> Option<&str> {
 /// still execute even when a real command follows them).
 fn leading_assignment_prefix(s: &str) -> &str {
     let rest = skip_env_assignments(s);
-    let offset = (rest.as_ptr() as usize).saturating_sub(s.as_ptr() as usize);
-    &s[..offset.min(s.len())]
+    let start = s.as_ptr() as usize;
+    let at = rest.as_ptr() as usize;
+    // A refused operand yields a stand-in outside `s`: scan all of `s`.
+    if at < start || at > start + s.len() {
+        return s;
+    }
+    &s[..at - start]
 }
 
 /// #855: collect the inner command text of every top-level `$(...)` found in
@@ -493,6 +498,13 @@ fn assignment_substitution_leaves(s: &str) -> Vec<&str> {
                     continue;
                 }
                 b'"' => in_double_quote = false,
+                b'`' => {
+                    if let Some(end) = super::case_construct::skip_backticks(bytes, i) {
+                        found.push(&prefix[i + 1..end - 1]);
+                        i = end;
+                        continue;
+                    }
+                }
                 _ => {}
             }
             i += 1;
@@ -502,6 +514,13 @@ fn assignment_substitution_leaves(s: &str) -> Vec<&str> {
             b'\\' => {
                 i = (i + 2).min(len);
                 continue;
+            }
+            b'`' => {
+                if let Some(end) = super::case_construct::skip_backticks(bytes, i) {
+                    found.push(&prefix[i + 1..end - 1]);
+                    i = end;
+                    continue;
+                }
             }
             b'\'' => in_single_quote = true,
             b'"' => in_double_quote = true,
@@ -647,7 +666,7 @@ fn closing_double_quote(s: &str, from: usize) -> Option<usize> {
 /// directly before a final `)`. `((a) )` or `((a); (b))` fail it and are
 /// nested subshells, which keep the subshell walk and its leaf checks. A
 /// trailing redirect also fails it and stays blocked.
-pub(super) fn arithmetic_command_expr(segment: &str) -> Option<&str> {
+pub fn arithmetic_command_expr(segment: &str) -> Option<&str> {
     let trimmed = segment.trim();
     if !trimmed.starts_with("((") {
         return None;
@@ -661,7 +680,7 @@ pub(super) fn arithmetic_command_expr(segment: &str) -> Option<&str> {
 /// `while`/`if`/`do` …? Called only when the line resolved to no leaves: then
 /// `((i++))` or `while (( i < 3 )); do ((i++)); done` ran no command, which is
 /// not an empty command.
-pub(super) fn has_arithmetic_command(command: &str) -> bool {
+pub fn has_arithmetic_command(command: &str) -> bool {
     let command = rewrite_case_constructs(command).unwrap_or_else(|_| command.to_string());
     extract_all_commands(&command)
         .iter()
@@ -686,10 +705,10 @@ fn strip_body_intro_keywords(segment: &str) -> &str {
 /// the substitutions and are not honoured here. A nested `$(( … ))` is walked
 /// into, not skipped, so a substitution inside it is found too. An
 /// unterminated substitution cannot be validated and blocks the command.
-pub(super) fn arithmetic_substitutions<'a>(
+pub fn arithmetic_substitutions<'a>(
     expr: &'a str,
     segment: &str,
-) -> Result<Vec<&'a str>, ShellError> {
+) -> Result<Vec<std::borrow::Cow<'a, str>>, ShellError> {
     let bytes = expr.as_bytes();
     let mut found = Vec::new();
     let mut i = 0;
@@ -705,7 +724,7 @@ pub(super) fn arithmetic_substitutions<'a>(
                 if nested_arithmetic {
                     i += 3;
                 } else {
-                    found.push(inner);
+                    found.push(inner.into());
                     i = end;
                 }
             }
@@ -713,7 +732,7 @@ pub(super) fn arithmetic_substitutions<'a>(
                 let Some(end) = super::case_construct::skip_backticks(bytes, i) else {
                     return Err(unterminated_arithmetic_substitution(segment));
                 };
-                found.push(&expr[i + 1..end - 1]);
+                found.push(super::lexer::backtick_script(&expr[i + 1..end - 1]));
                 i = end;
             }
             _ => i += 1,
@@ -790,7 +809,7 @@ fn balanced_paren_inner(segment: &str) -> Option<&str> {
 
 /// If `s` is a single balanced `{ … }` brace group with nothing trailing the
 /// closing `}`, return the inner command list (`{ a; b; }` → `a; b`). Mirrors
-/// [`balanced_paren_inner`] so [`resolve_segment_leaves`] can recurse into the
+/// `balanced_paren_inner` so `resolve_segment_leaves` can recurse into the
 /// group and validate every inner command, not just the first (#968).
 ///
 /// Only a real brace *group* qualifies: the `{` must be followed by whitespace
@@ -798,7 +817,7 @@ fn balanced_paren_inner(segment: &str) -> Option<&str> {
 /// enclosing command's base is validated normally. `{ a; } b` returns `None`
 /// (trailing content → falls through to base extraction), matching the paren
 /// walker; such a form is a shell syntax error anyway.
-pub(super) fn balanced_brace_inner(segment: &str) -> Option<&str> {
+pub fn balanced_brace_inner(segment: &str) -> Option<&str> {
     brace_group(segment).and_then(|(inner, suffix)| suffix.is_empty().then_some(inner))
 }
 

@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Docker image is 1.2 GB; could the runtime stage use a slim base?"
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

@@ -214,9 +214,13 @@ impl TaskSpine {
         // So do the sources it reads: without the call's source capture a
         // worker's reads would be missing from the lineage of the result.
         let sources = crate::core::archive::authority::current_capture();
+        // And so does an `outside_call` scope (pz21 §1.5 4a).
+        let carried = crate::core::context_admission::capture::carry();
         std::thread::spawn(move || {
-            let operation =
-                move || crate::core::archive::authority::CAPTURE.sync_scope(sources, operation);
+            let operation = move || {
+                crate::core::archive::authority::CAPTURE
+                    .sync_scope(sources, || carried.enter(operation))
+            };
             crate::core::context_admission::capture::ADMISSIONS.sync_scope(admissions, || {
                 match project {
                     Some(project) => crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(

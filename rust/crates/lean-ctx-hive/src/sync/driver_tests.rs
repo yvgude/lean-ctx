@@ -765,3 +765,150 @@ fn deletions_apply_while_transfer_is_used_up_without_moving_the_cursor() {
     assert_eq!(replica.cursor().unwrap(), Some(7));
     assert_eq!(replica.refold().unwrap().tombstones.len(), 1);
 }
+
+/// One sync of an Instance as `sync_vault_once` orders it: pull, capture
+/// `fact` (if any) with the position seen before the pull, push and tail,
+/// then the fact links, pushed and tailed.
+fn sync_with_fact(
+    server: &Server,
+    replica: &mut Replica,
+    v: &Verifier<'_>,
+    project_hash: &str,
+    checkout: &mut crate::capture::refs::Checkout,
+    fact: Option<&crate::capture::CapturedFact>,
+    wall_ms: u64,
+) {
+    use crate::capture::{conflicts, emit};
+    let key = instance_key();
+    let signer = Signer {
+        key: &key,
+        hlc_node: "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b".into(),
+        worker_id: "wkr_vk4oelpv5lzjmev44hun".into(),
+    };
+    let place_at = |causal_base| Place {
+        kind: "vault".into(),
+        id: "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01".into(),
+        pk_id: SALT,
+        causal_base,
+    };
+    let clock = Stamp {
+        wall_ms,
+        counter: 0,
+    };
+    let (_, seen) = crate::sync::place::pull(server, replica, PLACE, v).unwrap();
+    if let Some(fact) = fact {
+        let place = place_at(seen);
+        let target = emit::Target {
+            replica,
+            place: &place,
+            signer: &signer,
+            project_hash,
+            decision_anchors: false,
+        };
+        let emitted = emit::emit(
+            &target,
+            checkout,
+            std::slice::from_ref(fact),
+            clock,
+            wall_ms,
+        )
+        .unwrap();
+        assert_eq!(emitted.queued.len(), 1);
+    }
+    push_pending(server, replica, PLACE, &[]).unwrap();
+    tail(server, replica, PLACE, v).unwrap();
+    let place = place_at(replica.cursor().unwrap().unwrap_or(0));
+    let target = crate::review::maintain::Target {
+        replica,
+        place: &place,
+        signer: &signer,
+    };
+    conflicts::detect(&target, &SALT, clock, wall_ms + 1).unwrap();
+    push_pending(server, replica, PLACE, &[]).unwrap();
+    tail(server, replica, PLACE, v).unwrap();
+}
+
+/// Review r2 (#286): Instance A syncs a fact's value v1; Instance B wrote
+/// v2 before it had seen v1 and syncs later. B's sync pulls v1 before it
+/// pushes v2, yet v2 was written without it: exactly one `contradicts`, no
+/// `supersedes`. Had B pulled v1 in an earlier sync before writing v2, the
+/// same values are an edit: one `supersedes`, no conflict.
+#[test]
+fn a_fact_written_before_its_sync_pulled_the_other_value_is_a_conflict() {
+    let fact = |value: &str| crate::capture::CapturedFact {
+        candidate: CaptureCandidate {
+            node_type: NodeType::Fact,
+            statement: value.into(),
+            steps: vec![],
+            commands: vec![],
+            refs: vec![],
+            evidence: EvidenceLevel::Observed,
+            sensitivity: SensitivityLevel::Public,
+        },
+        refs: vec!["file:src/lib.rs".into()],
+        category: "arch".into(),
+        key: "relay-retries".into(),
+        value: value.into(),
+        derived_from: vec![],
+    };
+    let v1 = fact("The relay retries a dropped frame three times.");
+    let v2 = fact("The relay retries a dropped frame five times.");
+    let (snap, inst) = verifier_parts();
+    let ok = |e: &Value| sign::verify(e, &inst);
+    let v = Verifier {
+        snapshot_keys: &snap,
+        signature_ok: &ok,
+    };
+    for b_saw_v1 in [false, true] {
+        let server = Server::new(&STATEMENTS[..1], 1);
+        let (repo_a, repo_b) = (crate::capture::tests::repo(), crate::capture::tests::repo());
+        let data = tempfile::tempdir().unwrap();
+        let (mut a, _) = Replica::open(&data.path().join("a"), "pl_a", &[1; 32]).unwrap();
+        let (mut b, _) = Replica::open(&data.path().join("b"), "pl_b", &[2; 32]).unwrap();
+        let mut checkout_a = crate::capture::refs::Checkout::new(repo_a.path());
+        let mut checkout_b = crate::capture::refs::Checkout::new(repo_b.path());
+        let t = 1_792_801_000_000;
+        // Both Instances are on the place before either writes the fact.
+        sync_with_fact(&server, &mut a, &v, "ph-a", &mut checkout_a, None, t);
+        sync_with_fact(&server, &mut b, &v, "ph-b", &mut checkout_b, None, t + 10);
+        sync_with_fact(
+            &server,
+            &mut a,
+            &v,
+            "ph-a",
+            &mut checkout_a,
+            Some(&v1),
+            t + 20,
+        );
+        if b_saw_v1 {
+            sync_with_fact(&server, &mut b, &v, "ph-b", &mut checkout_b, None, t + 30);
+        }
+        sync_with_fact(
+            &server,
+            &mut b,
+            &v,
+            "ph-b",
+            &mut checkout_b,
+            Some(&v2),
+            t + 40,
+        );
+        // Each Instance syncs once more: whoever writes the link has.
+        sync_with_fact(&server, &mut a, &v, "ph-a", &mut checkout_a, None, t + 50);
+        sync_with_fact(&server, &mut b, &v, "ph-b", &mut checkout_b, None, t + 60);
+
+        let (ga, gb) = (a.refold().unwrap(), b.refold().unwrap());
+        assert_eq!(ga.digest(), gb.digest(), "both Instances fold one graph");
+        let count = |kind: &str| {
+            ga.edges
+                .values()
+                .filter(|e| e.kind == kind && !e.retracted)
+                .count()
+        };
+        let expected = if b_saw_v1 { (0, 1) } else { (1, 0) };
+        assert_eq!(
+            (count("contradicts"), count("supersedes")),
+            expected,
+            "b_saw_v1={b_saw_v1}"
+        );
+    }
+}

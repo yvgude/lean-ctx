@@ -2,18 +2,24 @@
 //! Handoff files of the A2A endpoints: published atomically, and the store
 //! kept at a bounded number of files.
 
+/// Publish `bytes` at `root/rel` (`root` is the project root, `rel` lies in its
+/// `.lean-ctx/handoffs/`). No component below the root — `.lean-ctx`, the
+/// handoff directories or the file — may be a symlink, and the write follows
+/// none. A retried delivery with identical content is a no-op.
 pub(super) fn persist_handoff_file(
-    path: &std::path::Path,
+    root: &std::path::Path,
+    rel: &std::path::Path,
     bytes: &[u8],
     delivery_id: Option<&str>,
 ) -> Result<(), String> {
-    match std::fs::symlink_metadata(path) {
+    let path = lean_ctx::core::pathjail_write::rebuild_below(root, rel)?;
+    match std::fs::symlink_metadata(&path) {
         Ok(metadata) => {
             if metadata.file_type().is_symlink() || !metadata.is_file() {
                 return Err("handoff destination must be a regular file".to_string());
             }
             if delivery_id.is_some() {
-                return match std::fs::read(path) {
+                return match std::fs::read(&path) {
                     Ok(existing) if existing == bytes => Ok(()),
                     Ok(_) => Err("handoff destination content mismatch".to_string()),
                     Err(error) => Err(error.to_string()),
@@ -23,41 +29,23 @@ pub(super) fn persist_handoff_file(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.to_string()),
     }
-
-    let temporary = path.with_extension(format!(
-        "{}.tmp",
-        path.extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("handoff")
-    ));
-    if std::fs::symlink_metadata(&temporary).is_ok() {
-        return Err("handoff temporary path already exists".to_string());
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.create_new(true).write(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NOFOLLOW);
-    let mut file = options
-        .open(&temporary)
-        .map_err(|error| error.to_string())?;
-    use std::io::Write as _;
-    if let Err(error) = file
-        .write_all(bytes)
-        .and_then(|()| file.sync_all())
-        .and_then(|()| std::fs::rename(&temporary, path))
-    {
-        let _ = std::fs::remove_file(&temporary);
-        return Err(error.to_string());
-    }
-    #[cfg(unix)]
-    std::fs::File::open(path.parent().ok_or("handoff path has no parent")?)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|error| error.to_string())?;
-    Ok(())
+    lean_ctx::core::pathjail_write::write_below(root, rel, bytes, 0o600).map(|_| ())
 }
 
-pub(super) fn evict_oldest_files(dir: &std::path::Path, max_files: usize) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
+/// Keep `root/rel_dir` below `max_files`. A directory reached through a
+/// symlinked component is left alone: eviction never deletes outside it.
+pub(super) fn evict_oldest_files(
+    root: &std::path::Path,
+    rel_dir: &std::path::Path,
+    max_files: usize,
+) {
+    let Ok(dir) = lean_ctx::core::pathjail_write::rebuild_below(root, rel_dir) else {
+        return;
+    };
+    if !std::fs::symlink_metadata(&dir).is_ok_and(|m| m.is_dir()) {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(&dir) else {
         return;
     };
     let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = entries

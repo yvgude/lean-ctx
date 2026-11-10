@@ -120,16 +120,44 @@ impl StoreAdmission {
 
     /// Admit `text` read from `path`. `None`: it must not be stored or served
     /// (withheld, or restricted).
+    ///
+    /// The origin class is derived from the path in this one place, fail
+    /// closed (pz21 §1.4): a `scheme://` path is `External(input_origin)`
+    /// when the caller passes the chunk's origin, otherwise `Unclassified`;
+    /// a path inside the request's project root is `Project`; anything else
+    /// is `Unclassified`.
     #[must_use]
-    pub fn admit(&self, text: &str, path: &Path) -> Option<String> {
-        self.admit_object(text, Some(path))
+    pub fn admit(
+        &self,
+        text: &str,
+        path: &Path,
+        input_origin: Option<&super::origin::InputOrigin>,
+    ) -> Option<String> {
+        let class = class_of_path(path, input_origin);
+        self.admit_object(text, Some(path), &class)
     }
 
-    /// Admit text with no source path (tool output entering an archive or a
-    /// recovery store). `None`: it must not be stored.
+    /// Admit text with no source path. Its origin is unknown
+    /// (`Unclassified`), so it is handled as untrusted (Rule U).
     #[must_use]
     pub fn admit_text(&self, text: &str) -> Option<String> {
-        self.admit_object(text, None)
+        self.admit_object(text, None, &STORE_UNCLASSIFIED)
+    }
+
+    /// Admit text with no source path whose origin the caller knows: a
+    /// chunk's side fields with the chunk's class, Instance-internal
+    /// metadata as `Project`.
+    #[must_use]
+    pub fn admit_text_as(&self, text: &str, class: &super::origin::SourceClass) -> Option<String> {
+        self.admit_object(text, None, class)
+    }
+
+    /// [`Self::admit_text_as`] for Instance-internal text with no source path
+    /// (its own records, cards, graph summaries, storage of its own tool
+    /// output): origin Project (pz21 §1.4).
+    #[must_use]
+    pub fn admit_instance_text(&self, text: &str) -> Option<String> {
+        self.admit_object(text, None, &super::origin::SourceClass::Project)
     }
 
     /// The same snapshot with the advisory semantic stage left out, for
@@ -156,7 +184,8 @@ impl StoreAdmission {
         let text = id.as_str();
         let mut policy = self.policy.clone();
         policy.gateway.pii = FilterAction::Off;
-        let admission = admit(text, None, &policy);
+        // Instance-internal metadata (NB-1).
+        let admission = admit(text, None, &super::origin::SourceClass::Project, &policy);
         (admission.storable() && admission.text.as_deref() == Some(text)).then(|| text.to_owned())
     }
 
@@ -165,7 +194,8 @@ impl StoreAdmission {
     pub fn admit_shell_command(&self, text: &str) -> Option<String> {
         // Project policy sees original text before Gateway redactions.
         crate::core::policy::content::protect_active(text).ok()?;
-        let admitted = self.admit_text(text)?;
+        // The agent's own command (NB-1).
+        let admitted = self.admit_text_as(text, &super::origin::SourceClass::Project)?;
         crate::core::policy::content::protect_active(&admitted)
             .ok()
             .map(std::borrow::Cow::into_owned)
@@ -199,7 +229,14 @@ impl StoreAdmission {
         })
     }
 
-    fn admit_object(&self, text: &str, path: Option<&Path>) -> Option<String> {
+    fn admit_object(
+        &self,
+        text: &str,
+        path: Option<&Path>,
+        class: &super::origin::SourceClass,
+    ) -> Option<String> {
+        // First, before the gateway-off return and the memo (pz21 §1.5 C1).
+        super::capture::note_origin(class);
         if !self.policy.enabled_effective() {
             return Some(text.to_owned());
         }
@@ -219,7 +256,7 @@ impl StoreAdmission {
             return Some(text.to_owned());
         }
         let admission =
-            super::semantic_deferred::for_stored_context(|| admit(text, path, &self.policy));
+            super::semantic_deferred::for_stored_context(|| admit(text, path, class, &self.policy));
         if !admission.storable() {
             return None;
         }
@@ -246,8 +283,58 @@ impl StoreAdmission {
             );
             return None;
         }
-        self.admit(&decoded.text, path)
+        self.admit(&decoded.text, path, None)
     }
+}
+
+const STORE_UNCLASSIFIED: super::origin::SourceClass =
+    super::origin::SourceClass::Unclassified { tool: "store" };
+
+/// The class of a stored object's path (pz21 §1.4), fail closed.
+pub(crate) fn class_of_path(
+    path: &Path,
+    input_origin: Option<&super::origin::InputOrigin>,
+) -> super::origin::SourceClass {
+    use super::origin::SourceClass;
+    if let Some(origin) = input_origin {
+        return SourceClass::External(origin.clone());
+    }
+    let label = path.to_string_lossy();
+    if label.contains("://") {
+        return STORE_UNCLASSIFIED;
+    }
+    let escapes = path
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir));
+    if escapes {
+        return STORE_UNCLASSIFIED;
+    }
+    if path.is_relative() {
+        return SourceClass::Project;
+    }
+    let Some(root) = crate::core::policy::diagnostics::project() else {
+        return STORE_UNCLASSIFIED;
+    };
+    if path.starts_with(&root) && !escapes_by_symlink(path, &root) {
+        return SourceClass::Project;
+    }
+    let canonical_root = crate::core::pathutil::canonicalize_secure(&root).unwrap_or(root);
+    let resolved =
+        crate::core::pathutil::canonicalize_secure(path).unwrap_or_else(|_| path.to_path_buf());
+    if resolved.starts_with(&canonical_root) {
+        SourceClass::Project
+    } else {
+        STORE_UNCLASSIFIED
+    }
+}
+
+/// A path lexically under `root` whose resolved target is not.
+fn escapes_by_symlink(path: &Path, root: &Path) -> bool {
+    let Ok(resolved) = crate::core::pathutil::canonicalize_secure(path) else {
+        return false;
+    };
+    let root = crate::core::pathutil::canonicalize_secure(root).unwrap_or_else(|_| root.into());
+    !resolved.starts_with(root)
 }
 
 /// Records `digest` as the observed policy and returns its epoch. A change

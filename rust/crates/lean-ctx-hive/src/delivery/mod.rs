@@ -124,12 +124,22 @@ fn tier(text: &str, terms: &[String]) -> Option<u8> {
 /// The deliverable items of `graph` for `query` (all when empty), in the
 /// order of §3.5.3: bucket → node type → relevance tier → node id.
 pub fn items(graph: &Graph, trust: &dyn Fn(&str) -> Option<String>, query: &str) -> Vec<Item> {
+    items_in(graph, &knowledge_state::Index::new(graph), trust, query)
+}
+
+/// [`items`] with the knowledge states of `states` (e.g. an index that
+/// also resolves fact links from the save history).
+pub fn items_in(
+    graph: &Graph,
+    states: &knowledge_state::Index,
+    trust: &dyn Fn(&str) -> Option<String>,
+    query: &str,
+) -> Vec<Item> {
     let terms: Vec<String> = query
         .split_whitespace()
         .map(str::to_lowercase)
         .filter(|t| t.chars().count() >= 2)
         .collect();
-    let states = knowledge_state::Index::new(graph);
     let mut out: Vec<Item> = graph
         .live_nodes()
         .filter_map(|(id, node)| {
@@ -262,9 +272,10 @@ fn master_key(config_dir: &std::path::Path) -> Option<&'static [u8; 32]> {
     .as_ref()
 }
 
-/// The folded graph of `vault_id`'s replica; `None` when there is none
-/// (nothing is created here).
-fn folded(store: &crate::HiveStore, vault_id: &str) -> Option<Graph> {
+/// The folded graph of `vault_id`'s replica and its knowledge states
+/// (edges and the save history's fact links, #286); `None` when there is
+/// none (nothing is created here).
+fn folded(store: &crate::HiveStore, vault_id: &str) -> Option<(Graph, knowledge_state::Index)> {
     let dir = crate::replica::store::place_dir(store.data_dir(), vault_id);
     if !dir.join("replica.db").exists() {
         return None;
@@ -275,7 +286,11 @@ fn folded(store: &crate::HiveStore, vault_id: &str) -> Option<Graph> {
     // lean-ctx: folds the stored log per call; switch to the materialised
     // nodes table once replicas reach ~10k events.
     graph.fold(&replica.fold_events().ok()?).ok()?;
-    Some(graph)
+    let states = match replica.first_saves() {
+        Ok(saves) => knowledge_state::Index::with_saves(&graph, &saves),
+        Err(_) => knowledge_state::Index::new(&graph),
+    };
+    Some((graph, states))
 }
 
 /// The vault section a recall in `project_root` delivers (§3.5.1): the
@@ -290,8 +305,8 @@ pub fn for_project(project_root: &str, query: &str) -> Option<String> {
         .vaults
         .get(&stable)?
         .clone();
-    let graph = folded(&store, &record.vault_id)?;
-    let list = items(&graph, &|_| None, query);
+    let (graph, states) = folded(&store, &record.vault_id)?;
+    let list = items_in(&graph, &states, &|_| None, query);
     let out = render(
         &format!("{}/{}", record.ns, record.name),
         &list,

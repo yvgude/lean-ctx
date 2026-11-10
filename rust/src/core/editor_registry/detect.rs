@@ -3,9 +3,10 @@ use std::path::{Path, PathBuf};
 use super::paths::{
     augment_cli_settings_path, augment_vscode_mcp_path, claude_mcp_json_path,
     cline_cli_mcp_settings_path, cline_mcp_path, codebuddy_mcp_json_path, codewhale_detect_path,
-    codewhale_mcp_json_path, detect_vibe_path, muse_config_dir, muse_settings_path, omp_agent_dir,
-    omp_mcp_path, qoder_all_mcp_paths, qodercli_settings_path, qoderwork_mcp_path, roo_mcp_path,
-    vibe_config_path, vscode_insiders_mcp_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
+    codewhale_mcp_json_path, detect_vibe_path, goose_config_dir, muse_config_dir,
+    muse_settings_path, omp_agent_dir, omp_mcp_path, qoder_all_mcp_paths, qodercli_settings_path,
+    qoderwork_mcp_path, roo_mcp_path, vibe_config_path, vscode_insiders_mcp_path, vscode_mcp_path,
+    zed_config_dir, zed_settings_path,
 };
 use super::types::{ConfigType, EditorTarget};
 
@@ -286,6 +287,13 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
             config_path: home.join(".aider/mcp.json"),
             detect_path: home.join(".aider"),
             config_type: ConfigType::McpJson,
+        },
+        EditorTarget {
+            name: "Goose",
+            agent_key: "goose".to_string(),
+            config_path: goose_config_dir(home).join("config.yaml"),
+            detect_path: goose_config_dir(home),
+            config_type: ConfigType::GooseYaml,
         },
         EditorTarget {
             name: "Continue",

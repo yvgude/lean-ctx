@@ -520,6 +520,14 @@ impl ProjectKnowledge {
     ) -> Result<T, String> {
         use fs2::FileExt;
         let hash = hash_project_root(project_root);
+        let dir = knowledge_dir(&hash)?;
+        // Parallel writers of this process queue in arrival order and wait
+        // only while the queue stands still; the polled locks below then
+        // bound just the embedding path and other processes. Polled alone,
+        // every writer ahead counted against a waiter's deadline (#2214).
+        let _turn =
+            crate::core::file_lock::take_turn(&dir.join(".knowledge.lock"), KNOWLEDGE_LOCK_WAIT)
+                .ok_or("knowledge lock unavailable")?;
         let lock = knowledge_lock(&hash);
         let deadline = std::time::Instant::now() + KNOWLEDGE_LOCK_WAIT;
         let _guard = loop {
@@ -533,7 +541,6 @@ impl ProjectKnowledge {
                 Err(_) => return Err("knowledge lock unavailable".into()),
             }
         };
-        let dir = knowledge_dir(&hash)?;
         std::fs::create_dir_all(&dir).map_err(|_| "knowledge directory unavailable")?;
         let file = crate::core::policy::diagnostics::open_append(&dir.join(".knowledge.lock"))
             .map_err(|_| "knowledge file lock unavailable")?;

@@ -119,9 +119,10 @@ impl TaskStore {
     }
 
     /// [`Self::mutate_locked`] that waits up to `wait` for the store lock.
-    /// The lock is a polled try-lock, not a fair queue: a caller that runs
-    /// once per request (such as `ctx_agent export`) can be kept out past
-    /// the default timeout by a writer taking the lock back to back.
+    /// Within this process callers queue in arrival order; another process
+    /// is held off only by the polled file lock, so a caller that runs once
+    /// per request (such as `ctx_agent export`) can still be kept out past
+    /// the default timeout by another process taking the lock back to back.
     pub fn mutate_locked_within<R, E>(
         path: &Path,
         wait: std::time::Duration,

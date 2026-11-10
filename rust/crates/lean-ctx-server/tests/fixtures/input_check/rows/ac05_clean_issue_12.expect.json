@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "The installer overwrote my existing shell alias for `ls`."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

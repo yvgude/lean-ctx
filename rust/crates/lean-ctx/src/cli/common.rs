@@ -91,6 +91,147 @@ pub(crate) struct CliToolRun<'a> {
     /// The Ed25519 public key a package signature was VERIFIED with, when the
     /// document names it ([`Self::verified_signer_key`]).
     verified_signer_key: Option<&'a str>,
+    /// The answer a document withheld as a whole gets on the run's channel
+    /// ([`Self::refuse_with`]); `None`: its reason on stderr.
+    refusal: Option<fn(&str) -> String>,
+    /// The document is a list of independent records
+    /// ([`Self::per_record`]); `None`: it is released as one whole.
+    records: Option<Records>,
+}
+
+/// Where the independent records of a document stand, and how the document
+/// reports the ones the release withheld (#1298).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Records {
+    /// Object keys from the document's root to the array of records; empty:
+    /// the document itself is the array.
+    pub path: &'static [&'static str],
+    /// Writes the number of withheld records (> 0) into the document before
+    /// the document itself is released. `None`: the count is named only in
+    /// the content-free notice.
+    pub report: Option<fn(&mut serde_json::Value, usize)>,
+}
+
+/// The content-free notice for `count` records left out of a document.
+pub(crate) fn withheld_records_notice(count: usize) -> String {
+    format!("[lean-ctx gateway: {count} record(s) withheld]")
+}
+
+/// The array `path` leads to in `value` (`value` itself for an empty path).
+fn records_at<'v>(
+    value: &'v mut serde_json::Value,
+    path: &[&str],
+) -> Option<&'v mut Vec<serde_json::Value>> {
+    let mut at = value;
+    for key in path {
+        at = at.get_mut(*key)?;
+    }
+    at.as_array_mut()
+}
+
+/// The content-free reason a document is withheld for when its policy view
+/// could not be held: the authority changed while it was released, the
+/// project could not be resolved, the policy could not be read in time, or
+/// the policy itself did not verify. Every one of them withholds.
+fn policy_view_refusal(error: &str) -> &'static str {
+    if error.contains("changed") || error.contains("no longer active") {
+        "policy.changed"
+    } else if error.contains("deadline") || error.contains("busy") {
+        "policy.unavailable"
+    } else if error.contains("root") || error.contains("project_unresolved") {
+        "policy.project_unavailable"
+    } else {
+        "policy.unverified"
+    }
+}
+
+/// The parts of `original` that masking replaced to give `masked`: the
+/// text each `[REDACTED…]` marker stands for. Masking keeps everything else
+/// in order, so the literal pieces between markers are found in `original`
+/// one after the other and what lies between them is what was masked. A
+/// masked text that does not line up that way (another marker form, a
+/// notice in front) yields the one span between their common prefix and
+/// suffix — wider than the secret, never narrower.
+fn masked_spans(original: &str, masked: &str) -> Vec<String> {
+    const MARKER: &str = "[REDACTED";
+    let mut pieces = Vec::new();
+    let mut rest = masked;
+    while let Some(start) = rest.find(MARKER) {
+        pieces.push(&rest[..start]);
+        rest = rest[start..]
+            .find(']')
+            .map_or("", |end| &rest[start + end + 1..]);
+    }
+    pieces.push(rest);
+    let aligned = aligned_spans(original, &pieces);
+    aligned.unwrap_or_else(|| {
+        let prefix = original
+            .char_indices()
+            .zip(masked.chars())
+            .take_while(|((_, a), b)| a == b)
+            .last()
+            .map_or(0, |((index, ch), _)| index + ch.len_utf8());
+        let suffix = original[prefix..]
+            .chars()
+            .rev()
+            .zip(masked[prefix.min(masked.len())..].chars().rev())
+            .take_while(|(a, b)| a == b)
+            .map(|(a, _)| a.len_utf8())
+            .sum::<usize>();
+        let end = original.len() - suffix;
+        if prefix < end {
+            vec![original[prefix..end].to_owned()]
+        } else {
+            Vec::new()
+        }
+    })
+}
+
+/// [`masked_spans`] when the literal pieces of the masked text line up in
+/// `original`: the text between consecutive pieces. `None` otherwise.
+fn aligned_spans(original: &str, pieces: &[&str]) -> Option<Vec<String>> {
+    let (first, last) = (pieces.first()?, pieces.last()?);
+    if pieces.len() < 2
+        || pieces[1..pieces.len() - 1]
+            .iter()
+            .any(|piece| piece.is_empty())
+        || !original.starts_with(first)
+        || !original.ends_with(last)
+        || original.len() < first.len() + last.len()
+    {
+        return None;
+    }
+    let tail_start = original.len() - last.len();
+    let mut at = first.len();
+    let mut spans = Vec::new();
+    for piece in &pieces[1..pieces.len() - 1] {
+        let found = at + 1 + original.get(at + 1..tail_start)?.find(piece)?;
+        spans.push(original[at..found].to_owned());
+        at = found + piece.len();
+    }
+    if at >= tail_start {
+        return None;
+    }
+    spans.push(original[at..tail_start].to_owned());
+    Some(spans)
+}
+
+/// Whether the serialized document still holds any text masking replaced
+/// ([`masked_spans`]), as written or as JSON escapes it. Spans shorter than
+/// four characters are not looked for: no rule masks so little, and they
+/// would match ordinary text.
+pub(crate) fn still_carries_a_masked_value(document: &str, originals: &[String]) -> bool {
+    originals
+        .iter()
+        .filter(|original| original.chars().count() >= 4)
+        .any(|original| {
+            let escaped = serde_json::to_string(original).unwrap_or_default();
+            let escaped = escaped
+                .strip_prefix('"')
+                .and_then(|inner| inner.strip_suffix('"'))
+                .unwrap_or(&escaped);
+            document.contains(original.as_str()) || document.contains(escaped)
+        })
 }
 
 /// The stdout text one handler produced, with what the helper has to know
@@ -137,7 +278,22 @@ impl<'a> CliToolRun<'a> {
             receipt_index: None,
             channel: lean_ctx::core::context_admission::receipt_store::trace::Channel::Stdout,
             verified_signer_key: None,
+            refusal: None,
+            records: None,
         }
+    }
+
+    /// The document is a list of independent records, such as the facts of
+    /// a knowledge listing or export. When it cannot be released as a whole,
+    /// every record is released on its own under the same floor: a record
+    /// the release would withhold, or that still carries a value masked in
+    /// another record, is left out and counted; the others are released.
+    /// The document around them is released as always, and the result must
+    /// pass the release point unchanged, or it is withheld as a whole
+    /// (#1298: one session id in one fact key withheld every fact).
+    pub(crate) fn per_record(mut self, records: Records) -> Self {
+        self.records = Some(records);
+        self
     }
 
     /// The document names the public key the Engine has just verified a
@@ -188,6 +344,32 @@ impl<'a> CliToolRun<'a> {
     )]
     pub(crate) fn to_clipboard(mut self) -> Self {
         self.channel = lean_ctx::core::context_admission::receipt_store::trace::Channel::Clipboard;
+        self
+    }
+
+    /// The local service hands this run's output to its socket transport as
+    /// a response body (`lean-ctx serve --daemon`, Local Service v1): the
+    /// receipt is prepared for the channel `mcp_transport`, for the text and
+    /// the final `\n` the response carries, as on stdout.
+    #[expect(
+        clippy::wrong_self_convention,
+        reason = "builder that redirects the run"
+    )]
+    pub(crate) fn to_transport(mut self) -> Self {
+        self.channel =
+            lean_ctx::core::context_admission::receipt_store::trace::Channel::McpTransport;
+        self
+    }
+
+    /// A document withheld as a whole is answered on the run's channel (the
+    /// transport, or stdout) with `render(reason)` (a content-free refusal
+    /// document) instead of the reason on stderr. The run prepares and
+    /// receipts THAT answer and its final `\n` for that channel — one
+    /// receipt, for the bytes sent; [`Self::deliver_json`] still returns
+    /// `Err(reason)`, and the caller sends `render(reason)` (on stdout with
+    /// [`exit_refused`]).
+    pub(crate) fn refuse_with(mut self, render: fn(&str) -> String) -> Self {
+        self.refusal = Some(render);
         self
     }
 
@@ -539,16 +721,21 @@ impl<'a> CliToolRun<'a> {
         let released = self.release_document(document);
         // G08: the receipt binds exactly the bytes the writer writes — the
         // document, and the final `\n` where the writer adds one. A
-        // withheld document prepares nothing for stdout: its reason is
-        // prepared for stderr. That those stderr bytes were written, and the
-        // status the command ends with, is recorded by [`exit_withheld`]
-        // when it has written them — never inferred from this `Err`.
+        // withheld document prepares nothing of it: its reason is prepared
+        // for stderr, or — with [`Self::refuse_with`] — the refusal document
+        // for the run's own channel. That those bytes were written, and the
+        // status the command ends with, is recorded by [`exit_withheld`] /
+        // [`exit_refused`] when they have written them — never inferred
+        // from this `Err`.
         let (written, is_error, channel) = match &released {
             Ok((document, _)) if final_newline => {
                 (format!("{document}\n"), false, self.output_channel())
             }
             Ok((document, _)) => (document.clone(), false, self.output_channel()),
-            Err(reason) => (format!("{reason}\n"), true, Channel::Stderr),
+            Err(reason) => match self.refusal {
+                Some(render) => (format!("{}\n", render(reason)), true, self.output_channel()),
+                None => (format!("{reason}\n"), true, Channel::Stderr),
+            },
         };
         let receipted = lean_ctx_server::tools::admitted_sources::as_agent_acquisition(
             self.project_root,
@@ -558,26 +745,92 @@ impl<'a> CliToolRun<'a> {
             return Err(lean_ctx::core::context_admission::receipt_store::not_persisted_notice());
         }
         let (document, notice) = released?;
-        if let Some(notice) = notice {
+        // A transport run's reader learns of a masked value from its caller
+        // (the local service), not from the daemon's stderr.
+        if let Some(notice) = notice
+            && self.channel != Channel::McpTransport
+        {
             eprintln!("{notice}");
         }
         Ok(document)
+    }
+
+    /// Whether `document` passes this run's release point, asked BEFORE a
+    /// write runs (G08: a write the release would withhold writes nothing).
+    /// No receipt and no output: the run's one receipt binds the bytes it
+    /// sends afterwards. Call it inside the handler of
+    /// [`Self::deliver_json`], so it reads the run's one policy snapshot.
+    pub(crate) fn would_release(&self, document: String) -> Result<(), String> {
+        self.release_document(document).map(|_| ())
+    }
+
+    /// [`Self::would_release`] with the released document: the bytes
+    /// [`Self::deliver_json`] would hand out for `document`, without a
+    /// receipt and without output. For a caller that decides which of
+    /// several documents it delivers before the first one is receipted.
+    pub(crate) fn released_preview(&self, document: String) -> Result<String, String> {
+        self.release_document(document)
+            .map(|(released, _)| released)
     }
 
     /// [`Self::deliver_json`] without the handler run and without stderr: the
     /// released document and, when something was masked in it, the notice.
     /// Runs inside the run's admission capture (G08).
     fn release_document(&self, document: String) -> Result<(String, Option<String>), String> {
+        self.in_release_scope(|| self.release_document_scoped(document))
+    }
+
+    /// The texts the release would mask or withhold anywhere in the JSON
+    /// `document` ([`Self::masked_values`]; a text that is not JSON is one
+    /// value), asked under this run's policy view and capture as
+    /// [`Self::would_release`] asks: no receipt, no output. For documents
+    /// released one by one (a `jsonl` export): what one of them hides must
+    /// not reach the reader through another.
+    pub(crate) fn masked_values_of(&self, document: &str) -> Result<Vec<String>, String> {
+        self.in_release_scope(|| {
+            let gate = lean_ctx::core::context_admission::carrier::ReleaseGate::current();
+            let value = serde_json::from_str::<serde_json::Value>(document)
+                .unwrap_or_else(|_| serde_json::Value::String(document.to_owned()));
+            let mut out = Vec::new();
+            self.masked_values(&gate, &value, 0, &mut out);
+            Ok(out)
+        })
+    }
+
+    /// Run `operation` where the release point runs: inside the request
+    /// scope, the run's admission capture, the verified signer key (if any)
+    /// and one verified policy view of the project.
+    fn in_release_scope<T>(
+        &self,
+        operation: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
         let release = || {
             lean_ctx_server::tools::admitted_sources::as_agent_acquisition(
                 self.project_root,
-                || self.captured(|| self.release_document_scoped(document)),
+                || self.captured(operation),
             )
         };
-        match self.verified_signer_key {
+        let release = || match self.verified_signer_key {
             Some(key) => lean_ctx::core::redaction::with_verified_signer_key(key, release),
             None => release(),
+        };
+        // One verified policy snapshot for the whole document. A document
+        // that needs masking is released value by value, and every release
+        // asked the policy worker for a fresh snapshot (re-reading policy,
+        // trust store, marker and Hive filters): 44,660 string values of a
+        // 3,504-fact knowledge export took 100–200 s. Inside the view the
+        // pack rules are read once; the view is verified again before the
+        // document is handed out, and a change in between withholds it.
+        if !std::path::Path::new(self.project_root).is_dir() {
+            return release();
         }
+        lean_ctx::core::policy::runtime::with_project_source_view(self.project_root, release)
+            .unwrap_or_else(|error| {
+                Err(lean_ctx::core::context_admission::carrier::Withheld::new(&[
+                    policy_view_refusal(&error),
+                ])
+                .notice())
+            })
     }
 
     fn release_document_scoped(
@@ -592,38 +845,213 @@ impl<'a> CliToolRun<'a> {
             if !refused && whole == document {
                 return Ok((document, None));
             }
-            let unadmitted = || Withheld::new(&["release.unadmitted_content"]).notice();
             // Something has to be masked. Masking the serialized text could
             // cut through its syntax, so every string value is released on
             // its own and the document is serialized again around them.
-            let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&document) else {
-                return Err(if refused { whole } else { unadmitted() });
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&document) else {
+                return Err(if refused {
+                    whole
+                } else {
+                    Withheld::new(&["release.unadmitted_content"]).notice()
+                });
             };
             let gate = ReleaseGate::current();
-            let mut notice = None;
-            self.mask_leaves(&gate, &mut value, 0, &mut notice)?;
-            let serialized = if document.contains('\n') {
-                serde_json::to_string_pretty(&value)
+            let pretty = document.contains('\n');
+            let (masked, notice) = if let Some(records) = self.records {
+                self.release_records(&gate, value, pretty, records)?
             } else {
-                serde_json::to_string(&value)
+                let (masked, notice, _) = self.release_masked(&gate, value, pretty)?;
+                (masked, notice)
             };
-            let Ok(masked) = serialized else {
-                return Err(unadmitted());
-            };
-            // The result must itself pass the release sequence unchanged;
-            // what value-wise masking cannot settle (a policy-pack refusal,
-            // a finding in a key) withholds the document as a whole.
-            let (verified, refused) = self.released(masked.clone());
-            if refused {
-                return Err(verified);
-            }
-            if verified != masked {
-                return Err(unadmitted());
-            }
             let notice =
                 notice.unwrap_or_else(|| "[lean-ctx gateway: content redacted]".to_string());
             Ok((masked, Some(notice)))
         })
+    }
+
+    /// Release `value` value by value and serialize it again: the masked
+    /// document, the notice of the first masking (if any) and the original
+    /// texts masking replaced. A masked original left anywhere in the
+    /// document, or a result that does not pass the release point
+    /// unchanged, withholds it. Must be called inside the request scope.
+    fn release_masked(
+        &self,
+        gate: &lean_ctx::core::context_admission::carrier::ReleaseGate,
+        mut value: serde_json::Value,
+        pretty: bool,
+    ) -> Result<(String, Option<String>, Vec<String>), String> {
+        use lean_ctx::core::context_admission::carrier::Withheld;
+        let unadmitted = || Withheld::new(&["release.unadmitted_content"]).notice();
+        let mut notice = None;
+        let mut originals = Vec::new();
+        self.mask_leaves(gate, &mut value, 0, &mut notice, &mut originals)?;
+        let serialized = if pretty {
+            serde_json::to_string_pretty(&value)
+        } else {
+            serde_json::to_string(&value)
+        };
+        let Ok(masked) = serialized else {
+            return Err(unadmitted());
+        };
+        // A value is masked where a rule found it; the same text under
+        // another name (`{"token": S, "copy": S}`) or inside another
+        // value (`"id": "decision/S"`) would still carry it. Any masked
+        // original that remains anywhere withholds the document.
+        if still_carries_a_masked_value(&masked, &originals) {
+            return Err(unadmitted());
+        }
+        // The result must itself pass the release sequence unchanged;
+        // what value-wise masking cannot settle (a policy-pack refusal,
+        // a finding in a key) withholds the document as a whole.
+        let (verified, refused) = self.released(masked.clone());
+        if refused {
+            return Err(verified);
+        }
+        if verified != masked {
+            return Err(unadmitted());
+        }
+        Ok((masked, notice, originals))
+    }
+
+    /// [`Self::release_masked`] record by record ([`Self::per_record`]).
+    /// Every record passes [`Self::release_masked`] on its own; one that is
+    /// withheld there, or that carries a value masked in another record, is
+    /// left out. The document with the released records (and the count its
+    /// `report` writes) then passes [`Self::release_masked`] as a whole, so
+    /// nothing reaches the reader that the release point would not deliver.
+    /// A document without the records array is released as a whole.
+    fn release_records(
+        &self,
+        gate: &lean_ctx::core::context_admission::carrier::ReleaseGate,
+        mut value: serde_json::Value,
+        pretty: bool,
+        records: Records,
+    ) -> Result<(String, Option<String>), String> {
+        use lean_ctx::core::context_admission::carrier::Withheld;
+        let Some(items) = records_at(&mut value, records.path).map(std::mem::take) else {
+            let (masked, notice, _) = self.release_masked(gate, value, pretty)?;
+            return Ok((masked, notice));
+        };
+        let mut withheld = 0usize;
+        let mut notice = None;
+        let mut originals = Vec::new();
+        let mut released = Vec::with_capacity(items.len());
+        for item in items {
+            let outcome = self
+                .release_masked(gate, item.clone(), false)
+                .ok()
+                .and_then(|(text, line, spans)| {
+                    let record = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+                    Some((record, text, line, spans))
+                });
+            if let Some((record, text, line, spans)) = outcome {
+                if let Some(line) = line {
+                    notice.get_or_insert(line);
+                }
+                originals.extend(spans);
+                released.push((record, text));
+            } else {
+                // What the release masked or withheld in a record it left
+                // out must not reach the reader through another record.
+                self.masked_values(gate, &item, 0, &mut originals);
+                withheld += 1;
+            }
+        }
+        // A value masked in one record must not stand unmasked in another.
+        let before = released.len();
+        released.retain(|(_, text)| !still_carries_a_masked_value(text, &originals));
+        withheld += before - released.len();
+        let Some(slot) = records_at(&mut value, records.path) else {
+            return Err(Withheld::new(&["release.unadmitted_content"]).notice());
+        };
+        *slot = released.into_iter().map(|(record, _)| record).collect();
+        if withheld > 0
+            && let Some(report) = records.report
+        {
+            report(&mut value, withheld);
+        }
+        let (masked, line, spans) = self.release_masked(gate, value, pretty)?;
+        originals.extend(spans);
+        if still_carries_a_masked_value(&masked, &originals) {
+            return Err(Withheld::new(&["release.unadmitted_content"]).notice());
+        }
+        let notice = match (withheld, line.or(notice)) {
+            (0, notice) => notice,
+            (count, None) => Some(withheld_records_notice(count)),
+            (count, Some(line)) => Some(format!("{line}\n{}", withheld_records_notice(count))),
+        };
+        Ok((masked, notice))
+    }
+
+    /// Every original text the release would mask or withhold anywhere in
+    /// `value` — in a value, in a value read with the name in front of it
+    /// ([`Self::mask_member`]), or in a member name — collected without
+    /// stopping at the first refusal, unlike [`Self::mask_leaves`]. A text
+    /// the release withholds is collected whole. For a record that is left
+    /// out: none of these texts may reach the reader through another record.
+    fn masked_values(
+        &self,
+        gate: &lean_ctx::core::context_admission::carrier::ReleaseGate,
+        value: &serde_json::Value,
+        depth: usize,
+        out: &mut Vec<String>,
+    ) {
+        use serde_json::Value;
+        const MAX_DEPTH: usize = 64;
+        if depth > MAX_DEPTH {
+            return;
+        }
+        match value {
+            Value::String(text) => self.masked_text_values(gate, text, out),
+            Value::Array(items) => {
+                for item in items {
+                    self.masked_values(gate, item, depth + 1, out);
+                }
+            }
+            Value::Object(map) => {
+                for (key, item) in map {
+                    self.masked_text_values(gate, key, out);
+                    if let Value::String(text) = item {
+                        let mut masked = text.clone();
+                        if self
+                            .mask_member(gate, key, &mut masked, &mut None, out)
+                            .is_err()
+                        {
+                            out.push(text.clone());
+                        }
+                    }
+                    self.masked_values(gate, item, depth + 1, out);
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) => {}
+        }
+    }
+
+    /// [`Self::masked_values`] for one text: the spans masking replaced, or
+    /// the whole text when the release withholds it.
+    fn masked_text_values(
+        &self,
+        gate: &lean_ctx::core::context_admission::carrier::ReleaseGate,
+        text: &str,
+        out: &mut Vec<String>,
+    ) {
+        use lean_ctx::core::context_admission::carrier::Release;
+        let released = match gate.text(text) {
+            Release::Unchanged => text.to_owned(),
+            Release::Redacted { text: masked, .. } => masked,
+            Release::Withheld(_) => {
+                out.push(text.to_owned());
+                return;
+            }
+        };
+        let released = if self.legacy_redaction {
+            lean_ctx_server::server::policy_guard::redact_model_text(&released)
+        } else {
+            released
+        };
+        if released != text {
+            out.extend(masked_spans(text, &released));
+        }
     }
 
     /// Release every string value of `value` in place. A key is never
@@ -636,6 +1064,7 @@ impl<'a> CliToolRun<'a> {
         value: &mut serde_json::Value,
         depth: usize,
         notice: &mut Option<String>,
+        originals: &mut Vec<String>,
     ) -> Result<(), String> {
         use lean_ctx::core::context_admission::carrier::{Release, Withheld};
         use serde_json::Value;
@@ -645,6 +1074,7 @@ impl<'a> CliToolRun<'a> {
         }
         match value {
             Value::String(text) => {
+                let original = text.clone();
                 match gate.text(text) {
                     Release::Unchanged => {}
                     Release::Redacted {
@@ -659,10 +1089,13 @@ impl<'a> CliToolRun<'a> {
                 if self.legacy_redaction {
                     *text = lean_ctx_server::server::policy_guard::redact_model_text(text);
                 }
+                if *text != original {
+                    originals.extend(masked_spans(&original, text));
+                }
             }
             Value::Array(items) => {
                 for item in items {
-                    self.mask_leaves(gate, item, depth + 1, notice)?;
+                    self.mask_leaves(gate, item, depth + 1, notice, originals)?;
                 }
             }
             Value::Object(map) => {
@@ -670,12 +1103,72 @@ impl<'a> CliToolRun<'a> {
                     if !matches!(gate.text(key), Release::Unchanged) {
                         return Err(Withheld::new(&["release.unadmitted_content"]).notice());
                     }
-                    self.mask_leaves(gate, item, depth + 1, notice)?;
+                    if let Value::String(text) = item {
+                        self.mask_member(gate, key, text, notice, originals)?;
+                    }
+                    self.mask_leaves(gate, item, depth + 1, notice, originals)?;
                 }
             }
             Value::Null | Value::Bool(_) | Value::Number(_) => {}
         }
         Ok(())
+    }
+
+    /// Release a string value together with the name of its member, as the
+    /// one-member object `{"<name>":"<value>"}`. A rule that reads a value by
+    /// the name in front of it (`key: …`, `"password": "…"`) finds that pair
+    /// in the whole document but never in the value alone: masking values
+    /// one by one left the finding in place, the re-check of the whole
+    /// document differed, and the document was withheld — every knowledge
+    /// export whose facts carry a long `key`. Here the pair is released, and
+    /// the value it masked stands in the document; the name is never
+    /// rewritten. A pair that is withheld, or whose released form is not
+    /// that one member with a string value, withholds the document.
+    fn mask_member(
+        &self,
+        gate: &lean_ctx::core::context_admission::carrier::ReleaseGate,
+        name: &str,
+        text: &mut String,
+        notice: &mut Option<String>,
+        originals: &mut Vec<String>,
+    ) -> Result<(), String> {
+        use lean_ctx::core::context_admission::carrier::{Release, Withheld};
+        use serde_json::Value;
+        let unadmitted = || Withheld::new(&["release.unadmitted_content"]).notice();
+        let fragment = Value::Object(serde_json::Map::from_iter([(
+            name.to_owned(),
+            Value::String(text.clone()),
+        )]))
+        .to_string();
+        let mut released = match gate.text(&fragment) {
+            Release::Unchanged => fragment.clone(),
+            Release::Redacted {
+                text: masked,
+                notice: line,
+            } => {
+                notice.get_or_insert(line);
+                masked
+            }
+            Release::Withheld(withheld) => return Err(withheld.notice()),
+        };
+        if self.legacy_redaction {
+            released = lean_ctx_server::server::policy_guard::redact_model_text(&released);
+        }
+        if released == fragment {
+            return Ok(());
+        }
+        let Ok(Value::Object(mut masked)) = serde_json::from_str::<Value>(&released) else {
+            return Err(unadmitted());
+        };
+        match (masked.len(), masked.remove(name)) {
+            (1, Some(Value::String(value))) => {
+                let original = std::mem::replace(text, value);
+                originals.extend(masked_spans(&original, text));
+                notice.get_or_insert_with(|| "[lean-ctx gateway: content redacted]".to_owned());
+                Ok(())
+            }
+            _ => Err(unadmitted()),
+        }
     }
 
     /// Run `handler` and return the text to print (steps 1–3 above). A
@@ -773,6 +1266,21 @@ pub(crate) fn confirm_copied_to_clipboard(text: &str) {
 /// nothing; the process ends with status 1 either way.
 pub(crate) fn exit_withheld(reason: &str) -> ! {
     eprint_released(reason, Some(1));
+    std::process::exit(1);
+}
+
+/// For a run with [`CliToolRun::refuse_with`]: write the refusal `document`
+/// the run prepared for stdout (and its final `\n`), record the hand-over
+/// with exit status 1, and end the process with it.
+pub(crate) fn exit_refused(document: &str) -> ! {
+    use lean_ctx::core::context_admission::receipt_store::{observed, trace::Channel};
+    let line = format!("{document}\n");
+    let _ = observed::write_observed(
+        &mut std::io::stdout().lock(),
+        Channel::Stdout,
+        line.as_bytes(),
+        Some(1),
+    );
     std::process::exit(1);
 }
 

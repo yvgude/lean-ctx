@@ -18,6 +18,7 @@ pub const OBSERVE_HOOK_BUDGET: Duration = Duration::from_secs(2);
 /// bounded here and FAILS OPEN instead of wedging the host's tool call (#1035).
 const HOOK_GATING_TIMEOUT: Duration = Duration::from_secs(15);
 // One admission decision on the original hook payload, before any derivation.
+mod activity_feed;
 mod admission;
 // "Mirror, don't grant": would the host have run the original command
 // without a prompt? Claude Code settings, Gemini settings, and the built-in
@@ -29,11 +30,15 @@ mod deny;
 mod edit_health;
 // Command-rewrite (#660/#966 LOC gate): file-read rewrites, compound wrapping,
 // and the rewrite_candidate dispatch every rewrite entry point funnels through.
+mod exclusions;
 mod file_rewrite;
 mod gemini_permissions;
 mod govern;
+// Kiro (exit-code) and Cline (`cancel`) enforcement dialects.
+mod kiro_cline;
 pub(crate) use govern::HOST_TIMEOUT_SECS as GOVERN_HOST_TIMEOUT_SECS;
 pub use govern::{handle_govern, handle_rewrite_enforce};
+pub use kiro_cline::{handle_cline_enforce, handle_kiro_enforce};
 
 /// `hook rewrite-enforce` for one payload, as the governor host tests see it.
 #[cfg(test)]
@@ -44,10 +49,13 @@ mod observe;
 mod payload;
 // PowerShell-tool rewrites: PowerShell quoting, no `lean-ctx -c` wrap (#1848).
 mod powershell_rewrite;
+pub mod profile;
 mod protected;
 pub use protected::handle_protected_gate;
 // Redirect decision logic (#660/#966 LOC gate) for Read/Grep/Glob.
 mod read_dedup;
+mod rights;
+pub use rights::handle_rights;
 mod redirect;
 mod safe_commands;
 // Search/dir-list rewriting and shell tokenization extracted to
@@ -534,23 +542,21 @@ pub fn handle_copilot() {
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
         return;
     };
-
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&input) else {
-        return;
-    };
-
-    let Some(tool_name) = payload::resolve_tool_name(&v) else {
-        return;
-    };
-
-    if !is_shell_tool(&tool_name) {
-        return;
+    if let Some(out) = copilot_output(&input, &binary) {
+        print!("{out}");
     }
+}
 
+/// The `hook copilot` stdout for one payload, or `None` for passthrough.
+fn copilot_output(input: &str, binary: &str) -> Option<String> {
+    let binary = binary.to_string();
+    let v = serde_json::from_str::<serde_json::Value>(input).ok()?;
+    let tool_name = payload::resolve_tool_name(&v)?;
+    if !is_shell_tool(&tool_name) {
+        return None;
+    }
     let tool_args = payload::resolve_tool_args(&v);
-    let Some(cmd) = payload::resolve_command(&v, tool_args.as_ref()) else {
-        return;
-    };
+    let cmd = payload::resolve_command(&v, tool_args.as_ref())?;
 
     let rewrite = if powershell_rewrite::is_powershell_tool(&tool_name) {
         powershell_rewrite::rewrite_candidate_powershell(&cmd, &binary)
@@ -568,13 +574,10 @@ pub fn handle_copilot() {
         }
     };
     if let Some(rewrite) = rewrite.filter(|r| r.safety == RewriteSafety::ReadOnly) {
-        print!(
-            "{}",
-            build_dual_rewrite_output(tool_args.as_ref(), &rewrite)
-        );
-    } else if let Some(msg) = denial() {
+        Some(build_dual_rewrite_output(tool_args.as_ref(), &rewrite))
+    } else {
         // The command runs natively, unwrapped: enforce the allowlist here.
-        print!("{}", build_deny_output(&msg, &v));
+        denial().map(|msg| build_deny_output(&msg, &v))
     }
 }
 

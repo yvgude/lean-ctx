@@ -148,12 +148,12 @@ fn prepare_file(
                     return None;
                 }
                 // Derived store: only admitted text, never restricted (E3).
-                std::borrow::Cow::Owned(admission.admit(&text, &abs)?)
+                std::borrow::Cow::Owned(admission.admit(&text, &abs, None)?)
             }
             Err(_) => return None,
         }
     } else if let Some(cached) = content_hint.get(rel) {
-        std::borrow::Cow::Owned(admission.admit(cached, &abs)?)
+        std::borrow::Cow::Owned(admission.admit(cached, &abs, None)?)
     } else if let Some(arc) = crate::core::content_cache::get(&abs, cache_state) {
         // The shared cache only ever holds admitted text.
         crate::core::cache::record_search_content_read(true);
@@ -273,9 +273,11 @@ impl BM25Index {
             }
             let adaptive_size = effective_batch_size(max_batch_size);
             let batch_end = (files_done + adaptive_size).min(files.len());
+            // The workers admit on the call's behalf (pz21 §1.5 4a).
+            let carried = crate::core::context_admission::capture::carry();
             let prepared: Vec<Option<PreparedFile>> = files[files_done..batch_end]
                 .par_iter()
-                .map(|rel| prepare_file(root, rel, content_hint, admission))
+                .map(|rel| carried.enter(|| prepare_file(root, rel, content_hint, admission)))
                 .collect();
             for pf in prepared.into_iter().flatten() {
                 for pc in pf.chunks {
@@ -321,10 +323,21 @@ impl BM25Index {
             }
             let batch_size = effective_batch_size(MAX_BATCH_FILES);
             let batch_end = (files_done + batch_size).min(files.len());
+            // The workers admit on the call's behalf (pz21 §1.5 4a).
+            let carried = crate::core::context_admission::capture::carry();
             let prepared: Vec<Option<PreparedFile>> = files[files_done..batch_end]
                 .par_iter()
                 .map(|rel| {
-                    prepare_incremental_file(root, prev, old_by_file, &empty_hint, rel, admission)
+                    carried.enter(|| {
+                        prepare_incremental_file(
+                            root,
+                            prev,
+                            old_by_file,
+                            &empty_hint,
+                            rel,
+                            admission,
+                        )
+                    })
                 })
                 .collect();
             for pf in prepared.into_iter().flatten() {
@@ -393,13 +406,14 @@ impl BM25Index {
                     (!text.is_empty()).then_some(text)
                 });
                 // Derived store: only admitted text, never restricted (E3).
-                let Some(text) = admitted.and_then(|text| admission.admit(&text, &abs)) else {
+                let Some(text) = admitted.and_then(|text| admission.admit(&text, &abs, None))
+                else {
                     continue;
                 };
                 std::borrow::Cow::Owned(text)
             } else if let Some(cached) = content_hint.get(rel) {
                 cache_hits += 1;
-                let Some(text) = admission.admit(cached, &abs) else {
+                let Some(text) = admission.admit(cached, &abs, None) else {
                     continue;
                 };
                 std::borrow::Cow::Owned(text)

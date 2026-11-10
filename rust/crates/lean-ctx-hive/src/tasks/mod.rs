@@ -28,8 +28,13 @@
 pub mod cache;
 pub mod claims;
 mod client;
+pub mod fields;
+pub mod gate;
 mod keeper;
+pub mod local;
+mod process;
 pub mod propose;
+pub mod reads;
 mod render;
 
 use crate::HiveConfigExt as _;
@@ -52,15 +57,18 @@ use claims::HeldClaim;
 use client::TasksApi;
 use lean_ctx_protocol::hive::lease::{HiveRight, LeaseState};
 use lean_ctx_protocol::hive::tasks::{
-    EvidenceKind, EvidenceV1, MAX_CLAIM_MINUTES, MIN_CLAIM_MINUTES, TASK_CLAIM_RENEW_SCHEMA,
-    TASK_CLAIM_REQUEST_SCHEMA, TASK_RELEASE_SCHEMA, TASK_RESULT_SCHEMA, TASK_UPDATE_SCHEMA,
-    TASK_VERIFY_SCHEMA, TaskAckV1, TaskClaimRenewRequestV1, TaskClaimRequestV1, TaskListV1,
-    TaskOutcome, TaskReleaseRequestV1, TaskResultRequestV1, TaskUpdateRequestV1, TaskV1,
+    EvidenceKind, EvidenceV1, MAX_CLAIM_MINUTES, MAX_TASKS_PAGE, MIN_CLAIM_MINUTES,
+    TASK_AMEND_SCHEMA, TASK_CLAIM_RENEW_SCHEMA, TASK_CLAIM_REQUEST_SCHEMA, TASK_RELEASE_SCHEMA,
+    TASK_RESULT_SCHEMA, TASK_UPDATE_SCHEMA, TASK_VERIFY_SCHEMA, TaskAckV1, TaskActorKind,
+    TaskAmendRequestV1, TaskClaimRenewRequestV1, TaskClaimRequestV1, TaskListV1, TaskOutcome,
+    TaskPriority, TaskReleaseRequestV1, TaskResultRequestV1, TaskUpdateRequestV1, TaskV1,
     TaskVerdict, TaskVerifyRequestV1, UsageV1,
 };
 
 pub use client::ListFilter;
-pub use render::{render_list, render_result_ack, render_task, render_verify_ack};
+pub use render::{
+    PARTIAL_NOTE, render_list, render_listing, render_result_ack, render_task, render_verify_ack,
+};
 
 /// The time one task call may take in all.
 pub const BUDGET: Duration = Duration::from_secs(5);
@@ -94,11 +102,8 @@ fn connected_with(
         ));
     }
     let instance = store.instance()?.ok_or(HiveError::NotConnected)?;
-    let root = project_root.to_string_lossy();
-    let project = VaultMap::load(store.data_dir())
-        .for_root(&root)
-        .cloned()
-        .ok_or_else(|| {
+    let project =
+        crate::resolution::vault_for_root(store.data_dir(), project_root)?.ok_or_else(|| {
             HiveError::Config(
                 "this repository is not linked to a vault (run `lean-ctx hive sync` in it)".into(),
             )
@@ -129,8 +134,10 @@ impl Connected {
             root: &self.root,
             via: Via::Session(&self.session),
             budget: BUDGET,
-            deadline: None,
+            deadline: std::cell::Cell::new(None),
             workers: Some(&self.store),
+            presence: &process::local_presence,
+            announce: Some(crate::bus::presence::announce_and_wait),
         }
     }
 }
@@ -150,33 +157,81 @@ struct Link<'a> {
     via: Via<'a>,
     budget: Duration,
     /// One deadline for every request of a call (a claim: opt-in read,
-    /// claim and its one retry); `None`: each request gets `budget`.
-    deadline: Option<Instant>,
+    /// claim and its one retry); `None`: each request gets `budget`. A
+    /// claim tried again after the relay announced gets a fresh one.
+    deadline: std::cell::Cell<Option<Instant>>,
     /// Where a local bus agent's worker is looked up (`None`: the agent
     /// goes to Hive as given).
     workers: Option<&'a HiveStore>,
+    /// Where a bus agent's live presence on this Instance is looked up
+    /// (the checker and the author of a verify, §3.1).
+    presence: process::PresenceLookup<'a>,
+    /// Asks the running relay to announce now and waits up to the given
+    /// time for its hello: what it announced, `None` when no relay
+    /// answered. `None` here: a claim refused for presence or role is not
+    /// tried again.
+    announce: Option<fn(Duration) -> Option<String>>,
 }
 
+/// How long a claim refused for presence or role waits for the relay's
+/// fresh announcement before it is tried once more (Hive task #27).
+const ANNOUNCE_WAIT: Duration = Duration::from_secs(3);
+
 impl Link<'_> {
+    /// The gate's directories: private copies under the data dir, the run
+    /// tree outside `$HOME`.
+    fn gate_dirs(&self) -> gate::GateDirs {
+        gate::GateDirs::for_instance(self.data_dir)
+    }
+
     /// The id Hive knows `agent` by. Hive keeps presence and claims under
     /// the worker the relay announced (`wkr_…`), so a local bus agent id
     /// is sent as its worker; a worker id, or a name Hive resolves, goes
     /// as it is.
     fn hive_agent(&self, agent: &str) -> String {
-        if crate::bus::address::is_worker_id(agent) {
-            return agent.to_owned();
-        }
-        self.workers
-            .and_then(|store| crate::bus::messages_v2::known_worker_of(store, agent))
-            .unwrap_or_else(|| agent.to_owned())
+        self.hive_identity(agent).0
     }
 
+    /// [`Self::hive_agent`] and the role of the worker it names when the
+    /// book knows it: whom a refusal says Hive looked up (task #27).
+    fn hive_identity(&self, agent: &str) -> (String, Option<String>) {
+        if crate::bus::address::is_worker_id(agent) {
+            return (agent.to_owned(), None);
+        }
+        self.workers
+            .and_then(|store| crate::bus::messages_v2::known_worker_and_role_of(store, agent))
+            .map_or_else(|| (agent.to_owned(), None), |(id, role)| (id, Some(role)))
+    }
+
+    /// One request that may change the vault's tasks: what this Instance
+    /// keeps of them ([`reads`]) is outdated afterwards, so the next read
+    /// asks Hive.
     fn call<T>(
+        &self,
+        call: impl FnOnce(&TasksApi<'_>) -> Result<T, HiveError>,
+    ) -> Result<T, HiveError> {
+        let result = self.call_read(call);
+        reads::outdate(self.data_dir, self.vault_id);
+        result
+    }
+
+    /// The Hive the requests go to (a 429 hold is kept per Hive).
+    fn hive_url(&self) -> &str {
+        match &self.via {
+            Via::Session(session) => &session.instance.url,
+            #[cfg(test)]
+            Via::Origin(origin) => origin,
+        }
+    }
+
+    /// One request that only reads.
+    fn call_read<T>(
         &self,
         call: impl FnOnce(&TasksApi<'_>) -> Result<T, HiveError>,
     ) -> Result<T, HiveError> {
         let deadline = self
             .deadline
+            .get()
             .unwrap_or_else(|| Instant::now() + self.budget);
         let client = match &self.via {
             Via::Session(session) => session.bounded_client(deadline)?,
@@ -319,7 +374,7 @@ pub struct EvidenceInput {
 impl EvidenceInput {
     /// `root` is the checkout a `file_anchor` (`path` or `path::symbol`) is
     /// digested in, as it is now (J2 anchors).
-    fn into_evidence(self, root: &Path) -> Result<EvidenceV1, HiveError> {
+    pub(crate) fn into_evidence(self, root: &Path) -> Result<EvidenceV1, HiveError> {
         let kind = match self.kind.as_str() {
             "receipt" => EvidenceKind::Receipt,
             "commit" => EvidenceKind::Commit,
@@ -369,25 +424,93 @@ fn file_anchor(root: &Path, spec: &str) -> Result<EvidenceV1, HiveError> {
     Ok(evidence)
 }
 
-/// The project's tasks.
-pub fn list(project_root: &Path, filter: &ListFilter) -> Result<TaskListV1, HiveError> {
+/// A task list as the Instance shows it.
+///
+/// `partial`: a Hive answer came back full ([`MAX_TASKS_PAGE`] tasks), so
+/// older tasks of these filters may be missing. The list says so, never
+/// silently incomplete. A list cached before 3.12.3 reads as whole.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
+pub struct TaskListing {
+    #[serde(flatten)]
+    pub list: TaskListV1,
+    #[serde(default)]
+    pub partial: bool,
+}
+
+/// The project's tasks (shared and coalesced per Instance, [`reads`]).
+/// Only a current list: when Hive holds reads or is not reachable this is
+/// an error, not the last good list ([`list_read`] serves that with its
+/// age), so no caller takes tasks since claimed or closed for current.
+pub fn list(project_root: &Path, filter: &ListFilter) -> Result<TaskListing, HiveError> {
+    list_read(project_root, filter).and_then(reads::current)
+}
+
+/// [`list`] and, when Hive holds reads (429) or is not reachable, the age
+/// of the last good list served instead.
+pub fn list_read(
+    project_root: &Path,
+    filter: &ListFilter,
+) -> Result<reads::Read<TaskListing>, HiveError> {
     let c = connected(project_root, HiveRight::TasksRead)?;
-    list_via(&c.link(), filter)
+    list_cached(&c.link(), filter)
 }
 
-fn list_via(link: &Link<'_>, filter: &ListFilter) -> Result<TaskListV1, HiveError> {
-    link.call(|api| api.list(filter))
+fn list_cached(
+    link: &Link<'_>,
+    filter: &ListFilter,
+) -> Result<reads::Read<TaskListing>, HiveError> {
+    let key = format!("list{}", filter.query()?);
+    reads::read_through(link.data_dir, link.hive_url(), link.vault_id, &key, || {
+        list_via(link, filter)
+    })
 }
 
-/// One task.
+/// The listing in board order ([`fields::sort_by_priority`]).
+///
+/// Hive answers one page, the newest tasks by number, so an older high task
+/// can fall off it: the high tasks of the same filters are fetched too and
+/// merged in, each task once, before the sort. That answer is a page too, so
+/// a full one marks the listing `partial`.
+fn list_via(link: &Link<'_>, filter: &ListFilter) -> Result<TaskListing, HiveError> {
+    let mut list = link.call_read(|api| api.list(filter))?;
+    let mut partial = list.tasks.len() >= MAX_TASKS_PAGE;
+    if filter.priority.is_none() {
+        let high = ListFilter {
+            priority: Some(TaskPriority::High),
+            ..filter.clone()
+        };
+        let high = link.call_read(|api| api.list(&high))?;
+        partial |= high.tasks.len() >= MAX_TASKS_PAGE;
+        let seen: std::collections::HashSet<u64> = list.tasks.iter().map(|t| t.number).collect();
+        list.tasks
+            .extend(high.tasks.into_iter().filter(|t| !seen.contains(&t.number)));
+    }
+    fields::sort_by_priority(&mut list.tasks);
+    Ok(TaskListing { list, partial })
+}
+
+/// One task (shared and coalesced per Instance, [`reads`]). Only a current
+/// answer: when Hive holds reads or is not reachable this is an error, not
+/// the last good answer ([`show_read`] serves that with its age).
 pub fn show(project_root: &Path, number: u64) -> Result<TaskView, HiveError> {
-    let c = connected(project_root, HiveRight::TasksRead)?;
-    show_via(&c.link(), number)
+    show_read(project_root, number).and_then(reads::current)
 }
 
-fn show_via(link: &Link<'_>, number: u64) -> Result<TaskView, HiveError> {
-    let task = link.call(|api| api.show(number))?;
-    Ok(view_of(link, task))
+/// [`show`] and, when Hive holds reads (429) or is not reachable, the age
+/// of the last good answer served instead. A task Hive does not know is
+/// [`HiveError::NotFound`]; a rate limit never reads as one.
+pub fn show_read(project_root: &Path, number: u64) -> Result<reads::Read<TaskView>, HiveError> {
+    let c = connected(project_root, HiveRight::TasksRead)?;
+    let link = c.link();
+    show_cached(&link, number)
+}
+
+fn show_cached(link: &Link<'_>, number: u64) -> Result<reads::Read<TaskView>, HiveError> {
+    let key = format!("task#{number}");
+    reads::read_through(link.data_dir, link.hive_url(), link.vault_id, &key, || {
+        link.call_read(|api| api.show(number))
+    })
+    .map(|read| read.map(|task| view_of(link, task)))
 }
 
 /// `task` as the caller sees it, with its local claim (no request).
@@ -416,21 +539,30 @@ pub fn claim(
     let local = lean_ctx::core::config::Config::load().hive.worker.clone();
     // The whole claim (opt-in read, claim, its one retry) ends within one
     // BUDGET, like every task call from a tool.
-    let deadline = Instant::now() + BUDGET;
+    let deadline = std::cell::Cell::new(Instant::now() + BUDGET);
     // Whether the gate let a request go to Hive: then an `Ok` is Hive's
     // grant (a claim this machine already holds never reaches the gate).
     let asked = std::cell::Cell::new(false);
     let gate = |scope: &TaskScope| {
         let unavailable = |e: HiveError| Refusal::Unavailable(e.to_string());
-        let client = c.session.bounded_client(deadline).map_err(unavailable)?;
+        let client = c
+            .session
+            .bounded_client(deadline.get())
+            .map_err(unavailable)?;
         let optin = worker::fetch_optin_via(&client).map_err(unavailable)?;
         let admission = worker::admit_claim_for(&c.store, &local, scope, &optin)?;
         asked.set(true);
         Ok(admission)
     };
-    let mut link = c.link();
-    link.deadline = Some(deadline);
-    let granted = claim_via(&link, number, agent, session_id, minutes, &gate)
+    let link = c.link();
+    link.deadline.set(Some(deadline.get()));
+    // A claim tried again after the relay announced gets a fresh BUDGET,
+    // its opt-in read too.
+    let restart = || {
+        deadline.set(Instant::now() + BUDGET);
+        link.deadline.set(Some(deadline.get()));
+    };
+    let granted = claim_via(&link, number, agent, session_id, minutes, &gate, &restart)
         .inspect_err(|error| record_claim_friction(error, agent, project_root))?;
     // Counted only once granted: a refused claim costs no task today. The
     // claim stands either way; Hive counts it too.
@@ -461,6 +593,64 @@ fn record_claim_friction(error: &HiveError, agent: &str, root: &Path) {
     }
 }
 
+/// Hive refused for presence or role: whom it found on the bus.
+fn is_permit_refusal(error: &HiveError) -> bool {
+    matches!(
+        error,
+        HiveError::Task {
+            refusal: TaskRefusal::NotPermitted(
+                crate::error::PermitCheck::Presence | crate::error::PermitCheck::Role
+            ),
+            ..
+        }
+    )
+}
+
+/// A presence or role refusal that names whom Hive looked up: the id the
+/// claim sent, the bus agent it stands for and that worker's role, and
+/// whether the relay announced before the claim was tried again (Hive
+/// task #27). Any other error stays as it is.
+fn looked_up(link: &Link<'_>, agent: &str, error: HiveError, announced: bool) -> HiveError {
+    let HiveError::Task {
+        refusal,
+        number,
+        detail,
+    } = error
+    else {
+        return error;
+    };
+    if !matches!(refusal, TaskRefusal::NotPermitted(_)) {
+        return HiveError::Task {
+            refusal,
+            number,
+            detail,
+        };
+    }
+    let (sent, role) = link.hive_identity(agent);
+    let mut line = detail.unwrap_or_else(|| refusal.to_string());
+    line.push_str(&match role {
+        Some(role) => {
+            format!(" Hive looked up {sent} (the worker of bus agent {agent}, role {role}).")
+        }
+        None if sent == agent && !crate::bus::address::is_worker_id(agent) => format!(
+            " Hive looked up {sent} as given: this machine's worker book has no worker for it."
+        ),
+        None => format!(" Hive looked up {sent}."),
+    });
+    if link.announce.is_some() {
+        line.push_str(if announced {
+            " The relay announced again and the claim was tried once more."
+        } else {
+            " No relay answered the request to announce."
+        });
+    }
+    HiveError::Task {
+        refusal,
+        number,
+        detail: Some(line),
+    }
+}
+
 /// The worker gate of a claim (L1): the opt-in it works under, or why not.
 type ClaimGate<'g> = &'g dyn Fn(&TaskScope) -> Result<Admission, Refusal>;
 
@@ -471,6 +661,7 @@ fn claim_via(
     session_id: &str,
     minutes: Option<u32>,
     gate: ClaimGate<'_>,
+    restart: &dyn Fn(),
 ) -> Result<ClaimGranted, HiveError> {
     let minutes = minutes
         .unwrap_or(DEFAULT_CLAIM_MINUTES)
@@ -516,11 +707,28 @@ fn claim_via(
         };
         link.call_claim(|api| api.claim(number, &request))
     };
-    let ack = match attempt() {
+    let answer = || match attempt() {
         Err(HiveError::Task {
             refusal: TaskRefusal::OptinChanged,
             ..
-        }) => attempt()?,
+        }) => attempt(),
+        answer => answer,
+    };
+    // Refused for presence or role (task #27): Hive's presence of the
+    // worker may be stale (a relay that reconnected, a role announced
+    // late). The relay announces now and the claim is tried once more
+    // when it did; a refusal that stands says whom Hive looked up.
+    let ack = match answer() {
+        Err(error) if is_permit_refusal(&error) => {
+            let announced = link.announce.and_then(|announce| announce(ANNOUNCE_WAIT));
+            let retried = if announced.is_some() {
+                restart();
+                answer()
+            } else {
+                Err(error)
+            };
+            retried.map_err(|error| looked_up(link, agent, error, announced.is_some()))?
+        }
         answer => answer?,
     };
     let until = ack.until.as_str().to_owned();
@@ -536,6 +744,15 @@ fn claim_via(
             minutes,
             pid: std::process::id(),
         },
+    )?;
+    // The commit this claim starts from (G6 of an S task pins it), and the
+    // session that holds it (it never checks this task's result).
+    claims::trace_claim(
+        link.data_dir,
+        link.vault_id,
+        number,
+        process::acting_identity(agent, link.presence),
+        gate::head_commit(link.root).ok(),
     )?;
     Ok(ClaimGranted {
         number,
@@ -587,6 +804,17 @@ fn verify_via(
 ) -> Result<TaskAckV1, HiveError> {
     let reason = reason.map(str::trim).filter(|reason| !reason.is_empty());
     screened(&[("verify reason", reason)])?;
+    // Checker ≠ author by the per-session identity (process v1 §3.1), and
+    // for a process task a green G6 record of the judged commit with its
+    // locked paths still unchanged (§5): decided here, before anything is
+    // sent.
+    // The checker is the live bus presence `agent`, held by this process
+    // or its app session; never a free string.
+    let task = link.call(|api| api.show(number))?;
+    let checker = process::checker_identity(agent, (link.presence)(agent), task.process.is_some())?;
+    let trace = claims::trace(link.data_dir, link.vault_id, number);
+    process::checker_not_author(&task, &checker, trace.as_ref())?;
+    process::verify_gate(&task, link.root, &link.gate_dirs().work)?;
     let request = TaskVerifyRequestV1 {
         schema: TASK_VERIFY_SCHEMA.into(),
         worker_id: link.hive_agent(agent),
@@ -601,6 +829,130 @@ fn verify_via(
     .to_hex()[..32]
         .to_string();
     link.call(|api| api.verify(number, &request, &key))
+}
+
+/// [`screened`] for a result: its texts, and every path or symbol name of
+/// its evidence (they leave the machine too).
+fn screened_result(
+    texts: &[(&str, Option<&str>)],
+    evidence: &[EvidenceV1],
+) -> Result<(), HiveError> {
+    let mut fields = texts.to_vec();
+    for item in evidence {
+        let anchor = item.anchor.as_ref();
+        for reference in [
+            item.reference.as_deref(),
+            anchor.map(|a| a.path.as_str()),
+            anchor.and_then(|a| a.symbol.as_deref()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            fields.push(("evidence", Some(reference)));
+        }
+    }
+    screened(&fields)
+}
+
+/// What an amendment of a result says (see [`amend`]).
+#[derive(Default)]
+pub struct AmendInput {
+    pub summary: Option<String>,
+    pub evidence: Vec<EvidenceInput>,
+    /// A `done` task's merge commit (the merge record).
+    pub merge_commit: Option<String>,
+    pub reason: Option<String>,
+    /// The caller checked this process runs for a registered Queen session
+    /// (`crate::queens::this_session_is_queen`): it may record a merge.
+    pub queen: bool,
+}
+
+/// The Hive route an amendment needs and no Hive serves yet.
+pub const AMEND_ROUTE: &str = "POST /v1/vaults/{vault_id}/tasks/{number}/amend";
+
+/// Amend the result of vault task `number` as `agent` (the rules of
+/// [`lean_ctx_protocol::hive::tasks::amend_rule`] and `may_amend`). Fails
+/// closed: it checks the request, the screening and the task (read only)
+/// and then refuses, sending nothing, because no Hive serves
+/// [`AMEND_ROUTE`] yet; the task stays unchanged.
+pub fn amend(
+    project_root: &Path,
+    number: u64,
+    agent: &str,
+    input: AmendInput,
+) -> Result<TaskAckV1, HiveError> {
+    let c = connected(project_root, HiveRight::TasksWork)?;
+    amend_via(&c.link(), number, agent, input)
+}
+
+fn amend_via(
+    link: &Link<'_>,
+    number: u64,
+    agent: &str,
+    input: AmendInput,
+) -> Result<TaskAckV1, HiveError> {
+    let input_queen = input.queen;
+    let trimmed =
+        |text: Option<String>| text.map(|t| t.trim().to_owned()).filter(|t| !t.is_empty());
+    let summary = trimmed(input.summary);
+    let reason = trimmed(input.reason);
+    let merge_commit = trimmed(input.merge_commit);
+    let evidence = input
+        .evidence
+        .into_iter()
+        .map(|item| item.into_evidence(link.root))
+        .collect::<Result<Vec<_>, _>>()?;
+    let worker_id = link.hive_agent(agent);
+    let request = TaskAmendRequestV1 {
+        schema: TASK_AMEND_SCHEMA.into(),
+        worker_id: worker_id.clone(),
+        summary,
+        evidence,
+        merge_commit,
+        reason,
+    };
+    request
+        .validate()
+        .map_err(|e| HiveError::Refused(format!("amendment of task #{number}: {e}")))?;
+    screened_result(
+        &[
+            ("summary", request.summary.as_deref()),
+            ("amend reason", request.reason.as_deref()),
+        ],
+        &request.evidence,
+    )?;
+    let task = link.call(|api| api.show(number))?;
+    let mine = |by: &lean_ctx_protocol::hive::tasks::TaskActorV1| {
+        by.kind == TaskActorKind::Instance
+            && by.mine
+            && by
+                .agent
+                .as_deref()
+                .is_some_and(|a| a == agent || a == worker_id)
+    };
+    let caller = lean_ctx_protocol::hive::tasks::AmendCaller {
+        submitter: task.result.as_ref().is_some_and(|r| mine(&r.by)),
+        reviewer: task.verified_by.as_ref().is_some_and(mine),
+        // A vault write always comes from an agent of this Instance.
+        person: false,
+        queen: input_queen,
+    };
+    lean_ctx_protocol::hive::tasks::may_amend(&request, caller).map_err(|refusal| {
+        HiveError::Refused(format!(
+            "task #{number}: only its submitter corrects a result; a merge record also a person or a Queen session, never the reviewer ({})",
+            refusal.code()
+        ))
+    })?;
+    lean_ctx_protocol::hive::tasks::amend_rule(&task, &request).map_err(|refusal| {
+        HiveError::Refused(format!(
+            "task #{number} is {:?}: its result cannot be amended like this ({})",
+            task.state,
+            refusal.code()
+        ))
+    })?;
+    Err(HiveError::Refused(format!(
+        "not supported by Hive yet: this Hive has no route to amend a result ({AMEND_ROUTE}); task #{number} is unchanged"
+    )))
 }
 
 /// Give task `number` back; `reason` is one line.
@@ -784,14 +1136,13 @@ struct Submission<'s> {
 /// field, so against it the failure is refused here, before anything is
 /// sent, and the agent releases the task instead.
 fn negotiated_outcome(
-    link: &Link<'_>,
+    task: &TaskV1,
     number: u64,
     outcome: TaskOutcome,
 ) -> Result<Option<TaskOutcome>, HiveError> {
     if outcome == TaskOutcome::Completed {
         return Ok(None);
     }
-    let task = link.call(|api| api.show(number))?;
     if task.lifecycle.is_none() {
         return Err(HiveError::Refused(format!(
             "this Hive does not take failed results yet; release task #{number} with a reason instead"
@@ -819,26 +1170,7 @@ fn submit_via(
         .into_iter()
         .map(|item| item.into_evidence(link.root))
         .collect::<Result<Vec<_>, _>>()?;
-    // A path or symbol name leaves the machine too: screened like text.
-    let references: Vec<&str> = evidence
-        .iter()
-        .flat_map(|item| {
-            let anchor = item.anchor.as_ref();
-            [
-                item.reference.as_deref(),
-                anchor.map(|a| a.path.as_str()),
-                anchor.and_then(|a| a.symbol.as_deref()),
-            ]
-        })
-        .flatten()
-        .collect();
-    let mut fields = vec![("summary", Some(summary))];
-    fields.extend(
-        references
-            .iter()
-            .map(|reference| ("evidence", Some(*reference))),
-    );
-    screened(&fields)?;
+    screened_result(&[("summary", Some(summary))], &evidence)?;
     gate(
         &link.scope(number),
         &EvidenceSummary {
@@ -847,7 +1179,29 @@ fn submit_via(
         },
     )
     .map_err(|refusal| HiveError::Refused(refusal.to_string()))?;
-    let outcome = negotiated_outcome(link, number, outcome)?;
+    // The task as Hive has it: its v5 lifecycle (a failed result) and, for
+    // a process task, what G6 runs. G6 runs here, in the Instance, on the
+    // claim's worktree; only a green record goes out with the result.
+    let task = link.call(|api| api.show(number))?;
+    let trace = claims::trace(link.data_dir, link.vault_id, number);
+    let gate_record = process::submit_gate(
+        &task,
+        link.root,
+        &link.gate_dirs(),
+        &evidence,
+        outcome,
+        trace.as_ref(),
+    )?;
+    let outcome = negotiated_outcome(&task, number, outcome)?;
+    let commit = gate_record.as_ref().map_or_else(
+        || {
+            evidence
+                .iter()
+                .find(|e| e.kind == EvidenceKind::Commit)
+                .and_then(|e| e.reference.clone())
+        },
+        |record| Some(record.artifact_commit.clone()),
+    );
     let request = TaskResultRequestV1 {
         schema: TASK_RESULT_SCHEMA.into(),
         claim: held.claim,
@@ -856,9 +1210,21 @@ fn submit_via(
         draft: None,
         usage,
         outcome,
+        gate_record,
     };
     let ack = link.settle(number, link.call(|api| api.result(number, &request)))?;
     claims::remove(link.data_dir, link.vault_id, number)?;
+    // The session that submitted it: a verify on this Instance is checked
+    // against it (checker ≠ author per session, §3.1). A trace that cannot
+    // be written leaves the verify refused (no per-session identity),
+    // never allowed.
+    let _ = claims::trace_submit(
+        link.data_dir,
+        link.vault_id,
+        number,
+        process::acting_identity(agent, link.presence),
+        commit,
+    );
     Ok(ack)
 }
 
@@ -957,14 +1323,7 @@ pub fn keep_cli_claims() -> usize {
         return 0;
     }
     let now = Utc::now();
-    let registry = lean_ctx::core::agents::AgentRegistry::load_or_create();
-    let idle = chrono::Duration::from_std(RENEW_IDLE).unwrap_or(chrono::Duration::MAX);
-    let working: std::collections::HashSet<String> = registry
-        .list_active(None)
-        .into_iter()
-        .filter(|agent| now - agent.last_active < idle)
-        .map(|agent| agent.agent_id.clone())
-        .collect();
+    let working = working_agents(now);
     keep_orphaned(
         store.data_dir(),
         now,
@@ -993,6 +1352,103 @@ fn keep_orphaned(
         renew(held);
     }
     kept.len()
+}
+
+/// The reason Hive records when the daemon gives an abandoned claim back.
+pub const ABANDONED_REASON: &str = "the claiming session ended on its machine";
+
+/// Give back the claims nobody works on any more (k2 E2E: an ended
+/// session's claim was neither renewed nor released, so nobody else could
+/// take the task): a claim that has expired, or whose holding process has
+/// ended while its agent no longer works on this machine. Runs in the
+/// daemon (the bus relay's process); returns how many Hive released.
+pub fn release_abandoned_claims() -> usize {
+    let Ok(store) = HiveStore::open() else {
+        return 0;
+    };
+    let now = Utc::now();
+    let working = working_agents(now);
+    give_back_abandoned(
+        store.data_dir(),
+        now,
+        |agent| working.contains(agent),
+        |held| {
+            connected(Path::new(&held.root), HiveRight::TasksWork).and_then(|c| {
+                release_via(&c.link(), held.number, &held.agent, Some(ABANDONED_REASON)).map(|_| ())
+            })
+        },
+    )
+}
+
+/// The bus agents of this machine at work (registered, not finished,
+/// active within [`RENEW_IDLE`]).
+fn working_agents(now: chrono::DateTime<Utc>) -> std::collections::HashSet<String> {
+    let registry = lean_ctx::core::agents::AgentRegistry::load_or_create();
+    let idle = chrono::Duration::from_std(RENEW_IDLE).unwrap_or(chrono::Duration::MAX);
+    registry
+        .list_active(None)
+        .into_iter()
+        .filter(|agent| now - agent.last_active < idle)
+        .map(|agent| agent.agent_id.clone())
+        .collect()
+}
+
+/// Whether `held` is abandoned at `now`: expired, or its holder process
+/// ended (not this one) and its agent is not `working`.
+fn abandoned(
+    held: &HeldClaim,
+    now: chrono::DateTime<Utc>,
+    working: &impl Fn(&str) -> bool,
+) -> bool {
+    let expired = held.until().is_none_or(|until| until <= now);
+    let holder_gone = held.pid != std::process::id() && !lean_ctx::ipc::process::is_alive(held.pid);
+    expired || (holder_gone && !working(&held.agent))
+}
+
+/// [`release_abandoned_claims`] with the agents at work and the release
+/// given. A claim Hive released is gone from the file (`release_via`); an
+/// expired one Hive refused is dropped here too (it is over on this
+/// machine; nothing can renew it). An unexpired one that could not be
+/// released (offline) is tried again on the next pass.
+fn give_back_abandoned(
+    data_dir: &Path,
+    now: chrono::DateTime<Utc>,
+    working: impl Fn(&str) -> bool,
+    release: impl Fn(&HeldClaim) -> Result<(), HiveError>,
+) -> usize {
+    let mut released = 0;
+    for held in claims::all(data_dir)
+        .into_iter()
+        .filter(|held| abandoned(held, now, &working))
+    {
+        match release(&held) {
+            Ok(()) => {
+                released += 1;
+                // `release_via` removes it; a fake release may not.
+                let _ = claims::remove(data_dir, &held.vault_id, held.number);
+            }
+            Err(error) if held.until().is_none_or(|until| until <= now) => {
+                tracing::info!(
+                    "hive: expired claim of task #{} dropped (Hive: {error})",
+                    held.number
+                );
+                let _ = claims::remove(data_dir, &held.vault_id, held.number);
+                crate::metrics::hive_use::claim_ended(
+                    data_dir,
+                    &held.vault_id,
+                    held.number,
+                    held.until().unwrap_or(now),
+                );
+            }
+            Err(error) => {
+                tracing::debug!(
+                    "hive: abandoned claim of task #{} kept: {error}",
+                    held.number
+                );
+            }
+        }
+    }
+    released
 }
 
 /// The checkout to act on claim `number` from: `project_root`, unless its

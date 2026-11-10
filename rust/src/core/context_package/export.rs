@@ -28,10 +28,16 @@ pub fn save_package(
 
     let path = output_path.map_or_else(|| default_path(project_root, &session.id), PathBuf::from);
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    // The destination can come from the agent (jailed by the caller). The
+    // jail does not resolve a dangling symlink, so the write itself must not
+    // follow one: a symlinked component below the project, dangling or not,
+    // is refused instead of redirecting the package out of it.
+    crate::core::pathjail_write::write_requested_below(
+        Path::new(project_root),
+        &path,
+        &path,
+        json.as_bytes(),
+    )?;
     Ok(path)
 }
 

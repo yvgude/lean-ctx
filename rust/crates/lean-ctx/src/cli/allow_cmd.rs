@@ -8,7 +8,7 @@
 //! the MCP server re-reads `config.toml` (mtime-invalidated) on the next command.
 
 use lean_ctx::core::config;
-use lean_ctx::core::shell_allowlist;
+use lean_ctx_shell_policy as shell_allowlist;
 
 pub fn cmd_allow(args: &[String]) {
     // `--help` anywhere shows usage instead of treating it as a command to

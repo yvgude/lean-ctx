@@ -1,0 +1,12 @@
+{
+  "ac": "pz21-AC06",
+  "channel": "project",
+  "clean": true,
+  "fenced": false,
+  "must_contain": [
+    "# Sample\n\nA small sample project used by the input check.\nIt has no network access and no secrets."
+  ],
+  "must_not_contain": [],
+  "path": "README.md",
+  "redacted_lines": 0
+}

@@ -35,6 +35,221 @@ pub fn current() -> Option<Arc<AdmissionCapture>> {
 struct Recorded {
     decision: ContextDecisionV1,
     counts: AdmissionCounts,
+    /// The object's class has an external or unknown origin floor: it is
+    /// never clean for displacement, so it stays itemized (pz21 §1.5 item 2).
+    external: bool,
+}
+
+/// The reason a receipt itemizes an object of external or unknown origin
+/// with (pz21 §1.5 item 2). Content-free.
+pub const UNTRUSTED_ORIGIN: &str = "origin.untrusted";
+
+/// Most distinct origins one call's ledger records; one more sets overflow.
+pub const MAX_LEDGER_REFS: usize = 256;
+
+/// The origin ledger of one call (pz21 §1.5): every admission whose class is
+/// external or unknown, independent of the capped decision records, so the
+/// `MAX_DECISIONS` cap can never displace it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OriginLedger {
+    /// Every external or unknown admission, saturating.
+    pub count: u64,
+    /// The distinct origins, bounded by [`MAX_LEDGER_REFS`].
+    pub refs: std::collections::BTreeSet<super::origin::InputRef>,
+    /// A ref too long to record, or the set full.
+    pub overflow: bool,
+}
+
+impl OriginLedger {
+    fn note(&mut self, input: Option<super::origin::InputRef>) {
+        self.count = self.count.saturating_add(1);
+        match input {
+            Some(input) if self.refs.contains(&input) => {}
+            Some(input) if self.refs.len() < MAX_LEDGER_REFS => {
+                self.refs.insert(input);
+            }
+            _ => self.overflow = true,
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.count = self.count.saturating_add(other.count);
+        for input in &other.refs {
+            if !self.refs.contains(input) {
+                if self.refs.len() < MAX_LEDGER_REFS {
+                    self.refs.insert(input.clone());
+                } else {
+                    self.overflow = true;
+                }
+            }
+        }
+        self.overflow |= other.overflow;
+    }
+
+    /// Nothing external or unknown was admitted.
+    pub fn is_empty(&self) -> bool {
+        self.count == 0 && !self.overflow
+    }
+}
+
+/// Process-wide count of external or unknown admissions that found neither a
+/// capture nor an `outside_call` scope (pz21 §1.5 item 4b). Every call open
+/// while it moves is released as if its ledger overflowed.
+pub static ORPHAN_EXTERNAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+thread_local! {
+    /// Depth of `outside_call` scopes on this thread.
+    static OUTSIDE_CALL: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Depth of `external_span` scopes on this thread.
+    static IN_SPAN: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// Depth of `egress_check` scopes on this thread.
+    static EGRESS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Whether the calling thread runs inside [`outside_call`].
+pub fn outside_call_active() -> bool {
+    OUTSIDE_CALL.with(std::cell::Cell::get) > 0
+}
+
+/// Whether the calling thread runs an egress-equality check
+/// ([`egress_check`]): its text is compared, never delivered or stored, so
+/// its injection action is never raised (NB-2).
+pub fn egress_check_active() -> bool {
+    EGRESS.with(std::cell::Cell::get) > 0
+}
+
+/// Run `check` as an egress-equality check: outside the call
+/// ([`outside_call`]) and with the injection action left as configured.
+pub fn egress_check<T>(check: impl FnOnce() -> T) -> T {
+    struct Leave;
+    impl Drop for Leave {
+        fn drop(&mut self) {
+            EGRESS.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        }
+    }
+    EGRESS.with(|depth| depth.set(depth.get().saturating_add(1)));
+    let _leave = Leave;
+    outside_call(check)
+}
+
+/// Run `operation` as an admission that is outside any tool call by design
+/// (egress checks, detached store writes, background index builds). Inside
+/// it an admission writes no ledger entry, raises no orphan mark and never
+/// taints. Its text reaches an agent only through a reader that admits it
+/// again at serve time, inside the call.
+pub fn outside_call<T>(operation: impl FnOnce() -> T) -> T {
+    struct Leave;
+    impl Drop for Leave {
+        fn drop(&mut self) {
+            OUTSIDE_CALL.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        }
+    }
+    OUTSIDE_CALL.with(|depth| depth.set(depth.get().saturating_add(1)));
+    let _leave = Leave;
+    operation()
+}
+
+/// Note that an admission of `class` happened (pz21 §1.5 item 1). Called
+/// first by every entry point that takes or derives a class, ahead of the
+/// config refusal, the gateway-off return, the clean memo and the
+/// detectors. A `Project` class notes nothing.
+pub fn note_origin(class: &super::origin::SourceClass) {
+    if !class.is_external_or_unknown() || outside_call_active() {
+        return;
+    }
+    let input = class.input_ref();
+    match current() {
+        Some(capture) => capture.note_origin_ref(input),
+        None => {
+            ORPHAN_EXTERNAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
+/// The capture and the `outside_call` marker of the calling thread, for a
+/// worker that admits on the call's behalf (`rayon`, `std::thread`).
+#[derive(Clone)]
+pub struct Carried {
+    capture: Option<Arc<AdmissionCapture>>,
+    outside: bool,
+    project: Option<std::path::PathBuf>,
+}
+
+/// Take what a worker needs to admit as part of this call (pz21 §1.5 4a).
+pub fn carry() -> Carried {
+    Carried {
+        capture: current(),
+        outside: outside_call_active(),
+        project: crate::core::policy::runtime::REQUEST_PROJECT
+            .try_with(|slot| slot.borrow().clone())
+            .ok()
+            .flatten(),
+    }
+}
+
+impl Carried {
+    /// Run `operation` on this worker as part of the carrying call.
+    pub fn enter<T>(&self, operation: impl FnOnce() -> T) -> T {
+        let inner = || {
+            if self.outside {
+                outside_call(operation)
+            } else {
+                operation()
+            }
+        };
+        let with_project = || match &self.project {
+            Some(project) if crate::core::policy::diagnostics::request_project().is_none() => {
+                crate::core::policy::runtime::in_project(project.clone(), inner)
+            }
+            _ => inner(),
+        };
+        if self.capture.is_some() && current().is_none() {
+            ADMISSIONS.sync_scope(self.capture.clone(), with_project)
+        } else {
+            with_project()
+        }
+    }
+}
+
+/// Admit text that a tool delivers as one marked part of a block (a hint
+/// line quoting an issue title, pz21 §1.6). Its origins go into the call's
+/// span list instead of the ledger, and the release point fences exactly
+/// that part when it finds it in a text block; otherwise it fences every
+/// block whole.
+pub fn external_span(
+    class: &super::origin::SourceClass,
+    admit: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    let Some(capture) =
+        current().filter(|_| class.is_external_or_unknown() && !outside_call_active())
+    else {
+        return admit();
+    };
+    struct Leave;
+    impl Drop for Leave {
+        fn drop(&mut self) {
+            IN_SPAN.with(|depth| depth.set(depth.get().saturating_sub(1)));
+        }
+    }
+    IN_SPAN.with(|depth| depth.set(depth.get().saturating_add(1)));
+    let admitted = {
+        let _leave = Leave;
+        admit()
+    };
+    if let Some(text) = &admitted
+        && !text.is_empty()
+    {
+        capture
+            .spans
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((class.input_ref(), text.clone()));
+    }
+    admitted
+}
+
+fn in_span() -> bool {
+    IN_SPAN.with(std::cell::Cell::get) > 0
 }
 
 /// The policy snapshot of ONE call (G08), taken once at its entry — where the
@@ -248,11 +463,34 @@ pub struct AdmissionCapture {
     /// The organization decision an egress admission's own snapshot observed
     /// (`None`: nothing noted yet).
     org_policy: Mutex<Option<OrgEvidence>>,
+    /// The origin ledger: never displaced by the record cap (pz21 §1.5).
+    origin: Mutex<OriginLedger>,
+    /// Marked parts of a block: external text a tool placed itself.
+    spans: Mutex<Vec<(Option<super::origin::InputRef>, String)>>,
+    /// [`ORPHAN_EXTERNAL`] when this capture was opened.
+    orphan_mark: u64,
+    /// The class of this call's command output, when the shell tool
+    /// classified it as `tool_output` (pz21 §1.8).
+    output_class: Mutex<Option<super::origin::SourceClass>>,
+    /// Digests of the text blocks the release point's origin step delivered
+    /// for this call: a block counts as already fenced only when it is one
+    /// of these, never because its text looks like a fence (outside text can
+    /// spell a fence header and closing line itself).
+    released: Mutex<std::collections::BTreeSet<[u8; 32]>>,
 }
+
+/// Most released blocks one capture remembers; past it a block released
+/// again is fenced again (fails closed: a double fence, never none).
+const MAX_RELEASED_BLOCKS: usize = 4096;
 
 impl Default for AdmissionCapture {
     fn default() -> Self {
         Self {
+            released: Mutex::new(std::collections::BTreeSet::new()),
+            origin: Mutex::new(OriginLedger::default()),
+            spans: Mutex::new(Vec::new()),
+            orphan_mark: ORPHAN_EXTERNAL.load(std::sync::atomic::Ordering::SeqCst),
+            output_class: Mutex::new(None),
             started: Instant::now(),
             records: Mutex::new(Vec::new()),
             overflow: Mutex::new(Overflow::default()),
@@ -285,6 +523,109 @@ impl AdmissionCapture {
     /// The call's policy snapshot, when this capture was opened for a call.
     pub fn snapshot(&self) -> Option<&CallSnapshot> {
         self.snapshot.as_ref()
+    }
+
+    /// The shell tool classified this call's command output (pz21 §1.8):
+    /// every command output it admits takes this class.
+    pub fn set_output_class(&self, class: super::origin::SourceClass) {
+        *self
+            .output_class
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(class);
+    }
+
+    /// The class of this call's command output; `None`: the project's own.
+    pub fn output_class(&self) -> Option<super::origin::SourceClass> {
+        self.output_class
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn note_origin_ref(&self, input: Option<super::origin::InputRef>) {
+        if in_span() {
+            return;
+        }
+        self.origin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .note(input);
+    }
+
+    /// The call's origin ledger. An orphan mark raised since the capture
+    /// opened reads as overflow (pz21 §1.5 item 4b).
+    pub fn origin_ledger(&self) -> OriginLedger {
+        let mut ledger = self
+            .origin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if self.orphan_external() {
+            ledger.overflow = true;
+        }
+        ledger
+    }
+
+    /// An external or unknown admission without capture or `outside_call`
+    /// happened somewhere in the process while this call was open.
+    pub fn orphan_external(&self) -> bool {
+        ORPHAN_EXTERNAL.load(std::sync::atomic::Ordering::SeqCst) != self.orphan_mark
+    }
+
+    /// The marked external parts tools placed in their blocks.
+    pub fn external_spans(&self) -> Vec<(Option<super::origin::InputRef>, String)> {
+        self.spans
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Record that the origin step delivered `text` as a block of this call.
+    pub fn mark_released(&self, text: &str) {
+        let mut released = self.released.lock().unwrap_or_else(PoisonError::into_inner);
+        if released.len() < MAX_RELEASED_BLOCKS {
+            released.insert(*blake3::hash(text.as_bytes()).as_bytes());
+        }
+    }
+
+    /// Whether the origin step already delivered exactly `text` for this
+    /// call (a result released twice).
+    pub fn was_released(&self, text: &str) -> bool {
+        self.released
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(blake3::hash(text.as_bytes()).as_bytes())
+    }
+
+    /// Every outside origin this call's output carries so far: the ledger
+    /// with the marked parts folded in. What a reused output (idempotent
+    /// replay) must bring into the call that serves it again.
+    pub fn output_origins(&self) -> OriginLedger {
+        let mut ledger = self.origin_ledger();
+        for (input, _) in self.external_spans() {
+            ledger.note(input);
+        }
+        ledger
+    }
+
+    /// Note the origins of an output produced by an earlier call and served
+    /// again by this one (idempotent replay): its release fences and taints
+    /// as the first release did.
+    pub fn renote_origins(&self, origins: &OriginLedger) {
+        self.origin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .merge(origins);
+    }
+
+    /// Fold the marked parts into the ledger: the tool's placement did not
+    /// survive to the release point, so every block is fenced whole.
+    pub fn spans_into_ledger(&self) {
+        let spans = std::mem::take(&mut *self.spans.lock().unwrap_or_else(PoisonError::into_inner));
+        let mut ledger = self.origin.lock().unwrap_or_else(PoisonError::into_inner);
+        for (input, _) in spans {
+            ledger.note(input);
+        }
     }
 
     /// Whether an admission recorded here was decided under other gateway
@@ -374,6 +715,17 @@ impl AdmissionCapture {
     }
 
     pub(super) fn record(&self, decision: &ContextDecisionV1, counts: AdmissionCounts) {
+        self.record_as(decision, counts, false);
+    }
+
+    /// [`Self::record`] for an object whose class is `external` or unknown:
+    /// such a decision is never clean for displacement (pz21 §1.5 item 2).
+    pub(super) fn record_as(
+        &self,
+        decision: &ContextDecisionV1,
+        counts: AdmissionCounts,
+        external: bool,
+    ) {
         if let Some(envelope) = crate::core::task_spine::TaskSpine::current() {
             let mut task = self.task.lock().unwrap_or_else(PoisonError::into_inner);
             if task.is_none() {
@@ -393,9 +745,20 @@ impl AdmissionCapture {
             *slot.borrow_mut() =
                 nameable.then(|| (std::ptr::from_ref(self).addr(), decision.object.clone()));
         });
+        let mut decision = decision.clone();
+        // The receipt itemizes an external or unknown object as not clean,
+        // with a content-free reason (also on a clean-memo hit).
+        if external {
+            let code =
+                ReasonCodeV1::new(UNTRUSTED_ORIGIN).expect("built-in reason codes are valid");
+            if !decision.reason_codes.contains(&code) {
+                decision.reason_codes.push(code);
+            }
+        }
         let incoming = Recorded {
-            decision: decision.clone(),
+            decision,
             counts,
+            external,
         };
         let mut records = self.records.lock().unwrap_or_else(PoisonError::into_inner);
         if records.len() < MAX_DECISIONS {
@@ -562,7 +925,35 @@ impl AdmissionCapture {
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
         for record in &records {
-            self.record(&record.decision, record.counts);
+            self.record_as(&record.decision, record.counts, record.external);
+        }
+        let ledger = earlier
+            .origin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        self.origin
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .merge(&ledger);
+        let spans = earlier.external_spans();
+        self.spans
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(spans);
+        let released = earlier
+            .released
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        {
+            let mut ours = self.released.lock().unwrap_or_else(PoisonError::into_inner);
+            for digest in released {
+                if ours.len() >= MAX_RELEASED_BLOCKS {
+                    break;
+                }
+                ours.insert(digest);
+            }
         }
         let theirs = earlier
             .overflow
@@ -702,6 +1093,7 @@ fn mark_notes_not_itemized(records: &mut [Recorded]) -> Option<Recorded> {
             required_transformations: Vec::new(),
         },
         counts: AdmissionCounts::default(),
+        external: false,
     };
     let slot = records
         .iter()
@@ -728,6 +1120,7 @@ impl Recorded {
     fn is_clean(&self) -> bool {
         self.decision.disposition == ContextDispositionV1::Allow
             && self.decision.reason_codes.is_empty()
+            && !self.external
     }
 
     /// A statement about a source, not a source ([`note_object`]).

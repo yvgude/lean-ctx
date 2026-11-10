@@ -4,7 +4,7 @@
 # Published in lockstep with the Engine.
 [package]
 name = "lean-ctx-server"
-version = "3.12.2"
+version = "3.12.3"
 edition = "2024"
 license = "Apache-2.0"
 description = "The LeanCTX MCP server and its tools on top of LeanCTX | OSS."
@@ -16,10 +16,31 @@ categories = ["development-tools"]
 # The moved integration tests, examples and benches read the Engine's tree
 # (rust/ and the repository): they cannot run from the published package.
 exclude = ["tests/", "examples/", "benches/"]
+# Integration tests are listed below: one binary instead of one per
+# tests/*.rs file (each would link the whole Engine).
+autotests = false
 
 [lib]
 name = "lean_ctx_server"
 path = "src/lib.rs"
+
+# The integration tests: tests/main.rs holds them as modules.
+[[test]]
+name = "server"
+path = "tests/main.rs"
+
+# Needs a process of its own (see tests/main.rs).
+[[test]]
+name = "quality_loop_golden"
+path = "tests/quality_loop_golden.rs"
+
+# The pz21 locked acceptance target (locked command:
+# `cargo test -p lean-ctx-server --test input_check`). Its own binary: the
+# Spec Writer owns the file, and CI sets INPUT_CHECK_SPEC_COMMIT and
+# INPUT_CHECK_COMMIT for its origin scan (ci/gitlab-ci.yml).
+[[test]]
+name = "input_check"
+path = "tests/input_check.rs"
 
 [features]
 # Same default set as the Engine: `cargo test/run -p lean-ctx-server` builds the Engine
@@ -61,12 +82,14 @@ wasm = ["lean-ctx-engine/wasm"]
 test-support = ["lean-ctx-engine/test-support", "lean-ctx-hive/test-support"]
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false }
-lean-ctx-hooks = { path = "../lean-ctx-hooks", version = "=3.12.2", default-features = false }
-lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.2", default-features = false }
-lean-ctx-ocla = { path = "../lean-ctx-ocla", version = "5.0.0" }
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.5.0" }
-lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.1.0" }
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false }
+lean-ctx-shell-policy = { path = "../lean-ctx-shell-policy", version = "=3.12.3", default-features = false }
+lean-ctx-hooks = { path = "../lean-ctx-hooks", version = "=3.12.3", default-features = false }
+lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.3", default-features = false }
+lean-ctx-ocla = { path = "../lean-ctx-ocla", version = "6.0.0" }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.6.0" }
+lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.2.0" }
+lean-ctx-tasks = { path = "../lean-ctx-tasks", version = "0.1.0" }
 rmcp = { version = "3", features = [
   "server",
   "client",
@@ -144,8 +167,8 @@ windows-sys = { version = "0.61", features = [
 
 [dev-dependencies]
 # The Engine's test helpers for this crate's unit tests (see core::test_mode).
-lean-ctx-engine = { path = "../..", version = "=3.12.2", default-features = false, features = ["test-support"] }
-lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.2", default-features = false, features = ["test-support"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false, features = ["test-support"] }
+lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.3", default-features = false, features = ["test-support"] }
 jsonschema = { version = "0.46", default-features = false }
 serial_test = "3.5"
 axum = { version = "0.8", features = ["ws"] }

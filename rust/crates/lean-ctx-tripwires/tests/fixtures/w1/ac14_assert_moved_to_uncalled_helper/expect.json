@@ -1,0 +1,20 @@
+{
+  "edit_counts": {},
+  "hits": [
+    {
+      "line": 7,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "assert_removed"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/a.rs",
+      "rule": "test_or_grader_touched"
+    },
+    {
+      "line": 0,
+      "path": "rust/crates/demo/tests/helpers/mod.rs",
+      "rule": "test_or_grader_touched"
+    }
+  ]
+}

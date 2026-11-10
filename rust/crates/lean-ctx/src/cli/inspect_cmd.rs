@@ -48,7 +48,7 @@ fn usage() {
          \x20      lean-ctx inspect --receipt <DIGEST> [--project <DIR> | --proxy] [--json]\n\
          \x20      lean-ctx inspect --output <FILE | -> [--project <DIR> | --proxy] [--json]\n\
          \x20      lean-ctx inspect --task <TASK_ID> [--project-id <ID>] [--tenant-id <ID>] [--json]\n\
-         \x20      lean-ctx inspect --maintain\n\n\
+         \x20      lean-ctx inspect --maintain [--dry-run] [--json]\n\n\
          Options:\n  \
            --latest         the newest receipt (the default)\n  \
            --last <N>       show the N newest receipts (default 1, max {MAX_LAST})\n  \
@@ -61,7 +61,8 @@ fn usage() {
            --project-id <ID> the task's project (default: the current project root)\n  \
            --tenant-id <ID> the task's tenant, for organization-admitted tasks\n  \
            --json           machine-readable output\n  \
-           --maintain       pack older receipts and remove expired ones now\n\n\
+           --maintain       pack older receipts, remove expired ones and orphans now\n  \
+           --dry-run        with --maintain: list what a pass would remove, change nothing\n\n\
          Receipts are stored packed and kept at most {retention} days and under the store's\n\
          ceiling, oldest first; the last {protect} hours, the latest receipts of every project\n\
          and the receipts of tasks in progress are always kept.\n",
@@ -80,6 +81,7 @@ struct Options {
     tenant_id: Option<lean_ctx_protocol::TenantId>,
     json: bool,
     maintain: bool,
+    dry_run: bool,
 }
 
 fn parse(args: &[String]) -> Result<Option<Options>, String> {
@@ -93,6 +95,7 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
         tenant_id: None,
         json: false,
         maintain: false,
+        dry_run: false,
     };
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -100,6 +103,7 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
             "-h" | "--help" => return Ok(None),
             "--json" => options.json = true,
             "--maintain" => options.maintain = true,
+            "--dry-run" => options.dry_run = true,
             "--latest" => options.last = DEFAULT_LAST,
             "--receipt" => {
                 let value = args.next().ok_or("--receipt needs a digest")?;
@@ -165,11 +169,21 @@ fn parse(args: &[String]) -> Result<Option<Options>, String> {
     if lookups.iter().filter(|chosen| **chosen).count() > 1 {
         return Err("--receipt, --output and --task are separate lookups".to_owned());
     }
+    if options.dry_run && !options.maintain {
+        return Err("--dry-run only applies with --maintain".to_owned());
+    }
+    if options.maintain && lookups.iter().any(|chosen| *chosen) {
+        return Err("--maintain is not a lookup: drop --receipt, --output and --task".to_owned());
+    }
     Ok(Some(options))
 }
 
-/// One maintenance pass of the gateway evidence store, in the foreground.
-fn maintain() {
+/// Paths a human-readable dry run shows per kind; `--json` lists every one.
+const PLAN_SAMPLE: usize = 20;
+
+/// One maintenance pass of the gateway evidence store, in the foreground; with
+/// `dry_run`, only the list of what it would remove or pack.
+fn maintain(dry_run: bool, json: bool) {
     use lean_ctx::core::context_admission::receipt_store::retention;
     let Some(dir) = lean_ctx::core::data_dir::lean_ctx_data_dir()
         .ok()
@@ -178,30 +192,140 @@ fn maintain() {
         eprintln!("lean-ctx inspect: no lean-ctx data directory");
         std::process::exit(1);
     };
-    match retention::maintain_in(
-        &dir,
-        std::time::SystemTime::now(),
-        retention::Policy::current(),
-    ) {
-        Ok(done) if done.skipped => println!("Another process is maintaining the receipt store."),
-        Ok(done) => println!(
-            "Receipt store: {} packed, {} receipts and {} task indexes removed, {} MB freed, {} MB held{}.",
-            done.packed,
-            done.removed,
-            done.removed_tasks,
-            done.freed_bytes / 1_048_576,
-            done.bytes / 1_048_576,
-            if done.full {
-                " (full of protected evidence)"
-            } else {
-                ""
-            }
+    let now = std::time::SystemTime::now();
+    let policy = retention::Policy::current();
+    let result = if dry_run {
+        retention::plan_in(&dir, now, policy)
+    } else {
+        retention::maintain_in(&dir, now, policy)
+    };
+    match result {
+        Ok(done) if json => println!(
+            "{}",
+            serde_json::to_string_pretty(&maintenance_json(&done)).unwrap_or_else(|_| "{}".into())
         ),
+        Ok(done) if done.skipped => println!("Another process is maintaining the receipt store."),
+        Ok(done) => print!("{}", render_maintenance(&done)),
         Err(error) => {
             eprintln!("lean-ctx inspect: maintenance failed: {error}");
             std::process::exit(1);
         }
     }
+}
+
+fn mb(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+}
+
+/// The human-readable report of a pass or a dry run.
+fn render_maintenance(
+    done: &lean_ctx::core::context_admission::receipt_store::retention::Maintenance,
+) -> String {
+    use lean_ctx::core::context_admission::receipt_store::retention::Action;
+    use std::fmt::Write as _;
+    let full = if done.full {
+        " (full of protected evidence)"
+    } else {
+        ""
+    };
+    let mut out = String::new();
+    if !done.dry_run {
+        let _ = writeln!(
+            out,
+            "Receipt store: {} packed, {} receipts, {} task indexes and {} orphans removed, {} freed, {} held{full}.",
+            done.packed,
+            done.removed,
+            done.removed_tasks,
+            done.removed_orphans,
+            mb(done.freed_bytes),
+            mb(done.bytes),
+        );
+        return out;
+    }
+    let _ = writeln!(
+        out,
+        "Dry run — nothing was changed. A pass now would remove {} receipts, {} task indexes and {} orphans ({}), pack {}; the store holds {}, {} after the pass{full}.",
+        done.removed,
+        done.removed_tasks,
+        done.removed_orphans,
+        mb(done.freed_bytes),
+        done.packed,
+        mb(done.bytes + done.freed_bytes),
+        mb(done.bytes),
+    );
+    let _ = writeln!(out, "Largest receipt: {}.", mb(done.largest_receipt_bytes));
+    for action in Action::ALL {
+        let mut files = done
+            .planned
+            .iter()
+            .filter(|p| p.action == action)
+            .peekable();
+        if files.peek().is_none() {
+            continue;
+        }
+        let files: Vec<_> = files.collect();
+        let bytes: u64 = files.iter().map(|p| p.bytes).sum();
+        let _ = writeln!(
+            out,
+            "\n{}: {} files, {}",
+            action.as_str(),
+            files.len(),
+            mb(bytes)
+        );
+        for planned in files.iter().take(PLAN_SAMPLE) {
+            let _ = writeln!(out, "  {} ({} B)", planned.path.display(), planned.bytes);
+        }
+        if files.len() > PLAN_SAMPLE {
+            let _ = writeln!(
+                out,
+                "  … {} more (--json lists every path)",
+                files.len() - PLAN_SAMPLE
+            );
+        }
+    }
+    out
+}
+
+/// The machine-readable report: counts, bytes and, for a dry run, every path.
+fn maintenance_json(
+    done: &lean_ctx::core::context_admission::receipt_store::retention::Maintenance,
+) -> serde_json::Value {
+    use lean_ctx::core::context_admission::receipt_store::retention::Action;
+    let kinds: serde_json::Map<String, serde_json::Value> = Action::ALL
+        .iter()
+        .map(|action| {
+            let files: Vec<_> = done
+                .planned
+                .iter()
+                .filter(|p| p.action == *action)
+                .collect();
+            (
+                action.as_str().to_owned(),
+                serde_json::json!({
+                    "files": files.len(),
+                    "bytes": files.iter().map(|p| p.bytes).sum::<u64>(),
+                }),
+            )
+        })
+        .collect();
+    serde_json::json!({
+        "dry_run": done.dry_run,
+        "skipped": done.skipped,
+        "full": done.full,
+        "packed": done.packed,
+        "removed_receipts": done.removed,
+        "removed_task_indexes": done.removed_tasks,
+        "removed_orphans": done.removed_orphans,
+        "freed_bytes": done.freed_bytes,
+        "held_bytes": done.bytes,
+        "largest_receipt_bytes": done.largest_receipt_bytes,
+        "kinds": kinds,
+        "planned": done.planned.iter().map(|p| serde_json::json!({
+            "action": p.action.as_str(),
+            "path": p.path.to_string_lossy(),
+            "bytes": p.bytes,
+        })).collect::<Vec<_>>(),
+    })
 }
 
 fn current_project_root() -> String {
@@ -228,7 +352,7 @@ pub(crate) fn cmd_inspect(args: &[String]) {
         }
     };
     if options.maintain {
-        maintain();
+        maintain(options.dry_run, options.json);
         return;
     }
     let scope_root = current_project_root();

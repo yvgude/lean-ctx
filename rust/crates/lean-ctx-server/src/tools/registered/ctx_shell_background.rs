@@ -238,7 +238,11 @@ pub(crate) fn reauthorize_retained_output(
         .admit_background_output(expected, snapshot.completeness)
         .filter(|_| store.is_current());
     let delivery = retained.as_ref().map(|text| {
-        lean_ctx::core::context_admission::admit_tool_output(text, snapshot.completeness)
+        lean_ctx::core::context_admission::admit_tool_output_as(
+            text,
+            snapshot.completeness,
+            &snapshot.class,
+        )
     });
     let replacement = delivery
         .as_ref()

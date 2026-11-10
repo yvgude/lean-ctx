@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use super::{EngineSessionId, SessionState, parse_engine_session_id};
 use crate::core::context_admission::{
-    OutputCompleteness, admit_tool_output, stores::StoreAdmission,
+    OutputCompleteness, admit_tool_output_as, carrier::INSTANCE, stores::StoreAdmission,
 };
 use crate::core::policy::runtime::PublicationAuthority;
 
@@ -189,7 +189,8 @@ pub fn for_delivery(session: &SessionState) -> Result<SessionState, String> {
 
 pub fn admit_tool_value(session: &SessionState, text: &str) -> Result<String, String> {
     with_session_policy(session, || {
-        let admitted = admit_tool_output(text, OutputCompleteness::complete());
+        // A value of the session's own state, not a command's output.
+        let admitted = admit_tool_output_as(text, OutputCompleteness::complete(), &INSTANCE);
         admitted.text.ok_or_else(|| {
             admitted
                 .notice
@@ -338,8 +339,8 @@ fn admit_for_storage_as(
     // Both policies inspect original text before either is allowed to mask it.
     let project_original = crate::core::policy::content::protect_active(text).ok()?;
     let gateway_original = match path {
-        Some(path) => store.admit(text, path)?,
-        None => store.admit_text(text)?,
+        Some(path) => store.admit(text, path, None)?,
+        None => store.admit_instance_text(text)?,
     };
     let project_after_gateway = crate::core::policy::content::protect_active(&gateway_original)
         .ok()?
@@ -353,8 +354,8 @@ fn admit_for_storage_as(
         gateway_original
     } else {
         match path {
-            Some(path) => store.admit(project_original.as_ref(), path)?,
-            None => store.admit_text(project_original.as_ref())?,
+            Some(path) => store.admit(project_original.as_ref(), path, None)?,
+            None => store.admit_instance_text(project_original.as_ref())?,
         }
     };
     (project_after_gateway == gateway_after_project).then_some(project_after_gateway)
@@ -642,7 +643,7 @@ mod tests {
         let group = "1".repeat(4);
         let card = format!("4{} {group} {group} {group}", "1".repeat(3));
         assert_ne!(
-            store.admit_text(&card).as_deref(),
+            store.admit_instance_text(&card,).as_deref(),
             Some(card.as_str()),
             "the Gateway must still redact a card number in free text"
         );
@@ -651,7 +652,10 @@ mod tests {
         // (`pii::card_layout_plausible`: a separated digit run is a card only
         // in an issuer layout) its `YYYYmmdd-HHMMSS` run is no card, so the id
         // passes free-text admission as well.
-        assert_eq!(store.admit_text(legacy_id).as_deref(), Some(legacy_id));
+        assert_eq!(
+            store.admit_instance_text(legacy_id,).as_deref(),
+            Some(legacy_id)
+        );
 
         let mut session = SessionState::new();
         session.id = legacy_id.to_string();

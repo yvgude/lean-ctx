@@ -107,6 +107,10 @@ fn should_allow(tool_name: &str, file_path: Option<&str>, payload: &str) -> bool
         return true;
     }
 
+    if is_user_excluded_shell(tool_name, payload) {
+        return true;
+    }
+
     // GH #1228: Claude/CodeBuddy auto memory must use native Read/Edit even
     // when Replace-mode deny hooks are installed.
     if file_path.is_some_and(|p| {
@@ -143,7 +147,7 @@ fn should_allow(tool_name: &str, file_path: Option<&str>, payload: &str) -> bool
 /// command must pass the same shell allowlist `ctx_shell` enforces, and only an
 /// exact Claude PreToolUse payload qualifies.
 fn is_notifying_background_shell(tool_name: &str, payload: &str) -> bool {
-    use lean_ctx::core::shell_allowlist::{ShellSecurity, passes_enforced};
+    use lean_ctx_shell_policy::{ShellSecurity, passes_enforced};
     if tool_name != "Bash" {
         return false;
     }
@@ -163,6 +167,27 @@ fn is_notifying_background_shell(tool_name: &str, payload: &str) -> bool {
     super::is_claude_pretooluse_payload(&v)
         && background
         && (ShellSecurity::resolve() == ShellSecurity::Off || passes_enforced(cmd))
+}
+
+/// #2194: a native shell command the user excluded from LeanCTX
+/// (`excluded_commands`, a `redirect_exclude` read) runs natively, so Replace
+/// mode does not deny it; the rewrite hook leaves it untouched for the same
+/// reason. Like the background exception it is never weaker than `ctx_shell`:
+/// the command must pass the same shell allowlist.
+fn is_user_excluded_shell(tool_name: &str, payload: &str) -> bool {
+    use lean_ctx_shell_policy::{ShellSecurity, passes_enforced};
+    if !super::is_shell_tool(tool_name) {
+        return false;
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return false;
+    };
+    let args = super::payload::resolve_tool_args(&v);
+    let Some(cmd) = super::payload::resolve_command(&v, args.as_ref()) else {
+        return false;
+    };
+    super::exclusions::user_excluded_reason(&cmd).is_some()
+        && (ShellSecurity::resolve() == ShellSecurity::Off || passes_enforced(&cmd))
 }
 
 fn is_lean_ctx_tool(tool_name: &str) -> bool {
@@ -980,6 +1005,35 @@ mod tests {
         assert!(
             denied_when_chosen,
             "an explicit Replace choice still denies"
+        );
+    }
+
+    /// #2194 r1: Replace mode does not deny a shell command the user excluded
+    /// from LeanCTX (it runs natively, as the rewrite hook leaves it), but the
+    /// allowlist `ctx_shell` enforces still applies.
+    #[test]
+    fn excluded_shell_command_passes_replace_mode_within_the_allowlist() {
+        let bash = |cmd: &str| {
+            serde_json::json!({ "tool_name": "Bash", "tool_input": { "command": cmd } }).to_string()
+        };
+        let verdicts = crate::hook_handlers::tests::tests_excluded_rewrites::with_isolated_config(
+            |write_config| {
+                write_config("excluded_commands = [\"git\", \"kubectl\"]\n");
+                let _mode = lean_ctx::test_env::VarGuard::set("LEAN_CTX_HOOK_MODE", "replace");
+                [
+                    "git status",
+                    "cargo test\ngit status",
+                    "cargo test",
+                    "kubectl get pods",
+                ]
+                .map(|cmd| should_allow("Bash", None, &bash(cmd)))
+            },
+        );
+        assert_eq!(
+            verdicts,
+            [true, true, false, false],
+            "excluded git passes (also on a later line); cargo is not excluded; \
+             kubectl is excluded but outside the allowlist"
         );
     }
 

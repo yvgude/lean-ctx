@@ -1,0 +1,11 @@
+{
+  "ac": "pz21-AC05",
+  "channel": "issue",
+  "clean": true,
+  "fenced": true,
+  "must_contain": [
+    "Timeouts when the repository has more than 200k files."
+  ],
+  "must_not_contain": [],
+  "redacted_lines": 0
+}

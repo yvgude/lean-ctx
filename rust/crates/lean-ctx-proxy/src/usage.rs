@@ -101,6 +101,9 @@ pub struct WireContext {
     /// Local project key of the folder the agent named in the request
     /// (`super::project_attribution`); splits measured spend per project.
     pub project_key: Option<String>,
+    /// The launching app's session (`x-leanctx-session-id`, validated);
+    /// splits measured spend per app session. Attribution only.
+    pub app_session: Option<String>,
     /// Estimated tokens this request saved through wire compression
     /// (bytes/4 heuristic, same basis as the proxy stats).
     pub saved_tokens: u64,
@@ -729,6 +732,7 @@ mod tests {
             team: None,
             project: Some("billing".into()),
             project_key: None,
+            app_session: None,
             saved_tokens: 42,
             uncompressed_input_tokens: 500,
             is_local: false,

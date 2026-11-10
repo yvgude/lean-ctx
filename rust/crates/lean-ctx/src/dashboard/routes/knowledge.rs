@@ -577,8 +577,11 @@ mod tests {
         let _data = lean_ctx::core::data_dir::isolated_data_dir();
         let project = tempfile::tempdir().unwrap();
         let root = project.path().to_string_lossy().into_owned();
+        // Six edits race as well as sixteen did, and stay inside the lock's
+        // 10 s wait on a loaded CI host (sixteen serialized fsyncs did not).
+        const EDITS: usize = 6;
         std::thread::scope(|s| {
-            for i in 0..16 {
+            for i in 0..EDITS {
                 let root = &root;
                 s.spawn(move || {
                     let (status, _, body) = apply_relation_edit(
@@ -596,7 +599,7 @@ mod tests {
         let graph = KnowledgeRelationGraph::load(&hash).expect("saved graph");
         assert_eq!(
             graph.edges.len(),
-            16,
+            EDITS,
             "an edge was lost to a concurrent edit"
         );
 

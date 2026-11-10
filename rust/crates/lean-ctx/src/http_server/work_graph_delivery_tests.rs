@@ -302,10 +302,12 @@ fn host_started_child_process() {
         .parse()
         .unwrap();
     assert!(address.ip().is_loopback());
+    // Hang guards only, inside the parent's 30 s deadline: a loaded CI host
+    // answered this request after more than the former 3 s (WouldBlock).
     let mut stream =
-        std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_secs(3)).unwrap();
+        std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_secs(20)).unwrap();
     stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+        .set_read_timeout(Some(std::time::Duration::from_secs(20)))
         .unwrap();
     write!(stream, "POST /ocla/v1/delivery/scoped HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
     stream.write_all(&body).unwrap();

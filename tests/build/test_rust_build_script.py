@@ -23,6 +23,11 @@ class BuildScriptTests(unittest.TestCase):
             )
             (project / "src/lib.rs").write_text("pub fn probe() {}\n", encoding="utf-8")
             shutil.copyfile(root / "rust/build.rs", project / "build.rs")
+            # build.rs includes the build-origin rules via #[path].
+            (project / "src/core").mkdir()
+            shutil.copyfile(
+                root / "rust/src/core/build_origin.rs", project / "src/core/build_origin.rs"
+            )
             env = dict(os.environ)
             env["CARGO_BUILD_JOBS"] = "3"
             # This isolated regression fixture owns and removes its tiny cache.

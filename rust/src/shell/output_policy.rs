@@ -57,6 +57,21 @@ fn is_passthrough(command: &str, user_excluded: &[String]) -> bool {
     super::compress::is_excluded_command(command, user_excluded)
 }
 
+/// Whether `command` matches one of the user's `excluded_commands` entries:
+/// case-insensitive, the whole command or the entry followed by a space
+/// (`git` matches `git status`, not `gitk`). The one matcher both the shell
+/// path ([`classify`]) and the `hook rewrite` entry point use (#2194).
+pub fn is_user_excluded(command: &str, user_excluded: &[String]) -> bool {
+    if user_excluded.is_empty() {
+        return false;
+    }
+    let cmd = command.trim().to_lowercase();
+    user_excluded.iter().any(|excl| {
+        let excl_lower = excl.trim().to_lowercase();
+        !excl_lower.is_empty() && (cmd == excl_lower || cmd.starts_with(&format!("{excl_lower} ")))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

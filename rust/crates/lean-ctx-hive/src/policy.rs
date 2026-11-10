@@ -304,6 +304,63 @@ pub fn pull(session: &Session) -> Result<PolicyPull, HiveError> {
     }
 }
 
+const PULLS_FILE: &str = "pulls.json";
+
+/// What started a policy pull.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PulledVia {
+    /// A bus hint (`policy.advanced`, a reconnect).
+    Nudge,
+    /// The scheduler's periodic pull (the fallback).
+    Poll,
+    /// `lean-ctx hive sync`.
+    Manual,
+}
+
+/// The last policy pull, and whether Hive has shown it sends policy
+/// nudges (`<data_dir>/hive/policy/pulls.json`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PullRecord {
+    pub last_pull_at: Option<String>,
+    pub pulled_via: Option<PulledVia>,
+    /// Hive sent a `policy.advanced` frame or a `hello.ack` with
+    /// `policy_version` at least once: changes arrive at once; until then
+    /// only the periodic pull brings them.
+    pub nudges_seen: bool,
+}
+
+pub fn load_pulls(data_dir: &Path) -> PullRecord {
+    std::fs::read(data_dir.join("policy").join(PULLS_FILE))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn save_pulls(data_dir: &Path, record: &PullRecord) {
+    if let Ok(bytes) = serde_json::to_vec_pretty(record) {
+        let _ = write_private(&data_dir.join("policy"), PULLS_FILE, &bytes);
+    }
+}
+
+/// Note a successful pull started by `via`.
+pub fn note_pull(data_dir: &Path, via: PulledVia) {
+    let mut record = load_pulls(data_dir);
+    record.last_pull_at = Some(Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+    record.pulled_via = Some(via);
+    save_pulls(data_dir, &record);
+}
+
+/// Note that Hive sends policy nudges (written once).
+pub fn note_nudges_seen(data_dir: &Path) {
+    let mut record = load_pulls(data_dir);
+    if !record.nudges_seen {
+        record.nudges_seen = true;
+        save_pulls(data_dir, &record);
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::*;

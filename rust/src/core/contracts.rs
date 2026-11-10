@@ -410,6 +410,9 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Experimental,
         ),
+        doc("local-read", "local-read-v1.md", 1, Experimental),
+        doc("client-calls", "client-calls-v1.md", 1, Experimental),
+        doc("local-service", "local-service-v1.md", 1, Experimental),
         doc(
             "engine-provider-execution",
             "engine-provider-execution-v1.md",

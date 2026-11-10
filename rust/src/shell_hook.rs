@@ -621,9 +621,10 @@ fn build_env_check() -> String {
     format!("[[ {} ]]", checks.join(" || "))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
 pub mod test_helpers {
-    use super::*;
+    use super::redirect_block;
     pub fn redirect_block_for_test(exec_var: &str, env_check: &str) -> String {
         redirect_block(exec_var, env_check)
     }

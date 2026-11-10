@@ -141,7 +141,7 @@ impl BuiltinAgentGateway {
         registry: &mut AgentRegistry,
         request: &AgentMessageRequest,
     ) -> Result<String, String> {
-        registry.post_message_keyed(
+        let id = registry.post_message_keyed(
             Some(&request.project_root),
             &request.from_agent_id,
             request.to_agent_id.as_deref(),
@@ -151,7 +151,22 @@ impl BuiltinAgentGateway {
             request.priority.clone(),
             request.ttl_hours,
             request.request_id.as_deref(),
-        )
+        )?;
+        // Under the same lock as the post: no reader sees it without them.
+        if (request.task_id.is_some() || !request.metadata.is_empty())
+            && let Some(entry) = registry.scratchpad.iter_mut().find(|e| e.id == id)
+        {
+            if let Some(task_id) = &request.task_id {
+                entry.task_id = Some(task_id.clone());
+            }
+            for (key, value) in &request.metadata {
+                entry
+                    .metadata
+                    .entry(key.clone())
+                    .or_insert_with(|| value.clone());
+            }
+        }
+        Ok(id)
     }
 }
 
@@ -238,6 +253,8 @@ mod tests {
             priority: MessagePriority::High,
             ttl_hours: Some(2),
             request_id: None,
+            task_id: None,
+            metadata: std::collections::BTreeMap::new(),
         }
     }
 
