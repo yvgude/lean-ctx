@@ -429,6 +429,15 @@ new_paths = [
   "scripts/scan-release-artifacts.py",
   "scripts/source-export-manifest.py",
   "scripts/sync-capabilities.py",
+  # ECCP W1b-02 change classifier (task 156): own code, Apache-2.0 SPDX-headed.
+  "scripts/change-class",
+  "scripts/tests/test_change_class.py",
+  "scripts/tests/fixtures/change-class/global/base/demo.txt",
+  "scripts/tests/fixtures/change-class/global/head/demo.txt",
+  "scripts/tests/fixtures/change-class/interface/base/demo.txt",
+  "scripts/tests/fixtures/change-class/interface/head/demo.txt",
+  "scripts/tests/fixtures/change-class/local/base/demo.txt",
+  "scripts/tests/fixtures/change-class/local/head/demo.txt",
   # Derivations registry: merge drivers + regenerate for generated and list files (.gitattributes).
   "scripts/derivations.py",
   "scripts/tests/test_derivations.py",

@@ -436,11 +436,11 @@
    "size": 525
   },
   {
-   "blob": "90e3b89af0a3b3a6e5d85be237f12c29c1a1b9f3",
+   "blob": "871744bf7b6cf80cd83554c8063d857a0d16f481",
    "mode": "100644",
    "path": "PUBLISH_MANIFEST.toml",
-   "sha256": "062fa6144ad488f45f2e90d43322c9975e12108bbb4cb1e189a3fa8df38c3eba",
-   "size": 308754
+   "sha256": "c229a578887eba9d41607f9a767234d1cb2a72dcb8889aba47507b38e549362d",
+   "size": 309276
   },
   {
    "blob": "b50ec9ee68e230777b65ff932e22735417a8e540",
@@ -2480,10 +2480,10 @@
    "size": 671
   },
   {
-   "blob": "3a97513ad084243ee5680ac510022664dec5f4da",
+   "blob": "1e028f5b735e0a76a1f6e76a4678e75fd7b53a0f",
    "mode": "100644",
    "path": "docs/contracts/team-seat-value-v1/frozen-hashes.json",
-   "sha256": "e0993056b5fb3faeb2e5dcdf56d3b40ea15835e81a219188074d57363b432b11",
+   "sha256": "6efc9fd3809d244bd9424a56ec9d2c369ba7ffdcf6049fe4967d426a2a125d5f",
    "size": 3917
   },
   {
@@ -4748,11 +4748,11 @@
    "size": 10667
   },
   {
-   "blob": "c14171fcb57f569ea20d1434f462319f7bf96a8d",
+   "blob": "c9811824d1287883d1314fca00d538ed5516f458",
    "mode": "100644",
    "path": "rust/CRATE_MAP.toml",
-   "sha256": "24c563f179a844cb2bc1b527ff0561da7b40c93ad0fe710ffede126632942a8a",
-   "size": 5569
+   "sha256": "7703d4b8915c7f7c165a9552e4aca7c0e90cef4c2744b75cc1b5dd585c5a0804",
+   "size": 5568
   },
   {
    "blob": "c0409ac95a09b11727582b2773b3abd7d2272c0d",
@@ -25909,11 +25909,11 @@
    "size": 11553
   },
   {
-   "blob": "6e898dd2f60c1ee440dd78ee290a81f3b3abc039",
+   "blob": "55c5c55b6ecf9d2b46cc02a93cbe735ba4d199ff",
    "mode": "100644",
    "path": "rust/src/core/contracts.rs",
-   "sha256": "761f5296e644aa669aeeb760cf7e7bdd73ad7f26cddb6703bb19ac1b4f989a88",
-   "size": 22269
+   "sha256": "ffca7b802db759bcbd644da7e841a7c9a3c5593c81517547bfe807c1d6ab882e",
+   "size": 22343
   },
   {
    "blob": "eda31b7ef0993d2f7b82f82e8e13919a4ee3d800",
@@ -34862,6 +34862,13 @@
    "size": 8178
   },
   {
+   "blob": "c145668f00fa194887df0db869484d3cb4293313",
+   "mode": "100755",
+   "path": "scripts/change-class",
+   "sha256": "581de05d00134657cb72bc44079a0f3241902aaad2c41c1cc150db26fecd87a7",
+   "size": 40355
+  },
+  {
    "blob": "ef3356fde42840142716b241144edd7c31021048",
    "mode": "100755",
    "path": "scripts/check-addon-versions.py",
@@ -35310,6 +35317,48 @@
    "size": 39022
   },
   {
+   "blob": "add3e0714c16d7bf2683b326dba1973496113985",
+   "mode": "100644",
+   "path": "scripts/tests/fixtures/change-class/global/base/demo.txt",
+   "sha256": "f10b976c38393b4e669a4dee057d0df6e2a6fcfdf0dc1926f2ea807bd994bfc4",
+   "size": 189
+  },
+  {
+   "blob": "221632efa9f675d7a92fe2c16ba0ffe51db5054a",
+   "mode": "100644",
+   "path": "scripts/tests/fixtures/change-class/global/head/demo.txt",
+   "sha256": "d51ef95427e2ce7049b56f33660429d754eab80674efd8d154fdae0086c5f4a8",
+   "size": 139
+  },
+  {
+   "blob": "add3e0714c16d7bf2683b326dba1973496113985",
+   "mode": "100644",
+   "path": "scripts/tests/fixtures/change-class/interface/base/demo.txt",
+   "sha256": "f10b976c38393b4e669a4dee057d0df6e2a6fcfdf0dc1926f2ea807bd994bfc4",
+   "size": 189
+  },
+  {
+   "blob": "2e3b1400b3acd1bc64ebbc4f06cba6aaf2518b8c",
+   "mode": "100644",
+   "path": "scripts/tests/fixtures/change-class/interface/head/demo.txt",
+   "sha256": "77c6ac0489d0aa30bb853764328c79bc2b1ca8b0c5a16edce8274c7cdae2465e",
+   "size": 262
+  },
+  {
+   "blob": "add3e0714c16d7bf2683b326dba1973496113985",
+   "mode": "100644",
+   "path": "scripts/tests/fixtures/change-class/local/base/demo.txt",
+   "sha256": "f10b976c38393b4e669a4dee057d0df6e2a6fcfdf0dc1926f2ea807bd994bfc4",
+   "size": 189
+  },
+  {
+   "blob": "add3e0714c16d7bf2683b326dba1973496113985",
+   "mode": "100644",
+   "path": "scripts/tests/fixtures/change-class/local/head/demo.txt",
+   "sha256": "f10b976c38393b4e669a4dee057d0df6e2a6fcfdf0dc1926f2ea807bd994bfc4",
+   "size": 189
+  },
+  {
    "blob": "4b95835ac42f7b4eaa7537ec04dc4e49cd5437c8",
    "mode": "100644",
    "path": "scripts/tests/fixtures/ip-provenance/README.md",
@@ -35378,6 +35427,13 @@
    "path": "scripts/tests/fixtures/ip-provenance/vendor-missing-notice/vendor.txt",
    "sha256": "394fdd7ca16c7b6aa7571f286cdfac68bd847463a150ad9f793b214fe935ab5d",
    "size": 41
+  },
+  {
+   "blob": "01573bcc6d1404f946c216f59815ec93502bd7b4",
+   "mode": "100644",
+   "path": "scripts/tests/test_change_class.py",
+   "sha256": "30e5c8382bfc6c1f3a8277b1823ab83938535d347c023d57ead8cd69f15c75c3",
+   "size": 9515
   },
   {
    "blob": "0a1648089486dba22c2c0c8921d02e734bb74e9f",
@@ -36545,9 +36601,9 @@
    "sha256": "d8ece87e85f847ba6ef03ac36623f3fa5675f01c3cd01ee22a4c8362eec48dda"
   }
  ],
- "manifest_sha256": "062fa6144ad488f45f2e90d43322c9975e12108bbb4cb1e189a3fa8df38c3eba",
+ "manifest_sha256": "c229a578887eba9d41607f9a767234d1cb2a72dcb8889aba47507b38e549362d",
  "schema": 1,
- "source_commit": "bd0b358799a23e6d61451db3c71a9e1b64647b99",
+ "source_commit": "04909d16f75deda223f610f9474ace20c5c4195f",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "3d43f91f7edbd7fff6e30ff7c7c5c559e392b1c116b87319b2d8b1afa309ab57"
+ "tree_sha256": "ae1553bea164ae0acfac78027aa6c4169333c669a0c75d01a28d59b9b987d9e7"
 }
