@@ -214,6 +214,9 @@ fn verify_cep_delta_tracking_prevents_overcounting() {
             lean_ctx_dir.to_string_lossy().to_string(),
         );
     };
+    // The stats buffer is process-wide: another test in this binary may
+    // have filled it (same PID) from a different data dir. Start clean.
+    lean_ctx::core::stats::reset_all();
 
     let mut modes = HashMap::new();
     modes.insert("full".to_string(), 5u64);

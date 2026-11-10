@@ -660,7 +660,33 @@ pub fn resolve(path: &Path) -> Result<PathBuf, String> {
             _ => out = next,
         }
     }
+    #[cfg(windows)]
+    let out = long_form(out);
     Ok(out)
+}
+
+/// Windows names one directory two ways (`C:\Users\RUNNER~1` and
+/// `C:\Users\runneradmin`): spell the existing part of `path` in its long,
+/// canonical form (without `\\?\`), so a binding and a target compare equal.
+#[cfg(windows)]
+fn long_form(path: PathBuf) -> PathBuf {
+    for existing in path.ancestors() {
+        if let Ok(canonical) = std::fs::canonicalize(existing) {
+            let rest = path
+                .strip_prefix(existing)
+                .unwrap_or_else(|_| Path::new(""));
+            let base = match canonical.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+                Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
+                _ => canonical,
+            };
+            return if rest.as_os_str().is_empty() {
+                base
+            } else {
+                base.join(rest)
+            };
+        }
+    }
+    path
 }
 
 /// Queue the components of `path` (last first, so they pop in order); an

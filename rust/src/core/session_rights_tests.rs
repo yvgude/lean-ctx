@@ -1141,7 +1141,7 @@ fn session_rights_rights_file_cannot_be_replaced_through_its_directory() {
     let err = rule(bash(
         &s,
         &fx,
-        &format!("mv {} {}.old", dir.display(), dir.display()),
+        &format!("mv '{}' '{}.old'", dir.display(), dir.display()),
     ));
     assert!(err.contains("rights_file"), "{err}");
 

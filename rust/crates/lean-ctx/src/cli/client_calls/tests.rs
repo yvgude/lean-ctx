@@ -116,6 +116,7 @@ fn fs_read_is_verbatim_sliced_and_bounded() {
             ..Default::default()
         })
         .unwrap();
+    // The stream records targets with `/` separators (Windows: `C:/...`).
     let reads: Vec<_> = stream
         .events
         .iter()
@@ -124,7 +125,7 @@ fn fs_read_is_verbatim_sliced_and_bounded() {
         .collect();
     assert!(
         reads.contains(&(
-            Some(path.clone()),
+            Some(path.replace('\\', "/")),
             Some(lean_ctx::core::activity::Outcome::Ok),
             lean_ctx::core::activity::Source::Acp,
             "codex".to_owned()

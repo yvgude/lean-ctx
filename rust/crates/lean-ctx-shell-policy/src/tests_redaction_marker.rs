@@ -190,6 +190,8 @@ fn file_writes_admit_the_marker_only_in_source_and_test_code() {
 /// directory. `client fs write` hands over the canonical absolute path, so
 /// only the part below the root may be judged; a path outside the root
 /// never takes a marker.
+// POSIX path literals (`/home/u/...` is not absolute on Windows).
+#[cfg(unix)]
 #[test]
 fn a_test_folder_above_the_project_root_grants_no_exemption() {
     let content = "url = \"postgres://[REDACTED:Database credentials]@db\"\n";

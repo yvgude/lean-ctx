@@ -24,8 +24,11 @@ pub(super) fn private_copy(
     let mut init = git(dir);
     init.args(["init", "--quiet", "--bare"]).arg(&git_dir);
     run_git(init, "init")?;
-    let source =
-        std::fs::canonicalize(repo).map_err(|e| GateError::Check(format!("the worktree: {e}")))?;
+    // Without the Windows `\\?\` prefix: git reads `\\?\C:\x` as `host:path`
+    // ("hostname contains invalid characters"); `C:/x` is a local path.
+    let source = std::fs::canonicalize(repo)
+        .map(lean_ctx::core::pathutil::strip_verbatim)
+        .map_err(|e| GateError::Check(format!("the worktree: {e}")))?;
     let mut fetch = git(&git_dir);
     fetch
         .args([
