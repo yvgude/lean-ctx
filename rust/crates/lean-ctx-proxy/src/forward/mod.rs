@@ -924,6 +924,29 @@ async fn prepare_upstream_request(
         .and_then(|v| v.get("model"))
         .and_then(|m| m.as_str())
         .map(str::to_owned);
+    // Cache-share guard (hc25): an open model may only leave for a provider
+    // with a listed cache discount when the policy says "refuse".
+    if let Some(open_model) = model
+        .clone()
+        .or_else(|| super::usage::gemini_model_from_path(parts.uri.path()))
+    {
+        let (provider, is_local) =
+            prepare::serving_identity(&parts, provider_label, upstream_base, route.as_ref());
+        if let Some(code) = super::cache_share::open_model_refusal(&provider, &open_model, is_local)
+        {
+            let refusal = admitted::GatewayRefusal::withheld(code);
+            tracing::warn!(
+                "lean-ctx proxy: {} ({provider}/{open_model})",
+                refusal.message()
+            );
+            return Ok(admission::refused(
+                &refusal,
+                provider_label,
+                caller_bytes,
+                &trace_id,
+            ));
+        }
+    }
     let cache_prompt_hash = super::ocla_cache_bridge::prompt_hash(&body_bytes);
     if let (Some(cache), Some(model)) = (&state.ocla_cache, model.clone())
         && let Some(cached) = cache.try_cache_hit(&model, &cache_prompt_hash, 0.0, 0)

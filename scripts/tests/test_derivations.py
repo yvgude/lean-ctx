@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Merge drivers of scripts/derivations.py, run by a real `git merge` with the repository's
 .gitattributes: two agent branches that touch the same declared files merge without a text
-conflict, and a frozen hash set differently on both sides still stops the merge."""
+conflict; anything the drivers cannot merge safely (a frozen hash set twice, structured blocks
+appended on both sides, a tree without the script) stops with git's conflict markers. Plus the
+`regenerate` command that rebuilds derived files after a merge."""
 
 from __future__ import annotations
 
@@ -9,6 +11,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -36,7 +39,9 @@ def lock(*packages: tuple[str, str, list[str]]) -> str:
     return LOCK_HEAD + "".join("\n" + b for b in blocks)
 
 
-class DerivationMergeTest(unittest.TestCase):
+class RepoCase(unittest.TestCase):
+    """A fresh repository with the drivers installed and the declared files committed on main."""
+
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="derivations-"))
         self.repo = self.tmp / "repo"
@@ -80,6 +85,15 @@ class DerivationMergeTest(unittest.TestCase):
         self.write(files)
         self.commit(name)
 
+    def merge(self, ours: str, theirs: str) -> subprocess.CompletedProcess:
+        self.git("checkout", "-q", ours)
+        return self.git("merge", "--no-edit", theirs, check=False)
+
+    def conflicted(self) -> list[str]:
+        return self.git("diff", "--name-only", "--diff-filter=U").stdout.split()
+
+
+class DerivationMergeTest(RepoCase):
     def test_two_branches_touching_declared_files_merge_cleanly(self) -> None:
         row_a = 'rust/src/core/bus,core-file,no,CORE_KEEP,R11,"coordination"\n'
         row_b = 'rust/src/core/budget,core-file,no,CORE_KEEP,R11,"coordination"\n'
@@ -129,6 +143,290 @@ class DerivationMergeTest(unittest.TestCase):
         self.assertEqual(self.git("diff", "--name-only", "--diff-filter=U").stdout.split(),
                          ["docs/contracts/frozen-hashes.json"])
         self.assertIn("<<<<<<<", self.read("docs/contracts/frozen-hashes.json"))
+
+    def test_dependency_list_added_on_both_sides_conflicts_instead_of_breaking_the_lock(self) -> None:
+        # Both sides give `app` its first dependency list. `dependencies = [` and `]` appear on
+        # both sides; dropping them as "added by both" left `"zstd",` outside the list.
+        self.git("checkout", "-q", "main")
+        self.write({"rust/Cargo.lock": lock(("app", "0.1.0", []), ("serde", "1.0.0", []))})
+        self.commit("app without dependencies")
+        self.branch("agent-a", {"rust/Cargo.lock": lock(("app", "0.1.0", ["log"]), ("log", "0.4.0", []),
+                                                        ("serde", "1.0.0", []))})
+        self.branch("agent-b", {"rust/Cargo.lock": lock(("app", "0.1.0", ["zstd"]), ("serde", "1.0.0", []),
+                                                        ("zstd", "0.13.0", []))})
+        merge = self.merge("agent-a", "agent-b")
+        self.assertNotEqual(merge.returncode, 0, self.read("rust/Cargo.lock"))
+        self.assertEqual(self.conflicted(), ["rust/Cargo.lock"])
+        self.assertIn("<<<<<<<", self.read("rust/Cargo.lock"))
+
+    def test_toml_tables_appended_on_both_sides_never_merge_into_invalid_toml(self) -> None:
+        def table(path: str) -> str:
+            return f'\n[[generated]]\npath = "{path}"\nsha256 = "{path[0] * 64}"\nrequired = true\n'
+
+        self.branch("agent-a", {"PUBLISH_MANIFEST.toml": MANIFEST_BASE + table("a.json")})
+        self.branch("agent-b", {"PUBLISH_MANIFEST.toml": MANIFEST_BASE + table("b.json")})
+        merge = self.merge("agent-a", "agent-b")
+        manifest = self.read("PUBLISH_MANIFEST.toml")
+        if merge.returncode == 0:  # a clean merge must keep both tables intact
+            generated = tomllib.loads(manifest)["generated"]
+            self.assertEqual(sorted(t["path"] for t in generated), ["a.json", "b.json"], manifest)
+        else:
+            self.assertEqual(self.conflicted(), ["PUBLISH_MANIFEST.toml"])
+            self.assertIn("<<<<<<<", manifest)
+
+    def test_tree_without_the_script_falls_back_to_a_marked_text_merge(self) -> None:
+        # A backport line or a branch cut before the registry has no scripts/derivations.py, but
+        # the drivers are installed clone-wide. git must still write markers: a conflict without
+        # them keeps ours unchanged, and a `git add` would silently drop theirs.
+        self.git("checkout", "-q", "-b", "old-line", "main")
+        self.git("rm", "-q", "scripts/derivations.py")
+        self.write({"CHANGELOG.md": CHANGELOG_BASE.replace("- older fix", "- fix on the old line")})
+        self.commit("old line")
+        self.branch("agent-b", {"CHANGELOG.md": CHANGELOG_BASE.replace("- older fix", "- fix from b")})
+        merge = self.merge("old-line", "agent-b")
+        self.assertNotEqual(merge.returncode, 0)
+        self.assertEqual(self.conflicted(), ["CHANGELOG.md"])
+        changelog = self.read("CHANGELOG.md")
+        self.assertIn("<<<<<<<", changelog)
+        self.assertIn("- fix from b\n", changelog)
+
+    def assert_marked_conflict(self, merge: subprocess.CompletedProcess, path: str) -> None:
+        self.assertNotEqual(merge.returncode, 0, self.read(path))
+        self.assertEqual(self.conflicted(), [path])
+        self.assertIn("<<<<<<<", self.read(path))
+
+    def test_key_added_to_a_table_the_other_side_deleted_conflicts(self) -> None:
+        # Ours deletes the last [[generated]] table, theirs adds a key to it. Merging would hang
+        # `note` onto the previous table: valid TOML, wrong meaning, exit 0.
+        tables = '\n[[generated]]\npath = "a"\nrequired = true\n\n[[generated]]\npath = "b"\nrequired = true\n'
+        self.git("checkout", "-q", "main")
+        self.write({"PUBLISH_MANIFEST.toml": MANIFEST_BASE + tables})
+        self.commit("two tables")
+        dropped = MANIFEST_BASE + '\n[[generated]]\npath = "a"\nrequired = true\n'
+        self.branch("agent-a", {"PUBLISH_MANIFEST.toml": dropped})
+        self.branch("agent-b", {"PUBLISH_MANIFEST.toml": MANIFEST_BASE + tables + 'note = "y"\n'})
+        self.assert_marked_conflict(self.merge("agent-a", "agent-b"), "PUBLISH_MANIFEST.toml")
+
+    def test_detail_added_to_a_changelog_entry_the_other_side_dropped_conflicts(self) -> None:
+        entries = "- fix A\n  details A\n- fix B\n"
+        self.git("checkout", "-q", "main")
+        self.write({"CHANGELOG.md": CHANGELOG_BASE.replace("- older fix\n", entries)})
+        self.commit("two entries")
+        self.branch("agent-a", {"CHANGELOG.md": CHANGELOG_BASE.replace("- older fix\n", "- fix A\n  details A\n")})
+        self.branch("agent-b", {"CHANGELOG.md": CHANGELOG_BASE.replace("- older fix\n", entries + "  details B\n")})
+        self.assert_marked_conflict(self.merge("agent-a", "agent-b"), "CHANGELOG.md")
+
+    def test_table_appended_by_one_side_and_key_by_the_other_conflicts(self) -> None:
+        # Ours appends [b], theirs appends a key to [a]. Concatenated, `k` lands under [b]:
+        # valid TOML, wrong meaning, exit 0. Either merge direction must conflict.
+        self.git("checkout", "-q", "main")
+        self.write({"PUBLISH_MANIFEST.toml": "[a]\nx = 1\n"})
+        self.commit("table a")
+        self.branch("agent-a", {"PUBLISH_MANIFEST.toml": "[a]\nx = 1\n[b]\nz = 2\n"})
+        self.branch("agent-b", {"PUBLISH_MANIFEST.toml": "[a]\nx = 1\nk = 1\n"})
+        self.assert_marked_conflict(self.merge("agent-a", "agent-b"), "PUBLISH_MANIFEST.toml")
+        self.git("merge", "--abort")
+        self.assert_marked_conflict(self.merge("agent-b", "agent-a"), "PUBLISH_MANIFEST.toml")
+
+    def assert_both_directions_conflict(self, base: str, ours: str, theirs: str) -> None:
+        self.git("checkout", "-q", "main")
+        self.write({"PUBLISH_MANIFEST.toml": base})
+        self.commit("base")
+        self.branch("agent-a", {"PUBLISH_MANIFEST.toml": ours})
+        self.branch("agent-b", {"PUBLISH_MANIFEST.toml": theirs})
+        self.assert_marked_conflict(self.merge("agent-a", "agent-b"), "PUBLISH_MANIFEST.toml")
+        self.git("merge", "--abort")
+        self.assert_marked_conflict(self.merge("agent-b", "agent-a"), "PUBLISH_MANIFEST.toml")
+
+    def test_header_with_a_bracket_in_a_quoted_key_conflicts(self) -> None:
+        # `[t."x]y"]` is a table header; read as plain text the `]` inside the key hid it, and
+        # theirs' `k` landed under [t."x]y"] instead of [a]: valid TOML, wrong meaning, exit 0.
+        self.assert_both_directions_conflict("[a]\nx = 1\n", '[a]\nx = 1\n[t."x]y"]\nz = 2\n',
+                                             "[a]\nx = 1\nk = 1\n")
+
+    def test_insert_that_opens_a_multi_line_string_conflicts(self) -> None:
+        # Ours adds `more` before the body line `one` of `doc`; the diff aligns `one` with the
+        # base, so ours' insert closes `doc` and opens `more` without closing it. Theirs adds a
+        # line to `doc` in the same gap; concatenated, it would land in `more`.
+        base = '[a]\ndoc = """\none\n"""\n'
+        self.assert_both_directions_conflict(base, '[a]\ndoc = """\nzero\n"""\nmore = """\none\n"""\n',
+                                             '[a]\ndoc = """\ntwo\none\n"""\n')
+
+    def test_plain_keys_inserted_into_one_gap_merge(self) -> None:
+        self.git("checkout", "-q", "main")
+        self.write({"PUBLISH_MANIFEST.toml": '[a]\nx = 1\n[t."x]y"]\nz = 2\n'})
+        self.commit("tables")
+        self.branch("agent-a", {"PUBLISH_MANIFEST.toml": '[a]\nx = 1\nk = 1\n[t."x]y"]\nz = 2\n'})
+        self.branch("agent-b", {"PUBLISH_MANIFEST.toml": '[a]\nx = 1\nm = "]"\n[t."x]y"]\nz = 2\n'})
+        merge = self.merge("agent-a", "agent-b")
+        self.assertEqual(merge.returncode, 0, merge.stdout + merge.stderr)
+        self.assertEqual(tomllib.loads(self.read("PUBLISH_MANIFEST.toml")),
+                         {"a": {"x": 1, "k": 1, "m": "]"}, "t": {"x]y": {"z": 2}}})
+
+    def test_generated_table_appended_while_the_other_side_extends_the_last_one_conflicts(self) -> None:
+        last = '\n[[generated]]\npath = "a.json"\nrequired = true\n'
+        self.git("checkout", "-q", "main")
+        self.write({"PUBLISH_MANIFEST.toml": MANIFEST_BASE + last})
+        self.commit("one generated table")
+        self.branch("agent-a", {"PUBLISH_MANIFEST.toml": MANIFEST_BASE + last
+                                + '\n[[generated]]\npath = "b.json"\nrequired = true\n'})
+        self.branch("agent-b", {"PUBLISH_MANIFEST.toml": MANIFEST_BASE + last + 'note = "a only"\n'})
+        self.assert_marked_conflict(self.merge("agent-a", "agent-b"), "PUBLISH_MANIFEST.toml")
+
+    def test_conflict_names_adjacent_base_lines_in_order(self) -> None:
+        # Ours rewrites base line 2, theirs deletes base line 3: one conflict over lines 2-3.
+        lines = SCOPE_BASE.splitlines(keepends=True)
+        self.branch("agent-a", {SCOPE: "".join(lines[:1] + [lines[1].replace("R11", "R12")] + lines[2:])})
+        self.branch("agent-b", {SCOPE: "".join(lines[:2] + lines[3:])})
+        merge = self.merge("agent-a", "agent-b")
+        self.assert_marked_conflict(merge, SCOPE)
+        self.assertIn("both sides changed base lines 2-3 differently", merge.stderr)
+
+    def test_crashing_script_falls_back_to_a_marked_text_merge(self) -> None:
+        # An uncaught exception exits 1 like a conflict does, but writes no markers.
+        self.git("checkout", "-q", "-b", "old-line", "main")
+        self.write({"scripts/derivations.py": "raise RuntimeError('old driver bug')\n",
+                    "CHANGELOG.md": CHANGELOG_BASE.replace("- older fix", "- fix on the old line")})
+        self.commit("old line")
+        self.branch("agent-b", {"CHANGELOG.md": CHANGELOG_BASE.replace("- older fix", "- fix from b")})
+        merge = self.merge("old-line", "agent-b")
+        self.assert_marked_conflict(merge, "CHANGELOG.md")
+        self.assertIn("- fix from b\n", self.read("CHANGELOG.md"))
+
+    def test_regenerate_strategy_keeps_the_current_side(self) -> None:
+        self.git("checkout", "-q", "main")
+        self.write({"THIRD_PARTY_NOTICES": "notices v1\n"})
+        self.commit("notices")
+        self.branch("agent-a", {"THIRD_PARTY_NOTICES": "notices from a\n"})
+        self.branch("agent-b", {"THIRD_PARTY_NOTICES": "notices from b\n"})
+        merge = self.merge("agent-a", "agent-b")
+        self.assertEqual(merge.returncode, 0, merge.stdout + merge.stderr)
+        self.assertEqual(self.read("THIRD_PARTY_NOTICES"), "notices from a\n")
+        self.assertIn("derivations.py regenerate", merge.stderr)
+
+
+# Stands in for scripts/generate-third-party-notices.py: `--check` passes while
+# .notices-current exists, `--write` rewrites the file.
+NOTICES_STUB = """import pathlib, sys
+if "--check" in sys.argv:
+    sys.exit(0 if pathlib.Path(".notices-current").exists() else 1)
+pathlib.Path("THIRD_PARTY_NOTICES").write_text("rewritten\\n")
+"""
+
+
+class DerivationRegenerateTest(RepoCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.write({"THIRD_PARTY_NOTICES": "notices v1\n", "SBOM.cdx.json": "{}\n",
+                    "legal/third-party-assets.toml": "assets = []\n",
+                    "scripts/generate-third-party-notices.py": NOTICES_STUB})
+        self.commit("derived files")
+        # An input of THIRD_PARTY_NOTICES only: SBOM, Cargo.lock and the register stay current.
+        self.write({"legal/third-party-assets.toml": 'assets = ["font"]\n'})
+
+    def regenerate(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["python3", "scripts/derivations.py", "regenerate", "--since", "HEAD", *args],
+                              cwd=self.repo, env=self.env, capture_output=True, text=True)
+
+    def test_dry_run_selects_only_files_whose_inputs_changed(self) -> None:
+        run = self.regenerate("--dry-run")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        selected = [line.split()[2].rstrip(":") for line in run.stderr.splitlines()
+                    if line.startswith("derivations: regenerate ")]
+        self.assertEqual(selected, ["THIRD_PARTY_NOTICES"], run.stderr)
+        self.assertEqual(self.read("THIRD_PARTY_NOTICES"), "notices v1\n")
+
+    def test_passing_check_leaves_the_file_untouched_and_a_failing_one_rewrites_it(self) -> None:
+        self.write({".notices-current": ""})
+        run = self.regenerate()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(self.read("THIRD_PARTY_NOTICES"), "notices v1\n")
+        (self.repo / ".notices-current").unlink()
+        run = self.regenerate()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(self.read("THIRD_PARTY_NOTICES"), "rewritten\n")
+
+
+
+class DerivationCheckTest(RepoCase):
+    """The W5-02 guard: a derived file in a change must equal its regeneration at the commit."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.write({"THIRD_PARTY_NOTICES": "notices v1\n", "legal/third-party-assets.toml": "assets = []\n",
+                    "scripts/generate-third-party-notices.py": NOTICES_STUB, ".notices-current": ""})
+        self.commit("derived files")
+        self.base = self.git("rev-parse", "HEAD").stdout.strip()
+
+    def check(self, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+        return subprocess.run(["python3", "scripts/derivations.py", "check", "--since", self.base, *args],
+                              cwd=self.repo, env=env or self.env, capture_output=True, text=True)
+
+    def test_unaffected_change_passes_without_running_a_check(self) -> None:
+        self.write({"README.md": "docs\n"})
+        self.commit("docs")
+        run = self.check()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("no derived file affected", run.stderr)
+
+    def test_stale_derived_file_fails_with_its_path_and_a_current_one_passes(self) -> None:
+        (self.repo / ".notices-current").unlink()
+        self.write({"legal/third-party-assets.toml": 'assets = ["font"]\n'})
+        self.commit("input changed, notices not regenerated")
+        run = self.check()
+        self.assertEqual(run.returncode, 1, run.stderr)
+        self.assertIn("derivations: check failed: THIRD_PARTY_NOTICES", run.stderr)
+        self.assertIn("THIRD_PARTY_NOTICES differs from its regeneration", run.stderr)
+        # The check ran in a temporary worktree: nothing written, no worktree left behind.
+        self.assertEqual(self.read("THIRD_PARTY_NOTICES"), "notices v1\n")
+        self.assertEqual(len(self.git("worktree", "list").stdout.splitlines()), 1)
+
+        self.write({".notices-current": ""})
+        self.commit("regenerated")
+        run = self.check()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("THIRD_PARTY_NOTICES current", run.stderr)
+
+    def test_checks_the_commit_not_the_worktree(self) -> None:
+        (self.repo / ".notices-current").unlink()
+        self.write({"legal/third-party-assets.toml": 'assets = ["font"]\n'})
+        self.commit("stale")
+        stale = self.git("rev-parse", "HEAD").stdout.strip()
+        self.write({".notices-current": ""})  # uncommitted: does not make the commit current
+        self.assertEqual(self.check("--commit", stale).returncode, 1)
+        self.assertEqual(self.check("--commit", stale, "--in-place").returncode, 2)
+
+    def test_unavailable_tool_warns_and_fails_only_with_strict(self) -> None:
+        self.write({"rust/Cargo.lock": lock(("app", "0.1.0", ["serde"]), ("serde", "1.0.1", []))})
+        self.commit("lock changed")
+        env = {**self.env, "PATH": "/usr/bin:/bin"} if shutil.which("cargo", path="/usr/bin:/bin") is None else None
+        if env is None:
+            self.skipTest("cargo on the system PATH")
+        run = self.check(env=env)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("rust/Cargo.lock not checked (cargo not found)", run.stderr)
+        self.assertEqual(self.check("--strict", env=env).returncode, 1)
+
+    def test_pre_push_hook_blocks_a_stale_derived_file(self) -> None:
+        hook = self.repo / ".githooks/pre-push"
+        hook.parent.mkdir()
+        shutil.copy(ROOT / ".githooks/pre-push", hook)
+        (self.repo / ".notices-current").unlink()
+        self.write({"legal/third-party-assets.toml": 'assets = ["font"]\n'})
+        self.commit("stale")
+        head = self.git("rev-parse", "HEAD").stdout.strip()
+        refs = f"refs/heads/main {head} refs/heads/main {self.base}\n"
+
+        def push(**extra: str) -> subprocess.CompletedProcess:
+            return subprocess.run(["bash", str(hook), "origin", "https://gitlab.invalid/p.git"], cwd=self.repo,
+                                  env={**self.env, "SKIP_PREFLIGHT": "1", **extra}, input=refs,
+                                  capture_output=True, text=True)
+
+        run = push()
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+        self.assertIn("pre-push BLOCKED: a derived file differs", run.stdout)
+        self.assertIn("THIRD_PARTY_NOTICES", run.stderr)
+        self.assertEqual(push(SKIP_DERIVATIONS="1").returncode, 0)
 
 
 if __name__ == "__main__":

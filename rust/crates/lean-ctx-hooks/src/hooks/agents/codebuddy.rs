@@ -478,6 +478,28 @@ fn ensure_command_hook(pre_arr: &mut Vec<serde_json::Value>, matcher: &str, comm
     pre_arr.push(serde_json::json!({ "matcher": matcher, "hooks": [desired] }));
 }
 
+/// Drops lean-ctx observe hooks rendered with another binary token (an older path, or an
+/// unquoted path with a space that the host splits at the space), so the current rendering is
+/// re-added below. A user's own command that merely ends in `hook observe` stays.
+fn heal_stale_observe(entry: &mut serde_json::Value, observe_cmd: &str) {
+    let Some(arr) = entry.as_array_mut() else {
+        return;
+    };
+    for group in arr.iter_mut() {
+        if let Some(hooks) = group.get_mut("hooks").and_then(|h| h.as_array_mut()) {
+            hooks.retain(|h| {
+                !(super::claude::is_lean_ctx_command_for(h, "hook observe")
+                    && h.get("command").and_then(|c| c.as_str()) != Some(observe_cmd))
+            });
+        }
+    }
+    arr.retain(|g| {
+        g.get("hooks")
+            .and_then(|h| h.as_array())
+            .is_none_or(|hooks| !hooks.is_empty())
+    });
+}
+
 fn ensure_codebuddy_observe_hooks(
     hooks_obj: &mut serde_json::Map<String, serde_json::Value>,
     observe_cmd: &str,
@@ -495,6 +517,7 @@ fn ensure_codebuddy_observe_hooks(
         let entry = hooks_obj
             .entry(event.to_string())
             .or_insert_with(|| serde_json::json!([]));
+        heal_stale_observe(entry, observe_cmd);
 
         if let Some(arr) = entry.as_array() {
             let already = arr.iter().any(|group| {
@@ -532,10 +555,10 @@ pub(crate) fn install_codebuddy_hook_config(home: &std::path::Path) {
     let hooks_dir = lean_ctx::core::editor_registry::codebuddy_state_dir(home).join("hooks");
     let binary = resolve_hook_command_binary();
 
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
-    let observe_cmd = format!("{binary} hook observe");
-    let read_dedup_cmd = format!("{binary} hook read-dedup");
+    let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
+    let redirect_cmd = crate::hooks::hook_shell_command(&binary, "redirect");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
+    let read_dedup_cmd = crate::hooks::hook_shell_command(&binary, "read-dedup");
 
     let settings_path =
         lean_ctx::core::editor_registry::codebuddy_state_dir(home).join("settings.json");
@@ -608,10 +631,10 @@ pub(crate) fn install_codebuddy_hook_config(home: &std::path::Path) {
 
 pub(crate) fn install_codebuddy_project_hooks(cwd: &std::path::Path) {
     let binary = resolve_hook_command_binary();
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
-    let observe_cmd = format!("{binary} hook observe");
-    let read_dedup_cmd = format!("{binary} hook read-dedup");
+    let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
+    let redirect_cmd = crate::hooks::hook_shell_command(&binary, "redirect");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
+    let read_dedup_cmd = crate::hooks::hook_shell_command(&binary, "read-dedup");
 
     let settings_path = cwd.join(".codebuddy").join("settings.local.json");
     let _ = std::fs::create_dir_all(cwd.join(".codebuddy"));
@@ -687,6 +710,7 @@ fn ensure_codebuddy_project_observe_hooks(
         let entry = hooks_obj
             .entry(event.to_string())
             .or_insert_with(|| serde_json::json!([]));
+        heal_stale_observe(entry, observe_cmd);
 
         if let Some(arr) = entry.as_array() {
             let already = arr.iter().any(|group| {

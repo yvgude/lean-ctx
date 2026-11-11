@@ -1856,6 +1856,8 @@ fn an_injection_phrase_in_an_outgoing_request_is_not_redacted() {
             );
         }
         EgressBody::Unchanged => {}
-        other => panic!("an immutable position was rewritten: {other:?}"),
+        other @ EgressBody::Rewritten(_) => {
+            panic!("an immutable position was rewritten: {other:?}")
+        }
     }
 }

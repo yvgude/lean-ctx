@@ -62,22 +62,26 @@ variables:
   # clone, so a shallow job would make the next full-history job deepen it
   # again, which costs more than the fetch of new objects it saves.
   GIT_DEPTH: "0"
+  # The commit that locked the pz21 spec (W1 spec_commit: the input_check
+  # target and its fixtures). The origin scan judges what changed since the
+  # spec; a range that starts before the lock (a release MR into main, whose
+  # diff base predates pz21) starts at the lock instead. A later base is kept.
+  INPUT_CHECK_SPEC_LOCK: "c061f60b7c16a8f31a91276c3867f24470dbbef0"
   # No submodules in this repository; skip the submodule pass explicitly.
   GIT_SUBMODULE_STRATEGY: none
   # The runner default, spelled out: every job removes untracked and ignored
   # files, including rust/target/ (restored crates, owned by the previous
   # job's user). The Rust jobs rely on starting from that clean state: a
-  # cached tree left by an untrusted MR job must never reach the post-merge
-  # run that writes the shared compiler cache. Do not add -e exclusions.
+  # cached tree left by an untrusted MR job must never reach a protected
+  # post-merge run. Do not add -e exclusions.
   # The Rust jobs' compiled output lives outside the checkout instead
   # (CI_TARGET_DIR in v4-runtime, owner 10.11.), in the runner slot's /builds
   # volume. That keeps the boundary: the runner gives protected refs
   # (integration/*, default branch) their own `-protected` volume, separate
-  # from the one of unprotected refs (merge requests, merge trains), so the
-  # protected run that writes the compiler cache only ever sees target state
-  # that protected runs wrote. MR jobs of one slot share their target state
-  # with each other: the trust domain of the MR jobs that already read the
-  # compiler cache through their read-only overlay.
+  # from the one of unprotected refs (merge requests, merge trains), so a
+  # protected run only ever sees target state that protected runs wrote. MR
+  # jobs of one slot share their target state with each other, one trust
+  # domain. This incremental target is the only compiler cache (W1-08).
   GIT_CLEAN_FLAGS: -ffdx
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
@@ -93,19 +97,64 @@ variables:
     - when: on_success
       interruptible: false
 
+# Path-scoped merge request gates (ci-slim 11.11.): a merge request runs a
+# gate only when it changes one of that gate's inputs; merge trains,
+# integration/* and the default branch always run every gate. An unchanged
+# input was already checked on the protected branch the merge request
+# targets, so no changed code loses a check. The Rust gates (rust-fmt,
+# mr-lint) read rust/ (build scripts watch only rust/), the cargo
+# configuration and the job definitions under ci/; include_str! of a file
+# outside rust/ embeds data only, and a missing one fails mr-quick's build.
+# Each job appends the MR `when: never` and the branch catch-all itself
+# (mr-lint is merge-request only and appends nothing).
+.rust-changes-on-mr:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"'
+      interruptible: true
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        paths:
+          - rust/**/*
+          - .cargo/**/*
+          - ci/**/*
+      interruptible: true
+
+# Flake handling (Integration Engine W1-02; the design of leanctx-workspace
+# task 597). A job is retried only for infrastructure failures, never for a
+# script or test failure: a red test is handled inside the Rust jobs instead,
+# where scripts/ci/flake_gate.py runs every failed test once more on the same
+# commit and records each result in runtime-evidence/flake-register.json.
+# ci/flaky-quarantine.json lists the known flaky tests, each with its issue; a
+# quarantined test that fails twice, or an unlisted one that passes on the
+# retry, ends the job with exit 76, a warning: never green, never red.
+# ee/ci/scope-register.yml repeats the retry block (see .interruptible-on-mr).
+.flake-retry:
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+      - api_failure
+      - unknown_failure
+
 # Cheap gates (owner 10.11.): small, fast checks on the light runner
 # (2 CPU / 4 GB, not throttled): rust-fmt, ip-boundary-skill-installed and
 # scope-register (ee/ci). The heavy jobs (mr-quick, mr-lint, v4-runtime) list
 # them in `needs:`, so a red gate stops a pipeline before any lane slot is
-# taken. The two private-tree gates are `optional` there because a checkout
-# without them (or another project) runs none. v4-provenance (also light) takes
+# taken. On merge requests the gates are path-scoped (.rust-changes-on-mr and
+# the gates' own rules), so they are `optional` in mr-quick's needs; the two
+# private-tree gates are also optional because a checkout without them (or
+# another project) runs none. v4-runtime keeps rust-fmt mandatory. v4-provenance (also light) takes
 # 3-8 minutes, too long to hold every MR back: on merge requests it runs beside
 # the heavy jobs, and its failure cancels them (auto_cancel on_job_failure).
 
 # Rust formatting on its own, on the light runner: no compilation, so a format
 # error fails the pipeline within a minute instead of after the lane queue and
-# mr-lint's clippy build. mr-lint and v4-runtime still run the same check.
+# mr-lint's clippy build. It is the only format check: mr-lint and v4-runtime
+# need this job and no longer repeat it (W1-08).
 rust-fmt:
+  extends: .flake-retry
   stage: verify
   image:
     name: lean-ctx-ci-rust:65e3bbf776c5
@@ -113,8 +162,14 @@ rust-fmt:
   tags: [light]
   timeout: 5 minutes
   interruptible: false
+  # Merge requests: only when Rust inputs change (.rust-changes-on-mr);
+  # branches: always (v4-runtime needs it there).
   rules:
-    - !reference [.interruptible-on-mr, rules]
+    - !reference [.rust-changes-on-mr, rules]
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - when: on_success
+      interruptible: false
   needs: []
   script:
     - cd rust
@@ -126,6 +181,7 @@ rust-fmt:
 # LEANCTX_APPROVED_SKILL_BUNDLE_SHA256, never from this checkout. Runs only in
 # the private project; a missing variable is a failure, not a skip.
 ip-boundary-skill-installed:
+  extends: .flake-retry
   stage: verify
   # The image of the other light jobs (scope-register, v4-provenance), kept on
   # the host: python:3.12-slim was used by this job alone, a second image the
@@ -138,10 +194,28 @@ ip-boundary-skill-installed:
   tags: [light]
   timeout: 5 minutes
   interruptible: false
+  # Merge requests: only when the checked tree changes (the skill copies in
+  # .agents/, .claude/, .cursor/, the root AGENTS.md; a branch cut from the
+  # public tree shows .agents/ as deleted) or the job itself (ci/). Merge
+  # trains and branches: always, against the protected bundle digest.
   rules:
     - if: '$CI_PROJECT_PATH != "root/lean-ctx"'
       when: never
-    - !reference [.interruptible-on-mr, rules]
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_EVENT_TYPE == "merge_train"'
+      interruptible: true
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        paths:
+          - .agents/**/*
+          - .claude/**/*
+          - .cursor/**/*
+          - AGENTS.md
+          - ci/**/*
+      interruptible: true
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - when: on_success
+      interruptible: false
   needs: []
   script:
     - |
@@ -176,10 +250,12 @@ ip-boundary-skill-installed:
 # writer of the shared build cache. A red run is fixed forward at once.
 # This is not a replacement for product E2E or release approval.
 v4-runtime:
+  extends: .flake-retry
   stage: verify
   # Prebuilt on the runner host (ci/images/rust/build.sh; the tag hashes its
-  # inputs): the apt packages, stable with clippy/rustfmt, sccache. The
-  # registry is disabled, so the image is only ever local.
+  # inputs): the apt packages, stable with clippy/rustfmt. The image still
+  # carries sccache; no job uses it (W1-08). The registry is disabled, so the
+  # image is only ever local.
   image:
     name: lean-ctx-ci-rust:65e3bbf776c5
     pull_policy: if-not-present
@@ -209,15 +285,19 @@ v4-runtime:
   rules:
     - if: '$CI_COMMIT_BRANCH =~ /^integration\// || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   # Exit 75 is used only by the superseded check and shows as a warning, not
-  # as a pass: that commit's content is tested by the newer run.
+  # as a pass: that commit's content is tested by the newer run. Exit 76 comes
+  # only from the flake gate (W1-02; runtime-evidence/flake-verdict.txt says
+  # `warning`): a quarantined test failed twice or a new flake passed on the
+  # retry. Both are warnings, never a pass.
   allow_failure:
     exit_codes:
       - 75
-  # Compiled output is no longer zipped (owner 08.11.: extracting and
-  # re-archiving rust/target/debug on every job saturated the host disk).
-  # Compilations come from sccache on a host directory instead (see
-  # before_script); this zip cache keeps only the downloaded crates and git
-  # dependencies, without their unpacked sources.
+      - 76
+  # Compiled output is never zipped (owner 08.11.: extracting and
+  # re-archiving rust/target/debug on every job saturated the host disk); it
+  # stays in the slot's persistent incremental target (CI_TARGET_DIR). This
+  # zip cache keeps only the downloaded crates and git dependencies, without
+  # their unpacked sources.
   cache:
     # Keyed on the lockfile and image only (MinIO is shared, so no ref slug
     # or runner id). The job name is spelled out so `mr-quick` reads the same
@@ -247,26 +327,19 @@ v4-runtime:
     V4_CACHE_POLICY: pull-push
     V4_TIP_CACHE_KEY: "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-rust1.99.1-tip"
     V4_TIP_CACHE_POLICY: push
-    # Only this post-merge job may add to the shared compiler cache; mr-quick
-    # sets `read`. Writing also needs a protected branch push (before_script).
-    V4_SCCACHE_MODE: write
-    # The runner mounts the host directory /srv/ci-cache/sccache (owned by
-    # uid 10999, the job's ci-runner) here. Without the mount, jobs compile
-    # uncached.
-    V4_SCCACHE_MOUNT: /sccache
-    SCCACHE_CACHE_SIZE: 60G
     # Persistent Cargo target per runner slot (owner 10.11.; before_script
     # sets it up). Outside the checkout, so git clean keeps it, and in the
     # slot's /builds volume, which the runner splits by protected and
     # unprotected refs (see GIT_CLEAN_FLAGS). The last component stays
     # `target`: tests recognise build output by paths like /target/debug/deps.
+    # It is the only compiler cache (W1-08: sccache is gone; the persistent
+    # target already holds every unchanged crate).
     CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/target"
     # A target over this size (GiB) is wiped at job start.
     CI_TARGET_CAP_GB: "40"
-    # The server lives as long as the job's container.
-    SCCACHE_IDLE_TIMEOUT: "0"
-    # sccache cannot cache incremental compilations.
-    CARGO_INCREMENTAL: "0"
+    # Incremental compilation of the workspace crates into the slot's
+    # persistent target (W1-08): a change recompiles only what it touched.
+    CARGO_INCREMENTAL: "1"
     # The runner gives each job a 12-CPU / 20-GiB cgroup (all jobs share the
     # host's 24-CPU / 64-GiB CI slice); more jobs than CPUs gain nothing. The
     # two ~9-GiB engine rustc (lib, lib test) dominate and fit side by side.
@@ -295,7 +368,7 @@ v4-runtime:
     # The image carries every tool; nothing is installed at job time. The
     # resolved compiler version is recorded with the evidence.
     - |
-      for ci_tool in git python3 cmake clang mold node npm useradd runuser mount mountpoint sccache cargo-clippy cargo-nextest rustfmt; do
+      for ci_tool in git python3 cmake clang mold node npm useradd runuser cargo-clippy cargo-nextest rustfmt; do
         command -v "$ci_tool" >/dev/null || { echo "CI image lacks $ci_tool" >&2; exit 1; }
       done
     - |
@@ -306,8 +379,9 @@ v4-runtime:
     # and the shell allowlist rightly refuses git writes in a directory at or
     # above lean-ctx's own state ($HOME/.config/lean-ctx).
     - if test -e /home/ci-runner; then echo "unexpected pre-existing ci-runner home" >&2; exit 1; fi
-    # A fixed uid, so the host's compiler cache stays owned by this identity
-    # across jobs. It is no host user and not in the docker socket's group.
+    # A fixed uid, so the slot's persistent target stays owned by this
+    # identity across jobs. It is no host user and not in the docker socket's
+    # group.
     - useradd --system --uid 10999 --user-group --no-create-home --home-dir /home/ci-runner --shell /bin/bash ci-runner
     - test "$(id -u ci-runner)" = 10999
     - test "$(id -u ci-runner)" -gt 0
@@ -347,8 +421,8 @@ v4-runtime:
       done
     - |
       # Persistent Cargo target (CI_TARGET_DIR; owner 10.11.): the slot keeps
-      # its compiled output between jobs, so unchanged crates are not even
-      # looked up in sccache again. Root prepares it before any job code
+      # its compiled output between jobs, so unchanged crates are not
+      # compiled again. Root prepares it before any job code
       # runs. /builds/.ci-cache and the project directory below it are
       # root-owned 0755 real directories, so job code (ci-runner) can neither
       # swap the target for a link nor forge the stamp beside it; the target
@@ -399,38 +473,9 @@ v4-runtime:
       if test -L "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then echo "target: $ci_target is not ci-runner's directory" >&2; exit 1; fi
       echo "target: $ci_target_state" > "$CI_PROJECT_DIR/runtime-evidence/target.txt"
       cat -- "$CI_PROJECT_DIR/runtime-evidence/target.txt"
-    - |
-      # Compiler cache. sccache keys every entry by a hash of the compiler,
-      # its arguments, the environment and every input file, so a hit is the
-      # output those exact inputs produce. Only a protected post-merge push
-      # writes the host directory. Every other job sees it through a
-      # read-only remount under an overlay whose upper layer is a job-local
-      # tmpfs (sccache still updates file times on a hit; metacopy keeps that
-      # to metadata). Code run by the build as ci-runner therefore cannot
-      # change what a trusted run reads. A host directory that cannot be made
-      # read-only fails the job; a failed overlay means uncached.
-      unset RUSTC_WRAPPER SCCACHE_DIR SCCACHE_LOCAL_RW_MODE
-      ci_sccache="${V4_SCCACHE_MOUNT:-}"
-      if test -n "$ci_sccache" && test -d "$ci_sccache" && ! test -L "$ci_sccache" && mountpoint -q "$ci_sccache"; then
-        if test "${V4_SCCACHE_MODE:-}" = write && test "${CI_COMMIT_REF_PROTECTED:-}" = true && test "${CI_PIPELINE_SOURCE:-}" = push && test "$(stat -c %u "$ci_sccache")" = 10999; then
-          export SCCACHE_DIR="$ci_sccache" SCCACHE_LOCAL_RW_MODE=READ_WRITE RUSTC_WRAPPER=sccache
-        else
-          if ! mount -o remount,bind,ro "$ci_sccache"; then echo "sccache: cannot make $ci_sccache read-only" >&2; exit 1; fi
-          if runuser --user ci-runner -- touch "$ci_sccache/.ci-write-probe" 2>/dev/null; then echo "sccache: $ci_sccache is still writable" >&2; exit 1; fi
-          if install -d -m 0700 /run/ci-sccache-upper /run/ci-sccache \
-            && mount -t tmpfs -o size=1g,mode=0700 ci-sccache-upper /run/ci-sccache-upper \
-            && install -d -m 0700 -o ci-runner -g ci-runner /run/ci-sccache-upper/upper \
-            && install -d -m 0700 /run/ci-sccache-upper/work \
-            && mount -t overlay ci-sccache -o "lowerdir=$ci_sccache,upperdir=/run/ci-sccache-upper/upper,workdir=/run/ci-sccache-upper/work,metacopy=on" /run/ci-sccache; then
-            export SCCACHE_DIR=/run/ci-sccache SCCACHE_LOCAL_RW_MODE=READ_ONLY RUSTC_WRAPPER=sccache
-          else
-            echo "sccache: read-only overlay failed; compiling uncached" >&2
-          fi
-        fi
-      else
-        echo "sccache: no host cache mounted at ${ci_sccache:-<unset>}; compiling uncached" >&2
-      fi
-      echo "sccache: ${SCCACHE_DIR:-off} ${SCCACHE_LOCAL_RW_MODE:-}"
+    # No compiler wrapper (W1-08): a wrapper set by the runner or an image
+    # default would put a cache between the build and the persistent target.
+    - unset RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER SCCACHE_DIR
   script:
     - set -o pipefail
     - |
@@ -459,41 +504,53 @@ v4-runtime:
         git config --global --add safe.directory "$CI_PROJECT_DIR"
         git -C "$CI_PROJECT_DIR" rev-parse HEAD | tee "$CI_PROJECT_DIR/runtime-evidence/commit.txt"
         rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
-        echo "${SCCACHE_DIR:-off} ${SCCACHE_LOCAL_RW_MODE:-}" | tee "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"
         cd "$CI_PROJECT_DIR/rust"
-        cargo +stable fmt --all --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/fmt.log"
+        # Format is the rust-fmt job; no gate runs twice in one pipeline (W1-08).
         cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
+        # Test, bench and example targets too (task 173): the same lints, except
+        # unwrap and length, which tests may use (AGENTS.md quality gate).
+        cargo +stable clippy --locked --all-features --all-targets -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy-all-targets.log"
         # One test pass with every feature except no-jail (owner 08.11.: the
         # second full pass doubled the run for little extra signal). no-jail
         # compiles PathJail and its tests out, so it is type-checked by clippy
         # above and never tested. The list comes from the same helper as the
         # MR build, so both share one cache. The shipping (default) feature
-        # set must still compile on its own, which the type check below proves.
+        # set, which users install, must still compile on its own: no other
+        # job builds it, so the check below is no duplicate (W1-08).
         test_features="$(python3 -I "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --print-test-features)"
         test -n "$test_features"
         echo "$test_features" | tee "$CI_PROJECT_DIR/runtime-evidence/test-features.txt"
         # cargo-nextest (owner 08.11.): one process per test on every CPU of
         # the job, profile ci of rust/.config/nextest.toml (no retries, a test
         # over 5 minutes fails, JUnit report). Every test still runs when one
-        # fails; the job fails after the doctests and the default-feature
-        # check have run too.
+        # fails; the job fails after the doctests have run too. Failed tests
+        # run once more on the same commit through scripts/ci/flake_gate.py
+        # (W1-02) against ci/flaky-quarantine.json: exit 0 green, 76 warning
+        # (quarantined failure or new flake), anything else red.
         # The pz21 origin scan (lean-ctx-server --test input_check) judges the
         # diff of this pipeline: the MR diff base, else the first parent.
         INPUT_CHECK_COMMIT="$(git -C "$CI_PROJECT_DIR" rev-parse HEAD)"
         INPUT_CHECK_SPEC_COMMIT="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$(git -C "$CI_PROJECT_DIR" rev-parse HEAD^1)}"
+        if git -C "$CI_PROJECT_DIR" merge-base --is-ancestor "$INPUT_CHECK_SPEC_COMMIT" "${INPUT_CHECK_SPEC_LOCK:-}" && git -C "$CI_PROJECT_DIR" merge-base --is-ancestor "${INPUT_CHECK_SPEC_LOCK:-}" HEAD; then INPUT_CHECK_SPEC_COMMIT="$INPUT_CHECK_SPEC_LOCK"; fi
         export INPUT_CHECK_COMMIT INPUT_CHECK_SPEC_COMMIT
         nextest_rc=0
         mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests.log" || nextest_rc=$?
         if test -f "$CARGO_TARGET_DIR/nextest/ci/junit.xml"; then cp "$CARGO_TARGET_DIR/nextest/ci/junit.xml" "$CI_PROJECT_DIR/runtime-evidence/junit.xml"; fi
+        if test "$nextest_rc" != 0; then
+          flake_rc=0
+          python3 -I -u "$CI_PROJECT_DIR/scripts/ci/flake_gate.py" --junit "$CI_PROJECT_DIR/runtime-evidence/junit.xml" --rerun-junit "$CARGO_TARGET_DIR/nextest/ci/junit.xml" --quarantine "$CI_PROJECT_DIR/ci/flaky-quarantine.json" --job v4-runtime --evidence "$CI_PROJECT_DIR/runtime-evidence" -- mold -run cargo +stable nextest run --locked --workspace --features "$test_features" --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/flake-gate.log" || flake_rc=$?
+          nextest_rc="$flake_rc"
+        fi
         # nextest does not run doctests.
         doc_rc=0
         mold -run cargo +stable test --locked --doc --workspace --features "$test_features" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/doctests.log" || doc_rc=$?
-        cargo +stable check --locked --workspace --all-targets 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-default.log"
-        # Stopping the server flushes pending cache writes and prints its stats.
-        if test -n "${RUSTC_WRAPPER:-}"; then sccache --stop-server 2>&1 | tee -a "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"; fi
+        # Default features, library and binaries only: the cheapest proof that
+        # what users install compiles, on the warm incremental target.
+        cargo +stable check --locked --workspace 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-default.log"
         GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
-        if test "$nextest_rc" != 0 || test "$doc_rc" != 0; then echo "tests failed: nextest exit $nextest_rc, doctests exit $doc_rc" >&2; exit 1; fi
-      ' || { rc=$?; if test "$rc" = 75; then echo "a check exited 75; reported as a failure, not as superseded" >&2; rc=1; fi; exit "$rc"; }
+        if test "$doc_rc" != 0 || { test "$nextest_rc" != 0 && test "$nextest_rc" != 76; }; then echo "tests failed: nextest exit $nextest_rc, doctests exit $doc_rc" >&2; exit 1; fi
+        if test "$nextest_rc" = 76; then echo "tests: WARNING (flake gate; see runtime-evidence/flake-register.json)" >&2; exit 76; fi
+      ' || { rc=$?; if test "$rc" = 75; then echo "a check exited 75; reported as a failure, not as superseded" >&2; rc=1; fi; if test "$rc" = 76 && ! grep -qx warning "$CI_PROJECT_DIR/runtime-evidence/flake-verdict.txt" 2>/dev/null; then echo "a check exited 76 without a flake-gate warning; reported as a failure" >&2; rc=1; fi; exit "$rc"; }
   artifacts:
     when: always
     expire_in: 30 days
@@ -519,9 +576,13 @@ mr-quick:
   # runner), so a format or skill/scope error never takes a lane slot.
   # v4-provenance runs beside it; a red provenance cancels it
   # (auto_cancel on_job_failure). mr-lint inherits this list.
+  # rust-fmt is optional here: on a merge request without Rust changes
+  # (docs, scripts, fixtures) it does not run, while mr-quick still runs the
+  # Rust tests that read those files. v4-runtime keeps it mandatory.
   needs:
     - job: rust-fmt
       artifacts: false
+      optional: true
     - job: ip-boundary-skill-installed
       artifacts: false
       optional: true
@@ -559,8 +620,6 @@ mr-quick:
     # MR jobs read the tip only through fallback_keys; this key is never written.
     V4_TIP_CACHE_KEY: "v4-cargohome-${CI_PROJECT_ID}-v4-runtime-mr-no-tip"
     V4_TIP_CACHE_POLICY: pull
-    # Hits from the post-merge compiler cache, never writes (before_script).
-    V4_SCCACHE_MODE: read
   script:
     - set -o pipefail
     - |
@@ -588,9 +647,16 @@ mr-quick:
         cd "$CI_PROJECT_DIR/rust"
         # The pz21 origin scan (lean-ctx-server --test input_check) judges the MR diff.
         INPUT_CHECK_COMMIT="$(git -C "$CI_PROJECT_DIR" rev-parse HEAD)"
-        INPUT_CHECK_SPEC_COMMIT="$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+        # GitLab sets no diff base for an MR without file changes (e.g. a merge of
+        # the target): fall back to the target tip, the merge base with the local
+        # target ref, else HEAD (the checkout is read-only here, so no fetch).
+        MR_BASE="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-}}"
+        if test -z "$MR_BASE"; then MR_BASE="$(git -C "$CI_PROJECT_DIR" merge-base HEAD "refs/remotes/origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-}" 2>/dev/null || git -C "$CI_PROJECT_DIR" rev-parse HEAD)"; fi
+        echo "mr-quick: diff base $MR_BASE"
+        INPUT_CHECK_SPEC_COMMIT="$MR_BASE"
+        if git -C "$CI_PROJECT_DIR" merge-base --is-ancestor "$INPUT_CHECK_SPEC_COMMIT" "${INPUT_CHECK_SPEC_LOCK:-}" && git -C "$CI_PROJECT_DIR" merge-base --is-ancestor "${INPUT_CHECK_SPEC_LOCK:-}" HEAD; then INPUT_CHECK_SPEC_COMMIT="$INPUT_CHECK_SPEC_LOCK"; fi
         export INPUT_CHECK_COMMIT INPUT_CHECK_SPEC_COMMIT
-        python3 -I -u "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --evidence "$CI_PROJECT_DIR/runtime-evidence" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/mr-quick.log"
+        python3 -I -u "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --base "$MR_BASE" --evidence "$CI_PROJECT_DIR/runtime-evidence" 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/mr-quick.log"
         # Stopping the server flushes pending cache writes and prints its stats.
         if test -n "${RUSTC_WRAPPER:-}"; then sccache --stop-server 2>&1 | tee -a "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"; fi
         GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
@@ -606,6 +672,10 @@ mr-lint:
   extends: mr-quick
   timeout: 30 minutes
   resource_group: mr-lint-$CI_MERGE_REQUEST_IID
+  # Clippy reads only Rust inputs: no run for a docs- or scripts-only merge
+  # request (v4-runtime lints every integration/* and default-branch push).
+  rules:
+    - !reference [.rust-changes-on-mr, rules]
   artifacts:
     when: always
     expire_in: 30 days
@@ -634,16 +704,17 @@ mr-lint:
         git config --global --add safe.directory "$CI_PROJECT_DIR"
         git -C "$CI_PROJECT_DIR" rev-parse HEAD | tee "$CI_PROJECT_DIR/runtime-evidence/commit.txt"
         rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
-        echo "${SCCACHE_DIR:-off} ${SCCACHE_LOCAL_RW_MODE:-}" | tee "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"
         cd "$CI_PROJECT_DIR/rust"
-        cargo +stable fmt --all --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/fmt.log"
+        # Format is the rust-fmt job this one needs (W1-08: no gate twice).
         cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
-        # Stopping the server flushes pending cache writes and prints its stats.
-        if test -n "${RUSTC_WRAPPER:-}"; then sccache --stop-server 2>&1 | tee -a "$CI_PROJECT_DIR/runtime-evidence/sccache.txt"; fi
+        # Test, bench and example targets too (task 173): the same lints, except
+        # unwrap and length, which tests may use (AGENTS.md quality gate).
+        cargo +stable clippy --locked --all-features --all-targets -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy-all-targets.log"
         GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
       '
 
 v4-provenance:
+  extends: .flake-retry
   stage: verify
   image:
     name: lean-ctx-ci-rust:65e3bbf776c5
@@ -712,3 +783,70 @@ v4-provenance:
     paths:
       - ip-provenance-gitlab-report.json
       - history-delta-gitlab-report.json
+
+# Public-API snapshots (Integration Engine W1b-01): scripts/public-api-snapshot
+# writes one file per workspace crate for the diff base (the MR diff base, else
+# the first parent) and for HEAD, from git objects only (no compilation), and
+# prints every interface change between them. Informational for now: it never
+# blocks a merge; change-class below reads the snapshots.
+public-api:
+  extends: .flake-retry
+  stage: verify
+  image:
+    name: lean-ctx-ci-rust:65e3bbf776c5
+    pull_policy: if-not-present
+  tags: [light]
+  timeout: 10 minutes
+  interruptible: false
+  rules:
+    - !reference [.interruptible-on-mr, rules]
+  needs: []
+  allow_failure: true
+  script:
+    - set -o pipefail
+    - api_base="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$(git rev-parse HEAD^1)}"
+    - python3 -I scripts/public-api-snapshot snapshot "$api_base" --out api-snapshot/base
+    - python3 -I scripts/public-api-snapshot snapshot HEAD --out api-snapshot/head
+    - python3 -I scripts/public-api-snapshot diff api-snapshot/base api-snapshot/head --json api-snapshot/diff.json | tee api-snapshot/diff.txt
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - api-snapshot/
+
+# Change classifier (ECCP W1b-02): scripts/change-class assigns the pipeline's
+# diff its change class (and the reasons) over the public-API snapshots above.
+# Informational until the merge policy consumes the class; never blocks.
+change-class:
+  extends: .flake-retry
+  stage: verify
+  image:
+    name: lean-ctx-ci-rust:65e3bbf776c5
+    pull_policy: if-not-present
+  tags: [light]
+  timeout: 10 minutes
+  interruptible: false
+  rules:
+    - !reference [.interruptible-on-mr, rules]
+  needs:
+    - job: public-api
+      artifacts: true
+  allow_failure: true
+  script:
+    - set -o pipefail
+    - mkdir -p change-class
+    - class_base="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$(git rev-parse HEAD^1)}"
+    - |
+      # The snapshots of public-api when it produced them; otherwise
+      # change-class extracts the same textual-v1 snapshots itself.
+      set --
+      if test -f api-snapshot/base/SNAPSHOT.json && test -f api-snapshot/head/SNAPSHOT.json; then
+        set -- --base-snapshots api-snapshot/base --head-snapshots api-snapshot/head
+      fi
+      python3 -I scripts/change-class "$class_base" HEAD --verbose "$@" | tee change-class/class.txt
+      python3 -I scripts/change-class "$class_base" HEAD --json "$@" > change-class/class.json
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - change-class/

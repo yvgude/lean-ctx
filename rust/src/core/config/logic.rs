@@ -696,7 +696,22 @@ impl Config {
         &self,
         guard: &crate::config_io::ConfigWriteGuard,
     ) -> std::result::Result<(), super::error::LeanCtxError> {
-        let (content, defaults) = self.render_for_save(guard.path())?;
+        // A loaded config carries the managed overlay; the user's file keeps
+        // the user's own values for the managed members.
+        let unmanaged;
+        let this = match crate::core::config::managed::current() {
+            Some(managed) if managed.config.is_ok() => {
+                let on_disk = Self::try_load_global_from(guard.path())
+                    .map(|config| config.hive)
+                    .unwrap_or_default();
+                let mut copy = self.clone();
+                managed.keep_user_values(&mut copy.hive, &on_disk);
+                unmanaged = copy;
+                &unmanaged
+            }
+            _ => self,
+        };
+        let (content, defaults) = this.render_for_save(guard.path())?;
         guard
             .write_toml_preserving_minimal(&content, &defaults)
             .map_err(super::error::LeanCtxError::Config)?;

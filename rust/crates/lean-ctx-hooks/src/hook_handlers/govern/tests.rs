@@ -693,9 +693,17 @@ fn concurrent_record_writes_never_tear() {
             while !done.load(std::sync::atomic::Ordering::Relaxed) {
                 let raw = match std::fs::read_to_string(&*store) {
                     Ok(raw) => raw,
-                    // Windows refuses to open a file while a rename replaces it;
-                    // the readers in read_dedup treat any read error as no record.
-                    Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    // Windows refuses to open a file while a rename replaces it
+                    // (PermissionDenied) and can briefly report it missing
+                    // (NotFound); the readers in read_dedup treat any read
+                    // error as no record.
+                    Err(e)
+                        if cfg!(windows)
+                            && matches!(
+                                e.kind(),
+                                std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+                            ) =>
+                    {
                         continue;
                     }
                     Err(e) => panic!("record always exists: {e}"),

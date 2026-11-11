@@ -90,9 +90,9 @@ fn apply_hooks(home: &Path) {
         return;
     };
     let before = root.clone();
-    let enforce = format!(
-        "{} hook codex-enforce",
-        super::super::resolve_hook_command_binary()
+    let enforce = crate::hooks::hook_shell_command(
+        &super::super::resolve_hook_command_binary(),
+        "codex-enforce",
     );
     let Some(hooks) = super::governor_hosts::hooks_object(&mut root) else {
         return;

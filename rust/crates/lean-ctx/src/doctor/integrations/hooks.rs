@@ -49,7 +49,7 @@ pub(crate) fn check_gemini_trust_and_hooks(home: &std::path::Path, binary: &str)
                         .get("command")
                         .and_then(|c| c.as_str())
                         .unwrap_or_default();
-                    let first = cmd.split_whitespace().next().unwrap_or_default();
+                    let first = super::wiring::hook_program(cmd);
                     if cmd.contains("hook rewrite") && cmd_matches_expected(first, binary) {
                         saw_rewrite = true;
                     }
@@ -141,7 +141,7 @@ pub(crate) fn check_antigravity_cli_hooks(home: &std::path::Path, binary: &str) 
                                 .get("command")
                                 .and_then(|c| c.as_str())
                                 .unwrap_or_default();
-                            let first = cmd.split_whitespace().next().unwrap_or_default();
+                            let first = super::wiring::hook_program(cmd);
                             cmd.contains("hook observe") && cmd_matches_expected(first, binary)
                         })
                     })
@@ -359,8 +359,10 @@ pub(crate) fn check_claude_hooks(path: &std::path::Path, binary: &str) -> NamedC
         .cloned()
         .unwrap_or_default();
     let joined = serde_json::to_string(&pre).unwrap_or_default();
-    let entries_ok = joined.contains(" hook rewrite")
-        && (joined.contains(" hook redirect") || joined.contains(" hook deny"));
+    // Command lines, so the exec form (`command` + `args`) counts too.
+    let lines = super::wiring::hook_command_lines(&serde_json::Value::Array(pre));
+    let entries_ok = lines.contains(" hook rewrite")
+        && (lines.contains(" hook redirect") || lines.contains(" hook deny"));
     let stale = stale_hook_binary(&joined, binary);
     let check = finalize_hook_check("Hooks", path, entries_ok, stale);
     // Every event's hooks, not only lean-ctx's: Claude Code runs them all.

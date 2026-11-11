@@ -88,6 +88,17 @@ On Unix, run direct tests as `(umask 077; cargo test --lib --locked)` to keep
 temporary fixtures private under shared-shell defaults. Make, preflight and CI
 configure this in their own subprocesses.
 
+### Merge drivers for generated and list files
+
+`make setup` runs `setup-hooks` and `setup-merge-drivers`. The latter registers
+the merge drivers that `.gitattributes` declares for `CHANGELOG.md`,
+`PUBLISH_MANIFEST.toml`, `Cargo.lock`, `frozen-hashes.json` and the generated
+files (`scripts/derivations.py install`, once per clone, shared by its
+worktrees): two branches that each add an entry merge without a text conflict,
+and anything the drivers cannot merge safely still stops with the usual markers.
+After a merge, run `python3 scripts/derivations.py regenerate` and commit what it
+rewrites (SBOM, THIRD_PARTY_NOTICES, Cargo.lock, scope register).
+
 ### Pre-push gate (CI parity)
 
 `make setup-hooks` wires a pre-push hook that runs `scripts/preflight.sh fast` —

@@ -12,6 +12,7 @@ pub mod hive;
 mod intelligence;
 mod loader;
 mod logic;
+pub mod managed;
 mod memory;
 mod merge;
 mod model;
@@ -39,13 +40,15 @@ mod value_display;
 /// content hashes of the global and project-local files plus the environment-
 /// selected config profile it was built from, so a later load only reuses an
 /// entry with identical inputs (#406, #1159). The trailing `bool` is the
-/// workspace-trust decision the entry was merged under (#2144).
+/// workspace-trust decision the entry was merged under (#2144); the last
+/// field keys the machine's managed configuration (`core::config::managed`).
 type ConfigCacheSlot = Option<(
     Arc<Config>,
     Option<String>,
     Option<String>,
     Option<String>,
     bool,
+    Option<String>,
 )>;
 
 pub use defaults::*;
@@ -76,10 +79,10 @@ pub use memory::{
 pub use merge::is_project_key;
 pub use provenance::{ConfigProvenance, EnvOverride};
 pub use proxy::{
-    BaselineConfig, DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK, HistoryMode, PipelineConfig, ProseRanker,
-    ProseRole, ProviderEntry, ProxyConfig, ProxyMode, ProxyProvider, ResolvedProvider,
-    RoleAggressiveness, RoutingRules, UpstreamDrift, Upstreams, WireShape, diagnose_drift,
-    env_upstream_override, is_local_proxy_url, normalize_url, normalize_url_opt,
+    BaselineConfig, CacheShareConfig, DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK, HistoryMode,
+    PipelineConfig, ProseRanker, ProseRole, ProviderEntry, ProxyConfig, ProxyMode, ProxyProvider,
+    ResolvedProvider, RoleAggressiveness, RoutingRules, UpstreamDrift, Upstreams, WireShape,
+    diagnose_drift, env_upstream_override, is_local_proxy_url, normalize_url, normalize_url_opt,
     parse_route_target,
 };
 pub use read_dedup::ReadDedup;

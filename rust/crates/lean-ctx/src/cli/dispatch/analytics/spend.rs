@@ -8,6 +8,7 @@
 //! produce measured data; MCP-only IDEs bypass the proxy and stay estimated.
 
 use lean_ctx::core::wrapped::format_tokens;
+use lean_ctx_proxy::cache_share::{self, CacheShareReport, OpenModelVerdict, ShareStatus};
 use lean_ctx_proxy::usage_meter::{self, ModelSpend};
 
 pub(in crate::cli::dispatch) fn cmd_spend(args: &[String]) {
@@ -16,6 +17,11 @@ pub(in crate::cli::dispatch) fn cmd_spend(args: &[String]) {
         .any(|a| a == "--help" || a == "-h" || a == "help")
     {
         print_help();
+        return;
+    }
+
+    if args.iter().any(|a| a == "--cache") {
+        cmd_cache_share(args.iter().any(|a| a == "--json"));
         return;
     }
 
@@ -108,6 +114,73 @@ fn print_table(rows: &[ModelSpend]) {
     );
 }
 
+/// `lean-ctx spend --cache`: the rolling cache-read share per provider+model.
+fn cmd_cache_share(json: bool) {
+    let settings = cache_share::Settings::load();
+    let report = cache_share::persisted_report().unwrap_or(CacheShareReport {
+        window_secs: settings.window_secs,
+        alarm_threshold: settings.threshold,
+        min_prompt_tokens: settings.min_prompt_tokens,
+        rows: Vec::new(),
+    });
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
+        );
+        return;
+    }
+    println!(
+        "Prompt-cache share  (last {} min, alarm below {:.0} %)",
+        report.window_secs / 60,
+        report.alarm_threshold * 100.0
+    );
+    println!();
+    if report.rows.is_empty() {
+        println!("  No proxy-routed provider calls in the window.");
+        return;
+    }
+    println!(
+        "  {:<12} {:<24} {:>6} {:>9} {:>7} {:>11} {:>11}  Status",
+        "Provider", "Model", "Reqs", "Prompt", "Cached", "Cost", "No cache"
+    );
+    println!("  {}", "-".repeat(96));
+    for r in &report.rows {
+        let share = r
+            .cache_read_share
+            .map_or_else(|| "-".to_string(), |s| format!("{:.1}%", s * 100.0));
+        let mut status = match r.status {
+            ShareStatus::Ok => "ok".to_string(),
+            ShareStatus::BelowThreshold => "ALARM: below threshold".to_string(),
+            ShareStatus::InsufficientData => "warming up".to_string(),
+            ShareStatus::Local => "local".to_string(),
+        };
+        match r.open_model {
+            OpenModelVerdict::Flagged | OpenModelVerdict::Refused => {
+                status.push_str(", open model on unlisted provider");
+            }
+            OpenModelVerdict::Allowed | OpenModelVerdict::NotApplicable => {}
+        }
+        println!(
+            "  {:<12} {:<24} {:>6} {:>9} {:>7} {:>11} {:>11}  {}",
+            truncate(&r.provider, 12),
+            truncate(&r.model, 24),
+            r.requests,
+            format_tokens(r.prompt_tokens),
+            share,
+            fmt_usd(r.cost_usd),
+            fmt_usd(r.uncached_cost_usd),
+            status,
+        );
+    }
+    println!();
+    println!(
+        "  Cost = billed (provider charge or price table); No cache = the same tokens\n  \
+         with every prompt token at the input rate. Purchase prices per token class:\n  \
+         `lean-ctx spend --cache --json`. Tune under [proxy.cache_share]."
+    );
+}
+
 fn fmt_usd(v: f64) -> String {
     if v >= 1.0 {
         format!("${v:.2}")
@@ -126,12 +199,15 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 fn print_help() {
-    println!("Usage: lean-ctx spend [--json]");
+    println!("Usage: lean-ctx spend [--cache] [--json]");
     println!();
     println!("Shows the measured provider bill: the real model and billed tokens");
     println!("(input, output, cache reads/writes, reasoning) that the lean-ctx proxy");
     println!("read from upstream responses, priced with the shared model table.");
     println!();
+    println!("  --cache  Prompt-cache share per provider and model over the rolling");
+    println!("           window ([proxy.cache_share]), with cost, cost without cache,");
+    println!("           the alarm state and the open-model provider check.");
     println!("  --json   Emit machine-readable JSON instead of the table.");
     println!();
     println!("Measured data is produced only by proxy-routed clients (Claude Code,");

@@ -8,7 +8,7 @@ fn append_generated(path: &Path, count: usize) {
     use std::io::BufWriter;
     let mut prev = fs::File::open(path).ok().map_or_else(
         || "genesis".to_string(),
-        |f| read_last_hash_tail(&f).unwrap(),
+        |f| read_tail(&f).unwrap().prev_hash,
     );
     let file = OpenOptions::new()
         .create(true)
@@ -44,6 +44,15 @@ fn append_generated(path: &Path, count: usize) {
             prev_hash: prev,
             entry_hash: entry_hash.clone(),
             signature: None,
+            // v1 entries, as an older writer appends them.
+            v: None,
+            session_id: None,
+            seq: None,
+            instance_id: None,
+            policy_digest: None,
+            decision: None,
+            output_digest: None,
+            v2_hash: None,
         };
         serde_json::to_writer(&mut out, &entry).unwrap();
         out.write_all(b"\n").unwrap();
@@ -110,6 +119,204 @@ fn drift_data() -> AuditEntryData {
         role: "coder".to_string(),
         event_type: AuditEventType::AgentDriftDetected,
     }
+}
+
+fn session_facts(session_id: &str) -> SessionFacts {
+    SessionFacts {
+        session_id: session_id.to_string(),
+        instance_id: Some("inst-1".to_string()),
+        policy_digest: Some("sha256:policy".to_string()),
+        decision: AuditDecision::Allow,
+        output_digest: keyed_digest("output", b"tool output"),
+    }
+}
+
+fn raw_entries(path: &Path) -> Vec<serde_json::Value> {
+    fs::read_to_string(path)
+        .expect("trail")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("entry"))
+        .collect()
+}
+
+fn write_raw(path: &Path, entries: &[serde_json::Value]) {
+    let mut text = String::new();
+    for entry in entries {
+        text.push_str(&serde_json::to_string(entry).expect("entry"));
+        text.push('\n');
+    }
+    fs::write(path, text).expect("write trail");
+}
+
+/// v2 entries (with and without a session) and v1 entries from an older
+/// writer form one chain that both passes verify. An older reader, which
+/// knows only the v1 fields, sees the same trail as intact.
+#[test]
+fn v2_entries_bind_session_facts_and_verify_mixed_with_v1_entries() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let path = trail_path().expect("trail path");
+    let first = try_record_v2(drift_data(), session_facts("s-1")).expect("v2 entry");
+    let second = try_record_v2(drift_data_unsigned(), session_facts("s-1")).expect("v2 entry");
+    let other = try_record_v2(drift_data_unsigned(), session_facts("s-2")).expect("v2 entry");
+    let plain = try_record(drift_data_unsigned()).expect("entry without session");
+    append_generated(&path, 2);
+    let after_v1 = try_record_v2(drift_data_unsigned(), session_facts("s-1")).expect("v2 entry");
+
+    assert_eq!(
+        [first.seq, second.seq, other.seq, after_v1.seq],
+        [Some(1), Some(2), Some(1), Some(3)]
+    );
+    assert_eq!(first.v, Some(ENTRY_VERSION));
+    assert_eq!(first.decision.as_deref(), Some("allow"));
+    assert!(first.v2_hash.is_some());
+    assert_eq!(
+        (plain.v, plain.session_id, plain.seq),
+        (Some(ENTRY_VERSION), None, None)
+    );
+
+    for result in [verify_chain(), verify_chain_full()] {
+        assert!(result.valid, "mixed v1/v2 chain verifies");
+        assert_eq!(result.total_entries, 7);
+        assert_eq!(result.unknown_event_types, 0);
+    }
+
+    // An older reader ignores every field it does not know.
+    let v1_view: Vec<serde_json::Value> = raw_entries(&path)
+        .into_iter()
+        .map(|mut entry| {
+            let object = entry.as_object_mut().expect("object");
+            for key in [
+                "v",
+                "session_id",
+                "seq",
+                "instance_id",
+                "policy_digest",
+                "decision",
+                "output_digest",
+                "v2_hash",
+            ] {
+                object.remove(key);
+            }
+            entry
+        })
+        .collect();
+    let old_reader = tempfile::tempdir().expect("tempdir");
+    let old_path = old_reader.path().join("trail.jsonl");
+    write_raw(&old_path, &v1_view);
+    let old = verify_chain_at(&old_path);
+    assert!(
+        old.valid,
+        "an old reader never reports v2 entries as tampering"
+    );
+    assert_eq!((old.total_entries, old.unknown_event_types), (7, 0));
+}
+
+/// The timestamp and every session fact are under `v2_hash`: editing one
+/// breaks that entry, rewriting its `v2_hash` breaks the next v2 entry,
+/// and stripping the v2 fields does too.
+#[test]
+fn edited_v2_facts_fail_verification_at_their_entry() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let path = trail_path().expect("trail path");
+    for _ in 0..3 {
+        try_record_v2(drift_data_unsigned(), session_facts("s-1")).expect("v2 entry");
+    }
+    let original = raw_entries(&path);
+    type Edit = fn(&mut serde_json::Value);
+    let edits: [(&str, Edit, usize); 6] = [
+        (
+            "timestamp",
+            |e| e["timestamp"] = "2020-01-01T00:00:00+00:00".into(),
+            1,
+        ),
+        ("seq", |e| e["seq"] = 7.into(), 1),
+        ("decision", |e| e["decision"] = "deny".into(), 1),
+        ("session_id", |e| e["session_id"] = "s-9".into(), 1),
+        ("v2_hash", |e| e["v2_hash"] = "0".repeat(64).into(), 1),
+        (
+            "stripped",
+            |e| {
+                let object = e.as_object_mut().expect("object");
+                for key in ["v", "session_id", "seq", "decision", "v2_hash"] {
+                    object.remove(key);
+                }
+            },
+            2,
+        ),
+    ];
+    for (name, edit, broken) in edits {
+        let mut entries = original.clone();
+        edit(&mut entries[1]);
+        write_raw(&path, &entries);
+        let result = verify_chain_full();
+        assert!(!result.valid, "{name}: edit must fail verification");
+        assert_eq!(result.first_invalid_at, Some(broken), "{name}");
+    }
+
+    // A forger who recomputes the edited entry's own v2_hash moves the
+    // break to the next entry.
+    let mut entries = original.clone();
+    entries[1]["timestamp"] = "2020-01-01T00:00:00+00:00".into();
+    let head = entries[0]["v2_hash"].as_str().expect("head").to_string();
+    let fields = v2::v2_fields(&entries[1]).expect("fields");
+    entries[1]["v2_hash"] = v2::compute_v2_hash(&head, &fields).into();
+    write_raw(&path, &entries);
+    assert_eq!(verify_chain_full().first_invalid_at, Some(2));
+
+    write_raw(&path, &original);
+    assert!(verify_chain_full().valid, "the untouched trail verifies");
+}
+
+/// An entry of a later version is verified through its v1 link and
+/// counted as forward-compatible, never as tampering; this build appends
+/// after it.
+#[test]
+fn a_newer_entry_version_is_forward_compatible() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let path = trail_path().expect("trail path");
+    try_record_v2(drift_data_unsigned(), session_facts("s-1")).expect("v2 entry");
+    let mut entries = raw_entries(&path);
+    entries[0]["v"] = 3.into();
+    entries[0]["future_fact"] = "x".into();
+    write_raw(&path, &entries);
+
+    let result = verify_chain_full();
+    assert!(result.valid, "a newer version is not tampering");
+    assert_eq!(result.unknown_event_types, 1);
+
+    try_record_v2(drift_data_unsigned(), session_facts("s-1")).expect("append after v3");
+    let continued = verify_chain_full();
+    assert!(continued.valid);
+    assert_eq!(
+        (continued.total_entries, continued.unknown_event_types),
+        (2, 1)
+    );
+}
+
+/// Digests are HMAC under the engine-local key: stable for one key, not
+/// the plain hash of the data, different under another key.
+#[test]
+fn keyed_digests_use_the_local_hmac_key() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let digest = keyed_digest("output", b"tool output").expect("digest");
+    assert!(digest.starts_with(HMAC_PREFIX));
+    assert_eq!(keyed_digest("output", b"tool output"), Some(digest.clone()));
+    assert_ne!(keyed_digest("input", b"tool output"), Some(digest.clone()));
+    let plain = crate::core::agent_identity::hex_encode(&Sha256::digest(b"tool output"));
+    assert!(!digest.ends_with(&plain));
+
+    let dir = crate::core::data_dir::lean_ctx_data_dir()
+        .expect("data dir")
+        .join("hive");
+    let key = load_or_create_hmac_key(&dir).expect("key");
+    assert_eq!(
+        digest,
+        format!("{HMAC_PREFIX}{}", hmac_hex(&key, "output", b"tool output"))
+    );
+    assert_ne!(
+        hmac_hex(&[7u8; 32], "output", b"tool output"),
+        hmac_hex(&key, "output", b"tool output")
+    );
 }
 
 /// The drift event must be a first-class, on-disk-stable event type:
@@ -677,7 +884,11 @@ fn hashes(entries: &[AuditEntry]) -> Vec<String> {
 /// One plain entry, appended as if at `days` days from now.
 fn append_on_day(path: &Path, days: i64) -> AuditEntry {
     let now = chrono::Utc::now() + chrono::Duration::days(days);
-    try_record_at_time(path, drift_data_unsigned(), now).expect("append")
+    let record = Record {
+        data: drift_data_unsigned(),
+        facts: None,
+    };
+    try_record_at_time(path, record, now).expect("append")
 }
 
 fn drift_data_unsigned() -> AuditEntryData {

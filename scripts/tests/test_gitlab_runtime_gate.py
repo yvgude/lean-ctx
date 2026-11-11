@@ -56,6 +56,15 @@ CHEAP_GATE_NEEDS = [
     ("scope-register", True),
 ]
 V4_RUNTIME_NEEDS = CHEAP_GATE_NEEDS + [("v4-provenance", False)]
+# On merge requests every cheap gate is path-scoped (ci-slim 11.11.), so
+# mr-quick and mr-lint need each of them optionally.
+MR_GATE_NEEDS = [(name, True) for name, _ in CHEAP_GATE_NEEDS]
+
+# What the Rust gates read on a merge request (.rust-changes-on-mr).
+RUST_GATE_INPUTS = ("rust/**/*", ".cargo/**/*", "ci/**/*")
+MR_RULE = "'$CI_PIPELINE_SOURCE == \"merge_request_event\"'"
+TRAIN_RULE = ("'$CI_PIPELINE_SOURCE == \"merge_request_event\" && "
+              "$CI_MERGE_REQUEST_EVENT_TYPE == \"merge_train\"'")
 
 
 RUST_INPUTS = (
@@ -84,18 +93,25 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertNotIn("merge_request_event", blocks[0])
         self.assertNotIn("LEANCTX_PROOF_BUILD", self.config)
 
-    def test_only_a_superseded_run_may_end_as_a_warning(self):
-        self.assertIn("allow_failure:\n    exit_codes:\n      - 75\n", self.job)
+    def test_only_a_superseded_run_or_the_flake_gate_may_end_as_a_warning(self):
+        self.assertIn("allow_failure:\n    exit_codes:\n      - 75\n      - 76\n  ", self.job)
         self.assertEqual(self.job.count("exit 75"), 1)
         check = self.job.index('git ls-remote origin "refs/heads/$CI_COMMIT_BRANCH"')
         self.assertLess(check, self.job.index("exit 75"))
         self.assertIn('test "$tip" != "$CI_COMMIT_SHA"', self.job)
         # The check runs before any setup or build work.
         self.assertLess(self.job.index("exit 75"), self.job.index("useradd"))
-        self.assertLess(self.job.index("exit 75"), self.job.index("mount -o remount"))
+        self.assertLess(self.job.index("exit 75"), self.job.index('ci_target_parent="/builds/.ci-cache/'))
         # A check that itself exits 75 is a failure, never a warning.
         self.assertIn("' || { rc=$?; if test \"$rc\" = 75; then", self.job)
         self.assertIn('rc=1; fi; exit "$rc"; }', self.job)
+        # Exit 76 is the flake gate's warning only: the job exits 76 once,
+        # and only when nextest's result is 76; any other 76 (one without
+        # flake-verdict.txt saying `warning`) is a failure.
+        self.assertEqual(self.job.count("exit 76"), 1)
+        self.assertIn('if test "$nextest_rc" = 76; then', self.job)
+        self.assertIn('if test "$rc" = 76 && ! grep -qx warning "$CI_PROJECT_DIR/runtime-evidence/flake-verdict.txt" 2>/dev/null; then', self.job)
+        self.assertLess(self.job.index('if test "$doc_rc" != 0 ||'), self.job.index("exit 76"))
 
     def test_one_full_run_per_branch(self):
         self.assertIn("resource_group: v4-rust-$CI_COMMIT_REF_SLUG\n", self.job)
@@ -125,7 +141,7 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         # A failed run still fails the job, after the remaining checks.
         self.assertEqual(self.job.count("nextest_rc=0"), 1)
         self.assertEqual(self.job.count("doc_rc=0"), 1)
-        verdict = 'if test "$nextest_rc" != 0 || test "$doc_rc" != 0; then'
+        verdict = 'if test "$doc_rc" != 0 || { test "$nextest_rc" != 0 && test "$nextest_rc" != 76; }; then'
         self.assertIn(verdict + ' echo "tests failed: nextest exit $nextest_rc, doctests exit $doc_rc" >&2; exit 1; fi', self.job)
         self.assertLess(self.job.index(nextest), self.job.index(verdict))
         self.assertLess(self.job.index(doctests), self.job.index(verdict))
@@ -144,12 +160,74 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertNotRegex(nextest_toml, r"(?m)^retries = [1-9]")
         self.assertIn("runtime-evidence/tests.log", self.job)
         self.assertIn("runtime-evidence/test-features.txt", self.job)
-        # The shipping feature set must compile on its own.
-        self.assertIn("cargo +stable check --locked --workspace --all-targets", self.job)
-        self.assertIn("runtime-evidence/check-default.log", self.job)
         self.assertIn("cargo +stable clippy --locked --all-features -- -D warnings", self.job)
-        self.assertIn("cargo +stable fmt --all --check", self.job)
         self.assertIn('CARGO_BUILD_JOBS: "12"', self.job)
+
+    def test_no_gate_runs_twice(self):
+        # W1-08: format is the rust-fmt job alone.
+        fmt = job_text(self.config, "rust-fmt")
+        self.assertIn("cargo +stable fmt --all --check", fmt)
+        for job in (self.job, self.quick, self.lint):
+            self.assertNotIn("cargo +stable fmt", job)
+        self.assertEqual(self.config.count("cargo +stable fmt --all --check"), 1)
+        # Clippy covers only --all-features; the shipping (default) feature
+        # set is compiled exactly once, by the full suite, after the tests.
+        check = 'cargo +stable check --locked --workspace 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/check-default.log"'
+        self.assertEqual(self.config.count("cargo +stable check"), 1)
+        self.assertIn(check, self.job)
+        self.assertNotIn("--features", check)
+        self.assertLess(self.job.index("cargo +stable test --locked --doc"), self.job.index(check))
+
+    def test_failed_tests_are_retried_once_through_the_flake_gate(self):
+        gate = ('python3 -I -u "$CI_PROJECT_DIR/scripts/ci/flake_gate.py"'
+                ' --junit "$CI_PROJECT_DIR/runtime-evidence/junit.xml"'
+                ' --rerun-junit "$CARGO_TARGET_DIR/nextest/ci/junit.xml"'
+                ' --quarantine "$CI_PROJECT_DIR/ci/flaky-quarantine.json"'
+                ' --job v4-runtime --evidence "$CI_PROJECT_DIR/runtime-evidence" --'
+                ' mold -run cargo +stable nextest run --locked --workspace --features "$test_features"'
+                ' --profile ci --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/flake-gate.log"'
+                ' || flake_rc=$?')
+        self.assertIn(gate, self.job)
+        self.assertEqual(self.job.count("flake_gate.py"), 1)
+        # Only after a failed first run, on its copied report, and the gate's
+        # result replaces nextest's before the verdict.
+        guard = 'if test "$nextest_rc" != 0; then'
+        copy = 'cp "$CARGO_TARGET_DIR/nextest/ci/junit.xml" "$CI_PROJECT_DIR/runtime-evidence/junit.xml"'
+        self.assertLess(self.job.index(copy), self.job.index(guard))
+        self.assertLess(self.job.index(guard), self.job.index(gate))
+        self.assertLess(self.job.index(gate), self.job.index('nextest_rc="$flake_rc"'))
+        # The gate and its quarantine list are private-mirror only (excluded
+        # from the public export together, PUBLISH_MANIFEST.toml).
+        if (ROOT / "scripts/ci/flake_gate.py").is_file():
+            self.assertTrue((ROOT / "ci/flaky-quarantine.json").is_file())
+        # Jobs retry only for infrastructure failures, never a script failure.
+        retry = job_text(self.config, ".flake-retry")
+        self.assertIn("  retry:\n    max: 2\n    when:\n", retry)
+        self.assertNotIn("script_failure", retry)
+        for name in ("rust-fmt", "ip-boundary-skill-installed", "v4-runtime", "v4-provenance",
+                     "public-api", "change-class"):
+            self.assertIn("  extends: .flake-retry\n", job_text(self.config, name), name)
+        scope = ROOT / "ee/ci/scope-register.yml"
+        if scope.exists():
+            text = scope.read_text(encoding="utf-8")
+            self.assertIn(retry[retry.index("  retry:"):].rstrip("\n") + "\n", text)
+
+    def test_api_snapshot_and_change_class_jobs_never_block(self):
+        api = job_text(self.config, "public-api")
+        cls = job_text(self.config, "change-class")
+        for job in (api, cls):
+            self.assertIn("  tags: [light]\n", job)
+            self.assertIn("  allow_failure: true\n", job)
+            self.assertIn("!reference [.interruptible-on-mr, rules]", job)
+            self.assertIn('"${CI_MERGE_REQUEST_DIFF_BASE_SHA:-$(git rev-parse HEAD^1)}"', job)
+        self.assertIn("  needs: []\n", api)
+        self.assertIn("scripts/public-api-snapshot snapshot", api)
+        self.assertIn("scripts/public-api-snapshot diff api-snapshot/base api-snapshot/head", api)
+        self.assertIn("    - job: public-api\n      artifacts: true\n", cls)
+        self.assertIn("--base-snapshots api-snapshot/base --head-snapshots api-snapshot/head", cls)
+        self.assertIn("scripts/change-class", cls)
+        for script in ("scripts/public-api-snapshot", "scripts/change-class"):
+            self.assertTrue((ROOT / script).is_file(), script)
 
     def test_no_test_run_compiles_the_path_jail_out(self):
         # `no-jail` removes PathJail and its tests; --all-features would turn
@@ -217,38 +295,23 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertNotIn("rust:1.99.1-bookworm", self.config)
         self.assertIn("command -v \"$ci_tool\"", self.job)
 
-    def test_compiler_cache_is_written_only_by_a_protected_post_merge_push(self):
-        self.assertIn("    V4_SCCACHE_MODE: write\n", self.job)
-        self.assertIn("    V4_SCCACHE_MODE: read\n", self.quick)
-        self.assertIn('    CARGO_INCREMENTAL: "0"\n', self.job)
+    def test_the_incremental_target_is_the_only_compiler_cache(self):
+        # W1-08: no sccache; the slot's persistent target compiles
+        # incrementally, and no wrapper may sit between cargo and rustc.
+        self.assertIn('    CARGO_INCREMENTAL: "1"\n', self.job)
         self.assertNotIn("CARGO_INCREMENTAL", self.quick)
-        self.assertNotIn("SCCACHE_LOCAL_RW_MODE=READ_WRITE", self.quick)
-        self.assertEqual(self.job.count("SCCACHE_LOCAL_RW_MODE=READ_WRITE"), 1)
-        write = self.job.index("SCCACHE_LOCAL_RW_MODE=READ_WRITE")
-        guard = self.job.rindex("if test", 0, write)
-        condition = self.job[guard:write]
-        for required in (
-            'test "${V4_SCCACHE_MODE:-}" = write',
-            'test "${CI_COMMIT_REF_PROTECTED:-}" = true',
-            'test "${CI_PIPELINE_SOURCE:-}" = push',
-            'test "$(stat -c %u "$ci_sccache")" = 10999',
-        ):
-            self.assertIn(required, condition)
-        # Every other run gets a read-only host directory or fails, and reads
-        # it through a job-local overlay.
-        self.assertIn('if ! mount -o remount,bind,ro "$ci_sccache"; then', self.job)
-        self.assertIn('touch "$ci_sccache/.ci-write-probe" 2>/dev/null; then echo "sccache: $ci_sccache is still writable" >&2; exit 1; fi', self.job)
-        self.assertIn("metacopy=on", self.job)
-        self.assertIn("SCCACHE_LOCAL_RW_MODE=READ_ONLY RUSTC_WRAPPER=sccache", self.job)
-        self.assertLess(self.job.index("mount -o remount,bind,ro"), self.job.index("SCCACHE_LOCAL_RW_MODE=READ_ONLY"))
-        self.assertIn("unset RUSTC_WRAPPER SCCACHE_DIR SCCACHE_LOCAL_RW_MODE", self.job)
-        self.assertLess(self.job.index("unset RUSTC_WRAPPER"), write)
-        self.assertIn("! test -L \"$ci_sccache\"", self.job)
-        # The cache owner is the fixed job identity.
+        self.assertNotIn("CARGO_INCREMENTAL", self.lint)
+        for gone in ("V4_SCCACHE", "SCCACHE_CACHE_SIZE", "SCCACHE_IDLE_TIMEOUT", "RUSTC_WRAPPER=",
+                     "mount -o remount", "ci-sccache", "sccache --stop-server"):
+            self.assertNotIn(gone, self.job, gone)
+            self.assertNotIn(gone, self.lint, gone)
+        self.assertNotIn("V4_SCCACHE", self.quick)
+        self.assertIn("  - unset RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER SCCACHE_DIR\n", self.job)
+        self.assertLess(self.job.index("unset RUSTC_WRAPPER"), self.job.index("  script:\n"))
+        self.assertNotIn(" mount ", self.job[self.job.index("for ci_tool in"):self.job.index("command -v")])
+        # The target owner is the fixed job identity.
         self.assertIn("useradd --system --uid 10999 --user-group", self.job)
         self.assertIn('test "$(id -u ci-runner)" = 10999', self.job)
-        for job in (self.job, self.quick, self.lint):
-            self.assertIn("runtime-evidence/sccache.txt", job)
 
     def test_linux_ci_builds_engine_and_binary_package_at_opt_level_zero(self):
         # Cargo.toml's opt-level 1 for these two is a macOS linker limit; on
@@ -311,24 +374,86 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertNotIn("MR_QUICK_LANE", self.config)
         # Waits only for the cheap gates (about a minute), never for
         # provenance, and overrides v4-runtime's list instead of inheriting it.
-        self.assertEqual(needs_of(self.quick), CHEAP_GATE_NEEDS)
+        self.assertEqual(needs_of(self.quick), MR_GATE_NEEDS)
         self.assertIn("  interruptible: true\n", self.quick)
-        # Every gate it waits for runs on every pipeline it runs in.
         fmt = job_text(self.config, "rust-fmt")
         self.assertIn("  needs: []\n", fmt)
-        self.assertIn("  rules:\n    - !reference [.interruptible-on-mr, rules]\n", fmt)
         self.assertIn("cargo +stable fmt --all --check", fmt)
-        for bypass in ("allow_failure", "when: manual", "when: never", "changes:"):
+        for bypass in ("allow_failure", "when: manual", "only:", "except:"):
             self.assertNotIn(bypass, fmt)
 
+    # -- path-scoped merge request gates (ci-slim 11.11.) ------------------
+
+    def test_rust_gate_inputs_cover_every_rust_input(self):
+        shared = job_text(self.config, ".rust-changes-on-mr")
+        # The anchor holds nothing but its rules.
+        self.assertTrue(shared.startswith("  rules:\n"), shared)
+        blocks = re.split(r"(?m)^    - if: ", shared)[1:]
+        self.assertEqual(len(blocks), 2, blocks)
+        # Merge trains test what lands: never path-scoped.
+        self.assertTrue(blocks[0].startswith(TRAIN_RULE + "\n"), blocks[0])
+        self.assertNotIn("changes:", blocks[0])
+        self.assertNotIn("when:", blocks[0])
+        self.assertTrue(blocks[1].startswith(MR_RULE + "\n"), blocks[1])
+        for path in RUST_GATE_INPUTS:
+            self.assertIn(f"          - {path}\n", blocks[1])
+        self.assertNotIn("when:", blocks[1])
+
+    def test_rust_fmt_always_runs_on_branches_and_on_rust_merge_requests(self):
+        fmt = job_text(self.config, "rust-fmt")
+        self.assertIn(
+            "  rules:\n"
+            "    - !reference [.rust-changes-on-mr, rules]\n"
+            f"    - if: {MR_RULE}\n"
+            "      when: never\n"
+            "    - when: on_success\n"
+            "      interruptible: false\n"
+            "  needs: []\n", fmt)
+
+    def test_lint_runs_on_rust_merge_requests_and_trains_only(self):
+        self.assertIn("  rules:\n    - !reference [.rust-changes-on-mr, rules]\n", self.lint)
+        # Nothing else: no branch catch-all (v4-runtime lints branches).
+        rules = re.search(r"(?ms)^  rules:\n(.*?)(?=^  \S)", self.lint).group(1)
+        self.assertEqual(rules, "    - !reference [.rust-changes-on-mr, rules]\n")
+
+    def test_skill_gate_is_scoped_to_its_inputs_on_merge_requests_only(self):
+        ip = job_text(self.config, "ip-boundary-skill-installed")
+        blocks = rule_blocks(ip)
+        self.assertEqual(len(blocks), 4, blocks)
+        self.assertIn('$CI_PROJECT_PATH != "root/lean-ctx"', blocks[0])
+        self.assertTrue(blocks[1].startswith(TRAIN_RULE + "\n"), blocks[1])
+        self.assertNotIn("changes:", blocks[1])
+        self.assertTrue(blocks[2].startswith(MR_RULE + "\n"), blocks[2])
+        for path in (".agents/**/*", ".claude/**/*", ".cursor/**/*", "AGENTS.md", "ci/**/*"):
+            self.assertIn(f"          - {path}\n", blocks[2])
+        self.assertTrue(blocks[3].startswith(MR_RULE + "\n      when: never\n"), blocks[3])
+        self.assertIn("    - when: on_success\n      interruptible: false\n  needs: []\n", ip)
+
+    def test_scope_register_is_scoped_to_its_inputs_on_merge_requests_only(self):
+        scope = ROOT / "ee/ci/scope-register.yml"
+        if not scope.exists():
+            self.skipTest("private tree absent")
+        job = job_text(scope.read_text(encoding="utf-8"), "scope-register")
+        blocks = rule_blocks(job)
+        self.assertEqual(len(blocks), 3, blocks)
+        self.assertTrue(blocks[0].startswith(TRAIN_RULE + "\n"), blocks[0])
+        self.assertNotIn("changes:", blocks[0])
+        self.assertTrue(blocks[1].startswith(MR_RULE + "\n"), blocks[1])
+        for path in ("rust/src/**/*", "rust/crates/**/*", "packages/**/*", "sdk/**/*", "ee/**/*", "ci/**/*"):
+            self.assertIn(f"          - {path}\n", blocks[1])
+        self.assertTrue(blocks[2].startswith(MR_RULE + "\n      when: never\n"), blocks[2])
+        self.assertIn("    - when: on_success\n      interruptible: false\n  needs: []\n", job)
+
     def test_lint_gate_runs_beside_the_quick_gate_on_every_merge_request(self):
-        # Inherits mr-quick's single rule, cheap-gate needs, allow_failure: false and
-        # read-only caches; overrides only the script and its own lane.
+        # Inherits mr-quick's cheap-gate needs, allow_failure: false and
+        # read-only caches; overrides the script, its own lane and its rules
+        # (Rust inputs only, test_lint_runs_on_rust_merge_requests_and_trains_only).
         self.assertIn("  extends: mr-quick\n", self.lint)
         self.assertIn("  resource_group: mr-lint-$CI_MERGE_REQUEST_IID\n", self.lint)
-        for override in ("rules:", "needs:", "allow_failure", "variables:", "when: manual", "when: never", "only:", "except:", "push"):
+        for override in ("needs:", "allow_failure", "variables:", "when: manual", "when: never", "only:", "except:", "push"):
             self.assertNotIn(override, self.lint)
-        self.assertIn("cargo +stable fmt --all --check", self.lint)
+        # Format is rust-fmt's, which mr-lint needs (W1-08: no gate twice).
+        self.assertNotIn("cargo +stable fmt", self.lint)
         # Same clippy invocation as the full suite, so the cache applies.
         self.assertIn("cargo +stable clippy --locked --all-features -- -D warnings", self.lint)
         self.assertNotIn("mr_quick.py", self.lint)
@@ -339,7 +464,12 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertNotIn("cargo +stable fmt", self.quick)
 
     def test_quick_gate_builds_everything_and_runs_selected_tests(self):
-        self.assertIn('python3 -I -u "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA"', self.quick)
+        self.assertIn('python3 -I -u "$CI_PROJECT_DIR/scripts/ci/mr_quick.py" --repo "$CI_PROJECT_DIR" --base "$MR_BASE"', self.quick)
+        # An MR without file changes has no CI_MERGE_REQUEST_DIFF_BASE_SHA; under
+        # set -u every use needs a fallback (pipeline 9257: unbound variable).
+        self.assertIn('MR_BASE="${CI_MERGE_REQUEST_DIFF_BASE_SHA:-${CI_MERGE_REQUEST_TARGET_BRANCH_SHA:-}}"', self.quick)
+        self.assertIn('INPUT_CHECK_SPEC_COMMIT="$MR_BASE"', self.quick)
+        self.assertNotIn('"$CI_MERGE_REQUEST_DIFF_BASE_SHA"', self.quick)
         self.assertIn('id -u | tee "$CI_PROJECT_DIR/runtime-evidence/uid.txt"', self.quick)
         self.assertIn('GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --', self.quick)
         script_path = ROOT / "scripts/ci/mr_quick.py"
@@ -441,8 +571,6 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         # The checkout guards are unchanged: rust/target (CARGO_HOME) stays
         # pruned, and the persistent target is not inside the scanned tree.
         self.assertNotIn('-path "/builds/.ci-cache', self.job)
-        # The compiler cache boundary is untouched.
-        self.assertEqual(self.job.count("SCCACHE_LOCAL_RW_MODE=READ_WRITE"), 1)
 
 
 class TeamSeatCiFragmentTests(unittest.TestCase):

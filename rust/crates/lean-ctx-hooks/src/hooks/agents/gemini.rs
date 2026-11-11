@@ -149,8 +149,8 @@ pub(crate) fn install_gemini_hook_scripts(home: &std::path::Path) {
 
 pub(crate) fn install_gemini_hook_config(home: &std::path::Path) {
     let binary = resolve_hook_command_binary();
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
+    let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
+    let redirect_cmd = crate::hooks::hook_shell_command(&binary, "redirect");
 
     let settings_path = home.join(".gemini").join("settings.json");
     let settings_content = if settings_path.exists() {
@@ -166,13 +166,14 @@ pub(crate) fn install_gemini_hook_config(home: &std::path::Path) {
     let has_old_hooks = settings_content.contains("lean-ctx-rewrite")
         || settings_content.contains("lean-ctx-redirect")
         || (settings_content.contains("hook rewrite") && !settings_content.contains("\"matcher\""));
-    let missing_observe = !settings_content.contains("hook observe");
+    let missing_observe = !settings_content.contains("hook observe")
+        || crate::hooks::content_has_split_hook_command(&settings_content);
 
     if has_new_format && !has_old_hooks && !missing_observe {
         return;
     }
 
-    let observe_cmd = format!("{binary} hook observe");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
     let hook_config = serde_json::json!({
         "hooks": {
             "BeforeTool": [
@@ -229,9 +230,9 @@ pub(crate) fn install_gemini_hook_config(home: &std::path::Path) {
 /// Replaces the redirect BeforeTool hook with a deny hook.
 pub(crate) fn install_gemini_deny_hook(home: &std::path::Path) {
     let binary = resolve_hook_command_binary();
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let deny_cmd = format!("{binary} hook deny");
-    let observe_cmd = format!("{binary} hook observe");
+    let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
+    let deny_cmd = crate::hooks::hook_shell_command(&binary, "deny");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
 
     let settings_path = home.join(".gemini").join("settings.json");
 

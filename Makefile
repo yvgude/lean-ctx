@@ -1,10 +1,15 @@
-.PHONY: setup-hooks install install-release build check dev test precommit-check preflight preflight-fast help
+.PHONY: setup setup-hooks setup-merge-drivers install install-release build check dev test precommit-check preflight preflight-fast help
 
 # ── Setup ─────────────────────────────────────────────────
+
+setup: setup-hooks setup-merge-drivers ## One-time clone setup: git hooks + merge drivers
 
 setup-hooks: ## Configure git to use .githooks/ for hooks
 	git config core.hooksPath .githooks
 	@echo "Git hooks configured: .githooks/"
+
+setup-merge-drivers: ## Register the .gitattributes merge drivers (scripts/derivations.py) in this clone
+	python3 scripts/derivations.py install
 
 # ── Build & Install ──────────────────────────────────────
 

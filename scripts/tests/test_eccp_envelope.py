@@ -99,10 +99,20 @@ class EnvelopeTests(unittest.TestCase):
         self.assertEqual(env["read_set"]["toolchain"]["rustc"], "rustc 1.90.0 (test)")
         self.assertEqual(env["read_set"]["observed_reads"], ["crates/alpha/src/lib.rs", "crates/beta/src/lib.rs"])
         self.assertEqual(env["derivations"], [{"output": "gen/out.rs", "inputs": [{"path": "codegen/spec.txt", "blob": self.rev("HEAD:codegen/spec.txt")}]}])
-        self.assertEqual(env["evidence"]["checks"], [
+        self.assertNotIn("observed_reads_source", env["read_set"])
+        self.assertEqual(env["write_set"], {
+            "paths": ["README", "ci/derivations.toml", "crates/alpha/src/lib.rs", "tests/accept.rs"],
+            "test_functions": ["tests/accept.rs::t"],
+        })
+        checks = env["evidence"]["checks"]
+        self.assertEqual([{k: c[k] for k in ("name", "result", "commit")} for c in checks], [
             {"name": "clippy", "result": "fail", "commit": self.first},
             {"name": "unit", "result": "pass", "commit": self.head},
         ])
+        for check in checks:
+            self.assertRegex(check["read_set_digest"], r"^sha256:[0-9a-f]{64}$")
+        # The README commit did not touch crate alpha: same read set, same address.
+        self.assertEqual(checks[0]["read_set_digest"], checks[1]["read_set_digest"])
 
         verified = self.tool("verify", self.head)
         self.assertEqual(verified.returncode, 0, verified.stderr)
@@ -115,9 +125,14 @@ class EnvelopeTests(unittest.TestCase):
     def test_matches_json_schema_shape(self):
         schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
         self.assertEqual(schema["properties"]["schema"]["const"], "leanctx.change-envelope/v1")
-        env = json.loads(self.write("--dry-run").stdout)
-        self.assertEqual(sorted(env), sorted(schema["required"]))
+        env = json.loads(self.write("--dry-run", "--features", "a,b").stdout)
+        self.assertEqual(set(schema["required"]) - set(env), set())
+        self.assertEqual(set(env) - set(schema["properties"]), set())
         self.assertEqual(set(env["read_set"]) - set(schema["properties"]["read_set"]["properties"]), set())
+        self.assertEqual(set(env["write_set"]), set(schema["properties"]["write_set"]["required"]))
+        check_props = schema["properties"]["evidence"]["properties"]["checks"]["items"]["properties"]
+        self.assertEqual(set(env["evidence"]["checks"][0]) - set(check_props), set())
+        self.assertEqual(env["read_set"]["features"], ["a", "b"])
         self.assertEqual(self.git("notes", "--ref", "refs/notes/eccp", "list"), "")
 
     def test_verify_rejects_base_that_is_not_an_ancestor(self):
@@ -153,6 +168,100 @@ class EnvelopeTests(unittest.TestCase):
         env = json.loads(self.write("--dry-run", extra_env={"ECCP_CLASSIFIER": str(classifier)}).stdout)
         self.assertEqual(env["class"], "I")
         self.assertEqual(json.loads(self.write("--dry-run", "--class", "G").stdout)["class"], "G")
+
+
+    def fake_lean_ctx(self, payload: dict) -> Path:
+        """A `lean-ctx` that records its arguments and prints a read-set export."""
+        tool = self.repo / ".fake-lean-ctx"
+        tool.write_text(
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$@\" > {self.repo / '.fake-args'}\n"
+            f"cat <<'JSON'\n{json.dumps(payload)}\nJSON\n",
+            encoding="utf-8",
+        )
+        tool.chmod(0o700)
+        return tool
+
+    def test_observed_reads_from_session(self):
+        tool = self.fake_lean_ctx({
+            "schema": "leanctx.session-readset/v1",
+            "sessions": ["s1", "s2"],
+            "reads": [
+                {"path": "crates/beta/src/lib.rs", "read_count": 2, "modified": False, "last_mode": "full"},
+                {"path": "crates/alpha/src/lib.rs", "read_count": 1, "modified": True, "last_mode": "map"},
+                {"path": "notes/untracked.md", "read_count": 1, "modified": False, "last_mode": "full"},
+            ],
+            "outside_root": 4,
+            "complete": False,
+        })
+        written = self.tool("write", "--base-ref", "main", "--task", "157", "--rustc-version", "rustc 1.90.0 (test)",
+                            "--observed-reads-from-session", "--session-id", "s1", "--session-id", "s2",
+                            extra_env={"LEAN_CTX_BIN": str(tool)})
+        self.assertEqual(written.returncode, 0, written.stderr)
+        args = (self.repo / ".fake-args").read_text(encoding="utf-8").split()
+        self.assertEqual(args[:4], ["session", "readset", "--json", "--root"])
+        self.assertEqual(Path(args[4]).resolve(), self.repo.resolve())
+        self.assertEqual(args[5:], ["--id", "s1", "--id", "s2"])
+        env = json.loads(self.tool("show", self.head).stdout)
+        self.assertEqual(env["read_set"]["observed_reads"], ["crates/alpha/src/lib.rs", "crates/beta/src/lib.rs"])
+        self.assertEqual(env["read_set"]["observed_reads_source"], {
+            "schema": "leanctx.session-readset/v1", "sessions": ["s1", "s2"], "complete": False, "untracked_dropped": 1,
+        })
+        self.assertEqual(self.tool("verify", self.head).returncode, 0)
+
+    def test_session_failure_and_exclusive_options_are_usage_errors(self):
+        failing = self.repo / ".failing-lean-ctx"
+        failing.write_text("#!/bin/sh\necho 'no saved LeanCTX session' >&2\nexit 1\n", encoding="utf-8")
+        failing.chmod(0o700)
+        run = self.tool("write", "--base-ref", "main", "--task", "1", "--dry-run", "--observed-reads-from-session",
+                        extra_env={"LEAN_CTX_BIN": str(failing)})
+        self.assertEqual(run.returncode, 2)
+        self.assertIn("no saved LeanCTX session", run.stderr)
+        reads = self.repo / ".reads"
+        reads.write_text("a\n", encoding="utf-8")
+        run = self.tool("write", "--base-ref", "main", "--task", "1", "--dry-run",
+                        "--observed-reads", str(reads), "--observed-reads-from-session")
+        self.assertEqual(run.returncode, 2)
+
+    def test_readset_export_file_is_accepted(self):
+        export = self.repo / ".readset.json"
+        export.write_text(json.dumps({"schema": "leanctx.session-readset/v1", "sessions": ["s"], "complete": True,
+                                      "outside_root": 0, "reads": [{"path": "crates/alpha/src/lib.rs"}]}),
+                          encoding="utf-8")
+        env = json.loads(self.tool("write", "--base-ref", "main", "--task", "1", "--dry-run",
+                                   "--rustc-version", "r", "--observed-reads", str(export)).stdout)
+        self.assertEqual(env["read_set"]["observed_reads"], ["crates/alpha/src/lib.rs"])
+        self.assertEqual(env["read_set"]["observed_reads_source"]["untracked_dropped"], 0)
+
+    def test_test_functions_in_the_write_set(self):
+        self.put("crates/alpha/src/lib.rs", (
+            "pub fn a() { }\n\n"
+            "#[cfg(test)]\nmod tests {\n"
+            "    #[test]\n    fn kept() {\n        assert!(true);\n    }\n\n"
+            "    #[tokio::test]\n    async fn edited() {\n        let x = 1;\n    }\n\n"
+            "    fn helper() -> u8 {\n        1\n    }\n}\n"))
+        self.commit("tests")
+        self.put("crates/alpha/src/lib.rs", self.repo.joinpath("crates/alpha/src/lib.rs").read_text()
+                 .replace("let x = 1;", "let x = 2;").replace("        1\n", "        2\n"))
+        self.commit("edit test and helper")
+        env = json.loads(self.tool("write", "--base-ref", "HEAD~1", "--task", "1", "--dry-run",
+                                   "--rustc-version", "r").stdout)
+        self.assertEqual(env["write_set"]["test_functions"], ["crates/alpha/src/lib.rs::edited"])
+
+    def test_read_set_digest_follows_the_crate_and_the_features(self):
+        def digest(*extra):
+            out = self.tool("write", "--base-ref", "main", "--task", "1", "--dry-run", "--rustc-version", "r",
+                            "--check", f"unit=pass@{self.first}", *extra)
+            self.assertEqual(out.returncode, 0, out.stderr)
+            return json.loads(out.stdout)["evidence"]["checks"][0]["read_set_digest"]
+
+        before = digest()
+        self.assertEqual(before, digest())
+        self.assertNotEqual(before, digest("--features", "x"))
+        self.put("crates/alpha/src/lib.rs", "pub fn a() { 1; }\n")
+        self.commit("alpha again")
+        self.first = self.rev("HEAD")
+        self.assertNotEqual(before, digest())
 
 
 if __name__ == "__main__":
