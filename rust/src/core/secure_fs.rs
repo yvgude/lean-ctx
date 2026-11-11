@@ -56,12 +56,25 @@ pub fn private_dir(dir: &std::path::Path) -> std::io::Result<()> {
         std::io::Error::new(e.kind(), format!("{what} {}: {e}", dir.display()))
     };
     std::fs::create_dir_all(dir).map_err(|e| step("create", e))?;
+    restrict_to_owner(dir).map_err(|e| step("restrict", e))
+}
+
+/// Sets `path` to mode 0700 on Unix, but only when its mode differs (GH #2227).
+///
+/// A `chmod` updates the inode's ctime and raises an inotify `IN_ATTRIB` event
+/// even when the mode stays the same, so an unconditional chmod on a path that
+/// runs per call floods watchers, backup and sync tools. Like `chmod`, this
+/// follows a symlink at `path`. A no-op on other platforms.
+pub fn restrict_to_owner(path: &std::path::Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
-            .map_err(|e| step("restrict", e))?;
+        if std::fs::metadata(path)?.permissions().mode() & 0o7777 != 0o700 {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+        }
     }
+    #[cfg(not(unix))]
+    let _ = path;
     Ok(())
 }
 
@@ -104,6 +117,58 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(&path).unwrap().permissions().mode();
             assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    /// GH #2227: a directory that is already 0700 is not chmodded again, so
+    /// its ctime stays put and watchers see no `IN_ATTRIB` event.
+    #[cfg(unix)]
+    #[test]
+    fn restrict_to_owner_leaves_a_private_dir_untouched() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("data");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let ctime = |p: &std::path::Path| {
+            let m = std::fs::metadata(p).unwrap();
+            (m.ctime(), m.ctime_nsec())
+        };
+        let before = ctime(&dir);
+        // Coarse ctime clocks: wait long enough for a chmod to be visible.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        super::restrict_to_owner(&dir).unwrap();
+        super::private_dir(&dir).unwrap();
+        crate::core::data_dir::ensure_dir_permissions(&dir);
+        assert_eq!(
+            ctime(&dir),
+            before,
+            "an already private dir is not chmodded"
+        );
+    }
+
+    /// GH #2227: the check does not weaken the guarantee — a 0755 directory
+    /// is still tightened to 0700.
+    #[cfg(unix)]
+    #[test]
+    fn restrict_to_owner_still_tightens_an_open_dir() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let tmp = tempfile::tempdir().unwrap();
+        let mode =
+            |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o7777;
+        for (i, restrict) in [
+            (|p: &std::path::Path| super::restrict_to_owner(p).unwrap()) as fn(&std::path::Path),
+            |p| super::private_dir(p).unwrap(),
+            |p| crate::core::data_dir::ensure_dir_permissions(p),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let dir = tmp.path().join(format!("open-{i}"));
+            std::fs::create_dir(&dir).unwrap();
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            restrict(&dir);
+            assert_eq!(mode(&dir), 0o700);
         }
     }
 }

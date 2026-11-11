@@ -373,6 +373,7 @@ pub(super) fn check_pipe_to_bare_interpreter(
 
 /// For empty allowlists: still enforce UNCONDITIONAL_BLOCKED commands.
 pub(super) fn check_unconditional_blocked_only(command: &str) -> Result<(), ShellError> {
+    let _loop_vars = super::self_config::bind_loop_variables(command);
     let segments = extract_all_commands(command);
     for seg in &segments {
         let base = extract_base_from_segment(seg);
@@ -393,7 +394,7 @@ pub(super) fn check_unconditional_blocked_only(command: &str) -> Result<(), Shel
         // Without an allowlist lean-ctx's own guardrails still hold: an agent
         // must not loosen them or rewrite its state.
         super::self_config::check_self_reconfiguration(seg, &tokens)?;
-        super::self_config::check_state_tampering(&tokens)?;
+        super::self_config::check_state_tampering(seg, &tokens)?;
         // A `trap` action runs like `eval`: the same rules hold inside it.
         if let Some(action) = super::side_doors::trap_action(&tokens) {
             check_unconditional_blocked_only(action)?;
@@ -413,6 +414,67 @@ pub(super) fn check_unconditional_blocked_only(command: &str) -> Result<(), Shel
 fn check_interpreter_eval_only(segment: &str) -> Result<(), ShellError> {
     let inline_ok = lean_ctx::core::config::shell_policy::allow_inline_scripts();
     check_interpreter_inner(segment, None, 0, inline_ok)
+}
+
+/// `words` joined back into one command line. A word of plain text with
+/// blanks in it (`"a rm -rf b"`) is single-quoted so it stays one word when
+/// the line is split again (#2231); any other word is joined as it is, so a
+/// substitution, quote or operator in it stays visible to the checks that
+/// follow.
+fn rejoin_words(words: &[String]) -> String {
+    words
+        .iter()
+        .map(|w| {
+            let plain = !w.contains([
+                '\'', '"', '$', '`', '\\', ';', '|', '&', '<', '>', '(', ')', '\n',
+            ]);
+            if plain && w.contains(char::is_whitespace) {
+                format!("'{w}'")
+            } else {
+                w.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The short flags of interpreter `base` that take no value, so a word after
+/// them is not theirs; `None` for an interpreter this check does not parse.
+fn value_free_short_flags(base: &str) -> Option<&'static str> {
+    Some(match base {
+        b if b.starts_with("python") || b.starts_with("pypy") => "bBdEhiIOPqRsSuvVx",
+        "node" => "hvi",
+        "ruby" => "acdlnpsSvwWyU",
+        "perl" => "acnpsStTuUvwW",
+        "php" => "aCHhiqsvw",
+        "lua" => "iEvW",
+        // No `c`, `s`, `o`, `O`: `-c` takes code, `-s` reads it from stdin,
+        // `-o`/`-O` take an option name.
+        "bash" | "sh" | "zsh" | "dash" | "ksh" => "abefhiklmnprtuvxBCEHPT",
+        "fish" => "ilnP",
+        _ => return None,
+    })
+}
+
+/// Where the script operand of interpreter command `tokens` stands: the
+/// first word that is not an option (`-` for stdin included), or the word
+/// after `--`. `None` when an option on the way is one this check does not
+/// know to take no value: the whole command is then scanned as flags.
+pub(super) fn script_operand(base: &str, tokens: &[String]) -> Option<usize> {
+    let value_free = value_free_short_flags(base)?;
+    for (i, tok) in tokens.iter().enumerate().skip(1) {
+        if tok == "--" {
+            return Some(i + 1);
+        }
+        if tok == "-" || !tok.starts_with('-') {
+            return Some(i);
+        }
+        let cluster = &tok[1..];
+        if cluster.starts_with('-') || !cluster.chars().all(|c| value_free.contains(c)) {
+            return None;
+        }
+    }
+    None
 }
 
 /// #823: unified interpreter-abuse walk. Both eval-only (empty allowlist) and
@@ -480,7 +542,10 @@ fn check_interpreter_inner(
     let claude_ok = super::config::claude_allows_interpreter_inline(&base);
     if INTERPRETER_COMMANDS.contains(&base.as_str()) && !inline_ok && !claude_ok {
         let python = base.starts_with("python") || base.starts_with("pypy");
-        for (i, tok) in tokens.iter().enumerate().skip(1) {
+        // The words after the script are its own arguments, not interpreter
+        // flags (`node x.js "a rm -rf b"`, #2231).
+        let operand = script_operand(&base, &tokens).unwrap_or(tokens.len());
+        for (i, tok) in tokens.iter().enumerate().take(operand).skip(1) {
             // Modules that run code given as an argument (`python -m timeit
             // "<code>"`) are inline code execution like `-c`, also behind
             // combined short flags (`-Im timeit`, `-mIPython`): the module is
@@ -580,7 +645,7 @@ fn check_interpreter_inner(
                     .into());
                 }
             }
-            let rest_str = rest_tokens.join(" ");
+            let rest_str = rejoin_words(&rest_tokens);
             // GHSA-rxv5-4c3x-g4q6 E: the target runs like a top-level command,
             // so it gets the same per-command checks at every unwrap level.
             let mut target_tokens = rest_tokens.clone();
@@ -947,7 +1012,7 @@ fn wrapper_options(wrapper: &str) -> WrapperOptions {
 /// Returns the delegated command and its arguments: everything after the
 /// wrapper's own options, option values, assignments and operands. Empty when
 /// the wrapper runs nothing.
-fn delegated_command_tokens(wrapper: &str, tokens: &[String]) -> Vec<String> {
+pub(super) fn delegated_command_tokens(wrapper: &str, tokens: &[String]) -> Vec<String> {
     delegated_parts(wrapper, tokens).1
 }
 
@@ -1615,6 +1680,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
     if allowlist.is_empty() {
         return Ok(());
     }
+    let _loop_vars = super::self_config::bind_loop_variables(command);
 
     if has_dangerous_patterns(command) {
         return Err(format!(
@@ -1695,7 +1761,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
                 check_dangerous_flags(body_seg)?;
                 check_embedded_commands(&body_tokens, Some(allowlist))?;
                 super::self_config::check_self_reconfiguration(body_seg, &body_tokens)?;
-                super::self_config::check_state_tampering(&body_tokens)?;
+                super::self_config::check_state_tampering(body_seg, &body_tokens)?;
             }
             continue;
         }
@@ -1729,7 +1795,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             super::operand_eval::check_evaluated_operands(seg)?;
             // `cd ~/.config/lean-ctx && rm config.toml`; a redirect on a
             // builtin (`: 1<>…`) writes like any other.
-            super::self_config::check_state_tampering(&tokens)?;
+            super::self_config::check_state_tampering(seg, &tokens)?;
             continue;
         }
         // #1442: PowerShell verb-prefix matching — safe cmdlets (Get-*, Test-*,
@@ -1741,7 +1807,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             // lean-ctx's state (#2165).
             Some(true) => {
                 if POSIX_WRITING_ALIASES.contains(&base.as_str()) {
-                    super::self_config::check_state_tampering(&tokens)?;
+                    super::self_config::check_state_tampering(seg, &tokens)?;
                 }
                 continue;
             }
@@ -1761,7 +1827,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
         check_dangerous_flags(seg)?;
         check_embedded_commands(&tokens, Some(allowlist))?;
         super::self_config::check_self_reconfiguration(seg, &tokens)?;
-        super::self_config::check_state_tampering(&tokens)?;
+        super::self_config::check_state_tampering(seg, &tokens)?;
         if !matches_allowlist_entry(&tokens, allowlist) {
             // #813: auto-allow binaries that resolve to existing files under
             // the project root. The first token (before rsplit) carries the

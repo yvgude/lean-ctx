@@ -100,11 +100,8 @@ impl Target {
             return;
         }
         #[cfg(unix)]
-        if self.scoped {
-            use std::os::unix::fs::PermissionsExt;
-            if std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).is_err() {
-                return;
-            }
+        if self.scoped && crate::core::secure_fs::restrict_to_owner(parent).is_err() {
+            return;
         }
         let lock_path = self.path.with_extension("lock");
         let Ok(lock) = open_append(&lock_path) else {

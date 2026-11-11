@@ -10,6 +10,8 @@ mod comment_strip_tests;
 mod delegation_option_tests;
 #[path = "function_def_tests.rs"]
 mod function_def_tests;
+#[path = "gh2231_tests.rs"]
+mod gh2231_tests;
 #[path = "inline_script_tests.rs"]
 mod inline_script_tests;
 #[path = "lexer_tests.rs"]

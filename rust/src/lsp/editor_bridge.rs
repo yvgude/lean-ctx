@@ -92,12 +92,8 @@ pub fn bridge_dir() -> Option<PathBuf> {
 pub fn ensure_bridge_dir() -> Result<PathBuf, String> {
     let dir = bridge_dir().ok_or("cannot resolve the lean-ctx data directory")?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
-            .map_err(|e| format!("restrict {}: {e}", dir.display()))?;
-    }
+    crate::core::secure_fs::restrict_to_owner(&dir)
+        .map_err(|e| format!("restrict {}: {e}", dir.display()))?;
     if !private_to_user(&dir, true) {
         return Err(format!(
             "{} is not a directory private to the current user",

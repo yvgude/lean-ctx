@@ -77,6 +77,77 @@ fn gh2165_state_check_judges_write_intent_not_the_program() {
     }
 }
 
+/// #2231: a command behind `timeout`, `nice`, `env`, a reserved word or a
+/// `for` header is judged by the program it runs — `~` is a directory above
+/// lean-ctx's state, but `find` and `ls` only read it. The wrapper's own
+/// words, `env -S`/`-C`, lookup-changing assignments and redirections
+/// anywhere in the command keep the conservative verdict.
+#[test]
+fn gh2231_wrapped_commands_are_judged_by_their_program() {
+    let protected = vec![
+        std::path::PathBuf::from("/home/u/.local/share/lean-ctx"),
+        std::path::PathBuf::from("/home/u/.config/lean-ctx"),
+    ];
+    let verdict = |cmd: &str| {
+        let tokens = crate::shell_tokenize(cmd);
+        touches_protected(&tokens, &protected, &[std::path::PathBuf::from("/home/u")])
+    };
+    for cmd in [
+        "find ~ -name x",
+        "timeout 120 find ~ -name x",
+        "nice ls ~",
+        "nice -n 5 ls ~/.config",
+        "nohup ls ~",
+        "stdbuf -oL ls ~",
+        "timeout -s KILL 5 cat ~/.config/lean-ctx/config.toml",
+        "timeout 5 nice ls ~",
+        "env FOO=1 ls ~",
+        "command ls ~",
+        "for d in ~ /tmp",
+        "do ls ~",
+        "then ls ~",
+        "! ls ~",
+        "time -p ls ~",
+        "timeout 5 ls ~ 2>/dev/null",
+        "timeout 5 ls ~ > /tmp/out",
+    ] {
+        assert!(verdict(cmd).is_none(), "must pass: {cmd}");
+    }
+    for (cmd, writes) in [
+        (
+            "timeout 5 cat x > ~/.config/lean-ctx/config.toml",
+            Some(true),
+        ),
+        (">~/.local/share/lean-ctx/x timeout 5 true", Some(true)),
+        ("2>>~/.config/lean-ctx/log nice ls /tmp", Some(true)),
+        ("timeout 5 rm -rf ~/.config/lean-ctx", None),
+        ("nice rm -rf ~/.config", None),
+        ("nohup timeout 5 nice rm -rf ~", None),
+        ("env -C ~ ls", None),
+        ("env -C /tmp ls ~", None),
+        ("env --chdir=/tmp ls ~", None),
+        ("env -S 'ls ~'", None),
+        ("env --split-string='rm -rf ~/.config/lean-ctx'", None),
+        ("env PATH=/tmp/bin ls ~", None),
+        ("env LD_PRELOAD=/tmp/x.so ls ~", None),
+        ("env BASH_ENV=/tmp/x ls ~", None),
+        ("env -u ~/.config/lean-ctx ls /tmp", None),
+        (
+            "timeout 5 sed -i s/a/b/ ~/.config/lean-ctx/config.toml",
+            Some(true),
+        ),
+        ("for d in ~/.config/lean-ctx", Some(false)),
+        ("do rm -rf ~/.config/lean-ctx", None),
+        ("rm -rf \">\" ~", None),
+    ] {
+        let found = verdict(cmd);
+        assert!(found.is_some(), "must refuse: {cmd}");
+        if let Some(writes) = writes {
+            assert_eq!(found.map(|t| t.writes), Some(writes), "{cmd}");
+        }
+    }
+}
+
 fn check(cmd: &str) -> Result<(), ShellError> {
     let tokens: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
     check_self_reconfiguration(cmd, &tokens)

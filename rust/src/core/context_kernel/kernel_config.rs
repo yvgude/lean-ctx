@@ -47,8 +47,12 @@ impl Default for KernelFeatures {
 static FEATURES: OnceLock<Mutex<KernelFeatures>> = OnceLock::new();
 
 fn feature_guard() -> MutexGuard<'static, KernelFeatures> {
+    // First use honours `LEAN_CTX_KERNEL_*` like `startup::initialize()` does,
+    // so processes that never initialize (one-shot CLI commands, library
+    // users) do not silently fall back to the defaults. `from_env` only reads
+    // the environment and never touches `FEATURES`.
     FEATURES
-        .get_or_init(|| Mutex::new(KernelFeatures::default()))
+        .get_or_init(|| Mutex::new(from_env()))
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
@@ -228,6 +232,34 @@ mod tests {
         }
         assert!(!configured.enabled);
         assert_eq!(configured.max_kernel_budget, 321);
+    }
+
+    /// #2228: the lazily initialised features honour `LEAN_CTX_KERNEL_*` on
+    /// first use. `FEATURES` is a `OnceLock`, so this runs in a fresh process.
+    #[test]
+    fn first_use_honours_kernel_env() {
+        if crate::test_env::run_in_own_process(
+            "core::context_kernel::kernel_config::tests::first_use_honours_kernel_env",
+            &[
+                ("LEAN_CTX_KERNEL_ENABLED", "false"),
+                ("LEAN_CTX_KERNEL_DEDUP", "off"),
+                ("LEAN_CTX_KERNEL_SCHEMA_OPT", "0"),
+                ("LEAN_CTX_KERNEL_MAX_BUDGET", "321"),
+            ],
+        ) {
+            return;
+        }
+        // Child: no reset, no initialize — the first read decides.
+        let current = features();
+        assert!(!current.enabled);
+        assert!(!current.content_dedup);
+        assert!(!current.schema_optimization);
+        assert_eq!(current.max_kernel_budget, 321);
+        assert!(!is_enabled());
+        // Explicit resets still restore the built-in defaults.
+        reset_features();
+        assert!(features().enabled);
+        assert_eq!(features().max_kernel_budget, 150);
     }
 
     #[test]

@@ -313,7 +313,7 @@ Parameters: `action`, `description`, `path`
 
 ## `ctx_patch`
 
-Safe file edit, project-relative paths. replace_unique(path,old_text,new_text): exact unique replacement, needs no anchors. Line ops take line+hash from ctx_read(mode="anchored:N-M"); CONFLICT means re-read. ops[] batch (cross-file, incl. replace_unique/replace_symbol); create and replace_all only as top-level calls.
+Safe file edit, project-relative paths. replace_unique(path,old_text,new_text): exact unique replacement, needs no anchors. Line ops take line+hash from ctx_read(mode="anchored:N-M"); CONFLICT means re-read. ops[] batch (cross-file, incl. replace_unique/replace_symbol); create and replace_all only as top-level calls. A 0-byte file: create, or replace_unique with old_text="".
 
 Parameters: `dry_run`, `end_hash`, `end_line`, `find`, `hash`, `line`, `name`, `new_text`, `old_text`, `op`, `ops`, `path`, `replace`, `start_hash`, `start_line`
 

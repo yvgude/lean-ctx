@@ -54,7 +54,7 @@ impl McpTool for CtxPatchTool {
              exact unique replacement, needs no anchors. Line ops take line+hash from \
              ctx_read(mode=\"anchored:N-M\"); CONFLICT means re-read. ops[] batch \
              (cross-file, incl. replace_unique/replace_symbol); create and replace_all only \
-             as top-level calls.",
+             as top-level calls. A 0-byte file: create, or replace_unique with old_text=\"\".",
             json!({
                 "type": "object",
                 "properties": {
@@ -517,6 +517,17 @@ fn delegate_replace_unique(
     let edit_args =
         build_unique_edit_args(args).map_err(|message| ErrorData::invalid_params(message, None))?;
 
+    // #2223: an empty old_text quotes nothing, so it can only fill a file that
+    // holds nothing. Admit it for an existing 0-byte regular file only; ctx_edit
+    // re-checks emptiness under its per-file lock right before the atomic write,
+    // so content that appears in between is refused, never overwritten.
+    if get_str(&edit_args, "old_string").is_some_and(|old| old.is_empty()) {
+        let path = require_resolved_path(ctx, args, "path")?;
+        if let Some(message) = empty_old_text_refusal(std::path::Path::new(&path)) {
+            return Err(ErrorData::invalid_params(message, None));
+        }
+    }
+
     if get_bool(args, "dry_run").unwrap_or(false) {
         let old_text = get_str(args, "old_text")
             .or_else(|| get_str(args, "old_string"))
@@ -533,13 +544,38 @@ fn delegate_replace_unique(
     crate::tools::registered::ctx_edit::handle_edit(&edit_args, ctx, host_draws_diffs(ctx))
 }
 
+/// Why an empty `old_text` cannot target `path`, naming the op that can; `None`
+/// for an existing empty regular file (a symlink is refused, as `op=create`
+/// refuses it).
+fn empty_old_text_refusal(path: &std::path::Path) -> Option<String> {
+    let shown = path.display();
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_file() && meta.len() == 0 => None,
+        Ok(meta) if meta.file_type().is_file() => Some(format!(
+            "replace_unique with empty old_text only fills an existing empty (0-byte) file; \
+             {shown} has content. Quote unique text from it as old_text, or use anchored ops \
+             (ctx_read mode=\"anchored\" → insert_after/set_line/replace_lines)"
+        )),
+        Ok(_) => Some(format!(
+            "replace_unique with empty old_text only fills an existing empty regular file; \
+             {shown} is not one (symlink or directory)"
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some(format!(
+            "replace_unique with empty old_text only fills an existing empty file; \
+             {shown} does not exist — use op=create to write a new file"
+        )),
+        Err(error) => Some(format!("cannot inspect {shown}: {error}")),
+    }
+}
+
 fn build_unique_edit_args(args: &Map<String, Value>) -> Result<Map<String, Value>, String> {
+    // An empty old_text is admitted here; `delegate_replace_unique` limits it
+    // to an existing empty file (#2223).
     let old_text = get_str(args, "old_text")
         .or_else(|| get_str(args, "old_string"))
-        .filter(|text| !text.is_empty())
         .ok_or_else(|| {
-            "replace_unique requires non-empty old_text (old_string also accepted); \
-             to fill an empty file use op=create"
+            "replace_unique requires old_text (old_string also accepted); an empty \
+             old_text fills an existing empty file"
                 .to_string()
         })?;
     let new_text = get_str(args, "new_text")
@@ -552,6 +588,9 @@ fn build_unique_edit_args(args: &Map<String, Value>) -> Result<Map<String, Value
     edit_args.insert("replace_all".into(), Value::Bool(false));
     edit_args.remove("old_text");
     edit_args.remove("op");
+    // ctx_edit's create=true overwrites a whole file; replace_unique never
+    // means that, so a stray `create` key must not reach it.
+    edit_args.remove("create");
     Ok(edit_args)
 }
 
@@ -1252,5 +1291,78 @@ mod batch_grouping_tests {
         // replace_all keeps its own find/replace keys.
         let replace_all = json!({"op": "replace_all", "path": "a.rs", "find": "a", "replace": "b"});
         assert!(infer_replace_unique(replace_all.as_object().unwrap()).is_none());
+    }
+
+    /// Runs `replace_unique` with an empty old_text against `path` through the
+    /// full tool handler (PathJail-resolved path, ctx_edit write path).
+    fn empty_old_text_patch(
+        root: &std::path::Path,
+        path: &std::path::Path,
+    ) -> Result<String, ErrorData> {
+        let resolved = path.to_string_lossy().into_owned();
+        let ctx = ToolContext {
+            project_root: root.to_string_lossy().into_owned(),
+            resolved_paths: std::collections::HashMap::from([("path".into(), resolved.clone())]),
+            cache: Some(std::sync::Arc::new(tokio::sync::RwLock::new(
+                lean_ctx::core::cache::SessionCache::new(),
+            ))),
+            ..ToolContext::default()
+        };
+        let args = json!({
+            "op": "replace_unique", "path": resolved, "old_text": "", "new_text": "filled\n"
+        });
+        tokio::task::block_in_place(|| CtxPatchTool.handle(args.as_object().unwrap(), &ctx))
+            .map(|out| out.text)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn replace_unique_with_empty_old_text_fills_an_empty_file() {
+        // #2223: a 0-byte file had no satisfiable replace_unique input.
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("empty.txt");
+        std::fs::write(&file, "").unwrap();
+        let text = empty_old_text_patch(dir.path(), &file).expect("empty file is filled");
+        assert!(text.contains("created empty.txt"), "{text}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "filled\n");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn replace_unique_with_empty_old_text_refuses_other_targets() {
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+
+        let full = dir.path().join("full.txt");
+        std::fs::write(&full, "keep\n").unwrap();
+        let err = empty_old_text_patch(dir.path(), &full).unwrap_err();
+        assert!(err.message.contains("anchored"), "{}", err.message);
+        assert_eq!(std::fs::read_to_string(&full).unwrap(), "keep\n");
+
+        let missing = dir.path().join("missing.txt");
+        let err = empty_old_text_patch(dir.path(), &missing).unwrap_err();
+        assert!(err.message.contains("op=create"), "{}", err.message);
+        assert!(!missing.exists(), "replace_unique must not create files");
+
+        #[cfg(unix)]
+        {
+            let target = dir.path().join("target.txt");
+            std::fs::write(&target, "").unwrap();
+            let link = dir.path().join("link.txt");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            let err = empty_old_text_patch(dir.path(), &link).unwrap_err();
+            assert!(err.message.contains("not one"), "{}", err.message);
+            assert_eq!(std::fs::read_to_string(&target).unwrap(), "");
+        }
+    }
+
+    #[test]
+    fn replace_unique_never_forwards_a_whole_file_create() {
+        let args = Map::from_iter([
+            ("old_text".into(), json!("old")),
+            ("new_text".into(), json!("new")),
+            ("create".into(), json!(true)),
+        ]);
+        let mapped = build_unique_edit_args(&args).expect("valid mapping");
+        assert!(!mapped.contains_key("create"));
     }
 }

@@ -208,11 +208,19 @@ fn group_of<'a>(table: &'a [&'a [&'a str]], cmd: &str) -> Option<&'a [&'a str]> 
     table.iter().copied().find(|group| group.contains(&cmd))
 }
 
-fn wants_help(rest: &[String]) -> bool {
-    rest.iter()
-        .take_while(|a| *a != "--")
-        .any(|a| a == "--help")
-        || matches!(rest, [only] if only == "-h")
+/// Arms whose arguments are operands — a search pattern, a path or tool
+/// arguments — so a later `-h` may be data (`grep -h src` searches for `-h`).
+/// Here `-h` means help only on its own. Every other arm treats `-h` before a
+/// `--` like `--help`: `cache prune -h` printed nothing and pruned (#2230).
+const DASH_H_OPERAND: &[&str] = &["read", "call", "diff", "grep", "glob", "find", "ls", "deps"];
+
+fn wants_help(cmd: &str, rest: &[String]) -> bool {
+    let mut flags = rest.iter().take_while(|a| *a != "--");
+    if DASH_H_OPERAND.contains(&cmd) {
+        flags.any(|a| a == "--help") || matches!(rest, [only] if only == "-h")
+    } else {
+        flags.any(|a| a == "--help" || a == "-h")
+    }
 }
 
 /// Measurement and demo commands removed by the focus release, and the
@@ -258,17 +266,17 @@ pub(super) fn removed_notice(cmd: &str) -> Option<String> {
     })
 }
 
-/// `lean-ctx <cmd> --help` (or a lone `-h`) on any arm the guard covers: a
-/// read-only request that must not create telemetry state or show first-run
-/// notices either.
+/// `lean-ctx <cmd> --help` (or `-h`, see [`DASH_H_OPERAND`]) on any arm the
+/// guard covers: a read-only request that must not create telemetry state or
+/// show first-run notices either.
 pub(super) fn is_help_request(cmd: &str, rest: &[String]) -> bool {
-    wants_help(rest) && group_of(EXEMPT, cmd).is_none()
+    wants_help(cmd, rest) && group_of(EXEMPT, cmd).is_none()
 }
 
 /// The usage text to print instead of running `cmd`, or `None` when the arm
 /// should run as usual (no help requested, exempt, or self-helping handler).
 pub(super) fn guarded_help(cmd: &str, rest: &[String]) -> Option<String> {
-    if !wants_help(rest) || group_of(EXEMPT, cmd).is_some() {
+    if !wants_help(cmd, rest) || group_of(EXEMPT, cmd).is_some() {
         return None;
     }
     let leading_help = rest.first().is_some_and(|a| a == "--help" || a == "-h");
@@ -438,8 +446,30 @@ mod tests {
         assert_eq!(guarded_help("raw", &args(&["cargo", "--help"])), None);
         assert_eq!(guarded_help("grep", &args(&["fn", "src"])), None);
         assert_eq!(guarded_help("grep", &args(&["--", "--help"])), None);
-        // `-h` is only help on its own; elsewhere it may be a real flag.
+        // For operand-taking arms `-h` is only help on its own; elsewhere it
+        // may be a pattern or path.
         assert_eq!(guarded_help("ls", &args(&["-h", "src"])), None);
+        assert_eq!(guarded_help("grep", &args(&["-h", "src"])), None);
+        assert_eq!(guarded_help("read", &args(&["src/main.rs", "-h"])), None);
+        assert!(guarded_help("grep", &args(&["-h"])).is_some());
+    }
+
+    /// `cache prune -h` pruned indexes and knowledge stores instead of
+    /// printing help, because `-h` counted only as the lone argument (#2230).
+    #[test]
+    fn dash_h_after_a_subcommand_prints_help_2230() {
+        for sub in ["prune", "clear", "reset", "invalidate"] {
+            let rest = args(&[sub, "-h"]);
+            let out = guarded_help("cache", &rest).unwrap_or_else(|| panic!("cache {sub} -h"));
+            assert!(out.starts_with("Usage (lean-ctx cache):"), "{out}");
+            assert!(is_help_request("cache", &rest), "{sub}");
+        }
+        // Self-help arms answer a later `-h` from the guard, like `--help`.
+        assert!(guarded_help("knowledge", &args(&["forget", "-h"])).is_some());
+        // After `--` it is an operand: `cache invalidate -- -h` names a file.
+        let operand = args(&["invalidate", "--", "-h"]);
+        assert_eq!(guarded_help("cache", &operand), None);
+        assert!(!is_help_request("cache", &operand));
     }
 
     #[test]

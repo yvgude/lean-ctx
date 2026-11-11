@@ -529,7 +529,6 @@ fn prepare_store_directory(root: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        use std::os::unix::fs::PermissionsExt;
         let metadata = std::fs::metadata(root)?;
         // SAFETY: `geteuid` has no arguments and only reads process credentials.
         if metadata.uid() != unsafe { libc::geteuid() } {
@@ -538,7 +537,7 @@ fn prepare_store_directory(root: &Path) -> std::io::Result<()> {
                 "DLQ store directory must be owned by the current user",
             ));
         }
-        std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700))?;
+        crate::core::secure_fs::restrict_to_owner(root)?;
     }
     Ok(())
 }

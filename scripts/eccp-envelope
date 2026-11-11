@@ -10,9 +10,11 @@ under ``refs/notes/eccp`` on the merge request's head commit.
         --observed-reads-from-session
     eccp-envelope show [COMMIT]
     eccp-envelope verify [COMMIT]
+    eccp-envelope verify-reads [--json] [COMMIT]
 
-Standard library only. Exit codes: 0 ok, 1 invalid envelope, 2 usage or git
-error (including a commit without an envelope).
+Standard library only. Exit codes: 0 ok, 1 invalid envelope (verify-reads:
+also reads not covered), 2 usage or git error (including a commit without an
+envelope).
 """
 from __future__ import annotations
 
@@ -40,6 +42,7 @@ DERIVATIONS_FILE = "ci/derivations.toml"
 SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 READSET_SCHEMA = "leanctx.session-readset/v1"
+COVERAGE_SCHEMA = "leanctx.read-coverage/v1"
 # A Rust function declaration and the attributes that make it a test.
 FN_RE = re.compile(r"^\s*((?:#\[[^\]]*\]\s*)*)(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)")
 TEST_ATTR_RE = re.compile(r"(?:^|\s)#\[(?:[A-Za-z_][A-Za-z0-9_]*::)*(?:test|rstest|test_case|proptest)\b")
@@ -567,6 +570,100 @@ def read_note(commitish: str) -> tuple[str, dict]:
         raise ValueError(f"note is not JSON: {exc}") from exc
 
 
+# ---------------------------------------------------------- read coverage
+
+
+def changes(base: str, commit: str) -> dict[str, str]:
+    """{path: status} between base and commit; status A, M, D or T (no renames)."""
+    fields = git("diff", "--name-status", "--no-renames", "-z", f"{base}..{commit}").stdout.split("\0")
+    return {fields[i + 1]: fields[i][:1] for i in range(0, len(fields) - 1, 2)}
+
+
+def required_reads(env: dict, commit: str, at_base: set[str]) -> tuple[list[dict], list[str], list[dict]]:
+    """What the change up to ``commit`` depends on and so must have read (W5-08).
+
+    Required, each with its reasons: every path changed since ``base.commit``
+    that existed there (``changed``: edited or deleted), every acceptance file
+    (``acceptance``) and, for a changed path the envelope declares as a
+    derivation output, each input of it (``derivation-input``); the derived
+    output itself needs no read. Paths absent at ``base.commit`` are authored
+    by the change, not read. Returns (required, authored, derived).
+    """
+    outputs = {entry["output"]: sorted(i["path"] for i in entry["inputs"]) for entry in env["derivations"]}
+    reasons: dict[str, set[str]] = {}
+    authored: list[str] = []
+    derived: list[dict] = []
+    for path, status in sorted(changes(env["base"]["commit"], commit).items()):
+        if path in outputs:
+            derived.append({"path": path, "inputs": outputs[path]})
+            for source in outputs[path]:
+                reasons.setdefault(source, set()).add("derivation-input")
+        elif status == "A":
+            authored.append(path)
+        else:
+            reasons.setdefault(path, set()).add("changed")
+    for path in env["intent"]["acceptance"]:
+        reasons.setdefault(path, set()).add("acceptance")
+    required = [{"path": path, "reasons": sorted(why)} for path, why in sorted(reasons.items()) if path in at_base]
+    return required, authored, derived
+
+
+def write_set_errors(env: dict, commit: str) -> list[str]:
+    """The recorded write set must be the change's: a claim cannot shrink it."""
+    if "write_set" not in env:
+        return []
+    actual = changed_paths(env["base"]["commit"], commit)
+    if sorted(env["write_set"]["paths"]) != actual:
+        return [f"write_set.paths: does not match the files changed in {env['base']['commit']}..{commit}"]
+    return []
+
+
+def read_coverage(env: dict, commit: str) -> dict:
+    """Verdict whether the observed read set proves the change was read (W5-08).
+
+    Deterministic and offline: only the envelope and the local repository.
+    ``covered`` when every required read is in ``read_set.observed_reads``,
+    ``missing_reads`` when one is not, ``unproven`` without observed reads.
+    Each evidence check is ``backed`` when the reads required by the change up
+    to its commit were all observed.
+    """
+    rs = env["read_set"]
+    proven = "observed_reads" in rs
+    observed = set(rs.get("observed_reads", []))
+    source = rs.get("observed_reads_source")
+    at_base = tracked_paths(env["base"]["commit"])
+    required, authored, derived = required_reads(env, commit, at_base)
+    missing = [entry for entry in required if entry["path"] not in observed]
+    unread: dict[str, list[str]] = {}
+    checks = []
+    for check in env["evidence"]["checks"]:
+        at = check["commit"]
+        if at not in unread:
+            needed = required if at == commit else required_reads(env, at, at_base)[0]
+            unread[at] = [entry["path"] for entry in needed if entry["path"] not in observed]
+        checks.append({
+            "name": check["name"],
+            "result": check["result"],
+            "commit": at,
+            "backed": proven and not unread[at],
+            "missing": unread[at],
+        })
+    return {
+        "schema": COVERAGE_SCHEMA,
+        "head": commit,
+        "base": env["base"]["commit"],
+        "verdict": "unproven" if not proven else "missing_reads" if missing else "covered",
+        "observed_reads": len(observed),
+        "complete": source["complete"] if source else None,
+        "sessions": source["sessions"] if source else [],
+        "required": required,
+        "missing": missing,
+        "authored": authored,
+        "derived": derived,
+        "checks": sorted(checks, key=lambda c: (c["name"], c["commit"])),
+    }
+
+
 # --------------------------------------------------------------- commands
 
 
@@ -612,6 +709,35 @@ def cmd_verify(args) -> int:
     return 0
 
 
+def cmd_verify_reads(args) -> int:
+    try:
+        commit, envelope = read_note(args.commit)
+    except ValueError as exc:
+        print(f"invalid: {exc}", file=sys.stderr)
+        return 1
+    errors = schema_errors(envelope) or graph_errors(envelope, commit) or write_set_errors(envelope, commit)
+    if errors:
+        for error in errors:
+            print(f"invalid: {error}", file=sys.stderr)
+        return 1
+    report = read_coverage(envelope, commit)
+    if args.json:
+        sys.stdout.write(render(report))
+    else:
+        print(f"{report['verdict']}: {len(report['required']) - len(report['missing'])} of "
+              f"{len(report['required'])} required reads observed on {commit}")
+        for entry in report["missing"]:
+            print(f"missing read: {entry['path']} ({', '.join(entry['reasons'])})")
+        for check in report["checks"]:
+            if not check["backed"]:
+                print(f"unbacked evidence: {check['name']}={check['result']}@{check['commit']}")
+        if report["verdict"] == "unproven":
+            print("no observed reads in the envelope: write it with --observed-reads-from-session")
+        elif report["missing"] and report["complete"] is False:
+            print("the session history is incomplete: evicted reads cannot be proven")
+    return 0 if report["verdict"] == "covered" else 1
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="eccp-envelope", description=__doc__.split("\n\n")[0])
     sub = root.add_subparsers(dest="command", required=True)
@@ -642,6 +768,11 @@ def parser() -> argparse.ArgumentParser:
         command = sub.add_parser(name, help=text)
         command.add_argument("commit", nargs="?", default="HEAD")
         command.set_defaults(func=func)
+
+    reads = sub.add_parser("verify-reads", help="check that the observed reads cover what the change depends on")
+    reads.add_argument("commit", nargs="?", default="HEAD")
+    reads.add_argument("--json", action="store_true", help=f"print the {COVERAGE_SCHEMA} verdict")
+    reads.set_defaults(func=cmd_verify_reads)
     return root
 
 

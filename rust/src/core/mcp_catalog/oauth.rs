@@ -264,11 +264,7 @@ fn normalize_url(url: &str) -> String {
 fn store_dir() -> Result<PathBuf, String> {
     let dir = crate::core::data_dir::lean_ctx_data_dir()?.join("mcp-oauth");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-    }
+    let _ = crate::core::secure_fs::restrict_to_owner(&dir);
     Ok(dir)
 }
 

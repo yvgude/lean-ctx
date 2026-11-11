@@ -1,0 +1,514 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Sign and verify ECCP change attestations (in-toto Statement in a DSSE envelope).
+
+An attestation binds a change envelope (``leanctx.change-envelope/v1``, see
+``scripts/eccp-envelope``) and its check results to the merge request head
+commit, records a per-evidence escape rate and an acceptance decision by risk
+budget, and signs the in-toto Statement with ed25519 inside a DSSE envelope.
+Contract: docs/contracts/change-attestation-v1.md.
+
+    eccp-attest statement --commit HEAD --escape-rates rates.json
+    eccp-attest sign --commit HEAD --key PATH [--out FILE] [--note]
+    eccp-attest verify FILE --pubkey PATH [--require-accept]
+    eccp-attest verify --note HEAD --pubkey PATH
+    eccp-attest keygen --out PATH
+
+The signing key is a PKCS#8 PEM ed25519 private key read from ``--key`` or
+``$ECCP_ATTEST_KEY_FILE``; it is never written into the repository. Signing and
+verification need the Python ``cryptography`` package; ``statement`` works with
+the standard library alone. Exit codes: 0 ok, 1 invalid attestation (or not
+accepted with ``--require-accept``), 2 usage, git or dependency error.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
+PAYLOAD_TYPE = "application/vnd.in-toto+json"
+PREDICATE_TYPE = "https://leanctx.dev/attestations/change-acceptance/v1"
+ENVELOPE_SCHEMA = "leanctx.change-envelope/v1"
+ENVELOPE_NOTES_REF = "eccp"
+ATTEST_NOTES_REF = "eccp-attest"
+CHECK_RESULTS = ("pass", "fail", "skip", "error")
+CLASSES = ("L", "I", "G")
+# Accepted residual escape risk per change class. A null class is treated as G.
+DEFAULT_BUDGETS = {"L": 0.05, "I": 0.01, "G": 0.001}
+DECISIONS = ("accept", "escalate", "reject")
+SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
+KEY_ENV = "ECCP_ATTEST_KEY_FILE"
+PUBKEY_ENV = "ECCP_ATTEST_PUBKEY_FILE"
+
+
+class UsageError(Exception):
+    """Usage, git or dependency failure (exit 2)."""
+
+
+class InvalidError(Exception):
+    """Invalid attestation (exit 1)."""
+
+
+# ------------------------------------------------------------------ helpers
+
+
+def git(*args: str, check: bool = True, input_text: str | None = None) -> subprocess.CompletedProcess:
+    proc = subprocess.run(["git", *args], input=input_text, capture_output=True, text=True, check=False)
+    if check and proc.returncode != 0:
+        raise UsageError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
+    return proc
+
+
+def rev(commitish: str) -> str:
+    out = git("rev-parse", "--verify", "--quiet", f"{commitish}^{{commit}}", check=False)
+    if out.returncode != 0:
+        raise UsageError(f"unknown commit: {commitish}")
+    return out.stdout.strip()
+
+
+def canonical(value) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def digest(value) -> str:
+    return hashlib.sha256(canonical(value)).hexdigest()
+
+
+def pae(payload_type: str, payload: bytes) -> bytes:
+    """DSSE v1 pre-authentication encoding."""
+    kind = payload_type.encode("utf-8")
+    return b"DSSEv1 %d %s %d %s" % (len(kind), kind, len(payload), payload)
+
+
+def b64(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
+def unb64(text: str) -> bytes:
+    try:
+        return base64.b64decode(text, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise InvalidError(f"invalid base64: {exc}") from exc
+
+
+def load_json(path: str):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise UsageError(f"cannot read {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"{path} is not JSON: {exc}") from exc
+
+
+def crypto():
+    try:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+    except ImportError as exc:
+        raise UsageError(
+            "signing and verification need the Python 'cryptography' package "
+            "(pip install cryptography); 'statement' works without it"
+        ) from exc
+    return serialization, ed25519
+
+
+def key_path(explicit: str | None, env: str, what: str) -> str:
+    path = explicit or os.environ.get(env)
+    if not path:
+        raise UsageError(f"no {what}: pass --{'key' if env == KEY_ENV else 'pubkey'} or set ${env}")
+    return path
+
+
+def load_private_key(path: str):
+    serialization, ed25519 = crypto()
+    try:
+        key = serialization.load_pem_private_key(Path(path).read_bytes(), password=None)
+    except (OSError, ValueError, TypeError) as exc:
+        raise UsageError(f"cannot load private key {path}: {exc}") from exc
+    if not isinstance(key, ed25519.Ed25519PrivateKey):
+        raise UsageError(f"{path} is not an ed25519 private key")
+    return key
+
+
+def load_public_key(path: str):
+    serialization, ed25519 = crypto()
+    data = Path(path).read_bytes() if Path(path).is_file() else None
+    if data is None:
+        raise UsageError(f"cannot read public key {path}")
+    try:
+        key = serialization.load_pem_public_key(data)
+    except ValueError:
+        try:  # accept a private key file too: its public half is used
+            key = serialization.load_pem_private_key(data, password=None).public_key()
+        except (ValueError, TypeError) as exc:
+            raise UsageError(f"cannot load public key {path}: {exc}") from exc
+    if not isinstance(key, ed25519.Ed25519PublicKey):
+        raise UsageError(f"{path} is not an ed25519 public key")
+    return key
+
+
+def raw_public(key) -> bytes:
+    serialization, _ = crypto()
+    return key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+
+
+def keyid(public_key) -> str:
+    return "ed25519:" + hashlib.sha256(raw_public(public_key)).hexdigest()[:32]
+
+
+# ----------------------------------------------------------- envelope input
+
+
+def read_envelope(args) -> dict:
+    if args.envelope:
+        env = load_json(args.envelope)
+    else:
+        head = rev(args.commit)
+        note = git("notes", f"--ref={ENVELOPE_NOTES_REF}", "show", head, check=False)
+        if note.returncode != 0:
+            raise UsageError(f"no change envelope note on {head} (run scripts/eccp-envelope write)")
+        try:
+            env = json.loads(note.stdout)
+        except json.JSONDecodeError as exc:
+            raise InvalidError(f"change envelope note is not JSON: {exc}") from exc
+    check_envelope(env)
+    return env
+
+
+def check_envelope(env) -> None:
+    if not isinstance(env, dict) or env.get("schema") != ENVELOPE_SCHEMA:
+        raise InvalidError(f"not a {ENVELOPE_SCHEMA} envelope")
+    if not isinstance(env.get("head"), str) or not SHA_RE.match(env["head"]):
+        raise InvalidError("envelope head is not a commit id")
+    if env.get("class") not in (*CLASSES, None):
+        raise InvalidError("envelope class must be L, I, G or null")
+    checks = env.get("evidence", {}).get("checks")
+    if not isinstance(checks, list):
+        raise InvalidError("envelope evidence.checks must be a list")
+    for check in checks:
+        if not isinstance(check, dict) or not isinstance(check.get("name"), str):
+            raise InvalidError("every check needs a name")
+        if check.get("result") not in CHECK_RESULTS:
+            raise InvalidError(f"check {check.get('name')}: result must be one of {CHECK_RESULTS}")
+
+
+def parse_escape_rates(path: str | None) -> dict:
+    """``{check: {"escapes": n, "runs": m}}`` or ``{check: rate}`` -> normalized."""
+    if not path:
+        return {}
+    data = load_json(path)
+    if not isinstance(data, dict):
+        raise UsageError("escape rates must be a JSON object keyed by check name")
+    rates = {}
+    for name, value in data.items():
+        if isinstance(value, dict):
+            escapes, runs = value.get("escapes"), value.get("runs")
+            if not (isinstance(escapes, int) and isinstance(runs, int) and 0 <= escapes <= runs and runs > 0):
+                raise UsageError(f"escape rate {name}: need integers 0 <= escapes <= runs, runs > 0")
+            rates[name] = {"rate": escapes / runs, "escapes": escapes, "runs": runs}
+        elif isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 1:
+            rates[name] = {"rate": float(value), "escapes": None, "runs": None}
+        else:
+            raise UsageError(f"escape rate {name}: need a number in [0, 1] or {{escapes, runs}}")
+    return rates
+
+
+def parse_budgets(values: list[str]) -> dict:
+    budgets = dict(DEFAULT_BUDGETS)
+    for item in values or []:
+        cls, sep, num = item.partition("=")
+        if not sep or cls not in CLASSES:
+            raise UsageError(f"--budget expects CLASS=RATE with CLASS in L, I, G: {item}")
+        try:
+            budgets[cls] = float(num)
+        except ValueError as exc:
+            raise UsageError(f"--budget {item}: not a number") from exc
+        if not 0 <= budgets[cls] <= 1:
+            raise UsageError(f"--budget {item}: must be in [0, 1]")
+    return budgets
+
+
+# ------------------------------------------------------------- the decision
+
+
+def decide(checks: list[dict], change_class: str | None, budgets: dict) -> dict:
+    """Acceptance by risk budget.
+
+    A failing or erroring check rejects. Otherwise the residual risk is the
+    lowest escape rate among passing checks (conservative: checks are not
+    assumed independent); a check without a recorded escape rate counts as 1.
+    The change is accepted when the residual risk is within the budget of its
+    class, otherwise escalated to a reviewer.
+    """
+    effective = change_class if change_class in CLASSES else "G"
+    budget = budgets[effective]
+    failed = sorted(c["name"] for c in checks if c["result"] in ("fail", "error"))
+    passing = [c for c in checks if c["result"] == "pass"]
+    rates = [c["escape_rate"] if c["escape_rate"] is not None else 1.0 for c in passing]
+    residual = min(rates) if rates else 1.0
+    if failed:
+        decision, reason = "reject", "failing checks: " + ", ".join(failed)
+    elif residual <= budget:
+        decision, reason = "accept", f"residual escape risk {residual:g} within class {effective} budget {budget:g}"
+    else:
+        decision, reason = "escalate", f"residual escape risk {residual:g} exceeds class {effective} budget {budget:g}"
+    return {
+        "class": change_class,
+        "effective_class": effective,
+        "budget": budget,
+        "residual_risk": residual,
+        "decision": decision,
+        "reason": reason,
+    }
+
+
+def build_statement(env: dict, rates: dict, budgets: dict) -> dict:
+    checks = []
+    for check in env["evidence"]["checks"]:
+        rate = rates.get(check["name"])
+        checks.append(
+            {
+                "name": check["name"],
+                "result": check["result"],
+                "commit": check.get("commit"),
+                "escape_rate": rate["rate"] if rate else None,
+                "escape_sample": {"escapes": rate["escapes"], "runs": rate["runs"]} if rate and rate["runs"] else None,
+            }
+        )
+    return {
+        "_type": STATEMENT_TYPE,
+        "subject": [{"name": f"git+commit:{env['head']}", "digest": {"gitCommit": env["head"]}}],
+        "predicateType": PREDICATE_TYPE,
+        "predicate": {
+            "change_envelope": {"schema": env["schema"], "sha256": digest(env)},
+            "intent": env.get("intent"),
+            "base": env.get("base"),
+            "checks": checks,
+            "acceptance": decide(checks, env.get("class"), budgets),
+        },
+    }
+
+
+# ---------------------------------------------------------------- commands
+
+
+def emit(value, out: str | None) -> None:
+    text = json.dumps(value, indent=2, sort_keys=True) + "\n"
+    if out:
+        Path(out).write_text(text, encoding="utf-8")
+    else:
+        sys.stdout.write(text)
+
+
+def cmd_statement(args) -> int:
+    env = read_envelope(args)
+    emit(build_statement(env, parse_escape_rates(args.escape_rates), parse_budgets(args.budget)), args.out)
+    return 0
+
+
+def cmd_sign(args) -> int:
+    env = read_envelope(args)
+    statement = build_statement(env, parse_escape_rates(args.escape_rates), parse_budgets(args.budget))
+    key = load_private_key(key_path(args.key, KEY_ENV, "signing key"))
+    payload = canonical(statement)
+    dsse = {
+        "payloadType": PAYLOAD_TYPE,
+        "payload": b64(payload),
+        "signatures": [{"keyid": keyid(key.public_key()), "sig": b64(key.sign(pae(PAYLOAD_TYPE, payload)))}],
+    }
+    if args.note:
+        head = rev(env["head"])
+        git("notes", f"--ref={ATTEST_NOTES_REF}", "add", "-f", "-F", "-", head,
+            input_text=json.dumps(dsse, sort_keys=True) + "\n")
+    if args.out or not args.note:
+        emit(dsse, args.out)
+    return 0
+
+
+def _is_rate(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 1
+
+
+def verify_dsse(dsse, public_key, envelope: dict | None) -> dict:
+    if not isinstance(dsse, dict) or dsse.get("payloadType") != PAYLOAD_TYPE:
+        raise InvalidError(f"payloadType must be {PAYLOAD_TYPE}")
+    payload = unb64(dsse.get("payload", ""))
+    sigs = dsse.get("signatures")
+    if not isinstance(sigs, list) or not sigs:
+        raise InvalidError("no signatures")
+    want = keyid(public_key)
+    from cryptography.exceptions import InvalidSignature
+
+    valid = False
+    for sig in sigs:
+        if not isinstance(sig, dict) or sig.get("keyid") not in (None, "", want):
+            continue
+        try:
+            public_key.verify(unb64(sig.get("sig", "")), pae(PAYLOAD_TYPE, payload))
+            valid = True
+            break
+        except InvalidSignature:
+            continue
+    if not valid:
+        raise InvalidError(f"no valid signature for key {want}")
+    try:
+        statement = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise InvalidError(f"payload is not JSON: {exc}") from exc
+    if statement.get("_type") != STATEMENT_TYPE or statement.get("predicateType") != PREDICATE_TYPE:
+        raise InvalidError("payload is not a change-acceptance in-toto Statement")
+    subjects = statement.get("subject") or []
+    head = subjects[0].get("digest", {}).get("gitCommit") if subjects and isinstance(subjects[0], dict) else None
+    if not isinstance(head, str) or not SHA_RE.match(head):
+        raise InvalidError("subject has no gitCommit digest")
+    predicate = statement.get("predicate") or {}
+    acceptance = predicate.get("acceptance") or {}
+    if acceptance.get("decision") not in DECISIONS:
+        raise InvalidError("acceptance.decision missing")
+    if acceptance.get("class") not in (*CLASSES, None) or acceptance.get("effective_class") not in CLASSES:
+        raise InvalidError("acceptance class invalid")
+    if not _is_rate(acceptance.get("budget")) or not _is_rate(acceptance.get("residual_risk")):
+        raise InvalidError("acceptance budget and residual_risk must be numbers in [0, 1]")
+    checks = predicate.get("checks")
+    if not isinstance(checks, list):
+        raise InvalidError("predicate.checks must be a list")
+    for check in checks:
+        if not isinstance(check, dict) or not isinstance(check.get("name"), str):
+            raise InvalidError("every check needs a name")
+        if check.get("result") not in CHECK_RESULTS:
+            raise InvalidError(f"check {check['name']}: invalid result")
+        if check.get("escape_rate") is not None and not _is_rate(check["escape_rate"]):
+            raise InvalidError(f"check {check['name']}: escape_rate must be null or a number in [0, 1]")
+    budgets = dict(DEFAULT_BUDGETS)
+    budgets[acceptance["effective_class"]] = acceptance["budget"]
+    recomputed = decide(checks, acceptance.get("class"), budgets)
+    if recomputed["effective_class"] != acceptance["effective_class"]:
+        raise InvalidError("acceptance effective_class does not follow from class")
+    if recomputed["decision"] != acceptance["decision"] or recomputed["residual_risk"] != acceptance.get("residual_risk"):
+        raise InvalidError("acceptance decision does not follow from the recorded checks and budget")
+    if envelope is not None:
+        if envelope.get("head") != head:
+            raise InvalidError("attestation subject is not the envelope head")
+        if predicate.get("change_envelope", {}).get("sha256") != digest(envelope):
+            raise InvalidError("change envelope digest mismatch")
+    return {
+        "valid": True,
+        "keyid": want,
+        "head": head,
+        "decision": acceptance["decision"],
+        "residual_risk": acceptance["residual_risk"],
+        "budget": acceptance["budget"],
+        "class": acceptance.get("class"),
+    }
+
+
+def cmd_verify(args) -> int:
+    if bool(args.file) == bool(args.note):
+        raise UsageError("verify needs exactly one of FILE or --note COMMIT")
+    public_key = load_public_key(key_path(args.pubkey, PUBKEY_ENV, "public key"))
+    envelope = None
+    if args.note:
+        head = rev(args.note)
+        note = git("notes", f"--ref={ATTEST_NOTES_REF}", "show", head, check=False)
+        if note.returncode != 0:
+            raise UsageError(f"no attestation note on {head}")
+        text = note.stdout
+        env_note = git("notes", f"--ref={ENVELOPE_NOTES_REF}", "show", head, check=False)
+        if env_note.returncode == 0:
+            try:
+                envelope = json.loads(env_note.stdout)
+            except json.JSONDecodeError as exc:
+                raise InvalidError(f"change envelope note is not JSON: {exc}") from exc
+    else:
+        try:
+            text = Path(args.file).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise UsageError(f"cannot read {args.file}: {exc}") from exc
+    if args.envelope:
+        envelope = load_json(args.envelope)
+    try:
+        dsse = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise InvalidError(f"attestation is not JSON: {exc}") from exc
+    report = verify_dsse(dsse, public_key, envelope)
+    report["envelope_checked"] = envelope is not None
+    print(json.dumps(report, sort_keys=True))
+    if args.require_accept and report["decision"] != "accept":
+        print(f"eccp-attest: decision is {report['decision']}, not accept", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_keygen(args) -> int:
+    serialization, ed25519 = crypto()
+    out = Path(args.out)
+    if out.exists() and not args.force:
+        raise UsageError(f"{out} exists (use --force)")
+    key = ed25519.Ed25519PrivateKey.generate()
+    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(pem)
+    pub = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    Path(str(out) + ".pub").write_bytes(pub)
+    print(json.dumps({"private": str(out), "public": str(out) + ".pub", "keyid": keyid(key.public_key())}))
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="eccp-attest", description=__doc__.split("\n\n")[0])
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def source(sp):
+        sp.add_argument("--commit", default="HEAD", help="read the change envelope note of this commit")
+        sp.add_argument("--envelope", help="read the change envelope from this JSON file instead")
+        sp.add_argument("--escape-rates", help="JSON {check: {escapes, runs}} or {check: rate}")
+        sp.add_argument("--budget", action="append", default=[], help="CLASS=RATE, overrides the default budget")
+        sp.add_argument("--out", help="write here instead of stdout")
+
+    st = sub.add_parser("statement", help="print the unsigned in-toto Statement")
+    source(st)
+    st.set_defaults(func=cmd_statement)
+
+    sg = sub.add_parser("sign", help="sign the Statement into a DSSE envelope")
+    source(sg)
+    sg.add_argument("--key", help=f"ed25519 PEM private key (default ${KEY_ENV})")
+    sg.add_argument("--note", action="store_true", help=f"store under refs/notes/{ATTEST_NOTES_REF} on the head")
+    sg.set_defaults(func=cmd_sign)
+
+    vf = sub.add_parser("verify", help="verify a DSSE attestation")
+    vf.add_argument("file", nargs="?", help="DSSE envelope JSON file")
+    vf.add_argument("--note", metavar="COMMIT", help=f"read refs/notes/{ATTEST_NOTES_REF} of COMMIT")
+    vf.add_argument("--envelope", help="change envelope JSON to bind (default: the eccp note with --note)")
+    vf.add_argument("--pubkey", help=f"ed25519 PEM public key (default ${PUBKEY_ENV})")
+    vf.add_argument("--require-accept", action="store_true", help="exit 1 unless the decision is accept")
+    vf.set_defaults(func=cmd_verify)
+
+    kg = sub.add_parser("keygen", help="write a new ed25519 key pair (PATH mode 0600, PATH.pub)")
+    kg.add_argument("--out", required=True)
+    kg.add_argument("--force", action="store_true")
+    kg.set_defaults(func=cmd_keygen)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    try:
+        return args.func(args)
+    except InvalidError as exc:
+        print(f"eccp-attest: invalid: {exc}", file=sys.stderr)
+        return 1
+    except UsageError as exc:
+        print(f"eccp-attest: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

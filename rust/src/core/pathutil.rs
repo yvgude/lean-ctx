@@ -666,15 +666,24 @@ pub fn safe_project_data_dir(project_root: &Path) -> Result<PathBuf, String> {
 /// than the extensionless shell shim beside it. Unix requires an execute bit,
 /// like `which`.
 pub fn find_on_path(name: &str) -> Option<PathBuf> {
+    find_all_on_path(name).into_iter().next()
+}
+
+/// Every executable named `name` on `PATH`, in lookup order: the one
+/// [`find_on_path`] returns first, then the ones it shadows.
+pub fn find_all_on_path(name: &str) -> Vec<PathBuf> {
     if name.is_empty() {
-        return None;
+        return Vec::new();
     }
-    let path_var = std::env::var_os("PATH")?;
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return Vec::new();
+    };
     let candidates = path_candidates(name);
     std::env::split_paths(&path_var)
         .filter(|dir| !dir.as_os_str().is_empty())
         .flat_map(|dir| candidates.iter().map(move |c| dir.join(c)))
-        .find(|p| is_executable_file(p))
+        .filter(|p| is_executable_file(p))
+        .collect()
 }
 
 #[cfg(windows)]

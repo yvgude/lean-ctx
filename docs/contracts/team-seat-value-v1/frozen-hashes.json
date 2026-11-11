@@ -4,8 +4,13 @@
     "ci/gitlab-ci.yml": "8d15d7382abf9068039a7e7826649cca23cd6bab142a33e9482a09316fd4f4cf"
   },
   "contract": "team-seat-value-v1",
+  "registry_fragment_sha256": {
+    "docs/contracts/README.md": "1d9591c1613be27c43524f7a805a91b69c19cd578b4f18c60578a88c22309977",
+    "rust/crates/lean-ctx-protocol/src/lib.rs": "f5f6f2c547cbe8eaad3ed30a0eb5fe4b0b75f10c4b1066821c341e1541632c87",
+    "rust/src/core/contracts.rs": "b81422f1bdd3ddc825385af4ae064d576f2eeee630e7230e5a8b8459000f34ba",
+    "rust/src/core/server_capabilities.rs": "e0207bd6548dfd78852ed9addcafeee8fe387b40185ebba70aeb9f139a43c650"
+  },
   "sha256": {
-    "docs/contracts/README.md": "e7012341f0448efe8570ed93d20772558f0245566b333b962f9dfabc1c1ff08a",
     "docs/contracts/team-seat-value-v1/README.md": "caecd3e67f1e9c0adacc272a9dae892ac0cddef42c5e17066c069d17a83505d6",
     "docs/contracts/team-seat-value-v1/common.schema.json": "ed7778ce53b4d17922f8d8b1c1fb36837bd0bee62d195c2c074bf849d78542a4",
     "docs/contracts/team-seat-value-v1/fixtures/cross-record/histories.json": "81ee94400fb3a7ebcd6b4a94829356b32ea2bde71957772d0225ba3339e70071",
@@ -24,14 +29,11 @@
     "docs/contracts/team-seat-value-v1/seat-usage.schema.json": "75ee7537f58adcbbd211f693aefef152fe00e9745d96c454f8f4f9dba07284fc",
     "docs/contracts/team-seat-value-v1/seat-value-signature-envelope.schema.json": "a6c6842f8d89b950e410408fc7e8c41f654691276d6af052888bac6893e241f2",
     "docs/contracts/team-seat-value-v1/team-value-aggregate.schema.json": "89b16787330ac2d2de94a383f3397d10b4d9535717d2034e0b08f9c64db970a7",
-    "rust/crates/lean-ctx-protocol/src/lib.rs": "de7353d7e7121e75bdf910048cc47d88790d824a04e3e3a3268ebf8fc3484413",
     "rust/crates/lean-ctx-protocol/src/seat_value.rs": "9b07cb6288cc368874c27fdcd1a8d15f210f101494c797282a08ed9b3d039d14",
     "rust/crates/lean-ctx-protocol/src/team_seat_value_capability.rs": "3c470bcc74989a6c89968a2fca544ea8077eca193f9c74e1db4a70e81c1a6124",
-    "rust/src/core/contracts.rs": "bbe04bb46e6b6a872c266883ada84cefd824760246f45a83d51c126c8d712a80",
-    "rust/src/core/server_capabilities.rs": "6f5533e7f2f5718856761ed448d57c6390b4bfb1536f9f4125d9c81052db950f",
     "scripts/verify-team-context-v1.py": "5df932374f44c32bdbf6598825498f54e30a2dee42eecc9bfbe79015525f74ee",
     "scripts/verify-team-seat-value-rust-parity.py": "ee8fa529b46407015be5561ef1a72e155e7ac40d5aebb36f0f66dac0481b6a5a",
-    "scripts/verify-team-seat-value-v1.py": "1fd3dc2e138da7f96e9820a07bcc6f812d41f2f53824822f84591bdfdb85da08"
+    "scripts/verify-team-seat-value-v1.py": "85a4a6e4ad5d1fd2a6f226e8b187406052ca198a4a5299678cc970f9361a1c05"
   },
   "v": 1
 }

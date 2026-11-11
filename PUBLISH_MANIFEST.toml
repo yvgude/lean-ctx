@@ -452,6 +452,12 @@ new_paths = [
   "scripts/tests/test_release_prebuild.py",
   "scripts/tests/test_publish_gate.py",
   "scripts/tests/test_eccp_envelope.py",
+  # ECCP W5-03 change attestation + W3-09 test-deletion guard: own code, Apache-2.0 SPDX-headed.
+  "docs/contracts/change-attestation-v1.md",
+  "scripts/eccp-attest",
+  "scripts/ci/test-deletion-guard",
+  "scripts/tests/test_eccp_attest.py",
+  "scripts/tests/test_test_deletion_guard.py",
   "scripts/tests/test_frozen_hashes_exclude_ci.py",
   "scripts/tests/test_runtime_install_isolation.py",
   "scripts/tests/test_scan_release_artifacts.py",
@@ -2828,6 +2834,8 @@ new_paths = [
   "rust/crates/vendor/rmcp/tests/test_subscriptions_streamable_http.rs",
   "rust/crates/vendor/rmcp/tests/test_trace_context.rs",
   "rust/crates/vendor/rmcp/tests/test_unix_socket_response_limits.rs",
+  # 3.12.3 GitHub #2231: shell-policy regression tests (own work, Apache-2.0).
+  "rust/crates/lean-ctx-shell-policy/src/gh2231_tests.rs",
 ]
 
 # Public paths the export no longer carries: each one is a feature sunset with

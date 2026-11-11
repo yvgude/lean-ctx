@@ -208,11 +208,12 @@ pub fn all_data_dirs_with_stats() -> Vec<PathBuf> {
     dirs
 }
 
+/// Restricts the directory at `path` to its owner (0700). Runs on every data
+/// dir lookup, so it chmods only when the mode differs (GH #2227).
 #[cfg(unix)]
 pub(crate) fn ensure_dir_permissions(path: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
     if path.is_dir() {
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+        let _ = crate::core::secure_fs::restrict_to_owner(path);
     }
 }
 

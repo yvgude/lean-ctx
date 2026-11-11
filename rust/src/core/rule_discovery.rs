@@ -89,6 +89,7 @@ pub fn rules_suffix_for_read(file_path: &str, project_root: &str, client_id: &st
     }
 
     let mut parts = Vec::new();
+    let mut not_shown = Vec::new();
     let mut token_count = 0;
     for rule in &rules {
         let key = format!("{}:{}", rule.source, blake3_short(&rule.content));
@@ -103,18 +104,35 @@ pub fn rules_suffix_for_read(file_path: &str, project_root: &str, client_id: &st
         let Some(content) = admitted_rule(project_root, &rule.source) else {
             continue;
         };
-        already_injected(&key);
-        let part = format!("[From: {}]\n{}", rule.source, content.trim());
-        let part_tokens = crate::core::tokens::count_tokens(&part);
-        if token_count + part_tokens > MAX_RULES_SUFFIX_TOKENS && !parts.is_empty() {
-            parts.push(format!(
-                "[… {} more rule(s) omitted — use auto_inject_rules=false to disable]",
-                rules.len() - parts.len()
-            ));
-            break;
+        // The cap holds for every rule, the first included (#2229): a body
+        // that does not fit is replaced by a pointer to its file, and a rule
+        // whose pointer does not fit either is only named. A rule counts as
+        // injected only once its body or pointer is in the reply, so a rule
+        // that was merely named is offered again on a later read.
+        let body = format!("[From: {}]\n{}", rule.source, content.trim());
+        let pointer = format!(
+            "[From: {}]\n[Rule body omitted; authoritative source: {}]",
+            rule.source,
+            Path::new(project_root).join(&rule.source).display()
+        );
+        let admitted_part = [body, pointer].into_iter().find_map(|part| {
+            let tokens = crate::core::tokens::count_tokens(&part);
+            (token_count + tokens <= MAX_RULES_SUFFIX_TOKENS).then_some((part, tokens))
+        });
+        match admitted_part {
+            Some((part, tokens)) => {
+                already_injected(&key);
+                token_count += tokens;
+                parts.push(part);
+            }
+            None => not_shown.push(rule.source.as_str()),
         }
-        token_count += part_tokens;
-        parts.push(part);
+    }
+    if !not_shown.is_empty() {
+        parts.push(format!(
+            "[Rules in scope not shown (size limit); read them directly: {}]",
+            not_shown.join(", ")
+        ));
     }
 
     if parts.is_empty() {
@@ -491,6 +509,97 @@ mod tests {
         assert!(admitted(), "unchanged rule file: the reply may be reused");
         std::fs::write(Path::new(&root).join("CLAUDE.md"), BANNERED_RULE).expect("reclassify");
         assert!(!admitted(), "reclassified rule file: no reuse");
+    }
+
+    fn suffix_tokens(suffix: &str) -> usize {
+        let body = suffix
+            .strip_prefix("\n\n--- Rules in scope for this file ---\n")
+            .expect("suffix header");
+        crate::core::tokens::count_tokens(body)
+    }
+
+    /// #2229: the cap applies to the first rule too. A rule file far larger
+    /// than the budget is replaced by a pointer to its file instead of being
+    /// appended whole, and the pointer counts as injected.
+    #[test]
+    fn an_oversized_first_rule_is_replaced_by_a_pointer() {
+        let _data = isolated(INJECTING);
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let _injection = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let large = "Always keep the build green and document every decision.\n".repeat(1_000);
+        let (_directory, root, file) = rule_project(&[("AGENTS.md", &large)]);
+
+        reset_injection_cache();
+        let suffix = rules_suffix_for_read(&file, &root, "opencode");
+        assert!(suffix.contains("[From: AGENTS.md]"), "{suffix:?}");
+        let source = Path::new(&root).join("AGENTS.md");
+        assert!(
+            suffix.contains(&format!(
+                "[Rule body omitted; authoritative source: {}]",
+                source.display()
+            )),
+            "{suffix:?}"
+        );
+        assert!(!suffix.contains("keep the build green"), "{suffix:?}");
+        assert!(
+            suffix_tokens(&suffix) <= MAX_RULES_SUFFIX_TOKENS,
+            "{suffix:?}"
+        );
+        assert_eq!(
+            suffix,
+            {
+                reset_injection_cache();
+                rules_suffix_for_read(&file, &root, "opencode")
+            },
+            "deterministic"
+        );
+
+        let again = rules_suffix_for_read(&file, &root, "opencode");
+        assert!(again.is_empty(), "the pointer was injected: {again:?}");
+    }
+
+    /// #2229: a rule whose pointer no longer fits is only named and is not
+    /// marked injected, so the next read offers it again.
+    #[test]
+    fn a_rule_that_does_not_fit_is_named_and_offered_again() {
+        let _data = isolated(INJECTING);
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let _injection = crate::test_env::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        // A CLAUDE.md body that fills the budget up to a few tokens.
+        let mut claude = String::from("Prefer small modules.");
+        while crate::core::tokens::count_tokens(&format!("[From: CLAUDE.md]\n{claude} word"))
+            <= MAX_RULES_SUFFIX_TOKENS - 2
+        {
+            claude.push_str(" word");
+        }
+        let large = "Always keep the build green and document every decision.\n".repeat(1_000);
+        let (_directory, root, file) =
+            rule_project(&[("CLAUDE.md", &claude), ("AGENTS.md", &large)]);
+
+        reset_injection_cache();
+        let first = rules_suffix_for_read(&file, &root, "opencode");
+        assert!(first.contains("Prefer small modules."), "{first:?}");
+        assert!(!first.contains("keep the build green"), "{first:?}");
+        assert!(!first.contains("authoritative source"), "{first:?}");
+        assert!(
+            first
+                .contains("[Rules in scope not shown (size limit); read them directly: AGENTS.md]"),
+            "{first:?}"
+        );
+
+        let second = rules_suffix_for_read(&file, &root, "opencode");
+        assert!(!second.contains("Prefer small modules."), "{second:?}");
+        assert!(second.contains("[From: AGENTS.md]"), "{second:?}");
+        assert!(
+            second.contains("[Rule body omitted; authoritative source:"),
+            "{second:?}"
+        );
+        assert!(
+            suffix_tokens(&second) <= MAX_RULES_SUFFIX_TOKENS,
+            "{second:?}"
+        );
+
+        assert!(rules_suffix_for_read(&file, &root, "opencode").is_empty());
     }
 
     #[test]

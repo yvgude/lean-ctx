@@ -643,6 +643,9 @@ pub(super) fn ensure_observe_on_events(
 }
 
 pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
+    if crate::hooks::refuses_transient_hook_binary(home) {
+        return;
+    }
     if super::claude_governor::is_installed(home) {
         return super::claude_governor::refresh(home);
     }

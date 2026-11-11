@@ -74,7 +74,7 @@ const LEAN_CTX_LOCATION_ENV: &[&str] = &[
     "XDG_CACHE_HOME",
 ];
 
-fn is_blocked_env(name: &str) -> bool {
+pub(super) fn is_blocked_env(name: &str) -> bool {
     // Windows looks environment names up case-insensitively.
     let upper;
     let name = if cfg!(windows) {
