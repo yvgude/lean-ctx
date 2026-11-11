@@ -424,10 +424,10 @@ pub fn emit_compatibility(kind: EventKind) -> u64 {
 pub(crate) fn try_emit(
     kind: EventKind,
 ) -> Result<u64, crate::core::context_os::ObservationPersistenceError> {
-    persist_admitted(&admit(kind)?)
+    persist_admitted(&admit_observation(kind)?)
 }
 
-fn admit(
+fn admit_observation(
     kind: EventKind,
 ) -> Result<
     crate::core::context_os::AdmittedLegacyObservation,
@@ -582,7 +582,7 @@ fn persist_with_retry(
 fn emit_detached(
     kind: EventKind,
 ) -> Result<u64, crate::core::context_os::ObservationPersistenceError> {
-    let admitted = admit(kind)?;
+    let admitted = admit_observation(kind)?;
     let id = admitted.event.id;
     let Some(sender) = detached_sender() else {
         return persist_admitted(&admitted);

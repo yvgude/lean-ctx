@@ -2098,7 +2098,7 @@ fn bus_list_all_releases_every_project_and_withholds_only_the_tripping_message()
     let newest = bus::bus_answer("list", &args("1"), Via::Cli);
     assert_eq!(newest.failed, None, "{}", newest.text);
     let doc = parse(&newest.text);
-    assert_eq!(ids(&doc), [b_id.clone()]);
+    assert_eq!(ids(&doc), std::slice::from_ref(&b_id));
     assert_eq!(doc["messages"][0]["project_root"], root_b.as_str());
     assert_eq!(doc["messages"][0]["message"], "hello from b");
     assert!(doc.get("withheld").is_none(), "{}", newest.text);

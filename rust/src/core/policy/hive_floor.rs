@@ -20,7 +20,9 @@
 //! local settings the floor overrides, for `hive status`.
 //!
 //! Only the members the schema marks `x-enforcement: engine` are mapped
-//! (their `x-engine` field); everything else is reported as unenforced on
+//! (their `x-engine` field; `security.readable_roots` and `never_send` are
+//! applied to reads by [`crate::core::policy::hive_io`] instead);
+//! everything else is reported as unenforced on
 //! the ack. Expiry (`not_after`) does not lift the floor: the last valid
 //! rules keep restricting local work offline; only sensitive operations
 //! fail closed (the connector's sensitive-operation gate).

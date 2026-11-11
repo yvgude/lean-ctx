@@ -57,7 +57,28 @@ pub fn is_governor_installed(home: &std::path::Path) -> bool {
     std::fs::read_to_string(
         crate::core::editor_registry::claude_state_dir(home).join("settings.json"),
     )
-    .is_ok_and(|c| c.contains(" hook govern\""))
+    .is_ok_and(|c| settings_have_govern_hook(&c))
+}
+
+/// `… hook govern` in shell form, or exec form (`"args": ["hook", "govern"]`,
+/// written on Windows for a binary path with a space).
+pub(crate) fn settings_have_govern_hook(content: &str) -> bool {
+    fn exec_form(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(object) => {
+                object
+                    .get("args")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|args| args.len() == 2 && args[0] == "hook" && args[1] == "govern")
+                    || object.values().any(exec_form)
+            }
+            serde_json::Value::Array(array) => array.iter().any(exec_form),
+            _ => false,
+        }
+    }
+    content.contains(" hook govern\"")
+        || (content.contains("\"govern\"")
+            && crate::core::jsonc::parse_jsonc(content).is_ok_and(|v| exec_form(&v)))
 }
 
 /// True when Claude Code's MCP config (`~/.claude.json`, or the one under
@@ -108,3 +129,29 @@ pub const RENDER_TSX: &str = include_str!("../templates/claude_mod/render.tsx");
 pub const TYPES_DTS: &str = include_str!("../templates/claude_mod/cockpit.d.ts");
 /// Source manifest; `hooks::agents::claude_mod::plugin_manifest` stamps the engine version into it.
 pub const PLUGIN_JSON: &str = include_str!("../templates/claude_mod/plugin.json");
+
+#[cfg(test)]
+mod tests {
+    use super::settings_have_govern_hook;
+
+    #[test]
+    fn govern_hook_detected_in_shell_and_exec_form() {
+        let shell = serde_json::json!({"hooks": {"PostToolUse": [{"hooks": [
+            {"type": "command", "command": "\"/a b/lean-ctx\" hook govern"}
+        ]}]}});
+        assert!(settings_have_govern_hook(
+            &serde_json::to_string_pretty(&shell).unwrap()
+        ));
+        let exec = serde_json::json!({"hooks": {"PostToolUse": [{"hooks": [
+            {"type": "command", "command": "C:/x/Author Software/lean-ctx.exe", "args": ["hook", "govern"]}
+        ]}]}});
+        assert!(settings_have_govern_hook(
+            &serde_json::to_string_pretty(&exec).unwrap()
+        ));
+        let standard = serde_json::json!({"hooks": {"PreToolUse": [{"hooks": [
+            {"type": "command", "command": "C:/x/Author Software/lean-ctx.exe", "args": ["hook", "rewrite"]}
+        ]}]}});
+        assert!(!settings_have_govern_hook(&standard.to_string()));
+        assert!(!settings_have_govern_hook("{}"));
+    }
+}

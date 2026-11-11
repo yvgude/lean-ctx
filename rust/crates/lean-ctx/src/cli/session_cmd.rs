@@ -145,12 +145,51 @@ pub fn cmd_session_action(args: &[String]) {
             });
             super::common::print_released(&out);
         }
+        Some("readset") => cmd_session_readset(&args[1..]),
         None => {
             cmd_session_legacy();
         }
         Some(other) => {
             eprintln!("Unknown session action: {other}");
             print_session_help();
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `session readset --json [--root DIR] [--id ID]...`: the files the latest
+/// session of DIR (default: the current directory), or the named sessions,
+/// read, relative to DIR. Read by `scripts/eccp-envelope` (ECCP
+/// `observed_reads`). Exit 1 when there is no such session.
+fn cmd_session_readset(args: &[String]) {
+    let mut root = None;
+    let mut ids = Vec::new();
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--json" => {}
+            "--root" => root = rest.next().map(std::path::PathBuf::from),
+            "--id" => ids.extend(rest.next().cloned()),
+            other => {
+                eprintln!("session readset: unknown argument {other}");
+                std::process::exit(2);
+            }
+        }
+    }
+    let Some(root) = root.or_else(|| std::env::current_dir().ok()) else {
+        eprintln!("session readset: no project root");
+        std::process::exit(2);
+    };
+    match lean_ctx::core::session_readset::load(&root, &ids) {
+        Ok(set) => match serde_json::to_string_pretty(&set) {
+            Ok(json) => println!("{json}"),
+            Err(error) => {
+                eprintln!("session readset: {error}");
+                std::process::exit(1);
+            }
+        },
+        Err(error) => {
+            eprintln!("session readset: {error}");
             std::process::exit(1);
         }
     }
@@ -253,6 +292,8 @@ Usage:
   lean-ctx session load [session-id]    Load a session (latest if no ID)
   lean-ctx session status               Show session status
   lean-ctx session reset|new            Reset session
+  lean-ctx session readset --json [--root DIR] [--id ID]...
+                                        Files the session read (ECCP observed_reads)
 
 Examples:
   lean-ctx session task \"implement JWT authentication\"

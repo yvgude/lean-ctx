@@ -1141,3 +1141,122 @@ fn runtime_only_setup_dispatch_avoids_rule_writers() {
         "runtime-only setup must not create OpenCode rules"
     );
 }
+
+const SPACED_EXE: &str = "C:/Users/u/AppData/Local/Author Software/nvm/installs/v24.22.2/node_modules/lean-ctx-bin/bin/lean-ctx.exe";
+
+#[test]
+fn hook_binary_token_quotes_only_when_needed() {
+    assert_eq!(
+        hook_binary_token("/usr/local/bin/lean-ctx"),
+        "/usr/local/bin/lean-ctx"
+    );
+    assert_eq!(hook_binary_token("lean-ctx"), "lean-ctx");
+    assert_eq!(hook_binary_token(SPACED_EXE), format!("\"{SPACED_EXE}\""));
+    assert_eq!(
+        hook_binary_token("/Users/First Last/bin/lean-ctx"),
+        "\"/Users/First Last/bin/lean-ctx\""
+    );
+    assert_eq!(
+        hook_binary_token("/opt/a(b)/lean-ctx"),
+        "\"/opt/a(b)/lean-ctx\""
+    );
+    // Already quoted stays as is; the `$HOME` portable form is not quoted.
+    assert_eq!(hook_binary_token("\"/a b/lean-ctx\""), "\"/a b/lean-ctx\"");
+    assert_eq!(
+        hook_binary_token("$HOME/.local/bin/lean-ctx"),
+        "$HOME/.local/bin/lean-ctx"
+    );
+}
+
+#[test]
+fn hook_shell_command_quotes_spaced_binary() {
+    assert_eq!(
+        hook_shell_command("/usr/bin/lean-ctx", "observe"),
+        "/usr/bin/lean-ctx hook observe"
+    );
+    assert_eq!(
+        hook_shell_command(SPACED_EXE, "observe"),
+        format!("\"{SPACED_EXE}\" hook observe")
+    );
+}
+
+#[test]
+fn claude_hook_uses_exec_form_only_on_windows_for_quoted_paths() {
+    let cmd = hook_shell_command(SPACED_EXE, "observe");
+    assert_eq!(
+        claude_command_hook_for(&cmd, true),
+        serde_json::json!({"type": "command", "command": SPACED_EXE, "args": ["hook", "observe"]})
+    );
+    assert_eq!(
+        claude_command_hook_for(&cmd, false),
+        serde_json::json!({"type": "command", "command": cmd})
+    );
+    // Plain and portable commands keep the shell form on Windows too.
+    let plain = "C:/bin/lean-ctx.exe hook observe";
+    assert_eq!(
+        claude_command_hook_for(plain, true),
+        serde_json::json!({"type": "command", "command": plain})
+    );
+    let portable = "\"%USERPROFILE%\\a b\\lean-ctx.exe\" hook observe";
+    assert_eq!(
+        claude_command_hook_for(portable, true),
+        serde_json::json!({"type": "command", "command": portable})
+    );
+}
+
+#[test]
+fn split_quoted_program_unescapes() {
+    assert_eq!(
+        split_quoted_program("\"/a b/lean-ctx\" hook rewrite"),
+        Some(("/a b/lean-ctx".to_string(), " hook rewrite"))
+    );
+    assert_eq!(
+        split_quoted_program("\"/a\\\"b/lean-ctx\" hook x"),
+        Some(("/a\"b/lean-ctx".to_string(), " hook x"))
+    );
+    assert_eq!(split_quoted_program("/plain/lean-ctx hook x"), None);
+    assert_eq!(split_quoted_program("\"/unterminated hook x"), None);
+}
+
+#[test]
+fn split_hook_command_detection() {
+    assert!(is_split_hook_command(&format!("{SPACED_EXE} hook observe")));
+    assert!(is_split_hook_command(
+        "/Users/First Last/bin/lean-ctx hook rewrite"
+    ));
+    assert!(!is_split_hook_command(&format!(
+        "\"{SPACED_EXE}\" hook observe"
+    )));
+    assert!(!is_split_hook_command("/usr/bin/lean-ctx hook observe"));
+    // A user wrapper that mentions lean-ctx is not ours.
+    assert!(!is_split_hook_command("redact-wrap lean-ctx hook rewrite"));
+    assert!(!is_split_hook_command("/a b/other-tool hook observe"));
+
+    let content = serde_json::json!({"hooks": {"Stop": [{"hooks": [
+        {"type": "command", "command": format!("{SPACED_EXE} hook observe")}
+    ]}]}})
+    .to_string();
+    assert!(content_has_split_hook_command(&content));
+    let healthy =
+        serde_json::json!({"hooks": [{"command": "/usr/bin/lean-ctx hook observe"}]}).to_string();
+    assert!(!content_has_split_hook_command(&healthy));
+}
+
+#[test]
+fn hook_command_line_reads_exec_form() {
+    let exec =
+        serde_json::json!({"type": "command", "command": SPACED_EXE, "args": ["hook", "observe"]});
+    assert_eq!(
+        hook_command_line(&exec).as_deref(),
+        Some(format!("\"{SPACED_EXE}\" hook observe").as_str())
+    );
+    let shell = serde_json::json!({"type": "command", "command": "lean-ctx hook observe"});
+    assert_eq!(
+        hook_command_line(&shell).as_deref(),
+        Some("lean-ctx hook observe")
+    );
+    assert_eq!(
+        hook_command_line(&serde_json::json!({"type": "command"})),
+        None
+    );
+}

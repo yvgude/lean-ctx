@@ -1234,17 +1234,24 @@ mod tests {
         use lean_ctx::core::context_admission::stored::lineage_support::{
             governed, project, scoped,
         };
+        use std::fmt::Write as _;
         let _data = governed();
         let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
         let (_directory, root) = project();
-        let old: String = (0..120)
-            .map(|i| format!("old-handoff step {i} reviewed the gateway retention path; "))
-            .collect();
-        let new: String = (0..120)
-            .map(|i| {
-                format!("Queen wake {i}: tester accepted branch fix/{i} with the gate green. ")
-            })
-            .collect();
+        let old = (0..120).fold(String::new(), |mut text, i| {
+            let _ = write!(
+                text,
+                "old-handoff step {i} reviewed the gateway retention path; "
+            );
+            text
+        });
+        let new = (0..120).fold(String::new(), |mut text, i| {
+            let _ = write!(
+                text,
+                "Queen wake {i}: tester accepted branch fix/{i} with the gate green. "
+            );
+            text
+        });
         let remember = |value: &str| {
             scoped(&root, || {
                 handle_remember(

@@ -6,7 +6,15 @@ use std::path::{Path, PathBuf};
 
 mod checkpoint;
 mod segments;
+mod v2;
 
+pub use v2::{
+    AuditDecision, ENTRY_VERSION, HMAC_PREFIX, SessionFacts, hmac_hex, keyed_digest,
+    keyed_input_digest, load_or_create_hmac_key,
+};
+
+/// One trail entry. The v2 fields (see `audit_trail/v2.rs`) are absent on
+/// entries an older writer appended.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEntry {
     pub timestamp: String,
@@ -23,6 +31,29 @@ pub struct AuditEntry {
     /// lean-ctx identity. `None` only when the keypair is unavailable (early boot).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub signature: Option<String>,
+    /// Entry version: absent on v1 entries, [`ENTRY_VERSION`] on entries this
+    /// build writes.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub v: Option<u64>,
+    /// The session whose call this entry records.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub session_id: Option<String>,
+    /// Position of the entry in its session, from 1, in chain order.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub seq: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub instance_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub policy_digest: Option<String>,
+    /// The [`AuditDecision`] label, kept as text so a reader older than the
+    /// writer still parses a decision it does not know.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub decision: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub output_digest: Option<String>,
+    /// Chained hash over the v2 fields (`audit_trail/v2.rs`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub v2_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,8 +192,9 @@ pub struct ChainVerifyResult {
     /// is a valid empty history for a fresh install, but callers that already
     /// hold audited state must treat `false` as evidence loss.
     pub source_present: bool,
-    /// Entries whose `event_type` this build does not know, but whose hash
-    /// links verify. Forward compatibility, NOT corruption: a reader older
+    /// Entries whose `event_type` or entry version (`v` above
+    /// [`ENTRY_VERSION`]) this build does not know, but whose hash links
+    /// verify. Forward compatibility, NOT corruption: a reader older
     /// than the writer must report those separately instead of raising a
     /// false tamper alarm (OCP Part 4 additive-event rule). Actual hash or
     /// structure damage still sets `valid = false`.
@@ -185,10 +217,29 @@ fn trail_path() -> Option<PathBuf> {
 /// a seek/read error on a NON-empty trail is indistinguishable from an empty
 /// one at that point, so the old fallback silently forked the chain and still
 /// returned `Ok` to a caller (attestation drift) that commits state on it.
-fn read_last_hash_tail(file: &fs::File) -> Result<String, String> {
-    Ok(read_tail_entry(file)?
-        .and_then(|entry| entry.get("entry_hash")?.as_str().map(str::to_string))
-        .unwrap_or_else(|| "genesis".to_string()))
+fn read_tail(file: &fs::File) -> Result<Tail, String> {
+    Ok(Tail::after(read_tail_entry(file)?.as_ref()))
+}
+
+/// Where the next entry links in: the `entry_hash` of the last entry (its
+/// `prev_hash`) and the v2 chain head after it.
+#[derive(Clone)]
+struct Tail {
+    prev_hash: String,
+    head: String,
+}
+
+impl Tail {
+    fn after(entry: Option<&serde_json::Value>) -> Self {
+        let prev_hash = entry
+            .and_then(|entry| entry.get("entry_hash")?.as_str())
+            .unwrap_or("genesis")
+            .to_string();
+        let head = entry
+            .and_then(|entry| v2::head_of(entry, v2::version_of(entry)?))
+            .unwrap_or_else(|| prev_hash.clone());
+        Self { prev_hash, head }
+    }
 }
 
 /// The last entry of `file` as raw JSON; `None` for an empty file. A
@@ -346,24 +397,59 @@ pub fn record_at(path: &Path, data: AuditEntryData) {
 }
 
 fn try_record_at(path: &Path, data: AuditEntryData) -> Result<AuditEntry, String> {
-    try_record_at_time(path, data, chrono::Utc::now())
+    try_record_at_time(path, Record { data, facts: None }, chrono::Utc::now())
+}
+
+/// Fire-and-forget append of a call of a session (see [`record`]).
+pub fn record_v2(data: AuditEntryData, facts: SessionFacts) {
+    let _ = try_record_v2(data, facts);
+}
+
+/// Append an entry that binds `facts` to the call: the session id, its next
+/// `seq`, the instance, policy digest, decision and output digest, hashed
+/// with the timestamp into the entry's `v2_hash`.
+pub fn try_record_v2(data: AuditEntryData, facts: SessionFacts) -> Result<AuditEntry, String> {
+    let path = trail_path().ok_or_else(|| "audit trail unavailable".to_string())?;
+    try_record_v2_at(&path, data, facts)
+}
+
+/// [`try_record_v2`] to the trail at an explicit `path`.
+pub fn try_record_v2_at(
+    path: &Path,
+    data: AuditEntryData,
+    facts: SessionFacts,
+) -> Result<AuditEntry, String> {
+    if facts.session_id.is_empty() {
+        return Err("audit v2: empty session id".to_string());
+    }
+    let record = Record {
+        data,
+        facts: Some(facts),
+    };
+    try_record_at_time(path, record, chrono::Utc::now())
+}
+
+/// One entry to append: the v1 data and, for a call of a session, its facts.
+struct Record {
+    data: AuditEntryData,
+    facts: Option<SessionFacts>,
 }
 
 /// [`try_record_at`] with the clock that decides whether a day has passed.
 fn try_record_at_time(
     path: &Path,
-    data: AuditEntryData,
+    record: Record,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<AuditEntry, String> {
     // At most one seal per append: after it the next file is fresh.
-    let mut data = data;
+    let mut record = record;
     for _ in 0..SNAPSHOT_ATTEMPTS {
         let mut file = open_active_locked(path)?;
-        let appended = append_or_seal(path, &mut file, data, now);
+        let appended = append_or_seal(path, &mut file, record, now);
         let _ = fs2::FileExt::unlock(&file);
         match appended? {
             Appended::Done(entry) => return Ok(entry),
-            Appended::Moved(back) => data = back,
+            Appended::Moved(back) => record = back,
         }
     }
     Err("audit trail: the active file kept moving".to_string())
@@ -373,7 +459,7 @@ fn try_record_at_time(
 enum Appended {
     Done(AuditEntry),
     /// The file was sealed and moved: append the entry to the new one.
-    Moved(AuditEntryData),
+    Moved(Record),
 }
 
 /// Open the active trail and take the exclusive lock. Advisory lock
@@ -421,24 +507,20 @@ fn is_current(path: &Path, file: &fs::File) -> bool {
 fn append_or_seal(
     path: &Path,
     file: &mut fs::File,
-    data: AuditEntryData,
+    record: Record,
     now: chrono::DateTime<chrono::Utc>,
 ) -> Result<Appended, String> {
     let Some(last) = read_tail_entry(file)? else {
         // A fresh active file continues the chain of the newest segment.
-        let prev_hash = match segments::sealed(path).last() {
+        let tail = match segments::sealed(path).last() {
             Some((_, segment)) => fs::File::open(segment)
                 .map_err(|e| format!("audit segment open: {e}"))
-                .and_then(|segment| read_last_hash_tail(&segment))?,
-            None => "genesis".to_string(),
+                .and_then(|segment| read_tail(&segment))?,
+            None => Tail::after(None),
         };
-        return append_locked(file, data, prev_hash).map(Appended::Done);
+        return append_locked(file, record, tail).map(Appended::Done);
     };
-    let last_hash = last
-        .get("entry_hash")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .to_string();
+    let last_tail = Tail::after(Some(&last));
     let next_seq = segments::sealed(path).last().map_or(0, |(seq, _)| seq + 1);
     let sealed_seq = if last.get("event_type").and_then(serde_json::Value::as_str)
         == Some(segments::SEAL_EVENT)
@@ -456,25 +538,29 @@ fn append_or_seal(
         // Sealed before, but the rename did not happen.
         Some(seq) if seq == next_seq => seq,
         // Already moved to its segment (a handle that outlived the rename).
-        Some(seq) if seq < next_seq => return Ok(Appended::Moved(data)),
+        Some(seq) if seq < next_seq => return Ok(Appended::Moved(record)),
         _ if segments::due(len, last_at, now)
             && !segments::backing_off()
             && verified_once(path, file) =>
         {
-            append_locked(file, seal_data(next_seq), last_hash.clone())?;
+            let seal = Record {
+                data: seal_data(next_seq),
+                facts: None,
+            };
+            append_locked(file, seal, last_tail)?;
             next_seq
         }
-        _ => return append_locked(file, data, last_hash).map(Appended::Done),
+        _ => return append_locked(file, record, last_tail).map(Appended::Done),
     };
     match segments::retire(path, seq) {
-        Ok(()) => Ok(Appended::Moved(data)),
+        Ok(()) => Ok(Appended::Moved(record)),
         Err(error) => {
             // The seal stays in the active file and the chain runs on; this
             // process tries again after a back-off.
             tracing::warn!("audit trail not sealed: {error}");
             segments::back_off();
-            let prev_hash = read_last_hash_tail(file)?;
-            append_locked(file, data, prev_hash).map(Appended::Done)
+            let tail = read_tail(file)?;
+            append_locked(file, record, tail).map(Appended::Done)
         }
     }
 }
@@ -507,14 +593,13 @@ pub fn is_seal(event_type: &AuditEventType) -> bool {
     matches!(event_type, AuditEventType::Unknown(label) if label == segments::SEAL_EVENT)
 }
 
-/// Build and append one entry after `prev_hash`. Caller holds the
-/// exclusive lock.
-fn append_locked(
-    file: &mut fs::File,
-    data: AuditEntryData,
-    prev_hash: String,
-) -> Result<AuditEntry, String> {
+/// Build and append one v2 entry after `tail`. Caller holds the exclusive
+/// lock, so a session's `seq` follows chain order.
+fn append_locked(file: &mut fs::File, record: Record, tail: Tail) -> Result<AuditEntry, String> {
     use std::io::{Seek, SeekFrom};
+
+    let Record { data, facts } = record;
+    let Tail { prev_hash, head } = tail;
 
     let authenticated_drift = matches!(
         &data.event_type,
@@ -542,7 +627,22 @@ fn append_locked(
         signature_result.ok()
     };
 
-    let entry = AuditEntry {
+    let facts = facts.map(|facts| {
+        let seq = v2::next_seq(&facts.session_id);
+        (facts, seq)
+    });
+    let (session_id, seq, instance_id, policy_digest, decision, output_digest) = match facts {
+        Some((facts, seq)) => (
+            Some(facts.session_id),
+            Some(seq),
+            facts.instance_id,
+            facts.policy_digest,
+            Some(facts.decision.as_str().to_string()),
+            facts.output_digest,
+        ),
+        None => (None, None, None, None, None, None),
+    };
+    let mut entry = AuditEntry {
         timestamp: chrono::Utc::now().to_rfc3339(),
         agent_id: data.agent_id,
         tool: data.tool,
@@ -554,7 +654,18 @@ fn append_locked(
         prev_hash,
         entry_hash,
         signature,
+        v: Some(ENTRY_VERSION),
+        session_id,
+        seq,
+        instance_id,
+        policy_digest,
+        decision,
+        output_digest,
+        v2_hash: None,
     };
+    let raw = serde_json::to_value(&entry).map_err(|e| format!("audit serialize: {e}"))?;
+    let fields = v2::v2_fields(&raw).ok_or_else(|| "audit v2: malformed facts".to_string())?;
+    entry.v2_hash = Some(v2::compute_v2_hash(&head, &fields));
 
     let mut line = serde_json::to_string(&entry).map_err(|e| format!("audit serialize: {e}"))?;
     line.push('\n');
@@ -853,6 +964,9 @@ fn verify_chain_with_drift_at(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct ChainState {
     prev_hash: String,
+    /// The v2 chain head when it differs from `prev_hash` (the last entry
+    /// was a v2 entry).
+    head: Option<String>,
     total: usize,
     unknown: usize,
     /// Latest unacknowledged drift per agent id, with the same transition
@@ -872,6 +986,7 @@ impl ChainState {
     fn genesis() -> Self {
         Self {
             prev_hash: "genesis".to_string(),
+            head: None,
             total: 0,
             unknown: 0,
             pending: std::collections::BTreeMap::new(),
@@ -925,9 +1040,27 @@ impl ChainState {
             return Err(());
         }
         let entry_hash = entry_hash.to_string();
+        // v2 binds the timestamp and the session facts in `v2_hash`. A later
+        // version is forward-compatible: its v1 link is verified above, the
+        // rest is counted like an unknown event, never reported as tampering.
+        let version = v2::version_of(&value).ok_or(())?;
+        let newer_version = match version {
+            0 => return Err(()),
+            1 => false,
+            v2::ENTRY_VERSION => {
+                let fields = v2::v2_fields(&value).ok_or(())?;
+                let claimed = value.get("v2_hash").and_then(serde_json::Value::as_str);
+                if claimed != Some(v2::compute_v2_hash(self.head(), &fields).as_str()) {
+                    return Err(());
+                }
+                false
+            }
+            _ => true,
+        };
+        let head = v2::head_of(&value, version).ok_or(())?;
         let entry = serde_json::from_value::<AuditEntry>(value).map_err(|_| ())?;
         let seal = is_seal(&entry.event_type);
-        if matches!(&entry.event_type, AuditEventType::Unknown(_)) && !seal {
+        if (matches!(&entry.event_type, AuditEventType::Unknown(_)) && !seal) || newer_version {
             self.unknown += 1;
         }
         self.sealed = if seal {
@@ -993,9 +1126,15 @@ impl ChainState {
             }
             _ => {}
         }
+        self.head = (head != entry_hash).then_some(head);
         self.prev_hash = entry_hash;
         self.total += 1;
         Ok(())
+    }
+
+    /// The v2 chain head the next entry hashes after.
+    fn head(&self) -> &str {
+        self.head.as_deref().unwrap_or(&self.prev_hash)
     }
 
     /// Verify every line of `reader` (the same line rules as

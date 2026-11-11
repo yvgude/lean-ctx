@@ -71,6 +71,77 @@ class BuildScriptTests(unittest.TestCase):
             self.assertNotEqual(blocked.returncode, 0)
             self.assertIn("BUILD BLOCKED", blocked.stderr)
 
+    def test_git_stamp_opt_out_keeps_a_new_commit_fresh(self):
+        """CI check jobs set LEANCTX_BUILD_GIT_STAMP=off (warm build farm):
+        a new commit must not re-run the script, while the default stamp
+        still follows HEAD."""
+        root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory(prefix="leanctx-build-stamp-") as tmp:
+            project = Path(tmp)
+            (project / "src/core").mkdir(parents=True)
+            (project / "Cargo.toml").write_text(
+                '[package]\nname = "leanctx-build-stamp-probe"\nversion = "0.1.0"\n'
+                'edition = "2024"\n',
+                encoding="utf-8",
+            )
+            (project / "src/lib.rs").write_text(
+                'pub const COMMIT: &str = env!("LEANCTX_BUILD_COMMIT");\n',
+                encoding="utf-8",
+            )
+            shutil.copyfile(root / "rust/build.rs", project / "build.rs")
+            shutil.copyfile(
+                root / "rust/src/core/build_origin.rs", project / "src/core/build_origin.rs"
+            )
+            (project / ".gitignore").write_text("/target\n", encoding="utf-8")
+            env = {
+                k: v
+                for k, v in os.environ.items()
+                if not k.startswith(("GITHUB_", "LEANCTX_", "GIT_"))
+            }
+            env.update(
+                CARGO_BUILD_JOBS="3",
+                CARGO_TARGET_DIR=str(project / "target"),
+                GIT_AUTHOR_NAME="probe",
+                GIT_AUTHOR_EMAIL="probe@example.invalid",
+                GIT_COMMITTER_NAME="probe",
+                GIT_COMMITTER_EMAIL="probe@example.invalid",
+                GIT_CONFIG_NOSYSTEM="1",
+                GIT_CONFIG_GLOBAL=os.devnull,
+            )
+
+            def git(*args):
+                subprocess.run(
+                    ["git", *args], cwd=project, env=env, check=True, capture_output=True
+                )
+
+            def build(stamp):
+                run_env = dict(env)
+                if stamp == "off":
+                    run_env["LEANCTX_BUILD_GIT_STAMP"] = "off"
+                out = subprocess.run(
+                    ["cargo", "build", "--offline", "-vv"],
+                    cwd=project,
+                    env=run_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    check=False,
+                )
+                self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+                return out.stderr
+
+            git("init", "-q", "-b", "main")
+            git("add", "-A")
+            git("commit", "-q", "-m", "one")
+            self.assertIn("Running", build("off"))
+            self.assertNotIn("Running", build("off"))
+            git("commit", "-q", "--allow-empty", "-m", "two")
+            self.assertNotIn("Running", build("off"))
+            # The default stamp still re-runs on a new commit.
+            self.assertIn("Running", build("on"))
+            git("commit", "-q", "--allow-empty", "-m", "three")
+            self.assertIn("Running", build("on"))
+
 
 if __name__ == "__main__":
     unittest.main()

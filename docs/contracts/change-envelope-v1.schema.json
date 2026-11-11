@@ -76,10 +76,37 @@
           }
         },
         "observed_reads": {
-          "description": "Paths a LeanCTX session read while producing the change.",
+          "description": "Repository paths a LeanCTX session read while producing the change (W5-01).",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "observed_reads_source": {
+          "description": "Present when observed_reads came from `lean-ctx session readset --json`: the sessions, whether their bounded file history was complete, and how many reads of files tracked neither at base nor at head were left out.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "sessions", "complete"],
+          "properties": {
+            "schema": { "const": "leanctx.session-readset/v1" },
+            "sessions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "complete": { "type": "boolean" },
+            "untracked_dropped": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "features": {
+          "description": "Cargo feature set the checks ran with.",
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         }
+      }
+    },
+    "write_set": {
+      "description": "What the change writes (W5-08): paths changed between base.commit and head, and the Rust test functions it adds, edits or removes (path::name, heuristic). A foreign merge invalidates evidence only when its write set meets this change's read set or the reverse.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paths", "test_functions"],
+      "properties": {
+        "paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "test_functions": { "type": "array", "items": { "type": "string", "minLength": 1 } }
       }
     },
     "derivations": {
@@ -123,6 +150,11 @@
               "commit": {
                 "description": "Commit the check ran on; head or an ancestor of head.",
                 "$ref": "#/$defs/commit"
+              },
+              "read_set_digest": {
+                "description": "Address of the check by the read set of its build and test run (W5-08): sha256 over toolchain, features, public API hashes and the tree id of each touched crate at the check commit.",
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
               }
             }
           }

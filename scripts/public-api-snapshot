@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Public-API snapshot of every Rust workspace crate (Integration Engine W1b-01).
+
+Usage:
+    scripts/public-api-snapshot snapshot <rev> --out DIR [--repo DIR]
+    scripts/public-api-snapshot diff <base-dir> <head-dir> [--json FILE]
+
+`snapshot` writes one ``<crate>.txt`` per member of rust/Cargo.toml's
+workspace at <rev> (one public item per line, sorted) plus ``SNAPSHOT.json``
+(commit, extractor, item count and sha256 per crate). It reads the git
+objects of <rev> only: no checkout, no compilation, no nightly toolchain. The
+items come from the textual extractor of scripts/change-class (textual-v1;
+its docstring lists what it records and its known gaps), so these directories
+are exactly what ``scripts/change-class --base-snapshots/--head-snapshots``
+compares. A crate without a library target gets an empty snapshot.
+
+`diff` prints every interface change between two snapshot directories, per
+crate: ``+`` added, ``-`` removed, ``~`` changed (same item key, new
+signature). --json additionally writes the diff as one JSON object
+(leanctx.public-api-diff/v1). Both commands exit 0 on success and 2 on a
+git or input error; a non-empty diff is not an error.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+SNAPSHOT_SCHEMA = "leanctx.public-api-snapshot/v1"
+DIFF_SCHEMA = "leanctx.public-api-diff/v1"
+
+
+def load_change_class():
+    path = str(Path(__file__).resolve().parent / "change-class")
+    loader = importlib.machinery.SourceFileLoader("change_class", path)
+    spec = importlib.util.spec_from_loader("change_class", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+cc = load_change_class()
+
+
+def snapshot(repo: str, rev: str, out: Path) -> dict:
+    tree = cc.GitTree(repo, rev)
+    try:
+        files = tree.files()
+        out.mkdir(parents=True, exist_ok=True)
+        crates = {}
+        for name, info in sorted(cc.workspace_crates(tree).items()):
+            lines = sorted(set(cc.extract_crate(tree, info["lib"]))) if info["lib"] in files else []
+            text = cc.snapshot_text(name, lines)
+            (out / f"{name}.txt").write_text(text, encoding="utf-8")
+            crates[name] = {
+                "dir": info["dir"],
+                "lib": info["lib"] if info["lib"] in files else None,
+                "items": len(lines),
+                "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            }
+        manifest = {
+            "schema": SNAPSHOT_SCHEMA,
+            "commit": tree.rev,
+            "extractor": cc.EXTRACTOR,
+            "crates": crates,
+        }
+        (out / "SNAPSHOT.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        return manifest
+    finally:
+        tree.close()
+
+
+def commit_of(snapshot_dir: Path) -> str | None:
+    try:
+        return json.loads((snapshot_dir / "SNAPSHOT.json").read_text(encoding="utf-8")).get("commit")
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def diff(base_dir: Path, head_dir: Path) -> dict:
+    for d in (base_dir, head_dir):
+        if not d.is_dir():
+            raise FileNotFoundError(f"no snapshot directory: {d}")
+    base, head = cc.read_snapshot_dir(str(base_dir)), cc.read_snapshot_dir(str(head_dir))
+    crates = {}
+    for crate, delta in cc.diff_api(base, head).items():
+        changed = set(delta["changed"])
+        key = lambda line: line.split("\t", 1)[0]  # noqa: E731
+        crates[crate] = {
+            "added": [l for l in delta["added"] if key(l) not in changed],
+            "removed": [l for l in delta["removed"] if key(l) not in changed],
+            "changed": [
+                {"key": k,
+                 "old": [l for l in delta["removed"] if key(l) == k],
+                 "new": [l for l in delta["added"] if key(l) == k]}
+                for k in sorted(changed)
+            ],
+        }
+    return {
+        "schema": DIFF_SCHEMA,
+        "base": commit_of(base_dir),
+        "head": commit_of(head_dir),
+        "crates_compared": sorted(set(base) | set(head)),
+        "crates_changed": sorted(crates),
+        "crates": crates,
+    }
+
+
+def render(result: dict) -> str:
+    lines = [f"public API: {result['base'] or '?'} -> {result['head'] or '?'}, "
+             f"{len(result['crates_compared'])} crate(s) compared, {len(result['crates_changed'])} changed"]
+    for crate in result["crates_changed"]:
+        delta = result["crates"][crate]
+        lines.append(f"crate {crate}: +{len(delta['added'])} -{len(delta['removed'])} ~{len(delta['changed'])}")
+        lines += [f"  + {l}" for l in delta["added"]]
+        lines += [f"  - {l}" for l in delta["removed"]]
+        for change in delta["changed"]:
+            lines.append(f"  ~ {change['key']}")
+            lines += [f"      was {l}" for l in change["old"]]
+            lines += [f"      now {l}" for l in change["new"]]
+    return "\n".join(lines) + "\n"
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("snapshot", help="write the snapshot of <rev> to --out")
+    s.add_argument("rev")
+    s.add_argument("--out", type=Path, required=True)
+    s.add_argument("--repo", default=".")
+    d = sub.add_parser("diff", help="print the interface changes between two snapshots")
+    d.add_argument("base", type=Path)
+    d.add_argument("head", type=Path)
+    d.add_argument("--json", type=Path, help="also write the diff as JSON to this file")
+    args = ap.parse_args(argv)
+    try:
+        if args.cmd == "snapshot":
+            manifest = snapshot(args.repo, args.rev, args.out)
+            total = sum(c["items"] for c in manifest["crates"].values())
+            print(f"public-api-snapshot: {manifest['commit']}: {len(manifest['crates'])} crate(s), "
+                  f"{total} public item(s) -> {args.out}")
+        else:
+            result = diff(args.base, args.head)
+            sys.stdout.write(render(result))
+            if args.json:
+                args.json.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except subprocess.CalledProcessError as err:
+        sys.stderr.write(f"public-api-snapshot: git failed: {err.stderr or err}\n")
+        return 2
+    except (OSError, ValueError) as err:
+        sys.stderr.write(f"public-api-snapshot: {err}\n")
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

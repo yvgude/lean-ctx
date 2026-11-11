@@ -306,8 +306,12 @@ fn integration_claude_governor(
     let settings_path =
         lean_ctx::core::editor_registry::claude_state_dir(home).join("settings.json");
     let settings = std::fs::read_to_string(&settings_path).unwrap_or_default();
-    let hooks_ok =
-        settings.contains(" hook govern\"") && settings.contains(" hook rewrite-enforce\"");
+    // Command lines, so the exec form (`command` + `args`) counts too.
+    let lines = lean_ctx::core::jsonc::parse_jsonc(&settings)
+        .map(|v| super::wiring::hook_command_lines(&v))
+        .unwrap_or_default();
+    let has_line = |action: &str| lines.lines().any(|l| l.trim_end().ends_with(action));
+    let hooks_ok = has_line(" hook govern") && has_line(" hook rewrite-enforce");
     let stale = stale_hook_binary(&settings, binary);
     let hooks = finalize_hook_check("Hooks", &settings_path, hooks_ok, stale);
     let claude_md = lean_ctx::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");

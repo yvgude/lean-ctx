@@ -180,8 +180,36 @@ fn part4_evidence_chain() {
         role: "reviewer".into(),
         event_type: AuditEventType::AgentDriftAcknowledged,
     });
+    // A v2 session entry as the MCP dispatch writes it: keyed input and
+    // output digests plus the session facts and the chained `v2_hash`.
+    let args = serde_json::Map::new();
+    audit_trail::record_v2(
+        AuditEntryData {
+            agent_id: "agent-1".into(),
+            tool: "ctx_read".into(),
+            action: None,
+            input_hash: audit_trail::keyed_input_digest(&args)
+                .unwrap_or_else(|| audit_trail::hash_input(&args)),
+            output_tokens: 7,
+            role: "developer".into(),
+            event_type: AuditEventType::ToolCall,
+        },
+        audit_trail::SessionFacts {
+            session_id: "session-1".into(),
+            instance_id: None,
+            policy_digest: None,
+            decision: audit_trail::AuditDecision::Allow,
+            output_digest: audit_trail::keyed_digest("output", b"tool output"),
+        },
+    );
 
     let entries = audit_trail::load_recent(10);
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.session_id.as_deref() == Some("session-1")),
+        "v2 session entry must persist (Part 4)"
+    );
     assert!(entries.len() >= 2, "audit trail must persist entries");
     for entry in &entries {
         let json = serde_json::to_value(entry).expect("entry serializes");

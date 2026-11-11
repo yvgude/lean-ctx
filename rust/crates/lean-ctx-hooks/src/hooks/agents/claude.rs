@@ -479,9 +479,12 @@ pub(super) fn is_lean_ctx_command_for(hook: &serde_json::Value, action: &str) ->
     if hook.get("type").and_then(|t| t.as_str()) != Some("command") {
         return false;
     }
-    let Some(cmd) = hook.get("command").and_then(|c| c.as_str()) else {
+    // Exec form (`command` + `args`, written on Windows for a binary path with a space)
+    // reads as the equivalent quoted command line.
+    let Some(cmd) = crate::hooks::hook_command_line(hook) else {
         return false;
     };
+    let cmd = cmd.as_str();
     if !cmd.contains("lean-ctx") {
         return false;
     }
@@ -548,7 +551,7 @@ pub(super) fn ensure_command_hook(
 ) {
     strip_lean_ctx_hooks(pre_arr, lean_ctx_action_token(command));
 
-    let desired = serde_json::json!({ "type": "command", "command": command });
+    let desired = crate::hooks::claude_command_hook(command);
     if let Some(group) = pre_arr
         .iter_mut()
         .find(|g| g.get("matcher").and_then(|m| m.as_str()) == Some(matcher))
@@ -574,51 +577,68 @@ fn ensure_claude_observe_hooks(
     hooks_obj: &mut serde_json::Map<String, serde_json::Value>,
     observe_cmd: &str,
 ) {
-    let observe_hook = serde_json::json!([{
-        "matcher": ".*",
-        "hooks": [{ "type": "command", "command": observe_cmd }]
-    }]);
+    ensure_observe_on_events(
+        hooks_obj,
+        observe_cmd,
+        &[
+            "PostToolUse",
+            "UserPromptSubmit",
+            "Stop",
+            "PreCompact",
+            "SessionStart",
+            "SessionEnd",
+        ],
+    );
+}
 
-    let observe_events = [
-        "PostToolUse",
-        "UserPromptSubmit",
-        "Stop",
-        "PreCompact",
-        "SessionStart",
-        "SessionEnd",
-    ];
-
-    for event in observe_events {
+/// Ensure each event in `events` runs the lean-ctx observe hook as currently rendered.
+///
+/// An event that already carries exactly this hook is left alone. A lean-ctx observe hook in
+/// another rendering (an older binary path, or an unquoted path with a space that the host
+/// splits) is replaced, so `init`/`update` heal it. A user's own command that merely ends in
+/// `hook observe` keeps the event untouched, as before.
+pub(super) fn ensure_observe_on_events(
+    hooks_obj: &mut serde_json::Map<String, serde_json::Value>,
+    observe_cmd: &str,
+    events: &[&str],
+) {
+    let desired = crate::hooks::claude_command_hook(observe_cmd);
+    let same_hook = |hook: &serde_json::Value| {
+        hook.get("command") == desired.get("command") && hook.get("args") == desired.get("args")
+    };
+    for event in events {
         let entry = hooks_obj
-            .entry(event.to_string())
+            .entry((*event).to_string())
             .or_insert_with(|| serde_json::json!([]));
-
-        if let Some(arr) = entry.as_array() {
-            let already = arr.iter().any(|group| {
-                group
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .is_some_and(|hooks| {
-                        hooks.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(|c| c.as_str())
-                                .is_some_and(|c| c.contains("hook observe"))
-                        })
-                    })
-            });
-            if already {
-                continue;
-            }
+        if !entry.is_array() {
+            *entry = serde_json::json!([]);
         }
-
-        if let Some(arr) = entry.as_array_mut() {
-            arr.push(serde_json::json!({
-                "matcher": ".*",
-                "hooks": [{ "type": "command", "command": observe_cmd }]
-            }));
-        } else {
-            *entry = observe_hook.clone();
+        let Some(arr) = entry.as_array_mut() else {
+            continue;
+        };
+        let hooks_of = |group: &serde_json::Value| {
+            group
+                .get("hooks")
+                .and_then(|h| h.as_array())
+                .cloned()
+                .unwrap_or_default()
+        };
+        let all: Vec<serde_json::Value> = arr.iter().flat_map(hooks_of).collect();
+        if all.iter().any(same_hook) {
+            continue;
         }
+        if all
+            .iter()
+            .any(|h| is_lean_ctx_command_for(h, "hook observe"))
+        {
+            strip_lean_ctx_hooks(arr, "hook observe");
+        } else if all
+            .iter()
+            .any(|h| crate::hooks::hook_command_line(h).is_some_and(|c| c.contains("hook observe")))
+        {
+            continue;
+        }
+        arr.push(serde_json::json!({ "matcher": ".*", "hooks": [desired.clone()] }));
     }
 }
 
@@ -629,10 +649,10 @@ pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
     let hooks_dir = lean_ctx::core::editor_registry::claude_state_dir(home).join("hooks");
     let binary = resolve_hook_command_binary();
 
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
-    let observe_cmd = format!("{binary} hook observe");
-    let read_dedup_cmd = format!("{binary} hook read-dedup");
+    let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
+    let redirect_cmd = crate::hooks::hook_shell_command(&binary, "redirect");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
+    let read_dedup_cmd = crate::hooks::hook_shell_command(&binary, "read-dedup");
 
     let settings_path =
         lean_ctx::core::editor_registry::claude_state_dir(home).join("settings.json");
@@ -651,17 +671,11 @@ pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
     let desired_pretooluse = serde_json::json!([
         {
             "matcher": bash_matcher,
-            "hooks": [{
-                "type": "command",
-                "command": rewrite_cmd
-            }]
+            "hooks": [crate::hooks::claude_command_hook(&rewrite_cmd)]
         },
         {
             "matcher": REDIRECT_MATCHER,
-            "hooks": [{
-                "type": "command",
-                "command": redirect_cmd
-            }]
+            "hooks": [crate::hooks::claude_command_hook(&redirect_cmd)]
         }
     ]);
 
@@ -712,10 +726,10 @@ pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
 
 pub(crate) fn install_claude_project_hooks(cwd: &std::path::Path) {
     let binary = resolve_hook_command_binary();
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
-    let observe_cmd = format!("{binary} hook observe");
-    let read_dedup_cmd = format!("{binary} hook read-dedup");
+    let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
+    let redirect_cmd = crate::hooks::hook_shell_command(&binary, "redirect");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
+    let read_dedup_cmd = crate::hooks::hook_shell_command(&binary, "read-dedup");
 
     let settings_path = cwd.join(".claude").join("settings.local.json");
     let _ = std::fs::create_dir_all(cwd.join(".claude"));
@@ -730,17 +744,11 @@ pub(crate) fn install_claude_project_hooks(cwd: &std::path::Path) {
     let desired_pretooluse = serde_json::json!([
         {
             "matcher": bash_matcher,
-            "hooks": [{
-                "type": "command",
-                "command": rewrite_cmd
-            }]
+            "hooks": [crate::hooks::claude_command_hook(&rewrite_cmd)]
         },
         {
             "matcher": REDIRECT_MATCHER,
-            "hooks": [{
-                "type": "command",
-                "command": redirect_cmd
-            }]
+            "hooks": [crate::hooks::claude_command_hook(&redirect_cmd)]
         }
     ]);
 
@@ -795,42 +803,11 @@ fn ensure_claude_project_observe_hooks(
     hooks_obj: &mut serde_json::Map<String, serde_json::Value>,
     observe_cmd: &str,
 ) {
-    let project_events = ["PostToolUse", "UserPromptSubmit", "Stop", "PreCompact"];
-    for event in project_events {
-        let entry = hooks_obj
-            .entry(event.to_string())
-            .or_insert_with(|| serde_json::json!([]));
-
-        if let Some(arr) = entry.as_array() {
-            let already = arr.iter().any(|group| {
-                group
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .is_some_and(|hooks| {
-                        hooks.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(|c| c.as_str())
-                                .is_some_and(|c| c.contains("hook observe"))
-                        })
-                    })
-            });
-            if already {
-                continue;
-            }
-        }
-
-        if let Some(arr) = entry.as_array_mut() {
-            arr.push(serde_json::json!({
-                "matcher": ".*",
-                "hooks": [{ "type": "command", "command": observe_cmd }]
-            }));
-        } else {
-            *entry = serde_json::json!([{
-                "matcher": ".*",
-                "hooks": [{ "type": "command", "command": observe_cmd }]
-            }]);
-        }
-    }
+    ensure_observe_on_events(
+        hooks_obj,
+        observe_cmd,
+        &["PostToolUse", "UserPromptSubmit", "Stop", "PreCompact"],
+    );
 }
 
 #[cfg(test)]

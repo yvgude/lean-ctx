@@ -28,6 +28,7 @@ pub mod diagnostics;
 pub mod floor;
 pub mod hive_filters;
 pub mod hive_floor;
+pub mod hive_io;
 pub mod org;
 pub mod runtime;
 

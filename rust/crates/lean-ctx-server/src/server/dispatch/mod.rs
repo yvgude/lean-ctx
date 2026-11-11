@@ -474,16 +474,38 @@ impl LeanCtxServer {
                 .unwrap_or_else(|| "unknown".into());
             let role = lean_ctx::core::roles::active_role_name();
             {
-                let input_hash = lean_ctx::core::audit_trail::hash_input(args_map);
-                lean_ctx::core::audit_trail::record(lean_ctx::core::audit_trail::AuditEntryData {
+                use lean_ctx::core::audit_trail as audit;
+                // Keyed digests (audit entry v2): a digest that leaves the
+                // machine cannot be tested against a guessed input. Without
+                // the local key the input falls back to the v1 plain hash.
+                let input_hash = audit::keyed_input_digest(args_map)
+                    .unwrap_or_else(|| audit::hash_input(args_map));
+                let data = audit::AuditEntryData {
                     agent_id: agent_id.clone(),
                     tool: name.to_string(),
                     action: None,
                     input_hash,
                     output_tokens: output_token_estimate,
                     role: role.clone(),
-                    event_type: lean_ctx::core::audit_trail::AuditEventType::ToolCall,
-                });
+                    event_type: audit::AuditEventType::ToolCall,
+                };
+                let session_id = self.session.read().await.id.clone();
+                if session_id.is_empty() {
+                    audit::record(data);
+                } else {
+                    audit::record_v2(
+                        data,
+                        audit::SessionFacts {
+                            session_id,
+                            // The instance id (Hive) and policy digest (ent2)
+                            // are bound once those land.
+                            instance_id: None,
+                            policy_digest: None,
+                            decision: audit::AuditDecision::Allow,
+                            output_digest: audit::keyed_digest("output", output.text.as_bytes()),
+                        },
+                    );
+                }
             }
 
             let saved = output.saved_tokens;

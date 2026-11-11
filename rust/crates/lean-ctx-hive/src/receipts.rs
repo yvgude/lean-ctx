@@ -29,7 +29,6 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use ed25519_dalek::Signer as _;
-use hmac::{Hmac, KeyInit as _, Mac as _};
 use serde_json::{Value, json};
 use sha2::Sha256;
 
@@ -61,29 +60,19 @@ use lean_ctx_protocol::{
 const ENABLED_FILE: &str = "receipts.enabled";
 const DISABLED_FILE: &str = "receipts.disabled-lease";
 /// The engine-local receipt HMAC key (32 random bytes, hex). Never uploaded.
+// Only the unix permission check in the tests reads it.
+#[cfg(all(test, unix))]
 const KEY_FILE: &str = "receipts.hmac-key";
 
-/// The engine-local key that makes input/output values opaque to Hive.
+/// The engine-local key that makes input/output values opaque to Hive. The
+/// same key keys the digests of audit entries v2.
 #[derive(Clone)]
 pub(crate) struct ReceiptKey([u8; 32]);
 
 impl ReceiptKey {
     /// The key in `hive_data`, created on first use.
     pub(crate) fn load_or_create(hive_data: &Path) -> Option<Self> {
-        if let Some(key) = Self::load(hive_data) {
-            return Some(key);
-        }
-        let mut bytes = [0u8; 32];
-        getrandom::fill(&mut bytes).ok()?;
-        write_private(hive_data, KEY_FILE, hex::encode(bytes).as_bytes()).ok()?;
-        // Another process may have written first: the file wins.
-        Self::load(hive_data)
-    }
-
-    fn load(hive_data: &Path) -> Option<Self> {
-        let text = std::fs::read_to_string(hive_data.join(KEY_FILE)).ok()?;
-        let bytes = hex::decode(text.trim()).ok()?;
-        Some(Self(bytes.try_into().ok()?))
+        lean_ctx::core::audit_trail::load_or_create_hmac_key(hive_data).map(Self)
     }
 
     #[cfg(test)]
@@ -93,11 +82,7 @@ impl ReceiptKey {
 
     /// HMAC-SHA256(key, `label` ‖ `\n` ‖ `data`), lowercase hex.
     fn mac_hex(&self, label: &str, data: &str) -> String {
-        let mut mac = Hmac::<Sha256>::new_from_slice(&self.0).expect("HMAC takes any key length");
-        mac.update(label.as_bytes());
-        mac.update(b"\n");
-        mac.update(data.as_bytes());
-        hex::encode(mac.finalize().into_bytes())
+        lean_ctx::core::audit_trail::hmac_hex(&self.0, label, data.as_bytes())
     }
 
     fn hmac(&self, label: &str, data: &str) -> Option<ReceiptHmac> {

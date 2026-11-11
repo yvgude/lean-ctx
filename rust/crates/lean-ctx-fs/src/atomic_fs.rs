@@ -32,7 +32,7 @@ pub fn try_atomic_write(
     try_atomic_write_if(path, bytes, permissions, || true)
 }
 
-/// [`try_atomic_write`] with a last word for the caller: `admit` is asked once
+/// [`try_atomic_write`] with a last word for the caller: `may_commit` is asked once
 /// the new content is fully staged and synced, immediately before the replace.
 /// On `false` the staged file is removed, `path` is untouched and the error
 /// kind is `TimedOut`. Everything slow (cleanup, create, write, sync) lies
@@ -42,9 +42,9 @@ pub fn try_atomic_write_if(
     path: &Path,
     bytes: &[u8],
     permissions: Option<&std::fs::Permissions>,
-    admit: impl FnOnce() -> bool,
+    may_commit: impl FnOnce() -> bool,
 ) -> std::io::Result<()> {
-    write_staged(path, bytes, permissions, admit, true)
+    write_staged(path, bytes, permissions, may_commit, true)
 }
 
 /// [`try_atomic_write`] without the sweep for orphaned temps: for a directory
@@ -78,7 +78,7 @@ fn write_staged(
     path: &Path,
     bytes: &[u8],
     permissions: Option<&std::fs::Permissions>,
-    admit: impl FnOnce() -> bool,
+    may_commit: impl FnOnce() -> bool,
     sweep: bool,
 ) -> std::io::Result<()> {
     use std::io::Write;
@@ -125,7 +125,7 @@ fn write_staged(
         std::fs::set_permissions(&tmp, perms.clone())?;
     }
 
-    if !admit() {
+    if !may_commit() {
         let _ = std::fs::remove_file(&tmp);
         return Err(std::io::Error::new(
             std::io::ErrorKind::TimedOut,

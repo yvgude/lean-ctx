@@ -45,11 +45,15 @@ pub trait HiveConfigExt {
 }
 
 impl HiveConfigExt for HiveConfig {
+    /// The managed `hive.url` already overlays `url` on every config load
+    /// (`lean_ctx::core::config::managed`); a refused managed carrier refuses here.
     fn origin(&self) -> Result<String, HiveError> {
+        managed_carrier_ok()?;
         normalize_origin(self.url.as_deref().unwrap_or(HIVE_DEFAULT_URL))
     }
 
     fn root_key(&self, origin: &str) -> Result<[u8; 32], HiveError> {
+        managed_carrier_ok()?;
         let encoded = match (&self.root_key, origin == HIVE_DEFAULT_URL) {
             (Some(key), _) => key.as_str(),
             (None, true) => HOSTED_ROOT_KEYS.first().copied().ok_or_else(|| {
@@ -64,6 +68,46 @@ impl HiveConfigExt for HiveConfig {
             }
         };
         decode_key(encoded.trim(), "root_key")
+    }
+}
+
+/// A managed carrier that exists but was refused stops every Hive call.
+fn managed_carrier_ok() -> Result<(), HiveError> {
+    match lean_ctx::core::config::managed::current().as_deref() {
+        Some(managed) => match &managed.config {
+            Ok(_) => Ok(()),
+            Err(error) => Err(HiveError::Config(format!(
+                "the managed configuration ({}) is refused: {error}",
+                managed.location
+            ))),
+        },
+        None => Ok(()),
+    }
+}
+
+/// Why this machine's managed configuration forbids an enrollment with
+/// `org_id` at `origin` (`hive.org`, `hive.url`), if it does.
+pub fn managed_enrollment_refusal(org_id: &str, origin: &str) -> Option<HiveError> {
+    let managed = lean_ctx::core::config::managed::current()?;
+    enrollment_refusal(&managed, org_id, origin)
+}
+
+pub(crate) fn enrollment_refusal(
+    managed: &lean_ctx::core::config::managed::Managed,
+    org_id: &str,
+    origin: &str,
+) -> Option<HiveError> {
+    if let Some(refusal) = managed.org_refusal(org_id) {
+        return Some(HiveError::Config(refusal));
+    }
+    let url = managed.config.as_ref().ok()?.hive_url.as_deref()?;
+    match normalize_origin(url) {
+        Ok(managed_origin) if managed_origin == origin => None,
+        Ok(managed_origin) => Some(HiveError::Config(format!(
+            "{}: it connects only to {managed_origin}, not {origin}. Run `lean-ctx hive connect` again",
+            managed.manager()
+        ))),
+        Err(error) => Some(error),
     }
 }
 
@@ -127,6 +171,44 @@ mod tests {
         assert!(normalize_origin("https://user:pw@hive.example.com").is_err());
         assert!(normalize_origin("https://hive.example.com/v1").is_err());
         assert!(normalize_origin("ftp://hive.example.com").is_err());
+    }
+
+    #[test]
+    fn a_managed_machine_refuses_a_foreign_org_or_hive() {
+        use lean_ctx::core::config::managed::Managed;
+        use lean_ctx_protocol::hive::managed::{ManagedCarrierKindV1, ManagedConfigV1};
+        let managed = |members: serde_json::Value| Managed {
+            carrier: ManagedCarrierKindV1::LinuxFile,
+            location: "/etc/lean-ctx/managed.toml".into(),
+            config: ManagedConfigV1::from_members(members.as_object().expect("object"))
+                .map_err(|error| error.to_string()),
+        };
+        let refused = |managed: &Managed, org: &str, origin: &str| {
+            enrollment_refusal(managed, org, origin).map(|error| error.to_string())
+        };
+        let acme = managed(serde_json::json!({
+            "hive": {"org": "org_acme", "url": "https://hive.acme.example"}
+        }));
+        assert!(refused(&acme, "org_acme", "https://hive.acme.example").is_none());
+        let org = refused(&acme, "org_other", "https://hive.acme.example").expect("other org");
+        assert!(org.contains("managed by org_acme"), "{org}");
+        let hive = refused(&acme, "org_acme", "https://hive.other.example").expect("other Hive");
+        assert!(
+            hive.contains("connects only to https://hive.acme.example"),
+            "{hive}"
+        );
+
+        // Only the org is managed: any Hive of that org.
+        let org_only = managed(serde_json::json!({"hive": {"org": "org_acme"}}));
+        assert!(refused(&org_only, "org_acme", "https://hive.other.example").is_none());
+
+        // A refused carrier refuses every enrollment.
+        let broken = Managed {
+            config: Err("hive.require: not a boolean".into()),
+            ..org_only
+        };
+        let error = refused(&broken, "org_acme", "https://hive.acme.example").expect("refused");
+        assert!(error.contains("is refused"), "{error}");
     }
 
     #[test]

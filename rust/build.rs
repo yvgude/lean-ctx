@@ -173,6 +173,7 @@ fn stamp_build_info() {
         "GITHUB_REF",
         "GITHUB_SHA",
         "LEANCTX_BUILD_KIND",
+        "LEANCTX_BUILD_GIT_STAMP",
     ] {
         println!("cargo::rerun-if-env-changed={name}");
     }
@@ -208,6 +209,12 @@ fn build_info() -> (&'static str, Option<String>, bool) {
     if let Ok(vcs) = std::fs::read_to_string(".cargo_vcs_info.json") {
         return (requested.unwrap_or("source"), vcs_info_sha1(&vcs), false);
     }
+    // CI check jobs (warm build farm) opt out of the git stamp: a commit in
+    // the Engine's env rebuilds it and every dependent on each new commit and
+    // defeats the warm and the persistent target. A release build wins above.
+    if git_stamp_off() {
+        return (requested.unwrap_or("source"), None, false);
+    }
     if let Some(head) = git(&["rev-parse", "HEAD"]).filter(|s| is_commit(s)) {
         watch_git_head();
         let dirty = git(&[
@@ -231,6 +238,11 @@ fn build_info() -> (&'static str, Option<String>, bool) {
         return (kind, Some(head), dirty);
     }
     (requested.unwrap_or("source"), None, false)
+}
+
+/// `LEANCTX_BUILD_GIT_STAMP=off`: no commit, no dirty flag, no `HEAD` watch.
+fn git_stamp_off() -> bool {
+    std::env::var("LEANCTX_BUILD_GIT_STAMP").is_ok_and(|v| v == "off")
 }
 
 fn git(args: &[&str]) -> Option<String> {

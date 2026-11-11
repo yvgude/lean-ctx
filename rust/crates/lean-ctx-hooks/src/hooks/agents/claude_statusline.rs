@@ -37,7 +37,8 @@ pub fn install_claude_statusline(home: &std::path::Path) {
             _ => return,
         }
     };
-    let binary = resolve_hook_command_binary();
+    // Quoted when the path holds a space (Claude Code runs it through a shell).
+    let binary = crate::hooks::hook_binary_token(&resolve_hook_command_binary());
     match merge_statusline(&mut settings, &binary) {
         StatuslineMerge::Set => {
             write_file(

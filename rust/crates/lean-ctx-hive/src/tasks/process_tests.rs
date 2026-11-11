@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 /// The machine worker every session on a shared host appears as in Hive.
 const SHARED_WORKER: &str = "wkr_ic7yo2evmqb6zhrg6v23";
 
-fn task(state: &str, by: Value, process: Option<Value>, commit: &str) -> TaskV1 {
+fn task(state: &str, by: &Value, process: Option<Value>, commit: &str) -> TaskV1 {
     let mut task = json!({
         "schema": "leanctx.hive.task/v1",
         "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42",
@@ -106,7 +106,7 @@ fn refusal(err: HiveError) -> String {
 fn two_sessions_on_one_instance_verify_each_other() {
     let worker = session("mcp-100-worker", Some("ses-worker"));
     let reviewer = session("mcp-200-reviewer", Some("ses-reviewer"));
-    let submitted = task("submitted", this_instance(), None, "9f01cf32a3");
+    let submitted = task("submitted", &this_instance(), None, "9f01cf32a3");
     let t = trace(&worker.agent, Some(worker.clone()), None);
     checker_not_author(&submitted, &reviewer, Some(&t)).unwrap();
 }
@@ -114,7 +114,7 @@ fn two_sessions_on_one_instance_verify_each_other() {
 #[test]
 fn the_same_session_never_verifies_its_own_result() {
     let worker = session("mcp-100-worker", Some("ses-worker"));
-    let submitted = task("submitted", this_instance(), None, "9f01cf32a3");
+    let submitted = task("submitted", &this_instance(), None, "9f01cf32a3");
     let t = trace(&worker.agent, Some(worker.clone()), None);
     let text = refusal(checker_not_author(&submitted, &worker, Some(&t)).unwrap_err());
     assert!(text.starts_with("self_check"), "{text}");
@@ -155,7 +155,7 @@ fn no_per_session_identity_fails_closed() {
     );
     // A result of this Instance without a record of who submitted it is
     // never taken as "same agent", and never as someone else either.
-    let submitted = task("submitted", this_instance(), None, "9f01cf32a3");
+    let submitted = task("submitted", &this_instance(), None, "9f01cf32a3");
     let text = refusal(
         checker_not_author(&submitted, &session("mcp-200-reviewer", None), None).unwrap_err(),
     );
@@ -167,14 +167,14 @@ fn another_instance_or_a_person_is_someone_else() {
     let reviewer = session("mcp-200-reviewer", None);
     let other = json!({"kind": "instance", "label": "mac", "agent": SHARED_WORKER, "mine": false});
     checker_not_author(
-        &task("submitted", other, None, "9f01cf32a3"),
+        &task("submitted", &other, None, "9f01cf32a3"),
         &reviewer,
         None,
     )
     .unwrap();
     let person = json!({"kind": "person", "label": "Ada", "mine": false});
     checker_not_author(
-        &task("submitted", person, None, "9f01cf32a3"),
+        &task("submitted", &person, None, "9f01cf32a3"),
         &reviewer,
         None,
     )
@@ -182,13 +182,13 @@ fn another_instance_or_a_person_is_someone_else() {
     let unknown = json!({"kind": "robot", "label": "x", "mine": false});
     assert!(
         checker_not_author(
-            &task("submitted", unknown, None, "9f01cf32a3"),
+            &task("submitted", &unknown, None, "9f01cf32a3"),
             &reviewer,
             None
         )
         .is_err()
     );
-    assert!(checker_not_author(&task("open", Value::Null, None, ""), &reviewer, None).is_err());
+    assert!(checker_not_author(&task("open", &Value::Null, None, ""), &reviewer, None).is_err());
 }
 
 // --- submit -----------------------------------------------------------
@@ -196,7 +196,7 @@ fn another_instance_or_a_person_is_someone_else() {
 #[test]
 fn a_task_that_is_not_a_process_task_submits_as_before() {
     let (repo, spec) = spec_repo();
-    let open = task("claimed", Value::Null, None, "");
+    let open = task("claimed", &Value::Null, None, "");
     let none = submit_gate(
         &open,
         &repo.root,
@@ -213,7 +213,7 @@ fn a_task_that_is_not_a_process_task_submits_as_before() {
 #[test]
 fn submit_with_a_green_g6_carries_the_record() {
     let (repo, spec, head) = green_cargo_repo();
-    let t = task("claimed", Value::Null, Some(m_cargo_process(&spec)), "");
+    let t = task("claimed", &Value::Null, Some(m_cargo_process(&spec)), "");
     let record = submit_gate(
         &t,
         &repo.root,
@@ -236,7 +236,7 @@ fn submit_without_a_green_g6_is_refused() {
     // A changed locked test: fail, rule locked_paths_changed, the path named.
     repo.write("tests/refund.rs", "weakened\n");
     let head = repo.commit("weaken");
-    let t = task("claimed", Value::Null, Some(m_process(&spec, "true")), "");
+    let t = task("claimed", &Value::Null, Some(m_process(&spec, "true")), "");
     let text = refusal(
         submit_gate(
             &t,
@@ -255,7 +255,12 @@ fn submit_without_a_green_g6_is_refused() {
     // A red rerun.
     let (repo, spec) = spec_repo();
     let head = repo.commit("nothing");
-    let t = task("claimed", Value::Null, Some(m_process(&spec, "exit 1")), "");
+    let t = task(
+        "claimed",
+        &Value::Null,
+        Some(m_process(&spec, "exit 1")),
+        "",
+    );
     let text = refusal(
         submit_gate(
             &t,
@@ -293,7 +298,7 @@ fn a_view_without_what_g6_needs_is_not_supported_yet() {
         json!({"risk": "H", "spec_commit": spec, "test_command": "true"}),
         json!({"risk": "S"}),
     ] {
-        let t = task("claimed", Value::Null, Some(process), "");
+        let t = task("claimed", &Value::Null, Some(process), "");
         let start = trace("mcp-100-worker", None, Some(&spec));
         let text = refusal(
             submit_gate(
@@ -317,7 +322,7 @@ fn an_s_task_pins_the_claims_start_commit_and_runs_the_repo_command() {
     let head = repo.commit("fix");
     let t = task(
         "claimed",
-        Value::Null,
+        &Value::Null,
         Some(json!({"risk": "S", "repo_test_command": "true"})),
         "",
     );
@@ -356,7 +361,7 @@ fn g6_judges_the_commit_g4_passed() {
     let head = repo.commit("work");
     let mut process = m_process(&spec, "true");
     process["candidate_commit"] = spec.clone().into();
-    let t = task("claimed", Value::Null, Some(process), "");
+    let t = task("claimed", &Value::Null, Some(process), "");
     let text = refusal(
         submit_gate(
             &t,
@@ -420,7 +425,7 @@ fn verify_without_a_g6_record_is_refused() {
     let head = repo.commit("work");
     let t = task(
         "submitted",
-        this_instance(),
+        &this_instance(),
         Some(m_process(&spec, "true")),
         &head,
     );
@@ -435,7 +440,7 @@ fn verify_needs_a_green_record_of_the_judged_commit_with_locked_paths_intact() {
     process["g6"] = green_record(&repo, &spec, &head);
 
     // The happy path: green, same commit, locked paths unchanged.
-    let t = task("submitted", this_instance(), Some(process.clone()), &head);
+    let t = task("submitted", &this_instance(), Some(process.clone()), &head);
     verify_gate(&t, &repo.root, &work(&repo)).unwrap();
 
     // A red record.
@@ -444,7 +449,7 @@ fn verify_needs_a_green_record_of_the_judged_commit_with_locked_paths_intact() {
     red["g6"]["reason"] = "the run exited 1".into();
     red["g6"]["rerun"]["features"][0]["passes"] = false.into();
     red["g6"]["rerun"]["exit_code"] = 1.into();
-    let t = task("submitted", this_instance(), Some(red), &head);
+    let t = task("submitted", &this_instance(), Some(red), &head);
     assert!(
         refusal(verify_gate(&t, &repo.root, &work(&repo)).unwrap_err()).contains("green G6 record")
     );
@@ -452,7 +457,7 @@ fn verify_needs_a_green_record_of_the_judged_commit_with_locked_paths_intact() {
     // A record of another commit.
     repo.write("tests/refund.rs", "weakened after G6\n");
     let later = repo.commit("weaken");
-    let t = task("submitted", this_instance(), Some(process.clone()), &later);
+    let t = task("submitted", &this_instance(), Some(process.clone()), &later);
     assert!(refusal(verify_gate(&t, &repo.root, &work(&repo)).unwrap_err()).contains("judged"));
 
     // Locked paths changed in the judged commit: checked again before verify.
@@ -460,7 +465,7 @@ fn verify_needs_a_green_record_of_the_judged_commit_with_locked_paths_intact() {
     stale["g6"]["artifact"]["ref"] = later.clone().into();
     stale["g6"]["ci"]["commit"] = later.clone().into();
     stale["g6"]["rerun"]["commit"] = later.clone().into();
-    let t = task("submitted", this_instance(), Some(stale), &later);
+    let t = task("submitted", &this_instance(), Some(stale), &later);
     let text = refusal(verify_gate(&t, &repo.root, &work(&repo)).unwrap_err());
     assert!(text.contains("tests/refund.rs modified"), "{text}");
 }
@@ -493,7 +498,7 @@ fn a_checker_this_process_does_not_act_for_is_refused() {
 /// other checker: the same app session or the same registering process.
 #[test]
 fn a_re_registration_in_the_authors_session_is_the_author() {
-    let submitted = task("submitted", this_instance(), None, "9f01cf32a3");
+    let submitted = task("submitted", &this_instance(), None, "9f01cf32a3");
     let author = SessionIdentity {
         agent: "mcp-100-worker".into(),
         session: None,
@@ -559,7 +564,7 @@ fn verify_refuses_a_hive_record_without_green_ci() {
     let with = |g6: Value| {
         let mut process = m_cargo_process(&spec);
         process["g6"] = g6;
-        task("submitted", this_instance(), Some(process), &head)
+        task("submitted", &this_instance(), Some(process), &head)
     };
     verify_gate(&with(green.clone()), &repo.root, &work(&repo)).unwrap();
 
