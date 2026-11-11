@@ -1,0 +1,6 @@
+# crate demo
+# extractor textual-v1
+crate::Widget	pub struct Widget { .. }
+crate::Widget::new	impl Widget => pub fn new(size: u32) -> Self
+crate::Widget::resize	impl Widget => pub fn resize(&mut self, size: u32)
+crate::render	pub fn render(w: &Widget) -> String

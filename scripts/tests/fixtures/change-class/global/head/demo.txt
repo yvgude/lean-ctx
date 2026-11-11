@@ -1,0 +1,4 @@
+# crate demo
+# extractor textual-v1
+crate::Widget	pub struct Widget { .. }
+crate::Widget::new	impl Widget => pub fn new(size: u64) -> Self

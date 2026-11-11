@@ -1,0 +1,6 @@
+# Add to the config.toml in the CODEX_HOME that your T3 Code Codex instance
+# uses (default ~/.codex/config.toml). `lean-ctx init --agent codex` writes
+# the same section for ~/.codex.
+[mcp_servers.lean-ctx]
+command = "lean-ctx"
+args = []

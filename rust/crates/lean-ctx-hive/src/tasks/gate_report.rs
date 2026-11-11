@@ -1033,7 +1033,13 @@ pub(super) fn bin_sources(target: &Path, bin: &str) -> BTreeSet<String> {
     let Some(name) = Path::new(bin).file_name() else {
         return out;
     };
-    let mut file = name.to_os_string();
+    // rustc names the dep-info after the binary without `.exe` on Windows.
+    let suffix = std::env::consts::EXE_SUFFIX;
+    let mut file = name
+        .to_str()
+        .filter(|_| !suffix.is_empty())
+        .and_then(|n| n.strip_suffix(suffix))
+        .map_or_else(|| name.to_os_string(), std::ffi::OsString::from);
     file.push(".d");
     for profile in profile_dirs(target) {
         read_dep_file(&profile.join("deps").join(&file), &mut out);
@@ -1175,7 +1181,7 @@ fn rustc_root(tree: &Path, rel: &str) -> Option<String> {
 /// absolute and equal to it, or relative to its rustc root.
 pub(super) fn was_built(tree: &Path, rel: &str, built: &BTreeSet<String>) -> bool {
     let abs = tree.join(rel);
-    let canonical = std::fs::canonicalize(&abs).ok();
+    let canonical = super::run::resolved(&abs).ok();
     let as_rustc_sees = rustc_root(tree, rel).map(|root| {
         if root.is_empty() {
             rel.to_owned()
@@ -1189,6 +1195,9 @@ pub(super) fn was_built(tree: &Path, rel: &str, built: &BTreeSet<String>) -> boo
         let p = Path::new(token);
         if p.is_absolute() {
             p == abs || canonical.as_deref() == Some(p)
+        } else if cfg!(windows) {
+            // rustc writes `tests\x.rs` there: compared as paths.
+            as_rustc_sees.as_deref().map(Path::new) == Some(p)
         } else {
             as_rustc_sees.as_deref() == Some(token.as_str())
         }

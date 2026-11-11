@@ -1,0 +1,1060 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Classify the change between two commits as L (local), I (interface) or G (global).
+
+Usage:
+    scripts/change-class <base> <head> [--json | --verbose] [--repo DIR]
+                         [--base-snapshots DIR --head-snapshots DIR]
+                         [--dump-snapshots DIR]
+
+Classes (the highest one wins):
+    L  Local: no public item of a workspace crate changed.
+    I  Interface: public items were only added.
+    G  Global: a public item was removed or changed, or the change touches
+       Cargo.toml features or dependency tables (also workspace members,
+       patch/replace, profiles, edition), Cargo.lock, a crate build.rs, a Cargo
+       config, the scope register or a generated registry, the Rust toolchain
+       pin, or CI configuration.
+
+Output: by default stdout carries exactly one line, the class (`L`, `I` or
+`G`), so callers such as `$ECCP_CLASSIFIER <base> <head>` (scripts/eccp-envelope
+compares the whole stripped stdout) can read it as is; the reason lines go to
+stderr. --verbose prints the class on the first line of stdout and base, head
+and the reasons after it; --json prints one JSON object instead. The exit code is 0 whenever
+classification succeeded, whatever the class, and 2 when git fails.
+
+API snapshots
+-------------
+The API part compares two snapshot directories: one ``<crate>.txt`` per
+workspace crate, one public item per line, sorted. Lines starting with ``#``
+and empty lines are ignored. A line may be ``key<TAB>signature``; the key only
+lets the report tell a changed item from a removed one. Otherwise lines are
+opaque, so any producer of this format (the public-API snapshot of task 155,
+or normalized ``cargo public-api`` output) can replace the built-in extractor:
+pass its output directories with --base-snapshots/--head-snapshots.
+
+Without snapshot directories the script extracts the snapshots itself, from
+the git objects of both commits (no checkout, no compilation, no nightly), and
+only for the crates whose files the change touches.
+
+Built-in textual extractor (textual-v1)
+---------------------------------------
+It follows the module tree from each crate's library root (``mod x;`` to
+``x.rs``/``x/mod.rs``, ``#[path]``, inline modules), skips every item and
+module under ``#[cfg(test)]``/``#[cfg(all(test, ..))]``, and records items
+declared plainly ``pub`` (never ``pub(crate)``/``pub(super)``/``pub(in ..)``)
+in modules reachable as public: fn, struct (pub fields), union, enum (all
+variants), trait (required items in the trait line, provided items on their
+own lines), type, const, static (type, not value), mod, ``pub use`` (expanded
+use trees), ``extern crate``, ``#[macro_export]`` macros, derives, trait impl
+headers and ``pub`` inherent methods of the recorded public types. ``cfg``
+attributes are kept as a prefix of the line. A change of an exhaustive enum's
+variants, of an exhaustive all-pub struct's fields or of a trait's required
+items rewrites the item's line, which counts as a change (G); the matching
+non-exhaustive forms and provided trait items get one line per member, so
+additions there count as I.
+
+Known gaps (each errs towards missing an API change, never towards a false G
+for an unchanged item, except the over-inclusions noted):
+  * Items produced by macros, ``include!``, build scripts or proc macros.
+  * Re-exports are recorded as ``use`` lines, not resolved to the items they
+    name. A private module counts as public when its parent ``pub use``s a
+    path starting with it (the whole module is then included, an
+    over-inclusion); re-exports from elsewhere (``pub use crate::a::b::X`` in
+    another module, ``super::`` paths) are not followed.
+  * Impl blocks are attributed by the bare type name, so a private type
+    sharing a public type's name adds its methods (over-inclusion).
+  * ``#[path]`` inside inline modules is resolved relative to the inline
+    module's directory; glob workspace members are not expanded.
+  * Nested block comments (``/* /* */ */``) end at the first ``*/``.
+  * Semver effects the text does not show: auto traits (Send/Sync), const
+    values, ``impl Trait`` return types' hidden bounds, private-field-only
+    changes (beyond turning a struct non-exhaustive), cfg evaluation.
+  * Only members of rust/Cargo.toml's workspace are snapshotted; manifests
+    outside it still count for the dependency rule.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import posixpath
+import re
+import subprocess
+import sys
+import tomllib
+
+EXTRACTOR = "textual-v1"
+SCHEMA = "leanctx.change-class.v1"
+WORKSPACE_MANIFEST = "rust/Cargo.toml"
+REPORT_ITEMS = 25
+
+# --------------------------------------------------------------------------
+# Path rules for G that do not depend on the API.
+
+G_PATH_RULES = [
+    (re.compile(r"(^|/)rust-toolchain(\.toml)?$"), "Rust toolchain pin"),
+    (
+        re.compile(r"^(ci/|ee/ci/|\.github/workflows/|\.gitlab/)|(^|/)\.gitlab-ci\.yml$"),
+        "CI configuration",
+    ),
+    (re.compile(r"(^|/)\.cargo/config(\.toml)?$"), "Cargo build configuration"),
+    (re.compile(r"(^|/)Cargo\.lock$"), "dependency lockfile"),
+    (
+        re.compile(r"^ee/delivery/(FEATURE_SCOPE_REGISTER\.csv|tools/scope_register\.py)$"),
+        "scope register",
+    ),
+    (re.compile(r"^rust/data/[^/]*_registry\.json$"), "generated registry"),
+    (re.compile(r"^docs/reference/generated/"), "generated registry"),
+    (re.compile(r"^rust/(CRATE_MAP\.toml|crate_boundary_baseline\.json)$"), "crate registry"),
+]
+
+MANIFEST_DEP_KEYS = ("dependencies", "dev-dependencies", "build-dependencies")
+MANIFEST_TOP_KEYS = MANIFEST_DEP_KEYS + ("features", "patch", "replace", "profile")
+
+
+def manifest_sections(doc: dict) -> dict:
+    """The manifest tables whose change is global."""
+    out = {}
+    for key in MANIFEST_TOP_KEYS:
+        if key in doc:
+            out[key] = doc[key]
+    for target, table in sorted(doc.get("target", {}).items()):
+        for key in MANIFEST_DEP_KEYS:
+            if isinstance(table, dict) and key in table:
+                out[f"target.{target}.{key}"] = table[key]
+    package = doc.get("package", {})
+    for key in ("edition", "rust-version", "links", "build"):
+        if key in package:
+            out[f"package.{key}"] = package[key]
+    workspace = doc.get("workspace", {})
+    for key in ("dependencies", "members", "default-members", "exclude"):
+        if key in workspace:
+            out[f"workspace.{key}"] = workspace[key]
+    for key in ("edition", "rust-version"):
+        if key in workspace.get("package", {}):
+            out[f"workspace.package.{key}"] = workspace["package"][key]
+    return out
+
+
+# --------------------------------------------------------------------------
+# Source trees.
+
+
+def git(repo: str, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", repo, *args], check=True, capture_output=True, text=True
+    ).stdout
+
+
+class GitTree:
+    """Read-only view of one commit's files through `git cat-file --batch`."""
+
+    def __init__(self, repo: str, rev: str):
+        self.repo = repo
+        self.rev = git(repo, "rev-parse", "--verify", f"{rev}^{{commit}}").strip()
+        self._proc = None
+        self._files = None
+
+    def read(self, path: str) -> str | None:
+        if self._proc is None:
+            self._proc = subprocess.Popen(
+                ["git", "-C", self.repo, "cat-file", "--batch"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+            )
+        self._proc.stdin.write(f"{self.rev}:{path}\n".encode())
+        self._proc.stdin.flush()
+        header = self._proc.stdout.readline().decode().split()
+        if len(header) < 3:
+            return None
+        size = int(header[2])
+        data = self._proc.stdout.read(size)
+        self._proc.stdout.read(1)
+        if header[1] != "blob":
+            return None
+        return data.decode("utf-8", "replace")
+
+    def files(self) -> set[str]:
+        if self._files is None:
+            out = git(self.repo, "ls-tree", "-r", "--name-only", "-z", self.rev)
+            self._files = {p for p in out.split("\0") if p}
+        return self._files
+
+    def close(self) -> None:
+        if self._proc is not None:
+            self._proc.stdin.close()
+            self._proc.wait()
+            self._proc.stdout.close()
+            self._proc = None
+
+
+class FsTree:
+    """The same interface over a directory (tests, working trees)."""
+
+    def __init__(self, root: str):
+        self.root = root
+
+    def read(self, path: str) -> str | None:
+        try:
+            with open(os.path.join(self.root, path), encoding="utf-8", errors="replace") as fh:
+                return fh.read()
+        except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
+            return None
+
+    def close(self) -> None:
+        pass
+
+
+def workspace_crates(tree) -> dict[str, dict]:
+    """Package name -> {dir, lib} for every member of the Rust workspace."""
+    text = tree.read(WORKSPACE_MANIFEST)
+    if text is None:
+        return {}
+    root = posixpath.dirname(WORKSPACE_MANIFEST)
+    crates = {}
+    for member in tomllib.loads(text).get("workspace", {}).get("members", []):
+        cdir = posixpath.normpath(posixpath.join(root, member))
+        manifest = tree.read(f"{cdir}/Cargo.toml")
+        if manifest is None:
+            continue
+        doc = tomllib.loads(manifest)
+        name = doc.get("package", {}).get("name")
+        if not name:
+            continue
+        lib = doc.get("lib", {}).get("path", "src/lib.rs")
+        crates[name] = {"dir": cdir, "lib": posixpath.normpath(posixpath.join(cdir, lib))}
+    return crates
+
+
+def crate_of(path: str, crates: dict[str, dict]) -> str | None:
+    best, best_len = None, -1
+    for name, info in crates.items():
+        prefix = info["dir"] + "/"
+        if path.startswith(prefix) and len(prefix) > best_len:
+            best, best_len = name, len(prefix)
+    return best
+
+
+# --------------------------------------------------------------------------
+# Textual extractor.
+
+_STRIP_RE = re.compile(
+    r"""
+    (?P<line>//[^\n]*)
+  | (?P<block>/\*[\s\S]*?\*/)
+  | (?<![\w])(?P<raw>b?r(?P<hashes>\#*)"[\s\S]*?"(?P=hashes))
+  | (?<![\w])(?P<str>[bc]?"(?:[^"\\]|\\[\s\S])*")
+  | (?<![\w])(?P<chr>b?'(?:[^'\\\n]|\\(?:x[0-9a-fA-F]{2}|u\{[0-9a-fA-F]{1,6}\}|[^\n]))')
+    """,
+    re.X,
+)
+_SAFE_RE = re.compile(r"[^A-Za-z0-9_.\-/+:@=, ]")
+_TOK_RE = re.compile(
+    r"""\s*(r\#\w+|[A-Za-z_]\w*|'\w+|\d[\w.]*|"[^"]*"|::|->|=>|\.\.=|\.\.\.|\.\.|\S)"""
+)
+_IDENT_RE = re.compile(r"(r#)?[A-Za-z_]\w*$")
+_TEST_CFG_RE = re.compile(r"cfg\((all\()?test\b")
+_PATH_ATTR_RE = re.compile(r'path = "(.*)"$')
+
+OPEN = {"(", "[", "{"}
+CLOSE = {")", "]", "}"}
+NO_SPACE_BEFORE = {",", ";", ")", "]", ">", "::", "?", ".", ":", "(", "<"}
+NO_SPACE_AFTER = {"(", "[", "<", "::", "&", "#", ".", "*"}
+TRAILING_COMMA_BEFORE = {")", "]", "}", ">", "{", "where"}
+
+
+def _strip_sub(m: re.Match) -> str:
+    if m.group("line") is not None or m.group("block") is not None:
+        return " "
+    if m.group("chr") is not None:
+        return "0"
+    s = m.group("raw") or m.group("str")
+    body = s[s.index('"') + 1 : s.rindex('"')]
+    return '"' + _SAFE_RE.sub("_", body) + '"'
+
+
+def strip_source(src: str) -> str:
+    """Comments removed, strings sanitized (no quotes/braces inside), chars as 0."""
+    return _STRIP_RE.sub(_strip_sub, src)
+
+
+def brace_map(text: str) -> dict[int, int]:
+    close, stack = {}, []
+    for m in re.finditer(r"[{}]", text):
+        if m.group() == "{":
+            stack.append(m.start())
+        elif stack:
+            close[stack.pop()] = m.start()
+    for start in stack:
+        close[start] = len(text)
+    return close
+
+
+def join(tokens) -> str:
+    """Tokens as one normalized line; trailing commas (a rustfmt choice) dropped."""
+    tokens = list(tokens)
+    out, prev = [], None
+    for idx, tok in enumerate(tokens):
+        if tok == "," and (idx + 1 == len(tokens) or tokens[idx + 1] in TRAILING_COMMA_BEFORE):
+            continue
+        if out and tok not in NO_SPACE_BEFORE and prev not in NO_SPACE_AFTER:
+            out.append(" ")
+        out.append(tok)
+        prev = tok
+    return "".join(out)
+
+
+class Lexer:
+    __slots__ = ("text", "close", "pos", "end", "tok_start")
+
+    def __init__(self, text: str, close: dict, pos: int, end: int):
+        self.text, self.close, self.pos, self.end = text, close, pos, end
+        self.tok_start = pos
+
+    def next(self) -> str | None:
+        if self.pos >= self.end:
+            return None
+        m = _TOK_RE.match(self.text, self.pos, self.end)
+        if m is None:
+            self.pos = self.end
+            return None
+        self.tok_start, self.pos = m.start(1), m.end()
+        return m.group(1)
+
+    def peek(self) -> str | None:
+        pos, start = self.pos, self.tok_start
+        tok = self.next()
+        self.pos, self.tok_start = pos, start
+        return tok
+
+    def skip_brace(self) -> None:
+        """After next() returned '{': continue behind its matching '}'."""
+        self.pos = self.close.get(self.tok_start, self.end) + 1
+
+    def sub(self) -> "Lexer":
+        """After next() returned '{': a lexer over its contents; skip past it."""
+        end = self.close.get(self.tok_start, self.end)
+        inner = Lexer(self.text, self.close, self.pos, min(end, self.end))
+        self.pos = end + 1
+        return inner
+
+    def rest(self) -> list[str]:
+        toks = []
+        while (tok := self.next()) is not None:
+            toks.append(tok)
+        return toks
+
+
+def collect_group(lx: Lexer) -> list[str]:
+    """After an opening bracket: the tokens up to its matching close."""
+    depth, toks = 1, []
+    while (tok := lx.next()) is not None:
+        if tok in OPEN:
+            depth += 1
+        elif tok in CLOSE:
+            depth -= 1
+            if depth == 0:
+                break
+        toks.append(tok)
+    return toks
+
+
+def read_head(lx: Lexer) -> tuple[list[str], str | None]:
+    """Tokens of an item head up to ';' or '{' outside any bracket."""
+    toks, depth = [], 0
+    while (tok := lx.next()) is not None:
+        if depth == 0 and tok in (";", "{"):
+            return toks, tok
+        if depth == 0 and tok == "}":
+            return toks, None
+        if tok in OPEN:
+            depth += 1
+        elif tok in CLOSE:
+            depth -= 1
+        toks.append(tok)
+    return toks, None
+
+
+def read_to_semicolon(lx: Lexer) -> list[str]:
+    toks, depth = [], 0
+    while (tok := lx.next()) is not None:
+        if depth == 0 and tok == ";":
+            break
+        if tok in OPEN:
+            depth += 1
+        elif tok in CLOSE:
+            depth -= 1
+        toks.append(tok)
+    return toks
+
+
+def read_attrs_vis(lx: Lexer) -> tuple[list[str], str | None]:
+    attrs = []
+    while lx.peek() == "#":
+        lx.next()
+        inner = lx.peek() == "!"
+        if inner:
+            lx.next()
+        if lx.next() != "[":
+            break
+        toks = collect_group(lx)
+        if not inner:
+            attrs.append(join(toks))
+    vis = None
+    if lx.peek() == "pub":
+        lx.next()
+        vis = "pub"
+        if lx.peek() == "(":
+            lx.next()
+            collect_group(lx)
+            vis = "restricted"
+    return attrs, vis
+
+
+def split_top(tokens: list[str], sep: str = ",") -> list[list[str]]:
+    parts, cur, depth, angle = [], [], 0, 0
+    for tok in tokens:
+        if tok in OPEN:
+            depth += 1
+        elif tok in CLOSE:
+            depth -= 1
+        elif tok == "<":
+            angle += 1
+        elif tok == ">" and angle > 0:
+            angle -= 1
+        if tok == sep and depth == 0 and angle == 0:
+            parts.append(cur)
+            cur = []
+        else:
+            cur.append(tok)
+    if cur:
+        parts.append(cur)
+    return parts
+
+
+def take_attrs(tokens: list[str]) -> tuple[list[str], list[str]]:
+    attrs, i = [], 0
+    while i + 1 < len(tokens) and tokens[i] == "#" and tokens[i + 1] == "[":
+        depth, j = 0, i + 1
+        while j < len(tokens):
+            if tokens[j] in OPEN:
+                depth += 1
+            elif tokens[j] in CLOSE:
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        attrs.append(join(tokens[i + 2 : j]))
+        i = j + 1
+    return attrs, tokens[i:]
+
+
+def take_vis(tokens: list[str]) -> tuple[str | None, list[str]]:
+    if tokens and tokens[0] == "pub":
+        if (
+            len(tokens) > 2
+            and tokens[1] == "("
+            and tokens[2] in ("crate", "self", "super", "in")
+        ):
+            depth, j = 0, 1
+            while j < len(tokens):
+                if tokens[j] == "(":
+                    depth += 1
+                elif tokens[j] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            return "restricted", tokens[j + 1 :]
+        return "pub", tokens[1:]
+    return None, tokens
+
+
+def is_test(attrs) -> bool:
+    return any(_TEST_CFG_RE.match(a) for a in attrs)
+
+
+def cfgs(attrs) -> tuple[str, ...]:
+    return tuple(a for a in attrs if a.startswith("cfg("))
+
+
+def cfg_prefix(cfg) -> str:
+    return "".join(f"#[{c}] " for c in cfg)
+
+
+ITEM_KEYWORDS = {"fn", "struct", "enum", "trait", "type", "static", "mod", "use", "impl", "macro_rules"}
+
+
+def item_kind(head: list[str]) -> tuple[str | None, int]:
+    i, saw_extern = 0, False
+    while i < len(head):
+        tok = head[i]
+        nxt = head[i + 1] if i + 1 < len(head) else None
+        if tok == "const":
+            if nxt in ("fn", "unsafe", "async", "extern"):
+                i += 1
+                continue
+            return "const", i
+        if tok == "extern":
+            if nxt == "crate":
+                return "extern crate", i
+            saw_extern = True
+            i += 1
+            if i < len(head) and head[i].startswith('"'):
+                i += 1
+            continue
+        if tok in ("default", "unsafe", "async", "auto", "safe"):
+            i += 1
+            continue
+        if tok in ITEM_KEYWORDS:
+            return tok, i
+        if tok == "union" and nxt is not None and _IDENT_RE.match(nxt):
+            return "union", i
+        return None, i
+    return ("extern block" if saw_extern else None), i
+
+
+def expand_use(tokens: list[str]) -> list[str]:
+    out = []
+
+    def rec(prefix: str, toks: list[str]) -> None:
+        depth = 0
+        for idx, tok in enumerate(toks):
+            if tok == "{" and depth == 0:
+                inner = toks[idx + 1 : -1] if toks[-1] == "}" else toks[idx + 1 :]
+                for part in split_top(inner):
+                    if part:
+                        rec(prefix + join(toks[:idx]), part)
+                return
+            if tok in OPEN:
+                depth += 1
+            elif tok in CLOSE:
+                depth -= 1
+        out.append(prefix + join(toks))
+
+    rec("", tokens)
+    return out
+
+
+def type_name(tokens: list[str]) -> str | None:
+    name, angle = None, 0
+    for tok in tokens:
+        if tok == "<":
+            if angle == 0 and name is not None:
+                break
+            angle += 1
+        elif tok == ">":
+            angle -= 1
+        elif angle == 0 and _IDENT_RE.match(tok) and tok not in ("mut", "dyn", "const"):
+            name = tok
+        elif angle == 0 and tok in ("(", "["):
+            return None
+    return name
+
+
+def split_impl_head(head: list[str]):
+    """impl head -> (trait tokens or None, self type tokens)."""
+    i = head.index("impl") + 1
+    if i < len(head) and head[i] == "<":
+        angle = 0
+        while i < len(head):
+            if head[i] == "<":
+                angle += 1
+            elif head[i] == ">":
+                angle -= 1
+                if angle == 0:
+                    i += 1
+                    break
+            i += 1
+    rest, angle = [], 0
+    for tok in head[i:]:
+        if tok == "where" and angle == 0:
+            break
+        if tok == "<":
+            angle += 1
+        elif tok == ">":
+            angle -= 1
+        rest.append(tok)
+    angle = 0
+    for j, tok in enumerate(rest):
+        if tok == "<":
+            angle += 1
+        elif tok == ">":
+            angle -= 1
+        elif tok == "for" and angle == 0 and j > 0:
+            return rest[:j], rest[j + 1 :]
+    return None, rest
+
+
+class Ctx:
+    __slots__ = ("path", "public", "cfg", "child_dir", "file_dir", "root")
+
+    def __init__(self, path, public, cfg, child_dir, file_dir, root=False):
+        self.path, self.public, self.cfg = path, public, cfg
+        self.child_dir, self.file_dir, self.root = child_dir, file_dir, root
+
+
+class Extractor:
+    """Public items of one crate as sorted `key<TAB>signature` lines."""
+
+    def __init__(self, tree, lib: str):
+        self.tree, self.lib = tree, lib
+        self.lines: set[str] = set()
+        self.pub_types: set[str] = set()
+        self.pending: list[tuple[str, str]] = []
+        self.seen: set[str] = set()
+
+    def run(self) -> list[str]:
+        self.parse_file(self.lib, ["crate"], True, (), root=True)
+        for tyname, line in self.pending:
+            if tyname in self.pub_types:
+                self.lines.add(line)
+        return sorted(self.lines)
+
+    def emit(self, ctx: Ctx, key: str, sig: str, attrs=()) -> None:
+        cfg = ctx.cfg + cfgs(attrs)
+        self.lines.add(f"{'::'.join(ctx.path)}::{key}\t{cfg_prefix(cfg)}{sig}")
+
+    def parse_file(self, path: str, modpath, public, cfg, root=False) -> bool:
+        if path in self.seen:
+            return True
+        src = self.tree.read(path)
+        if src is None:
+            return False
+        self.seen.add(path)
+        text = strip_source(src)
+        file_dir = posixpath.dirname(path)
+        base = posixpath.basename(path)
+        if root or base in ("lib.rs", "main.rs", "mod.rs"):
+            child_dir = file_dir
+        else:
+            child_dir = posixpath.join(file_dir, base[:-3] if base.endswith(".rs") else base)
+        lx = Lexer(text, brace_map(text), 0, len(text))
+        self.parse_mod(lx, Ctx(modpath, public, cfg, child_dir, file_dir, root))
+        return True
+
+    def parse_mod(self, lx: Lexer, ctx: Ctx) -> None:
+        children, reexports = [], set()
+        while (tok := lx.peek()) is not None:
+            if tok == ";":
+                lx.next()
+                continue
+            attrs, vis = read_attrs_vis(lx)
+            if lx.peek() == "use":
+                lx.next()
+                toks = read_to_semicolon(lx)
+                if vis == "pub" and not is_test(attrs):
+                    for path in expand_use(toks):
+                        segs = path.split("::")
+                        first = segs[0]
+                        if len(segs) > 1 and (first == "self" or (first == "crate" and ctx.root)):
+                            first = segs[1]
+                        reexports.add(first)
+                        if ctx.public:
+                            self.emit(ctx, f"use {path}", f"pub use {path}", attrs)
+                continue
+            head, term = read_head(lx)
+            if not head and term is None:
+                break
+            kind, ki = item_kind(head)
+            offset = 2 if kind == "macro_rules" else 1  # macro_rules ! name
+            name = head[ki + offset] if kind and ki + offset < len(head) else ""
+            sub = None
+            if term == "{":
+                if kind in ("struct", "union", "enum", "trait", "impl", "mod", "extern block"):
+                    sub = lx.sub()
+                else:
+                    lx.skip_brace()
+                    if kind in ("const", "static", "type"):
+                        head = head + ["{", "}"] + read_to_semicolon(lx)
+                    elif kind is None and lx.peek() == ";":
+                        lx.next()
+            if kind is None or is_test(attrs):
+                continue
+            exported = vis == "pub" and ctx.public
+            if kind == "mod":
+                children.append((name, vis, attrs, sub))
+            elif kind == "impl":
+                if sub is not None:
+                    self.parse_impl(sub, ctx, head, attrs)
+            elif kind == "extern block":
+                if sub is not None:
+                    self.parse_mod(sub, ctx)
+            elif kind == "macro_rules":
+                if "macro_export" in attrs:
+                    self.lines.add(f"crate::{name}!\tmacro_rules! {name}")
+            elif not exported:
+                continue
+            elif kind == "fn":
+                self.emit(ctx, name, join(["pub"] + head), attrs)
+            elif kind in ("const", "static"):
+                sig = head[: head.index("=")] if "=" in head else head
+                self.emit(ctx, name, join(["pub"] + sig), attrs)
+            elif kind in ("type", "extern crate"):
+                self.emit(ctx, name if kind == "type" else join(head), join(["pub"] + head), attrs)
+            elif kind in ("struct", "union"):
+                self.emit_struct(ctx, name, attrs, head, sub)
+            elif kind == "enum":
+                self.emit_enum(ctx, name, attrs, head, sub)
+            elif kind == "trait":
+                self.emit_trait(ctx, name, attrs, head, sub)
+        for name, vis, attrs, sub in children:
+            public = ctx.public and (vis == "pub" or name in reexports)
+            if public and vis == "pub":
+                self.emit(ctx, name, f"pub mod {name}", attrs)
+            cfg = ctx.cfg + cfgs(attrs)
+            path = ctx.path + [name]
+            if sub is not None:
+                child_dir = posixpath.join(ctx.child_dir, name)
+                self.parse_mod(sub, Ctx(path, public, cfg, child_dir, child_dir))
+                continue
+            explicit = next((m.group(1) for a in attrs if (m := _PATH_ATTR_RE.match(a))), None)
+            if explicit is not None:
+                candidates = [posixpath.normpath(posixpath.join(ctx.file_dir, explicit))]
+            else:
+                candidates = [
+                    posixpath.join(ctx.child_dir, f"{name}.rs"),
+                    posixpath.join(ctx.child_dir, name, "mod.rs"),
+                ]
+            if not any(self.parse_file(c, path, public, cfg) for c in candidates) and public:
+                self.emit(ctx, name, f"!unresolved module {name}", attrs)
+
+    def emit_struct(self, ctx, name, attrs, head, sub) -> None:
+        self.pub_types.add(name)
+        self.emit_derives(ctx, name, attrs)
+        non_exhaustive = "non_exhaustive" in attrs
+        marker = "#[non_exhaustive] " if non_exhaustive else ""
+        if "(" in head:
+            # Tuple struct: private positional fields show as `_`.
+            open_at = head.index("(")
+            depth, close_at = 0, len(head)
+            for j in range(open_at, len(head)):
+                if head[j] in OPEN:
+                    depth += 1
+                elif head[j] in CLOSE:
+                    depth -= 1
+                    if depth == 0:
+                        close_at = j
+                        break
+            fields = []
+            for field in split_top(head[open_at + 1 : close_at]):
+                fattrs, rest = take_attrs(field)
+                fvis, rest = take_vis(rest)
+                fields.append(join(["pub"] + rest) if fvis == "pub" else "_")
+            head = head[: open_at + 1] + [", ".join(fields)] + head[close_at:]
+        sig = marker + join(["pub"] + head)
+        if sub is None:
+            self.emit(ctx, name, sig, attrs)
+            return
+        fields, private = [], False
+        for field in split_top(sub.rest()):
+            fattrs, rest = take_attrs(field)
+            if not rest or is_test(fattrs):
+                continue
+            fvis, rest = take_vis(rest)
+            if fvis == "pub" and rest:
+                fields.append((rest[0], cfg_prefix(cfgs(fattrs)) + join(["pub"] + rest)))
+            else:
+                private = True
+        if private or non_exhaustive:
+            self.emit(ctx, name, sig + " { .. }", attrs)
+            for fname, fsig in fields:
+                self.emit(ctx, f"{name}.{fname}", fsig, attrs)
+        else:
+            self.emit(ctx, name, sig + " { " + ", ".join(f for _, f in fields) + " }", attrs)
+
+    def emit_enum(self, ctx, name, attrs, head, sub) -> None:
+        self.pub_types.add(name)
+        self.emit_derives(ctx, name, attrs)
+        variants = []
+        for part in split_top(sub.rest() if sub else []):
+            vattrs, rest = take_attrs(part)
+            if rest and not is_test(vattrs):
+                variants.append(cfg_prefix(cfgs(vattrs)) + join(rest))
+        sig = join(["pub"] + head)
+        if "non_exhaustive" in attrs:
+            self.emit(ctx, name, "#[non_exhaustive] " + sig + " { .. }", attrs)
+            for variant in variants:
+                vname = variant.split("#] ")[-1].split("(")[0].split(" ")[0]
+                self.emit(ctx, f"{name}::{vname}", variant, attrs)
+        else:
+            self.emit(ctx, name, sig + " { " + ", ".join(variants) + " }", attrs)
+
+    def emit_derives(self, ctx, name, attrs) -> None:
+        for attr in attrs:
+            if attr.startswith("derive("):
+                for trait in attr[len("derive(") : -1].split(","):
+                    trait = trait.strip()
+                    if trait:
+                        self.emit(ctx, f"{name} derive {trait}", f"derive({trait})", attrs)
+
+    def emit_trait(self, ctx, name, attrs, head, sub) -> None:
+        self.pub_types.add(name)
+        required = []
+        for iattrs, ihead, iterm, ikind, iname in self.members(sub):
+            prefix = cfg_prefix(cfgs(iattrs))
+            if ikind in ("const", "type"):
+                provided = "=" in ihead
+                sig = ihead[: ihead.index("=")] if provided else ihead
+            else:
+                provided = iterm == "{"
+                sig = ihead
+            if provided:
+                self.emit(ctx, f"{name}::{iname}", prefix + join(sig) + " (provided)", attrs)
+            else:
+                required.append(prefix + join(sig))
+        body = "; ".join(sorted(required))
+        self.emit(ctx, name, join(["pub"] + head) + " { " + body + " }", attrs)
+
+    def parse_impl(self, sub, ctx, head, attrs) -> None:
+        trait, self_ty = split_impl_head(head)
+        tyname = type_name(self_ty)
+        if tyname is None:
+            return
+        cfg = ctx.cfg + cfgs(attrs)
+        modpath = "::".join(ctx.path)
+        impl_sig = join(head)
+        if trait is not None:
+            self.pending.append(
+                (tyname, f"{modpath}::{tyname} impl {join(trait)}\t{cfg_prefix(cfg)}{impl_sig}")
+            )
+            return
+        for iattrs, ihead, _iterm, ikind, iname in self.members(sub, need_pub=True):
+            sig = ihead[: ihead.index("=")] if ikind == "const" and "=" in ihead else ihead
+            line_cfg = cfg_prefix(cfg + cfgs(iattrs))
+            self.pending.append(
+                (tyname, f"{modpath}::{tyname}::{iname}\t{line_cfg}{impl_sig} => pub {join(sig)}")
+            )
+
+    def members(self, lx: Lexer | None, need_pub: bool = False):
+        """Associated items of a trait or impl body."""
+        if lx is None:
+            return
+        while (tok := lx.peek()) is not None:
+            if tok == ";":
+                lx.next()
+                continue
+            attrs, vis = read_attrs_vis(lx)
+            head, term = read_head(lx)
+            if not head and term is None:
+                break
+            kind, ki = item_kind(head)
+            if term == "{":
+                lx.skip_brace()
+                if kind in ("const", "type"):
+                    head = head + ["{", "}"] + read_to_semicolon(lx)
+                elif kind is None and lx.peek() == ";":
+                    lx.next()
+            if kind not in ("fn", "const", "type") or is_test(attrs):
+                continue
+            if need_pub and vis != "pub":
+                continue
+            name = head[ki + 1] if ki + 1 < len(head) else ""
+            yield attrs, head, term, kind, name
+
+
+def extract_crate(tree, lib: str) -> list[str]:
+    return Extractor(tree, lib).run()
+
+
+def snapshot_text(crate: str, lines: list[str]) -> str:
+    return f"# crate {crate}\n# extractor {EXTRACTOR}\n" + "".join(f"{line}\n" for line in lines)
+
+
+# --------------------------------------------------------------------------
+# Classification.
+
+
+def read_snapshot_dir(path: str) -> dict[str, set[str]]:
+    out = {}
+    for name in sorted(os.listdir(path)):
+        if not name.endswith(".txt"):
+            continue
+        with open(os.path.join(path, name), encoding="utf-8") as fh:
+            out[name[:-4]] = {
+                line.rstrip("\n") for line in fh if line.strip() and not line.startswith("#")
+            }
+    return out
+
+
+def diff_api(base: dict[str, set[str]], head: dict[str, set[str]]) -> dict[str, dict]:
+    out = {}
+    for crate in sorted(set(base) | set(head)):
+        old, new = base.get(crate, set()), head.get(crate, set())
+        removed, added = sorted(old - new), sorted(new - old)
+        if not removed and not added:
+            continue
+        key = lambda line: line.split("\t", 1)[0]  # noqa: E731
+        changed = sorted({key(l) for l in removed} & {key(l) for l in added})
+        out[crate] = {"added": added, "removed": removed, "changed": changed}
+    return out
+
+
+def api_reasons(api: dict[str, dict]) -> list[dict]:
+    reasons = []
+    for crate, delta in api.items():
+        changed = set(delta["changed"])
+        removed = [l for l in delta["removed"] if l.split("\t", 1)[0] not in changed]
+        added = [l for l in delta["added"] if l.split("\t", 1)[0] not in changed]
+        if changed:
+            reasons.append(
+                {"class": "G", "reason": f"crate {crate}: {len(changed)} public item(s) changed",
+                 "items": sorted(changed)[:REPORT_ITEMS]}
+            )
+        if removed:
+            reasons.append(
+                {"class": "G", "reason": f"crate {crate}: {len(removed)} public item(s) removed",
+                 "items": [l.split("\t", 1)[0] for l in removed][:REPORT_ITEMS]}
+            )
+        if added:
+            reasons.append(
+                {"class": "I", "reason": f"crate {crate}: {len(added)} public item(s) added",
+                 "items": [l.split("\t", 1)[0] for l in added][:REPORT_ITEMS]}
+            )
+    return reasons
+
+
+def path_reasons(changed: list[str], base, head) -> list[dict]:
+    reasons = []
+    manifests_needed = [p for p in changed if posixpath.basename(p) == "build.rs"]
+    crate_roots = set()
+    if manifests_needed:
+        for tree in (base, head):
+            crate_roots |= {
+                posixpath.dirname(p) for p in tree.files() if posixpath.basename(p) == "Cargo.toml"
+            }
+    for path in changed:
+        for pattern, label in G_PATH_RULES:
+            if pattern.search(path):
+                reasons.append({"class": "G", "reason": f"{label}: {path}"})
+                break
+        else:
+            if posixpath.basename(path) == "build.rs" and posixpath.dirname(path) in crate_roots:
+                reasons.append({"class": "G", "reason": f"build script: {path}"})
+            elif posixpath.basename(path) == "Cargo.toml":
+                reasons.extend(manifest_reasons(path, base, head))
+    return reasons
+
+
+def manifest_reasons(path: str, base, head) -> list[dict]:
+    docs = []
+    for tree in (base, head):
+        text = tree.read(path)
+        try:
+            docs.append(None if text is None else tomllib.loads(text))
+        except tomllib.TOMLDecodeError:
+            return [{"class": "G", "reason": f"manifest unparseable: {path}"}]
+    old, new = docs
+    if old is None or new is None:
+        return [{"class": "G", "reason": f"manifest {'added' if old is None else 'removed'}: {path}"}]
+    old_s, new_s = manifest_sections(old), manifest_sections(new)
+    return [
+        {"class": "G", "reason": f"manifest {path}: [{key}] changed"}
+        for key in sorted(set(old_s) | set(new_s))
+        if old_s.get(key) != new_s.get(key)
+    ]
+
+
+def classify(reasons: list[dict]) -> str:
+    classes = {r["class"] for r in reasons}
+    return "G" if "G" in classes else "I" if "I" in classes else "L"
+
+
+def run(args) -> dict:
+    repo = args.repo
+    base, head = GitTree(repo, args.base), GitTree(repo, args.head)
+    try:
+        changed = [
+            p
+            for p in git(repo, "diff", "--name-only", "--no-renames", "-z", base.rev, head.rev).split("\0")
+            if p
+        ]
+        reasons = path_reasons(changed, base, head)
+        if args.base_snapshots or args.head_snapshots:
+            if not (args.base_snapshots and args.head_snapshots):
+                raise SystemExit("--base-snapshots and --head-snapshots go together")
+            base_api = read_snapshot_dir(args.base_snapshots)
+            head_api = read_snapshot_dir(args.head_snapshots)
+            source = "snapshot-dirs"
+        else:
+            crates = {"base": workspace_crates(base), "head": workspace_crates(head)}
+            touched = set()
+            for side in crates.values():
+                for path in changed:
+                    if path.endswith(".rs") and (crate := crate_of(path, side)):
+                        touched.add(crate)
+            base_api, head_api = {}, {}
+            for crate in sorted(touched):
+                for tree, side, api in ((base, "base", base_api), (head, "head", head_api)):
+                    if crate in crates[side]:
+                        api[crate] = set(extract_crate(tree, crates[side][crate]["lib"]))
+            source = EXTRACTOR
+        if args.dump_snapshots:
+            for side, api in (("base", base_api), ("head", head_api)):
+                os.makedirs(os.path.join(args.dump_snapshots, side), exist_ok=True)
+                for crate, lines in api.items():
+                    with open(os.path.join(args.dump_snapshots, side, f"{crate}.txt"), "w") as fh:
+                        fh.write(snapshot_text(crate, sorted(lines)))
+        api = diff_api(base_api, head_api)
+        reasons += api_reasons(api)
+        return {
+            "schema": SCHEMA,
+            "base": base.rev,
+            "head": head.rev,
+            "class": classify(reasons),
+            "api_source": source,
+            "crates_compared": sorted(set(base_api) | set(head_api)),
+            "changed_files": len(changed),
+            "reasons": reasons,
+        }
+    finally:
+        base.close()
+        head.close()
+
+
+def render_text(result: dict) -> str:
+    lines = [result["class"], f"base: {result['base']}", f"head: {result['head']}"]
+    lines.append(f"api: {result['api_source']} over {len(result['crates_compared'])} crate(s)")
+    if not result["reasons"]:
+        lines.append("reasons: none (no public item or global input changed)")
+    else:
+        lines.append("reasons:")
+        for reason in result["reasons"]:
+            lines.append(f"  {reason['class']}  {reason['reason']}")
+            for item in reason.get("items", [])[:5]:
+                lines.append(f"       {item}")
+    return "\n".join(lines) + "\n"
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("base")
+    parser.add_argument("head")
+    parser.add_argument("--json", action="store_true", help="print one JSON object")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="class on line 1, then base/head and reasons"
+    )
+    parser.add_argument("--repo", default=".", help="git repository (default: .)")
+    parser.add_argument("--base-snapshots", help="snapshot directory of <base>")
+    parser.add_argument("--head-snapshots", help="snapshot directory of <head>")
+    parser.add_argument("--dump-snapshots", help="write the compared snapshots to DIR/{base,head}")
+    args = parser.parse_args(argv)
+    try:
+        result = run(args)
+    except subprocess.CalledProcessError as err:
+        sys.stderr.write(f"change-class: git failed: {err.stderr or err}\n")
+        return 2
+    if args.json:
+        sys.stdout.write(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    elif args.verbose:
+        sys.stdout.write(render_text(result))
+    else:
+        sys.stdout.write(result["class"] + "\n")
+        sys.stderr.write(render_text(result).split("\n", 1)[1])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

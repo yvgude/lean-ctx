@@ -41,12 +41,16 @@ fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
     }
 }
 
-pub struct Case {
-    files: Vec<(String, Option<Vec<u8>>, Option<Vec<u8>>)>,
+/// One file of a case: repo path, base bytes, candidate bytes (`None` when
+/// the file is absent on that side).
+type FileChange = (String, Option<Vec<u8>>, Option<Vec<u8>>);
+
+struct Case {
+    files: Vec<FileChange>,
     expect: Value,
 }
 
-pub fn load(name: &str) -> Case {
+fn load(name: &str) -> Case {
     let dir = fixtures().join(name);
     let mut base = BTreeMap::new();
     let mut candidate = BTreeMap::new();
@@ -73,7 +77,7 @@ pub fn load(name: &str) -> Case {
     Case { files, expect }
 }
 
-fn input_json(files: &[(String, Option<Vec<u8>>, Option<Vec<u8>>)], edit_counts: &Value) -> Value {
+fn input_json(files: &[FileChange], edit_counts: &Value) -> Value {
     json!({
         "files": files
             .iter()
@@ -125,7 +129,7 @@ fn expected_hits(expect: &Value) -> Vec<(String, String, u64)> {
     hits_of(expect)
 }
 
-pub fn run_case_with(name: &str, extra: Vec<(String, Option<Vec<u8>>, Option<Vec<u8>>)>) -> Value {
+fn run_case_with(name: &str, extra: Vec<FileChange>) -> Value {
     let mut case = load(name);
     case.files.extend(extra);
     case.files.sort_by(|a, b| a.0.cmp(&b.0));
@@ -161,7 +165,7 @@ pub fn run_case_with(name: &str, extra: Vec<(String, Option<Vec<u8>>, Option<Vec
     report
 }
 
-pub fn run_case(name: &str) -> Value {
+fn run_case(name: &str) -> Value {
     run_case_with(name, Vec::new())
 }
 
@@ -188,11 +192,16 @@ fn ac01_test_or_grader_touched_quiet() {
 #[test]
 fn ac01_is_test_or_grader_path() {
     let change = |path: &str| -> Value {
-        let (base, candidate) = if path.ends_with(".rs") {
+        let has_ext = |ext: &str| {
+            Path::new(path)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case(ext))
+        };
+        let (base, candidate) = if has_ext("rs") {
             ("// first\n", "// second\n")
-        } else if path.ends_with(".py") {
+        } else if has_ext("py") {
             ("x = 1\n", "x = 2\n")
-        } else if path.ends_with(".js") || path.ends_with(".ts") {
+        } else if has_ext("js") || has_ext("ts") {
             ("export const a = 1;\n", "export const a = 2;\n")
         } else {
             ("first: 1\n", "second: 2\n")
@@ -361,7 +370,7 @@ fn ac10_mock_only_test_quiet() {
 /// `EDIT_CYCLES_MAX` writes to one file.
 #[test]
 fn ac11_edit_cycles_hits() {
-    assert_eq!(lean_ctx_tripwires::EDIT_CYCLES_MAX as u64, 8);
+    assert_eq!(u64::from(lean_ctx_tripwires::EDIT_CYCLES_MAX), 8);
     run_case("ac11_edit_cycles_hits");
 }
 

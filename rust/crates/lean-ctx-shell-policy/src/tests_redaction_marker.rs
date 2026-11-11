@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{
     check_shell_allowlist, marker_literal_allowed_in, refuse_redaction_marker,
@@ -190,11 +190,14 @@ fn file_writes_admit_the_marker_only_in_source_and_test_code() {
 /// directory. `client fs write` hands over the canonical absolute path, so
 /// only the part below the root may be judged; a path outside the root
 /// never takes a marker.
-// POSIX path literals (`/home/u/...` is not absolute on Windows).
-#[cfg(unix)]
 #[test]
 fn a_test_folder_above_the_project_root_grants_no_exemption() {
     let content = "url = \"postgres://[REDACTED:Database credentials]@db\"\n";
+    // The cases are written as POSIX paths; `/home/u` is not absolute on
+    // Windows, so each is rebuilt below the platform's filesystem root.
+    let refuse = |root: &str, path: &str| {
+        refuse_redaction_marker_in_file(&absolute(root), &absolute(path), content)
+    };
     for (root, path) in [
         ("/home/u/test/app", "/home/u/test/app/config/settings.py"),
         (
@@ -205,10 +208,7 @@ fn a_test_folder_above_the_project_root_grants_no_exemption() {
         ("/home/u/test/app", "/home/u/test/app"),
         ("/home/u/test/app", "/home/u/test/app/../other/tests/a.js"),
     ] {
-        assert!(
-            refuse_redaction_marker_in_file(Path::new(root), Path::new(path), content).is_err(),
-            "{root} {path}"
-        );
+        assert!(refuse(root, path).is_err(), "{root} {path}");
     }
     for (root, path) in [
         ("/home/u/test/app", "/home/u/test/app/tests/test_a.py"),
@@ -218,10 +218,7 @@ fn a_test_folder_above_the_project_root_grants_no_exemption() {
             "/builds/grp/tests/svc/web/a.spec.js",
         ),
     ] {
-        assert!(
-            refuse_redaction_marker_in_file(Path::new(root), Path::new(path), content).is_ok(),
-            "{root} {path}"
-        );
+        assert!(refuse(root, path).is_ok(), "{root} {path}");
     }
 
     // A real project under a `test` folder, the root given uncanonicalized
@@ -236,6 +233,18 @@ fn a_test_folder_above_the_project_root_grants_no_exemption() {
     assert!(refuse_redaction_marker_in_file(&root, &config, content).is_err());
     let test = canonical.join("tests").join("test_a.py");
     assert!(refuse_redaction_marker_in_file(&root, &test, content).is_ok());
+}
+
+/// The POSIX absolute path `posix` below this platform's filesystem root
+/// (`/` on Unix, `C:\` on Windows), keeping every part, `..` included.
+fn absolute(posix: &str) -> PathBuf {
+    let relative = posix
+        .strip_prefix('/')
+        .expect("case paths are written absolute");
+    let mut path = PathBuf::from(if cfg!(windows) { "C:\\" } else { "/" });
+    path.extend(relative.split('/'));
+    assert!(path.is_absolute(), "{}", path.display());
+    path
 }
 
 /// Review 5!191: an absolute heredoc target is judged against no project

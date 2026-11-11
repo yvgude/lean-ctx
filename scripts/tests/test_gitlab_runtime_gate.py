@@ -8,7 +8,11 @@ and the default branch.
 """
 
 from pathlib import Path
+import importlib.util
+import json
 import re
+import shutil
+import tempfile
 import unittest
 
 
@@ -28,6 +32,30 @@ def rule_blocks(job: str) -> list[str]:
     rules = re.search(r"(?ms)^  rules:\n(.*?)(?=^  \S)", job)
     assert rules is not None
     return re.split(r"(?m)^    - if: ", rules.group(1))[1:]
+
+
+def needs_of(job: str) -> list[tuple[str, bool]]:
+    """The job's `needs:` as (job, optional) pairs, in order."""
+    block = re.search(r"(?ms)^  needs:\n(.*?)(?=^  \S)", job)
+    assert block is not None, "missing needs:"
+    entries = re.split(r"(?m)^    - job: ", block.group(1))[1:]
+    needs = []
+    for entry in entries:
+        name, _, rest = entry.partition("\n")
+        # Gates never hand artifacts to the heavy jobs.
+        assert "      artifacts: false\n" in rest, entry
+        needs.append((name.strip(), "      optional: true\n" in rest))
+    return needs
+
+
+# Cheap gates in front of every heavy job (owner 10.11.). The two private-tree
+# gates are optional (a checkout without them runs none); rust-fmt never is.
+CHEAP_GATE_NEEDS = [
+    ("rust-fmt", False),
+    ("ip-boundary-skill-installed", True),
+    ("scope-register", True),
+]
+V4_RUNTIME_NEEDS = CHEAP_GATE_NEEDS + [("v4-provenance", False)]
 
 
 RUST_INPUTS = (
@@ -71,9 +99,13 @@ class GitLabRuntimeGateTests(unittest.TestCase):
 
     def test_one_full_run_per_branch(self):
         self.assertIn("resource_group: v4-rust-$CI_COMMIT_REF_SLUG\n", self.job)
-        self.assertRegex(self.job, r"needs:\n\s+- job: v4-provenance\n")
+        # The full suite starts only after provenance and the cheap gates
+        # passed; provenance and rust-fmt are never optional for it.
+        self.assertEqual(needs_of(self.job), V4_RUNTIME_NEEDS)
         self.assertLess(self.job.index("needs:"), self.job.index("resource_group:"))
-        self.assertIn("interruptible: true", self.job)
+        # Post-merge runs always finish: each merge keeps its own verdict.
+        self.assertIn("  interruptible: false\n", self.job)
+        self.assertNotIn("interruptible: true", self.job)
 
     def test_full_suite_executes_the_workspace(self):
         self.assertIn(
@@ -237,8 +269,26 @@ class GitLabRuntimeGateTests(unittest.TestCase):
     def test_provenance_is_unconditional(self):
         provenance = re.search(r"(?ms)^v4-provenance:\n(.*?)(?=^\S|\Z)", self.config)
         self.assertIsNotNone(provenance)
-        for bypass in ("allow_failure:", "when: manual", "when: never", "rules:"):
+        for bypass in ("allow_failure:", "when: manual", "when: never", "changes:", "exists:", "only:", "except:"):
             self.assertNotIn(bypass, provenance.group(1))
+        # Its only rules are the shared interruptible switch, which always
+        # adds the job: an MR rule plus an unconditional catch-all, neither
+        # of which can drop it.
+        self.assertIn("  rules:\n    - !reference [.interruptible-on-mr, rules]\n  needs: []\n",
+                      provenance.group(1))
+        rules = job_text(self.config, ".interruptible-on-mr").rstrip("\n") + "\n"
+        self.assertEqual(
+            rules,
+            "  rules:\n"
+            "    - if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"'\n"
+            "      interruptible: true\n"
+            "    - when: on_success\n"
+            "      interruptible: false\n",
+        )
+        # On merge requests provenance runs beside the heavy jobs instead of
+        # in front of them; a red provenance still stops the pipeline at once.
+        self.assertIn("  auto_cancel:\n    on_new_commit: interruptible\n    on_job_failure: all\n",
+                      self.config)
 
     # -- mr-quick: blocking fast gate on every merge request --------------
 
@@ -259,10 +309,20 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         # lanes that queue unrelated merge requests behind each other.
         self.assertIn("  resource_group: mr-quick-$CI_MERGE_REQUEST_IID\n", self.quick)
         self.assertNotIn("MR_QUICK_LANE", self.config)
-        self.assertIn("  needs: []\n", self.quick)
+        # Waits only for the cheap gates (about a minute), never for
+        # provenance, and overrides v4-runtime's list instead of inheriting it.
+        self.assertEqual(needs_of(self.quick), CHEAP_GATE_NEEDS)
+        self.assertIn("  interruptible: true\n", self.quick)
+        # Every gate it waits for runs on every pipeline it runs in.
+        fmt = job_text(self.config, "rust-fmt")
+        self.assertIn("  needs: []\n", fmt)
+        self.assertIn("  rules:\n    - !reference [.interruptible-on-mr, rules]\n", fmt)
+        self.assertIn("cargo +stable fmt --all --check", fmt)
+        for bypass in ("allow_failure", "when: manual", "when: never", "changes:"):
+            self.assertNotIn(bypass, fmt)
 
     def test_lint_gate_runs_beside_the_quick_gate_on_every_merge_request(self):
-        # Inherits mr-quick's single rule, needs: [], allow_failure: false and
+        # Inherits mr-quick's single rule, cheap-gate needs, allow_failure: false and
         # read-only caches; overrides only the script and its own lane.
         self.assertIn("  extends: mr-quick\n", self.lint)
         self.assertIn("  resource_group: mr-lint-$CI_MERGE_REQUEST_IID\n", self.lint)
@@ -310,7 +370,9 @@ class GitLabRuntimeGateTests(unittest.TestCase):
                 'export HOME=/home/ci-runner',
                 'case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac',
                 'export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"',
-                'export CARGO_TARGET_DIR="$CI_PROJECT_DIR/rust/target"',
+                'export CARGO_TARGET_DIR="$CI_TARGET_DIR"',
+                'case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;;',
+                'if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then',
                 'git config --global --add safe.directory "$CI_PROJECT_DIR"',
                 'if test -n "$writable_source";',
             ):
@@ -327,6 +389,119 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertIn('CI source remains writable', self.job)
         self.assertIn('GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --', self.job)
         self.assertNotIn('find -L', self.job)
+
+    def test_persistent_target_stays_outside_the_checkout_and_the_trust_boundary(self):
+        # Compiled output persists per runner slot outside the checkout; the
+        # last component stays `target` (tests match /target/debug/deps).
+        self.assertIn('    CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/target"\n', self.job)
+        self.assertIn('    CI_TARGET_CAP_GB: "40"\n', self.job)
+        self.assertNotIn("CI_TARGET_DIR:", self.quick)
+        self.assertNotIn("CI_TARGET_DIR:", self.lint)
+        for job in (self.job, self.quick, self.lint):
+            self.assertNotIn('CARGO_TARGET_DIR="$CI_PROJECT_DIR', job)
+        # git clean still wipes the whole checkout; no exclusions.
+        self.assertIn("  GIT_CLEAN_FLAGS: -ffdx\n", self.config)
+        self.assertNotRegex(self.config, r"GIT_CLEAN_FLAGS:.*-e")
+        # Root-side setup, fail closed: fixed builds dir, sane slug, target
+        # outside the checkout, root-owned real parent directories.
+        for check in (
+            'test "${CI_BUILDS_DIR:-}" = /builds || {',
+            "case \"${CI_PROJECT_PATH_SLUG:-}\" in ''|*[!a-z0-9-]*)",
+            "case \"${CI_TARGET_CAP_GB:-}\" in ''|*[!0-9]*)",
+            'ci_target_parent="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG"',
+            'ci_target="$ci_target_parent/target"',
+            'test "${CI_TARGET_DIR:-}" = "$ci_target" || {',
+            'case "$ci_target/" in "$CI_PROJECT_DIR"/*) echo "target: inside the checkout" >&2; exit 1;; esac',
+            'if test -L /builds; then',
+            'for ci_dir in /builds/.ci-cache "$ci_target_parent"; do',
+            'if test -L "$ci_dir"; then echo "target: $ci_dir is a symlink" >&2; exit 1; fi',
+            'if test "$(stat -c %u -- "$ci_dir")" != 0; then',
+            'chown -h root:root -- "$ci_dir"',
+            'chmod 0755 -- "$ci_dir"',
+            'if test -L "$ci_target"; then echo "target: $ci_target is a symlink" >&2; exit 1; fi',
+            'test "$(stat -c %u -- "$ci_target")" != 10999',
+            'install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_target"',
+        ):
+            self.assertIn(check, self.job)
+        # Size cap and toolchain stamp (written by root beside the target,
+        # where job code cannot write) wipe without following links.
+        self.assertIn('du -sx --block-size=1G -- "$ci_target"', self.job)
+        self.assertIn('if test "$ci_target_gb" -gt "$CI_TARGET_CAP_GB"; then', self.job)
+        self.assertIn('ci_target_state="wiped ($ci_target_gb GB > cap)"', self.job)
+        self.assertIn('"$(rustc +stable -vV)" | sha256sum', self.job)
+        self.assertIn('printf \'%s\\n\' "$ci_stamp" > "$ci_target_parent/target.stamp"', self.job)
+        self.assertIn('wiped*) rm -rf --one-file-system -- "$ci_target";;', self.job)
+        self.assertIn('rm -rf --one-file-system -- "$ci_target/nextest"', self.job)
+        self.assertNotIn("rm -rf --no-preserve-root", self.job)
+        self.assertIn('echo "target: $ci_target_state" > "$CI_PROJECT_DIR/runtime-evidence/target.txt"', self.job)
+        # Set up as root before any job code runs, after the identity exists.
+        setup = self.job.index('ci_target_parent="/builds/.ci-cache/')
+        self.assertLess(self.job.index("useradd --system --uid 10999"), setup)
+        self.assertLess(setup, self.job.index("runuser --user ci-runner --preserve-environment"))
+        # The checkout guards are unchanged: rust/target (CARGO_HOME) stays
+        # pruned, and the persistent target is not inside the scanned tree.
+        self.assertNotIn('-path "/builds/.ci-cache', self.job)
+        # The compiler cache boundary is untouched.
+        self.assertEqual(self.job.count("SCCACHE_LOCAL_RW_MODE=READ_WRITE"), 1)
+
+
+class TeamSeatCiFragmentTests(unittest.TestCase):
+    """team-seat-value-v1 pins the CI files only in the lines that run its
+    verifiers: an unrelated pipeline edit keeps the pin, a change to those
+    lines fails it, and every other pinned file stays pinned whole."""
+
+    PACK = "docs/contracts/team-seat-value-v1"
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location(
+            "verify_team_seat_value_v1", ROOT / "scripts/verify-team-seat-value-v1.py")
+        self.verifier = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.verifier)
+        manifest = json.loads((ROOT / self.PACK / "frozen-hashes.json").read_text(encoding="utf-8"))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        for rel in [*manifest["sha256"], *manifest["ci_fragment_sha256"], self.PACK + "/frozen-hashes.json"]:
+            (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / rel, self.root / rel)
+        self.verifier.ROOT = self.root
+        self.verifier.PACK = self.root / self.PACK
+
+    def edit(self, rel, change):
+        path = self.root / rel
+        path.write_text(change(path.read_text(encoding="utf-8")), encoding="utf-8")
+
+    def test_the_committed_pins_hold(self):
+        self.verifier.verify_frozen()
+
+    def test_an_unrelated_ci_edit_keeps_the_pin(self):
+        for rel in self.verifier.CI_FILES:
+            self.edit(rel, lambda text: text.replace("\n", "\n# unrelated pipeline edit\n", 3))
+        self.verifier.verify_frozen()
+
+    def test_dropping_or_editing_a_verifier_line_fails(self):
+        script = "scripts/verify-team-seat-value-rust-parity.py"
+        for rel in self.verifier.CI_FILES:
+            with self.subTest(rel=rel, change="drop"):
+                self.setUp()
+                self.edit(rel, lambda text: "".join(
+                    line for line in text.splitlines(keepends=True) if script not in line))
+                with self.assertRaisesRegex(ValueError, "frozen CI fragment: .*no longer runs every team verifier"):
+                    self.verifier.verify_frozen()
+            with self.subTest(rel=rel, change="edit"):
+                self.setUp()
+                self.edit(rel, lambda text: text.replace(script, script + " || true"))
+                with self.assertRaisesRegex(ValueError, "frozen CI fragment: .*lines that run the team verifiers changed"):
+                    self.verifier.verify_frozen()
+
+    def test_the_ci_files_are_not_also_pinned_whole_and_other_files_stay_pinned(self):
+        manifest = json.loads((ROOT / self.PACK / "frozen-hashes.json").read_text(encoding="utf-8"))
+        self.assertEqual(sorted(manifest["ci_fragment_sha256"]), sorted(self.verifier.CI_FILES))
+        for rel in self.verifier.CI_FILES:
+            self.assertNotIn(rel, manifest["sha256"])
+        self.edit(self.PACK + "/README.md", lambda text: text + "\n")
+        with self.assertRaisesRegex(ValueError, "frozen hash: " + self.PACK + "/README.md"):
+            self.verifier.verify_frozen()
 
 
 if __name__ == "__main__":

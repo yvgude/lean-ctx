@@ -188,9 +188,6 @@ pub fn inputs_for(
     }
 }
 
-/// The `PATH` git and the gate's helpers run with: system directories only.
-const SYSTEM_PATH: &str = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin";
-
 /// The config every gate git call runs with: nothing a repository or the
 /// environment can configure to run code or to show other content.
 const GIT_SAFE_CONFIG: [&str; 18] = [
@@ -215,11 +212,12 @@ const GIT_SAFE_CONFIG: [&str; 18] = [
 ];
 
 /// git with an empty environment: no global or system config, no replace
-/// objects, nothing a repository can configure to run code.
+/// objects, nothing a repository can configure to run code. Its `PATH` is
+/// the system directories only ([`run::system_dirs`]).
 fn git(repo: &Path) -> Command {
     let mut cmd = Command::new("git");
     cmd.env_clear()
-        .env("PATH", SYSTEM_PATH)
+        .env("PATH", run::system_path())
         .env("LANG", "C")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")

@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanctx.com/schemas/eccp/v1/change-envelope.json",
+  "title": "LeanCTX ChangeEnvelopeV1",
+  "description": "ECCP change envelope: the intent of a merge request plus its evidence, stored as a JSON git note under refs/notes/eccp on the merge request head commit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "head", "intent", "base", "class", "read_set", "derivations", "evidence"],
+  "properties": {
+    "schema": { "const": "leanctx.change-envelope/v1" },
+    "head": { "$ref": "#/$defs/commit" },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task", "plan_url", "acceptance"],
+      "properties": {
+        "task": { "type": "string", "minLength": 1 },
+        "plan_url": { "type": ["string", "null"] },
+        "acceptance": {
+          "description": "Acceptance test file paths.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "commit"],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1 },
+        "commit": {
+          "description": "Merge base of ref and head; must be an ancestor of head.",
+          "$ref": "#/$defs/commit"
+        }
+      }
+    },
+    "class": {
+      "description": "Change class from the W1b-02 classifier; null when unknown.",
+      "enum": ["L", "I", "G", null]
+    },
+    "read_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crates", "toolchain"],
+      "properties": {
+        "crates": {
+          "description": "Cargo packages owning the files changed between base.commit and head.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "public_api_hashes": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "toolchain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rust_toolchain", "rustc"],
+          "properties": {
+            "rust_toolchain": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["path", "content"],
+                  "properties": {
+                    "path": { "type": "string" },
+                    "content": { "type": "string" }
+                  }
+                }
+              ]
+            },
+            "rustc": { "type": ["string", "null"] }
+          }
+        },
+        "observed_reads": {
+          "description": "Paths a LeanCTX session read while producing the change.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "derivations": {
+      "description": "Inputs of generated files (ci/derivations.toml, W4-05) recorded instead of their outputs.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["output", "inputs"],
+        "properties": {
+          "output": { "type": "string", "minLength": 1 },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "blob"],
+              "properties": {
+                "path": { "type": "string" },
+                "blob": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/commit" }] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checks"],
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "result", "commit"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "result": { "enum": ["pass", "fail", "skip", "error"] },
+              "commit": {
+                "description": "Commit the check ran on; head or an ancestor of head.",
+                "$ref": "#/$defs/commit"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "commit": {
+      "description": "Full git object id (SHA-1 or SHA-256).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+    }
+  }
+}

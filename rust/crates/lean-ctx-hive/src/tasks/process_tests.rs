@@ -211,10 +211,6 @@ fn a_task_that_is_not_a_process_task_submits_as_before() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn submit_with_a_green_g6_carries_the_record() {
     let (repo, spec, head) = green_cargo_repo();
     let t = task("claimed", Value::Null, Some(m_cargo_process(&spec)), "");
@@ -235,10 +231,6 @@ fn submit_with_a_green_g6_carries_the_record() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn submit_without_a_green_g6_is_refused() {
     let (repo, spec) = spec_repo();
     // A changed locked test: fail, rule locked_paths_changed, the path named.
@@ -319,10 +311,6 @@ fn a_view_without_what_g6_needs_is_not_supported_yet() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn an_s_task_pins_the_claims_start_commit_and_runs_the_repo_command() {
     let (repo, start) = spec_repo();
     repo.write("tests/refund.rs", "an S task has no locked tests\n");
@@ -441,10 +429,6 @@ fn verify_without_a_g6_record_is_refused() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn verify_needs_a_green_record_of_the_judged_commit_with_locked_paths_intact() {
     let (repo, spec, head) = green_cargo_repo();
     let mut process = m_cargo_process(&spec);
@@ -569,10 +553,6 @@ fn a_process_task_needs_a_verifying_role() {
 // --- review r1 F5: a Hive record passes only with green CI ----------------
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "the G6 gate run is Unix-only (passwd home, rustup PATH)"
-)]
 fn verify_refuses_a_hive_record_without_green_ci() {
     let (repo, spec, head) = green_cargo_repo();
     let green = green_record(&repo, &spec, &head);
