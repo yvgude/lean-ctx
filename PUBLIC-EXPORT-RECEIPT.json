@@ -331,11 +331,11 @@
    "size": 1033
   },
   {
-   "blob": "fae48f18741e39faaa3ce4867a05223e419e86a5",
+   "blob": "3b18c6e600a28d639dc8147fadad16bcce42e098",
    "mode": "100644",
    "path": "CHANGELOG.md",
-   "sha256": "c06077b55ffa7342e907f835e16e799ae89c3c735995ab0d4e79c6ef82aa55f2",
-   "size": 1268998
+   "sha256": "32f337259c460e0cd57e984f26bb7f5feff73b4167ee721c940773880cb2ad42",
+   "size": 1269413
   },
   {
    "blob": "77a7c7a520af8fc8b4df372eb5bd5fddcefbfecf",
@@ -4643,11 +4643,11 @@
    "size": 272
   },
   {
-   "blob": "b1f1861632988b685bbeaa7a64c9b00ad5470ad9",
+   "blob": "5b8999a68a4b63d7824fe6279ab1e123ab42fbe5",
    "mode": "100644",
    "path": "product/binary-budget.json",
-   "sha256": "e362aa2aafdfba44653016381f465ceb8cd9254e06cb5231bc248d99e2a36bb9",
-   "size": 513
+   "sha256": "890da29de9711e8b32f1efcd5146d365e11335134997b271619079fc1e7312c4",
+   "size": 556
   },
   {
    "blob": "e6157bd6595e8d7a3280363d3e7ab7fdb5c12bb2",
@@ -36603,7 +36603,7 @@
  ],
  "manifest_sha256": "c229a578887eba9d41607f9a767234d1cb2a72dcb8889aba47507b38e549362d",
  "schema": 1,
- "source_commit": "04909d16f75deda223f610f9474ace20c5c4195f",
+ "source_commit": "61a53a1ee8edda775f7d3a90a78ada96a743aa18",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "ae1553bea164ae0acfac78027aa6c4169333c669a0c75d01a28d59b9b987d9e7"
+ "tree_sha256": "94f67cdcab205a530d7e99e8bc1fceae96ba351ca287727ceaa8322383b94cac"
 }
