@@ -180,19 +180,34 @@ mod tests {
         s
     }
 
+    /// An absolute path on this platform: on Windows a path without a drive
+    /// prefix is not absolute, so the fixture would count as relative there.
+    fn abs(p: &str) -> String {
+        if cfg!(windows) {
+            format!("C:{}", p.replace('/', "\\"))
+        } else {
+            p.to_string()
+        }
+    }
+
     #[test]
     fn read_set_is_relative_merged_and_sorted() {
-        let root = Path::new("/nonexistent-readset-root/repo");
+        let root = PathBuf::from(abs("/nonexistent-readset-root/repo"));
+        let (b_rs, a_rs) = (
+            abs("/nonexistent-readset-root/repo/src/b.rs"),
+            abs("/nonexistent-readset-root/repo/src/a.rs"),
+        );
+        let other = abs("/nonexistent-readset-root/repo/../other/x.rs");
         let mut a = session(
             "a",
             &[
-                ("/nonexistent-readset-root/repo/src/b.rs", "full"),
-                ("/nonexistent-readset-root/repo/src/a.rs", "map"),
+                (b_rs.as_str(), "full"),
+                (a_rs.as_str(), "map"),
                 ("/etc/hosts", "full"),
-                ("/nonexistent-readset-root/repo/../other/x.rs", "full"),
+                (other.as_str(), "full"),
             ],
         );
-        a.mark_modified("/nonexistent-readset-root/repo/src/a.rs");
+        a.mark_modified(&a_rs);
         let b = session(
             "b",
             &[
@@ -202,7 +217,7 @@ mod tests {
             ],
         );
 
-        let set = from_sessions(root, &[a, b]);
+        let set = from_sessions(&root, &[a, b]);
         assert_eq!(set.schema, SCHEMA);
         assert_eq!(set.sessions, vec!["a", "b"]);
         assert_eq!(set.outside_root, 3);
