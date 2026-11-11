@@ -485,10 +485,13 @@ impl HivePolicy {
     ) -> Result<Self, String> {
         use crate::core::policy::hive_floor::{FLOOR_FILE, REQUIRED_FILE, floor_dir, vault_for};
         let Some(dir) = floor_dir() else {
+            crate::core::config::managed::require_gate(false)?;
             return Ok(Self::default());
         };
         let floor = read(&dir.join(FLOOR_FILE), false)?;
         let required = read(&dir.join(REQUIRED_FILE), false)?;
+        // `hive.require` (managed): no tool runs before a sign-in and a floor.
+        crate::core::config::managed::require_gate(floor.is_some())?;
         if floor.is_none() && required.is_none() {
             return Ok(Self::default());
         }
@@ -879,6 +882,27 @@ mod required_policy_tests {
         for required in [root.join("other"), PathBuf::from("."), PathBuf::new()] {
             assert!(snapshot(&root, Some(&required)).is_err());
         }
+    }
+
+    #[test]
+    fn managed_hive_require_refuses_the_policy_snapshot() {
+        use crate::core::config::managed::{managed_from_toml_for_test, with_managed_for_test};
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let capture = |managed: Option<&str>| {
+            with_managed_for_test(managed.map(managed_from_toml_for_test), || {
+                Snapshot::capture_for(&root, None).map(|_| ())
+            })
+        };
+        assert_eq!(capture(None), Ok(()));
+        assert_eq!(capture(Some("[hive]\norg = \"org_acme\"\n")), Ok(()));
+        // No lease and no installed floor here: required means refused.
+        let required = capture(Some("[hive]\nrequire = true\norg = \"org_acme\"\n"))
+            .expect_err("hive.require without a lease or floor");
+        assert!(required.contains("managed by org_acme"), "{required}");
+        let broken = capture(Some("[hive]\nrequire = \"maybe\"\n")).expect_err("refused carrier");
+        assert!(broken.contains("is refused"), "{broken}");
     }
 
     #[test]

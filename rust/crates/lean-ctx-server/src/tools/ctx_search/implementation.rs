@@ -386,6 +386,35 @@ fn search_compiled_pattern(
         });
     }
 
+    // ent2-3: the Hive policy's readable roots and never-send patterns apply
+    // to every file the scan would read, from either collection path; a policy
+    // that cannot be trusted refuses the search (fail closed).
+    match lean_ctx::core::io_boundary::hive_io_rules(None) {
+        Ok(None) => {}
+        Ok(Some(rules)) => {
+            files.retain(|path| match rules.refusal(path) {
+                None => true,
+                Some(refusal) => {
+                    let reason = match refusal {
+                        lean_ctx::core::policy::hive_io::Refusal::OutsideRoots => {
+                            "outside the Hive readable roots"
+                        }
+                        lean_ctx::core::policy::hive_io::Refusal::NeverSend(_) => "Hive never_send",
+                    };
+                    skipped_boundary_files.push((filter_rel(path, root).into_owned(), reason));
+                    false
+                }
+            });
+            skipped_boundary_files.sort_unstable();
+        }
+        Err(e) => {
+            return SearchOutcome::error(format!(
+                "ERROR: [I/O BOUNDARY] search refused: {e}; reads stay refused until a valid \
+                 Hive policy is installed."
+            ));
+        }
+    }
+
     // Deterministic search: stable file ordering makes max_results truncation reproducible.
     files.sort_unstable_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
 

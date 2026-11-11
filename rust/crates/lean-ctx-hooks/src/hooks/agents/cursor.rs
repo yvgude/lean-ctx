@@ -52,6 +52,12 @@ fn ensure_observe_hook(
     let Some(entries) = arr.as_array_mut() else {
         return;
     };
+    // An unquoted binary path with a space never runs; replace it.
+    entries.retain(|e| {
+        !e.get("command")
+            .and_then(|c| c.as_str())
+            .is_some_and(crate::hooks::is_split_hook_command)
+    });
     let already = entries.iter().any(|e| {
         e.get("command")
             .and_then(|c| c.as_str())
@@ -289,7 +295,7 @@ pub(crate) fn install_cursor_deny_hook(_global: bool) {
         return;
     };
     let binary = resolve_hook_command_binary();
-    let deny_cmd = format!("{binary} hook deny");
+    let deny_cmd = crate::hooks::hook_shell_command(&binary, "deny");
 
     let hooks_json = home.join(".cursor").join("hooks.json");
     let mut existing = match read_agent_json_config(&hooks_json, "cursor") {
@@ -359,8 +365,8 @@ pub(crate) fn install_cursor_deny_hook(_global: bool) {
 
 pub(crate) fn install_cursor_hook_config(home: &std::path::Path) {
     let binary = resolve_hook_command_binary();
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
+    let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
+    let redirect_cmd = crate::hooks::hook_shell_command(&binary, "redirect");
 
     let hooks_json = home.join(".cursor").join("hooks.json");
     let mut existing = match read_agent_json_config(&hooks_json, "cursor") {

@@ -37,9 +37,9 @@ pub(crate) fn install_windsurf_rules(global: bool) {
 pub(crate) fn install_windsurf_hooks(home: &std::path::Path) {
     let hooks_json = home.join(".codeium").join("windsurf").join("hooks.json");
     let binary = resolve_hook_command_binary();
-    let observe_cmd = format!("{binary} hook observe");
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
+    let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
+    let redirect_cmd = crate::hooks::hook_shell_command(&binary, "redirect");
 
     let mut root = match read_agent_json_config(&hooks_json, "windsurf") {
         Ok(root) => root,
@@ -122,7 +122,7 @@ fn ensure_windsurf_hook_entry(
 pub(crate) fn install_windsurf_deny_hook(home: &std::path::Path) {
     let hooks_json = home.join(".codeium").join("windsurf").join("hooks.json");
     let binary = resolve_hook_command_binary();
-    let deny_cmd = format!("{binary} hook deny");
+    let deny_cmd = crate::hooks::hook_shell_command(&binary, "deny");
 
     let mut root = match read_agent_json_config(&hooks_json, "windsurf") {
         Ok(root) => root,

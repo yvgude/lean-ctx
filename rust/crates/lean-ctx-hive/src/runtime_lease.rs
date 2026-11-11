@@ -61,6 +61,31 @@ pub fn runtime_lease_bytes(store: &HiveStore, config: &HiveConfig) -> Option<Vec
     serde_json::to_vec(&document).ok()
 }
 
+/// Signed in: an enrollment this machine may use (not revoked, the managed
+/// org) whose lease is valid or in grace. The managed `hive.require` gate
+/// asks this ([`lean_ctx::core::config::managed::register_signed_in_probe`]).
+pub(crate) fn signed_in() -> bool {
+    let Ok(store) = HiveStore::open() else {
+        return false;
+    };
+    let config = lean_ctx::core::config::Config::load().hive.clone();
+    if config.enabled == Some(false) {
+        return false;
+    }
+    let Ok(Some(instance)) = store.instance() else {
+        return false;
+    };
+    let Ok(root) = super::root_cert::trust_root(&store, &config, &instance.url) else {
+        return false;
+    };
+    Session::load(store, root).is_ok_and(|session| {
+        matches!(
+            session.lease.state_at(Utc::now()),
+            LeaseState::Valid | LeaseState::Grace
+        )
+    })
+}
+
 struct HiveLeaseSource;
 
 impl LeaseSource for HiveLeaseSource {

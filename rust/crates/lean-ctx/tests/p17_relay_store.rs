@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#[path = "../src/http_server/relay_replay.rs"]
-mod relay_replay;
-
-use relay_replay::{
+use crate::relay_replay::{
     MAX_RETENTION_SECONDS, MIN_RETENTION_SECONDS, RelayReplayLimits, RelayReplayStore, Reservation,
     StoreError, StoreLimits,
 };

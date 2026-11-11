@@ -54,9 +54,12 @@ mod index_scoping_scenarios;
 mod oneshot_call_no_stub;
 mod oneshot_semantic_terminates;
 mod p17_relay_store;
+// Shared by the p17 relay modules; loading it once avoids `clippy::duplicate_mod`.
 mod p17_replay_review_regressions;
 mod p17_response_atomicity;
 mod proxy_stale_env_scenarios;
+#[path = "../src/http_server/relay_replay.rs"]
+mod relay_replay;
 mod ticket_fixes_scenarios;
 mod v3_receipt_fixture_migration;
 mod v4_checkpoint_package;

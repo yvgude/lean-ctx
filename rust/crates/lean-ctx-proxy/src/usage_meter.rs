@@ -310,13 +310,16 @@ pub fn record(u: &super::usage::RealUsage) {
         super::policy_gate::record_spend(wire.person.as_deref(), wire.project.as_deref(), cost_usd);
     }
 
+    // Cache-share guard (hc25): per provider+model cost log, rolling
+    // cache-read share and its alarm.
+    let pricing = ModelPricing::load();
+    super::cache_share::record_turn(u, &pricing);
+
     // Mechanism attribution into the local savings ledger (enterprise#19):
     // provider prompt-cache reads billed below the input rate. Best-effort,
     // never blocking. A model swap is never booked as a LeanCTX saving.
     if u.cache_read_tokens > 0 {
-        let cost = lean_ctx::core::gain::model_pricing::ModelPricing::load()
-            .quote(Some(&u.model))
-            .cost;
+        let cost = pricing.quote(Some(&u.model)).cost;
         #[allow(clippy::cast_precision_loss)]
         let discount_usd =
             (cost.input_per_m - cost.cache_read_per_m) / 1_000_000.0 * u.cache_read_tokens as f64;

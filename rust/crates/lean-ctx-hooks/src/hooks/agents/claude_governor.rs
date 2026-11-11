@@ -251,12 +251,16 @@ pub fn revert(home: &std::path::Path) -> bool {
 
 fn timed_hook(arr: &mut Vec<serde_json::Value>, matcher: &str, command: &str, timeout: u64) {
     ensure_command_hook(arr, matcher, command);
+    // Exec form (Windows, binary path with a space) keeps the action in `args`.
+    let desired = crate::hooks::claude_command_hook(command);
     let hook = arr
         .iter_mut()
         .filter(|g| g.get("matcher").and_then(|m| m.as_str()) == Some(matcher))
         .filter_map(|g| g.get_mut("hooks").and_then(|h| h.as_array_mut()))
         .flatten()
-        .find(|h| h.get("command").and_then(|c| c.as_str()) == Some(command));
+        .find(|h| {
+            h.get("command") == desired.get("command") && h.get("args") == desired.get("args")
+        });
     if let Some(obj) = hook.and_then(|h| h.as_object_mut()) {
         obj.insert("timeout".to_string(), serde_json::json!(timeout));
     }
@@ -283,9 +287,9 @@ fn apply_hooks(root: &mut serde_json::Value, binary: &str) {
     else {
         return;
     };
-    let govern = format!("{binary} hook govern");
-    let enforce = format!("{binary} hook rewrite-enforce");
-    let observe = format!("{binary} hook observe");
+    let govern = crate::hooks::hook_shell_command(&binary, "govern");
+    let enforce = crate::hooks::hook_shell_command(&binary, "rewrite-enforce");
+    let observe = crate::hooks::hook_shell_command(&binary, "observe");
     let timeout = crate::hook_handlers::GOVERN_HOST_TIMEOUT_SECS;
     // One group: `ensure_command_hook` keeps a single hook per action.
     let enforce_matcher = if cfg!(windows) {

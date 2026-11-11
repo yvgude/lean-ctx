@@ -375,6 +375,14 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Fixed
 
+- **Hooks run when the lean-ctx path contains a space** (reported on Discord). An npm
+  install under `C:/Users/…/AppData/Local/Author Software/…/lean-ctx.exe` was written
+  unquoted, so the host shell split it and every hook failed with "The term
+  'C:/Users/…/Author' is not recognized". Hook commands for every agent now quote a
+  binary path with whitespace or shell metacharacters (plain paths stay byte-identical).
+  On Windows, Claude Code hooks for such a path use exec form (`command` + `args`, no
+  shell), because PowerShell does not run a quoted path. `init`, `update` and
+  `doctor --fix` replace existing unquoted entries, and `doctor` reports them as stale.
 - **`ctx_patch op=create` fills an existing empty file** (#2223, reported by @HaleTom). A
   0-byte file had no lines to anchor and no text for `replace_unique`, so no op could write
   it. `create` now accepts an existing empty regular file (not a symlink) and keeps its

@@ -302,6 +302,135 @@ pub(crate) fn shell_quoted_binary(binary: &str) -> String {
     format!("\"{escaped}\"")
 }
 
+/// The binary token of a shell-executed hook command: double-quoted (as
+/// `shell_quoted_binary`) when it contains whitespace or a shell
+/// metacharacter, verbatim otherwise. An npm install under
+/// `C:/Users/…/AppData/Local/Author Software/…` or a home like
+/// `/Users/First Last` would otherwise be split at the space and the host
+/// would try to run `C:/Users/…/Author`. Plain paths stay byte-identical, so
+/// existing configs are not rewritten.
+pub fn hook_binary_token(binary: &str) -> String {
+    let already_quoted = binary.len() >= 2 && binary.starts_with('"') && binary.ends_with('"');
+    let needs_quotes = binary.chars().any(|c| {
+        c.is_whitespace()
+            || matches!(
+                c,
+                '&' | '(' | ')' | ';' | '|' | '<' | '>' | '\'' | '"' | '`'
+            )
+    });
+    if needs_quotes && !already_quoted {
+        shell_quoted_binary(binary)
+    } else {
+        binary.to_string()
+    }
+}
+
+/// `<binary> hook <action>` for a shell-executed hook command, with the
+/// binary quoted when needed ([`hook_binary_token`]).
+pub fn hook_shell_command(binary: &str, action: &str) -> String {
+    format!("{} hook {action}", hook_binary_token(binary))
+}
+
+/// A Claude Code command-hook object for the shell command line `command`.
+///
+/// On Windows Claude Code runs a shell-form hook in Git Bash, or in
+/// PowerShell when Git Bash is not installed. PowerShell prints a quoted
+/// program path instead of running it, and an unquoted path with a space is
+/// split, so neither form works there for a binary whose path holds a space.
+/// For such a (quoted) binary the hook uses exec form instead:
+/// `command` is the executable and `args` its argument vector, spawned
+/// without a shell. Every other command, and every command elsewhere, keeps
+/// the shell form unchanged.
+pub fn claude_command_hook(command: &str) -> serde_json::Value {
+    claude_command_hook_for(command, cfg!(windows))
+}
+
+pub(crate) fn claude_command_hook_for(command: &str, windows: bool) -> serde_json::Value {
+    if windows
+        && let Some((program, rest)) = split_quoted_program(command)
+        && !program.contains(['$', '%'])
+    {
+        let args: Vec<&str> = rest.split_whitespace().collect();
+        return serde_json::json!({ "type": "command", "command": program, "args": args });
+    }
+    serde_json::json!({ "type": "command", "command": command })
+}
+
+/// Splits `"<program>" <rest>` (as written by [`shell_quoted_binary`]) into
+/// the unescaped program and the rest of the line.
+fn split_quoted_program(command: &str) -> Option<(String, &str)> {
+    let rest = command.strip_prefix('"')?;
+    let mut program = String::new();
+    let mut chars = rest.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '\\' => match chars.next() {
+                Some((_, next @ ('"' | '`'))) => program.push(next),
+                Some((_, next)) => {
+                    program.push('\\');
+                    program.push(next);
+                }
+                None => program.push('\\'),
+            },
+            '"' => return Some((program, &rest[i + 1..])),
+            _ => program.push(c),
+        }
+    }
+    None
+}
+
+/// True for a lean-ctx hook command whose binary path holds whitespace but is
+/// not quoted (`C:/…/Author Software/…/lean-ctx.exe hook observe`): the host
+/// shell splits it at the space and the hook never runs. Written by
+/// installers before 3.12.3; `init`/`update`/`doctor --fix` replace it.
+pub fn is_split_hook_command(command: &str) -> bool {
+    let command = command.trim_start();
+    if command.starts_with(['"', '\'']) {
+        return false;
+    }
+    let Some((program, _)) = command.split_once(" hook ") else {
+        return false;
+    };
+    let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
+    program.chars().any(char::is_whitespace)
+        && (name.eq_ignore_ascii_case("lean-ctx") || name.eq_ignore_ascii_case("lean-ctx.exe"))
+}
+
+/// True when any `command` string in the JSON document `content` is a split
+/// lean-ctx hook command ([`is_split_hook_command`]).
+pub fn content_has_split_hook_command(content: &str) -> bool {
+    fn walk(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(object) => {
+                object
+                    .get("command")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(is_split_hook_command)
+                    || object.values().any(walk)
+            }
+            serde_json::Value::Array(array) => array.iter().any(walk),
+            _ => false,
+        }
+    }
+    lean_ctx::core::jsonc::parse_jsonc(content).is_ok_and(|value| walk(&value))
+}
+
+/// The command line a host hook entry runs: the `command` string for shell
+/// form, or `"<command>" <args…>` for exec form (`args` present). `None`
+/// when the entry has no string `command`.
+pub fn hook_command_line(hook: &serde_json::Value) -> Option<String> {
+    let command = hook.get("command")?.as_str()?;
+    let Some(args) = hook.get("args").and_then(serde_json::Value::as_array) else {
+        return Some(command.to_string());
+    };
+    let mut line = shell_quoted_binary(command);
+    for arg in args {
+        line.push(' ');
+        line.push_str(arg.as_str()?);
+    }
+    Some(line)
+}
+
 /// #719: true when an existing generated wrapper references a portable binary
 /// form (`$HOME/…`, `${HOME}/…`, `%USERPROFILE%\…`) that resolves to an
 /// existing binary on THIS machine. Such a wrapper is healthy and must not be

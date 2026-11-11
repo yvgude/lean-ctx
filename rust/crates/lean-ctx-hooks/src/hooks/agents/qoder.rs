@@ -45,7 +45,7 @@ fn install_qoder_deny_hook() {
         return;
     };
     let settings_path = home.join(".qoder").join("settings.json");
-    let deny_cmd = format!("{} hook deny", resolve_hook_command_binary());
+    let deny_cmd = crate::hooks::hook_shell_command(&resolve_hook_command_binary(), "deny");
 
     let mut root = if settings_path.exists() {
         std::fs::read_to_string(&settings_path)
@@ -117,7 +117,7 @@ fn is_lean_ctx_qoder_deny_entry(entry: &serde_json::Value) -> bool {
 }
 
 fn install_qoder_hook_config_at(name: &str, settings_path: &Path) -> bool {
-    let command = format!("{} hook rewrite", resolve_hook_command_binary());
+    let command = crate::hooks::hook_shell_command(&resolve_hook_command_binary(), "rewrite");
     let mut changed = false;
     let mut root = if settings_path.exists() {
         if let Some(parsed) = std::fs::read_to_string(settings_path)

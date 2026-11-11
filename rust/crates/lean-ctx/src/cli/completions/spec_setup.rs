@@ -438,13 +438,22 @@ pub(super) const SPEND: CommandNode = CommandNode {
     aliases: &["billing", "finops", "roi"],
     description: "Show cost report",
     subcommands: &[],
-    flags: &[FlagSpec {
-        long: "--json",
-        short: None,
-        description: "JSON output",
-        takes_value: false,
-        value_kind: None,
-    }],
+    flags: &[
+        FlagSpec {
+            long: "--json",
+            short: None,
+            description: "JSON output",
+            takes_value: false,
+            value_kind: None,
+        },
+        FlagSpec {
+            long: "--cache",
+            short: None,
+            description: "Cache-read share per provider and model",
+            takes_value: false,
+            value_kind: None,
+        },
+    ],
     positional: None,
     hidden: false,
 };

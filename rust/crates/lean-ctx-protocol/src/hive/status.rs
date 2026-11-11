@@ -125,6 +125,35 @@ pub struct HiveCliStatusV1 {
     /// earlier shapes see unchanged output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault_mismatch: Option<HiveStatusVaultMismatchV1>,
+    /// 1.7: this machine carries a managed configuration
+    /// (`leanctx.managed-config/v1`). Left out when it carries none, so
+    /// readers of earlier shapes see unchanged output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed: Option<HiveStatusManagedV1>,
+}
+
+/// `managed` of `hive status --json` (1.7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HiveStatusManagedV1 {
+    pub carrier: super::managed::ManagedCarrierKindV1,
+    /// Where the carrier lives (a path, or `HKLM\…`).
+    pub location: String,
+    /// The members in force, in schema order; empty when `error` is set.
+    pub members: Vec<HiveStatusManagedMemberV1>,
+    /// `managed_digest` of the members; `null` when `error` is set.
+    pub digest: Option<String>,
+    /// Why the carrier was refused: the engine fails closed (Hive calls
+    /// and, with nothing to go by, `hive.*` settings refuse).
+    pub error: Option<String>,
+}
+
+/// One managed member (`hive.url`, …) and its value as text.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HiveStatusManagedMemberV1 {
+    pub member: String,
+    pub value: String,
 }
 
 /// `vault_mismatch` of `hive status --json` (1.6). That resolution is not
@@ -176,6 +205,7 @@ impl HiveCliStatusV1 {
             bus_controls_inactive: None,
             metrics_v2: None,
             vault_mismatch: None,
+            managed: None,
         }
     }
 }

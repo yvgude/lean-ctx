@@ -79,9 +79,9 @@ fn has_standard_setup(home: &Path) -> bool {
 
 fn apply_hooks(root: &mut serde_json::Value) {
     let binary = super::super::resolve_hook_command_binary();
-    let govern = format!("{binary} hook govern");
-    let enforce = format!("{binary} hook rewrite-enforce");
-    let observe = format!("{binary} hook observe");
+    let govern = crate::hooks::hook_shell_command(&binary, "govern");
+    let enforce = crate::hooks::hook_shell_command(&binary, "rewrite-enforce");
+    let observe = crate::hooks::hook_shell_command(&binary, "observe");
     let timeout = crate::hook_handlers::GOVERN_HOST_TIMEOUT_SECS;
     let enforce_matcher = if cfg!(windows) {
         "Bash|bash|PowerShell|powershell|Read|Grep|Glob"

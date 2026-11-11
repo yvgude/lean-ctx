@@ -562,6 +562,8 @@ mod tests {
             security: Default::default(),
             context: Default::default(),
             sharing: Default::default(),
+            agents: None,
+            other: Default::default(),
         };
         let floor = Floor {
             schema: FLOOR_SCHEMA.into(),

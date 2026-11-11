@@ -438,6 +438,7 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             Experimental,
         ),
         doc("change-envelope", "change-envelope-v1.md", 1, Experimental),
+        doc("managed-config", "managed-config-v1.md", 1, Experimental),
     ]
 }
 

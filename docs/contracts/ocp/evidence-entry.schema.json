@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://opencontextprotocol.org/schemas/v0.1/evidence-entry.schema.json",
   "title": "OCP Part 4 — Evidence chain entry",
-  "$comment": "Additive evolution rule: `event_type` grows over time. The chain hash covers agent_id, tool, action, input_hash, output_tokens, role and event_type as raw JSON values, so an entry can be link-verified WITHOUT understanding its event_type. A reader that meets an unknown label MUST verify the links and report the entry as unknown-but-chained; it MUST NOT report chain tampering. See x-ocp-additive-event-types for the reader version each label first requires.",
+  "$comment": "Additive evolution rule: `event_type` grows over time. The chain hash covers agent_id, tool, action, input_hash, output_tokens, role and event_type as raw JSON values, so an entry can be link-verified WITHOUT understanding its event_type. A reader that meets an unknown label MUST verify the links and report the entry as unknown-but-chained; it MUST NOT report chain tampering. See x-ocp-additive-event-types for the reader version each label first requires. Entry versions are additive too: an entry without `v` is v1. A v2 entry (lean-ctx >= 3.12.3) adds `v: 2`, the optional session facts (session_id, seq, instance_id, policy_digest, decision, output_digest) and `v2_hash`, a second chained hash over timestamp, v, entry_hash and those facts. The v1 `entry_hash` chain is unchanged, so a v1 reader still link-verifies a v2 entry. A v2 `input_hash` may be a keyed digest (`hmac-sha256:<hex>`) under the engine-local key.",
   "x-ocp-additive-event-types": {
     "agent_registered": "lean-ctx >= 3.9.0",
     "agent_suspended": "lean-ctx >= 3.9.0",
@@ -24,7 +24,12 @@
     "agent_id": { "type": "string", "minLength": 1 },
     "tool": { "type": "string", "minLength": 1 },
     "action": { "type": ["string", "null"] },
-    "input_hash": { "$ref": "#/$defs/sha256hex" },
+    "input_hash": {
+      "oneOf": [
+        { "$ref": "#/$defs/sha256hex" },
+        { "$ref": "#/$defs/hmacsha256" }
+      ]
+    },
     "output_tokens": { "type": "integer", "minimum": 0 },
     "role": { "type": "string", "minLength": 1 },
     "event_type": {
@@ -51,7 +56,20 @@
       ]
     },
     "entry_hash": { "$ref": "#/$defs/sha256hex" },
-    "signature": { "$ref": "#/$defs/ed25519hex" }
+    "signature": { "$ref": "#/$defs/ed25519hex" },
+    "v": { "type": "integer", "minimum": 1 },
+    "session_id": { "type": ["string", "null"], "minLength": 1 },
+    "seq": { "type": ["integer", "null"], "minimum": 1 },
+    "instance_id": { "type": ["string", "null"] },
+    "policy_digest": { "type": ["string", "null"] },
+    "decision": { "enum": ["allow", "deny", "redact", "error", null] },
+    "output_digest": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/hmacsha256" }
+      ]
+    },
+    "v2_hash": { "$ref": "#/$defs/sha256hex" }
   },
   "allOf": [
     {
@@ -64,11 +82,30 @@
         "required": ["event_type"]
       },
       "then": { "required": ["signature"] }
+    },
+    {
+      "if": { "required": ["v2_hash"] },
+      "then": {
+        "required": ["v"],
+        "properties": { "v": { "minimum": 2 } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "v": { "minimum": 2 } },
+        "required": ["v"]
+      },
+      "then": { "required": ["v2_hash"] }
     }
   ],
+  "dependentRequired": {
+    "session_id": ["seq"],
+    "seq": ["session_id"]
+  },
   "additionalProperties": false,
   "$defs": {
     "sha256hex": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "hmacsha256": { "type": "string", "pattern": "^hmac-sha256:[0-9a-f]{64}$" },
     "ed25519hex": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
   }
 }

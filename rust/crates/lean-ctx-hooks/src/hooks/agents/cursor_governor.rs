@@ -91,9 +91,9 @@ fn apply_hooks(home: &Path) {
         return;
     };
     let before = root.clone();
-    let enforce = format!(
-        "{} hook rewrite-enforce",
-        super::super::resolve_hook_command_binary()
+    let enforce = crate::hooks::hook_shell_command(
+        &super::super::resolve_hook_command_binary(),
+        "rewrite-enforce",
     );
     if let Some(obj) = root.as_object_mut() {
         obj.insert("version".to_string(), serde_json::json!(1));

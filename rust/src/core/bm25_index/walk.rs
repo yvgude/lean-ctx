@@ -45,14 +45,21 @@ pub(super) fn admitted_scoped_source_paths(
 /// index is shared across roles, served by dense/hybrid search and uploaded
 /// by `sync index push`. Store admission already refuses them while the
 /// context gateway is on; this keeps the guarantee when it is switched off.
+/// Neither do paths the Hive policy keeps out of context (ent2-3: outside
+/// `readable_roots`, matching `never_send`); a Hive policy that cannot be
+/// trusted fails the walk.
 /// Role-aware fresh views use [`list_scoped_code_files`] and admit per read.
 fn list_code_files_bounded(
     root: &Path,
     rules: &CorpusRules,
     bounded: bool,
 ) -> Result<Vec<String>, String> {
+    let hive = crate::core::policy::hive_io::rules_for(root)?;
     list_scoped_code_files(root, rules, bounded, None, &|rel| {
         crate::core::io_boundary::is_secret_like(Path::new(rel)).is_none()
+            && hive
+                .as_ref()
+                .is_none_or(|hive| hive.refusal(&root.join(rel)).is_none())
     })
 }
 

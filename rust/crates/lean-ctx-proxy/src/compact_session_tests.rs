@@ -134,7 +134,7 @@ pub(super) async fn spawn_upstream_signing(signature: Option<&'static str>) -> U
             let Ok((mut socket, _)) = listener.accept().await else {
                 return;
             };
-            let request = read_request(&mut socket).await;
+            let request = Box::pin(read_request(&mut socket)).await;
             sink.lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(request);

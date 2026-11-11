@@ -215,6 +215,11 @@ pub fn complete_enrollment(
             "the lease is for another workspace".into(),
         ));
     }
+    // `hive.org` / `hive.url` of a managed machine: refused before anything
+    // of this enrollment is stored.
+    if let Some(refusal) = super::config::managed_enrollment_refusal(&enrollment.org.id, origin) {
+        return Err(refusal);
+    }
     store_lease(store, &verified, keys_raw, local_now)?;
     let record = InstanceRecord {
         instance_id: enrollment.instance_id.clone(),
@@ -260,6 +265,13 @@ impl Session {
         // A revoked instance fails closed here, before any Hive call.
         if let Some(revoked) = super::revoked::recorded(&store, &instance) {
             return Err(revoked);
+        }
+        // An enrollment from before the machine was managed, with another
+        // org or Hive, is not used.
+        if let Some(refusal) =
+            super::config::managed_enrollment_refusal(&instance.org_id, &instance.url)
+        {
+            return Err(refusal);
         }
         let lease = load_lease(&store, &root, &instance.instance_id)?;
         super::root_cert::check_lease_org(&store, &instance.url, &lease.lease)?;

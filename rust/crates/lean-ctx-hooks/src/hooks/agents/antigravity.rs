@@ -108,9 +108,9 @@ fn install_antigravity_mcp_config(home: &std::path::Path, subdir: &str) {
 
 fn install_antigravity_gemini_hooks(home: &std::path::Path) {
     let binary = resolve_hook_command_binary();
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
-    let observe_cmd = format!("{binary} hook observe");
+    let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
+    let redirect_cmd = crate::hooks::hook_shell_command(&binary, "redirect");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
 
     let settings_path = home.join(".gemini").join("settings.json");
     let settings_content = if settings_path.exists() {
@@ -122,7 +122,8 @@ fn install_antigravity_gemini_hooks(home: &std::path::Path) {
     let has_hooks = settings_content.contains("hook rewrite")
         && settings_content.contains("hook redirect")
         && settings_content.contains("\"matcher\"");
-    let has_observe = settings_content.contains("hook observe");
+    let has_observe = settings_content.contains("hook observe")
+        && !crate::hooks::content_has_split_hook_command(&settings_content);
 
     // The shared file carries Gemini CLI's governor hooks; never replace them.
     if (has_hooks && has_observe) || super::governor_hosts::is_installed("gemini", home) {
@@ -251,7 +252,7 @@ pub fn antigravity_cli_config_dir(home: &std::path::Path) -> std::path::PathBuf 
 ///   (hooks run in interactive sessions only).
 fn install_antigravity_cli_hooks(home: &std::path::Path) {
     let binary = resolve_hook_command_binary();
-    let observe_cmd = format!("{binary} hook observe");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
 
     let plugin_dir = antigravity_cli_plugin_dir(home);
     let hooks_dir = plugin_dir.join("hooks");

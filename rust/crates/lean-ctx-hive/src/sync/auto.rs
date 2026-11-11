@@ -725,7 +725,7 @@ fn pass(
         // that just ran (or failed and backs off) counts here too. Held
         // back, the vault stays due and goes out once the budget allows.
         let purge = *trigger == Trigger::BusPurge;
-        if super::budget::admit(&data, &record.vault_id, purge, Utc::now())
+        if super::budget::admit_sync(&data, &record.vault_id, purge, Utc::now())
             != super::budget::Admit::Go
         {
             continue;

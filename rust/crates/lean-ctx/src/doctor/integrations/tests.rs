@@ -563,3 +563,50 @@ fn check_codex_toml_ok_with_mcp_arg() {
     assert!(check.ok);
     assert!(check.detail.contains("ok"));
 }
+
+const SPACED_EXE: &str =
+    "C:/Users/u/AppData/Local/Author Software/node_modules/lean-ctx-bin/bin/lean-ctx.exe";
+
+#[test]
+fn quoted_spaced_hook_binary_is_current() {
+    let content = serde_json::json!([{"hooks": [
+        {"type": "command", "command": format!("\"{SPACED_EXE}\" hook observe")}
+    ]}])
+    .to_string();
+    assert_eq!(hook_binary_refs(&content), vec![SPACED_EXE.to_string()]);
+    assert!(stale_hook_binary(&content, SPACED_EXE).is_none());
+}
+
+#[test]
+fn exec_form_hook_binary_is_recognised() {
+    let content = serde_json::json!([{"hooks": [
+        {"type": "command", "command": SPACED_EXE, "args": ["hook", "observe"]}
+    ]}])
+    .to_string();
+    assert_eq!(hook_binary_refs(&content), vec![SPACED_EXE.to_string()]);
+    assert!(stale_hook_binary(&content, SPACED_EXE).is_none());
+    let lines = hook_command_lines(&serde_json::from_str(&content).unwrap());
+    assert_eq!(lines, format!("\"{SPACED_EXE}\" hook observe\n"));
+}
+
+#[test]
+fn unquoted_spaced_hook_binary_is_stale() {
+    let content = serde_json::json!([{"hooks": [
+        {"type": "command", "command": format!("{SPACED_EXE} hook observe")}
+    ]}])
+    .to_string();
+    let stale = stale_hook_binary(&content, SPACED_EXE).expect("split path must be stale");
+    assert!(stale.contains("unquoted path with a space"), "{stale}");
+}
+
+#[test]
+fn hook_program_keeps_quoted_path() {
+    assert_eq!(
+        hook_program(&format!("\"{SPACED_EXE}\" hook observe")),
+        format!("\"{SPACED_EXE}\"")
+    );
+    assert_eq!(
+        hook_program("/usr/bin/lean-ctx hook observe"),
+        "/usr/bin/lean-ctx"
+    );
+}

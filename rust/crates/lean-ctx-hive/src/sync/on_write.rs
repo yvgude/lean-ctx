@@ -282,7 +282,7 @@ fn push_now(root: &str) -> Outcome {
     };
     // The vault's budget, shared with the daemon and every other process:
     // held back or used up, the daemon's sync takes the write along later.
-    if super::budget::admit(
+    if super::budget::admit_sync(
         store.data_dir(),
         &record.vault_id,
         false,

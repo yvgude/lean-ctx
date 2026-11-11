@@ -134,7 +134,12 @@ fn save(data_dir: &Path, vault_id: &str, budget: &Budget) {
 }
 
 /// [`Budget::admit`] on the shared file. Call with the vault's sync lock.
-pub(crate) fn admit(data_dir: &Path, vault_id: &str, purge: bool, now: DateTime<Utc>) -> Admit {
+pub(crate) fn admit_sync(
+    data_dir: &Path,
+    vault_id: &str,
+    purge: bool,
+    now: DateTime<Utc>,
+) -> Admit {
     let mut budget = load(data_dir, vault_id);
     let before = budget.clone();
     let admit = budget.admit(purge, now.timestamp_millis());

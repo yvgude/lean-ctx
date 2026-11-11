@@ -252,6 +252,88 @@ pub struct ProxyConfig {
     /// for the avoided-cost evidence chain. See [`BaselineConfig`].
     pub baseline: BaselineConfig,
     pub pipeline: PipelineConfig,
+    /// Prompt-cache share guard (`[proxy.cache_share]`): rolling cache-read
+    /// share per provider+model, its alarm threshold and the provider
+    /// allowlist for open models. See [`CacheShareConfig`].
+    pub cache_share: CacheShareConfig,
+}
+
+/// `[proxy.cache_share]` — guards the provider prompt-cache discount.
+///
+/// Without prompt caching a long agent session bills every prompt token at
+/// the full input rate; with it most prompt tokens bill at the cache-read
+/// rate. The proxy keeps a rolling window per provider+model and raises an
+/// alarm when the cache-read share of the prompt tokens drops below
+/// `alarm_threshold`.
+///
+/// Open-weight models (Llama, Qwen, DeepSeek, …) are served by many hosts,
+/// and not all of them give a reliable cache discount. A provider not in
+/// `open_model_providers` is flagged (`open_model_policy = "flag"`, the
+/// default) or refused before the request leaves (`"refuse"`). Local
+/// endpoints are exempt: nothing is bought there.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct CacheShareConfig {
+    /// Minimum cache-read share (0–1) of the prompt tokens; default 0.90.
+    pub alarm_threshold: Option<f64>,
+    /// Rolling window in seconds; default 3600, capped at 7 days.
+    pub window_secs: Option<u64>,
+    /// Prompt tokens a window needs before the alarm may fire, so the cold
+    /// first turn of a session (all cache writes) does not alarm; default 200 000.
+    pub min_prompt_tokens: Option<u64>,
+    /// Provider ids (registry id or built-in label, case-insensitive) with a
+    /// reliable cache discount, allowed to serve open models.
+    pub open_model_providers: Vec<String>,
+    /// Extra model-name fragments (case-insensitive) counted as open models,
+    /// added to the built-in list.
+    pub open_model_patterns: Vec<String>,
+    /// `"flag"` (default) or `"refuse"` for an open model on a provider
+    /// outside `open_model_providers`.
+    pub open_model_policy: Option<String>,
+}
+
+/// Default cache-read share below which the cache-share alarm fires.
+const DEFAULT_CACHE_SHARE_THRESHOLD: f64 = 0.90;
+/// Default rolling window of the cache-share guard (one hour).
+const DEFAULT_CACHE_SHARE_WINDOW_SECS: u64 = 3_600;
+/// Longest rolling window the cache-share guard keeps (seven days).
+const MAX_CACHE_SHARE_WINDOW_SECS: u64 = 7 * 24 * 3_600;
+/// Default prompt tokens a window needs before the alarm may fire.
+const DEFAULT_CACHE_SHARE_MIN_PROMPT_TOKENS: u64 = 200_000;
+
+impl CacheShareConfig {
+    /// Configured threshold clamped to 0–1, or the 0.90 default.
+    #[must_use]
+    pub fn effective_threshold(&self) -> f64 {
+        match self.alarm_threshold {
+            Some(t) if t.is_finite() => t.clamp(0.0, 1.0),
+            _ => DEFAULT_CACHE_SHARE_THRESHOLD,
+        }
+    }
+
+    /// Configured window clamped to 60 s – 7 days, or one hour.
+    #[must_use]
+    pub fn effective_window_secs(&self) -> u64 {
+        self.window_secs
+            .unwrap_or(DEFAULT_CACHE_SHARE_WINDOW_SECS)
+            .clamp(60, MAX_CACHE_SHARE_WINDOW_SECS)
+    }
+
+    /// Configured minimum prompt tokens, or the default.
+    #[must_use]
+    pub fn effective_min_prompt_tokens(&self) -> u64 {
+        self.min_prompt_tokens
+            .unwrap_or(DEFAULT_CACHE_SHARE_MIN_PROMPT_TOKENS)
+    }
+
+    /// True when an unlisted provider must refuse an open model; any value
+    /// other than `"refuse"` flags only.
+    #[must_use]
+    pub fn refuses_unlisted_open_models(&self) -> bool {
+        self.open_model_policy
+            .as_deref()
+            .is_some_and(|p| p.trim().eq_ignore_ascii_case("refuse"))
+    }
 }
 
 /// `[proxy.baseline]` — the contract-frozen counterfactual parameters that make
