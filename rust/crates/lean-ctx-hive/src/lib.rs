@@ -83,8 +83,11 @@ pub use state::HiveStore;
 /// at start-up, before the first tool call (`cli::dispatch::run`, next to
 /// `proxy::register_shapers`, and the `lean-ctx-embed` engine builder).
 /// Calling it again changes nothing: the first registration wins. Every
-/// hook here is bookkeeping or telemetry; none decides a refusal.
+/// hook here is bookkeeping or telemetry; none decides a refusal (the
+/// sign-in probe answers a question: the managed `hive.require` gate in the
+/// engine decides, and refuses when no probe is registered).
 pub fn register_hooks() {
+    lean_ctx::core::config::managed::register_signed_in_probe(runtime_lease::signed_in);
     // Config off switches, Engine receipts, the runtime lease source (it
     // reads the Hive lease on every request).
     lean_ctx::core::config::hive::register_off_switches(receipts::apply_off_switches);

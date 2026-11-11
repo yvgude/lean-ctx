@@ -192,6 +192,7 @@ pub mod handoff_ledger;
 pub mod handoff_transfer_bundle;
 pub mod session;
 pub mod session_diff;
+pub mod session_readset;
 pub mod session_rights;
 pub mod session_summary;
 pub mod signer_trust;

@@ -37,6 +37,40 @@ pub(crate) fn requested_model_of(parts: &Parts, body_bytes: &[u8]) -> Option<Str
     v.get("model")?.as_str().map(str::to_string)
 }
 
+/// Provider identity (registry id, else the wire-shape label) and local flag
+/// of the handler's upstream, before routing.
+fn registry_identity(parts: &Parts, provider_label: &str, upstream_base: &str) -> (String, bool) {
+    let registry = parts
+        .extensions
+        .get::<crate::providers::RegistryProviderId>();
+    let provider = registry.map_or(provider_label, |r| r.id.as_str());
+    let is_local = registry.map_or_else(
+        || crate::codec::upstream_is_local(upstream_base),
+        |r| r.local,
+    );
+    (provider.to_string(), is_local)
+}
+
+/// Provider identity serving this request after routing, and whether it is a
+/// local endpoint — the same attribution the usage record gets.
+pub(crate) fn serving_identity(
+    parts: &Parts,
+    provider_label: &str,
+    upstream_base: &str,
+    route: Option<&crate::routing::RouteDecision>,
+) -> (String, bool) {
+    let (mut provider, mut is_local) = registry_identity(parts, provider_label, upstream_base);
+    if let Some(route) = route {
+        if let Some(id) = &route.provider_id {
+            provider.clone_from(id);
+        }
+        if let Some(local) = route.local {
+            is_local = local;
+        }
+    }
+    (provider, is_local)
+}
+
 /// Builds the request-side [`WireContext`](crate::usage::WireContext) stamped
 /// onto this turn's usage record: identity tags (inserted as a request
 /// extension by the auth guard, enterprise#11), the per-request compression
@@ -62,16 +96,9 @@ pub(crate) fn wire_context(
     // "local"), not the wire-shape label ("OpenAI") — shape ≠ identity. The
     // entry's resolved local flag rides along (shadow-rate billing for
     // non-loopback local endpoints, e.g. host.docker.internal).
-    let registry = parts
-        .extensions
-        .get::<crate::providers::RegistryProviderId>();
-    let provider = registry.map_or(provider_label, |r| r.id.as_str());
-    let is_local = registry.map_or_else(
-        || crate::codec::upstream_is_local(upstream_base),
-        |r| r.local,
-    );
+    let (provider, is_local) = registry_identity(parts, provider_label, upstream_base);
     Box::new(crate::usage::WireContext {
-        provider: provider.to_string(),
+        provider,
         person: tags.person,
         team: tags.team,
         project: tags.project,

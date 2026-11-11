@@ -28,6 +28,15 @@ pub fn set_by_key(key: &str, value: &str) -> Result<Config, crate::core::error::
 pub fn set_many_by_key(
     updates: &[(&str, &str)],
 ) -> Result<Config, crate::core::error::ConfigError> {
+    // A member the machine's managed configuration sets is not the user's.
+    for (key, _) in updates {
+        if let Some(message) = crate::core::config::managed::refusal_for_key(key) {
+            return Err(crate::core::error::ConfigError::InvalidValue {
+                key: (*key).to_string(),
+                message,
+            });
+        }
+    }
     let schema = ConfigSchema::generate();
     let path = Config::path().ok_or(crate::core::error::ConfigError::MissingPath)?;
     let guard = crate::config_io::ConfigWriteGuard::acquire(&path).map_err(|message| {
@@ -273,6 +282,30 @@ fn set_nested(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_set_of_a_managed_member_is_refused_before_any_write() {
+        use crate::core::config::managed::{managed_from_toml_for_test, with_managed_for_test};
+        let isolated = crate::core::data_dir::isolated_data_dir();
+        let managed = managed_from_toml_for_test(
+            "[hive]\nurl = \"https://hive.acme.example\"\norg = \"org_acme\"\n",
+        );
+        let result = with_managed_for_test(Some(managed), || {
+            set_many_by_key(&[
+                ("hive.auto_capture", "false"),
+                ("hive.url", "https://hive.user.example"),
+            ])
+        });
+        match result {
+            Err(crate::core::error::ConfigError::InvalidValue { key, message }) => {
+                assert_eq!(key, "hive.url");
+                assert!(message.contains("managed by org_acme"), "{message}");
+            }
+            other => panic!("expected a managed refusal, got {other:?}"),
+        }
+        // Refused whole: not even the unmanaged key reached the user's file.
+        assert!(!isolated.path().join("config.toml").exists());
+    }
 
     #[test]
     fn parse_bool_values() {

@@ -92,8 +92,9 @@ impl Sandbox {
         let base = dirs::config_dir().expect("dirs::config_dir under the sandbox HOME");
         assert!(
             base.starts_with(&self.root),
-            "dirs::config_dir() {base:?} escapes the sandbox {:?}",
-            self.root
+            "dirs::config_dir() {} escapes the sandbox {}",
+            base.display(),
+            self.root.display()
         );
         base.join("lean-ctx")
     }

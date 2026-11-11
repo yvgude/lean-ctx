@@ -241,7 +241,7 @@ pub mod support {
         }
     }
 
-    impl<'a> ClassArg for &'a SourceClass {
+    impl ClassArg for &SourceClass {
         fn class_arg(class: &'static SourceClass) -> Self {
             class
         }

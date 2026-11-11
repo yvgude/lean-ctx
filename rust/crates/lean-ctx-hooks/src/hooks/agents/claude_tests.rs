@@ -648,3 +648,40 @@ fn a_legacy_bash_matcher_is_replaced_without_a_duplicate() {
         "the emptied legacy group is dropped: {pre:?}"
     );
 }
+
+#[test]
+fn observe_heals_unquoted_spaced_binary() {
+    let spaced =
+        "C:/Users/u/AppData/Local/Author Software/node_modules/lean-ctx-bin/bin/lean-ctx.exe";
+    let broken = format!("{spaced} hook observe");
+    let mut hooks = serde_json::Map::new();
+    hooks.insert(
+        "Stop".into(),
+        json!([
+            {"matcher": ".*", "hooks": [{"type": "command", "command": broken}]},
+            {"matcher": ".*", "hooks": [{"type": "command", "command": "my-tool --stop"}]}
+        ]),
+    );
+    let fixed = crate::hooks::hook_shell_command(spaced, "observe");
+    ensure_observe_on_events(&mut hooks, &fixed, &["Stop"]);
+    let all: Vec<serde_json::Value> = hooks["Stop"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|g| g["hooks"].as_array())
+        .flatten()
+        .cloned()
+        .collect();
+    assert_eq!(all.len(), 2, "broken entry replaced, foreign kept: {all:?}");
+    assert!(all.iter().any(|h| h["command"] == "my-tool --stop"));
+    assert!(!all.iter().any(|h| h["command"] == broken.as_str()));
+    let desired = crate::hooks::claude_command_hook(&fixed);
+    assert!(
+        all.iter()
+            .any(|h| h["command"] == desired["command"] && h.get("args") == desired.get("args"))
+    );
+    // Idempotent.
+    let before = hooks.clone();
+    ensure_observe_on_events(&mut hooks, &fixed, &["Stop"]);
+    assert_eq!(hooks, before);
+}

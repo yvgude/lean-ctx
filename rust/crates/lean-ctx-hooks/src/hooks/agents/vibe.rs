@@ -76,7 +76,7 @@ fn install_vibe_hooks_toml(home: &Path) {
     let hooks_path = home.join(".vibe/hooks.toml");
     let display_path = "~/.vibe/hooks.toml";
     // `hook <agent>-<event>` dispatch, honoring the portable-binary override (#708).
-    let command = format!("{} hook vibe-pre-tool", resolve_hook_command_binary());
+    let command = crate::hooks::hook_shell_command(&resolve_hook_command_binary(), "vibe-pre-tool");
 
     // Refuse to clobber a config we cannot parse (#443-style guard).
     let doc_res: Result<toml_edit::DocumentMut, String> = match std::fs::read_to_string(&hooks_path)

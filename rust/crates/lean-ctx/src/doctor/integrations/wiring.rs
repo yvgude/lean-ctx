@@ -166,8 +166,58 @@ pub(crate) fn check_jetbrains_snippet(
     c
 }
 
+/// Every hook command line in `value`, one per line; an exec-form entry
+/// (`command` + `args`, written on Windows for a binary path with a space)
+/// reads as `"<command>" <args…>`, so `… hook <action>` checks cover both.
+pub(crate) fn hook_command_lines(value: &serde_json::Value) -> String {
+    fn walk(value: &serde_json::Value, out: &mut String) {
+        match value {
+            serde_json::Value::Object(object) => {
+                if object
+                    .get("command")
+                    .is_some_and(serde_json::Value::is_string)
+                    && let Some(line) = lean_ctx_hooks::hooks::hook_command_line(value)
+                {
+                    out.push_str(&line);
+                    out.push('\n');
+                }
+                for child in object.values() {
+                    walk(child, out);
+                }
+            }
+            serde_json::Value::Array(array) => {
+                for child in array {
+                    walk(child, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = String::new();
+    walk(value, &mut out);
+    out
+}
+
+/// The program token of a shell-form hook command: the quoted path for
+/// `"C:/…/Author Software/…/lean-ctx.exe" hook observe` (quotes kept), else
+/// the first whitespace-separated word.
+pub(crate) fn hook_program(cmd: &str) -> &str {
+    let cmd = cmd.trim_start();
+    if let Some(rest) = cmd.strip_prefix('"')
+        && let Some(end) = rest.find('"')
+    {
+        return &cmd[..end + 2];
+    }
+    cmd.split_whitespace().next().unwrap_or_default()
+}
+
 pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     let cmd = cmd.trim();
+    // A binary path with a space is written quoted (`"C:/…/lean-ctx.exe"`).
+    let cmd = match cmd.strip_prefix('"').and_then(|c| c.strip_suffix('"')) {
+        Some(inner) if !inner.contains('"') => inner,
+        _ => cmd,
+    };
     if cmd == portable.trim() {
         return true;
     }
@@ -267,11 +317,28 @@ pub(crate) fn hook_binary_refs(content: &str) -> Vec<String> {
     fn collect(value: &serde_json::Value, refs: &mut Vec<String>) {
         match value {
             serde_json::Value::Object(object) => {
-                if let Some(command) = object.get("command").and_then(|value| value.as_str())
-                    && let Some((prefix, _)) = command.split_once(" hook ")
-                    && let Some(binary) = binary_ref(prefix)
-                {
-                    refs.push(binary);
+                let exec_form = object
+                    .get("args")
+                    .and_then(serde_json::Value::as_array)
+                    .and_then(|args| args.first())
+                    .and_then(serde_json::Value::as_str)
+                    == Some("hook");
+                if let Some(command) = object.get("command").and_then(|value| value.as_str()) {
+                    if exec_form {
+                        // Exec form: `command` is the binary itself (spaces allowed).
+                        if lean_ctx::core::portable_binary::is_lean_ctx_hook_binary(command) {
+                            refs.push(command.to_string());
+                        }
+                    } else if lean_ctx_hooks::hooks::is_split_hook_command(command) {
+                        // An unquoted path with a space never runs: always stale.
+                        if let Some((prefix, _)) = command.split_once(" hook ") {
+                            refs.push(format!("{} (unquoted path with a space)", prefix.trim()));
+                        }
+                    } else if let Some((prefix, _)) = command.split_once(" hook ")
+                        && let Some(binary) = binary_ref(prefix)
+                    {
+                        refs.push(binary);
+                    }
                 }
                 for child in object
                     .values()
@@ -349,6 +416,10 @@ pub(crate) fn missing_hook_programs(content: &str) -> Vec<String> {
         } else {
             command.split_whitespace().next()?
         };
+        absolute(program)
+    }
+
+    fn absolute(program: &str) -> Option<&str> {
         let absolute = program.starts_with('/')
             || (program.len() > 2
                 && program.as_bytes()[0].is_ascii_alphabetic()
@@ -360,10 +431,19 @@ pub(crate) fn missing_hook_programs(content: &str) -> Vec<String> {
     fn collect(value: &serde_json::Value, missing: &mut Vec<String>) {
         match value {
             serde_json::Value::Object(object) => {
+                // Exec form (`args` present): `command` is the whole program path,
+                // spaces included.
+                let exec_form = object.get("args").is_some_and(serde_json::Value::is_array);
                 if let Some(path) = object
                     .get("command")
                     .and_then(serde_json::Value::as_str)
-                    .and_then(program)
+                    .and_then(|c| {
+                        if exec_form {
+                            absolute(c.trim())
+                        } else {
+                            program(c)
+                        }
+                    })
                     && !std::path::Path::new(path).exists()
                     && !missing.iter().any(|known| known == path)
                 {

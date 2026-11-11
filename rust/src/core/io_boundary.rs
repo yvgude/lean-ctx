@@ -157,7 +157,65 @@ pub fn is_secret_like(path: &Path) -> Option<&'static str> {
     None
 }
 
+/// The project whose Hive I/O rules apply when the caller names none: the
+/// request's bound project, else the configured or detected project of the
+/// working directory ([`crate::core::protocol::detect_project_root_or_cwd`]).
+fn current_project() -> PathBuf {
+    if let Some(project) = crate::core::policy::diagnostics::request_project() {
+        return project;
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    PathBuf::from(crate::core::protocol::detect_project_root_or_cwd(
+        &cwd.to_string_lossy(),
+    ))
+}
+
+/// The Hive I/O rules (`security.readable_roots`, `security.never_send`) in
+/// force for `project` (default: `current_project`). `Err` when the
+/// installed Hive policy cannot be applied: callers fail closed.
+pub fn hive_io_rules(
+    project: Option<&Path>,
+) -> Result<Option<crate::core::policy::hive_io::IoRules>, String> {
+    let project = project.map_or_else(current_project, Path::to_path_buf);
+    crate::core::policy::hive_io::rules_for(&project)
+}
+
+/// Refuse reading `path` when the Hive policy keeps it out of context: outside
+/// the readable roots, matching `never_send`, or (fail closed) the installed
+/// policy cannot be applied. Always enforced: neither the role nor the warn
+/// boundary mode loosens a Hive rule.
+pub fn check_hive_io_for_tool(
+    tool: &str,
+    path: &Path,
+    project: Option<&Path>,
+) -> Result<(), String> {
+    let refusal = match hive_io_rules(project) {
+        Ok(None) => return Ok(()),
+        Ok(Some(rules)) => match rules.refusal(path) {
+            None => return Ok(()),
+            Some(refusal) => format!(
+                "[I/O BOUNDARY] {} is {}.",
+                path.display(),
+                refusal.describe()
+            ),
+        },
+        Err(e) => format!(
+            "[I/O BOUNDARY] {} refused: {e}; reads stay refused until a valid Hive policy is installed.",
+            path.display()
+        ),
+    };
+    events::emit_policy_violation(&roles::active_role_name(), tool, &refusal);
+    Err(format!("ERROR: {refusal}"))
+}
+
+/// The Hive I/O rules ([`check_hive_io_for_tool`]) and then the role's
+/// secret-path rule, for a path read in the current project.
 pub fn check_secret_path_for_tool(tool: &str, path: &Path) -> Result<Option<String>, String> {
+    check_hive_io_for_tool(tool, path, None)?;
+    secret_path_rule(tool, path)
+}
+
+fn secret_path_rule(tool: &str, path: &Path) -> Result<Option<String>, String> {
     let role_name = roles::active_role_name();
     let role = roles::active_role();
     let mode = boundary_mode_effective(&role);
@@ -199,7 +257,9 @@ pub fn jail_and_check_path(
     candidate: &Path,
     jail_root: &Path,
 ) -> Result<(PathBuf, Option<String>), String> {
-    jail_and_check_with(tool, candidate, jail_root, pathjail::jail_path)
+    let (jailed, warning) = jail_and_check_with(tool, candidate, jail_root, pathjail::jail_path)?;
+    check_hive_io_for_tool(tool, &jailed, Some(jail_root))?;
+    Ok((jailed, warning))
 }
 
 /// [`jail_and_check_path`] for a destination that stays contained when the
@@ -233,7 +293,7 @@ fn jail_and_check_with(
         }
         e.to_string()
     })?;
-    let warning = check_secret_path_for_tool(tool, &jailed)?;
+    let warning = secret_path_rule(tool, &jailed)?;
     Ok((jailed, warning))
 }
 

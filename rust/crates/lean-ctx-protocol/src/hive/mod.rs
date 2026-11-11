@@ -37,6 +37,7 @@ pub mod gate;
 pub mod graph;
 pub mod knowledge;
 pub mod lease;
+pub mod managed;
 pub mod metrics_v2;
 pub mod optin;
 pub mod policy;

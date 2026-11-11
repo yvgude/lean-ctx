@@ -42,6 +42,7 @@ pub mod cache_attribution;
 pub mod cache_breakpoint;
 pub mod cache_policy;
 pub mod cache_safety;
+pub mod cache_share;
 #[cfg(feature = "http-server")]
 pub(crate) mod cache_ttl;
 pub mod ccr;

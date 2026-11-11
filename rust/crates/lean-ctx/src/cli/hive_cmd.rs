@@ -402,7 +402,29 @@ fn project_line() -> Option<String> {
     })
 }
 
+/// `Managed:` lines: the carrier, then each member the organisation set.
+fn print_managed(current: &HiveStatusReport) {
+    let Some(managed) = &current.managed else {
+        return;
+    };
+    use lean_ctx_protocol::hive::managed::ManagedCarrierKindV1 as Kind;
+    let carrier = match managed.carrier {
+        Kind::MacosProfile => "macOS configuration profile",
+        Kind::WindowsPolicy => "Windows policy",
+        Kind::LinuxFile => "managed file",
+        Kind::Unknown => "carrier",
+    };
+    println!("Managed:      yes, {carrier} {}", managed.location);
+    if let Some(error) = &managed.error {
+        println!("              refused: {error} (Hive and tools stay off)");
+    }
+    for member in &managed.members {
+        println!("              {} = {}", member.member, member.value);
+    }
+}
+
 fn print_report(current: &HiveStatusReport) {
+    print_managed(current);
     let Some(instance) = &current.instance else {
         if lean_ctx_hive::HIVE_AVAILABLE {
             println!(
@@ -1619,9 +1641,9 @@ mod worker_retire_tests {
 
     #[test]
     fn idle_durations_read_with_their_unit() {
-        assert_eq!(parse_idle("24h"), Some(Duration::from_secs(86_400)));
-        assert_eq!(parse_idle("90m"), Some(Duration::from_secs(5_400)));
-        assert_eq!(parse_idle("7d"), Some(Duration::from_secs(604_800)));
+        assert_eq!(parse_idle("24h"), Some(Duration::from_hours(24)));
+        assert_eq!(parse_idle("90m"), Some(Duration::from_mins(90)));
+        assert_eq!(parse_idle("7d"), Some(Duration::from_hours(168)));
         assert_eq!(parse_idle("30s"), Some(Duration::from_secs(30)));
         assert_eq!(parse_idle("2"), Some(Duration::from_secs(7_200)));
         assert_eq!(parse_idle("1w"), None);

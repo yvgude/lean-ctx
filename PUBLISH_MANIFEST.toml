@@ -38,6 +38,7 @@ new_paths = [
   "docs/contracts/client-calls-v1.md",
   "docs/contracts/change-envelope-v1.md",
   "docs/contracts/change-envelope-v1.schema.json",
+  "docs/contracts/managed-config-v1.md",
   "docs/contracts/local-service-v1.md",
   "docs/contracts/engine-context-sources-v2.md",
   "docs/contracts/team-context-outcome-v1.md",
@@ -438,6 +439,10 @@ new_paths = [
   "scripts/tests/fixtures/change-class/interface/head/demo.txt",
   "scripts/tests/fixtures/change-class/local/base/demo.txt",
   "scripts/tests/fixtures/change-class/local/head/demo.txt",
+  # Integration Engine W1b-01 public-API snapshots (over change-class): own code,
+  # Apache-2.0 SPDX-headed.
+  "scripts/public-api-snapshot",
+  "scripts/tests/test_public_api_snapshot.py",
   # Derivations registry: merge drivers + regenerate for generated and list files (.gitattributes).
   "scripts/derivations.py",
   "scripts/tests/test_derivations.py",
@@ -562,6 +567,7 @@ new_paths = [
   "rust/src/core/session_rights/shell.rs",
   "rust/src/core/session_rights/git.rs",
   "rust/src/core/session_rights/runners.rs",
+  "rust/src/core/session_readset.rs",
   "rust/src/core/feature_list.rs",
   "rust/crates/lean-ctx-hooks/src/hook_handlers/rights.rs",
   "rust/src/core/context_package/rights.rs",
@@ -655,6 +661,7 @@ new_paths = [
   "rust/crates/lean-ctx-hive/src/status.rs",
   "rust/crates/lean-ctx-hive/src/transport.rs",
   "rust/src/core/audit_trail/segments.rs",
+  "rust/src/core/audit_trail/v2.rs",
   "rust/src/core/audit_trail_tests.rs",
   "rust/src/core/context_admission/receipt_store/retention.rs",
   "rust/src/core/context_admission/receipt_store/retention_tests.rs",
@@ -1290,6 +1297,7 @@ new_paths = [
   "rust/crates/lean-ctx-hive/src/delivery/tests.rs",
   "rust/crates/lean-ctx-hive/src/disconnect.rs",
   "rust/src/core/policy/hive_floor.rs",
+  "rust/src/core/policy/hive_io.rs",
   "rust/src/core/policy/hive_filters.rs",
   "rust/src/core/vault_map.rs",
   "rust/src/core/git_worktree.rs",
@@ -1613,6 +1621,9 @@ new_paths = [
   "rust/crates/lean-ctx-fs/src/home.rs",
   "rust/crates/lean-ctx-fs/src/jsonc.rs",
   "rust/crates/lean-ctx-fs/src/lib.rs",
+  "rust/crates/lean-ctx-fs/src/managed.rs",
+  "rust/crates/lean-ctx-protocol/src/hive/managed.rs",
+  "rust/src/core/config/managed.rs",
   "rust/crates/lean-ctx-fs/src/process.rs",
   "rust/src/core/adaptive_policy.rs",
   "rust/src/core/ccr.rs",
@@ -2090,6 +2101,7 @@ new_paths = [
   "rust/crates/lean-ctx-proxy/src/cache_breakpoint.rs",
   "rust/crates/lean-ctx-proxy/src/cache_policy.rs",
   "rust/crates/lean-ctx-proxy/src/cache_safety.rs",
+  "rust/crates/lean-ctx-proxy/src/cache_share.rs",
   "rust/crates/lean-ctx-proxy/src/ccr.rs",
   "rust/crates/lean-ctx-proxy/src/ccr_robustness_tests.rs",
   "rust/crates/lean-ctx-proxy/src/chatgpt.rs",
@@ -4986,6 +4998,13 @@ exclude = [
   # The private mirror's fast merge-request gate (ci/gitlab-ci.yml mr-quick).
   "scripts/ci/mr_quick.py",
   "scripts/tests/test_mr_quick.py",
+  "scripts/ci/warm_farm.py",
+  "scripts/tests/test_warm_farm.py",
+  # The private mirror's flake gate (ci/gitlab-ci.yml v4-runtime, W1-02) and
+  # its quarantine list.
+  "ci/flaky-quarantine.json",
+  "scripts/ci/flake_gate.py",
+  "scripts/tests/test_flake_gate.py",
   # Changelog fragments (changelog.d/, not included) are folded into
   # CHANGELOG.md in the private mirror before a release is exported.
   "scripts/changelog-fragments.py",

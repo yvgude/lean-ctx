@@ -12,6 +12,10 @@ fn fixture(name: &str) -> Value {
     serde_json::from_slice(&std::fs::read(&path).expect(&path)).expect(&path)
 }
 
+/// ent2 members this engine enforces (ent2-3) before the synced C0 schema
+/// carries them.
+const ENT2_ENFORCED: &[&str] = &["security.never_send", "security.readable_roots"];
+
 fn bundle_raw() -> Value {
     fixture("routes/policy_bundle.v2.response.json")["effective_policy"].clone()
 }
@@ -113,14 +117,24 @@ fn the_ack_reports_exactly_the_members_this_engine_does_not_enforce() {
 fn every_member_of_the_schema_is_classified_once_as_its_x_enforcement_says() {
     let schema = fixture("schemas/policy.schema.json");
     let mut seen = BTreeSet::new();
-    for section in ["security", "context", "sharing"] {
+    for section in ["security", "context", "sharing", "agents"] {
         for def in [section.to_string(), format!("{section}_effective")] {
-            let props = schema["$defs"][&def]["properties"].as_object().unwrap();
+            // `agents` (ent2) is in the contract once Hive ships it.
+            let Some(props) = schema["$defs"][&def]["properties"].as_object() else {
+                assert_eq!(section, "agents", "{def}");
+                continue;
+            };
             for (name, prop) in props {
                 let member = format!("{section}.{name}");
                 match prop["x-enforcement"].as_str().unwrap() {
                     "instance" => {
-                        let mapped = ENGINE_MEMBERS.iter().find(|(m, _)| *m == member);
+                        let mapped = ENGINE_MEMBERS
+                            .iter()
+                            .chain(PLANNED_ENGINE_MEMBERS)
+                            .find(|(m, _)| *m == member);
+                        if PLANNED_ENGINE_MEMBERS.iter().any(|(m, _)| *m == member) {
+                            assert!(!is_engine_member(&member), "{member}: listed twice");
+                        }
                         assert_eq!(
                             mapped.map(|(_, e)| *e),
                             prop["x-instance"].as_str(),
@@ -152,10 +166,78 @@ fn every_member_of_the_schema_is_classified_once_as_its_x_enforcement_says() {
             }
         }
     }
+    // Every classified member is in the contract; the ent2 ones (planned or
+    // enforced) and `agents.require_approvals` only once the synced schema
+    // has them.
+    let ent2 = |m: &str| {
+        m.starts_with("agents.")
+            || PLANNED_ENGINE_MEMBERS.iter().any(|(p, _)| *p == m)
+            || ENT2_ENFORCED.contains(&m)
+    };
+    for member in ENGINE_MEMBERS
+        .iter()
+        .map(|(m, _)| *m)
+        .chain(SERVER_MEMBERS.iter().copied())
+        .chain(ADVISORY_MEMBERS.iter().copied())
+    {
+        assert!(
+            seen.contains(member) || ent2(member),
+            "{member} is not in the schema"
+        );
+    }
+}
+
+/// ent2-1: the agent/model rule members validate in normal form, stay in
+/// the typed view, and are acked as unenforced while this engine does not
+/// enforce them; an unknown section is kept and reported the same way.
+#[test]
+fn the_ent2_members_validate_and_are_acked_unenforced_until_enforced() {
+    let mut raw = bundle_raw();
+    let effective = &mut raw["policy"]["effective"];
+    effective["agents"] =
+        json!({"allowed": ["acp:kiro", "claude-code", "codex"], "require_approvals": true});
+    effective["security"]["allowed_providers"] = json!(["anthropic", "azure-openai", "local"]);
+    effective["security"]["require_proxy"] = json!(true);
+    effective["security"]["readable_roots"] = json!(["{project}", "~/src/**"]);
+    effective["security"]["never_send"] = json!(["*.pem", ".env*", "secrets/"]);
+    effective["audit"] = json!({"retention_days": 30});
+    let bundle: EffectivePolicyBundleV1 = serde_json::from_value(raw.clone()).unwrap();
+    bundle.validate().unwrap();
+    let policy = bundle.policy.for_vault(None);
     assert_eq!(
-        seen.len(),
-        ENGINE_MEMBERS.len() + SERVER_MEMBERS.len() + ADVISORY_MEMBERS.len()
+        policy.agents.as_ref().unwrap().allowed.as_deref(),
+        Some(&["acp:kiro".to_string(), "claude-code".into(), "codex".into()][..])
     );
+    assert_eq!(policy.security.require_proxy, Some(true));
+    // Nothing is dropped: the typed view serializes back to the signed bytes.
+    assert_eq!(
+        serde_json::to_value(&bundle.policy).unwrap(),
+        raw["policy"],
+        "typed view keeps every member"
+    );
+    let unenforced = bundle.ack().unenforced;
+    for member in [
+        "agents.allowed",
+        "agents.require_approvals",
+        "audit.retention_days",
+        "security.allowed_providers",
+        "security.require_proxy",
+    ] {
+        assert!(unenforced.contains(&member.to_string()), "{member}");
+    }
+    // ent2-3: readable roots and never-send are enforced in io_boundary.
+    for member in ENT2_ENFORCED {
+        assert!(is_engine_member(member), "{member}");
+        assert!(!unenforced.contains(&(*member).to_string()), "{member}");
+    }
+    // A policy without them keeps its normal form (and digest).
+    let plain = bundle_raw();
+    let typed: EffectivePolicyBundleV1 = serde_json::from_value(plain.clone()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&typed.policy).unwrap(),
+        plain["policy"]
+    );
+    assert!(typed.policy.effective.agents.is_none());
 }
 
 #[test]
@@ -341,9 +423,31 @@ fn a_known_member_outside_the_contract_refuses_the_bundle() {
         ("/org_id", json!("org_acme")),
         ("/signature", json!("AB")),
         ("/not_after", json!("2026-10-25T12:00:00Z")),
+        // ent2 members
+        (
+            "/policy/effective/agents/allowed",
+            json!(["codex", "claude-code"]),
+        ),
+        ("/policy/effective/agents/allowed", json!(["Claude Code"])),
+        ("/policy/effective/agents/require_approvals", json!("yes")),
+        (
+            "/policy/effective/security/allowed_providers",
+            json!(["OpenAI"]),
+        ),
+        ("/policy/effective/security/require_proxy", json!(1)),
+        ("/policy/effective/security/readable_roots", json!([""])),
+        (
+            "/policy/effective/security/never_send",
+            json!([".env", ".env"]),
+        ),
+        ("/policy/effective/security/never_send", json!(["a\u{7}"])),
+        // an unknown section must be an object of member names
+        ("/policy/effective/audit", json!(["retention_days"])),
+        ("/policy/effective/Audit", json!({})),
     ];
     for (path, value) in cases {
         let mut raw = bundle_raw();
+        raw["policy"]["effective"]["agents"] = json!({});
         let (parent, key) = path.rsplit_once('/').unwrap();
         raw.pointer_mut(parent).unwrap()[key] = value;
         let refused = serde_json::from_value::<EffectivePolicyBundleV1>(raw)

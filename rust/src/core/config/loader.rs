@@ -532,6 +532,10 @@ impl Config {
                 )
             });
 
+        // The machine's managed configuration overlays `[hive]` (below).
+        let managed = crate::core::config::managed::current();
+        let managed_key = crate::core::config::managed::cache_key();
+
         if let Ok(guard) = cache.lock()
             && let Some((
                 ref cfg,
@@ -539,11 +543,13 @@ impl Config {
                 ref cached_local,
                 ref cached_profile,
                 cached_trusted,
+                ref cached_managed,
             )) = *guard
             && *cached_global == global_hash
             && *cached_local == local_key
             && *cached_profile == selected_profile
             && cached_trusted == trusted
+            && *cached_managed == managed_key
         {
             note_gateway_store_ceiling(cfg);
             return Arc::clone(cfg);
@@ -592,6 +598,11 @@ impl Config {
         if failure.is_none() {
             cfg.migrate_v4_config_on_disk();
         }
+        // Managed > Hive floor > user config > defaults. After the on-disk
+        // migration, so the overlay never reaches the user's file.
+        if let Some(managed) = &managed {
+            managed.apply_to_hive(&mut cfg.hive);
+        }
         // Last, so no merge step can drop it: the marker belongs to this value.
         cfg.load_failure = failure;
 
@@ -603,6 +614,7 @@ impl Config {
                 local_key,
                 selected_profile,
                 trusted,
+                managed_key,
             ));
         }
         CONFIG_GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);

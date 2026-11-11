@@ -6,7 +6,8 @@ A change envelope (schema ``leanctx.change-envelope/v1``) records the intent
 of a merge request and the evidence for it. It is stored as a JSON git note
 under ``refs/notes/eccp`` on the merge request's head commit.
 
-    eccp-envelope write --base-ref origin/main --task 157 --check unit=pass
+    eccp-envelope write --base-ref origin/main --task 157 --check unit=pass \
+        --observed-reads-from-session
     eccp-envelope show [COMMIT]
     eccp-envelope verify [COMMIT]
 
@@ -16,6 +17,7 @@ error (including a commit without an envelope).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import PurePosixPath
@@ -36,6 +38,12 @@ CHECK_RESULTS = ("pass", "fail", "skip", "error")
 TOOLCHAIN_FILES = ("rust-toolchain.toml", "rust-toolchain", "rust/rust-toolchain.toml", "rust/rust-toolchain")
 DERIVATIONS_FILE = "ci/derivations.toml"
 SHA_RE = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+READSET_SCHEMA = "leanctx.session-readset/v1"
+# A Rust function declaration and the attributes that make it a test.
+FN_RE = re.compile(r"^\s*((?:#\[[^\]]*\]\s*)*)(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)")
+TEST_ATTR_RE = re.compile(r"(?:^|\s)#\[(?:[A-Za-z_][A-Za-z0-9_]*::)*(?:test|rstest|test_case|proptest)\b")
+HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
 class EnvelopeError(Exception):
@@ -86,20 +94,27 @@ def crate_name(manifest: str) -> str | None:
     return found.group(1) if found else None
 
 
-def crates_touched(base: str, head: str) -> list[str]:
-    """Cargo packages owning the files changed between base and head."""
-    changed = git("diff", "--name-only", "--no-renames", f"{base}..{head}").stdout.split()
+def changed_paths(base: str, head: str) -> list[str]:
+    return sorted(set(git("diff", "--name-only", "--no-renames", f"{base}..{head}").stdout.splitlines()))
+
+
+def crate_dirs(base: str, head: str) -> dict[str, str]:
+    """Cargo packages owning the files changed between base and head: {name: directory}."""
     manifests: dict[str, str | None] = {}
-    crates: set[str] = set()
-    for path in changed:
+    crates: dict[str, str] = {}
+    for path in changed_paths(base, head):
         for parent in PurePosixPath(path).parents:
             manifest = "Cargo.toml" if str(parent) == "." else f"{parent}/Cargo.toml"
             if manifest not in manifests:
                 manifests[manifest] = crate_name(read_blob(head, manifest)) if blob_exists(head, manifest) else None
             if manifests[manifest]:
-                crates.add(manifests[manifest])
+                crates[manifests[manifest]] = str(parent)
                 break
-    return sorted(crates)
+    return dict(sorted(crates.items()))
+
+
+def crates_touched(base: str, head: str) -> list[str]:
+    return list(crate_dirs(base, head))
 
 
 def toolchain(head: str, rustc_version: str | None) -> dict:
@@ -125,21 +140,135 @@ def load_json_file(path: str, what: str):
         raise EnvelopeError(f"cannot read {what} from {path}: {exc}") from exc
 
 
-def load_observed_reads(path: str) -> list[str]:
-    """A JSON list of paths, or one path per line (LeanCTX session export)."""
+def parse_observed_reads(text: str, origin: str) -> tuple[list[str], dict | None]:
+    """Observed reads and, for a LeanCTX read-set export, its source record.
+
+    Accepts the JSON printed by ``lean-ctx session readset --json`` (schema
+    ``leanctx.session-readset/v1``), a JSON list of paths, or one path per line.
+    """
+    stripped = text.strip()
+    source = None
+    try:
+        if stripped.startswith("{"):
+            export = json.loads(stripped)
+            if export.get("schema") != READSET_SCHEMA or not isinstance(export.get("reads"), list):
+                raise EnvelopeError(f"{origin}: expected a {READSET_SCHEMA} export")
+            reads = [entry.get("path") if isinstance(entry, dict) else None for entry in export["reads"]]
+            sessions = export.get("sessions", [])
+            if not isinstance(sessions, list) or not all(isinstance(s, str) for s in sessions):
+                raise EnvelopeError(f"{origin}: sessions must be a list of ids")
+            source = {
+                "schema": READSET_SCHEMA,
+                "sessions": sessions,
+                "complete": export.get("complete") is True,
+            }
+        elif stripped.startswith("["):
+            reads = json.loads(stripped)
+        else:
+            reads = [line.strip() for line in stripped.splitlines() if line.strip()]
+    except json.JSONDecodeError as exc:
+        raise EnvelopeError(f"{origin}: not JSON: {exc}") from exc
+    if not isinstance(reads, list) or not all(isinstance(item, str) and item for item in reads):
+        raise EnvelopeError(f"{origin}: observed reads must be a list of paths")
+    return sorted(set(reads)), source
+
+
+def load_observed_reads(path: str) -> tuple[list[str], dict | None]:
     try:
         with open(path, encoding="utf-8") as handle:
             text = handle.read()
     except OSError as exc:
         raise EnvelopeError(f"cannot read observed reads from {path}: {exc}") from exc
-    stripped = text.strip()
-    if stripped.startswith("["):
-        reads = json.loads(stripped)
-    else:
-        reads = [line.strip() for line in stripped.splitlines() if line.strip()]
-    if not all(isinstance(item, str) for item in reads):
-        raise EnvelopeError("observed reads must be a list of paths")
-    return sorted(set(reads))
+    return parse_observed_reads(text, path)
+
+
+def session_readset(session_ids: list[str]) -> str:
+    """``lean-ctx session readset --json`` for this repository's root."""
+    root = git("rev-parse", "--show-toplevel").stdout.strip()
+    command = [*shlex.split(os.environ.get("LEAN_CTX_BIN", "lean-ctx")), "session", "readset", "--json", "--root", root]
+    for session_id in session_ids:
+        command += ["--id", session_id]
+    try:
+        proc = subprocess.run(command, capture_output=True, text=True, check=False)
+    except OSError as exc:
+        raise EnvelopeError(f"cannot run {command[0]}: {exc}") from exc
+    if proc.returncode != 0:
+        raise EnvelopeError(f"{' '.join(command[:4])} failed (exit {proc.returncode}): {proc.stderr.strip()}")
+    return proc.stdout
+
+
+def tracked_paths(*commits: str) -> set[str]:
+    paths: set[str] = set()
+    for commit in commits:
+        paths.update(git("ls-tree", "-r", "--name-only", commit).stdout.splitlines())
+    return paths
+
+
+# --------------------------------------------------------------- write set
+
+
+def _enclosing_test(lines: list[str], index: int) -> str | None:
+    """Name of the test function around 0-based line ``index``, if any.
+
+    Heuristic: the nearest function declaration at or above the line, a test
+    when one of the attributes directly above it is #[test], #[tokio::test],
+    #[rstest], #[test_case] or #[proptest].
+    """
+    for i in range(min(index, len(lines) - 1), -1, -1):
+        found = FN_RE.match(lines[i])
+        if not found:
+            continue
+        if TEST_ATTR_RE.search(found.group(1)):
+            return found.group(2)
+        j = i - 1
+        while j >= 0 and (lines[j].strip().startswith(("#[", "///", "//")) or not lines[j].strip()):
+            if TEST_ATTR_RE.search(lines[j]):
+                return found.group(2)
+            j -= 1
+        return None
+    return None
+
+
+def test_functions(base: str, head: str) -> list[str]:
+    """Rust test functions the change adds, edits or removes: ``path::name``.
+
+    Test functions count to the write set (W5-08): evidence that ran a test
+    the change edited is never reused for it.
+    """
+    diff = git("diff", "-U0", "--no-renames", "--no-color", f"{base}..{head}", "--", "*.rs").stdout
+    found: set[str] = set()
+    old_path = new_path = None
+    sources: dict[tuple[str, str], list[str]] = {}
+
+    def source(commit: str, path: str) -> list[str]:
+        if (commit, path) not in sources:
+            sources[(commit, path)] = read_blob(commit, path).splitlines() if blob_exists(commit, path) else []
+        return sources[(commit, path)]
+
+    for line in diff.splitlines():
+        if line.startswith("--- "):
+            old_path = line[6:] if line.startswith("--- a/") else None
+        elif line.startswith("+++ "):
+            new_path = line[6:] if line.startswith("+++ b/") else None
+        elif line.startswith("@@"):
+            hunk = HUNK_RE.match(line)
+            if not hunk:
+                continue
+            old_start, old_len = int(hunk.group(1)), int(hunk.group(2) or 1)
+            new_start, new_len = int(hunk.group(3)), int(hunk.group(4) or 1)
+            for commit, path, start, length in ((base, old_path, old_start, old_len), (head, new_path, new_start, new_len)):
+                if not path or not length:
+                    continue
+                lines = source(commit, path)
+                for number in range(start, start + length):
+                    name = _enclosing_test(lines, number - 1)
+                    if name:
+                        found.add(f"{path}::{name}")
+    return sorted(found)
+
+
+def write_set(base: str, head: str) -> dict:
+    return {"paths": changed_paths(base, head), "test_functions": test_functions(base, head)}
 
 
 # ------------------------------------------------------------------- hooks
@@ -200,6 +329,28 @@ def derivations(args, head: str) -> list[dict]:
 # ---------------------------------------------------------------- evidence
 
 
+def read_set_digest(read_set: dict, dirs: dict[str, str], commit: str) -> str:
+    """Address of a check by the read set of the build and test run (W5-08).
+
+    sha256 over the canonical JSON of the toolchain, the feature set, the
+    public API hashes and, for each crate the change touches, the git tree id
+    of the crate directory at the commit the check ran on. A verdict store
+    reuses a verdict only while this digest is unchanged.
+    """
+    trees = {}
+    for name, directory in dirs.items():
+        spec = f"{commit}^{{tree}}" if directory == "." else f"{commit}:{directory}"
+        trees[name] = git("rev-parse", "--verify", "--quiet", spec, check=False).stdout.strip() or None
+    material = {
+        "crates": trees,
+        "features": read_set.get("features", []),
+        "public_api_hashes": read_set.get("public_api_hashes", {}),
+        "toolchain": read_set["toolchain"],
+    }
+    canonical = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def parse_check(spec: str, head: str) -> dict:
     """``name=result`` or ``name=result@commit``."""
     name, sep, rest = spec.partition("=")
@@ -226,19 +377,42 @@ def build_envelope(args) -> dict:
         raise EnvelopeError(f"unknown base ref {args.base_ref!r}")
     base = git("merge-base", base_tip, head).stdout.strip()
 
+    dirs = crate_dirs(base, head)
     read_set = {
-        "crates": crates_touched(base, head),
+        "crates": list(dirs),
         "toolchain": toolchain(head, args.rustc_version),
     }
+    if args.features:
+        read_set["features"] = sorted({f.strip() for spec in args.features for f in spec.split(",") if f.strip()})
     if args.public_api_hashes:
         hashes = load_json_file(args.public_api_hashes, "public API hashes")
         if not isinstance(hashes, dict):
             raise EnvelopeError("--public-api-hashes must hold a JSON object {crate: hash}")
         read_set["public_api_hashes"] = dict(sorted(hashes.items()))
+    if args.observed_reads and args.observed_reads_from_session:
+        raise EnvelopeError("--observed-reads and --observed-reads-from-session exclude each other")
+    if args.session_id and not args.observed_reads_from_session:
+        raise EnvelopeError("--session-id needs --observed-reads-from-session")
+    source = None
     if args.observed_reads:
-        read_set["observed_reads"] = load_observed_reads(args.observed_reads)
+        read_set["observed_reads"], source = load_observed_reads(args.observed_reads)
+    elif args.observed_reads_from_session:
+        read_set["observed_reads"], source = parse_observed_reads(session_readset(args.session_id or []), "lean-ctx session readset")
+    if source is not None:
+        # Only files of the repository can conflict with another change; a
+        # session's reads of untracked or ignored files stay out of the note.
+        tracked = tracked_paths(base, head)
+        kept = [path for path in read_set["observed_reads"] if path in tracked]
+        source["untracked_dropped"] = len(read_set["observed_reads"]) - len(kept)
+        read_set["observed_reads"] = kept
+        read_set["observed_reads_source"] = source
 
     checks = [parse_check(spec, head) for spec in args.check or []]
+    digests: dict[str, str] = {}
+    for check in checks:
+        if check["commit"] not in digests:
+            digests[check["commit"]] = read_set_digest(read_set, dirs, check["commit"])
+        check["read_set_digest"] = digests[check["commit"]]
     return {
         "schema": SCHEMA_ID,
         "head": head,
@@ -250,6 +424,7 @@ def build_envelope(args) -> dict:
         "base": {"ref": args.base_ref, "commit": base},
         "class": classify(args, base, head),
         "read_set": read_set,
+        "write_set": write_set(base, head),
         "derivations": derivations(args, head),
         "evidence": {"checks": sorted(checks, key=lambda c: (c["name"], c["commit"]))},
     }
@@ -287,7 +462,7 @@ def schema_errors(env) -> list[str]:
         expect(isinstance(value, list) and all(isinstance(v, str) and v for v in value), f"{path}: must be a list of strings")
 
     top = {"schema", "head", "intent", "base", "class", "read_set", "derivations", "evidence"}
-    if not keys(env, "envelope", top):
+    if not keys(env, "envelope", top, {"write_set"}):
         return errors
     expect(env["schema"] == SCHEMA_ID, f"schema: must be {SCHEMA_ID!r}")
     sha(env["head"], "head")
@@ -304,7 +479,8 @@ def schema_errors(env) -> list[str]:
 
     expect(env["class"] is None or env["class"] in CLASSES, "class: must be L, I, G or null")
 
-    if keys(env["read_set"], "read_set", {"crates", "toolchain"}, {"public_api_hashes", "observed_reads"}):
+    if keys(env["read_set"], "read_set", {"crates", "toolchain"},
+            {"public_api_hashes", "observed_reads", "observed_reads_source", "features"}):
         rs = env["read_set"]
         str_list(rs["crates"], "read_set.crates")
         if keys(rs["toolchain"], "read_set.toolchain", {"rust_toolchain", "rustc"}):
@@ -318,6 +494,23 @@ def schema_errors(env) -> list[str]:
             expect(isinstance(hashes, dict) and all(isinstance(v, str) for v in hashes.values()), "read_set.public_api_hashes: must map crate to hash string")
         if "observed_reads" in rs:
             str_list(rs["observed_reads"], "read_set.observed_reads")
+        if "features" in rs:
+            str_list(rs["features"], "read_set.features")
+        if "observed_reads_source" in rs:
+            expect("observed_reads" in rs, "read_set.observed_reads_source: needs observed_reads")
+            src = rs["observed_reads_source"]
+            if keys(src, "read_set.observed_reads_source", {"schema", "sessions", "complete"}, {"untracked_dropped"}):
+                expect(src["schema"] == READSET_SCHEMA, f"read_set.observed_reads_source.schema: must be {READSET_SCHEMA!r}")
+                str_list(src["sessions"], "read_set.observed_reads_source.sessions")
+                expect(isinstance(src["complete"], bool), "read_set.observed_reads_source.complete: must be a boolean")
+                if "untracked_dropped" in src:
+                    dropped = src["untracked_dropped"]
+                    expect(isinstance(dropped, int) and not isinstance(dropped, bool) and dropped >= 0,
+                           "read_set.observed_reads_source.untracked_dropped: must be a non-negative integer")
+
+    if "write_set" in env and keys(env["write_set"], "write_set", {"paths", "test_functions"}):
+        str_list(env["write_set"]["paths"], "write_set.paths")
+        str_list(env["write_set"]["test_functions"], "write_set.test_functions")
 
     if expect(isinstance(env["derivations"], list), "derivations: must be a list"):
         for i, entry in enumerate(env["derivations"]):
@@ -333,10 +526,13 @@ def schema_errors(env) -> list[str]:
     if keys(env["evidence"], "evidence", {"checks"}) and expect(isinstance(env["evidence"]["checks"], list), "evidence.checks: must be a list"):
         for i, check in enumerate(env["evidence"]["checks"]):
             path = f"evidence.checks[{i}]"
-            if keys(check, path, {"name", "result", "commit"}):
+            if keys(check, path, {"name", "result", "commit"}, {"read_set_digest"}):
                 expect(isinstance(check["name"], str) and check["name"] != "", f"{path}.name: must be a non-empty string")
                 expect(check["result"] in CHECK_RESULTS, f"{path}.result: must be one of {', '.join(CHECK_RESULTS)}")
                 sha(check["commit"], f"{path}.commit")
+                if "read_set_digest" in check:
+                    expect(isinstance(check["read_set_digest"], str) and bool(DIGEST_RE.match(check["read_set_digest"])),
+                           f"{path}.read_set_digest: must be sha256:<64 hex>")
     return errors
 
 
@@ -429,7 +625,14 @@ def parser() -> argparse.ArgumentParser:
     write.add_argument("--class", dest="change_class", choices=CLASSES, help="change class; else $ECCP_CLASSIFIER, else null")
     write.add_argument("--check", action="append", metavar="NAME=RESULT[@COMMIT]", help="evidence check (repeatable)")
     write.add_argument("--public-api-hashes", metavar="FILE", help="JSON object {crate: hash}")
-    write.add_argument("--observed-reads", metavar="FILE", help="LeanCTX session reads: JSON list or one path per line")
+    write.add_argument("--observed-reads", metavar="FILE",
+                       help="observed reads: `lean-ctx session readset --json` output, a JSON list or one path per line")
+    write.add_argument("--observed-reads-from-session", action="store_true",
+                       help="run `lean-ctx session readset --json` ($LEAN_CTX_BIN) for this repository's root")
+    write.add_argument("--session-id", action="append", metavar="ID",
+                       help="LeanCTX session to read (repeatable; default: the latest one for the root)")
+    write.add_argument("--features", action="append", metavar="LIST",
+                       help="cargo feature set of the checks, comma separated (repeatable)")
     write.add_argument("--derivations", metavar="FILE", help="JSON list overriding ci/derivations.toml")
     write.add_argument("--rustc-version", help="rustc -V output to record instead of running rustc")
     write.add_argument("--dry-run", action="store_true", help="print the envelope, write no note")

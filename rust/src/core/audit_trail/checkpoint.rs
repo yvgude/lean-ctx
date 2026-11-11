@@ -44,8 +44,9 @@ use std::path::{Path, PathBuf};
 /// Bump on any change to the stored `ChainState`: an older checkpoint must
 /// never resume with a field defaulted (v2 added the signed-tally evidence,
 /// v3 the security evidence of every kind, v4 the start link and the seal,
-/// v5 prefixes whose ordinary-entry signatures were verified too).
-const VERSION: u32 = 5;
+/// v5 prefixes whose ordinary-entry signatures were verified too, v6 the
+/// v2 chain head of the state and of the start).
+const VERSION: u32 = 6;
 /// Bytes hashed at the start and at the end of the verified prefix.
 const EDGE_BYTES: u64 = 64 * 1024;
 /// A checkpoint whose last full pass is older than this is not trusted.
@@ -106,6 +107,8 @@ struct Payload {
     full_verified_at: i64,
     /// Chain head and entry count the file starts from.
     start_hash: String,
+    /// The v2 chain head the file starts from (see `ChainState::head`).
+    start_head: Option<String>,
     start_total: usize,
     state: ChainState,
 }
@@ -160,7 +163,10 @@ impl Store {
         now: i64,
     ) -> Option<Resumed> {
         let payload = self.authentic_prefix_of(file, stamp)?;
-        if payload.start_hash != start.prev_hash || payload.start_total != start.total {
+        if payload.start_hash != start.prev_hash
+            || payload.start_head != start.head
+            || payload.start_total != start.total
+        {
             return None;
         }
         let age = now - payload.full_verified_at;
@@ -244,6 +250,7 @@ impl Store {
             tail_digest,
             full_verified_at,
             start_hash: start.prev_hash.clone(),
+            start_head: start.head.clone(),
             start_total: start.total,
             state: state.clone(),
         };

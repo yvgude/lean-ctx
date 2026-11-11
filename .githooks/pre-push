@@ -11,6 +11,9 @@ set -euo pipefail
 REMOTE_NAME="$1"
 REMOTE_URL="$2"
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+# git passes the pushed refs on stdin once; both guards below read them.
+PUSH_REFS="$(cat)"
+ZERO_SHA="0000000000000000000000000000000000000000"
 
 # ── Local CI-parity gate (runs for every remote) ──────────────────────
 # Blocks pushes that would fail the deterministic CI jobs (fmt / clippy /
@@ -33,6 +36,38 @@ if [[ "${SKIP_PREFLIGHT:-0}" != "1" && -x "$REPO_ROOT/scripts/preflight.sh" ]]; 
             exit 1
         fi
     fi
+fi
+
+# ── Derivations guard (ECCP W5-02, every remote) ──────────────────────
+# A generated file (Cargo.lock, SBOM, notices, scope register) in a pushed
+# commit must equal its regeneration from the commit's inputs, or the merge
+# that regenerates it would conflict with the change. Checks only the derived
+# files whose inputs changed since the remote branch (or, for a new branch,
+# since its merge base with $DERIVATIONS_BASE, default <remote>/HEAD), in a
+# temporary worktree of the pushed commit.
+# Bypass:  SKIP_DERIVATIONS=1 git push …   (or  git push --no-verify)
+if [[ "${SKIP_DERIVATIONS:-0}" != "1" && -f "$REPO_ROOT/scripts/derivations.py" ]]; then
+    while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
+        [[ -z "$LOCAL_SHA" || "$LOCAL_SHA" == "$ZERO_SHA" || "$REMOTE_REF" != refs/heads/* ]] && continue
+        SINCE=""
+        if [[ "$REMOTE_SHA" != "$ZERO_SHA" ]] && git cat-file -e "$REMOTE_SHA^{commit}" 2>/dev/null; then
+            SINCE="$REMOTE_SHA"
+        else
+            BASE_REF="${DERIVATIONS_BASE:-refs/remotes/$REMOTE_NAME/HEAD}"
+            SINCE="$(git merge-base "$LOCAL_SHA" "$BASE_REF" 2>/dev/null || true)"
+        fi
+        if [[ -z "$SINCE" ]]; then
+            echo "derivations: no base for ${REMOTE_REF#refs/heads/} (set DERIVATIONS_BASE) — guard skipped"
+            continue
+        fi
+        if ! python3 "$REPO_ROOT/scripts/derivations.py" check --repo "$REPO_ROOT" \
+            --commit "$LOCAL_SHA" --since "$SINCE"; then
+            echo ""
+            echo "pre-push BLOCKED: a derived file differs from its regeneration (see above)."
+            echo "Regenerate and commit it, or: SKIP_DERIVATIONS=1 git push"
+            exit 1
+        fi
+    done <<< "$PUSH_REFS"
 fi
 
 # ── Proprietary-file guard (GitHub only) ──────────────────────────────
@@ -73,11 +108,11 @@ VIOLATIONS=()
 while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     [[ -z "$LOCAL_SHA" ]] && continue
     # skip delete pushes
-    if [[ "$LOCAL_SHA" == "0000000000000000000000000000000000000000" ]]; then
+    if [[ "$LOCAL_SHA" == "$ZERO_SHA" ]]; then
         continue
     fi
 
-    if [[ "$REMOTE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+    if [[ "$REMOTE_SHA" == "$ZERO_SHA" ]]; then
         # New branch on the remote: nothing exists there yet, so every file in
         # the pushed tree becomes newly published. `git diff --name-only <sha>`
         # compares the WORKING TREE against that commit — on a clean tree it
@@ -111,7 +146,7 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
             fi
         done
     done
-done
+done <<< "$PUSH_REFS"
 
 if [[ ${#VIOLATIONS[@]} -gt 0 ]]; then
     echo ""

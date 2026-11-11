@@ -24,7 +24,12 @@ fn stamp() -> (String, bool) {
     // A packaged crate keeps the Engine's stamp (its `.cargo_vcs_info.json`),
     // even when unpacked inside an unrelated git tree.
     println!("cargo::rerun-if-changed=build.rs");
-    if manifest.join(".cargo_vcs_info.json").exists() {
+    // CI check jobs opt out (see the Engine's build script): no commit stamp,
+    // so a new commit leaves an unchanged binary crate fresh.
+    println!("cargo::rerun-if-env-changed=LEANCTX_BUILD_GIT_STAMP");
+    if manifest.join(".cargo_vcs_info.json").exists()
+        || std::env::var("LEANCTX_BUILD_GIT_STAMP").is_ok_and(|v| v == "off")
+    {
         return (String::new(), false);
     }
     let workspace = manifest.join("../..");

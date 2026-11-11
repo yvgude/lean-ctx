@@ -377,6 +377,35 @@ local_shadow_rate_per_mtok = 0.25     # USD/MTok booked for local/loopback infer
   USD/MTok, never 0): local compute is free of provider fees, not of hardware
   and power — keeping "savings vs. local" honest instead of infinite.
 
+**Prompt-cache share guard — `[proxy.cache_share]`.** Without the provider's
+prompt cache every prompt token of a long agent session bills at the full
+input rate. The proxy logs every measured provider call (provider, model,
+input/cache-read/cache-write/output tokens and the purchase price per token
+class, log target `lean_ctx_proxy::cost`), keeps a rolling window per
+provider+model and raises an alarm when the cache-read share of the prompt
+tokens drops below the threshold:
+
+```toml
+[proxy.cache_share]
+alarm_threshold = 0.90        # cache reads / prompt tokens; alarm below this
+window_secs = 3600            # rolling window (60 s – 7 days)
+min_prompt_tokens = 200000    # no alarm before the window has this many prompt tokens
+open_model_providers = ["deepseek"]  # providers with a reliable cache discount
+open_model_patterns = []      # extra model-name fragments counted as open models
+open_model_policy = "flag"    # or "refuse": HTTP 400 destination.open_model_provider_not_allowed
+```
+
+- The alarm logs a warning and emits a `VerificationWarning` event
+  (`cache_share_below_threshold`) once; it re-arms when the share recovers.
+  Local endpoints never alarm.
+- Open-weight models (Llama, Qwen, DeepSeek, Mistral, Gemma, Kimi, GLM,
+  gpt-oss, …) on a provider outside `open_model_providers` are flagged
+  (warning + `open_model_provider_not_allowlisted` event) or refused before
+  the request leaves. The provider is the `[[proxy.providers]]` id or the
+  built-in label.
+- `lean-ctx spend --cache [--json]` shows the window: cache-read share, cost,
+  cost without cache, purchase prices, alarm state and the open-model check.
+
 **Provider-verified savings — `proxy.counterfactual_metering` (#701).** The
 baseline above still *estimates* the uncompressed side (bytes/4). Opt in to
 replace the estimate with a receipt: for every request the proxy actually

@@ -33,7 +33,7 @@ ee/governance/migrations/014_stripe_billing.sql -whitespace
 
 # Derivations registry (scripts/derivations.py): generated files are regenerated
 # and list files merge as line sets, so two branches never text-conflict on them.
-# Needs `python3 scripts/derivations.py install` once per clone; without it git
+# Needs `make setup-merge-drivers` (or `make setup`) once per clone; without it git
 # falls back to its normal text merge. After a merge, run
 # `python3 scripts/derivations.py regenerate` and commit what it rewrites.
 CHANGELOG.md merge=leanctx-lineset

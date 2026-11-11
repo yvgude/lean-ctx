@@ -166,7 +166,8 @@ fn after_a_restart_a_bus_hint_pulls_within_two_seconds_of_the_startup_pull() {
     let vault = "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01";
     let (t0, wall) = (Instant::now(), Utc::now());
     let wall_at = |millis: i64| wall + chrono::Duration::milliseconds(millis);
-    let budget = |millis| super::super::budget::admit(dir.path(), vault, false, wall_at(millis));
+    let budget =
+        |millis| super::super::budget::admit_sync(dir.path(), vault, false, wall_at(millis));
     // Startup: a vault never tried syncs at once.
     let mut due = Due::default();
     assert_eq!(decide(&due, t0, INTERVAL), Some(Trigger::Periodic));
@@ -439,7 +440,7 @@ fn a_vault_backing_off_is_held_for_every_process() {
         roots: Vec::new(),
     };
     let now = Utc::now();
-    let admit = |at| super::super::budget::admit(dir.path(), &record.vault_id, false, at);
+    let admit = |at| super::super::budget::admit_sync(dir.path(), &record.vault_id, false, at);
     assert_eq!(admit(now), super::super::budget::Admit::Go);
     let (mut runs, mut status) = (BTreeMap::new(), SyncStatus::default());
     let offline = HiveError::Offline("down".into());

@@ -507,11 +507,11 @@ mod over_mcp {
                 };
                 let fields = !requested_schema.properties.is_empty();
                 let result = match (codex, fields) {
-                    (Codex::NeverPolicy, false) => ElicitResult::new(ElicitationAction::Accept)
-                        .with_content(serde_json::json!({})),
+                    (Codex::NeverPolicy | Codex::Person, false) => {
+                        ElicitResult::new(ElicitationAction::Accept)
+                            .with_content(serde_json::json!({}))
+                    }
                     (Codex::NeverPolicy, true) => ElicitResult::new(ElicitationAction::Decline),
-                    (Codex::Person, false) => ElicitResult::new(ElicitationAction::Accept)
-                        .with_content(serde_json::json!({})),
                     (Codex::Person, true) => ElicitResult::new(ElicitationAction::Accept)
                         .with_content(serde_json::json!({ "decision": "once" })),
                 };

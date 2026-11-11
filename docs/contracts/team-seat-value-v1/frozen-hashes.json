@@ -27,7 +27,7 @@
     "rust/crates/lean-ctx-protocol/src/lib.rs": "de7353d7e7121e75bdf910048cc47d88790d824a04e3e3a3268ebf8fc3484413",
     "rust/crates/lean-ctx-protocol/src/seat_value.rs": "9b07cb6288cc368874c27fdcd1a8d15f210f101494c797282a08ed9b3d039d14",
     "rust/crates/lean-ctx-protocol/src/team_seat_value_capability.rs": "3c470bcc74989a6c89968a2fca544ea8077eca193f9c74e1db4a70e81c1a6124",
-    "rust/src/core/contracts.rs": "ffca7b802db759bcbd644da7e841a7c9a3c5593c81517547bfe807c1d6ab882e",
+    "rust/src/core/contracts.rs": "bbe04bb46e6b6a872c266883ada84cefd824760246f45a83d51c126c8d712a80",
     "rust/src/core/server_capabilities.rs": "6f5533e7f2f5718856761ed448d57c6390b4bfb1536f9f4125d9c81052db950f",
     "scripts/verify-team-context-v1.py": "5df932374f44c32bdbf6598825498f54e30a2dee42eecc9bfbe79015525f74ee",
     "scripts/verify-team-seat-value-rust-parity.py": "ee8fa529b46407015be5561ef1a72e155e7ac40d5aebb36f0f66dac0481b6a5a",

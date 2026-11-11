@@ -48,6 +48,8 @@ pub struct HiveStatusReport {
     pub workers: usize,
     /// Workers the book gave up that Hive has not retired yet.
     pub workers_retiring: usize,
+    /// The machine's managed configuration: each member and its carrier.
+    pub managed: Option<lean_ctx_protocol::hive::status::HiveStatusManagedV1>,
 }
 
 impl HiveStatusReport {
@@ -108,6 +110,7 @@ impl HiveStatusReport {
             // Per checkout: the CLI fills it for the project it runs in
             // ([`super::resolution::Stale::wire`]).
             vault_mismatch: None,
+            managed: self.managed.clone(),
         }
     }
 }
@@ -145,6 +148,7 @@ pub fn report(
         unvouched_root: super::root_cert::unvouched(store, config),
         workers: 0,
         workers_retiring: 0,
+        managed: lean_ctx::core::config::managed::current().map(|managed| managed.wire()),
     };
     if let Some(instance) = &instance {
         let id = &instance.instance_id;

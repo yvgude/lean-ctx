@@ -116,8 +116,8 @@ fn upsert_solution_rules(path: &std::path::Path, block: &str) -> bool {
 
 fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
     let binary = resolve_hook_command_binary();
-    let session_start_cmd = format!("{binary} hook codex-session-start");
-    let pre_tool_use_cmd = format!("{binary} hook codex-pretooluse");
+    let session_start_cmd = crate::hooks::hook_shell_command(&binary, "codex-session-start");
+    let pre_tool_use_cmd = crate::hooks::hook_shell_command(&binary, "codex-pretooluse");
     let hooks_json_path = codex_dir.join("hooks.json");
 
     let mut changed = false;
@@ -141,7 +141,7 @@ fn install_codex_hook_config(codex_dir: &std::path::Path) -> bool {
     }
 
     // Observe hooks for context awareness
-    let observe_cmd = format!("{binary} hook observe");
+    let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
     if ensure_codex_observe_hooks(&mut root, &observe_cmd) {
         changed = true;
     }

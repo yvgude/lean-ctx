@@ -26,10 +26,19 @@
 //!   enforces them whatever the engine does ([`server_members`], shown
 //!   apart in status).
 //!
-//! The bundle and its policy sections accept unknown members (they are
-//! covered by the signature and reported as unenforced); a known member with
-//! a value outside the contract refuses the whole bundle, so the engine keeps
-//! its last valid one.
+//! The bundle, the effective policy and its sections accept unknown members
+//! and unknown sections (they are covered by the signature and reported as
+//! unenforced); a known member with a value outside the contract refuses the
+//! whole bundle, so the engine keeps its last valid one.
+//!
+//! ent2 (rules for agents and models) adds the optional `agents` section and
+//! the `security` members `allowed_providers`, `require_proxy`,
+//! `readable_roots` and `never_send`. This engine enforces `readable_roots`
+//! and `never_send` (ent2-3: `io_boundary` and the native hooks); it
+//! validates the others but does not enforce them yet
+//! ([`PLANNED_ENGINE_MEMBERS`]): its ack reports them as
+//! unenforced until the enforcement lands and moves each one into
+//! [`ENGINE_MEMBERS`].
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -83,7 +92,19 @@ pub const ENGINE_MEMBERS: &[(&str, &str)] = &[
     ("security.block_secrets", "egress.block_secrets"),
     ("security.blocked_labels", "filters.blocked_labels"),
     ("security.classification", "filters.classification"),
+    ("security.never_send", "io.never_send"),
     ("security.pii", "filters.pii"),
+    ("security.readable_roots", "io.readable_roots"),
+];
+
+/// `section.member` → its `x-instance` gateway pack field, for every member
+/// the schema marks `x-enforcement: instance` that this engine validates but
+/// does not enforce yet (ent2). The ack reports them as unenforced; each one
+/// moves into [`ENGINE_MEMBERS`] with its enforcement (ent2-2 … ent2-4).
+pub const PLANNED_ENGINE_MEMBERS: &[(&str, &str)] = &[
+    ("agents.allowed", "agents.allowed_agents"),
+    ("security.allowed_providers", "routing.allowed_providers"),
+    ("security.require_proxy", "routing.require_proxy"),
 ];
 
 /// Every member the schema marks `x-enforcement: server`: Hive enforces it
@@ -102,6 +123,9 @@ pub const SERVER_MEMBERS: &[&str] = &[
 
 /// Every member the schema marks `x-enforcement: advisory`.
 pub const ADVISORY_MEMBERS: &[&str] = &[
+    // Desktop pre-checks it at session start; the instance cannot see
+    // whether an agent asks for approval.
+    "agents.require_approvals",
     "context.allowed_sources",
     "context.auto_extraction",
     "context.extraction_requires_source_anchor",
@@ -181,6 +205,22 @@ pub struct SecurityPolicyV1 {
     pub external_model_excluded_classes: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidential_out_of_sharing: Option<bool>,
+    /// ent2: upstream providers the proxy may forward to (`anthropic`,
+    /// `openai`, `bedrock`, `local`, …); `x-merge: intersect`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_providers: Option<Vec<String>>,
+    /// ent2: agent model traffic must go through the LeanCTX proxy;
+    /// `x-merge: or`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub require_proxy: Option<bool>,
+    /// ent2: path globs (`{project}` and `~` allowed) LeanCTX tools and
+    /// hooked native reads may read; `x-merge: intersect`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub readable_roots: Option<Vec<String>>,
+    /// ent2: gitignore globs whose content is never read into context nor
+    /// sent to a model or Hive; `x-merge: union`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub never_send: Option<Vec<String>>,
     /// Members this crate does not know (reported as unenforced).
     #[serde(flatten)]
     pub other: BTreeMap<String, Value>,
@@ -242,14 +282,35 @@ pub struct SharingPolicyV1 {
     pub other: BTreeMap<String, Value>,
 }
 
+/// `agents` of an effective policy (ent2). Absent when no level sets one of
+/// its members, so a policy without them keeps its digest.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AgentsPolicyV1 {
+    /// Agent ids allowed to run under LeanCTX (`claude-code`, `codex`,
+    /// `acp:<id>`, `*`); `x-merge: intersect`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed: Option<Vec<String>>,
+    /// Only agents that ask for approval may run; `x-merge: or`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub require_approvals: Option<bool>,
+    #[serde(flatten)]
+    pub other: BTreeMap<String, Value>,
+}
+
 /// The merged policy in normal form (schema `$defs/effective`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct EffectivePolicyV1 {
     pub schema: String,
     pub security: SecurityPolicyV1,
     pub context: ContextPolicyV1,
     pub sharing: SharingPolicyV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agents: Option<AgentsPolicyV1>,
+    /// Sections this crate does not know: covered by the signature, every
+    /// member reported as unenforced. Accepting them keeps a later section
+    /// from making this engine refuse the whole bundle.
+    #[serde(flatten)]
+    pub other: BTreeMap<String, Value>,
 }
 
 /// The effective policy of one vault with a vault-level document.
@@ -542,6 +603,13 @@ fn valid_pattern(value: &str, max: usize) -> bool {
             .any(|c| matches!(c, '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}'))
 }
 
+/// A member or section name this crate does not know: 1..=64 of `a-z`, `_`.
+fn valid_member_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && name.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+}
+
 fn invalid(field: &str) -> ValidationError {
     ValidationError::new(format!("invalid_policy: {field}"))
 }
@@ -614,6 +682,22 @@ impl EffectivePolicyV1 {
                 check_set(Some(group), field, |p| valid_pattern(p, 128))?;
             }
         }
+        check_set(
+            s.allowed_providers.as_ref(),
+            "security.allowed_providers",
+            valid_name,
+        )?;
+        check_set(s.readable_roots.as_ref(), "security.readable_roots", |p| {
+            valid_pattern(p, 256)
+        })?;
+        check_set(s.never_send.as_ref(), "security.never_send", |p| {
+            valid_pattern(p, 256)
+        })?;
+        if let Some(agents) = &self.agents {
+            check_set(agents.allowed.as_ref(), "agents.allowed", |a| {
+                a == "*" || valid_name(a)
+            })?;
+        }
         let c = &self.context;
         check_range(
             c.max_context_tokens,
@@ -685,17 +769,26 @@ impl EffectivePolicyV1 {
             PERSONAL_WORKSPACE_MODES,
             "sharing.personal_workspace",
         )?;
+        let empty = BTreeMap::new();
+        let agents_other = self.agents.as_ref().map_or(&empty, |a| &a.other);
         for (section, other) in [
             ("security", &s.other),
             ("context", &c.other),
             ("sharing", &h.other),
+            ("agents", agents_other),
         ] {
-            if let Some(name) = other.keys().find(|k| {
-                k.is_empty()
-                    || k.len() > 64
-                    || !k.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
-            }) {
+            if let Some(name) = other.keys().find(|k| !valid_member_name(k)) {
                 return Err(invalid(&format!("{section}.{name}")));
+            }
+        }
+        // An unknown section is an object of members like a known one.
+        for (section, value) in &self.other {
+            let ok = valid_member_name(section)
+                && value
+                    .as_object()
+                    .is_some_and(|members| members.keys().all(|k| valid_member_name(k)));
+            if !ok {
+                return Err(invalid(section));
             }
         }
         Ok(())
@@ -722,6 +815,15 @@ impl EffectivePolicyV1 {
             "sharing",
             serde_json::to_value(&self.sharing).unwrap_or(Value::Null),
         ));
+        if let Some(agents) = &self.agents {
+            out.extend(section(
+                "agents",
+                serde_json::to_value(agents).unwrap_or(Value::Null),
+            ));
+        }
+        for (name, value) in &self.other {
+            out.extend(section(name, value.clone()));
+        }
         out
     }
 }
