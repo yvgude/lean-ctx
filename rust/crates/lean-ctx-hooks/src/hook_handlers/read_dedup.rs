@@ -531,11 +531,7 @@ pub(super) fn session_hash(session_id: &str) -> String {
 fn read_dedup_root() -> Option<std::path::PathBuf> {
     let dir = std::env::temp_dir().join("lean-ctx-hook").join("rd");
     std::fs::create_dir_all(&dir).ok()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-    }
+    let _ = lean_ctx::core::secure_fs::restrict_to_owner(&dir);
     Some(dir)
 }
 

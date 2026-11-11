@@ -646,7 +646,8 @@ class TeamSeatCiFragmentTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name)
-        for rel in [*manifest["sha256"], *manifest["ci_fragment_sha256"], self.PACK + "/frozen-hashes.json"]:
+        for rel in [*manifest["sha256"], *manifest["ci_fragment_sha256"],
+                    *manifest["registry_fragment_sha256"], self.PACK + "/frozen-hashes.json"]:
             (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / rel, self.root / rel)
         self.verifier.ROOT = self.root
@@ -658,6 +659,38 @@ class TeamSeatCiFragmentTests(unittest.TestCase):
 
     def test_the_committed_pins_hold(self):
         self.verifier.verify_frozen()
+
+    def test_another_contract_in_the_shared_registry_keeps_the_pin(self):
+        # The registry files list every contract; only the lines naming this pack are frozen.
+        manifest = json.loads((ROOT / self.PACK / "frozen-hashes.json").read_text(encoding="utf-8"))
+        self.assertEqual(sorted(manifest["registry_fragment_sha256"]), sorted(self.verifier.REGISTRY_FILES))
+        for rel in self.verifier.REGISTRY_FILES:
+            self.assertNotIn(rel, manifest["sha256"])
+            self.edit(rel, lambda text: text.replace("\n", "\n// another contract v9\n", 3))
+        self.verifier.verify_frozen()
+
+    def test_editing_or_dropping_a_pack_registry_line_fails_with_the_repin_command(self):
+        rel = "rust/src/core/contracts.rs"
+        self.edit(rel, lambda text: text.replace("team_seat_value_v1.schema_version",
+                                                 "team_seat_value_v1.schema_version_v2"))
+        with self.assertRaisesRegex(
+                ValueError, r"frozen registry fragment: rust/src/core/contracts\.rs - the lines that name "
+                r"team-seat-value-v1 changed.*repin-frozen docs/contracts/team-seat-value-v1/"
+                r"frozen-hashes\.json rust/src/core/contracts\.rs"):
+            self.verifier.verify_frozen()
+        self.setUp()
+        rel = "docs/contracts/README.md"
+        self.edit(rel, lambda text: "".join(
+            line for line in text.splitlines(keepends=True) if "team-seat-value" not in line))
+        with self.assertRaisesRegex(ValueError, "frozen registry fragment: docs/contracts/README.md .*no longer"):
+            self.verifier.verify_frozen()
+
+    def test_a_frozen_hash_failure_names_the_repin_command(self):
+        rel = self.PACK + "/README.md"
+        self.edit(rel, lambda text: text + "\n")
+        with self.assertRaisesRegex(ValueError, "contract freeze.*derivations.py repin-frozen " + self.PACK
+                                    + "/frozen-hashes.json " + rel):
+            self.verifier.verify_frozen()
 
     def test_an_unrelated_ci_edit_keeps_the_pin(self):
         for rel in self.verifier.CI_FILES:

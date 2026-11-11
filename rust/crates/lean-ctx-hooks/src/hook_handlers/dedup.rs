@@ -147,11 +147,7 @@ fn key(event: &str, key_material: &str) -> String {
 fn hook_dir() -> Option<std::path::PathBuf> {
     let dir = std::env::temp_dir().join("lean-ctx-hook");
     fs::create_dir_all(&dir).ok()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
-    }
+    let _ = lean_ctx::core::secure_fs::restrict_to_owner(&dir);
     Some(dir)
 }
 

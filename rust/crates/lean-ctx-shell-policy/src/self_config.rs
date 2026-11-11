@@ -415,6 +415,22 @@ const LEANCTX_READ_SUBCOMMANDS: &[&str] = &[
     "read", "grep", "glob", "find", "ls", "diff", "deps", "search",
 ];
 
+/// Wrappers that only run the command after their own words, judged by that
+/// command (`timeout 120 find ~ -name x` reads like `find ~ -name x`). Not
+/// here: wrappers that change who runs it (`sudo`, `doas`), take the
+/// command from input (`xargs`) or write a file of their own (`flock`,
+/// `strace -o`).
+const PEELED_WRAPPERS: &[&str] = &[
+    "timeout", "nice", "nohup", "env", "command", "builtin", "stdbuf", "setsid",
+];
+
+/// Reserved words that introduce the command after them.
+const COMMAND_KEYWORDS: &[&str] = &["do", "then", "else", "elif", "if", "while", "until", "!"];
+
+/// Most keywords and wrappers peeled off one command; deeper nesting is
+/// judged as written.
+const MAX_PEEL: usize = 8;
+
 /// Programs that carry a script in an argument: a state path anywhere in
 /// such a word (`sed -n '1w ~/.config/lean-ctx/x'`) names that state. For
 /// every other program only a whole word counts, so a commit message that
@@ -475,24 +491,209 @@ enum LineCwd {
 
 thread_local! {
     static LINE_CWD: std::cell::RefCell<LineCwd> = const { std::cell::RefCell::new(LineCwd::Process) };
+    /// Loop variables the line binds (`for d in ~ /tmp`), with the words
+    /// each may stand for, and variables assigned from them (`x=$d`).
+    static LINE_VARS: std::cell::RefCell<Vec<(String, Vec<String>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Restores the enclosing line's working directory when dropped.
-pub(super) struct LineScope(Option<LineCwd>);
+/// Restores the enclosing line's working directory and loop variables when
+/// dropped.
+pub(super) struct LineScope(Option<(LineCwd, Vec<(String, Vec<String>)>)>);
 
-/// Scopes the `cd` tracking to one command line: a nested line (`cd x &&
-/// lean-ctx -c '…'`) starts where the outer one is, and whatever it moves
-/// to is undone when it ends.
+/// Scopes the `cd` tracking and the loop variables to one command line: a
+/// nested line (`cd x && lean-ctx -c '…'`) starts where the outer one is,
+/// and whatever it moves to or binds is undone when it ends.
 pub(super) fn enter_line() -> LineScope {
-    LineScope(Some(LINE_CWD.with(|c| c.borrow().clone())))
+    LineScope(Some((
+        LINE_CWD.with(|c| c.borrow().clone()),
+        LINE_VARS.with(|v| v.borrow().clone()),
+    )))
 }
 
 impl Drop for LineScope {
     fn drop(&mut self) {
-        if let Some(previous) = self.0.take() {
-            LINE_CWD.with(|c| *c.borrow_mut() = previous);
+        if let Some((cwd, vars)) = self.0.take() {
+            LINE_CWD.with(|c| *c.borrow_mut() = cwd);
+            LINE_VARS.with(|v| *v.borrow_mut() = vars);
         }
     }
+}
+
+/// Most words one loop variable is followed through; a line binding more
+/// is judged with every variable it cannot follow refused (fail closed).
+const MAX_BOUND_VALUES: usize = 256;
+
+/// Most command variants one segment is judged in (one per combination of
+/// the values of the loop variables it names).
+const MAX_VARIANTS: usize = 1024;
+
+/// A shell variable name.
+fn is_identifier(word: &str) -> bool {
+    word.chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && word.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// `word` with every expansion of variable `name` (`$name`, `${name}`, and
+/// `${name…}` forms such as `${name%/}`, read as the whole value) replaced
+/// by `value`.
+fn substitute(word: &str, name: &str, value: &str) -> String {
+    let mut out = String::with_capacity(word.len());
+    let mut rest = word;
+    while let Some(at) = rest.find('$') {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 1..];
+        if let Some(braced) = after.strip_prefix('{')
+            && let Some(tail) = braced.strip_prefix(name)
+            && !tail.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+            && let Some(close) = tail.find('}')
+        {
+            out.push_str(value);
+            rest = &tail[close + 1..];
+            continue;
+        }
+        if let Some(tail) = after.strip_prefix(name)
+            && !tail.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+        {
+            out.push_str(value);
+            rest = tail;
+            continue;
+        }
+        out.push('$');
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Whether `word` expands variable `name`.
+fn expands(word: &str, name: &str) -> bool {
+    substitute(word, name, "\u{0}") != word
+}
+
+/// Binds the loop variables of `command` for the state check of its
+/// segments: `for d in ~ /tmp; do rm -rf "$d/.config/lean-ctx"; done` writes
+/// lean-ctx's state through `$d`, although no single segment names it. A
+/// `for`/`select` header only lists its words; the commands of the body are
+/// judged once for every word the variable stands for. A variable assigned
+/// from a bound one (`x=$d`) is followed the same way. The scan is
+/// flow-insensitive and reads the whole line, so it holds for both the
+/// segment and the leaf walk (`( for … )`, `{ for …; }`). The bindings hold
+/// until the returned guard drops.
+#[must_use]
+pub(super) fn bind_loop_variables(command: &str) -> LoopVars {
+    let guard = LoopVars(Some(LINE_VARS.with(|v| v.borrow().clone())));
+    bind_into_line(command);
+    guard
+}
+
+/// Restores the enclosing check's loop variables when dropped.
+pub(super) struct LoopVars(Option<Vec<(String, Vec<String>)>>);
+
+impl Drop for LoopVars {
+    fn drop(&mut self) {
+        if let Some(vars) = self.0.take() {
+            LINE_VARS.with(|v| *v.borrow_mut() = vars);
+        }
+    }
+}
+
+fn bind_into_line(command: &str) {
+    let tokens = crate::shell_tokenize(command);
+    let mut bound: Vec<(String, Vec<String>)> = Vec::new();
+    for (i, token) in tokens.iter().enumerate() {
+        if !matches!(token.trim_start_matches(['(', '{']), "for" | "select") {
+            continue;
+        }
+        let Some(name) = tokens.get(i + 1).map(|n| n.trim_end_matches(';')) else {
+            continue;
+        };
+        if !is_identifier(name) || tokens.get(i + 2).map(String::as_str) != Some("in") {
+            continue;
+        }
+        let mut words = Vec::new();
+        for word in &tokens[i + 3..] {
+            if word == "do" || word.starts_with(';') {
+                break;
+            }
+            if let Some(last) = word.strip_suffix(';') {
+                if !last.is_empty() {
+                    words.push(last.to_string());
+                }
+                break;
+            }
+            words.push(word.clone());
+        }
+        bound.push((name.to_string(), words));
+    }
+    if bound.is_empty() {
+        return;
+    }
+    // `x=$d`, `x="$d/sub"`: x stands for what `$d` does.
+    for _ in 0..3 {
+        let mut added = false;
+        for token in &tokens {
+            let Some((name, value)) = token.split_once('=') else {
+                continue;
+            };
+            let value = value.trim_end_matches(';');
+            if !is_identifier(name) || bound.iter().any(|(n, _)| n == name) {
+                continue;
+            }
+            let mut values = vec![value.to_string()];
+            for (var, words) in &bound {
+                if values.iter().any(|v| expands(v, var)) {
+                    values = values
+                        .iter()
+                        .flat_map(|v| words.iter().map(move |w| substitute(v, var, w)))
+                        .collect();
+                }
+            }
+            if values.len() == 1 && values[0] == value {
+                continue;
+            }
+            bound.push((name.to_string(), values));
+            added = true;
+        }
+        if !added {
+            break;
+        }
+    }
+    LINE_VARS.with(|v| v.borrow_mut().extend(bound));
+}
+
+/// `tokens` once for every combination of the values of the bound loop
+/// variables they expand (just `tokens` when they expand none); `None`
+/// when there are too many to judge.
+fn bound_variants(tokens: &[String]) -> Option<Vec<Vec<String>>> {
+    let vars = LINE_VARS.with(|v| v.borrow().clone());
+    let mut variants = vec![tokens.to_vec()];
+    for (name, values) in &vars {
+        if !variants.iter().any(|v| v.iter().any(|t| expands(t, name))) {
+            continue;
+        }
+        if values.len() > MAX_BOUND_VALUES || variants.len() * values.len().max(1) > MAX_VARIANTS {
+            return None;
+        }
+        variants = variants
+            .iter()
+            .flat_map(|variant| {
+                values.iter().map(move |value| {
+                    variant
+                        .iter()
+                        .map(|t| substitute(t, name, value))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        if variants.is_empty() {
+            // `for d in; do …` runs no body.
+            return Some(variants);
+        }
+    }
+    Some(variants)
 }
 
 thread_local! {
@@ -1278,34 +1479,323 @@ const DIRECTORY_CHANGERS: &[&str] = &["cd", "pushd"];
 /// flags [`viewer_writes`] knows.
 const VIEWERS: &[&str] = &["tree", "fd", "code", "open", "bat"];
 
+/// Whether `token` names a path inside lean-ctx's state (a glob: may match one).
+fn names_inside(
+    token: &str,
+    protected: &[std::path::PathBuf],
+    homes: &[std::path::PathBuf],
+) -> bool {
+    if let Some(glob) = token.find(['*', '?', '[']) {
+        // A glob may match lean-ctx's directories: compare its literal
+        // prefix with them in both directions.
+        return word_paths(&token[..glob], homes).iter().any(|p| {
+            let key = path_key(p);
+            protected
+                .iter()
+                .any(|dir| within(p, dir) || path_key(dir).starts_with(&key))
+        });
+    }
+    word_paths(token, homes)
+        .iter()
+        .any(|p| protected.iter().any(|dir| within(p, dir)))
+}
+
+/// Whether `token` names lean-ctx's state or a directory above it.
+fn names_reaching(
+    token: &str,
+    protected: &[std::path::PathBuf],
+    homes: &[std::path::PathBuf],
+) -> bool {
+    names_inside(token, protected, homes)
+        || word_paths(token, homes).iter().any(|p| {
+            protected
+                .iter()
+                .any(|dir| within(p, dir) || ancestor_of(p, dir))
+        })
+}
+
+/// How many words the redirection at `tokens[i]` takes (`>f`, `2>>f`,
+/// `&>f`, `<f`, `<<<w`, `>&2`: one; `> f`: two), or 0 for any other word.
+fn redirection_words(tokens: &[String], i: usize) -> usize {
+    let token = tokens[i].as_str();
+    if token.starts_with("<(") || token.starts_with(">(") {
+        // Process substitution: a command, not a redirection.
+        return 0;
+    }
+    let op = token.trim_start_matches(|c: char| c.is_ascii_digit());
+    let op = op
+        .strip_prefix('&')
+        .filter(|r| r.starts_with('>'))
+        .unwrap_or(op);
+    let rest = [">>", ">|", ">&", "<>", "<<<", "<<-", "<<", "<&", ">", "<"]
+        .iter()
+        .find_map(|p| op.strip_prefix(p));
+    match rest {
+        None => 0,
+        Some("") if i + 1 < tokens.len() => 2,
+        Some(_) => 1,
+    }
+}
+
+/// `tokens` without their redirections, wherever they stand (`>f timeout 5
+/// cat`, `timeout 5 2>/dev/null ls`): the shell applies them before it runs
+/// the program, so they are not words of the command. Returns the kept words
+/// and the removed ones.
+fn split_redirections(tokens: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut kept = Vec::with_capacity(tokens.len());
+    let mut removed = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        match redirection_words(tokens, i) {
+            0 => {
+                kept.push(tokens[i].clone());
+                i += 1;
+            }
+            n => {
+                removed.extend_from_slice(&tokens[i..i + n]);
+                i += n;
+            }
+        }
+    }
+    (kept, removed)
+}
+
+fn without_redirections(tokens: &[String]) -> Vec<String> {
+    split_redirections(tokens).0
+}
+
+/// `NAME=VALUE`, or one whose name is built at run time (`${N}=x`).
+fn is_assignment_word(word: &str) -> bool {
+    word.split_once('=').is_some_and(|(name, _)| {
+        is_identifier(name) || (!name.is_empty() && name.contains(['$', '`', '{', '\\']))
+    })
+}
+
+/// Variables that change which program, library or startup file a wrapped
+/// command runs (`env PATH=/x ls`, `env LD_PRELOAD=… ls`).
+fn changes_lookup(assignment: &str) -> bool {
+    let Some((name, _)) = assignment.split_once('=') else {
+        return false;
+    };
+    !is_identifier(name)
+        || super::side_doors::is_blocked_env(name)
+        || matches!(
+            name,
+            "PATH"
+                | "IFS"
+                | "SHELL"
+                | "CDPATH"
+                | "BASHOPTS"
+                | "SHELLOPTS"
+                | "GLOBIGNORE"
+                | "HOME"
+                | "BASH_ENV"
+                | "ENV"
+        )
+}
+
+/// Whether `env`'s own words split a string into the command (`-S`,
+/// `--split-string`), move it into another directory (`-C`, `--chdir`) or
+/// search another path for it (BSD `-P`). Any single-dash word holding one
+/// of those letters counts, even as an option value: refusing too much is
+/// the safe side.
+fn env_relocates(own: &[String]) -> bool {
+    own.iter().any(|w| {
+        if let Some(long) = w.strip_prefix("--") {
+            let name = long.split('=').next().unwrap_or("");
+            return !name.is_empty()
+                && ["split-string", "chdir"]
+                    .iter()
+                    .any(|o| o.starts_with(name));
+        }
+        w.strip_prefix('-')
+            .is_some_and(|cluster| cluster.contains(['S', 'C', 'P']))
+    })
+}
+
+/// A command with its reserved words and wrappers peeled off.
+#[derive(Default)]
+struct Peeled {
+    /// The simple command that runs, its program word reduced to its
+    /// basename; empty when none runs.
+    program: Vec<String>,
+    /// The command from the first wrapper whose own words reach lean-ctx's
+    /// state, or that changes how or where the command is found
+    /// (`env -S`, `env -C`, `env PATH=…`): judged as written, the wrapper
+    /// as the program, in addition to [`Self::program`].
+    conservative: Option<Vec<String>>,
+    /// The words a `for`/`select` header lists.
+    header: Option<Vec<String>>,
+}
+
+/// The last path component of a program word.
+fn basename(word: &str) -> String {
+    word.rsplit('/').next().unwrap_or(word).to_string()
+}
+
+/// Peels reserved words (`do`, `then`, `!`, `time -p`, …), a `for`/`select`
+/// header and the wrappers in [`PEELED_WRAPPERS`] (parsed by
+/// `delegated_command_tokens`) off `tokens`, whose redirections are already
+/// removed.
+fn peel(mut words: Vec<String>, reaches: &dyn Fn(&str) -> bool) -> Peeled {
+    let mut out = Peeled::default();
+    let original = words.clone();
+    let mut after_wrapper = false;
+    for _ in 0..MAX_PEEL {
+        if !after_wrapper {
+            let skip = words
+                .iter()
+                .take_while(|w| is_assignment_word(w) || matches!(w.as_str(), "{" | "("))
+                .count();
+            words.drain(..skip);
+        }
+        let Some(first) = words.first().cloned() else {
+            return out;
+        };
+        if COMMAND_KEYWORDS.contains(&first.as_str()) {
+            words.remove(0);
+            after_wrapper = false;
+            continue;
+        }
+        if first == "time" {
+            words.remove(0);
+            while matches!(words.first().map(String::as_str), Some("-p" | "--")) {
+                words.remove(0);
+            }
+            after_wrapper = false;
+            continue;
+        }
+        if matches!(first.as_str(), "for" | "select") {
+            let body_at = words.iter().position(|w| w == "do");
+            let list_end = body_at.unwrap_or(words.len());
+            let list = if words.get(2).map(String::as_str) == Some("in") {
+                words[3.min(list_end)..list_end]
+                    .iter()
+                    .map(|w| w.trim_end_matches(';').to_string())
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            out.header.get_or_insert_with(Vec::new).extend(list);
+            words = body_at.map_or_else(Vec::new, |at| words[at + 1..].to_vec());
+            after_wrapper = false;
+            continue;
+        }
+        let wrapper = basename(&first);
+        if !PEELED_WRAPPERS.contains(&wrapper.as_str()) {
+            words[0] = wrapper;
+            out.program = words;
+            return out;
+        }
+        let rest = &words[1..];
+        let inner = super::enforcement::delegated_command_tokens(&wrapper, rest);
+        let own = if rest.ends_with(&inner) {
+            &rest[..rest.len() - inner.len()]
+        } else {
+            rest
+        };
+        let risky = own.iter().any(|w| reaches(w))
+            || (wrapper == "env" && env_relocates(own))
+            || super::enforcement::wrapper_assignment_words(&wrapper, rest)
+                .iter()
+                .any(|a| changes_lookup(a));
+        if risky && out.conservative.is_none() {
+            // The wrapper as written, plus the words it splits out of a
+            // string (`env -S 'rm -rf ~'`) when they are not its own.
+            let mut as_written = words.clone();
+            as_written[0] = wrapper;
+            if !rest.ends_with(&inner) {
+                as_written.extend(inner.iter().cloned());
+            }
+            out.conservative = Some(as_written);
+        }
+        words = inner;
+        after_wrapper = true;
+    }
+    // Nested deeper than this check peels: judged as written.
+    let mut as_written = original;
+    if let Some(first) = as_written.first_mut() {
+        *first = basename(first);
+    }
+    out.conservative.get_or_insert(as_written);
+    out
+}
+
+/// What `tokens`, one simple command as written, does to lean-ctx's state:
+/// a redirection into it writes it, whatever the program and wherever the
+/// redirection stands; a `for`/`select` header may not list a word inside
+/// it; otherwise the command behind its reserved words and wrappers is
+/// judged by its program (#2231).
 fn touches_protected(
     tokens: &[String],
     protected: &[std::path::PathBuf],
     homes: &[std::path::PathBuf],
 ) -> Option<Tampering> {
-    let base = tokens.first()?.as_str();
-    let inside = |token: &str| {
-        if let Some(glob) = token.find(['*', '?', '[']) {
-            // A glob may match lean-ctx's directories: compare its literal
-            // prefix with them in both directions.
-            return word_paths(&token[..glob], homes).iter().any(|p| {
-                let key = path_key(p);
-                protected
-                    .iter()
-                    .any(|dir| within(p, dir) || path_key(dir).starts_with(&key))
-            });
-        }
-        word_paths(token, homes)
-            .iter()
-            .any(|p| protected.iter().any(|dir| within(p, dir)))
+    let inside = |token: &str| names_inside(token, protected, homes);
+    let reaches = |token: &str| names_reaching(token, protected, homes);
+    let (words, removed) = split_redirections(tokens);
+    let shown = |base: &str, token: &str| {
+        let path = word_paths(token, homes)
+            .last()
+            .map_or_else(|| token.to_string(), |p| p.display().to_string());
+        format!("{base} {path}")
     };
+    // A redirect into lean-ctx's state writes it, whatever the program.
+    if let Some(target) = (0..tokens.len())
+        .filter_map(|i| redirect_target(tokens, i))
+        .find(|t| inside(t))
+    {
+        let base = words.first().map_or_else(String::new, |w| basename(w));
+        return Some(Tampering::new(shown(&base, target), true));
+    }
+    // A removed word naming a directory above the state was likely a quoted
+    // operand (`rm -rf ">" ~`), not a redirection: judge the line as written.
+    if removed.iter().any(|w| reaches(w)) {
+        let mut as_written = tokens.to_vec();
+        as_written[0] = basename(&as_written[0]);
+        if let Some(verdict) = touches_program(&as_written, protected, homes) {
+            return Some(verdict);
+        }
+    }
+    let peeled = peel(words, &reaches);
+    if let Some(word) = peeled.header.iter().flatten().find(|w| inside(w)) {
+        return Some(Tampering::new(shown("for", word), false));
+    }
+    if let Some(verdict) = peeled
+        .conservative
+        .as_deref()
+        .and_then(|as_written| touches_program(as_written, protected, homes))
+    {
+        return Some(verdict);
+    }
+    touches_program(&peeled.program, protected, homes)
+}
+
+/// The program words (`peel`) of a command when it moves the shell into a
+/// directory (`cd`, `pushd`, `popd`, also behind `builtin`/`command`).
+fn directory_change(tokens: &[String]) -> Option<Vec<String>> {
+    let program = peel(without_redirections(tokens), &|_| false).program;
+    program
+        .first()
+        .is_some_and(|b| matches!(b.as_str(), "cd" | "pushd" | "popd"))
+        .then_some(program)
+}
+
+/// What one simple command, its program word a basename, does to lean-ctx's
+/// state.
+fn touches_program(
+    tokens: &[String],
+    protected: &[std::path::PathBuf],
+    homes: &[std::path::PathBuf],
+) -> Option<Tampering> {
+    let base = tokens.first()?.as_str();
+    let inside = |token: &str| names_inside(token, protected, homes);
     let target_hits = |p: &std::path::Path| {
         protected
             .iter()
             .any(|dir| within(p, dir) || ancestor_of(p, dir))
     };
-    let reaches =
-        |token: &str| inside(token) || word_paths(token, homes).iter().any(|p| target_hits(p));
+    let reaches = |token: &str| names_reaching(token, protected, homes);
     // A word naming a protected directory anywhere inside it (a sed or awk
     // script: `sed -n '1w ~/.config/lean-ctx/config.toml'`).
     let mentions = |token: &str| {
@@ -1447,14 +1937,32 @@ fn touches_protected(
 /// claims file would steal a fencing token). Reading stays allowed, judged by
 /// what the command does rather than by its program: `sed -n 1,3p` reads,
 /// `sed -i` writes (#2165).
-pub(super) fn check_state_tampering(tokens: &[String]) -> Result<(), ShellError> {
+///
+/// `segment` is the simple command as written; `tokens` the caller's words
+/// for it, which drop a leading redirection's target (`>~/x timeout 5
+/// true`): the segment's own words are judged, the caller's only when the
+/// segment has none. A command behind `timeout`, `nice`, `env`, a reserved word or a
+/// `for` header is judged by its program (#2231), once for every value of
+/// the loop variables it expands.
+pub(super) fn check_state_tampering(segment: &str, tokens: &[String]) -> Result<(), ShellError> {
     let homes = homes();
-    let verdict = touches_protected(tokens, &protected_dirs(), &homes);
-    if tokens
-        .first()
-        .is_some_and(|b| matches!(b.as_str(), "cd" | "pushd" | "popd"))
-    {
-        follow_directory_change(tokens, &homes);
+    let mut raw = crate::shell_tokenize(crate::skip_env_assignments(segment.trim()));
+    if raw.first().is_some_and(|t| t == "{") {
+        raw.remove(0);
+    }
+    let words: &[String] = if raw.is_empty() { tokens } else { &raw };
+    let protected = protected_dirs();
+    let verdict = match bound_variants(words) {
+        Some(variants) => variants
+            .iter()
+            .find_map(|variant| touches_protected(variant, &protected, &homes)),
+        None => Some(Tampering::new(
+            format!("{} (a loop over too many words)", words.join(" ")),
+            false,
+        )),
+    };
+    if let Some(program) = directory_change(words) {
+        follow_directory_change(&program, &homes);
     }
     match verdict {
         Some(Tampering {

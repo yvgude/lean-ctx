@@ -137,6 +137,13 @@ pub fn refresh_installed_shell_hooks() {
     let binary = lean_ctx::core::portable_binary::stable_shell_binary(
         &lean_ctx::core::portable_binary::resolve_portable_binary(),
     );
+    // A `cargo test` binary must never become the real account's shell hook,
+    // `env.sh` or `_lc` shim (#2232).
+    if lean_ctx::core::home::resolve_home_dir().is_some_and(|home| {
+        lean_ctx::core::portable_binary::refuses_transient_binary_for_home(&binary, &home)
+    }) {
+        return;
+    }
     if refresh_shell_hooks_in(&dir, &binary) {
         let bash_binary = hook_binary_for_shell("bash", &binary);
         if dir.join("env.sh").exists() {

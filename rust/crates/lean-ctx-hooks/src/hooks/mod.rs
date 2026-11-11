@@ -102,6 +102,10 @@ pub fn refresh_installed_hooks() {
     let Some(home) = lean_ctx::core::home::resolve_home_dir() else {
         return;
     };
+    // A `cargo test` binary must never become the real account's hook (#2232).
+    if refuses_transient_hook_binary(&home) {
+        return;
+    }
     // A newer lean-ctx wrote this setup (an update replaced the binary under a
     // still-running server or daemon): its setup stands.
     if let Some(newer) = setup_writer::newer_writer() {
@@ -282,6 +286,15 @@ fn resolve_hook_command_binary() -> String {
         return portable;
     }
     resolve_binary_path()
+}
+
+/// True (and logged) when the hook binary this process would write is a
+/// transient cargo artifact and `home` is the real account home (#2232).
+pub(crate) fn refuses_transient_hook_binary(home: &std::path::Path) -> bool {
+    lean_ctx::core::portable_binary::refuses_transient_binary_for_home(
+        &resolve_hook_command_binary(),
+        home,
+    )
 }
 
 fn resolve_binary_path_for_bash() -> String {

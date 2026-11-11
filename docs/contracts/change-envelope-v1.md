@@ -26,6 +26,7 @@ scripts/eccp-envelope write --base-ref origin/integration/3.12.3 --task 157 \
   --observed-reads-from-session
 scripts/eccp-envelope show HEAD
 scripts/eccp-envelope verify HEAD
+scripts/eccp-envelope verify-reads HEAD
 git push origin refs/notes/eccp   # notes are not pushed by default
 ```
 
@@ -61,6 +62,30 @@ may reuse a verdict while the digest is unchanged. `write_set` lists what the
 change writes; test functions count to it, so a check that ran a test the
 change edited is never taken over. A foreign merge invalidates evidence only
 when its write set meets this change's read set, or the reverse.
+
+## Verifying evidence against observed reads (W5-08)
+
+`scripts/eccp-envelope verify-reads [--json] [COMMIT]` checks that the
+observed read set proves the change was read before it was made and tested.
+It runs offline on the note and the local repository and prints the same
+verdict for the same note (schema `leanctx.read-coverage/v1` with `--json`).
+
+A path is a required read, with its reasons, when it existed at
+`base.commit` and it is changed since then (`changed`: edited or deleted),
+an acceptance file (`acceptance`), or an input of a changed path that
+`derivations` declares as an output (`derivation-input`); the derived output
+itself needs no read. Paths the change adds are listed as `authored`.
+
+The `verdict` is `covered` when every required read is in
+`read_set.observed_reads`, `missing_reads` when one is not (listed in
+`missing`), and `unproven` without observed reads. Each evidence check is
+`backed` when the reads required by the change up to the check's commit
+were observed. `complete` and `sessions` repeat `observed_reads_source`;
+with `complete: false` a missing read may have been evicted from the
+session history and is still reported. A recorded `write_set.paths` that
+differs from the files changed since `base.commit` makes the envelope
+invalid. Exit codes: 0 covered, 1 not covered or invalid envelope, 2 usage
+or git error.
 
 ## Compatibility
 

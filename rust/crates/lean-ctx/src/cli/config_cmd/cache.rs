@@ -57,12 +57,12 @@ fn try_cmd_cache(args: &[String]) -> std::io::Result<()> {
             }
         }
         Some("invalidate") => {
-            if args.len() < 2 {
-                eprintln!("Usage: lean-ctx cache invalidate <path>");
+            let Some(path) = invalidate_target(&args[1..]) else {
+                eprintln!("Usage: lean-ctx cache invalidate [--] <path>");
                 std::process::exit(1);
-            }
-            cli_cache::invalidate(&args[1])?;
-            println!("Invalidated cache for {}", args[1]);
+            };
+            cli_cache::invalidate(path)?;
+            println!("Invalidated cache for {path}");
         }
         Some("prune") => {
             let bm25 = prune_bm25_caches();
@@ -117,4 +117,32 @@ fn try_cmd_cache(args: &[String]) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// The path after `cache invalidate`; a leading `--` ends the options, so
+/// `cache invalidate -- -h` names a file called `-h` (#2230).
+fn invalidate_target(rest: &[String]) -> Option<&str> {
+    match rest {
+        [sep, path, ..] if sep == "--" => Some(path),
+        [sep] if sep == "--" => None,
+        [path, ..] => Some(path),
+        [] => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::invalidate_target;
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn invalidate_target_honours_end_of_options_2230() {
+        assert_eq!(invalidate_target(&args(&["--", "-h"])), Some("-h"));
+        assert_eq!(invalidate_target(&args(&["src/a.rs"])), Some("src/a.rs"));
+        assert_eq!(invalidate_target(&args(&["--"])), None);
+        assert_eq!(invalidate_target(&args(&[])), None);
+    }
 }

@@ -448,5 +448,187 @@ class DerivationCheckTest(RepoCase):
         self.assertEqual(push(SKIP_DERIVATIONS="1").returncode, 0)
 
 
+APACHE = "// SPDX-License-Identifier: Apache-2.0\n"
+MATRIX = """[licenses.apache]
+spdx = "Apache-2.0"
+
+[licenses.third_party]
+spdx = "NOASSERTION"
+
+[[rules]]
+name = "private-service"
+class = "private_service"
+license = "apache"
+include = ["src/svc/**"]
+
+[[rules]]
+name = "vendored"
+class = "third_party"
+license = "third_party"
+include = ["src/vendor/**"]
+
+[[rules]]
+name = "fixtures"
+class = "core"
+license = "apache"
+fixture = true
+include = ["src/fixtures/**"]
+
+[[rules]]
+name = "own-source"
+class = "core"
+license = "apache"
+include = ["src/**"]
+exclude = ["src/svc/**", "src/vendor/**", "src/fixtures/**"]
+"""
+
+
+class PublishManifestTest(RepoCase):
+    """`write-publish-manifest` names new public Apache files in `new_paths` and refuses every
+    file whose publication needs a decision; `check` and `regenerate` run it."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        for script in ("public-export.py", "ip-provenance-audit.py"):
+            shutil.copy(ROOT / "scripts" / script, self.repo / "scripts" / script)
+        self.write({"LICENSE_MATRIX.toml": MATRIX, "src/old.rs": APACHE})
+        self.commit("public baseline")
+        self.baseline = self.git("rev-parse", "HEAD").stdout.strip()
+        self.write({"PUBLISH_MANIFEST.toml": self.manifest('  "src/a.rs",\n  # reviewed in !1\n  "src/m.rs",\n'
+                                                           '  "src/gone.rs",\n'),
+                    "src/a.rs": APACHE, "src/m.rs": APACHE})
+        self.commit("named files")
+        self.base = self.git("rev-parse", "HEAD").stdout.strip()
+
+    def manifest(self, names: str, baseline: str | None = None) -> str:
+        return (f'schema = 1\ninclude = ["src/**"]\nexclude = ["src/secret/**"]\nforbidden_prefixes = ["private/"]\n'
+                f'baseline_commit = "{baseline or self.baseline}"\nnew_paths = [\n{names}]\n')
+
+    def run_cmd(self, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["python3", "scripts/derivations.py", *args], cwd=self.repo, env=self.env,
+                              capture_output=True, text=True)
+
+    def test_names_a_new_apache_file_in_order_and_drops_a_stale_name(self) -> None:
+        self.write({"src/h.rs": APACHE})
+        run = self.run_cmd("write-publish-manifest")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(self.read("PUBLISH_MANIFEST.toml"),
+                         self.manifest('  "src/a.rs",\n  "src/h.rs",\n  # reviewed in !1\n  "src/m.rs",\n'))
+        self.assertIn("named src/h.rs", run.stderr)
+        self.assertIn("dropped src/gone.rs", run.stderr)
+        self.assertEqual(self.run_cmd("write-publish-manifest", "--check").returncode, 0)
+
+    def test_check_reports_without_writing(self) -> None:
+        self.write({"src/h.rs": APACHE})
+        before = self.read("PUBLISH_MANIFEST.toml")
+        run = self.run_cmd("write-publish-manifest", "--check")
+        self.assertEqual(run.returncode, 1, run.stderr)
+        self.assertIn("src/h.rs is new to the public tree", run.stderr)
+        self.assertIn("names src/gone.rs, which is not a new selected file", run.stderr)
+        self.assertEqual(self.read("PUBLISH_MANIFEST.toml"), before)
+
+    def test_refuses_every_file_that_needs_a_decision(self) -> None:
+        self.write({"src/h.rs": APACHE, "src/svc/x.rs": APACHE, "src/vendor/v.rs": APACHE,
+                    "src/fixtures/f.json": "{}\n", "src/doc.md": "# no header\n",
+                    "src/secret/k.rs": "excluded, never selected\n"})
+        run = self.run_cmd("write-publish-manifest")
+        self.assertEqual(run.returncode, 1, run.stderr)
+        manifest = self.read("PUBLISH_MANIFEST.toml")
+        self.assertIn('"src/h.rs"', manifest)
+        for path in ("src/svc/x.rs", "src/vendor/v.rs", "src/fixtures/f.json", "src/doc.md", "src/secret/k.rs"):
+            self.assertNotIn(f'"{path}"', manifest)
+        self.assertRegex(run.stderr, r"src/svc/x\.rs: not named automatically: private by .*add it to `exclude`")
+        self.assertRegex(run.stderr, r"src/vendor/v\.rs: not named automatically: .*third-party provenance")
+        self.assertRegex(run.stderr, r"src/fixtures/f\.json: not named automatically: fixture")
+        self.assertRegex(run.stderr, r"src/doc\.md: not named automatically: it does not declare "
+                                     r"`SPDX-License-Identifier: Apache-2\.0`")
+        self.assertNotIn("src/secret/k.rs", run.stderr)
+        self.assertIn("4 new public file(s) need a decision", run.stderr)
+
+    def test_a_file_under_no_or_two_matrix_rules_is_refused(self) -> None:
+        self.write({"LICENSE_MATRIX.toml": MATRIX.replace('include = ["src/**"]', 'include = ["src/*.rs"]')
+                    + '\n[[rules]]\nname = "docs"\nclass = "core"\nlicense = "apache"\ninclude = ["src/a*"]\n',
+                    "src/sub/n.txt": APACHE, "src/ab.rs": APACHE})
+        run = self.run_cmd("write-publish-manifest", "--check")
+        self.assertEqual(run.returncode, 1, run.stderr)
+        self.assertIn("src/sub/n.txt: not named automatically: LICENSE_MATRIX.toml has 0 rules", run.stderr)
+        self.assertIn("src/ab.rs: not named automatically: LICENSE_MATRIX.toml has 2 rules", run.stderr)
+
+    def test_a_missing_baseline_is_unavailable_not_a_failure(self) -> None:
+        self.write({"PUBLISH_MANIFEST.toml": self.manifest("", baseline="0" * 40)})
+        run = self.run_cmd("write-publish-manifest", "--check")
+        self.assertEqual(run.returncode, 2, run.stderr)
+        self.assertIn("is not in this clone; fetch it", run.stderr)
+
+    def test_regenerate_names_the_file_and_check_gates_the_commit(self) -> None:
+        self.write({"src/h.rs": APACHE})
+        self.commit("new public file, not named")
+        run = self.run_cmd("check", "--since", self.base)
+        self.assertEqual(run.returncode, 1, run.stderr)
+        self.assertIn("derivations: check failed: PUBLISH_MANIFEST.toml", run.stderr)
+        run = self.run_cmd("regenerate", "--since", self.base)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn('  "src/h.rs",\n', self.read("PUBLISH_MANIFEST.toml"))
+        self.commit("named")
+        run = self.run_cmd("check", "--since", self.base)
+        self.assertEqual(run.returncode, 0, run.stderr)
+
+
+class RepinFrozenTest(RepoCase):
+    """A frozen hash is a contract promise: only `repin-frozen` with the path named moves it, and
+    `regenerate` never does."""
+
+    PACK = "docs/contracts/demo-v1"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.write({f"{self.PACK}/a.md": "a\n", f"{self.PACK}/b.md": "b\n", f"{self.PACK}/c.md": "c\n"})
+        self.pins = {"contract": "demo-v1", "sha256": {f"{self.PACK}/a.md": self.digest("a\n"),
+                                                       f"{self.PACK}/b.md": self.digest("b\n")}}
+        self.write({f"{self.PACK}/frozen-hashes.json": self.dump(self.pins)})
+        self.commit("pack")
+
+    @staticmethod
+    def digest(text: str) -> str:
+        return hashlib.sha256(text.encode()).hexdigest()
+
+    @staticmethod
+    def dump(data: dict) -> str:
+        import json
+        return json.dumps(data, indent=2, sort_keys=True) + "\n"
+
+    def repin(self, *paths: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["python3", "scripts/derivations.py", "repin-frozen",
+                               f"{self.PACK}/frozen-hashes.json", *paths], cwd=self.repo, env=self.env,
+                              capture_output=True, text=True)
+
+    def test_repins_only_the_named_entry(self) -> None:
+        self.write({f"{self.PACK}/a.md": "a2\n", f"{self.PACK}/b.md": "b2\n"})
+        run = self.repin(f"{self.PACK}/a.md")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.pins["sha256"][f"{self.PACK}/a.md"] = self.digest("a2\n")
+        self.assertEqual(self.read(f"{self.PACK}/frozen-hashes.json"), self.dump(self.pins))
+        self.assertIn("name the contract review in the commit", run.stderr)
+
+    def test_refuses_a_path_that_is_not_pinned(self) -> None:
+        run = self.repin(f"{self.PACK}/c.md")
+        self.assertEqual(run.returncode, 1, run.stderr)
+        self.assertIn("is not pinned", run.stderr)
+        self.assertEqual(self.read(f"{self.PACK}/frozen-hashes.json"), self.dump(self.pins))
+
+    def test_refuses_a_non_canonical_manifest(self) -> None:
+        self.write({f"{self.PACK}/frozen-hashes.json": self.dump(self.pins).replace("  ", "    ")})
+        run = self.repin(f"{self.PACK}/a.md")
+        self.assertNotEqual(run.returncode, 0)
+        self.assertIn("not in canonical form", run.stderr)
+
+    def test_regenerate_never_repins_a_frozen_hash(self) -> None:
+        self.write({f"{self.PACK}/a.md": "changed\n"})
+        run = subprocess.run(["python3", "scripts/derivations.py", "regenerate", "--since", "HEAD"],
+                             cwd=self.repo, env=self.env, capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(self.read(f"{self.PACK}/frozen-hashes.json"), self.dump(self.pins))
+
+
 if __name__ == "__main__":
     unittest.main()

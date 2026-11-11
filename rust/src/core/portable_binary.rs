@@ -54,11 +54,80 @@ pub fn resolve_portable_binary() -> String {
         .ok()
         .map(|p| p.to_string_lossy().into_owned());
 
-    let which_raw = crate::core::pathutil::find_on_path("lean-ctx")
+    // The first `lean-ctx` on PATH that is not a test/example binary in a
+    // cargo output directory (#2232).
+    let which_raw = crate::core::pathutil::find_all_on_path("lean-ctx")
+        .into_iter()
         .map(|p| p.to_string_lossy().into_owned())
-        .filter(|s| !s.is_empty());
+        .find(|s| !s.is_empty() && !is_transient_build_binary(s));
 
     choose_binary_path(current.as_deref(), which_raw.as_deref())
+}
+
+/// Directories of a cargo profile that hold only intermediate artifacts:
+/// test and example binaries, build scripts, incremental state.
+const TRANSIENT_CARGO_DIRS: &[&str] = &["deps", "build", "examples", "incremental"];
+
+/// Whether `path` is an intermediate cargo artifact (#2232): anything under
+/// `target/{debug,release}/{deps,build,examples,incremental}/` or the same
+/// below a `target/<triple>/` directory, or below any other cargo profile
+/// directory recognised by what cargo wrote into it (a `CARGO_TARGET_DIR` of
+/// another name, a named profile).
+///
+/// Such a binary — a `cargo test` harness like `lean_ctx_server-1a2b3c4d` —
+/// disappears with the next build or `cargo clean`, so it must never be baked
+/// into a hook or agent config. A developer's own `target/release/lean-ctx`
+/// sits directly in the profile directory, is not transient, and stays a
+/// valid dev install.
+pub fn is_transient_build_binary(path: &str) -> bool {
+    let comps: Vec<&str> = path.split(['/', '\\']).collect();
+    (1..comps.len().saturating_sub(1)).any(|i| {
+        if !TRANSIENT_CARGO_DIRS.contains(&comps[i]) {
+            return false;
+        }
+        let profile = comps[i - 1];
+        let named_profile = matches!(profile, "debug" | "release")
+            && ((i >= 2 && comps[i - 2].ends_with("target"))
+                || (i >= 3 && comps[i - 3].ends_with("target")));
+        named_profile || is_cargo_profile_dir(std::path::Path::new(&comps[..i].join("/")))
+    })
+}
+
+/// True when writing `binary` into the agent or shell configuration of
+/// `home` would bake a transient cargo artifact into the real account's
+/// configuration (#2232). A test that runs a server or a hook refresh with
+/// the real `HOME` would otherwise point the user's live hooks at a test
+/// binary that the next build deletes.
+///
+/// The real home comes from the account database, not `$HOME`, so tests with
+/// a temporary `HOME` keep exercising the writers. Logs why when it refuses.
+pub fn refuses_transient_binary_for_home(binary: &str, home: &std::path::Path) -> bool {
+    let real_home = crate::core::config::shell_policy::real_user_home();
+    let refused = transient_binary_for_real_home(binary, home, real_home.as_deref());
+    if refused {
+        tracing::warn!(
+            "not writing transient build binary {binary} into the hook configuration of {}; \
+             install lean-ctx (or put it on PATH) and run `lean-ctx setup`",
+            home.display()
+        );
+    }
+    refused
+}
+
+fn transient_binary_for_real_home(
+    binary: &str,
+    home: &std::path::Path,
+    real_home: Option<&std::path::Path>,
+) -> bool {
+    if !is_transient_build_binary(binary.trim().trim_matches(['\'', '"'])) {
+        return false;
+    }
+    // Without an account-database entry there is no real home to protect.
+    let Some(real_home) = real_home else {
+        return false;
+    };
+    let canonical = |p: &std::path::Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.into());
+    canonical(home) == canonical(real_home)
 }
 
 /// File names a `lean-ctx` launcher can have inside a `PATH` directory.
@@ -269,10 +338,11 @@ fn choose_binary_path(current_exe: Option<&str>, which_raw: Option<&str>) -> Str
         return sanitize_exe_path(exe);
     }
 
-    // 2. Otherwise fall back to the installed copy on PATH.
+    // 2. Otherwise fall back to the installed copy on PATH — never a test or
+    //    example binary that only happens to be on PATH (#2232).
     if let Some(raw) = which_raw {
         let path = pick_best_binary_line(raw);
-        if std::path::Path::new(&path).is_absolute() {
+        if std::path::Path::new(&path).is_absolute() && !is_transient_build_binary(&path) {
             return sanitize_exe_path(&path);
         }
     }
@@ -489,6 +559,93 @@ mod tests {
         fn relative_current_exe_falls_back_to_path() {
             let chosen = choose_binary_path(Some("lean-ctx"), Some("/usr/bin/lean-ctx"));
             assert_eq!(chosen, "/usr/bin/lean-ctx");
+        }
+
+        /// #2232: test, example and build-script binaries are transient; a
+        /// developer's own build in the profile directory is not.
+        #[test]
+        fn transient_build_binaries_are_recognised() {
+            for transient in [
+                "/work/lean-ctx/rust/target/debug/deps/lean_ctx_server-1a2b3c4d",
+                "/work/lean-ctx/rust/target/release/deps/lean_ctx-abc123",
+                "/work/rust/target/debug/examples/demo",
+                "/work/rust/target/debug/build/lean-ctx-0f/build-script-build",
+                "/work/rust/target/debug/incremental/x/lean-ctx",
+                "/work/rust/target/x86_64-unknown-linux-gnu/debug/deps/lean_ctx-1",
+                "/Users/dev/.cargo/shared-target/debug/deps/lean_ctx-1",
+                r"C:\work\rust\target\debug\deps\lean_ctx-1.exe",
+            ] {
+                assert!(is_transient_build_binary(transient), "{transient}");
+            }
+            for stable in [
+                "/work/lean-ctx/rust/target/release/lean-ctx",
+                "/work/lean-ctx/rust/target/debug/lean-ctx",
+                "/Users/dev/.local/bin/lean-ctx",
+                "/opt/build/deps/lean-ctx",
+                "/usr/local/bin/lean-ctx",
+                "lean-ctx",
+            ] {
+                assert!(!is_transient_build_binary(stable), "{stable}");
+            }
+        }
+
+        /// #2232: a cargo output directory of any name, by what cargo wrote.
+        #[test]
+        fn transient_binary_in_unnamed_target_dir_is_recognised_on_disk() {
+            let tmp = tempfile::tempdir().unwrap();
+            let profile = tmp.path().join("target-agent-shared/debug");
+            std::fs::create_dir_all(profile.join("deps")).unwrap();
+            std::fs::write(profile.join(".cargo-lock"), "").unwrap();
+            let test_bin = profile.join("deps/lean_ctx_server-1a2b");
+            assert!(is_transient_build_binary(&test_bin.to_string_lossy()));
+            assert!(!is_transient_build_binary(
+                &profile.join("lean-ctx").to_string_lossy()
+            ));
+        }
+
+        /// #2232: a test binary that is on PATH is never chosen over the
+        /// running build.
+        #[test]
+        fn transient_path_entry_is_not_chosen() {
+            let chosen = choose_binary_path(
+                Some("/work/rust/target/debug/deps/lean_ctx_server-1a2b"),
+                Some("/work/rust/target/debug/deps/lean-ctx"),
+            );
+            assert_eq!(chosen, "/work/rust/target/debug/deps/lean_ctx_server-1a2b");
+        }
+
+        /// #2232: a transient binary is refused for the real account home
+        /// only; temp homes (tests) and stable binaries pass.
+        #[test]
+        fn transient_binary_refused_only_for_real_home() {
+            let tmp = tempfile::tempdir().unwrap();
+            let real = tmp.path().join("real");
+            let other = tmp.path().join("other");
+            std::fs::create_dir_all(&real).unwrap();
+            std::fs::create_dir_all(&other).unwrap();
+            let test_bin = "/work/rust/target/debug/deps/lean_ctx_server-1a2b3c4d";
+            assert!(transient_binary_for_real_home(test_bin, &real, Some(&real)));
+            assert!(transient_binary_for_real_home(
+                &format!("\"{test_bin}\""),
+                &real,
+                Some(&real)
+            ));
+            assert!(!transient_binary_for_real_home(
+                test_bin,
+                &other,
+                Some(&real)
+            ));
+            assert!(!transient_binary_for_real_home(test_bin, &real, None));
+            assert!(!transient_binary_for_real_home(
+                "/work/rust/target/release/lean-ctx",
+                &real,
+                Some(&real)
+            ));
+            assert!(!transient_binary_for_real_home(
+                "/Users/dev/.local/bin/lean-ctx",
+                &real,
+                Some(&real)
+            ));
         }
 
         #[test]

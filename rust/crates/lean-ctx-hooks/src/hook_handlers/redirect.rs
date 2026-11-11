@@ -704,11 +704,7 @@ fn redirect_temp_path(key: &str) -> std::path::PathBuf {
 
     let temp_dir = std::env::temp_dir().join("lean-ctx-hook");
     let _ = std::fs::create_dir_all(&temp_dir);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&temp_dir, std::fs::Permissions::from_mode(0o700));
-    }
+    let _ = lean_ctx::core::secure_fs::restrict_to_owner(&temp_dir);
     temp_dir.join(format!("{hash:016x}.lctx"))
 }
 

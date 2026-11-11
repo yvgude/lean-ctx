@@ -466,7 +466,14 @@ v4-runtime:
           || test "$(cat -- "$ci_target_parent/target.stamp")" != "$ci_stamp"; then
           ci_target_state="wiped (toolchain or image changed)"
         else
-          ci_target_gb="$(du -sx --block-size=1G -- "$ci_target" | cut -f1)"
+          # Another job in the slot may delete cargo temporaries (rmeta*,
+          # rustc*) while du walks the tree; du then exits 1 but still prints
+          # the total. Only a missing total is an error.
+          if ! ci_target_du="$(du -sx --block-size=1G -- "$ci_target" 2>/dev/null)"; then
+            echo "target: files vanished while sizing $ci_target; using du's total" >&2
+          fi
+          ci_target_gb="${ci_target_du%%[[:space:]]*}"
+          case "$ci_target_gb" in ''|*[!0-9]*) echo "target: cannot size $ci_target" >&2; exit 1;; esac
           if test "$ci_target_gb" -gt "$CI_TARGET_CAP_GB"; then
             ci_target_state="wiped ($ci_target_gb GB > cap)"
           else

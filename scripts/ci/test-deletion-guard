@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Flag removed or weakened tests in a merge request diff (anti-Goodhart guard, W3-09).
+
+Findings, each counted net of code moved elsewhere in the same diff:
+
+- ``deleted_test``: a Rust test function (``#[test]``, ``#[tokio::test]``,
+  ``#[rstest]`` ...) or Python ``def test_*`` removed and not re-added under
+  the same name anywhere in the diff.
+- ``removed_assert``: an assertion line (``assert!``, ``assert_eq!``,
+  ``assert_ne!``, ``assert_matches!``, Python ``assert`` / ``self.assert*``)
+  removed and not re-added with the same text; rewritten assertions (a
+  different one added in the same file) offset removals, so only the net
+  loss per file is reported.
+- ``ignored_test``: ``#[ignore]`` or a Python skip / xfail marker added.
+
+Any finding sets ``t2_escalation``: the change needs a T2 (human) review and
+cannot be accepted on agent evidence alone. The guard never edits anything.
+
+    test-deletion-guard --base origin/integration/3.12.3 [--head HEAD]
+    test-deletion-guard --diff mr.diff
+    git diff A B | test-deletion-guard --diff -
+
+Output is one JSON object (schema ``leanctx.test-deletion-guard/v1``). Exit
+codes: 0 report written, 1 escalation with ``--fail-on-escalation``, 2 usage
+or git error. Standard library only.
+"""
+from __future__ import annotations
+
+import argparse
+from collections import Counter, defaultdict
+import json
+import re
+import subprocess
+import sys
+
+SCHEMA = "leanctx.test-deletion-guard/v1"
+CODE_SUFFIXES = (".rs", ".py")
+RUST_TEST_ATTR = re.compile(r"^\s*#\[\s*(?:[\w:]+::)?(?:test|rstest|test_case|quickcheck|proptest)\b")
+RUST_FN = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)")
+PY_TEST_FN = re.compile(r"^\s*(?:async\s+)?def\s+(test\w*)\s*\(")
+ASSERT_LINE = re.compile(
+    r"(?:\b(?:debug_)?assert(?:_eq|_ne|_matches)?!\s*[(\[{])"  # Rust macros
+    r"|(?:^\s*assert\b)"  # Python assert statement
+    r"|(?:\bself\.assert\w*\s*\()"  # unittest
+    r"|(?:\bpytest\.raises\s*\()"
+)
+IGNORE_LINE = re.compile(
+    r"^\s*#\[\s*ignore\b"
+    r"|^\s*@(?:unittest\.)?skip(?:If|Unless)?\b"
+    r"|^\s*@pytest\.mark\.(?:skip|skipif|xfail)\b"
+    r"|^\s*@(?:unittest\.)?expectedFailure\b"
+    r"|\bself\.skipTest\s*\("
+    r"|\bpytest\.skip\s*\("
+)
+HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+class UsageError(Exception):
+    pass
+
+
+def git(*args: str) -> str:
+    proc = subprocess.run(["git", *args], capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise UsageError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
+    return proc.stdout
+
+
+def normalize(line: str) -> str:
+    return " ".join(line.split())
+
+
+def parse_diff(text: str) -> list[dict]:
+    """Split a unified diff into files with ordered (op, old_no, new_no, text) lines."""
+    files: list[dict] = []
+    cur = None
+    old_no = new_no = 0
+    for raw in text.splitlines():
+        if raw.startswith("diff --git "):
+            cur = {"old": None, "new": None, "lines": []}
+            files.append(cur)
+            continue
+        if cur is None:
+            continue
+        if raw.startswith("--- ") and not cur["lines"]:
+            cur["old"] = None if raw[4:].strip() == "/dev/null" else raw[4:].strip().removeprefix("a/")
+            continue
+        if raw.startswith("+++ ") and not cur["lines"]:
+            cur["new"] = None if raw[4:].strip() == "/dev/null" else raw[4:].strip().removeprefix("b/")
+            continue
+        m = HUNK.match(raw)
+        if m:
+            old_no, new_no = int(m.group(1)), int(m.group(2))
+            cur["lines"].append(("@", 0, 0, ""))
+            continue
+        if raw.startswith("-"):
+            cur["lines"].append(("-", old_no, 0, raw[1:]))
+            old_no += 1
+        elif raw.startswith("+"):
+            cur["lines"].append(("+", 0, new_no, raw[1:]))
+            new_no += 1
+        elif raw.startswith(" "):
+            cur["lines"].append((" ", old_no, new_no, raw[1:]))
+            old_no += 1
+            new_no += 1
+    return [f for f in files if (f["old"] or f["new"] or "").endswith(CODE_SUFFIXES)]
+
+
+def test_functions(lines: list[tuple], side: str, rust: bool) -> list[tuple[str, int]]:
+    """Test functions whose defining line is on ``side`` ('-' or '+')."""
+    found = []
+    pending_attr = False
+    for op, old_no, new_no, text in lines:
+        if op == "@":
+            pending_attr = False
+            continue
+        visible = op in (side, " ")
+        if not visible:
+            continue
+        if rust:
+            if RUST_TEST_ATTR.match(text):
+                pending_attr = True
+                continue
+            m = RUST_FN.match(text)
+            if m:
+                if pending_attr and op == side:
+                    found.append((m.group(1), old_no if side == "-" else new_no))
+                pending_attr = False
+            elif text.strip() and not text.strip().startswith(("#[", "//")):
+                pending_attr = False
+        else:
+            m = PY_TEST_FN.match(text)
+            if m and op == side:
+                found.append((m.group(1), old_no if side == "-" else new_no))
+    return found
+
+
+def analyse(text: str) -> dict:
+    files = parse_diff(text)
+    removed_tests, added_tests = [], Counter()
+    removed_asserts, added_asserts = [], Counter()
+    added_assert_paths: dict[str, list[str]] = defaultdict(list)
+    added_ignores, removed_ignores = [], Counter()
+    for f in files:
+        path = f["new"] or f["old"]
+        old_path = f["old"] or path
+        rust = path.endswith(".rs")
+        for name, line in test_functions(f["lines"], "-", rust):
+            removed_tests.append({"path": old_path, "line": line, "name": name})
+        for name, _ in test_functions(f["lines"], "+", rust):
+            added_tests[name] += 1
+        for op, old_no, new_no, body in f["lines"]:
+            if op == "-" and ASSERT_LINE.search(body):
+                removed_asserts.append(({"path": old_path, "line": old_no, "text": body.strip()}, path))
+            elif op == "+" and ASSERT_LINE.search(body):
+                added_asserts[normalize(body)] += 1
+                added_assert_paths[normalize(body)].append(path)
+            if op == "+" and IGNORE_LINE.search(body):
+                added_ignores.append({"path": path, "line": new_no, "text": body.strip()})
+            elif op == "-" and IGNORE_LINE.search(body):
+                removed_ignores[normalize(body)] += 1
+
+    findings = []
+    for item in removed_tests:
+        if added_tests[item["name"]] > 0:
+            added_tests[item["name"]] -= 1  # moved or rewritten under the same name
+            continue
+        findings.append({"kind": "deleted_test", **item})
+    unmatched = []
+    for item, file_path in removed_asserts:
+        key = normalize(item["text"])
+        if added_asserts[key] > 0:
+            added_asserts[key] -= 1  # moved
+            continue
+        unmatched.append((item, file_path))
+    # A rewritten assertion (one removed, a different one added in the same
+    # file) is not a weakening: only the net loss per file is reported.
+    spare = Counter()
+    for key, count in added_asserts.items():
+        for file_path in added_assert_paths[key][:count]:
+            spare[file_path] += 1
+    for item, file_path in unmatched:
+        if spare[file_path] > 0:
+            spare[file_path] -= 1
+            continue
+        findings.append({"kind": "removed_assert", **item})
+    for item in added_ignores:
+        key = normalize(item["text"])
+        if removed_ignores[key] > 0:
+            removed_ignores[key] -= 1  # moved
+            continue
+        findings.append({"kind": "ignored_test", **item})
+
+    counts = Counter(f["kind"] for f in findings)
+    escalate = bool(findings)
+    return {
+        "schema": SCHEMA,
+        "files_scanned": len(files),
+        "counts": {k: counts.get(k, 0) for k in ("deleted_test", "removed_assert", "ignored_test")},
+        "findings": findings,
+        "t2_escalation": escalate,
+        "reason": (
+            "tests removed or weakened: T2 review required" if escalate else "no removed or weakened tests"
+        ),
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(prog="test-deletion-guard", description=__doc__.split("\n\n")[0])
+    p.add_argument("--base", help="target ref; the diff starts at merge-base(base, head)")
+    p.add_argument("--head", default="HEAD")
+    p.add_argument("--diff", help="read a unified diff from this file ('-' = stdin) instead of git")
+    p.add_argument("--fail-on-escalation", action="store_true", help="exit 1 when t2_escalation is set")
+    args = p.parse_args(argv)
+    try:
+        if bool(args.diff) == bool(args.base):
+            raise UsageError("pass exactly one of --base or --diff")
+        if args.diff:
+            text = sys.stdin.read() if args.diff == "-" else open(args.diff, encoding="utf-8").read()
+            base = head = None
+        else:
+            head = git("rev-parse", "--verify", f"{args.head}^{{commit}}").strip()
+            base = git("merge-base", args.base, head).strip()
+            text = git("diff", "--no-color", "--no-ext-diff", "-M", base, head, "--", "*.rs", "*.py")
+    except (UsageError, OSError) as exc:
+        print(f"test-deletion-guard: {exc}", file=sys.stderr)
+        return 2
+    report = analyse(text)
+    report = {"schema": report.pop("schema"), "base": base, "head": head, **report}
+    print(json.dumps(report, indent=2, sort_keys=False))
+    return 1 if args.fail_on_escalation and report["t2_escalation"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

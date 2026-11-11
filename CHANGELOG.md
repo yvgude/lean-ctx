@@ -375,6 +375,12 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Fixed
 
+- **Rule injection respects its token cap for the first rule too.** A large `AGENTS.md` or `CLAUDE.md` is no longer appended in full to every `ctx_read` reply; a rule that does not fit is replaced by a pointer to its file (or only named, and offered again later) (#2229).
+- **`LEAN_CTX_KERNEL_*` settings apply in every process**: one-shot CLI commands and library users now read the Context Kernel switches from the environment on first use instead of silently using the defaults (#2228)
+- **No more chmod storm on the data directory**: lean-ctx now changes a private directory's permissions only when they are not already 0700, so file watchers, backup and sync tools no longer see an attribute change on every tool call (#2227).
+- **`-h` after a subcommand prints help instead of running it**: `lean-ctx cache prune -h` and `cache clear -h` no longer prune or clear; `-h` before `--` now means help like `--help`, except for `read`, `grep`, `ls` and similar commands whose arguments may be a pattern or path, and `cache invalidate -- -h` invalidates a file named `-h` (#2230)
+- **Running the test suite no longer rewrites your real hooks.** A `cargo test` binary (`target/debug/deps/…`) is never written into `~/.claude/settings.json`, agent hooks or shell hooks of the real account; an installed `lean-ctx` on PATH is used instead, and a developer's own `target/release/lean-ctx` stays allowed (#2232).
+- **`timeout`, `nice`, `env` and `for` loops no longer trip the state guard**: `timeout 120 find ~ -name x`, `nice ls ~`, `for d in ~ /tmp; do ls $d; done` and `timeout 300 node x.js "a rm -rf b"` now run like the unwrapped commands, while writes into lean-ctx's state through a wrapper, a loop variable or a redirection stay refused (#2231)
 - **Hooks run when the lean-ctx path contains a space** (reported on Discord). An npm
   install under `C:/Users/…/AppData/Local/Author Software/…/lean-ctx.exe` was written
   unquoted, so the host shell split it and every hook failed with "The term
@@ -387,7 +393,9 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   0-byte file had no lines to anchor and no text for `replace_unique`, so no op could write
   it. `create` now accepts an existing empty regular file (not a symlink) and keeps its
   permissions; non-empty files are still refused. `replace_unique` with an empty
-  `old_text` names `op=create` in its error.
+  `old_text` now fills an existing empty file too, through the same guarded write path;
+  on a missing file it points to `op=create`, on a file with content to anchored ops, and
+  nothing is overwritten (#2223).
 - **`ctx_knowledge remember` answers in one short line.** The reply names category, key,
   revision and size — "Updated [cat] key → revision N: previous value superseded and
   archived" — and no longer echoes the new text or both texts as `⚠ CONTRADICTION` on a

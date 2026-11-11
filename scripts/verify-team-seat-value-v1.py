@@ -933,6 +933,41 @@ def ci_fragment_digest(lines):
     return hashlib.sha256("".join(line + "\n" for line in lines).encode("utf-8")).hexdigest()
 
 
+# Shared registries every contract edits: the contract classification table,
+# the contracts index, the capability list and the protocol crate root. Their
+# whole-file digest moved with every other contract's entry (rust/src/core/
+# contracts.rs was re-pinned by hand twice on 10-11 Nov 2026 for
+# change-envelope-v1 and managed-config-v1), so they are pinned only in the
+# lines that name this pack. Renaming, dropping or editing such a line still
+# fails here.
+REGISTRY_FILES = (
+    "docs/contracts/README.md",
+    "rust/crates/lean-ctx-protocol/src/lib.rs",
+    "rust/src/core/contracts.rs",
+    "rust/src/core/server_capabilities.rs",
+)
+PACK_MARKERS = ("team-seat-value", "seat_value", "SEAT_VALUE")
+
+
+def registry_fragment(text):
+    return [line.strip() for line in text.splitlines()
+            if any(marker in line for marker in PACK_MARKERS)]
+
+
+def repin_command(rel):
+    return ("python3 scripts/derivations.py repin-frozen %s %s"
+            % ((PACK / "frozen-hashes.json").relative_to(ROOT), rel))
+
+
+def frozen_change(kind, rel, why=""):
+    """A pin of this pack moved: never re-pinned automatically, because the
+    pinned bytes are the reviewed contract. The message names the one command
+    that re-pins it once the change was reviewed as a contract change."""
+    fail("frozen %s: %s%s (a team-seat-value-v1 contract freeze; only a reviewed "
+         "contract change may move it - if reviewed and intended: %s)"
+         % (kind, rel, why, repin_command(rel)))
+
+
 def verify_frozen():
     manifest = load(PACK / "frozen-hashes.json")
     if manifest.get("contract") != "team-seat-value-v1" or manifest.get("v") != 1:
@@ -943,7 +978,7 @@ def verify_frozen():
     for rel, expected in sorted(hashes.items()):
         path = ROOT / rel
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
-            fail("frozen hash: " + rel)
+            frozen_change("hash", rel)
     fragments = manifest.get("ci_fragment_sha256")
     if not isinstance(fragments, dict) or sorted(fragments) != sorted(CI_FILES):
         fail("frozen CI fragment inventory")
@@ -954,11 +989,20 @@ def verify_frozen():
         lines = ci_fragment(path.read_text(encoding="utf-8"))
         if any(not any(script in line for line in lines) for script in CI_VERIFIERS):
             fail("frozen CI fragment: %s no longer runs every team verifier" % rel)
-        actual = ci_fragment_digest(lines)
-        if actual != fragments[rel]:
-            fail("frozen CI fragment: %s (the lines that run the team verifiers changed; "
-                 "now %s - if intended, pin it as ci_fragment_sha256 in %s)"
-                 % (rel, actual, (PACK / "frozen-hashes.json").relative_to(ROOT)))
+        if ci_fragment_digest(lines) != fragments[rel]:
+            frozen_change("CI fragment", rel, " - the lines that run the team verifiers changed")
+    registry = manifest.get("registry_fragment_sha256")
+    if not isinstance(registry, dict) or sorted(registry) != sorted(REGISTRY_FILES):
+        fail("frozen registry fragment inventory")
+    for rel in REGISTRY_FILES:
+        path = ROOT / rel
+        if rel in hashes or not path.is_file():
+            fail("frozen registry fragment: " + rel)
+        lines = registry_fragment(path.read_text(encoding="utf-8"))
+        if not lines:
+            fail("frozen registry fragment: %s no longer names team-seat-value-v1" % rel)
+        if ci_fragment_digest(lines) != registry[rel]:
+            frozen_change("registry fragment", rel, " - the lines that name team-seat-value-v1 changed")
 
 
 def record_kind(record):

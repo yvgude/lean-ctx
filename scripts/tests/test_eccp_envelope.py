@@ -264,5 +264,123 @@ class EnvelopeTests(unittest.TestCase):
         self.assertNotEqual(before, digest())
 
 
+    # ------------------------------------------------ verify-reads (W5-08)
+
+    def write_reads(self, reads, *extra):
+        """Envelope whose observed reads are ``reads`` (None: no observed reads)."""
+        args = ["write", "--base-ref", "main", "--task", "157", "--rustc-version", "rustc 1.90.0 (test)",
+                "--check", "unit=pass", "--check", f"clippy=pass@{self.first}"]
+        if reads is not None:
+            path = self.repo / ".reads"
+            path.write_text("".join(f"{r}\n" for r in reads), encoding="utf-8")
+            args += ["--observed-reads", str(path)]
+        written = self.tool(*args, *extra)
+        self.assertEqual(written.returncode, 0, written.stderr)
+
+    def verify_reads(self):
+        run = self.tool("verify-reads", "--json", self.head)
+        self.assertIn(run.returncode, (0, 1), run.stderr)
+        return run.returncode, json.loads(run.stdout)
+
+    def test_verify_reads_covered(self):
+        self.write_reads(["crates/alpha/src/lib.rs", "crates/beta/src/lib.rs"], "--acceptance", "tests/accept.rs")
+        code, report = self.verify_reads()
+        self.assertEqual(code, 0)
+        self.assertEqual(report["schema"], "leanctx.read-coverage/v1")
+        self.assertEqual(report["verdict"], "covered")
+        self.assertEqual(report["base"], self.base)
+        # Edited files must be read; files the change adds (incl. the new acceptance test) are authored.
+        self.assertEqual(report["required"], [{"path": "crates/alpha/src/lib.rs", "reasons": ["changed"]}])
+        self.assertEqual(report["missing"], [])
+        self.assertEqual(report["authored"], ["README", "ci/derivations.toml", "tests/accept.rs"])
+        self.assertEqual([(c["name"], c["commit"], c["backed"]) for c in report["checks"]],
+                         [("clippy", self.first, True), ("unit", self.head, True)])
+        text = self.tool("verify-reads", self.head)
+        self.assertEqual(text.returncode, 0, text.stderr)
+        self.assertIn("covered: 1 of 1 required reads observed", text.stdout)
+        # Deterministic: the same note gives the same bytes.
+        first = self.tool("verify-reads", "--json", self.head).stdout
+        self.assertTrue(first)
+        self.assertEqual(first, self.tool("verify-reads", "--json", self.head).stdout)
+
+    def test_verify_reads_flags_edits_and_inputs_never_read(self):
+        self.write_reads(["crates/beta/src/lib.rs"], "--acceptance", "codegen/spec.txt")
+        code, report = self.verify_reads()
+        self.assertEqual(code, 1)
+        self.assertEqual(report["verdict"], "missing_reads")
+        self.assertEqual(report["missing"], [
+            {"path": "codegen/spec.txt", "reasons": ["acceptance"]},
+            {"path": "crates/alpha/src/lib.rs", "reasons": ["changed"]},
+        ])
+        self.assertEqual([(c["name"], c["backed"], c["missing"]) for c in report["checks"]], [
+            ("clippy", False, ["codegen/spec.txt", "crates/alpha/src/lib.rs"]),
+            ("unit", False, ["codegen/spec.txt", "crates/alpha/src/lib.rs"]),
+        ])
+        text = self.tool("verify-reads", self.head)
+        self.assertEqual(text.returncode, 1)
+        self.assertIn("missing read: crates/alpha/src/lib.rs (changed)", text.stdout)
+        self.assertIn("unbacked evidence: unit=pass@", text.stdout)
+
+    def test_verify_reads_evidence_on_an_earlier_commit(self):
+        # The clippy check ran before the edit of beta: only the edit of alpha backs it.
+        self.put("crates/beta/src/lib.rs", "pub fn b() { }\n")
+        self.commit("beta")
+        self.head = self.rev("HEAD")
+        self.write_reads(["crates/alpha/src/lib.rs"])
+        code, report = self.verify_reads()
+        self.assertEqual(code, 1)
+        self.assertEqual([m["path"] for m in report["missing"]], ["crates/beta/src/lib.rs"])
+        self.assertEqual([(c["name"], c["backed"], c["missing"]) for c in report["checks"]], [
+            ("clippy", True, []),
+            ("unit", False, ["crates/beta/src/lib.rs"]),
+        ])
+
+    def test_verify_reads_derived_output_needs_its_inputs(self):
+        self.put("gen/out.rs", "// generated from codegen/spec.txt\n")
+        self.commit("regenerate")
+        self.head = self.rev("HEAD")
+        self.write_reads(["crates/alpha/src/lib.rs"])
+        code, report = self.verify_reads()
+        self.assertEqual(code, 1)
+        self.assertEqual(report["derived"], [{"path": "gen/out.rs", "inputs": ["codegen/spec.txt"]}])
+        self.assertNotIn("gen/out.rs", report["authored"])
+        self.assertEqual(report["missing"], [{"path": "codegen/spec.txt", "reasons": ["derivation-input"]}])
+        self.write_reads(["codegen/spec.txt", "crates/alpha/src/lib.rs"])
+        code, report = self.verify_reads()
+        self.assertEqual((code, report["verdict"]), (0, "covered"))
+
+    def test_verify_reads_without_observed_reads_is_unproven(self):
+        self.write_reads(None)
+        code, report = self.verify_reads()
+        self.assertEqual(code, 1)
+        self.assertEqual(report["verdict"], "unproven")
+        self.assertIsNone(report["complete"])
+        self.assertTrue(all(not c["backed"] for c in report["checks"]))
+        self.assertIn("no observed reads", self.tool("verify-reads", self.head).stdout)
+
+    def test_verify_reads_reports_incomplete_session_history(self):
+        export = self.repo / ".readset.json"
+        export.write_text(json.dumps({"schema": "leanctx.session-readset/v1", "sessions": ["s9"], "complete": False,
+                                      "outside_root": 0, "reads": [{"path": "crates/beta/src/lib.rs"}]}),
+                          encoding="utf-8")
+        written = self.tool("write", "--base-ref", "main", "--task", "1", "--rustc-version", "r",
+                            "--observed-reads", str(export))
+        self.assertEqual(written.returncode, 0, written.stderr)
+        code, report = self.verify_reads()
+        self.assertEqual((code, report["verdict"], report["complete"], report["sessions"]),
+                         (1, "missing_reads", False, ["s9"]))
+        self.assertIn("session history is incomplete", self.tool("verify-reads", self.head).stdout)
+
+    def test_verify_reads_rejects_a_shrunk_write_set(self):
+        self.write_reads(["crates/beta/src/lib.rs"])
+        env = json.loads(self.tool("show", self.head).stdout)
+        env["write_set"]["paths"].remove("crates/alpha/src/lib.rs")
+        self.git("notes", "--ref", "eccp", "add", "-f", "-m", json.dumps(env), self.head)
+        run = self.tool("verify-reads", self.head)
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("write_set.paths: does not match", run.stderr)
+        self.assertEqual(self.tool("verify-reads", self.base).returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

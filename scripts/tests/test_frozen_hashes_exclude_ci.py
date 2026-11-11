@@ -50,7 +50,8 @@ class FrozenHashesExcludeCiTests(unittest.TestCase):
         manifest = json.loads((ROOT / pack_rel / "frozen-hashes.json").read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory() as tmp:
             tmp_root = Path(tmp)
-            for rel in list(manifest["sha256"]) + [str(pack_rel / "frozen-hashes.json")]:
+            for rel in (list(manifest["sha256"]) + list(manifest["registry_fragment_sha256"])
+                        + [str(pack_rel / "frozen-hashes.json")]):
                 target = tmp_root / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / rel, target)
