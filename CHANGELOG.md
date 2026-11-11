@@ -342,6 +342,12 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Changed
 
+- **The `x86_64-unknown-linux-gnu` binary budget is 110 MB.** The 3.12.3 release
+  binary measures 101,999,384 bytes (3.12.2: 96,853,528) after this release's
+  additions — the Hive G6 gate on Windows and macOS, the shell-policy and symlink
+  hardening, the change-envelope contract and classifier — and crossed the 100 MB
+  ceiling set on 2026-10-15; `product/binary-budget.json` records the new measurement.
+
 - **Changelog entries are fragments, so merge requests stop conflicting on
   `CHANGELOG.md`.** A merge request adds its entry as one file in `changelog.d/`
   (front matter `section`, optional `version`, then the bullet) instead of editing
