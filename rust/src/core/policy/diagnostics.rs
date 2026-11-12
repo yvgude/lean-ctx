@@ -60,18 +60,8 @@ pub(crate) fn target(base: PathBuf) -> Option<Target> {
 }
 
 fn is_plain_directory(metadata: &std::fs::Metadata) -> bool {
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return false;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
-        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-            return false;
-        }
-    }
-    true
+    // A symlink or (on Windows) a junction or other reparse point is not one.
+    metadata.is_dir() && !crate::core::pathutil::is_symlink_or_reparse(metadata)
 }
 
 impl Target {

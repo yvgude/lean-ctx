@@ -493,6 +493,15 @@ pub(super) fn upsert_lean_ctx_codex_hook_entries(
         CODEX_PRE_TOOL_USE_MATCHER,
         pre_tool_use_cmd,
     );
+    // A native write must not reconfigure LeanCTX or the host's hooks.
+    if let Some((binary, _)) = pre_tool_use_cmd.trim().rsplit_once(" hook ") {
+        push_codex_hook_entry(
+            hooks_obj,
+            "PreToolUse",
+            super::agents::governor_hosts::CODEX_WRITE_MATCHER,
+            &format!("{binary} hook write-guard"),
+        );
+    }
     push_codex_hook_entry(
         hooks_obj,
         "SessionStart",
@@ -595,7 +604,11 @@ pub(super) fn is_lean_ctx_codex_managed_entry(event_name: &str, entry: &serde_js
             "PreToolUse" => {
                 matches!(
                     entry_obj.get("matcher").and_then(|value| value.as_str()),
-                    Some("Bash" | CODEX_PRE_TOOL_USE_MATCHER)
+                    Some(
+                        "Bash"
+                            | CODEX_PRE_TOOL_USE_MATCHER
+                            | super::agents::governor_hosts::CODEX_WRITE_MATCHER
+                    )
                 ) && is_lean_ctx_codex_managed_command(event_name, command)
             }
             "SessionStart" => is_lean_ctx_codex_managed_command(event_name, command),
@@ -609,7 +622,10 @@ fn is_lean_ctx_codex_managed_command(event_name: &str, command: &str) -> bool {
         return false;
     };
     let managed_action = match event_name {
-        "PreToolUse" => matches!(action, "codex-pretooluse" | "deny" | "rewrite"),
+        "PreToolUse" => matches!(
+            action,
+            "codex-pretooluse" | "deny" | "rewrite" | "write-guard"
+        ),
         "SessionStart" => action == "codex-session-start",
         _ => false,
     };

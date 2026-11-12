@@ -64,6 +64,9 @@ pub struct Config {
     /// Code-health engine: cognitive complexity, naming, coupling, edit-gate.
     #[serde(default)]
     pub code_health: CodeHealthConfig,
+    /// Decision layer: pre-edit check mode for `.leanctx/decisions`.
+    #[serde(default)]
+    pub decisions: DecisionsConfig,
     #[serde(default)]
     pub autonomy: AutonomyConfig,
     #[serde(default)]

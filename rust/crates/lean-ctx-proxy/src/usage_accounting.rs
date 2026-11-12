@@ -24,6 +24,9 @@ use serde_json::Value;
 
 /// Response header LiteLLM proxies attach to every turn: the billed USD.
 const LITELLM_COST_HEADER: &str = "x-litellm-response-cost";
+/// Response header of the Hive models gateway (mz6): the credit charged for
+/// the turn, integer micro-USD (`docs/model-access-subscription.md` §4.5).
+const LEANCTX_COST_MICROS_HEADER: &str = "x-leanctx-cost-usd-micros";
 
 /// True when `base_url` points at OpenRouter — the only upstream documented to
 /// accept (and reward) the `usage.include` opt-in.
@@ -46,6 +49,15 @@ pub(super) fn cost_from_headers(headers: &HeaderMap, extra_header: Option<&str>)
     let mut names = vec![LITELLM_COST_HEADER];
     if let Some(h) = extra_header {
         names.push(h);
+    }
+    // mz6: the Hive models gateway charges the month's credit in integer
+    // micro-USD and names that figure; it is the authoritative one.
+    if let Some(micros) = headers
+        .get(LEANCTX_COST_MICROS_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+    {
+        return Some(micros as f64 / 1_000_000.0);
     }
     for name in names {
         let cost = headers
@@ -119,6 +131,9 @@ mod tests {
         let mut h = HeaderMap::new();
         h.insert("x-litellm-response-cost", "0.00042".parse().unwrap());
         assert_eq!(cost_from_headers(&h, None), Some(0.00042));
+        // The Hive models gateway's integer micro-USD wins (mz6).
+        h.insert("x-leanctx-cost-usd-micros", "1250".parse().unwrap());
+        assert_eq!(cost_from_headers(&h, None), Some(0.00125));
     }
 
     #[test]

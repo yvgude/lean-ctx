@@ -643,10 +643,14 @@ pub fn admit(
         Some(findings.redact(source, &actions, &policy.secret_patterns))
     };
     // Fail closed: a redaction that leaves a detectable secret or PII value
-    // behind must not be delivered as if it were clean. Unchanged text was
-    // already inspected by the same detectors, so only a rewrite is re-checked.
+    // behind must not be delivered as if it were clean. A rewrite is always
+    // re-checked; so is unchanged text after a redacting detector reported a
+    // value, because the redactor then kept what the detector flagged
+    // (GHSA-xmx8-69qv-7f86). Clean, unchanged text needs no second pass.
+    let reported = (actions.secrets == FilterAction::Redact && counts.secrets > 0)
+        || (actions.pii == FilterAction::Redact && counts.pii > 0);
     if let Some(output) = &delivered
-        && output != text
+        && (output != text || reported)
         && detectors::residual(output, &actions, &policy.secret_patterns)
     {
         reasons.push(reason("redaction.incomplete"));
@@ -1475,6 +1479,9 @@ mod shell_admission_regression_tests;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod operand_tests;
 
 #[cfg(test)]
 mod receipt_tests;

@@ -87,6 +87,11 @@
       "maxLength": 128,
       "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
     },
+    "country": {
+      "description": "ISO 3166-1 alpha-2 country code.",
+      "type": "string",
+      "pattern": "^[A-Z]{2}$"
+    },
     "digest": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$",
@@ -187,6 +192,37 @@
           "type": "boolean",
           "x-merge": "true_wins",
           "x-enforcement": "advisory"
+        },
+        "blocked_model_origins": {
+          "description": "Countries of origin whose model weights are never used (catalog origin_country), whatever the host.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/country"
+          },
+          "x-merge": "union",
+          "x-enforcement": "instance",
+          "x-instance": "routing.blocked_model_origins"
+        },
+        "blocked_host_countries": {
+          "description": "Countries where no model request is processed (catalog host_country, including vendors' own APIs).",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/country"
+          },
+          "x-merge": "union",
+          "x-enforcement": "instance",
+          "x-instance": "routing.blocked_host_countries"
+        },
+        "vendor_direct_cn": {
+          "description": "Allow instances to opt in to a vendor's own API processed in CN; false forbids it.",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "instance",
+          "x-instance": "routing.vendor_direct_cn"
         }
       }
     },
@@ -273,6 +309,37 @@
           "type": "boolean",
           "x-merge": "true_wins",
           "x-enforcement": "advisory"
+        },
+        "blocked_model_origins": {
+          "description": "Countries of origin whose model weights are never used (catalog origin_country), whatever the host.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/country"
+          },
+          "x-merge": "union",
+          "x-enforcement": "instance",
+          "x-instance": "routing.blocked_model_origins"
+        },
+        "blocked_host_countries": {
+          "description": "Countries where no model request is processed (catalog host_country, including vendors' own APIs).",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/country"
+          },
+          "x-merge": "union",
+          "x-enforcement": "instance",
+          "x-instance": "routing.blocked_host_countries"
+        },
+        "vendor_direct_cn": {
+          "description": "Allow instances to opt in to a vendor's own API processed in CN; false forbids it.",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "instance",
+          "x-instance": "routing.vendor_direct_cn"
         }
       }
     },

@@ -35,7 +35,7 @@ impl McpTool for CtxCompressMemoryTool {
     ) -> Result<ToolOutput, ErrorData> {
         let path = require_resolved_path(ctx, args, "path")?;
 
-        let result = crate::tools::ctx_compress_memory::handle(&path);
+        let result = crate::tools::ctx_compress_memory::handle(&ctx.project_root, &path);
         Ok(ToolOutput::simple(result))
     }
 }

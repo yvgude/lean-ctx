@@ -934,6 +934,37 @@ impl CostConfig {
     }
 }
 
+/// Decision layer (`[decisions]`): `.leanctx/decisions/*.toml` records.
+///
+/// `enforce` sets what a pre-edit check does when an edit introduces a
+/// violation of an active decision's `[[check]]`: `"hint"` (report, default),
+/// `"refuse"` (strict: the edit is not written) or `"off"` (no pre-edit check;
+/// reads still name decisions in scope).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DecisionsConfig {
+    pub enforce: String,
+}
+
+impl Default for DecisionsConfig {
+    fn default() -> Self {
+        Self {
+            enforce: "hint".to_string(),
+        }
+    }
+}
+
+impl DecisionsConfig {
+    /// `enforce` normalized: `hint` | `refuse` | `off` (unknown → `hint`).
+    pub fn enforce_mode(&self) -> &'static str {
+        match self.enforce.trim().to_ascii_lowercase().as_str() {
+            "refuse" | "strict" | "block" => "refuse",
+            "off" | "false" | "none" => "off",
+            _ => "hint",
+        }
+    }
+}
+
 /// Code-health engine (`[code_health]`): clean code as a token-cost lever.
 ///
 /// Cognitive complexity, naming quality, and coupling are computed once during

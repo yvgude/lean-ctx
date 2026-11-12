@@ -42,6 +42,12 @@ pub struct ProxyConfig {
     /// `config.toml` and never the shell's `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM`, can
     /// honor a custom upstream too (#590).
     pub allow_custom_upstream: Option<bool>,
+    /// mz14: allow a `[[proxy.providers]]` entry that points at a vendor's own
+    /// China-hosted API (a `[[direct]]` host of the bundled model catalog:
+    /// DeepSeek, Z.ai, MiniMax). Default `false`: such a request is refused
+    /// with 403 `cn_direct_opt_in_required`. An org policy with
+    /// `vendor_direct_cn = false` voids this opt-in. Config only, no env var.
+    pub allow_vendor_direct_cn: Option<bool>,
     /// Absolute project root the proxy acts for; operator-set only, verified at
     /// use. Env `LEAN_CTX_PROXY_PROJECT_ROOT`. See `proxy::request_project`.
     pub project_root: Option<String>,
@@ -543,10 +549,31 @@ pub struct ResolvedProvider {
     /// Billed as local inference (shadow rate). Explicit `local` flag when the
     /// entry declares one, otherwise loopback-URL derivation.
     pub local: bool,
+    /// Where the upstream credential comes from. Never read from TOML:
+    /// every `[[proxy.providers]]` entry is [`CredentialSource::Configured`].
+    pub credential: CredentialSource,
 }
 
-/// Built-in provider route names a registry entry must not shadow.
-const BUILTIN_PROVIDER_IDS: &[&str] = &["anthropic", "openai", "chatgpt", "gemini"];
+/// The credential a provider sends upstream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CredentialSource {
+    /// The caller's own headers, or the key in `api_key_env`.
+    Configured,
+    /// The Hive instance's short-lived access token (`hive_i_…`), only for
+    /// the built-in `leanctx` provider and only to the Hive models origin
+    /// (`core::hive_models`, mz6).
+    HiveInstance,
+}
+
+/// Built-in provider route names a registry entry must not shadow
+/// (`leanctx`: the Hive subscription models, `core::hive_models`).
+const BUILTIN_PROVIDER_IDS: &[&str] = &[
+    "anthropic",
+    "openai",
+    "chatgpt",
+    "gemini",
+    crate::core::hive_models::PROVIDER_ID,
+];
 
 /// True when `id` is usable as a registry id: non-empty, lowercase alnum plus
 /// `-`/`_` (it becomes a URL path segment), and not a built-in provider name.
@@ -1155,6 +1182,13 @@ impl ProxyConfig {
             || self.allow_custom_upstream.unwrap_or(false)
     }
 
+    /// `[proxy] allow_vendor_direct_cn` (default `false`). The org policy can
+    /// still void it (`routing.vendor_direct_cn = false`).
+    #[must_use]
+    pub fn allows_vendor_direct_cn(&self) -> bool {
+        self.allow_vendor_direct_cn.unwrap_or(false)
+    }
+
     /// True when any `*_upstream` configured in `config.toml` (env-independent) is a
     /// custom HTTPS host outside the built-in allowlist — i.e. one that resolves
     /// only with the [`Self::allows_custom_upstream`] opt-in. Plaintext-HTTP custom
@@ -1380,6 +1414,7 @@ impl ProxyConfig {
                             configured_region.map(str::to_string)
                         },
                         local,
+                        credential: CredentialSource::Configured,
                     });
                 }
                 Err(e) => {

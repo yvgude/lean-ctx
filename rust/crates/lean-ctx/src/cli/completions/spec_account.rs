@@ -59,6 +59,63 @@ pub(super) const KNOWLEDGE: CommandNode = CommandNode {
     hidden: false,
 };
 
+const fn leaf(name: &'static str, description: &'static str) -> CommandNode {
+    CommandNode {
+        name,
+        aliases: &[],
+        description,
+        subcommands: &[],
+        flags: &[],
+        positional: None,
+        hidden: false,
+    }
+}
+
+pub(super) const DECISIONS: CommandNode = CommandNode {
+    name: "decisions",
+    aliases: &[],
+    description: "Project decisions (.leanctx/decisions): list, show, check, new",
+    subcommands: &[
+        leaf("list", "List the project's decisions"),
+        leaf("show", "Show one decision"),
+        leaf("new", "Create a decision record"),
+        CommandNode {
+            name: "check",
+            aliases: &[],
+            description: "Check a change against the decisions (exit 1 on a violation)",
+            subcommands: &[],
+            flags: &[
+                FlagSpec {
+                    long: "--staged",
+                    short: None,
+                    description: "Check the staged changes",
+                    takes_value: false,
+                    value_kind: None,
+                },
+                FlagSpec {
+                    long: "--rev",
+                    short: None,
+                    description: "Check a revision range A..B",
+                    takes_value: true,
+                    value_kind: None,
+                },
+                FlagSpec {
+                    long: "--diff",
+                    short: None,
+                    description: "Check a unified diff file",
+                    takes_value: true,
+                    value_kind: None,
+                },
+            ],
+            positional: None,
+            hidden: false,
+        },
+    ],
+    flags: &[],
+    positional: None,
+    hidden: false,
+};
+
 pub(super) const TASKS: CommandNode = CommandNode {
     name: "tasks",
     aliases: &[],

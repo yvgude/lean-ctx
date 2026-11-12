@@ -52,13 +52,9 @@ fn is_gradle_noise(line: &str) -> bool {
         return true;
     }
     let tl = t.to_ascii_lowercase();
-    if tl.starts_with("consider enabling configuration cache")
+    tl.starts_with("consider enabling configuration cache")
         || tl.contains("deprecated gradle features were used")
         || tl.starts_with("you can use '--warning-mode")
-    {
-        return true;
-    }
-    false
 }
 
 fn is_maven_or_gradle_command(command: &str) -> bool {

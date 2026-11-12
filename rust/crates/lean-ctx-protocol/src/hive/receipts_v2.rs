@@ -113,27 +113,39 @@ fn is_measurement_name(value: &str) -> bool {
 
 closed_string!(
     /// `hmac-sha256:<64 hex>` under the engine-local receipt key.
-    ReceiptHmac, is_hmac, "receipt hmac"
+    ReceiptHmac,
+    is_hmac,
+    "receipt hmac"
 );
 closed_string!(
     /// `sha256:<64 hex>`: the Hive-issued policy digest or the item digest.
-    Sha256Ref, is_sha256, "sha256 digest"
+    Sha256Ref,
+    is_sha256,
+    "sha256 digest"
 );
 closed_string!(
     /// `rcpt_<1-64 of [0-9a-z]>`.
-    ReceiptIdV2, is_receipt_id, "receipt id"
+    ReceiptIdV2,
+    is_receipt_id,
+    "receipt id"
 );
 closed_string!(
     /// 32-64 lowercase hex, derived by hashing (never a path or name).
-    InvocationIdV2, is_invocation_id, "invocation id"
+    InvocationIdV2,
+    is_invocation_id,
+    "invocation id"
 );
 closed_string!(
     /// `major.minor.patch[-pre]` as the contract allows it.
-    ReceiptSemver, is_semver, "version"
+    ReceiptSemver,
+    is_semver,
+    "version"
 );
 closed_string!(
     /// A measurement name (never token-like).
-    MeasurementName, is_measurement_name, "measurement name"
+    MeasurementName,
+    is_measurement_name,
+    "measurement name"
 );
 
 schema_const!(ReceiptsSchema, RECEIPTS_V2_SCHEMA);

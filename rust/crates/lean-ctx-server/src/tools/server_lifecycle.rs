@@ -517,6 +517,18 @@ impl LeanCtxServer {
                 tracing::warn!("lean-ctx: failed to finish MCP agent presence: {error}");
             }
         }
+        // Unit claims of this connection end with it: the registered agent,
+        // the presence id and the process fallback the edit tools claim under.
+        {
+            let mut holders = vec![crate::tools::claims_gate::process_agent()];
+            holders.extend(self.agent_id.read().await.clone());
+            holders.extend(self.presence_agent_id.read().await.clone());
+            holders.sort();
+            holders.dedup();
+            for holder in holders {
+                lean_ctx::core::unit_claims::release_agent(&holder);
+            }
+        }
         let stage = shutdown_stage("summary and presence", stage);
 
         let enrichment_ends = Instant::now() + SHUTDOWN_ENRICHMENT;

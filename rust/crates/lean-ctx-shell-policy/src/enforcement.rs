@@ -247,10 +247,15 @@ pub(super) fn enforce_with(
     // #931: for command-segment and redirect checks, strip ALL heredoc bodies
     // (quoted + unquoted) — a `>` or command word in any body is opaque data.
     let all_stripped = strip_for_analysis(&normalized, false, true);
+    // GHSA-4gm5-2mgw-9r9r: every check below reads a segment's first word as
+    // its program; bash takes a redirection anywhere in a simple command
+    // (`>/tmp/cat rm …`, `2>/dev/null eval …`, `cat a>f`). The checks read
+    // the line in the order bash runs it: words first, then redirections.
+    let all_stripped = super::redirections::canonical(&all_stripped)?;
     let cmd = quoted_stripped.as_str();
     let cmd_all = all_stripped.as_str();
 
-    if has_dangerous_patterns(cmd) {
+    if has_dangerous_patterns(cmd) || has_dangerous_patterns(cmd_all) {
         return Err(format!(
             "[BLOCKED — DO NOT RETRY] Command runs eval, exec, source, `.` or a $()/backtick substitution at command position, \
              which is blocked regardless of allowlist. \
@@ -266,6 +271,7 @@ pub(super) fn enforce_with(
     // the lines after the `<<'EOF'` operator for that body and skip them.
     check_substitution_in_args(&normalized)?;
     check_pipe_to_bare_interpreter(cmd, strict)?;
+    check_pipe_to_bare_interpreter(cmd_all, strict)?;
     super::side_doors::check_location_with_leanctx(&extract_all_commands(cmd_all))?;
 
     let mut allowlist = effective_allowlist();
@@ -283,7 +289,8 @@ pub(super) fn enforce_with(
     let mut allowlist = Allowlist::new(allowlist, subcommand_scoping);
     allowlist.misses = misses.cloned();
     super::dataflow::check_dataflow(cmd)?;
-    check_all_segments(cmd_all, &allowlist)
+    check_all_segments(cmd_all, &allowlist)?;
+    check_inside_groups(cmd_all, true)
 }
 
 /// Normalize the command string: remove the backslash-newline continuations
@@ -374,8 +381,71 @@ pub(super) fn check_pipe_to_bare_interpreter(
 /// For empty allowlists: still enforce UNCONDITIONAL_BLOCKED commands.
 pub(super) fn check_unconditional_blocked_only(command: &str) -> Result<(), ShellError> {
     let _loop_vars = super::self_config::bind_loop_variables(command);
-    let segments = extract_all_commands(command);
-    for seg in &segments {
+    {
+        let _line = super::self_config::enter_line();
+        for seg in &extract_all_commands(command) {
+            check_unconditional_segment(seg, command)?;
+        }
+    }
+    if super::groups::flatten(command) != command {
+        check_inside_groups(command, false)?;
+    }
+    Ok(())
+}
+
+/// GHSA-9jrf-q94p-frhr: the commands inside `( … )` and `{ …; }` groups and
+/// the redirections after them (`(cmd) >f`, `done >f`), judged by the same
+/// per-segment rules as a top-level segment. With `trailing_only` (the
+/// allowlist mode, whose leaf walk already judges every command inside a
+/// group but drops a group's or loop's trailing redirection) only those
+/// redirections are judged, and the directory changes before them followed.
+/// The working directory starts again where the line starts.
+pub(super) fn check_inside_groups(command: &str, trailing_only: bool) -> Result<(), ShellError> {
+    let flat = super::groups::flatten(command);
+    let _loop_vars = super::self_config::bind_loop_variables(command);
+    let _line = super::self_config::enter_line();
+    for seg in &extract_all_commands(&flat) {
+        if trailing_only {
+            let first = seg.split_whitespace().next().unwrap_or("");
+            let closer = matches!(first, ":" | "done" | "fi" | "esac") && seg.contains(['<', '>']);
+            if !closer && !matches!(first, "cd" | "pushd" | "popd") {
+                continue;
+            }
+        }
+        check_unconditional_segment(seg, command)?;
+    }
+    Ok(())
+}
+
+/// `segment` after the `time` (with `-p`/`--`) and `!` words and the
+/// reserved words (`then`, `do`, `else`, `if`, `while`, `coproc`, …) that
+/// lead it, when any do: bash runs the command after them.
+fn after_pipeline_modifiers(segment: &str) -> Option<&str> {
+    let mut rest = segment.trim_start();
+    let mut peeled = false;
+    loop {
+        let word_end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let word = &rest[..word_end];
+        let modifier = matches!(
+            word,
+            "!" | "time" | "then" | "do" | "else" | "elif" | "if" | "while" | "until" | "coproc"
+        ) || (peeled && matches!(word, "-p" | "--"));
+        if !modifier {
+            break;
+        }
+        peeled = true;
+        rest = rest[word_end..].trim_start();
+    }
+    peeled.then_some(rest)
+}
+
+fn check_unconditional_segment(seg: &str, command: &str) -> Result<(), ShellError> {
+    if let Some(rest) = after_pipeline_modifiers(seg)
+        && !rest.is_empty()
+    {
+        check_unconditional_segment(rest, command)?;
+    }
+    {
         let base = extract_base_from_segment(seg);
         if !base.is_empty()
             && UNCONDITIONAL_BLOCKED.contains(&super::tokenizer::exec_name(&base).as_str())
@@ -398,6 +468,13 @@ pub(super) fn check_unconditional_blocked_only(command: &str) -> Result<(), Shel
         // A `trap` action runs like `eval`: the same rules hold inside it.
         if let Some(action) = super::side_doors::trap_action(&tokens) {
             check_unconditional_blocked_only(action)?;
+        }
+        // GHSA-cfmv-qg29-3rvp: an alias body runs wherever its name is used
+        // later on the line, also inside another alias or a function.
+        if tokens.first().is_some_and(|t| t == "alias") {
+            for body in tokens[1..].iter().filter_map(|t| t.split_once('=')) {
+                check_unconditional_blocked_only(body.1)?;
+            }
         }
         check_embedded_commands(&tokens, None)?;
     }
@@ -540,7 +617,23 @@ fn check_interpreter_inner(
     // Eval-flag / heredoc checks on interpreters (unless opted out via #814).
     // GH #1466: also skip when Claude settings explicitly allow this interpreter.
     let claude_ok = super::config::claude_allows_interpreter_inline(&base);
-    if INTERPRETER_COMMANDS.contains(&base.as_str()) && !inline_ok && !claude_ok {
+    // GHSA-cfmv-qg29-3rvp: `deno eval`, `bun -e` run their argument as code.
+    if !inline_ok && !claude_ok && matches!(interpreter_family(&base), "deno" | "bun") {
+        let first = tokens[1..].iter().find(|t| !t.starts_with('-'));
+        let eval_flag = tokens[1..].iter().find(|t| {
+            matches!(t.as_str(), "-e" | "--eval" | "-p" | "--print")
+                || t.starts_with("--eval=")
+                || t.starts_with("--print=")
+        });
+        if let Some(word) = eval_flag.or(first.filter(|w| matches!(w.as_str(), "eval" | "repl"))) {
+            return Err(format!(
+                "[BLOCKED] {base} {word}: inline code execution is blocked.\n{}",
+                script_file_recipe(interpreter_family(&base))
+            )
+            .into());
+        }
+    }
+    if is_interpreter(&base) && !inline_ok && !claude_ok {
         let python = base.starts_with("python") || base.starts_with("pypy");
         // The words after the script are its own arguments, not interpreter
         // flags (`node x.js "a rm -rf b"`, #2231).
@@ -612,8 +705,7 @@ fn check_interpreter_inner(
             // assignments or its code (`… | xargs env`, `… | xargs sh`),
             // which no check here sees.
             if base == "xargs"
-                && (DELEGATION_COMMANDS.contains(&delegated)
-                    || INTERPRETER_COMMANDS.contains(&delegated))
+                && (DELEGATION_COMMANDS.contains(&delegated) || is_interpreter(delegated))
             {
                 return Err(format!(
                     "[BLOCKED — DO NOT RETRY] 'xargs {delegated}' takes the command it runs \
@@ -666,8 +758,7 @@ fn check_interpreter_inner(
     // asking the allowlist about a word that may be a plain argument.
     if let Some(at) = tokens.iter().skip(1).position(|t| {
         let name = super::tokenizer::exec_name(t);
-        DELEGATION_COMMANDS.contains(&name.as_str())
-            || INTERPRETER_COMMANDS.contains(&name.as_str())
+        DELEGATION_COMMANDS.contains(&name.as_str()) || is_interpreter(&name)
     }) {
         let rest = &tokens[at + 1..];
         let rest_str = rest.join(" ");
@@ -763,6 +854,20 @@ pub(super) const INTERPRETER_COMMANDS: &[&str] = &[
     "python", "python3", "python2", "node", "ruby", "perl", "lua", "php", "bash", "sh", "zsh",
     "fish", "dash", "ksh",
 ];
+
+/// An interpreter's name without its version (`python3.12` → `python`,
+/// `node@18` → `node`, `lua5.4` → `lua`).
+pub(super) fn interpreter_family(base: &str) -> &str {
+    let name = base.split('@').next().unwrap_or(base);
+    let family = name.trim_end_matches(|c: char| c.is_ascii_digit() || matches!(c, '.' | '-'));
+    if family.is_empty() { base } else { family }
+}
+
+/// Whether `base` is one of [`INTERPRETER_COMMANDS`], also by a versioned
+/// name (GHSA-cfmv-qg29-3rvp: `python3.12 -c`, `node@18 -e`).
+pub(super) fn is_interpreter(base: &str) -> bool {
+    INTERPRETER_COMMANDS.contains(&base) || INTERPRETER_COMMANDS.contains(&interpreter_family(base))
+}
 
 /// Flags that indicate inline code execution for interpreters.
 const EVAL_FLAGS: &[&str] = &[
@@ -1174,7 +1279,7 @@ pub(super) fn is_bare_interpreter_stdin(segment: &str) -> bool {
         return false;
     }
     let base = super::tokenizer::exec_name(&tokens[0]);
-    if !INTERPRETER_COMMANDS.contains(&base.as_str()) {
+    if !is_interpreter(&base) {
         return false;
     }
     let has_file_arg = tokens[1..]
@@ -1240,15 +1345,23 @@ fn check_dangerous_flags(segment: &str) -> Result<(), ShellError> {
                 }
             }
         }
-        "awk" | "gawk" | "mawk" => {
-            for tok in &tokens[1..] {
-                if tok.contains("system(") {
-                    return Err(format!(
-                        "[BLOCKED — DO NOT RETRY] '{base}' with 'system()' call is blocked.\n\
-                         This is a permanent security restriction."
-                    )
-                    .into());
-                }
+        "awk" | "gawk" | "mawk" | "nawk" => {
+            if awk_program_from_stream(&tokens[1..]) {
+                return Err(format!(
+                    "[BLOCKED — DO NOT RETRY] '{base}' reading its program from standard input \
+                     or a stream is blocked: the shell allowlist cannot check that program. Pass \
+                     the program as an argument or write it to a file.\n\
+                     This is a permanent security restriction."
+                )
+                .into());
+            }
+            if let Some(what) = awk_programs(&tokens[1..]).into_iter().find_map(awk_escapes) {
+                return Err(format!(
+                    "[BLOCKED — DO NOT RETRY] '{base}' with {what} is blocked: it runs a \
+                     command or writes a file the shell allowlist cannot check.\n\
+                     This is a permanent security restriction."
+                )
+                .into());
             }
         }
         // lean-ctx's hidden modes (`__session-starter`, `__group-guard`,
@@ -1273,6 +1386,175 @@ fn check_dangerous_flags(segment: &str) -> Result<(), ShellError> {
         _ => {}
     }
     Ok(())
+}
+
+/// Whether an awk command reads its program from standard input or another
+/// stream (`-f -`, `-f /dev/stdin`, `-f /dev/fd/0`, `--file=/proc/self/fd/0`):
+/// code given inline by a heredoc or here-string this check never sees.
+fn awk_program_from_stream(args: &[String]) -> bool {
+    let stream = |f: &str| {
+        f == "-" || f.starts_with("/dev/") || f.starts_with("/proc/") || f.starts_with("<(")
+    };
+    args.iter().enumerate().any(|(i, a)| match a.as_str() {
+        "-f" | "--file" | "-E" | "--exec" => args.get(i + 1).is_some_and(|f| stream(f)),
+        _ => ["--file=", "--exec=", "-f"].iter().any(|p| {
+            a.strip_prefix(p)
+                .is_some_and(|f| !f.is_empty() && stream(f))
+        }),
+    })
+}
+
+/// The program texts of an awk command (`args` after the program name):
+/// every `-e`/`--source` text, else the first operand after the options;
+/// none when the program comes from a file (`-f`) only.
+fn awk_programs(args: &[String]) -> Vec<&str> {
+    let mut sources = Vec::new();
+    let mut from_file = false;
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        match a {
+            "--" => {
+                if sources.is_empty() && !from_file {
+                    sources.extend(args.get(i + 1).map(String::as_str));
+                }
+                return sources;
+            }
+            "-e" | "--source" => {
+                sources.extend(args.get(i + 1).map(String::as_str));
+                i += 2;
+            }
+            "-f" | "--file" | "-E" | "--exec" => {
+                from_file = true;
+                i += 2;
+            }
+            "-F" | "-v" | "--assign" | "--field-separator" => i += 2,
+            _ if a.starts_with("--source=") => {
+                sources.push(&a["--source=".len()..]);
+                i += 1;
+            }
+            _ if a.starts_with("-e") && a.len() > 2 => {
+                sources.push(&a[2..]);
+                i += 1;
+            }
+            _ if a.starts_with("-f") || a.starts_with("--file=") || a.starts_with("--exec=") => {
+                from_file = true;
+                i += 1;
+            }
+            _ if a.starts_with('-') && a.len() > 1 => i += 1,
+            _ => {
+                if sources.is_empty() && !from_file {
+                    sources.push(a);
+                }
+                return sources;
+            }
+        }
+    }
+    sources
+}
+
+/// GHSA-cfmv-qg29-3rvp: what in an awk program runs a command or writes a
+/// file — `system`, a pipe (`print | "sh"`, `"id" | getline`), an output
+/// redirection (`print > f`) or an extension (`@load`) — outside its string
+/// and regex literals; `None` when nothing does.
+fn awk_escapes(program: &str) -> Option<&'static str> {
+    // Printing to the standard streams writes no file.
+    let program =
+        ["\"/dev/stderr\"", "\"/dev/stdout\""]
+            .iter()
+            .fold(program.to_string(), |p, stream| {
+                p.replace(&format!(">{stream}"), "")
+                    .replace(&format!("> {stream}"), "")
+            });
+    let s = program.as_bytes();
+    let mut code = Vec::with_capacity(s.len());
+    let mut i = 0;
+    // Whether the last byte ends an operand: a `/` after one divides, any
+    // other `/` opens a regex literal.
+    let mut operand_before = false;
+    while i < s.len() {
+        let c = s[i];
+        match c {
+            b'"' => {
+                i += 1;
+                while i < s.len() && s[i] != b'"' {
+                    i += if s[i] == b'\\' { 2 } else { 1 };
+                }
+                code.extend_from_slice(b"\"\"");
+                operand_before = true;
+            }
+            b'/' if !operand_before => {
+                i += 1;
+                while i < s.len() && s[i] != b'/' {
+                    i += if s[i] == b'\\' { 2 } else { 1 };
+                }
+                code.extend_from_slice(b"//");
+                operand_before = true;
+            }
+            b'#' => {
+                while i < s.len() && s[i] != b'\n' {
+                    i += 1;
+                }
+                continue;
+            }
+            _ => {
+                code.push(c);
+                if !c.is_ascii_whitespace() {
+                    // A postfix `++`/`--` (`i++ /2`) ends an operand.
+                    let postfix = matches!(c, b'+' | b'-')
+                        && i >= 2
+                        && s[i - 1] == c
+                        && (s[i - 2].is_ascii_alphanumeric() || matches!(s[i - 2], b'_' | b']'));
+                    operand_before = postfix
+                        || c.is_ascii_alphanumeric()
+                        || matches!(c, b'_' | b')' | b']' | b'$');
+                }
+            }
+        }
+        i += 1;
+    }
+    let code = String::from_utf8_lossy(&code).into_owned();
+    let bytes = code.as_bytes();
+    if code.contains("@load") || code.contains("@include") {
+        return Some("an extension (`@load`)");
+    }
+    let word_at = |at: usize, word: &str| {
+        code[at..].starts_with(word)
+            && (at == 0 || !(bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_'))
+            && !code[at + word.len()..].starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+    };
+    for at in 0..bytes.len() {
+        if word_at(at, "system") && code[at + 6..].trim_start().starts_with('(') {
+            return Some("`system()`");
+        }
+        if bytes[at] == b'|'
+            && bytes.get(at + 1) != Some(&b'|')
+            && (at == 0 || bytes[at - 1] != b'|')
+        {
+            return Some("a pipe to or from a command");
+        }
+    }
+    // `print … > f` / `printf … >> f`: a `>` at the top level of a print
+    // statement redirects its output (a comparison there needs parentheses).
+    for at in 0..bytes.len() {
+        if !(word_at(at, "print") || word_at(at, "printf")) {
+            continue;
+        }
+        let mut depth = 0i32;
+        for &c in &bytes[at..] {
+            match c {
+                b'(' | b'[' => depth += 1,
+                b')' | b']' => depth -= 1,
+                b';' | b'}' | b'\n' => break,
+                b'>' if depth <= 0 => return Some("an output redirection"),
+                _ => {}
+            }
+            if depth < 0 {
+                break;
+            }
+        }
+    }
+    None
 }
 
 /// Inline or builtin assignments that can hijack execution; see

@@ -560,55 +560,81 @@ fn is_engine_version(value: &str) -> bool {
 
 closed_string!(
     /// A registered LeanCTX tool name ([`KNOWN_TOOLS`], `other` included).
-    ToolName, is_tool, "tool name"
+    ToolName,
+    is_tool,
+    "tool name"
 );
 closed_string!(
     /// A policy member path or gateway rule id (`security.excluded_paths`).
-    RuleId, is_rule, "rule id"
+    RuleId,
+    is_rule,
+    "rule id"
 );
 closed_string!(
     /// A model, provider or host name (v1 `name` rule, never a path).
-    WireName, is_wire_name, "name"
+    WireName,
+    is_wire_name,
+    "name"
 );
 closed_string!(
     /// A compression filter: a read mode or a pattern name (tool rule).
-    FilterName, is_filter, "filter name"
+    FilterName,
+    is_filter,
+    "filter name"
 );
 closed_string!(
     /// A secret detector name (tool rule).
-    DetectorName, is_detector, "detector name"
+    DetectorName,
+    is_detector,
+    "detector name"
 );
 closed_string!(
     /// A known program, host or MCP server name (never a command line).
-    UnregulatedName, is_unregulated_name, "unregulated name"
+    UnregulatedName,
+    is_unregulated_name,
+    "unregulated name"
 );
 closed_string!(
     /// First 16 hex of HMAC-SHA256(workspace fingerprint key, secret).
-    Fingerprint, is_hex16, "fingerprint"
+    Fingerprint,
+    is_hex16,
+    "fingerprint"
 );
 closed_string!(
     /// A UTC hour start, `YYYY-MM-DDTHH:00:00Z`.
-    HourStamp, is_hour, "hour"
+    HourStamp,
+    is_hour,
+    "hour"
 );
 closed_string!(
     /// A UTC time, second precision.
-    TimeStamp, is_time, "time"
+    TimeStamp,
+    is_time,
+    "time"
 );
 closed_string!(
     /// A Hive vault id (32 lowercase hex characters).
-    VaultId, is_hex32, "vault id"
+    VaultId,
+    is_hex32,
+    "vault id"
 );
 closed_string!(
     /// `CARGO_PKG_VERSION` as the contract allows it.
-    EngineVersion, is_engine_version, "engine version"
+    EngineVersion,
+    is_engine_version,
+    "engine version"
 );
 closed_string!(
     /// `hex(blake3(instance public key))[..16]`.
-    KeyId, is_hex16, "key id"
+    KeyId,
+    is_hex16,
+    "key id"
 );
 closed_string!(
     /// An Ed25519 signature, lowercase hex.
-    SignatureHex, is_hex128, "signature"
+    SignatureHex,
+    is_hex128,
+    "signature"
 );
 
 impl ToolName {

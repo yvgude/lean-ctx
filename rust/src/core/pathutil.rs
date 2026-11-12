@@ -493,16 +493,19 @@ pub fn has_project_marker(dir: &Path) -> bool {
 /// exactly like directory symlinks and would otherwise bypass jail/TOCTOU
 /// checks on Windows (GL#442).
 pub fn is_symlink_or_reparse(meta: &std::fs::Metadata) -> bool {
-    if meta.file_type().is_symlink() {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
-        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-    }
-    #[cfg(not(windows))]
+    meta.file_type().is_symlink() || is_reparse_point(meta)
+}
+
+/// An NTFS reparse point (junction, mount point, symlink) on Windows.
+#[cfg(windows)]
+fn is_reparse_point(meta: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+    meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn is_reparse_point(_meta: &std::fs::Metadata) -> bool {
     false
 }
 

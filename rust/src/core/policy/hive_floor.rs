@@ -217,6 +217,9 @@ pub fn to_resolved(policy: &EffectivePolicyV1, version: u64) -> ResolvedPolicy {
             allowed_models: Vec::new(),
             model_ceiling_groups: s.allowed_models.clone().unwrap_or_default(),
             forbid_downgrade_for: Vec::new(),
+            blocked_model_origins: s.blocked_model_origins.clone().unwrap_or_default(),
+            blocked_host_countries: s.blocked_host_countries.clone().unwrap_or_default(),
+            vendor_direct_cn: s.vendor_direct_cn,
         },
         budgets: BudgetRules {
             max_cost_usd_per_person_per_day: usd(c.max_cost_cents_per_person_per_day),

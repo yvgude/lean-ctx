@@ -535,13 +535,9 @@ fn patterns_are_similar(a: &str, b: &str) -> bool {
     }
     let a_alpha: String = a.chars().filter(|c| c.is_alphanumeric()).collect();
     let b_alpha: String = b.chars().filter(|c| c.is_alphanumeric()).collect();
-    if a_alpha.len() >= 3
+    a_alpha.len() >= 3
         && b_alpha.len() >= 3
         && (a_alpha.contains(&b_alpha) || b_alpha.contains(&a_alpha))
-    {
-        return true;
-    }
-    false
 }
 
 fn canonical_json(value: &serde_json::Value) -> String {

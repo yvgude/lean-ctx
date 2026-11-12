@@ -558,6 +558,7 @@ async fn gateway_credential_route_requires_lean_ctx_token() {
         account_ref: None,
         region: None,
         local: true,
+        credential: lean_ctx::core::config::CredentialSource::Configured,
     };
     let mut upstreams = lean_ctx::core::config::Config::default()
         .proxy

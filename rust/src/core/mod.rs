@@ -39,6 +39,7 @@ pub(crate) mod migration_lock;
 pub mod output_sanitizer;
 pub mod policy;
 pub mod pop_pruning;
+pub mod pre_edit;
 pub mod preservation;
 pub mod process_capture;
 pub mod protect;
@@ -234,6 +235,7 @@ pub mod agents;
 pub mod autonomy;
 pub mod canonical;
 pub mod hive_gate;
+pub mod hive_models;
 
 // ---------------------------------------------------------------------------
 // Domain: Adaptive & Scoring
@@ -246,8 +248,10 @@ pub mod decision_loop;
 pub mod decision_loop_runtime;
 #[cfg(test)]
 mod decision_loop_runtime_tests;
+pub mod decisions;
 pub mod execution_lifecycle;
 pub mod execution_protocol;
+pub mod model_catalog;
 pub mod model_registry;
 pub mod shadow;
 pub mod task_relevance;
@@ -352,6 +356,7 @@ pub mod mcp_catalog;
 pub mod metering;
 pub mod ocla;
 pub mod ocla_bus;
+pub mod unit_claims;
 pub mod work_graph;
 pub mod work_graph_delegation;
 pub mod work_graph_store;

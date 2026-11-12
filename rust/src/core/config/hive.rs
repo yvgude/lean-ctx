@@ -66,6 +66,19 @@ pub struct HiveConfig {
     pub runtime_consent: bool,
     /// Worker mode: local caps that only tighten the server opt-in budget.
     pub worker: HiveWorkerConfig,
+    /// mz6: origin of the Hive models gateway that serves the subscription
+    /// models (`leanctx` provider). `None`: `https://models.<hive host>`.
+    /// Honoured only when its host is the Hive host or a direct subdomain
+    /// of it (loopback for tests); any other value is refused and the
+    /// instance token is never sent (`core::hive_models::models_origin`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models_url: Option<String>,
+    /// mz6 owner question Q3 (open): whether Anthropic-shaped agents may
+    /// reach the subscription models through `shape-xlat` routing aliases.
+    /// Default `false`: OpenAI-shaped agents only, the rel2 launch scope;
+    /// `true` has no effect until Q3 is decided (routing refuses aliases to
+    /// `leanctx`).
+    pub models_anthropic_agents: bool,
     /// How the bus treats a sender presenting as the Queen that is no
     /// registered Queen session: `warn` (unset: pass, log, mark) or
     /// `enforce` (refuse); any other value counts as `enforce`. Kept as
@@ -88,6 +101,8 @@ impl Default for HiveConfig {
             vault_labels: true,
             runtime_consent: false,
             worker: HiveWorkerConfig::default(),
+            models_url: None,
+            models_anthropic_agents: false,
             queen_identity: None,
         }
     }
@@ -251,6 +266,24 @@ pub fn schema_section() -> crate::core::config::schema::SectionSchema {
                 "bool",
                 serde_json::json!(defaults.runtime_consent),
                 "You agreed to install the proprietary Intelligence runtime your plan licenses (set by `hive connect` or `hive runtime install`).",
+                None,
+            ),
+        ),
+        (
+            "models_url",
+            key(
+                "string",
+                serde_json::Value::Null,
+                "Origin of the Hive models gateway for the leanctx provider; unset means https://models.<hive host>. Only the Hive host or a direct subdomain of it is honoured.",
+                None,
+            ),
+        ),
+        (
+            "models_anthropic_agents",
+            key(
+                "bool",
+                serde_json::json!(defaults.models_anthropic_agents),
+                "Let Anthropic-shaped agents reach the subscription models through shape-xlat routing aliases; false means OpenAI-shaped agents only. Owner question Q3 is open: true takes effect only once it is decided.",
                 None,
             ),
         ),

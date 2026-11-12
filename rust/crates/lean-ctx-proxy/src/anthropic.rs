@@ -62,11 +62,7 @@ fn is_copilot_request(req: &Request<Body>, openai_upstream: &str) -> bool {
     }
 
     // Signal 3: Configured openai_upstream is a Copilot host
-    if is_copilot_host(openai_upstream) {
-        return true;
-    }
-
-    false
+    is_copilot_host(openai_upstream)
 }
 
 fn is_copilot_host(url: &str) -> bool {

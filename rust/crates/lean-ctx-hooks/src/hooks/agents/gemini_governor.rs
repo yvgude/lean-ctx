@@ -120,6 +120,13 @@ fn apply_hooks(home: &Path) {
         Some(hooks) => hooks.insert(0, hook),
         None => before_tool.push(serde_json::json!({ "matcher": FILE_MATCHER, "hooks": [hook] })),
     }
+    // A native write must not reconfigure LeanCTX or the host's hooks.
+    super::governor_hosts::ensure_write_guard(
+        hooks,
+        "BeforeTool",
+        super::governor_hosts::GEMINI_WRITE_MATCHER,
+        None,
+    );
     super::governor_hosts::prune_empty_events(hooks);
     save_if_changed(&path, &before, &root);
 }
@@ -209,6 +216,12 @@ mod tests {
             .map(|g| g["matcher"].as_str().unwrap())
             .collect();
         assert_eq!(enforce, [SHELL_MATCHER, FILE_MATCHER], "idempotent: {s}");
+        let guards: Vec<&str> = groups
+            .iter()
+            .filter(|g| g["hooks"][0]["command"] == "lean-ctx hook write-guard")
+            .map(|g| g["matcher"].as_str().unwrap())
+            .collect();
+        assert_eq!(guards, ["write_file|replace|edit"], "{s}");
         assert!(groups.iter().any(|g| g["hooks"][0]["command"] == "my-hook"));
         assert!(!s.to_string().contains("hook rewrite\""), "{s}");
 

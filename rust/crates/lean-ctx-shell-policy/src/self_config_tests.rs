@@ -2,6 +2,39 @@
 
 use super::*;
 
+/// The 3.12.4 Windows CI: after `cd /tmp`, `$PWD` expanded to the resolved
+/// `\\?\D:\tmp`, whose `?` read as a glob over the drive, so
+/// `cd /tmp && rm -rf "$PWD/lcx-x"` was refused as touching lean-ctx's state.
+#[test]
+fn pwd_is_spelled_without_the_windows_verbatim_prefix() {
+    for (dir, pwd) in [
+        (r"\\?\D:\tmp", r"D:\tmp"),
+        (r"\\?\UNC\host\share\x", r"\\host\share\x"),
+        (r"\\?\Volume{1}\x", r"\\?\Volume{1}\x"),
+        (r"C:\tmp", r"C:\tmp"),
+        ("/tmp", "/tmp"),
+    ] {
+        assert_eq!(shell_pwd(std::path::Path::new(dir)), pwd, "{dir}");
+    }
+    LINE_CWD.with(|c| {
+        *c.borrow_mut() = LineCwd::At(vec![std::path::PathBuf::from(r"\\?\D:\tmp")]);
+    });
+    let tokens: Vec<String> = ["rm", "-rf", "$PWD/lcx-x"].map(String::from).to_vec();
+    let variants = expanded_variants(&tokens);
+    LINE_CWD.with(|c| *c.borrow_mut() = LineCwd::Process);
+    let variants = variants.expect("a few variants");
+    assert!(
+        variants.iter().flatten().all(|word| !word.contains('?')),
+        "{variants:?}"
+    );
+    assert!(
+        variants
+            .iter()
+            .any(|v| v.last().is_some_and(|w| w.starts_with(r"D:\tmp"))),
+        "{variants:?}"
+    );
+}
+
 fn tampering(cmd: &str) -> Option<Tampering> {
     let tokens: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
     let protected = vec![

@@ -446,10 +446,13 @@ pub fn metrics_snapshot() -> serde_json::Value {
 }
 
 pub(crate) fn flush() {
-    if let Ok(store) = global().lock()
+    // Clears `dirty` once saved: flush runs after every tool call, and a
+    // store left dirty was rewritten on each one.
+    if let Ok(mut store) = global().lock()
         && store.dirty
+        && store.save().is_ok()
     {
-        let _ = store.save();
+        store.dirty = false;
     }
 }
 

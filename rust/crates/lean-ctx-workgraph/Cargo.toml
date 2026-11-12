@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "lean-ctx-workgraph"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "Bounded multi-agent work graph, budget cascade and outcome evaluation model for LeanCTX | OSS."
@@ -14,7 +14,7 @@ publish = true
 
 [dependencies]
 blake3 = "1.8"
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.6.0" }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.7.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
 sha2 = "0.11"

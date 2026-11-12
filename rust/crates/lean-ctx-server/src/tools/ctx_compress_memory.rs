@@ -9,7 +9,7 @@ const SOURCE_EXTENSIONS: &[&str] = &[
     ".mod",
 ];
 
-pub fn handle(path: &str) -> String {
+pub fn handle(project_root: &str, path: &str) -> String {
     if SOURCE_EXTENSIONS.iter().any(|ext| path.ends_with(ext)) {
         return format!(
             "ERROR: refusing to compress source file {path} — \
@@ -20,6 +20,19 @@ pub fn handle(path: &str) -> String {
     if let Err(e) = lean_ctx::core::pathjail::enforce_writable(Path::new(path)) {
         return format!("ERROR: {e}");
     }
+    let root = Path::new(project_root);
+
+    // The memory file itself may be a symlink a cloned repository shipped.
+    // Refuse it before anything is read or backed up, so the bytes of a file
+    // outside the project are never copied into the backup. The rewrite keeps
+    // the file's own permission bits.
+    let mode = match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return format!("ERROR: refusing to compress {path}: it is a symlink");
+        }
+        Ok(meta) => file_mode(&meta),
+        Err(e) => return format!("ERROR: Cannot read {path}: {e}"),
+    };
 
     // Admission gate (G01). This tool rewrites a file from its ORIGINAL bytes
     // and reports token counts only, so nothing admitted or redacted is ever
@@ -42,9 +55,20 @@ pub fn handle(path: &str) -> String {
 
     let original_tokens = count_tokens(&content);
 
+    // The backup name and the file itself can both be symlinks a cloned
+    // repository shipped (a dangling `<name>.original.md`, or `<name>` itself),
+    // and the jail leaves a dangling link unresolved; write both through the
+    // confined write so a symlinked component is refused instead of following
+    // it out of the project.
     let backup_path = build_backup_path(path);
     if !Path::new(&backup_path).exists()
-        && let Err(e) = std::fs::write(&backup_path, &content)
+        && let Err(e) = lean_ctx::core::pathjail_write::write_requested_below_with_mode(
+            root,
+            Path::new(&backup_path),
+            Path::new(&backup_path),
+            content.as_bytes(),
+            mode,
+        )
     {
         return format!("ERROR: Cannot create backup {backup_path}: {e}");
     }
@@ -52,7 +76,13 @@ pub fn handle(path: &str) -> String {
     let compressed = compress_memory_file(&content);
     let compressed_tokens = count_tokens(&compressed);
 
-    if let Err(e) = std::fs::write(path, &compressed) {
+    if let Err(e) = lean_ctx::core::pathjail_write::write_requested_below_with_mode(
+        root,
+        Path::new(path),
+        Path::new(path),
+        compressed.as_bytes(),
+        mode,
+    ) {
         return format!("ERROR: Cannot write compressed file: {e}");
     }
 
@@ -73,6 +103,19 @@ pub fn handle(path: &str) -> String {
         original_tokens,
         compressed_tokens,
     )
+}
+
+/// Permission bits for the rewritten file and its backup: the original's own
+/// bits, so compaction never widens or narrows who may read the file.
+#[cfg(unix)]
+fn file_mode(meta: &std::fs::Metadata) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    meta.permissions().mode() & 0o777
+}
+
+#[cfg(not(unix))]
+fn file_mode(_meta: &std::fs::Metadata) -> u32 {
+    0o600
 }
 
 fn build_backup_path(path: &str) -> String {
@@ -236,6 +279,102 @@ fn try_shorten_phrase(words: &[&str], pos: usize) -> Option<(&'static str, usize
 mod tests {
     use super::*;
 
+    /// A cloned repository can ship the backup name as a dangling symlink, or
+    /// the memory file itself as a symlink; neither may carry the write out of
+    /// the project.
+    #[cfg(unix)]
+    #[test]
+    fn handle_refuses_symlinked_backup_and_target() {
+        use std::os::unix::fs::symlink;
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("proj");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+
+        // The backup name is a dangling link out of the project.
+        let file = root.join("CLAUDE.md");
+        std::fs::write(&file, "# T\n\n\n\nverbose prose here.\n").unwrap();
+        symlink(outside.join("stolen"), root.join("CLAUDE.original.md")).unwrap();
+        let out = handle(
+            root.to_string_lossy().as_ref(),
+            file.to_string_lossy().as_ref(),
+        );
+        assert!(out.starts_with("ERROR") && out.contains("symlink"), "{out}");
+        assert!(!outside.join("stolen").exists());
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "# T\n\n\n\nverbose prose here.\n"
+        );
+
+        // The memory file itself is a link to a file outside the project.
+        let victim = outside.join("victim");
+        std::fs::write(&victim, "keep").unwrap();
+        let linked = root.join("NOTES.md");
+        symlink(&victim, &linked).unwrap();
+        let out = handle(
+            root.to_string_lossy().as_ref(),
+            linked.to_string_lossy().as_ref(),
+        );
+        assert!(out.starts_with("ERROR"), "{out}");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+        // Nothing of the linked file is copied into a backup either.
+        assert!(!root.join("NOTES.original.md").exists());
+
+        // A plain memory file still compacts and gets its backup in the project.
+        let plain = root.join("MEM.md");
+        std::fs::write(&plain, "# M\n\n\n\nverbose prose here.\n").unwrap();
+        let out = handle(
+            root.to_string_lossy().as_ref(),
+            plain.to_string_lossy().as_ref(),
+        );
+        assert!(out.starts_with("Compressed MEM.md"), "{out}");
+        assert!(root.join("MEM.original.md").exists());
+    }
+
+    /// The confined write replaces the file; the result and its backup keep
+    /// the original's permission bits (as a create applies them, through the
+    /// umask) instead of a fixed 0600.
+    #[cfg(unix)]
+    #[test]
+    fn handle_keeps_the_file_mode() {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let _iso = lean_ctx::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("proj");
+        std::fs::create_dir_all(&root).unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+
+        // 0o700 survives any umask that keeps the owner's bits, so a fixed
+        // 0600 fails here whatever umask the test runs under.
+        for (name, original) in [("AGENTS", 0o644), ("NOTES", 0o700)] {
+            let probe = root.join(format!("{name}.probe"));
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(original)
+                .open(&probe)
+                .unwrap();
+            let expected = mode(&probe);
+
+            let file = root.join(format!("{name}.md"));
+            std::fs::write(&file, "# A\n\n\n\nverbose prose here.\n").unwrap();
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(original)).unwrap();
+            let out = handle(
+                root.to_string_lossy().as_ref(),
+                file.to_string_lossy().as_ref(),
+            );
+            assert!(out.starts_with(&format!("Compressed {name}.md")), "{out}");
+            assert_eq!(mode(&file), expected, "{name}.md");
+            assert_eq!(
+                mode(&root.join(format!("{name}.original.md"))),
+                expected,
+                "{name}.original.md"
+            );
+        }
+    }
+
     #[test]
     fn preserves_code_blocks() {
         let input = "Some text just really here.\n\n```rust\nfn main() {\n    println!(\"hello\");\n}\n```\n\nMore text.";
@@ -324,7 +463,10 @@ mod tests {
             "LEAN_CTX_READ_ONLY_ROOTS",
             ro_canon.to_string_lossy().as_ref(),
         );
-        let out = handle(file.to_string_lossy().as_ref());
+        let out = handle(
+            ro.to_string_lossy().as_ref(),
+            file.to_string_lossy().as_ref(),
+        );
         lean_ctx::test_env::remove_var("LEAN_CTX_READ_ONLY_ROOTS");
 
         assert!(
@@ -352,7 +494,7 @@ mod tests {
         let root = dir.path().to_string_lossy().into_owned();
         let in_request = |path: &std::path::Path| {
             crate::tools::admitted_sources::as_agent_acquisition(&root, || {
-                handle(path.to_string_lossy().as_ref())
+                handle(&root, path.to_string_lossy().as_ref())
             })
         };
         let open = dir.path().join("NOTES.md");
