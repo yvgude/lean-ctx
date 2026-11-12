@@ -269,10 +269,7 @@ fn is_scratch_path(path: &str) -> bool {
     }
     // Windows: %TEMP% / std::env::temp_dir()
     let tmp = std::env::temp_dir();
-    if std::path::Path::new(path).starts_with(&tmp) {
-        return true;
-    }
-    false
+    std::path::Path::new(path).starts_with(&tmp)
 }
 
 /// (`curl -o`, `wget` default mode, `dd of=`) — the redirect-free equivalent of

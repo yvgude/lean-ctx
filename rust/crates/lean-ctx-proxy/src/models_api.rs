@@ -48,9 +48,27 @@ fn wants_anthropic_shape(req: &axum::extract::Request) -> bool {
     req.headers().contains_key("anthropic-version") || req.headers().contains_key("x-api-key")
 }
 
-/// The catalog rows: `(alias, owned_by)`. Empty when routing is inactive —
-/// an honest empty list, never an invented model set.
-fn catalog(rules: &RoutingRules) -> Vec<(String, String)> {
+/// mz14: where the model behind `target` comes from and where it is served,
+/// for an alias naming a subscription catalog model (`leanctx/<id>`, or the
+/// bare id on the `leanctx` provider). From the bundled catalog.
+fn origin_host(target: &str) -> Option<serde_json::Value> {
+    let (provider, model) = parse_route_target(target)?;
+    let model = if provider == Some("leanctx") {
+        lean_ctx::core::model_catalog::model_for_request(model)
+    } else {
+        lean_ctx::core::model_catalog::bundled()?.model(model)
+    }?;
+    Some(serde_json::json!({
+        "catalog_model": model.id,
+        "origin_country": model.origin_country,
+        "host_countries": model.hosts.iter().map(|h| h.host_country.as_str()).collect::<Vec<_>>(),
+        "label": model.origin_host_label(),
+    }))
+}
+
+/// The catalog rows: `(alias, owned_by, origin/host label)`. Empty when
+/// routing is inactive — an honest empty list, never an invented model set.
+fn catalog(rules: &RoutingRules) -> Vec<(String, String, Option<serde_json::Value>)> {
     if !rules.is_active() {
         return Vec::new();
     }
@@ -62,22 +80,27 @@ fn catalog(rules: &RoutingRules) -> Vec<(String, String)> {
                 .and_then(|(provider, _)| provider.map(str::to_string))
                 // Model-only alias (upstream unchanged) → owned by the gateway.
                 .unwrap_or_else(|| "gateway".to_string());
-            (alias.clone(), owned_by)
+            (alias.clone(), owned_by, origin_host(target))
         })
         .collect()
 }
 
-/// OpenAI `GET /v1/models` list shape.
+/// OpenAI `GET /v1/models` list shape; a catalog model carries its origin
+/// and host countries under `lean_ctx` (clients ignore unknown fields).
 fn openai_model_list(rules: &RoutingRules) -> serde_json::Value {
     let data: Vec<serde_json::Value> = catalog(rules)
         .into_iter()
-        .map(|(id, owned_by)| {
-            serde_json::json!({
+        .map(|(id, owned_by, origin)| {
+            let mut entry = serde_json::json!({
                 "id": id,
                 "object": "model",
                 "created": CATALOG_CREATED_UNIX,
                 "owned_by": owned_by,
-            })
+            });
+            if let Some(origin) = origin {
+                entry["lean_ctx"] = origin;
+            }
+            entry
         })
         .collect();
     serde_json::json!({ "object": "list", "data": data })
@@ -86,17 +109,26 @@ fn openai_model_list(rules: &RoutingRules) -> serde_json::Value {
 /// Anthropic `GET /v1/models` list shape (single page, `has_more: false`).
 fn anthropic_model_list(rules: &RoutingRules) -> serde_json::Value {
     let entries = catalog(rules);
-    let first_id = entries.first().map(|(id, _)| id.clone());
-    let last_id = entries.last().map(|(id, _)| id.clone());
+    let first_id = entries.first().map(|(id, ..)| id.clone());
+    let last_id = entries.last().map(|(id, ..)| id.clone());
     let data: Vec<serde_json::Value> = entries
         .into_iter()
-        .map(|(id, _)| {
-            serde_json::json!({
+        .map(|(id, _, origin)| {
+            // The label is part of what a person sees when choosing.
+            let display_name = match origin.as_ref().and_then(|o| o["label"].as_str()) {
+                Some(label) => format!("{id} — {label}"),
+                None => id.clone(),
+            };
+            let mut entry = serde_json::json!({
                 "type": "model",
                 "id": id,
-                "display_name": id,
+                "display_name": display_name,
                 "created_at": CATALOG_CREATED_RFC3339,
-            })
+            });
+            if let Some(origin) = origin {
+                entry["lean_ctx"] = origin;
+            }
+            entry
         })
         .collect();
     serde_json::json!({
@@ -159,6 +191,24 @@ mod tests {
         assert_eq!(body["has_more"], false);
         assert_eq!(body["first_id"], "zuehlke/fast");
         assert_eq!(body["last_id"], "zuehlke/premium");
+        assert!(
+            data[0].get("lean_ctx").is_none(),
+            "no catalog model, no label"
+        );
+    }
+
+    #[test]
+    fn catalog_models_are_listed_with_origin_and_host() {
+        let aliases = rules(&[("fast", "leanctx:glm-5.3-flash")]);
+        let openai = openai_model_list(&aliases);
+        let origin = &openai["data"][0]["lean_ctx"];
+        assert_eq!(origin["catalog_model"], "leanctx/glm-5.3-flash");
+        assert_eq!(origin["origin_country"], "CN");
+        assert_eq!(origin["host_countries"], serde_json::json!(["US"]));
+        let anthropic = anthropic_model_list(&aliases);
+        let shown = anthropic["data"][0]["display_name"].as_str().expect("name");
+        assert!(shown.starts_with("fast — origin CN ("), "{shown}");
+        assert!(shown.contains("hosted US ("), "{shown}");
     }
 
     #[test]

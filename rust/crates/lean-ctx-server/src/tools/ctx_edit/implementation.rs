@@ -603,6 +603,12 @@ fn do_replace(
             lean_ctx::core::code_health::gate::GateOutcome::Allow(notice) => notice,
         };
 
+    // Pre-edit checks (unit claims, decisions): hint, or refuse when strict.
+    if let Err(e) = crate::tools::claims_gate::before_write(path, Some(args.content), &new_content)
+    {
+        return (e, CacheEffect::None);
+    }
+
     // #960: a point-in-time check, not a held lock — see
     // ensure_preimage_still_matches' doc for the residual window between
     // this check and the write below.
@@ -837,6 +843,11 @@ fn handle_create(
             return (e, CacheEffect::None);
         }
         preimage = Some(pre);
+    }
+
+    let before = preimage.as_ref().map(|pre| pre.text.as_str());
+    if let Err(e) = crate::tools::claims_gate::before_write(path, before, content) {
+        return (e, CacheEffect::None);
     }
 
     if let Some(parent) = path.parent()

@@ -113,7 +113,11 @@ pub fn flush() {
     let mut guard = STATS_BUFFER
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // Every accounting event is persisted when it is recorded, so the
+    // buffer usually holds nothing new: then there is nothing to merge, and
+    // the lock file and a rewrite of `stats.json` per tool call are saved.
     if let Some((ref mut store, ref mut baseline, ref mut last_flush)) = *guard
+        && store != baseline
         && let Some(merged) = io::merge_and_save(store, baseline)
     {
         *store = merged.clone();
@@ -551,6 +555,38 @@ mod tests {
             total_output_tokens: output,
             ..Default::default()
         }
+    }
+
+    /// Write amplification (Mac, 11.11.): `flush` runs after every tool call
+    /// and merged and rewrote `stats.json` although every event had already
+    /// been persisted when it was recorded. A flush with nothing new must
+    /// not write.
+    #[test]
+    fn a_flush_with_nothing_new_does_not_rewrite_stats() {
+        let dir = crate::core::data_dir::isolated_data_dir();
+        record("ctx_read", 100, 40);
+        let stats_path = dir.path().join("stats.json");
+        let identity = || {
+            let meta = std::fs::metadata(&stats_path).expect("stats.json written");
+            #[cfg(unix)]
+            let ino = {
+                use std::os::unix::fs::MetadataExt;
+                meta.ino()
+            };
+            #[cfg(not(unix))]
+            let ino = 0;
+            (ino, meta.modified().unwrap())
+        };
+        let first = identity();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        flush();
+        flush();
+        assert_eq!(
+            identity(),
+            first,
+            "a flush with nothing new rewrote stats.json"
+        );
+        assert_eq!(load().total_commands, io::load_from_disk().total_commands);
     }
 
     /// #706: a corrupt `stats.json` must never be silently replaced by an

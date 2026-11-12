@@ -229,6 +229,21 @@ fn remove(project_root: &Path, name: Option<&str>, format: Option<&str>) -> Stri
         }
     };
 
+    // The registry is a file in the working tree, which a cloned repository
+    // populates: a symlinked registry must neither be read nor rewritten
+    // through the link (GHSA-mq5c-rjv9-2fc3). The rewrite goes through the
+    // confined write and keeps the file's permission bits.
+    let mode = match std::fs::symlink_metadata(&lean_path) {
+        Ok(meta) if meta.is_file() => registry_mode(&meta),
+        Ok(_) => {
+            return format!(
+                "refusing to edit {}: not a regular file (symlink?)",
+                lean_path.display()
+            );
+        }
+        Err(e) => return format!("failed to read registry: {e}"),
+    };
+
     let content = match std::fs::read_to_string(&lean_path) {
         Ok(s) => s,
         Err(e) => return format!("failed to read registry: {e}"),
@@ -286,7 +301,13 @@ fn remove(project_root: &Path, name: Option<&str>, format: Option<&str>) -> Stri
     }
     .unwrap_or_else(|e| format!("{{\"error\":\"serialization failed: {e}\"}}"));
 
-    if let Err(e) = std::fs::write(&lean_path, new_json) {
+    let registry_name = lean_path.file_name().map(Path::new).unwrap_or(&lean_path);
+    if let Err(e) = lean_ctx::core::pathjail_write::write_below(
+        project_root,
+        registry_name,
+        new_json.as_bytes(),
+        mode,
+    ) {
         return format!("failed to write registry: {e}");
     }
 
@@ -307,5 +328,54 @@ fn remove(project_root: &Path, name: Option<&str>, format: Option<&str>) -> Stri
         }
         _ => serde_json::to_string_pretty(&res)
             .unwrap_or_else(|e| format!("{{\"error\":\"serialization failed: {e}\"}}")),
+    }
+}
+
+#[cfg(unix)]
+fn registry_mode(meta: &std::fs::Metadata) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    meta.permissions().mode() & 0o777
+}
+
+#[cfg(not(unix))]
+fn registry_mode(_meta: &std::fs::Metadata) -> u32 {
+    0o644
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    const REGISTRY: &str = r#"[{"name":"a","path":"a.md","description":"A"},{"name":"b","path":"b.md","description":"B"}]"#;
+
+    /// A cloned repository ships the registry as a link to a JSON file
+    /// outside it: `remove` neither reads nor rewrites that file.
+    #[test]
+    fn remove_refuses_a_symlinked_registry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("proj");
+        let outside = tmp.path().join("outside.json");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&outside, REGISTRY).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join(".lean-ctx-artifacts.json")).unwrap();
+
+        let out = remove(&root, Some("a"), None);
+        assert!(out.starts_with("refusing"), "{out}");
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), REGISTRY);
+    }
+
+    #[test]
+    fn remove_rewrites_a_plain_registry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join(".lean-ctx-artifacts.json");
+        std::fs::write(&file, REGISTRY).unwrap();
+
+        let out = remove(tmp.path(), Some("a"), None);
+        assert!(out.contains("\"removed\": 1"), "{out}");
+        let left = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            !left.contains("\"a.md\"") && left.contains("\"b.md\""),
+            "{left}"
+        );
     }
 }

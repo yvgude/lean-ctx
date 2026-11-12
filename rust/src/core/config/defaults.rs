@@ -70,6 +70,7 @@ impl Default for Config {
             decision_loop: DecisionLoopConfig::default(),
             protection: ProtectionConfig::default(),
             code_health: CodeHealthConfig::default(),
+            decisions: DecisionsConfig::default(),
             autonomy: AutonomyConfig::default(),
             providers: ProvidersConfig::default(),
             knowledge_routing: KnowledgeRoutingConfig::default(),

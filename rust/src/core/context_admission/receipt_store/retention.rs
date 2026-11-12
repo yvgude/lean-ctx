@@ -75,6 +75,11 @@ pub(super) const BOOKKEEPING_PREFIX: &str = ".maintenance";
 const STAMP: &str = ".maintenance";
 const LOCK: &str = ".maintenance.lock";
 const CURSOR: &str = ".maintenance.cursor";
+/// Written when a pass starts and removed when it is stamped: a pass the
+/// process could not finish still counts as an attempt, so a crash or a kill
+/// mid-walk does not make the next process count the whole store again at
+/// once.
+const STARTED: &str = ".maintenance.started";
 
 pub(super) fn pack(bytes: &[u8]) -> Result<Vec<u8>, String> {
     zstd::encode_all(bytes, ZSTD_LEVEL).map_err(|e| e.to_string())
@@ -219,6 +224,19 @@ struct Stamp {
     /// store is another one.
     store: Option<String>,
     full: bool,
+    /// Finished passes in a row that freed nothing while the store was full
+    /// (or that failed): an urgent pass backs off by this count.
+    #[serde(default)]
+    fruitless: u32,
+}
+
+/// A pass that started and was not stamped (yet).
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Started {
+    store: Option<String>,
+    /// Earlier passes in a row that started and never finished.
+    #[serde(default)]
+    aborted: u32,
 }
 
 /// The identity of the store directory: a copy of it is a new directory.
@@ -240,20 +258,65 @@ fn identity(dir: &Path) -> Option<String> {
 
 /// The last finished pass over THIS store and how long ago it ended.
 fn own_stamp(dir: &Path) -> Option<(Stamp, Duration)> {
-    let path = dir.join(STAMP);
-    let age = std::fs::metadata(&path)
+    let (stamp, age) = read_record::<Stamp>(&dir.join(STAMP))?;
+    (stamp.store.is_some() && stamp.store == identity(dir)).then_some((stamp, age))
+}
+
+/// The pass over THIS store that started and was not stamped, and how long
+/// ago it started.
+fn own_started(dir: &Path) -> Option<(Started, Duration)> {
+    let (started, age) = read_record::<Started>(&dir.join(STARTED))?;
+    (started.store.is_some() && started.store == identity(dir)).then_some((started, age))
+}
+
+/// A small bookkeeping record and the age of its file.
+fn read_record<T: serde::de::DeserializeOwned>(path: &Path) -> Option<(T, Duration)> {
+    let age = std::fs::metadata(path)
         .and_then(|meta| meta.modified())
         .ok()?
         .elapsed()
         .unwrap_or_default();
     let mut bytes = Vec::new();
-    std::fs::File::open(&path)
+    std::fs::File::open(path)
         .ok()?
         .take(4096)
         .read_to_end(&mut bytes)
         .ok()?;
-    let stamp: Stamp = serde_json::from_slice(&bytes).ok()?;
-    (stamp.store.is_some() && stamp.store == identity(dir)).then_some((stamp, age))
+    Some((serde_json::from_slice(&bytes).ok()?, age))
+}
+
+/// How long after the last attempt a pass may run again: hourly; an urgent
+/// one after a minute, doubled for every fruitless or aborted attempt in a
+/// row, never later than the hourly pass.
+fn interval(urgent: bool, misses: u32) -> Duration {
+    if !urgent {
+        return MAINTAIN_EVERY;
+    }
+    URGENT_EVERY
+        .saturating_mul(1u32 << misses.min(16))
+        .min(MAINTAIN_EVERY)
+}
+
+/// Whether a pass over `dir` is due: the last attempt — a finished pass, or
+/// a later one that started and never finished — lies further back than
+/// [`interval`].
+fn pass_due(dir: &Path, urgent: bool) -> bool {
+    let stamp = own_stamp(dir);
+    // A started record younger than the stamp is a pass that never finished.
+    let started = own_started(dir).filter(|(_, started_age)| {
+        stamp
+            .as_ref()
+            .is_none_or(|(_, stamp_age)| started_age < stamp_age)
+    });
+    let fruitless = stamp.as_ref().map_or(0, |(stamp, _)| stamp.fruitless);
+    let aborted = started
+        .as_ref()
+        .map_or(0, |(started, _)| started.aborted + 1);
+    let last = match (&stamp, &started) {
+        (_, Some((_, age))) | (Some((_, age)), None) => *age,
+        (None, None) => return true,
+    };
+    last >= interval(urgent, fruitless.saturating_add(aborted))
 }
 
 /// The last pass over this store, which ended within the hour, counted its
@@ -287,16 +350,16 @@ pub fn maintain_at_startup() {
     }
 }
 
-/// Run a pass on a background thread when one is due — none over this store
-/// ended in the last hour, or with `urgent` in the last minute; never blocks
-/// the caller. Only in a process that called [`maintain_at_startup`].
+/// Run a pass on a background thread when one is due ([`pass_due`]: none
+/// over this store was attempted in the last hour, or with `urgent` in the
+/// last minute, backing off while passes free nothing or do not finish);
+/// never blocks the caller. Only in a process that called
+/// [`maintain_at_startup`].
 pub(crate) fn maintain_in_background(dir: PathBuf, urgent: bool) {
     if !ALLOWED.load(Ordering::Acquire) {
         return;
     }
-    let every = if urgent { URGENT_EVERY } else { MAINTAIN_EVERY };
-    let recent = own_stamp(&dir).is_some_and(|(_, age)| age < every);
-    if recent || MAINTAINING.swap(true, Ordering::AcqRel) {
+    if !pass_due(&dir, urgent) || MAINTAINING.swap(true, Ordering::AcqRel) {
         return;
     }
     let spawned = std::thread::Builder::new()
@@ -354,17 +417,41 @@ pub fn maintain_in(dir: &Path, now: SystemTime, policy: Policy) -> Result<Mainte
             ..Maintenance::default()
         });
     }
+    let store = identity(dir);
+    // Recorded before the walk: a pass this process cannot finish still
+    // counts as an attempt (see [`pass_due`]).
+    let started = Started {
+        store: store.clone(),
+        aborted: own_started(dir)
+            .filter(|(_, started_age)| {
+                own_stamp(dir).is_none_or(|(_, stamp_age)| *started_age < stamp_age)
+            })
+            .map_or(0, |(previous, _)| previous.aborted.saturating_add(1)),
+    };
+    if let Ok(bytes) = serde_json::to_vec(&started) {
+        let _ = crate::core::atomic_fs::try_atomic_write(&dir.join(STARTED), &bytes, None);
+    }
+    let previous = own_stamp(dir).map(|(stamp, _)| stamp);
     let result = maintain_locked(dir, now, policy, false);
     // Stamped when the pass ends, also when it failed (then never as full),
     // so a broken store is not retried on every delivery; an interrupted
-    // pass stays unstamped.
+    // pass stays unstamped and its start record stays.
+    let fruitless = match &result {
+        Ok(done) if !(done.full && done.freed_bytes == 0 && done.packed == 0) => 0,
+        _ => previous
+            .as_ref()
+            .map_or(0, |stamp| stamp.fruitless)
+            .saturating_add(1),
+    };
     let stamp = Stamp {
-        store: identity(dir),
+        store,
         full: result.as_ref().is_ok_and(|done| done.full),
+        fruitless,
     };
     if let Ok(bytes) = serde_json::to_vec(&stamp) {
         let _ = crate::core::atomic_fs::try_atomic_write(&dir.join(STAMP), &bytes, None);
     }
+    let _ = std::fs::remove_file(dir.join(STARTED));
     result
 }
 

@@ -105,6 +105,12 @@ fn apply_hooks(home: &Path) {
         &enforce,
         Some(15),
     );
+    super::governor_hosts::ensure_write_guard(
+        hooks,
+        "PreToolUse",
+        super::governor_hosts::CODEX_WRITE_MATCHER,
+        Some(15),
+    );
     super::governor_hosts::prune_empty_events(hooks);
     save_if_changed(&path, &before, &root);
 }
@@ -203,9 +209,11 @@ mod tests {
 
         let hooks = read_json(&hooks_path(home));
         let pre = hooks["hooks"]["PreToolUse"].as_array().unwrap();
-        assert_eq!(pre.len(), 1, "{hooks}");
+        assert_eq!(pre.len(), 2, "{hooks}");
         assert_eq!(pre[0]["hooks"][0]["command"], "lean-ctx hook codex-enforce");
         assert_eq!(pre[0]["hooks"][0]["timeout"], 15);
+        assert_eq!(pre[1]["matcher"], "apply_patch|Edit|Write");
+        assert_eq!(pre[1]["hooks"][0]["command"], "lean-ctx hook write-guard");
         assert!(hooks["hooks"].get("SessionStart").is_none());
         assert_eq!(hooks["hooks"]["Stop"][0]["hooks"][0]["command"], "my-stop");
 

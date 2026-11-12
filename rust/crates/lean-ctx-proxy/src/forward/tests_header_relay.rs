@@ -726,6 +726,7 @@ async fn routed_gateway_credential_requires_lean_ctx_token() {
                     account_ref: None,
                     region: None,
                     local: true,
+                    credential: lean_ctx::core::config::CredentialSource::Configured,
                 }],
             }));
         state.upstreams = upstreams;

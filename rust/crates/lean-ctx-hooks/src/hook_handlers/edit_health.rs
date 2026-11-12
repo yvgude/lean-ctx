@@ -27,10 +27,10 @@ use serde_json::Value;
 const MAX_EDIT_BYTES: usize = 1_000_000;
 
 /// A single textual replacement from an edit payload.
-struct Replacement {
-    old: String,
-    new: String,
-    replace_all: bool,
+pub(super) struct Replacement {
+    pub(super) old: String,
+    pub(super) new: String,
+    pub(super) replace_all: bool,
 }
 
 /// Parse, evaluate, and print a PostToolUse code-health notice for a native edit.
@@ -186,7 +186,7 @@ fn notice_with(v: &Value, root: &str, mode: GateMode, threshold: u32) -> Option<
 /// Extract the edit replacements from a tool-args object. Handles the single-edit
 /// shape (`old_string` + `new_string`) and the MultiEdit shape (`edits: [...]`).
 /// `None` when the payload carries no recognizable edit (e.g. a Write/create).
-fn collect_edits(args: &Value) -> Option<Vec<Replacement>> {
+pub(super) fn collect_edits(args: &Value) -> Option<Vec<Replacement>> {
     if let Some(arr) = args.get("edits").and_then(Value::as_array) {
         let edits: Vec<Replacement> = arr.iter().filter_map(replacement_from).collect();
         return (!edits.is_empty()).then_some(edits);

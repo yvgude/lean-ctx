@@ -4,7 +4,7 @@
 # Published in lockstep with the Engine.
 [package]
 name = "lean-ctx-hive"
-version = "3.12.3"
+version = "3.12.4"
 edition = "2024"
 license = "Apache-2.0"
 description = "The LeanCTX | Hive connector: enrollment, bus, knowledge sync, tasks and policy on top of LeanCTX | OSS."
@@ -25,10 +25,10 @@ http-server = ["lean-ctx-engine/http-server", "dep:tokio-tungstenite", "dep:rust
 test-support = ["lean-ctx-engine/test-support"]
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false }
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.6.0" }
+lean-ctx-engine = { path = "../..", version = "=3.12.4", default-features = false }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.7.0" }
 lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.2.0" }
-lean-ctx-tasks = { path = "../lean-ctx-tasks", version = "0.1.0" }
+lean-ctx-tasks = { path = "../lean-ctx-tasks", version = "0.2.0" }
 http = "1.4"
 tokio = { version = "1.52", features = [
   "rt",
@@ -92,7 +92,7 @@ keyring = { version = "3.6.3", default-features = false, features = ["sync-secre
 [dev-dependencies]
 # The Engine's test helpers for this crate's unit tests (see core::test_mode),
 # and its tree-sitter symbol anchors, which the capture tests resolve.
-lean-ctx-engine = { path = "../..", version = "=3.12.3", default-features = false, features = ["test-support", "tree-sitter"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.4", default-features = false, features = ["test-support", "tree-sitter"] }
 jsonschema = { version = "0.46", default-features = false }
 
 [lints]

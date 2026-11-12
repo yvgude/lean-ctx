@@ -45,7 +45,9 @@
 //!   must be built from such a root. A hollow module at the same path is
 //!   then a duplicate definition. Else `locked_test_not_run`;
 //! - every locked `*.rs` that declares tests named in a dep-info file the
-//!   run wrote (`<target>/debug/deps/*.d`): else `locked_test_not_run`;
+//!   run wrote (`<target>/debug/deps/*.d`, or a unit's
+//!   `<target>/debug/build/<pkg>/<hash>/out/*.d` from Cargo 1.100 on): else
+//!   `locked_test_not_run`;
 //! - independent of names: every binary whose own dep-info names a locked
 //!   `*.rs` (a helper module too) ended in a summary: else
 //!   `locked_test_not_run`;
@@ -1027,7 +1029,8 @@ fn profile_dirs(target: &Path) -> Vec<std::path::PathBuf> {
 
 /// The prerequisites of the test binary `bin`'s own dep-info
 /// (`<file name of bin>.d` in a `deps` directory of a profile of
-/// `target`, [`profile_dirs`]); never a dep-info outside `target`.
+/// `target`, [`profile_dirs`], or in a unit's `out` directory there,
+/// [`unit_dep_files`]); never a dep-info outside `target`.
 pub(super) fn bin_sources(target: &Path, bin: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     let Some(name) = Path::new(bin).file_name() else {
@@ -1043,6 +1046,59 @@ pub(super) fn bin_sources(target: &Path, bin: &str) -> BTreeSet<String> {
     file.push(".d");
     for profile in profile_dirs(target) {
         read_dep_file(&profile.join("deps").join(&file), &mut out);
+        for dep in unit_dep_files(&profile) {
+            if dep.file_name() == Some(file.as_os_str()) {
+                read_dep_file(&dep, &mut out);
+            }
+        }
+    }
+    out
+}
+
+/// Whether `path`'s file name is a build script's dep-info
+/// (`build_script_build-<hash>.d`, or `build_script_build.d` in a unit's
+/// `out` directory).
+fn is_build_script_dep(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|n| n.to_string_lossy().starts_with("build_script_build"))
+}
+
+/// Every `*.d` in the per-unit output directories of `profile`
+/// (`<profile>/build/<pkg>/<hash>/out/`): where Cargo 1.100 and later
+/// write each unit's artifacts and dep-info instead of `<profile>/deps`.
+/// Real directories and files only, as in [`profile_dirs`].
+fn unit_dep_files(profile: &Path) -> Vec<std::path::PathBuf> {
+    fn real_dirs(dir: &Path) -> Vec<std::path::PathBuf> {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let mut out: Vec<_> = entries
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .map(|e| e.path())
+            .collect();
+        out.sort();
+        out
+    }
+    let mut out = Vec::new();
+    for pkg in real_dirs(&profile.join("build")) {
+        for unit in real_dirs(&pkg) {
+            let dir = unit.join("out");
+            if !std::fs::symlink_metadata(&dir).is_ok_and(|m| m.is_dir()) {
+                continue;
+            }
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            let mut files: Vec<_> = entries
+                .flatten()
+                .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|e| e == "d"))
+                .collect();
+            files.sort();
+            out.extend(files);
+        }
     }
     out
 }
@@ -1085,10 +1141,16 @@ pub(super) fn locked_statuses(
 }
 
 /// The prerequisites, exactly as written, of every `*.d` in `target`'s
-/// `deps` directories: what rustc read for the libraries and test binaries.
+/// `deps` directories and unit `out` directories (build scripts' aside):
+/// what rustc read for the libraries and test binaries.
 fn built_sources(target: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for profile in profile_dirs(target) {
+        for dep in unit_dep_files(&profile) {
+            if !is_build_script_dep(&dep) {
+                read_dep_file(&dep, &mut out);
+            }
+        }
         let Ok(entries) = std::fs::read_dir(profile.join("deps")) else {
             continue;
         };
@@ -1102,10 +1164,16 @@ fn built_sources(target: &Path) -> BTreeSet<String> {
 }
 
 /// The prerequisites of every build script's `*.d`
-/// (`build/<pkg>/build_script_build-*.d`).
+/// (`build/<pkg>/build_script_build-*.d`, or
+/// `build/<pkg>/<hash>/out/build_script_build.d` from Cargo 1.100 on).
 fn build_script_sources(target: &Path) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for profile in profile_dirs(target) {
+        for dep in unit_dep_files(&profile) {
+            if is_build_script_dep(&dep) {
+                read_dep_file(&dep, &mut out);
+            }
+        }
         let Ok(pkgs) = std::fs::read_dir(profile.join("build")) else {
             continue;
         };
@@ -1378,6 +1446,56 @@ mod tests {
         assert_eq!(status(&format!("{lib}{own_ok}")), PASSED);
         std::fs::remove_dir_all(target.join("debug/deps")).unwrap();
         assert_eq!(status(&format!("{lib}{own_ok}")), NOT_RUN);
+    }
+
+    /// Cargo 1.100 writes each unit's binary and dep-info to
+    /// `<profile>/build/<pkg>/<hash>/out/`, not `<profile>/deps/`: the
+    /// gate reads both layouts, and a build script's dep-info there stays a
+    /// build script's.
+    #[test]
+    fn unit_out_dirs_hold_the_dep_info_from_cargo_1_100_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let tree = dir.path().join("tree");
+        let target = dir.path().join("target");
+        let unit = |hash: &str| target.join("debug/build/r").join(hash).join("out");
+        for hash in ["1f", "2e", "3d"] {
+            std::fs::create_dir_all(unit(hash)).unwrap();
+        }
+        std::fs::create_dir_all(tree.join("tests")).unwrap();
+        std::fs::write(tree.join("Cargo.toml"), "[package]\nname = \"r\"\n").unwrap();
+        std::fs::write(tree.join("tests/refund.rs"), "#[test]\nfn refunds() {}\n").unwrap();
+        let src = tree.join("tests/refund.rs");
+        let build_rs = tree.join("build.rs");
+        std::fs::write(
+            unit("1f").join("refund-1f.d"),
+            format!("x: {}\n", src.display()),
+        )
+        .unwrap();
+        std::fs::write(
+            unit("3d").join("build_script_build.d"),
+            format!("x: {}\n", build_rs.display()),
+        )
+        .unwrap();
+        let tests = locked_tests(&tree, &["tests/refund.rs".into()]).unwrap();
+        let own_ok = "Running tests/refund.rs (/t/debug/build/r/1f/out/refund-1f)\n\
+                      test refunds ... ok\n\
+                      test result: ok. 1 passed; 0 failed; 0 ignored\n";
+        let report = parse_report(own_ok);
+        assert_eq!(
+            locked_statuses(&tree, &target, &tests, &report)[0].status,
+            PASSED
+        );
+        let src_text = src.display().to_string();
+        let build_text = build_rs.display().to_string();
+        assert!(built_sources(&target).contains(&src_text));
+        assert!(!built_sources(&target).contains(&build_text));
+        assert!(build_script_sources(&target).contains(&build_text));
+        assert!(!build_script_sources(&target).contains(&src_text));
+        std::fs::remove_dir_all(unit("1f")).unwrap();
+        assert_eq!(
+            locked_statuses(&tree, &target, &tests, &report)[0].status,
+            NOT_RUN
+        );
     }
 
     #[test]

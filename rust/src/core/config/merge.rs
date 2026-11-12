@@ -51,6 +51,7 @@ pub(super) const PROJECT_KEYS: &[&str] = &[
     "conversation",
     "crush_verbatim_json",
     "decision_loop",
+    "decisions",
     "delta_explicit",
     "graph_index_max_files",
     "knowledge_routing",

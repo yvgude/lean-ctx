@@ -103,6 +103,8 @@ mod integration_tests;
 mod intent;
 pub mod introspect;
 #[cfg(feature = "http-server")]
+pub mod leanctx_provider;
+#[cfg(feature = "http-server")]
 mod lineage;
 #[cfg(feature = "http-server")]
 pub mod models_api;

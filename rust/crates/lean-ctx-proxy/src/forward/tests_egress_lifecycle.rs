@@ -1066,6 +1066,68 @@ async fn project_rule_blocks_a_classified_original_on_every_route() {
     }
 }
 
+/// mz14: a blocked model origin is refused locally (no upstream connection),
+/// and a vendor's own CN-hosted API is refused 403 without the opt-in —
+/// both before anything leaves.
+#[tokio::test]
+async fn model_origin_and_vendor_direct_cn_are_refused_before_egress() {
+    let _data = lean_ctx::core::data_dir::isolated_data_dir();
+    let cn_origin = lean_ctx::core::policy::runtime::TestPolicyOverride::set(Some(project_policy(
+        "[routing]\nblocked_model_origins = [\"CN\"]\n",
+    )));
+    let request = |model: &str| {
+        axum::http::Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::json!({"model": model, "messages": [{"role": "user", "content": "hi"}]})
+                    .to_string(),
+            ))
+            .expect("request")
+    };
+    let forward = |upstream: String, model: &'static str| async move {
+        tokio::time::timeout(
+            DISPATCH_BOUND,
+            forward_request(
+                State(proxy_test_state(&upstream)),
+                request(model),
+                &upstream,
+                "/v1/chat/completions",
+                add_test_marker,
+                "OpenAI",
+                &[],
+            ),
+        )
+        .await
+        .expect("refused before any upstream wait")
+    };
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let upstream = format!("http://{}", listener.local_addr().expect("address"));
+    let result = forward(upstream, "leanctx/glm-5.3-flash").await;
+    assert_typed_refusal(result, "destination.model_origin_blocked").await;
+    assert_no_upstream_connection(&listener).await;
+
+    // No origin rule, no opt-in: the vendor's own API is refused, not dialled.
+    drop(cn_origin);
+    let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+    let response = forward("https://api.deepseek.com".to_owned(), "deepseek-chat")
+        .await
+        .expect("a typed refusal");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        response.headers()[crate::admitted::REASON_CODES_HEADER],
+        "cn_direct_opt_in_required"
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let body: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(body["error"]["code"], "cn_direct_opt_in_required");
+    assert_eq!(body["lean_ctx"]["vendor"], "DeepSeek");
+}
+
 /// Answers the first request with 503 and every later one with 200, running
 /// `after_first` once the first request is read and before it is answered —
 /// that is, strictly before the proxy can start its retry.

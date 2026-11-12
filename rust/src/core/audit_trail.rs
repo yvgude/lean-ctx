@@ -768,6 +768,53 @@ pub fn load_all_at(path: &Path) -> Vec<AuditEntry> {
     entries
 }
 
+/// Visit the parseable entries of the trail at `path` in chain order, one at
+/// a time, like [`load_all_at`] without holding the trail in memory.
+///
+/// * `since` leaves out the sealed segments sealed before it (see
+///   [`trail_files_since`]).
+/// * `needle` leaves out, unparsed, every line that does not contain it.
+///
+/// Returns the number of entries visited.
+pub fn for_each_entry_at(
+    path: &Path,
+    since: Option<chrono::DateTime<chrono::Utc>>,
+    needle: Option<&str>,
+    mut visit: impl FnMut(&AuditEntry),
+) -> usize {
+    let mut visited = 0;
+    let mut line = Vec::new();
+    for file in trail_files_since(path, since) {
+        let Some((file, len)) = open_for_listing(&file) else {
+            continue;
+        };
+        let mut reader = std::io::BufReader::new(file.take(len));
+        loop {
+            line.clear();
+            match reader.read_until(b'\n', &mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {}
+            }
+            // Like `BufRead::lines` in `load_all_at`: a file stops at its
+            // first line that is not UTF-8.
+            let Ok(text) = std::str::from_utf8(&line) else {
+                break;
+            };
+            if needle.is_some_and(|needle| !text.contains(needle)) {
+                continue;
+            }
+            for entry in serde_json::Deserializer::from_str(text)
+                .into_iter::<AuditEntry>()
+                .map_while(Result::ok)
+            {
+                visited += 1;
+                visit(&entry);
+            }
+        }
+    }
+    visited
+}
+
 /// The files of the trail at `trail` in chain order: its sealed segments,
 /// oldest first, then the active trail if it exists. With `since`, a sealed
 /// segment whose last entry (its seal) is older than `since` is left out;

@@ -168,6 +168,18 @@ fn resolve_provider(
             None,
             false,
         ),
+        // The subscription models (mz6) are reached at `/providers/leanctx/…`
+        // only: an alias would need the instance-token admission on the
+        // shared forward path, and serving Anthropic-shaped agents through
+        // translation is the owner-open Q3 (`[hive] models_anthropic_agents`,
+        // docs/model-access-subscription.md §9). Until then: passthrough.
+        id if id == lean_ctx::core::hive_models::PROVIDER_ID => {
+            tracing::warn!(
+                "[proxy.routing] target '{id}' is served at /providers/{id}/ only; \
+                 routing aliases to it are not supported yet (Q3) — passthrough"
+            );
+            return None;
+        }
         id => {
             let Some(p) = upstreams.provider_by_id(id) else {
                 tracing::warn!(
@@ -267,6 +279,7 @@ mod tests {
                     account_ref: Some("finance-prod".into()),
                     region: Some("eastus".into()),
                     local: false,
+                    credential: lean_ctx::core::config::CredentialSource::Configured,
                 },
                 ResolvedProvider {
                     id: "claudeish".into(),
@@ -277,6 +290,7 @@ mod tests {
                     account_ref: Some("caller-key-scope".into()),
                     region: None,
                     local: false,
+                    credential: lean_ctx::core::config::CredentialSource::Configured,
                 },
             ],
         }
@@ -407,6 +421,7 @@ mod tests {
             account_ref: None,
             region: None,
             local: false,
+            credential: lean_ctx::core::config::CredentialSource::Configured,
         });
         let mut body =
             json!({"model": "claude-opus-4-5", "messages": [{"role":"user","content":"hi"}]});

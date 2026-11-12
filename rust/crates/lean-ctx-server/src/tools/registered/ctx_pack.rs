@@ -397,16 +397,16 @@ fn handle_bundle(
             return Err(invalid("emit=plain writes no bundle; drop file".into()));
         }
         // A file leaves the delivery path of this result: it stays inside
-        // the project (the export rule) and receives the released text.
-        let output = context_bundle::export::destination(
+        // the project (the export rule), receives the released text, and the
+        // write refuses a symlinked destination a cloned repo may have planted.
+        let released = released_bundle(bundle.xml).map_err(tool_execution_error)?;
+        context_bundle::export::write(
             "ctx_pack",
             std::path::Path::new(project_root),
             std::path::Path::new(file),
+            released.as_bytes(),
         )
-        .map_err(invalid)?;
-        let released = released_bundle(bundle.xml).map_err(tool_execution_error)?;
-        std::fs::write(&output, released)
-            .map_err(|e| tool_execution_error(format!("cannot write {file}: {e}")))?;
+        .map_err(|e| tool_execution_error(format!("cannot write {file}: {e}")))?;
         return Ok(format!("{report}written: {file}"));
     } else if let Some(err) = ctx.path_error("file") {
         return Err(invalid(format!("file: {err}")));

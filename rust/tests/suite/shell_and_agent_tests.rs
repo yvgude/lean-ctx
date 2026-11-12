@@ -819,8 +819,8 @@ fn agent_init_codex_migrates_legacy_lean_ctx_hook_but_keeps_other_hooks() {
         .expect("PreToolUse should remain");
     assert_eq!(
         pre_tool_use.len(),
-        2,
-        "legacy hook should be replaced and custom hook preserved (deny is handled at runtime by codex-pretooluse)"
+        3,
+        "legacy hook should be replaced, custom hook preserved and the write guard added (deny is handled at runtime by codex-pretooluse)"
     );
     assert_eq!(
         pre_tool_use[0]["hooks"][0]["command"].as_str(),
@@ -829,6 +829,15 @@ fn agent_init_codex_migrates_legacy_lean_ctx_hook_but_keeps_other_hooks() {
     assert_hook_command_suffix(
         pre_tool_use[1]["hooks"][0]["command"].as_str(),
         "hook codex-pretooluse",
+    );
+    assert_eq!(
+        pre_tool_use[2]["matcher"].as_str(),
+        Some("apply_patch|Edit|Write"),
+        "native writes must be guarded (#88)"
+    );
+    assert_hook_command_suffix(
+        pre_tool_use[2]["hooks"][0]["command"].as_str(),
+        "hook write-guard",
     );
     assert_hook_command_suffix(
         hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str(),

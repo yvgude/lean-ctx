@@ -269,6 +269,8 @@ COMMANDS:
     compile [--mode=<m>] [--budget=N] Context compilation (knapsack + Boltzmann)
     addon list|search|info|add|remove
                                    Unavailable: marketplace/addon surface is Research
+    decisions list|show|check|new  Recorded team decisions (.leanctx/decisions); check exits 1
+                                   on a violation (--rev A..B | --staged | --diff FILE|-)
     rules sync|diff|lint|status|init
                                    Local rules management; no public cross-agent governance product
     policy list|show|validate|coverage|org  Local policy-pack utilities; organization controls are Research
@@ -479,7 +481,7 @@ GITHUB:  https://github.com/yvgude/lean-ctx
         banner = capability_banner(),
         rc_file = lean_ctx::shell_hook::shell_rc_file(),
         hive = if lean_ctx_hive::HIVE_AVAILABLE {
-            "    hive connect|status|disconnect|link  Connect this machine to LeanCTX | Hive\n"
+            "    hive connect|status|disconnect|link  Connect this machine to LeanCTX | Hive\n    models                         List the models your Hive plan includes\n"
         } else {
             ""
         },

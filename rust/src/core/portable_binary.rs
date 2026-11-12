@@ -275,8 +275,10 @@ fn is_cargo_profile_dir(dir: &std::path::Path) -> bool {
 }
 
 /// Whether `path` is an artifact in a cargo output directory on this disk:
-/// directly in a profile directory (`<profile>/lean-ctx`) or in its
-/// `deps`/`examples` (test and example binaries).
+/// directly in a profile directory (`<profile>/lean-ctx`), in its
+/// `deps`/`examples` (test and example binaries), or in a unit's
+/// `<profile>/build/<pkg>/<hash>/out` (where Cargo 1.100 and later put test
+/// binaries).
 ///
 /// The one structural answer for every caller that must tell a developer's
 /// build from an installation (uninstall, dev-install, the path baked into
@@ -290,10 +292,21 @@ pub fn in_cargo_output_dir(path: &std::path::Path) -> bool {
     if is_cargo_profile_dir(dir) {
         return true;
     }
-    matches!(
-        dir.file_name().and_then(|name| name.to_str()),
-        Some("deps" | "examples")
-    ) && dir.parent().is_some_and(is_cargo_profile_dir)
+    let name = dir.file_name().and_then(|name| name.to_str());
+    if matches!(name, Some("deps" | "examples")) {
+        return dir.parent().is_some_and(is_cargo_profile_dir);
+    }
+    // <profile>/build/<pkg>/<hash>/out, the unit's fingerprint beside `out`.
+    let unit = dir.parent();
+    let build = unit
+        .and_then(std::path::Path::parent)
+        .and_then(std::path::Path::parent);
+    name == Some("out")
+        && unit.is_some_and(|u| u.join("fingerprint").is_dir())
+        && build.is_some_and(|b| b.file_name().is_some_and(|n| n == "build"))
+        && build
+            .and_then(std::path::Path::parent)
+            .is_some_and(is_cargo_profile_dir)
 }
 
 /// Decide which `lean-ctx` path to bake into generated artifacts (autostart
@@ -601,6 +614,29 @@ mod tests {
             assert!(!is_transient_build_binary(
                 &profile.join("lean-ctx").to_string_lossy()
             ));
+        }
+
+        /// Cargo 1.100 puts test binaries in a unit's
+        /// `<profile>/build/<pkg>/<hash>/out`: still a cargo output
+        /// directory; an `out` without that shape is not.
+        #[test]
+        fn a_unit_out_dir_of_cargo_1_100_is_a_cargo_output_dir() {
+            let tmp = tempfile::tempdir().unwrap();
+            let profile = tmp.path().join("t/x86_64-pc-windows-gnu/debug");
+            let unit = profile.join("build/lean-ctx/400bfa2068bac60c");
+            std::fs::create_dir_all(unit.join("out")).unwrap();
+            std::fs::create_dir_all(unit.join("fingerprint")).unwrap();
+            std::fs::write(profile.join(".cargo-lock"), "").unwrap();
+            let test_bin = unit.join("out/lean_ctx-400bfa2068bac60c");
+            assert!(in_cargo_output_dir(&test_bin));
+            assert!(is_transient_build_binary(&test_bin.to_string_lossy()));
+
+            std::fs::remove_dir_all(unit.join("fingerprint")).unwrap();
+            assert!(!in_cargo_output_dir(&test_bin));
+            let stray = tmp.path().join("opt/build/pkg/h");
+            std::fs::create_dir_all(stray.join("out")).unwrap();
+            std::fs::create_dir_all(stray.join("fingerprint")).unwrap();
+            assert!(!in_cargo_output_dir(&stray.join("out/lean-ctx")));
         }
 
         /// #2232: a test binary that is on PATH is never chosen over the

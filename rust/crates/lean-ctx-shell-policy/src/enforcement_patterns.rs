@@ -32,11 +32,7 @@ pub(super) fn has_dangerous_patterns(command: &str) -> bool {
         }
     }
 
-    if has_substitution_at_command_pos(trimmed) {
-        return true;
-    }
-
-    false
+    has_substitution_at_command_pos(trimmed)
 }
 
 /// Replace the contents of single-quoted strings with spaces, keeping the

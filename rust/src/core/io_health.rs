@@ -84,19 +84,20 @@ pub fn is_wsl() -> bool {
 
 /// Detects if a path is likely on a slow filesystem (DrvFS, NFS, FUSE, sshfs).
 pub fn is_slow_mount(path: &str) -> bool {
-    if is_wsl() && path.starts_with("/mnt/") {
-        return true;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        static SLOW_PREFIXES: OnceLock<Vec<String>> = OnceLock::new();
-        let prefixes = SLOW_PREFIXES.get_or_init(detect_slow_mount_prefixes);
-        for prefix in prefixes {
-            if path.starts_with(prefix.as_str()) {
-                return true;
-            }
-        }
-    }
+    (is_wsl() && path.starts_with("/mnt/")) || on_slow_mount_prefix(path)
+}
+
+#[cfg(target_os = "linux")]
+fn on_slow_mount_prefix(path: &str) -> bool {
+    static SLOW_PREFIXES: OnceLock<Vec<String>> = OnceLock::new();
+    let prefixes = SLOW_PREFIXES.get_or_init(detect_slow_mount_prefixes);
+    prefixes
+        .iter()
+        .any(|prefix| path.starts_with(prefix.as_str()))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn on_slow_mount_prefix(_path: &str) -> bool {
     false
 }
 
@@ -126,18 +127,7 @@ fn is_windows_elevated_latency() -> bool {
 
 fn is_slow_environment() -> bool {
     static SLOW_ENV: OnceLock<bool> = OnceLock::new();
-    *SLOW_ENV.get_or_init(|| {
-        if is_wsl() {
-            return true;
-        }
-        #[cfg(target_os = "linux")]
-        {
-            if has_nfs_or_fuse_mounts() {
-                return true;
-            }
-        }
-        false
-    })
+    *SLOW_ENV.get_or_init(|| is_wsl() || has_nfs_or_fuse_mounts())
 }
 
 #[cfg(target_os = "linux")]
@@ -166,6 +156,11 @@ fn detect_slow_mount_prefixes() -> Vec<String> {
 #[cfg(target_os = "linux")]
 fn has_nfs_or_fuse_mounts() -> bool {
     !detect_slow_mount_prefixes().is_empty()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn has_nfs_or_fuse_mounts() -> bool {
+    false
 }
 
 fn epoch_ms() -> u64 {

@@ -174,10 +174,7 @@ fn verify_index_ownership(dir: &Path) -> bool {
     let Ok(meta) = std::fs::metadata(&marker) else {
         return true;
     };
-    if meta.len() == 0 || meta.len() > 500_000_000 {
-        return false;
-    }
-    true
+    !(meta.len() == 0 || meta.len() > 500_000_000)
 }
 
 fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
