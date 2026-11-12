@@ -84,6 +84,7 @@ const SELF_HELP: &[&[&str]] = &[
     &["cheat", "cheatsheet", "cheat-sheet"],
     &["telemetry"],
     &["hive"],
+    &["models"],
 ];
 
 /// Arms the guard never intercepts: passthroughs whose arguments belong to the
@@ -392,9 +393,9 @@ mod tests {
     fn every_non_exempt_arm_has_reference_lines() {
         let help = full_help_text();
         for group in SELF_HELP.iter().chain(GUARDED) {
-            // `hive` prints its own help and stays out of `help all` until
-            // the release switch is on (3.12.1).
-            if group[0] == "hive" && !lean_ctx_hive::HIVE_AVAILABLE {
+            // `hive` and `models` print their own help and stay out of
+            // `help all` until the release switch is on (3.12.1).
+            if matches!(group[0], "hive" | "models") && !lean_ctx_hive::HIVE_AVAILABLE {
                 continue;
             }
             assert!(

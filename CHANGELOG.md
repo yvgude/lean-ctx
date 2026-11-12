@@ -6,6 +6,8 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+## [3.12.4] — 2026-11-12
+
 ### Added
 
 - **Policy enforcement acknowledged to Hive (D4).** The bus hello now names the features
@@ -17,6 +19,122 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   `policy_applied`. An expired, outdated or unverified policy is never reported. Local Read
   `policy.sessions` adds `installed.enforcement` (`applied_version`, `acknowledged_at`,
   `sessions`, `reported_at`), additively.
+
+- **ECCP L/I/G change classifier (task 156).** `scripts/change-class <base> <head>`
+  prints `L` (no public Rust item changed), `I` (public items only added) or `G`
+  (public item changed or removed, Cargo features or dependency tables,
+  `Cargo.lock`, `build.rs`, Cargo config, toolchain pin, CI configuration or a
+  generated registry) from the git objects alone, without a build or network,
+  and serves as `$ECCP_CLASSIFIER` for `scripts/eccp-envelope`.
+
+- **ECCP change envelope in git notes (task 157).** `scripts/eccp-envelope` writes,
+  shows and verifies a `leanctx.change-envelope/v1` JSON note under
+  `refs/notes/eccp` on a merge request head: intent, base, class, read set,
+  derivations and check evidence (`docs/contracts/change-envelope-v1.md`).
+
+- **Audit entries v2 bind each tool call to its session (ent3-1).** Every new
+  audit-trail entry carries `v: 2` and a chained `v2_hash` over its timestamp
+  and, for a call of an MCP session, the `session_id`, a per-session `seq`,
+  the decision and an output digest, so an edited timestamp, seq or fact fails
+  `verify_chain` and `verify_chain_full` at that entry. Input and output digests
+  are HMAC-SHA256 under the engine-local key (`hive/receipts.hmac-key`, never
+  uploaded). The v1 `entry_hash` is unchanged: older engines and
+  `leanctx-verify` still verify a mixed trail, and an entry of a newer version
+  counts as forward-compatible, not as tampering.
+
+- **Managed configuration for MDM-provisioned machines (task 169).** An organisation can
+  preconfigure an Instance through a macOS configuration profile, the Windows policy key
+  `HKLM\SOFTWARE\Policies\LeanCTX\Managed` or `/etc/lean-ctx/managed.toml`
+  (`leanctx.managed-config/v1`, `docs/contracts/managed-config-v1.md`). Managed
+  `hive.url` and `hive.root_key` win over `[hive]` and `config set` on them is refused;
+  `hive.org` refuses an enrollment for another org; `hive.require` makes tools refuse
+  until the machine is signed in and has a policy floor. A carrier that is malformed,
+  a symlink, or not root-owned (it or its directory) fails closed; it is checked and
+  read through one open handle. `hive status` and the cockpit `hive status --json`
+  (`managed`, since 1.7) show the carrier and each member.
+
+- **Unit claims warn before two agents edit the same code.** A `ctx_patch` or `ctx_edit`
+  write claims the functions, types and Markdown sections it touches for the editing agent
+  (10-minute lease, renewed on each edit). When another agent holds a claim on a touched
+  unit, the write goes ahead and the result names the holder (`LEAN_CTX_CLAIM_MODE=warn`,
+  the default). `strict` refuses the write before anything is written, and `off` turns the
+  check off. `ctx_agent action=claims` lists the live claims. `action=plan_claims` plans a
+  task against them, through an optional local planner (`LEAN_CTX_CLAIM_PLANNER`) or a
+  built-in fallback without network, and claims the free units. Claims are released when
+  the agent reports `status=finished` and when the server shuts down.
+
+### Security
+
+The first five fixes below were reported by @dkiaulakis.
+
+- **A redirection written another way cannot write past the gate (GHSA-4gm5-2mgw-9r9r).** A
+  redirection with a file-descriptor prefix, an `&>`/`>|`/`<>` operator, a quoted or escaped
+  target, or no space before its target was missed, so an agent shell could write lean-ctx's
+  own state or an unlisted file. The gate now reads every redirection in its canonical form
+  before any other check.
+
+- **A command inside `( … )` or `{ …; }` is checked like any other (GHSA-9jrf-q94p-frhr).** A
+  subshell or group was one segment to the gate, whose first word (`(eval`, `(rm`) matched no
+  rule, and a redirection after the group was dropped. Every group is now opened into its
+  commands for the checks, and a redirection after it is checked too; a command in a `case`
+  arm or after `then`, `do`, `else` or `coproc` is judged as its own command. The line that
+  runs is unchanged.
+
+- **The state guard follows the working directory and the values a line builds
+  (GHSA-cfmv-qg29-3rvp).** Repeated or conditional `cd ..`, a `cd` in a loop, function or trap,
+  `CDPATH`/`HOME`/`OLDPWD` assignments, variables assigned or read at run time (also
+  `${d:=…}` and `set --` arguments, also inside a longer word), the shell's own
+  `$PWD`/`$OLDPWD`/`$_` and `~+`/`~-`/`~N`, brace and parameter expansions, function
+  arguments, `alias` bodies, `GIT_DIR`-style variables, versioned interpreter names
+  (`python3.12`, `node@20`), `deno eval`/`bun -e`, awk `system()`/pipes/output redirection
+  (also in `-e`/`--source` programs; a program read from stdin with `-f -` or `-f /dev/stdin`
+  is refused) and in-place writers (`sed`, `perl -i`, `sort -o`, `gzip`,
+  `patch`, `split`, `tar`/`unzip` extraction) could reach lean-ctx's own state unseen. A write
+  whose target cannot be placed is now refused (fail closed); read-only commands are unchanged.
+
+- **A read-only git subcommand cannot write lean-ctx's state or run a program
+  (GHSA-fv44-pm58-9c8p).** When git runs at or above lean-ctx's state, `log`/`diff`/`show`/`grep`
+  and the other read subcommands were allowed whatever their options, so `--output=…`,
+  `--ext-diff` with `-c diff.external=…`, a `-c`/`--config-env` pager, fsmonitor or alias,
+  `--paginate`, `--textconv` or `grep -O` could write a file or run a program. Those options are
+  now refused there; plain reads such as `log --oneline` and `diff --stat` still pass.
+
+- **Context admission never delivers a value the secret detector flagged
+  (GHSA-xmx8-69qv-7f86).** The detector and the redactor read different spans of one
+  comparison or key/value expression: the operand with or without the rest of its operator
+  (`==`, `:=`), with or without a trailing `)` or `:`. The redactor could judge a flagged value
+  benign and leave it unchanged, and admission then delivered it as `AllowRedacted`, because it
+  only re-checked text it had rewritten. Both layers now judge the same operand, so a
+  comparison operand is masked exactly when its `key=<value>` form is. Unchanged text is
+  re-checked after a reported value too and is withheld (`redaction.incomplete`) when the value
+  is still there. A benign comparison such as `if (token==unit_reference):` is no longer withheld.
+
+- **Memory compaction, context bundles and rule exports do not write through a symlink
+  (GHSA-mq5c-rjv9-2fc3).** Reported by @kasparovabi. `ctx_compress_memory` wrote its backup
+  (`<name>.original.md`) and the compacted file, and `ctx_pack` / `lean-ctx pack` wrote the
+  bundle file, with a plain write after the path jail check. The jail leaves a dangling link
+  unresolved, so a symlink a cloned repository shipped could redirect the write to a file
+  outside the project. These writes now go through the confined write, which refuses a
+  symlinked component below the project root, and a memory file that is itself a symlink is
+  refused before it is read. The compacted file and its backup keep the original's permissions.
+  The same applies to `lean-ctx export-rules` (`AGENTS.md`, `CLAUDE.md`, `CODEBUDDY.md`,
+  `.cursor/rules/…`) and to the artifact registry that `ctx_artifacts action=remove` rewrites.
+  A rule file that links to another file, such as `CLAUDE.md` → `AGENTS.md`, is now refused
+  with an error instead of written through, and a new bundle file is readable only by its
+  owner (0600).
+
+### Changed
+
+- **Library crates carry new versions.** `lean-ctx-protocol` 0.7.0 adds the Hive model catalog,
+  three routing members of the security policy and the `models.subscription` right, which
+  changes its public types; `lean-ctx-ocla` 7.0.0, `lean-ctx-workgraph` 0.3.0 and
+  `lean-ctx-tasks` 0.2.0 expose those types and move with it.
+
+### Fixed
+
+- **A PowerShell-shaped command with a non-ASCII character no longer panics the shell gate.**
+  The verb-prefix check sliced the command name at a byte that could fall inside a
+  multi-byte character (`A-bᲳ`); it now compares bytes, so such a name is no match.
 
 ## [3.12.3] — 2026-11-10
 

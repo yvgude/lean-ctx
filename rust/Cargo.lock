@@ -2170,7 +2170,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lean-ctx"
-version = "3.12.3"
+version = "3.12.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -2283,7 +2283,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-engine"
-version = "3.12.3"
+version = "3.12.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2402,7 +2402,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hive"
-version = "3.12.3"
+version = "3.12.4"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2449,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hooks"
-version = "3.12.3"
+version = "3.12.4"
 dependencies = [
  "blake3",
  "chrono",
@@ -2468,7 +2468,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-ocla"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2498,7 +2498,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-protocol"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
@@ -2513,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-proxy"
-version = "3.12.3"
+version = "3.12.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2553,7 +2553,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-server"
-version = "3.12.3"
+version = "3.12.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2602,10 +2602,11 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-shell-policy"
-version = "3.12.3"
+version = "3.12.4"
 dependencies = [
  "dirs",
  "lean-ctx-engine",
+ "proptest",
  "regex",
  "serde_json",
  "serial_test",
@@ -2652,7 +2653,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-tasks"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "fs2",
@@ -2675,7 +2676,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-workgraph"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake3",
  "lean-ctx-protocol",
@@ -4708,7 +4709,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

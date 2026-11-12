@@ -68,9 +68,11 @@ pub(crate) mod send_mirror;
 pub mod solution_capture;
 mod value_recap;
 mod vibe;
+mod write_guard;
 pub use codex::{handle_codex_enforce, handle_codex_pretooluse, handle_codex_session_start};
 pub use solution_capture::handle_post_commit;
 pub use vibe::handle_vibe_pre_tool;
+pub use write_guard::handle_write_guard;
 // Test-only re-export: only `hook_handlers::tests` (cfg(test)) reaches these
 // through this path; codex.rs's own production use of them is internal.
 #[cfg(test)]

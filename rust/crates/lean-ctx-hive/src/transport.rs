@@ -351,7 +351,7 @@ impl HiveClient {
 /// A 429/503 whose body names no `retry_after_s` takes the `Retry-After`
 /// header's delta-seconds (API §0: 429 sets both; a proxy may set only the
 /// header), so every caller backs off by the same value.
-fn honour_retry_after(status: u16, header: Option<&str>, value: &mut Value) {
+pub(crate) fn honour_retry_after(status: u16, header: Option<&str>, value: &mut Value) {
     if !matches!(status, 429 | 503) {
         return;
     }

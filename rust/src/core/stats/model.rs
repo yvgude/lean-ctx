@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::core::gain::model_pricing::{ModelQuote, PricingMatchKind};
 
 /// Persistent store for all-time token savings, command stats, and daily history.
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
 pub struct StatsStore {
     pub total_commands: u64,
     pub total_input_tokens: u64,
@@ -153,7 +153,7 @@ pub fn classify_command(command: &str) -> TrafficClass {
 }
 
 /// Aggregated CEP (Cognitive Efficiency Protocol) metrics across sessions.
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq)]
 pub struct CepStats {
     pub sessions: u64,
     pub total_cache_hits: u64,
@@ -179,7 +179,7 @@ pub struct CepStats {
 }
 
 /// Point-in-time snapshot of CEP scores for a single session.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct CepSessionSnapshot {
     pub timestamp: String,
     pub score: u32,
@@ -192,7 +192,7 @@ pub struct CepSessionSnapshot {
 }
 
 /// Per-command token statistics: invocation count and input/output totals.
-#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug, PartialEq)]
 pub struct CommandStats {
     pub count: u64,
     pub input_tokens: u64,
@@ -200,7 +200,7 @@ pub struct CommandStats {
 }
 
 /// Daily aggregate: command count and token totals for one calendar day.
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Default, PartialEq)]
 pub struct DayStats {
     pub date: String,
     pub commands: u64,

@@ -90,11 +90,20 @@ pub const ENGINE_MEMBERS: &[(&str, &str)] = &[
     ("context.read_mode", "context.default_read_mode"),
     ("security.allowed_models", "routing.model_ceiling_groups"),
     ("security.block_secrets", "egress.block_secrets"),
+    (
+        "security.blocked_host_countries",
+        "routing.blocked_host_countries",
+    ),
     ("security.blocked_labels", "filters.blocked_labels"),
+    (
+        "security.blocked_model_origins",
+        "routing.blocked_model_origins",
+    ),
     ("security.classification", "filters.classification"),
     ("security.never_send", "io.never_send"),
     ("security.pii", "filters.pii"),
     ("security.readable_roots", "io.readable_roots"),
+    ("security.vendor_direct_cn", "routing.vendor_direct_cn"),
 ];
 
 /// `section.member` → its `x-instance` gateway pack field, for every member
@@ -205,6 +214,18 @@ pub struct SecurityPolicyV1 {
     pub external_model_excluded_classes: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidential_out_of_sharing: Option<bool>,
+    /// Countries of origin whose model weights are never used (catalog
+    /// `origin_country`), whatever the host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_model_origins: Option<Vec<String>>,
+    /// Countries where no model request is processed (catalog
+    /// `host_country`, vendors' own APIs included).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_host_countries: Option<Vec<String>>,
+    /// `false` forbids the local opt-in to a vendor's own API processed in
+    /// CN (`x-merge: false_wins`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vendor_direct_cn: Option<bool>,
     /// ent2: upstream providers the proxy may forward to (`anthropic`,
     /// `openai`, `bedrock`, `local`, …); `x-merge: intersect`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -569,6 +590,11 @@ fn is_lower_hex(value: &str, len: usize) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+/// ISO 3166-1 alpha-2: two uppercase ASCII letters (`$defs/country`).
+pub fn is_country(value: &str) -> bool {
+    value.len() == 2 && value.bytes().all(|b| b.is_ascii_uppercase())
+}
+
 fn validate_digest(value: &str, field: &str) -> Result<(), ValidationError> {
     match value.strip_prefix("sha256:") {
         Some(hex) if is_lower_hex(hex, 64) => Ok(()),
@@ -666,6 +692,16 @@ impl EffectivePolicyV1 {
             s.external_model_excluded_classes.as_ref(),
             "security.external_model_excluded_classes",
             |c| DATA_CLASSES.contains(&c),
+        )?;
+        check_set(
+            s.blocked_model_origins.as_ref(),
+            "security.blocked_model_origins",
+            is_country,
+        )?;
+        check_set(
+            s.blocked_host_countries.as_ref(),
+            "security.blocked_host_countries",
+            is_country,
         )?;
         if let Some(groups) = &s.allowed_models {
             let field = "security.allowed_models";

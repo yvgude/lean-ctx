@@ -190,7 +190,7 @@ ip-boundary-skill-installed:
     name: lean-ctx-ci-rust:65e3bbf776c5
     pull_policy: if-not-present
   # Python only: run on the small runner (2 CPU / 4 GB slots), so the job does
-  # not queue behind Rust builds for a 12-CPU slot.
+  # not queue behind Rust builds for a 6-CPU slot.
   tags: [light]
   timeout: 5 minutes
   interruptible: false
@@ -334,9 +334,15 @@ v4-runtime:
     # `target`: tests recognise build output by paths like /target/debug/deps.
     # It is the only compiler cache (W1-08: sccache is gone; the persistent
     # target already holds every unchanged crate).
-    CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/target"
-    # A target over this size (GiB) is wiped at job start.
-    CI_TARGET_CAP_GB: "40"
+    # One target per concurrent build directory of a runner, keyed like the
+    # runner's own /builds/<short token>/<concurrent id> (11.11., p5 jobs
+    # 32317/32318/32345: jobs in /builds/<token>/1 and /2 built into one
+    # target, and one job's cargo replaced or removed the other's test
+    # binaries mid-run).
+    CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/slot-$CI_RUNNER_SHORT_TOKEN-$CI_CONCURRENT_PROJECT_ID/target"
+    # A target over this size (GiB) is wiped at job start. Per slot: with
+    # about six slots on the host, 30 keeps the worst case near 180 GiB.
+    CI_TARGET_CAP_GB: "30"
     # Warm build farm (W4-04, scripts/ci/warm_farm.py). The runner mounts the
     # root-owned host directory /srv/ci-cache/warm-farm here. A green
     # protected post-merge run publishes its target (incremental data
@@ -352,8 +358,9 @@ v4-runtime:
     # Incremental compilation of the workspace crates into the slot's
     # persistent target (W1-08): a change recompiles only what it touched.
     CARGO_INCREMENTAL: "1"
-    # The runner gives each job a 12-CPU / 20-GiB cgroup (all jobs share the
-    # host's 24-CPU / 64-GiB CI slice); more jobs than CPUs gain nothing. The
+    # The runner gives each job a cgroup of 6 CPUs (cpu.max 600000/100000, as
+    # mr-quick prints it, 12.11.); all jobs share the host's 24-CPU / 64-GiB CI
+    # slice. 12 jobs exceed the quota and the cgroup throttles the excess. The
     # two ~9-GiB engine rustc (lib, lib test) dominate and fit side by side.
     CARGO_BUILD_JOBS: "12"
     CARGO_PROFILE_DEV_DEBUG: line-tables-only
@@ -380,7 +387,7 @@ v4-runtime:
     # The image carries every tool; nothing is installed at job time. The
     # resolved compiler version is recorded with the evidence.
     - |
-      for ci_tool in git python3 cmake clang mold node npm useradd runuser cargo-clippy cargo-nextest rustfmt; do
+      for ci_tool in git python3 cmake clang mold node npm useradd runuser flock cargo-clippy cargo-nextest rustfmt; do
         command -v "$ci_tool" >/dev/null || { echo "CI image lacks $ci_tool" >&2; exit 1; }
       done
     - |
@@ -440,67 +447,101 @@ v4-runtime:
       # swap the target for a link nor forge the stamp beside it; the target
       # belongs to ci-runner. Nothing here follows a symlink. Toolchain or
       # image changes and targets over CI_TARGET_CAP_GB start fresh.
+      # Each concurrent build directory has its own target (CI_TARGET_DIR).
+      # Should two jobs ever share one (11.11., p5 jobs 32317/32318/32321: a
+      # wipe deleted a running job's test binaries and du failed on files
+      # another job removed), each holds a shared lock on target.lock (fd 9)
+      # until the job ends; only a job that gets the lock exclusively without
+      # waiting (fd 8) wipes or cleans up. A busy slot keeps its target.
       test "${CI_BUILDS_DIR:-}" = /builds || { echo "target: unexpected CI_BUILDS_DIR" >&2; exit 1; }
       case "${CI_PROJECT_PATH_SLUG:-}" in ''|*[!a-z0-9-]*) echo "target: unexpected CI_PROJECT_PATH_SLUG" >&2; exit 1;; esac
       case "${CI_TARGET_CAP_GB:-}" in ''|*[!0-9]*) echo "target: unexpected CI_TARGET_CAP_GB" >&2; exit 1;; esac
-      ci_target_parent="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG"
+      case "${CI_RUNNER_SHORT_TOKEN:-}" in ''|*[!A-Za-z0-9_-]*) echo "target: unexpected CI_RUNNER_SHORT_TOKEN" >&2; exit 1;; esac
+      case "${CI_CONCURRENT_PROJECT_ID:-}" in ''|*[!0-9]*) echo "target: unexpected CI_CONCURRENT_PROJECT_ID" >&2; exit 1;; esac
+      ci_target_parent="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/slot-$CI_RUNNER_SHORT_TOKEN-$CI_CONCURRENT_PROJECT_ID"
       ci_target="$ci_target_parent/target"
       test "${CI_TARGET_DIR:-}" = "$ci_target" || { echo "target: unexpected CI_TARGET_DIR" >&2; exit 1; }
       case "$ci_target/" in "$CI_PROJECT_DIR"/*) echo "target: inside the checkout" >&2; exit 1;; esac
+      case "${CI_JOB_ID:-}" in ''|*[!0-9]*) echo "target: unexpected CI_JOB_ID" >&2; exit 1;; esac
       if test -L /builds; then echo "target: /builds is a symlink" >&2; exit 1; fi
-      for ci_dir in /builds/.ci-cache "$ci_target_parent"; do
+      for ci_dir in /builds/.ci-cache "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG" "$ci_target_parent"; do
         if test -L "$ci_dir"; then echo "target: $ci_dir is a symlink" >&2; exit 1; fi
-        if ! test -e "$ci_dir"; then mkdir -m 0755 -- "$ci_dir"; fi
+        if ! test -e "$ci_dir"; then mkdir -m 0755 -- "$ci_dir" 2>/dev/null || test -d "$ci_dir"; fi
         if ! test -d "$ci_dir" || test -L "$ci_dir"; then echo "target: $ci_dir is no directory" >&2; exit 1; fi
         if test "$(stat -c %u -- "$ci_dir")" != 0; then echo "target: $ci_dir is not owned by root" >&2; exit 1; fi
         chown -h root:root -- "$ci_dir"
         chmod 0755 -- "$ci_dir"
       done
       ci_stamp="$(printf '%s\n' "${CI_JOB_IMAGE:-}" "$(rustc +stable -vV)" | sha256sum | cut -d' ' -f1)"
+      # This job's stamp, written at its start, in a root-owned job-local
+      # directory: the slot's target.stamp is shared, the warm-farm publish
+      # must read this job's own.
+      if test -L /run/ci-target; then echo "target: /run/ci-target is a symlink" >&2; exit 1; fi
+      install -d -m 0755 -o root -g root -- /run/ci-target
+      printf '%s\n' "$ci_stamp" > /run/ci-target/stamp
+      ci_target_lock="$ci_target_parent/target.lock"
+      if test -L "$ci_target_lock"; then echo "target: $ci_target_lock is a symlink" >&2; exit 1; fi
+      exec 8>>"$ci_target_lock"
+      if test -L "$ci_target_lock" || ! test -f "$ci_target_lock" || test "$(stat -c %u -- "$ci_target_lock")" != 0; then echo "target: $ci_target_lock is not root's file" >&2; exit 1; fi
+      chmod 0600 -- "$ci_target_lock"
       ci_target_state=fresh
       if test -L "$ci_target"; then echo "target: $ci_target is a symlink" >&2; exit 1; fi
-      if test -e "$ci_target"; then
-        if ! test -d "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then
-          ci_target_state="wiped (not a ci-runner directory)"
-        elif ! test -f "$ci_target_parent/target.stamp" || test -L "$ci_target_parent/target.stamp" \
-          || test "$(cat -- "$ci_target_parent/target.stamp")" != "$ci_stamp"; then
-          ci_target_state="wiped (toolchain or image changed)"
-        else
-          # Another job in the slot may delete cargo temporaries (rmeta*,
-          # rustc*) while du walks the tree; du then exits 1 but still prints
-          # the total. Only a missing total is an error.
-          if ! ci_target_du="$(du -sx --block-size=1G -- "$ci_target" 2>/dev/null)"; then
-            echo "target: files vanished while sizing $ci_target; using du's total" >&2
-          fi
-          ci_target_gb="${ci_target_du%%[[:space:]]*}"
-          case "$ci_target_gb" in ''|*[!0-9]*) echo "target: cannot size $ci_target" >&2; exit 1;; esac
-          if test "$ci_target_gb" -gt "$CI_TARGET_CAP_GB"; then
-            ci_target_state="wiped ($ci_target_gb GB > cap)"
+      if flock -xn 8; then
+        # No other job holds the lock: nothing below is in use.
+        if test -e "$ci_target"; then
+          if ! test -d "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then
+            ci_target_state="wiped (not a ci-runner directory)"
+          elif ! test -f "$ci_target_parent/target.stamp" || test -L "$ci_target_parent/target.stamp" \
+            || test "$(cat -- "$ci_target_parent/target.stamp")" != "$ci_stamp"; then
+            ci_target_state="wiped (toolchain or image changed)"
           else
-            ci_target_state="reused $ci_target_gb GB"
+            # du exits 1, and still prints the total, when a file vanishes
+            # under it; any other failure fails the job.
+            ci_target_gb="$({ du -sx --block-size=1G -- "$ci_target" 2>/dev/null || test "$?" = 1; } | cut -f1)"
+            case "$ci_target_gb" in ''|*[!0-9]*) ci_target_gb=unknown;; esac
+            if test "$ci_target_gb" = unknown; then
+              ci_target_state="wiped (size unknown)"
+            elif test "$ci_target_gb" -gt "$CI_TARGET_CAP_GB"; then
+              ci_target_state="wiped ($ci_target_gb GB > cap)"
+            else
+              ci_target_state="reused $ci_target_gb GB"
+            fi
           fi
+          case "$ci_target_state" in wiped*) rm -rf --one-file-system -- "$ci_target";; esac
+          # Reports of an earlier job must never pass for this job's report.
+          rm -rf --one-file-system -- "$ci_target/nextest"
         fi
-        case "$ci_target_state" in wiped*) rm -rf --one-file-system -- "$ci_target";; esac
-        # Reports of an earlier job must never pass for this job's report.
-        rm -rf --one-file-system -- "$ci_target/nextest"
+        # Overlay layers and records of earlier jobs.
+        for ci_old in "$ci_target_parent/overlay" "$ci_target_parent/overlay.base" "$ci_target_parent"/overlay.[0-9]*; do
+          if test -e "$ci_old" || test -L "$ci_old"; then rm -rf --one-file-system -- "$ci_old"; fi
+        done
+        rm -f -- "$ci_target_parent/target.stamp"
+        printf '%s\n' "$ci_stamp" > "$ci_target_parent/target.stamp"
+        chmod 0644 -- "$ci_target_parent/target.stamp"
+      elif test -e "$ci_target"; then
+        ci_target_state="reused (slot busy: no wipe)"
       fi
-      rm -f -- "$ci_target_parent/target.stamp"
-      printf '%s\n' "$ci_stamp" > "$ci_target_parent/target.stamp"
-      chmod 0644 -- "$ci_target_parent/target.stamp"
+      exec 8>&-
+      # Held until the job's shell exits (before_script and script share it).
+      exec 9>>"$ci_target_lock"
+      flock -s -w 1800 9 || { echo "target: cannot lock $ci_target_lock" >&2; exit 1; }
       if test -L "$ci_target"; then echo "target: $ci_target is a symlink" >&2; exit 1; fi
       install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_target"
       if test -L "$ci_target" || test "$(stat -c %u -- "$ci_target")" != 10999; then echo "target: $ci_target is not ci-runner's directory" >&2; exit 1; fi
       # Warm build farm (W4-04): mount the newest golden target of the
       # branch (published by a protected post-merge run, root-owned,
       # read-only here) as the lower layer of an overlay at the target path.
-      # The upper layer is this job's own, wiped here, so no job sees
-      # another job's output. Merge requests take their target branch, a
+      # The upper layer is this job's own (overlay.$CI_JOB_ID; a concurrent
+      # job of the slot has its own), so no job sees another job's output. Merge requests take their target branch, a
       # protected push its own branch (it then publishes the next generation
       # from this overlay, see script). The checkout's mtimes are then set
       # against the golden commit: unchanged files get a fixed old time,
       # files that differ the current one, so Cargo rebuilds only what
       # changed. The slot target stays untouched below the mount; anything
       # missing (no mount, no generation for this toolchain) keeps it.
+      # Every Rust job builds at these fixed, container-local paths (bind
+      # mounts below); generations are published and picked by them.
+      ci_view=/ci-build
       ci_farm="${CI_WARM_FARM:-}"
       ci_farm_branch=""
       if test "${CI_PIPELINE_SOURCE:-}" = merge_request_event; then
@@ -508,21 +549,34 @@ v4-runtime:
       elif test "${CI_COMMIT_REF_PROTECTED:-}" = true && test "${CI_PIPELINE_SOURCE:-}" = push; then
         ci_farm_branch="${CI_COMMIT_BRANCH:-}"
       fi
-      rm -f -- "$ci_target_parent/overlay.base"
+      rm -f -- /run/ci-target/overlay.base
+      ci_overlay="$ci_target_parent/overlay.$CI_JOB_ID"
       if test -n "$ci_farm_branch" && test -n "$ci_farm" && test -d "$ci_farm" && ! test -L "$ci_farm" && mountpoint -q "$ci_farm"; then
         if ! mount -o remount,bind,ro "$ci_farm"; then echo "warm-farm: cannot make $ci_farm read-only" >&2; exit 1; fi
         if runuser --user ci-runner -- touch "$ci_farm/.ci-write-probe" 2>/dev/null; then echo "warm-farm: $ci_farm is still writable" >&2; exit 1; fi
-        if test -L "$ci_target_parent/overlay"; then echo "warm-farm: overlay dir is a symlink" >&2; exit 1; fi
-        rm -rf --one-file-system -- "$ci_target_parent/overlay"
+        if test -L "$ci_overlay"; then echo "warm-farm: overlay dir is a symlink" >&2; exit 1; fi
+        rm -rf --one-file-system -- "$ci_overlay"
         if test "$(stat -c %u -- "$ci_farm")" = 0 \
-          && ci_golden="$(python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" pick --farm "$ci_farm" --repo "$CI_PROJECT_DIR" --project "$CI_PROJECT_PATH" --branch "$ci_farm_branch" --stamp "$ci_stamp" --project-dir "$CI_PROJECT_DIR" --cargo-home "$CI_PROJECT_DIR/rust/target/ci-cargo-home" --target-dir "$ci_target")" \
-          && install -d -m 0755 -- "$ci_target_parent/overlay" \
-          && install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_target_parent/overlay/upper" \
-          && install -d -m 0700 -- "$ci_target_parent/overlay/work" \
-          && mount -t overlay ci-warm-target -o "lowerdir=${ci_golden%% *},upperdir=$ci_target_parent/overlay/upper,workdir=$ci_target_parent/overlay/work,metacopy=on" "$ci_target"; then
+          && ci_golden="$(python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" pick --farm "$ci_farm" --repo "$CI_PROJECT_DIR" --project "$CI_PROJECT_PATH" --branch "$ci_farm_branch" --stamp "$ci_stamp" --project-dir "$ci_view/src" --cargo-home "$ci_view/src/rust/target/ci-cargo-home" --target-dir "$ci_view/target")" \
+          && install -d -m 0755 -- "$ci_overlay" \
+          && install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_overlay/upper" \
+          && install -d -m 0700 -- "$ci_overlay/work" \
+          && mount -t overlay ci-warm-target -o "lowerdir=${ci_golden%% *},upperdir=$ci_overlay/upper,workdir=$ci_overlay/work,metacopy=on" "$ci_target"; then
           # A partial normalization could pass a stale unit as fresh: fail.
           python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" normalize --repo "$CI_PROJECT_DIR" --base "${ci_golden##* }" || { echo "warm-farm: normalize failed" >&2; exit 1; }
-          printf '%s\n' "${ci_golden##* }" > "$ci_target_parent/overlay.base"
+          printf '%s\n' "${ci_golden##* }" > /run/ci-target/overlay.base
+          # A missed cargo-home cache (pipelines started by an unprotected
+          # user get a key no job writes; owner 12.11.: no shared key) is
+          # seeded from the generation's crates instead of ~7 s of index and
+          # crate downloads. ci-runner copies, as it would download them.
+          ci_seed="${ci_golden%% *}/.warm-farm-cargo-home"
+          if test -d "$ci_seed" && ! test -L "$ci_seed" && ! test -d "$CI_PROJECT_DIR/rust/target/ci-cargo-home/registry/index"; then
+            if runuser --user ci-runner -- /bin/sh -ec 'mkdir -p -- "$2" && cp -R --preserve=mode,timestamps -- "$1/." "$2/"' sh "$ci_seed" "$CI_PROJECT_DIR/rust/target/ci-cargo-home"; then
+              echo "cargo-home: cache missed; seeded from warm-farm ${ci_golden##* }"
+            else
+              echo "cargo-home: seeding failed; Cargo downloads what is missing" >&2
+            fi
+          fi
           ci_target_state="warm-farm ${ci_golden%% *} (slot target: $ci_target_state)"
         else
           echo "warm-farm: no usable generation; using the slot target" >&2
@@ -530,11 +584,31 @@ v4-runtime:
       fi
       echo "target: $ci_target_state" > "$CI_PROJECT_DIR/runtime-evidence/target.txt"
       cat -- "$CI_PROJECT_DIR/runtime-evidence/target.txt"
+      # Fixed build paths (CI-v2, 11.11.). Cargo fingerprints, incremental
+      # data and the warm-farm match (warm_farm.py pick compares the project,
+      # CARGO_HOME and target paths exactly) hold absolute paths, and both the
+      # checkout (/builds/<runner token>/<concurrent id>/...) and the slot
+      # target differ per runner and slot. So merge-request jobs, on another
+      # runner than the post-merge publisher, never matched a generation
+      # (11.11.: no warm-farm hit in 78 MR Rust jobs) and built from a cold
+      # or capped slot target. Every job now builds at the same paths: bind
+      # mounts of this checkout and of the (overlaid) slot target, made by
+      # root in this job's own container. Nothing on the host changes.
+      if test -e "$ci_view" || test -L "$ci_view"; then echo "target: $ci_view already exists" >&2; exit 1; fi
+      install -d -m 0755 -o root -g root -- "$ci_view" "$ci_view/src" "$ci_view/target"
+      mount --bind "$CI_PROJECT_DIR" "$ci_view/src"
+      mount --bind "$ci_target" "$ci_view/target"
+      test "$(git -C "$ci_view/src" rev-parse --show-toplevel)" = "$ci_view/src"
+      if test -L "$ci_view/target" || test "$(stat -c %u -- "$ci_view/target")" != 10999; then echo "target: $ci_view/target is not ci-runner's directory" >&2; exit 1; fi
+      export CI_PROJECT_DIR="$ci_view/src" CI_TARGET_DIR="$ci_view/target"
     # No compiler wrapper (W1-08): a wrapper set by the runner or an image
     # default would put a cache between the build and the persistent target.
     - unset RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER SCCACHE_DIR
   script:
     - set -o pipefail
+    - |
+      # The shared slot lock (fd 9, before_script) must still be open here.
+      { : >&9; } 2>/dev/null || { echo "target: the slot lock is not held in script" >&2; exit 1; }
     - |
       runuser --user ci-runner --preserve-environment -- /bin/bash -c '
         set -euo pipefail
@@ -545,7 +619,7 @@ v4-runtime:
         case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
         export CARGO_TARGET_DIR="$CI_TARGET_DIR"
-        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
         if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
         test "$(id -un)" = ci-runner
         test "$(id -u)" -gt 0
@@ -563,7 +637,12 @@ v4-runtime:
         rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
         cd "$CI_PROJECT_DIR/rust"
         # Format is the rust-fmt job; no gate runs twice in one pipeline (W1-08).
-        cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
+        # Its own profile (clippy-lib, = dev): clippy-driver records its lint
+        # arguments (CLIPPY_ARGS) in each workspace unit, so the two runs
+        # below, whose arguments differ, re-checked all 13 workspace crates
+        # of each other on every run (2 x ~33 s with no Rust change). Same
+        # targets, features and lints; only the output directory differs.
+        cargo +stable clippy --locked --all-features --config profile.clippy-lib.inherits=\"dev\" --profile clippy-lib -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
         # Test, bench and example targets too (task 173): the same lints, except
         # unwrap and length, which tests may use (AGENTS.md quality gate).
         cargo +stable clippy --locked --all-features --all-targets -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy-all-targets.log"
@@ -584,6 +663,11 @@ v4-runtime:
         # run once more on the same commit through scripts/ci/flake_gate.py
         # (W1-02) against ci/flaky-quarantine.json: exit 0 green, 76 warning
         # (quarantined failure or new flake), anything else red.
+        # Tier 2 (owner 11.11.): merge requests run only the tests their change
+        # affects, this job the full suite. A red run on a branch push ends its
+        # log with the last green commit (newest warm-farm generation), the
+        # merges since it, the failing tests and a git bisect command
+        # (scripts/ci/postmerge_bisect.py, runtime-evidence/bisect.txt).
         # The pz21 origin scan (lean-ctx-server --test input_check) judges the
         # diff of this pipeline: the MR diff base, else the first parent.
         INPUT_CHECK_COMMIT="$(git -C "$CI_PROJECT_DIR" rev-parse HEAD)"
@@ -607,7 +691,7 @@ v4-runtime:
         GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
         if test "$doc_rc" != 0 || { test "$nextest_rc" != 0 && test "$nextest_rc" != 76; }; then echo "tests failed: nextest exit $nextest_rc, doctests exit $doc_rc" >&2; exit 1; fi
         if test "$nextest_rc" = 76; then echo "tests: WARNING (flake gate; see runtime-evidence/flake-register.json)" >&2; exit 76; fi
-      ' || { rc=$?; if test "$rc" = 75; then echo "a check exited 75; reported as a failure, not as superseded" >&2; rc=1; fi; if test "$rc" = 76 && ! grep -qx warning "$CI_PROJECT_DIR/runtime-evidence/flake-verdict.txt" 2>/dev/null; then echo "a check exited 76 without a flake-gate warning; reported as a failure" >&2; rc=1; fi; exit "$rc"; }
+      ' || { rc=$?; if test "$rc" = 75; then echo "a check exited 75; reported as a failure, not as superseded" >&2; rc=1; fi; if test "${CI_PIPELINE_SOURCE:-}" = push && test -n "${CI_COMMIT_BRANCH:-}" && test "$rc" != 76; then python3 -I "$CI_PROJECT_DIR/scripts/ci/postmerge_bisect.py" --repo "$CI_PROJECT_DIR" --farm "${CI_WARM_FARM:-}" --project "$CI_PROJECT_PATH" --branch "$CI_COMMIT_BRANCH" --junit "$CI_PROJECT_DIR/runtime-evidence/junit.xml" --out "$CI_PROJECT_DIR/runtime-evidence/bisect.txt"; fi; if test "$rc" = 76 && ! grep -qx warning "$CI_PROJECT_DIR/runtime-evidence/flake-verdict.txt" 2>/dev/null; then echo "a check exited 76 without a flake-gate warning; reported as a failure" >&2; rc=1; fi; exit "$rc"; }
     - |
       # Warm build farm (W4-04): a green protected post-merge push publishes
       # its target (the overlay of the previous generation, or the slot
@@ -622,11 +706,10 @@ v4-runtime:
       ci_farm="${CI_WARM_FARM:-}"
       if test "${CI_COMMIT_REF_PROTECTED:-}" = true && test "${CI_PIPELINE_SOURCE:-}" = push && test -n "${CI_COMMIT_BRANCH:-}" \
         && test -n "$ci_farm" && test -d "$ci_farm" && ! test -L "$ci_farm" && mountpoint -q "$ci_farm" && test "$(stat -c %u -- "$ci_farm")" = 0; then
-        ci_target_parent="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG"
         ci_farm_base=""
-        if test -f "$ci_target_parent/overlay.base" && ! test -L "$ci_target_parent/overlay.base"; then ci_farm_base="$(cat -- "$ci_target_parent/overlay.base")"; fi
+        if test -f /run/ci-target/overlay.base && ! test -L /run/ci-target/overlay.base; then ci_farm_base="$(cat -- /run/ci-target/overlay.base)"; fi
         if mount -o remount,bind,rw "$ci_farm"; then
-          python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" publish --farm "$ci_farm" --repo "$CI_PROJECT_DIR" --project "$CI_PROJECT_PATH" --branch "$CI_COMMIT_BRANCH" --stamp "$(cat -- "$ci_target_parent/target.stamp")" --project-dir "$CI_PROJECT_DIR" --cargo-home "$CI_PROJECT_DIR/rust/target/ci-cargo-home" --target-dir "$CI_TARGET_DIR" --target "$CI_TARGET_DIR" --commit "$CI_COMMIT_SHA" --base "$ci_farm_base" --started-file "$ci_target_parent/target.stamp" --pipeline "${CI_PIPELINE_ID:-}" \
+          python3 -I "$CI_PROJECT_DIR/scripts/ci/warm_farm.py" publish --farm "$ci_farm" --repo "$CI_PROJECT_DIR" --project "$CI_PROJECT_PATH" --branch "$CI_COMMIT_BRANCH" --stamp "$(cat -- /run/ci-target/stamp)" --project-dir "$CI_PROJECT_DIR" --cargo-home "$CI_PROJECT_DIR/rust/target/ci-cargo-home" --target-dir "$CI_TARGET_DIR" --target "$CI_TARGET_DIR" --commit "$CI_COMMIT_SHA" --base "$ci_farm_base" --started-file /run/ci-target/stamp --pipeline "${CI_PIPELINE_ID:-}" \
             || echo "warm-farm: publish failed; the previous generation stays" >&2
         else
           echo "warm-farm: cannot make $ci_farm writable; nothing published" >&2
@@ -704,6 +787,9 @@ mr-quick:
   script:
     - set -o pipefail
     - |
+      # The shared slot lock (fd 9, before_script) must still be open here.
+      { : >&9; } 2>/dev/null || { echo "target: the slot lock is not held in script" >&2; exit 1; }
+    - |
       runuser --user ci-runner --preserve-environment -- /bin/bash -c '
         set -euo pipefail
         umask 077
@@ -711,7 +797,7 @@ mr-quick:
         case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
         export CARGO_TARGET_DIR="$CI_TARGET_DIR"
-        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
         if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
         test "$(id -un)" = ci-runner
         test "$(id -u)" -gt 0
@@ -765,6 +851,9 @@ mr-lint:
   script:
     - set -o pipefail
     - |
+      # The shared slot lock (fd 9, before_script) must still be open here.
+      { : >&9; } 2>/dev/null || { echo "target: the slot lock is not held in script" >&2; exit 1; }
+    - |
       runuser --user ci-runner --preserve-environment -- /bin/bash -c '
         set -euo pipefail
         umask 077
@@ -772,7 +861,7 @@ mr-lint:
         case "$HOME/" in "$CI_PROJECT_DIR"/*) echo "HOME inside the checkout" >&2; exit 1;; esac
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
         export CARGO_TARGET_DIR="$CI_TARGET_DIR"
-        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /builds/.ci-cache/*/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
+        case "$CARGO_TARGET_DIR/" in "$CI_PROJECT_DIR"/*) echo "CARGO_TARGET_DIR inside the checkout" >&2; exit 1;; /ci-build/target/) ;; *) echo "unexpected CARGO_TARGET_DIR" >&2; exit 1;; esac
         if test -L "$CARGO_TARGET_DIR" || ! test -d "$CARGO_TARGET_DIR" || ! test -O "$CARGO_TARGET_DIR"; then echo "CARGO_TARGET_DIR is not the job user directory" >&2; exit 1; fi
         test "$(id -un)" = ci-runner
         test "$(id -u)" -gt 0
@@ -787,7 +876,12 @@ mr-lint:
         rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
         cd "$CI_PROJECT_DIR/rust"
         # Format is the rust-fmt job this one needs (W1-08: no gate twice).
-        cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
+        # Its own profile (clippy-lib, = dev): clippy-driver records its lint
+        # arguments (CLIPPY_ARGS) in each workspace unit, so the two runs
+        # below, whose arguments differ, re-checked all 13 workspace crates
+        # of each other on every run (2 x ~33 s with no Rust change). Same
+        # targets, features and lints; only the output directory differs.
+        cargo +stable clippy --locked --all-features --config profile.clippy-lib.inherits=\"dev\" --profile clippy-lib -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
         # Test, bench and example targets too (task 173): the same lints, except
         # unwrap and length, which tests may use (AGENTS.md quality gate).
         cargo +stable clippy --locked --all-features --all-targets -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy-all-targets.log"

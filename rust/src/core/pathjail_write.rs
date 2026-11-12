@@ -92,14 +92,26 @@ pub fn write_requested_below(
     jailed: &Path,
     content: &[u8],
 ) -> Result<PathBuf, String> {
+    write_requested_below_with_mode(root, requested, jailed, content, 0o600)
+}
+
+/// [`write_requested_below`] with the permission bits of the written file,
+/// for a caller that rewrites a user's own file and keeps its mode.
+pub fn write_requested_below_with_mode(
+    root: &Path,
+    requested: &Path,
+    jailed: &Path,
+    content: &[u8],
+    mode: u32,
+) -> Result<PathBuf, String> {
     if let Ok(rel) = relative_below(root, requested).or_else(|_| relative_below(root, jailed)) {
-        return write_below(root, &rel, content, 0o600);
+        return write_below(root, &rel, content, mode);
     }
     let (Some(parent), Some(name)) = (jailed.parent(), jailed.file_name()) else {
         return Err(format!("invalid destination: {}", jailed.display()));
     };
     std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
-    write_below(parent, Path::new(name), content, 0o600)
+    write_below(parent, Path::new(name), content, mode)
 }
 
 #[cfg(all(test, unix))]

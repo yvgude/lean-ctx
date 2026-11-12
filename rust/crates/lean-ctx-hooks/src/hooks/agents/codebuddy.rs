@@ -594,6 +594,12 @@ pub(crate) fn install_codebuddy_hook_config(home: &std::path::Path) {
     if settings_content.is_empty() {
         let mut hook_map = serde_json::Map::new();
         hook_map.insert("PreToolUse".to_string(), desired_pretooluse);
+        super::governor_hosts::ensure_write_guard(
+            &mut hook_map,
+            "PreToolUse",
+            super::governor_hosts::CLAUDE_WRITE_MATCHER,
+            None,
+        );
         ensure_codebuddy_observe_hooks(&mut hook_map, &observe_cmd);
         ensure_read_dedup_hook(&mut hook_map, &read_dedup_cmd);
         let hook_entry = serde_json::json!({ "hooks": serde_json::Value::Object(hook_map) });
@@ -615,6 +621,12 @@ pub(crate) fn install_codebuddy_hook_config(home: &std::path::Path) {
                     ensure_command_hook(pre_arr, bash_matcher, &rewrite_cmd);
                     ensure_command_hook(pre_arr, REDIRECT_MATCHER, &redirect_cmd);
                 }
+                super::governor_hosts::ensure_write_guard(
+                    hooks_obj,
+                    "PreToolUse",
+                    super::governor_hosts::CLAUDE_WRITE_MATCHER,
+                    None,
+                );
                 ensure_codebuddy_observe_hooks(hooks_obj, &observe_cmd);
                 ensure_read_dedup_hook(hooks_obj, &read_dedup_cmd);
             }

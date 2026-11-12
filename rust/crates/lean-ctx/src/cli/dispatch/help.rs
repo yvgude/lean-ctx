@@ -479,7 +479,7 @@ GITHUB:  https://github.com/yvgude/lean-ctx
         banner = capability_banner(),
         rc_file = lean_ctx::shell_hook::shell_rc_file(),
         hive = if lean_ctx_hive::HIVE_AVAILABLE {
-            "    hive connect|status|disconnect|link  Connect this machine to LeanCTX | Hive\n"
+            "    hive connect|status|disconnect|link  Connect this machine to LeanCTX | Hive\n    models                         List the models your Hive plan includes\n"
         } else {
             ""
         },

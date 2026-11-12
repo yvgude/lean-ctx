@@ -46,6 +46,7 @@ pub mod mapping;
 pub mod metrics;
 pub mod metrics_v2;
 pub mod migrate;
+pub mod models_access;
 pub mod outbox;
 pub mod policy;
 pub mod policy_sessions;
@@ -83,13 +84,16 @@ pub use state::HiveStore;
 /// at start-up, before the first tool call (`cli::dispatch::run`, next to
 /// `proxy::register_shapers`, and the `lean-ctx-embed` engine builder).
 /// Calling it again changes nothing: the first registration wins. Every
-/// hook here is bookkeeping or telemetry; none decides a refusal (the
-/// sign-in probe answers a question: the managed `hive.require` gate in the
-/// engine decides, and refuses when no probe is registered).
+/// hook here is bookkeeping or telemetry and decides no refusal, except the
+/// subscription-model token source (`models_access`): without it the
+/// proxy refuses the `leanctx` provider (fail closed). The sign-in probe
+/// answers a question: the managed `hive.require` gate in the engine
+/// decides, and refuses when no probe is registered.
 pub fn register_hooks() {
     lean_ctx::core::config::managed::register_signed_in_probe(runtime_lease::signed_in);
     // Config off switches, Engine receipts, the runtime lease source (it
-    // reads the Hive lease on every request).
+    // reads the Hive lease on every request), the subscription-model token
+    // source of the proxy's `leanctx` provider.
     lean_ctx::core::config::hive::register_off_switches(receipts::apply_off_switches);
     // Each receipt: queued for upload when allowed, and noted as evidence of
     // the policy in force for this process's app session.
@@ -100,6 +104,7 @@ pub fn register_hooks() {
         },
     );
     runtime_lease::ensure_registered();
+    models_access::ensure_registered();
     lean_ctx::core::agents::register_announce(bus::presence::request_announce);
     // Signal recording and knowledge bookkeeping.
     lean_ctx::core::hive_signals::register_signal_recorder(

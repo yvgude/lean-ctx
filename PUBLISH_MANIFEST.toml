@@ -345,6 +345,8 @@ new_paths = [
   "rust/src/core/context_admission/cross_line.rs",
   "rust/src/core/context_admission/egress_api_tests.rs",
   "rust/src/core/context_admission/egress_walk.rs",
+  # GHSA-xmx8-69qv-7f86 regression tests: Apache-2.0, own work.
+  "rust/src/core/context_admission/operand_tests.rs",
   "rust/src/core/context_admission/origin.rs",
   "rust/src/core/context_admission/receipt_store/anchors.rs",
   "rust/src/core/context_admission/receipt_store/capacity.rs",
@@ -395,6 +397,7 @@ new_paths = [
   "rust/src/shell/containment/starter.rs",
   "rust/src/shell/containment/tests.rs",
   "rust/src/shell/containment/wire.rs",
+  "scripts/ci/postmerge_bisect.py",
   "scripts/eccp-envelope",
   "scripts/agent_tools_compatibility.py",
   "scripts/check-capabilities.py",
@@ -408,6 +411,7 @@ new_paths = [
   "rust/crates/lean-ctx-server/tests/main.rs",
   "rust/crates/lean-ctx-protocol/tests/main.rs",
   "scripts/check-local-free.py",
+  "scripts/tests/test_postmerge_bisect.py",
   "tests/delivery/test_check_local_free.py",
   "tests/hive-e2e/lifecycle.cjs",
   "tests/hive-e2e/lifecycle.sh",
@@ -430,6 +434,14 @@ new_paths = [
   "scripts/scan-release-artifacts.py",
   "scripts/source-export-manifest.py",
   "scripts/sync-capabilities.py",
+  # W3-08 deterministic checkers: own code, Apache-2.0 SPDX-headed.
+  "scripts/mutants-changed",
+  "scripts/tests/test_mutants_changed.py",
+  "rust/crates/lean-ctx-shell-policy/tests/proptest_tokenizer.rs",
+  "rust/fuzz/.gitignore",
+  "rust/fuzz/Cargo.toml",
+  "rust/fuzz/README.md",
+  "rust/fuzz/fuzz_targets/shell_tokenizer.rs",
   # ECCP W1b-02 change classifier (task 156): own code, Apache-2.0 SPDX-headed.
   "scripts/change-class",
   "scripts/tests/test_change_class.py",
@@ -1337,6 +1349,7 @@ new_paths = [
   "rust/crates/lean-ctx-hive/src/metrics_v2/tests.rs",
   "rust/crates/lean-ctx-hive/src/metrics_v2/upload.rs",
   "rust/crates/lean-ctx-hive/src/migrate.rs",
+  "rust/crates/lean-ctx-hive/src/models_access.rs",
   "rust/crates/lean-ctx-hive/src/migrate_tests.rs",
   "rust/crates/lean-ctx-hive/src/policy_tests.rs",
   "rust/crates/lean-ctx-hive/src/receipts_tests.rs",
@@ -1378,6 +1391,7 @@ new_paths = [
   "rust/crates/lean-ctx-hive/src/throttle_tests.rs",
   "rust/src/core/untrusted.rs",
   "rust/src/core/hive_gate.rs",
+  "rust/src/core/hive_models.rs",
   "rust/src/core/config/hive.rs",
   "rust/src/core/engine_interface/receipt_sink.rs",
   "rust/crates/lean-ctx-hive/src/vault.rs",
@@ -1407,6 +1421,10 @@ new_paths = [
   "rust/crates/lean-ctx-shell-policy/src/tests_ps_quotes.rs",
   "rust/crates/lean-ctx-shell-policy/src/tests_ps_escapes.rs",
   "rust/crates/lean-ctx-shell-policy/src/redaction_marker.rs",
+  # 3.12.4 shell-gate advisories (GHSA-4gm5/9jrf/cfmv/fv44).
+  "rust/crates/lean-ctx-shell-policy/src/groups.rs",
+  "rust/crates/lean-ctx-shell-policy/src/redirections.rs",
+  "rust/crates/lean-ctx-shell-policy/src/tests_ghsa_3124.rs",
   "rust/crates/lean-ctx-server/tests/agent_wait_roundtrip.rs",
   "rust/tests/suite/hive_fake_wire_conformance.rs",
   "scripts/sync-hive-c0.sh",
@@ -1859,6 +1877,7 @@ new_paths = [
   "rust/crates/lean-ctx/src/cli/migrate_legacy.rs",
   "rust/crates/lean-ctx/src/cli/mod.rs",
   "rust/crates/lean-ctx/src/cli/model_cmd.rs",
+  "rust/crates/lean-ctx/src/cli/models_cmd.rs",
   "rust/crates/lean-ctx/src/cli/ocla_cmd.rs",
   "rust/crates/lean-ctx/src/cli/output_savings_cmd.rs",
   "rust/crates/lean-ctx/src/cli/overview_cmd.rs",
@@ -2073,6 +2092,8 @@ new_paths = [
   "rust/src/core/mcp_roots/derive.rs",
   "rust/src/core/policy/audit_filter.rs",
   "rust/src/core/read_mode.rs",
+  # redaction.rs tests moved into their own file (LOC gate): Apache-2.0, own work.
+  "rust/src/core/redaction/tests.rs",
   "rust/src/core/reference_store.rs",
   "rust/src/core/reference_store/tests.rs",
   "rust/src/core/rooted_read.rs",
@@ -2159,6 +2180,7 @@ new_paths = [
   "rust/crates/lean-ctx-proxy/src/integration_tests.rs",
   "rust/crates/lean-ctx-proxy/src/intent.rs",
   "rust/crates/lean-ctx-proxy/src/introspect.rs",
+  "rust/crates/lean-ctx-proxy/src/leanctx_provider.rs",
   "rust/crates/lean-ctx-proxy/src/lib.rs",
   "rust/crates/lean-ctx-proxy/src/lineage.rs",
   "rust/crates/lean-ctx-proxy/src/live_zone.rs",
@@ -2672,6 +2694,7 @@ new_paths = [
   "rust/crates/lean-ctx-hooks/src/hook_handlers/tests_search_rewrites.rs",
   "rust/crates/lean-ctx-hooks/src/hook_handlers/value_recap.rs",
   "rust/crates/lean-ctx-hooks/src/hook_handlers/vibe.rs",
+  "rust/crates/lean-ctx-hooks/src/hook_handlers/write_guard.rs",
   "rust/crates/lean-ctx-hooks/src/hooks/agents/amp.rs",
   "rust/crates/lean-ctx-hooks/src/hooks/agents/antigravity.rs",
   "rust/crates/lean-ctx-hooks/src/hooks/agents/claude.rs",
@@ -2730,6 +2753,15 @@ new_paths = [
   "rust/src/ipc/detached.rs",
   "rust/src/ipc/process/services.rs",
   "rust/src/ipc/process/tests.rs",
+  # mz6/mz14 T4: model origin/host-country enforcement. Own code, Apache-2.0;
+  # the catalog data is LeanCTX's own Hive catalog (leanctx-hive d22a1ece).
+  "rust/crates/lean-ctx-protocol/src/hive/model_catalog.rs",
+  "rust/crates/lean-ctx-proxy/src/forward/origin_gate.rs",
+  "rust/data/model_catalog.hive.toml",
+  "rust/data/model_catalog.json",
+  "rust/src/core/model_catalog.rs",
+  "scripts/sync-model-catalog.py",
+  "scripts/tests/test_sync_model_catalog.py",
   # 3.12.3 vault resolution (task #14): own code, Apache-2.0.
   "rust/crates/lean-ctx-hive/src/resolution.rs",
   "rust/tests/suite/hive_vault_resolution.rs",
@@ -2836,6 +2868,10 @@ new_paths = [
   "rust/crates/vendor/rmcp/tests/test_unix_socket_response_limits.rs",
   # 3.12.3 GitHub #2231: shell-policy regression tests (own work, Apache-2.0).
   "rust/crates/lean-ctx-shell-policy/src/gh2231_tests.rs",
+  # 3.12.3 unit claims + pre-edit gate (MR 5!334; own work, Apache-2.0).
+  "rust/crates/lean-ctx-server/src/tools/claims_gate.rs",
+  "rust/crates/lean-ctx-server/src/tools/ctx_agent_claims.rs",
+  "rust/src/core/unit_claims.rs",
 ]
 
 # Public paths the export no longer carries: each one is a feature sunset with
@@ -4984,6 +5020,9 @@ exclude = [
   "docs/internal.zip",
   # Internal docs (e.g. the emspace → Hive cut-over) sit under a forbidden prefix.
   "docs/internal/**",
+  # Subscription model-access design (mz6/mz14): describes the private Hive Cloud
+  # gateway, plan credit and Masterplan scope, so it stays in the private tree.
+  "docs/model-access-subscription.md",
   # The private matrix renders the canonical registry; the public tree carries
   # the matrix of its projection instead (generated below).
   "docs/reference/generated/product-capabilities.md",

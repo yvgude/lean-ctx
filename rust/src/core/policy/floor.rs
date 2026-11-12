@@ -98,6 +98,20 @@ pub fn merge_floor(org: &ResolvedPolicy, local: Option<&ResolvedPolicy>) -> Reso
             &org.routing.forbid_downgrade_for,
             &local.routing.forbid_downgrade_for,
         ),
+        // mz14: blocked countries accumulate; a `false` vendor-direct ruling
+        // anywhere voids the local opt-in.
+        blocked_model_origins: union(
+            &org.routing.blocked_model_origins,
+            &local.routing.blocked_model_origins,
+        ),
+        blocked_host_countries: union(
+            &org.routing.blocked_host_countries,
+            &local.routing.blocked_host_countries,
+        ),
+        vendor_direct_cn: super::false_wins(
+            org.routing.vendor_direct_cn,
+            local.routing.vendor_direct_cn,
+        ),
     };
     let budgets = BudgetRules {
         max_cost_usd_per_person_per_day: min_f64(
@@ -385,6 +399,27 @@ mod tests {
         let local = rp("local"); // no ceiling of its own
         let m = merge_floor(&org, Some(&local));
         assert_eq!(m.routing.allowed_models, vec!["claude-*".to_string()]);
+    }
+
+    /// mz14: blocked origins/hosts accumulate; `vendor_direct_cn = false`
+    /// anywhere wins, so a local `true` cannot lift an org `false`.
+    #[test]
+    fn country_blocks_union_and_vendor_direct_cn_false_wins() {
+        let mut org = rp("org");
+        org.routing.blocked_model_origins = vec!["CN".into()];
+        org.routing.vendor_direct_cn = Some(false);
+        let mut local = rp("local");
+        local.routing.blocked_host_countries = vec!["RU".into()];
+        local.routing.vendor_direct_cn = Some(true);
+        let m = merge_floor(&org, Some(&local));
+        assert!(m.routing.origin_blocked("CN"));
+        assert!(m.routing.host_blocked("RU"));
+        assert_eq!(m.routing.vendor_direct_cn, Some(false));
+        org.routing.vendor_direct_cn = None;
+        assert_eq!(
+            merge_floor(&org, Some(&local)).routing.vendor_direct_cn,
+            Some(true)
+        );
     }
 
     #[test]

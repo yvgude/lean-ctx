@@ -76,6 +76,40 @@ slow-timeout = { period = "60s", terminate-after = 5 }
 [profile.ci.junit]
 path = "junit.xml"
 
+# Slowest first: nextest starts higher-priority tests before the rest, so a
+# 10-30 s test no longer starts late and alone sets the wall time. Durations
+# from CI (the job cgroup grants 6 CPUs, so 6 test threads); list tests of
+# >= 10 s by exact name.
+[[profile.ci.overrides]]
+filter = '''
+    (package(lean-ctx-engine) & test(=core::cache::tests::concurrent_cache_hits_are_lossless))
+  | (package(lean-ctx-hive) & test(=sync::driver::tests::a_clone_before_the_snapshot_rebuild_folds_the_purge))
+  | (package(lean-ctx-engine) & binary(gateway_postprocess_e2e) & test(=proxy_redacts_secrets_before_postprocessing))
+  | (package(lean-ctx) & binary(main) & test(=suite::cli_characterization::overview_exits_cleanly))
+  | (package(lean-ctx-syntax) & test(=deep_queries::tests::deeply_nested_source_does_not_overflow))
+'''
+priority = 100
+
+[[profile.ci.overrides]]
+filter = '''
+    (package(lean-ctx) & binary(main) & (
+        test(=suite::hive_connector_cli::the_relay_announces_a_remote_worker_so_its_role_gated_claim_succeeds)
+      | test(=suite::lock_contention_hardening::bounded_lock_respects_adaptive_timeout_in_degraded)
+      | test(=suite::hive_connector_cli::after_an_hive_restart_the_relay_says_hello_again_within_seconds)
+      | test(=suite::hive_fake_wire_conformance::the_engine_maps_only_contract_error_reasons)
+      | test(/^suite::(lock_contention_hardening|io_health_scenarios)::bounded_(read|write)_/)))
+  | (package(lean-ctx-engine) & (
+        test(=core::reference_store::tests::reference_pool_enforces_entry_and_aggregate_byte_budgets)
+      | test(=core::knowledge::tests::a_store_over_eight_mib_stays_writable_and_recallable)
+      | test(=core::context_ledger::persistence::tests::corrupt_or_locked_ledger_is_not_replaced)))
+  | (package(lean-ctx) & test(=http_server::cancellation_tests::outer_rest_timeout_preserves_mcp_execution))
+  | (package(lean-ctx) & binary(integration)
+      & test(=oneshot_semantic_terminates::oneshot_semantic_search_and_compose_answer_on_a_real_sized_project))
+  | (package(lean-ctx-hive) & test(=consent::web::tests::no_answer_within_ten_minutes_times_out_and_stays_pending))
+  | (package(lean-ctx-server) & test(=tools::registered::ctx_read::tests::contended_cache_lock_degrades_to_uncached_read))
+'''
+priority = 50
+
 [[profile.ci.scripts]]
 platform = 'cfg(unix)'
 filter = 'all()'

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pub mod admitted_sources;
 pub mod autonomy;
+pub(crate) mod claims_gate;
 pub mod ctx_agent;
 pub mod ctx_architecture;
 pub mod ctx_artifacts;

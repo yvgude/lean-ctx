@@ -110,6 +110,10 @@ fn merge_cursor_hooks(existing: &mut serde_json::Value, rewrite_cmd: &str, redir
         "Read|Grep|Glob",
         redirect_cmd,
     );
+    // A native write must not reconfigure LeanCTX or the host's hooks.
+    let write_guard_cmd = rewrite_cmd.replace("hook rewrite", "hook write-guard");
+    let write_matcher = super::governor_hosts::CURSOR_WRITE_MATCHER;
+    ensure_pretooluse_hook(pre_arr, &[write_matcher], write_matcher, &write_guard_cmd);
 
     // Observe hooks — only essential ones (#1200). postToolUse caused
     // Cursor to append hook stdout to edited files, corrupting source code.
@@ -448,6 +452,12 @@ mod tests {
         assert!(pre.iter().any(|e| {
             e.get("matcher").and_then(|m| m.as_str()) == Some("Read|Grep|Glob")
                 && e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook redirect")
+        }));
+        // Native writes route through the write guard (k4).
+        assert!(pre.iter().any(|e| {
+            e.get("matcher").and_then(|m| m.as_str())
+                == Some(super::super::governor_hosts::CURSOR_WRITE_MATCHER)
+                && e.get("command").and_then(|c| c.as_str()) == Some("/new/bin hook write-guard")
         }));
     }
 

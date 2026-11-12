@@ -19,7 +19,7 @@ impl McpTool for CtxAgentTool {
             "Local multi-agent coordination helper for explicit opt-in sessions. It is not a hosted workflow service.\n\
              Active presence uses a bounded lease; read or status=active renews it.\n\
              Actions: register, list, post, read, wait, status, info, handoff, sync, poll_events, export,\n\
-              claim/release, lease_acquire/lease_renew/lease_release, brief/return, diary/recall_diary/diaries,\n\
+              claim/release, lease_acquire/lease_renew/lease_release, claims/plan_claims, brief/return, diary/recall_diary/diaries,\n\
               share_knowledge/receive_knowledge, control_status. Directed events require an agent filter when read.\n\
              wait blocks until a message to this agent (or a broadcast) arrives, then answers like read;\n\
               after timeout_secs (default 600, max 1800) it answers \"No new messages within <n>s.\".\n\
@@ -28,8 +28,12 @@ impl McpTool for CtxAgentTool {
              Leases (message=path or symbol:<name>; renew/release take category=lease_ref) are machine-wide:\n\
               every lean-ctx process sharing the data dir sees the same holder. A path lease is project-bound\n\
               (relative, or absolute inside the project; not the root itself, no symlinks) and shares one\n\
-              namespace with ctx_work_graph path claims: holding src blocks a node claiming src/x. Advisory:\n\
-              edit tools do not check leases.",
+              namespace with ctx_work_graph path claims: holding src blocks a node claiming src/x.\n\
+             Unit claims: ctx_edit/ctx_patch claim the functions/sections they change for 10 min and warn\n\
+              (LEAN_CTX_CLAIM_MODE=strict: refuse) when another agent holds a touched unit or a path lease\n\
+              on the file; status=finished releases them. claims lists holders; plan_claims (message=task or\n\
+              `path#unit path`) plans a task against them (external planner `weave` if present) and claims\n\
+              the free named units.",
             json!({
                 "type": "object",
                 "properties": {
@@ -186,6 +190,7 @@ impl McpTool for CtxAgentTool {
                     { "if": { "properties": { "action": { "const": "lease_acquire" } }, "required": ["action"] }, "then": { "required": ["action", "message"] } },
                     { "if": { "properties": { "action": { "const": "lease_renew" } }, "required": ["action"] }, "then": { "required": ["action", "message", "category"] } },
                     { "if": { "properties": { "action": { "const": "lease_release" } }, "required": ["action"] }, "then": { "required": ["action", "message", "category"] } },
+                    { "if": { "properties": { "action": { "const": "plan_claims" } }, "required": ["action"] }, "then": { "required": ["action", "message"] } },
                     { "if": { "properties": { "action": { "const": "send" } }, "required": ["action"] }, "then": { "required": ["action", "message", "type"] } },
                     { "if": { "properties": { "action": { "const": "reply" } }, "required": ["action"] }, "then": { "required": ["action", "message", "reply_to"] } }
                 ],

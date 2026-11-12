@@ -96,6 +96,12 @@ fn apply_hooks(root: &mut serde_json::Value) {
     // No host timeout on the enforcement hook: it fails open inside 15 s,
     // and a short host timeout would let a violation through unwrapped.
     ensure_group_hook(event(hooks, "PreToolUse"), enforce_matcher, &enforce, None);
+    super::governor_hosts::ensure_write_guard(
+        hooks,
+        "PreToolUse",
+        super::governor_hosts::CLAUDE_WRITE_MATCHER,
+        None,
+    );
     ensure_group_hook(
         event(hooks, "PostToolUse"),
         super::claude_governor::GOVERN_POST_MATCHER,
@@ -236,6 +242,7 @@ mod tests {
                 ("PostToolUse".into(), "hook govern".into(), t),
                 ("PreCompact".into(), "hook govern".into(), t),
                 ("PreToolUse".into(), "hook rewrite-enforce".into(), None),
+                ("PreToolUse".into(), "hook write-guard".into(), None),
                 ("SessionEnd".into(), "hook observe".into(), t),
                 ("SessionStart".into(), "hook govern".into(), t),
             ]
@@ -250,7 +257,11 @@ mod tests {
         assert!(is_installed(home));
 
         assert!(revert(home));
-        assert!(actions(home).is_empty());
+        // The write guard belongs to both setups and stays.
+        assert_eq!(
+            actions(home),
+            [("PreToolUse".into(), "hook write-guard".into(), None)]
+        );
         assert!(!codebuddy_md(home).exists());
     }
 
