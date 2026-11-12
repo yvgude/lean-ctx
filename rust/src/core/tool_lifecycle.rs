@@ -419,6 +419,8 @@ pub fn flush_all() {
 pub fn flush_all_at_exit() {
     crate::core::bounce_tracker::flush_pending();
     flush_all();
+    // `flush_all` puts off a heat map saved within the last 30 s.
+    heatmap::flush_now();
     // Observations a serving process handed to the detached writer, and its
     // published request snapshot (#2196, #2197).
     crate::core::request_ledger::finish_serving(std::time::Duration::from_secs(5));

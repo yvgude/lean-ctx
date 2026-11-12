@@ -231,6 +231,20 @@ pub struct RoutingPolicyRules {
     /// tier (`["security", "prod"]`). Accumulates down the chain.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forbid_downgrade_for: Vec<String>,
+    /// Countries of origin (ISO 3166-1 alpha-2, the model catalog's
+    /// `origin_country`) whose model weights are never used, whatever the
+    /// host (mz14). Accumulates (union) down the chain and across the floor.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_model_origins: Vec<String>,
+    /// Countries where no model request is processed: a catalog host's
+    /// `host_country`, and a vendor's own API (`[[direct]]`). Union.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_host_countries: Vec<String>,
+    /// `Some(false)` voids the local `[proxy] allow_vendor_direct_cn` opt-in.
+    /// `false` wins over `true` in every merge; `true` grants nothing by
+    /// itself (the opt-in stays local).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vendor_direct_cn: Option<bool>,
 }
 
 impl RoutingPolicyRules {
@@ -240,6 +254,21 @@ impl RoutingPolicyRules {
         self.allowed_models.is_empty()
             && self.model_ceiling_groups.is_empty()
             && self.forbid_downgrade_for.is_empty()
+            && self.blocked_model_origins.is_empty()
+            && self.blocked_host_countries.is_empty()
+            && self.vendor_direct_cn.is_none()
+    }
+
+    /// Whether `country` is a blocked model origin.
+    #[must_use]
+    pub fn origin_blocked(&self, country: &str) -> bool {
+        self.blocked_model_origins.iter().any(|c| c == country)
+    }
+
+    /// Whether `country` is a blocked host country.
+    #[must_use]
+    pub fn host_blocked(&self, country: &str) -> bool {
+        self.blocked_host_countries.iter().any(|c| c == country)
     }
 
     /// Apply all inherited ceilings to one explicitly selected model.
@@ -371,6 +400,17 @@ pub enum PolicyError {
     UnknownFilterAction { field: String, value: String },
     InvalidBudget { field: String, value: String },
     EmptyModelPattern,
+    InvalidCountry { field: String, value: String },
+}
+
+/// `false` wins: a `false` anywhere stays `false`; otherwise any `true`.
+#[must_use]
+pub fn false_wins(a: Option<bool>, b: Option<bool>) -> Option<bool> {
+    match (a, b) {
+        (Some(false), _) | (_, Some(false)) => Some(false),
+        (Some(true), _) | (_, Some(true)) => Some(true),
+        (None, None) => None,
+    }
 }
 
 impl std::fmt::Display for PolicyError {
@@ -429,6 +469,10 @@ impl std::fmt::Display for PolicyError {
             PolicyError::EmptyModelPattern => {
                 write!(f, "routing.allowed_models must not contain empty patterns")
             }
+            PolicyError::InvalidCountry { field, value } => write!(
+                f,
+                "routing.{field} '{value}' is not an ISO 3166-1 alpha-2 country code (e.g. \"CN\")"
+            ),
         }
     }
 }
@@ -587,6 +631,23 @@ pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
         .any(|p| p.trim().is_empty())
     {
         return Err(PolicyError::EmptyModelPattern);
+    }
+    for (field, countries) in [
+        ("blocked_model_origins", &pack.routing.blocked_model_origins),
+        (
+            "blocked_host_countries",
+            &pack.routing.blocked_host_countries,
+        ),
+    ] {
+        if let Some(bad) = countries
+            .iter()
+            .find(|c| !lean_ctx_protocol::hive::effective_policy::is_country(c))
+        {
+            return Err(PolicyError::InvalidCountry {
+                field: field.into(),
+                value: bad.clone(),
+            });
+        }
     }
     validate_budget(
         "max_cost_usd_per_person_per_day",
@@ -750,6 +811,23 @@ pub fn resolve(pack: &PolicyPack) -> Result<ResolvedPolicy, PolicyError> {
                 resolved.routing.forbid_downgrade_for.push(project.clone());
             }
         }
+        for country in &layer.routing.blocked_model_origins {
+            if !resolved.routing.blocked_model_origins.contains(country) {
+                resolved.routing.blocked_model_origins.push(country.clone());
+            }
+        }
+        for country in &layer.routing.blocked_host_countries {
+            if !resolved.routing.blocked_host_countries.contains(country) {
+                resolved
+                    .routing
+                    .blocked_host_countries
+                    .push(country.clone());
+            }
+        }
+        resolved.routing.vendor_direct_cn = false_wins(
+            resolved.routing.vendor_direct_cn,
+            layer.routing.vendor_direct_cn,
+        );
         // Budgets: scalar caps override (child wins) — the floor merge takes
         // the stricter side across org vs. local separately.
         if let Some(v) = layer.budgets.max_cost_usd_per_person_per_day {

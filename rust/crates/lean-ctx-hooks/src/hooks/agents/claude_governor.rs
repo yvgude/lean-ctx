@@ -314,6 +314,12 @@ fn apply_hooks(root: &mut serde_json::Value, binary: &str) {
         // timeout, 15 s internal fail-open): a short host timeout would let
         // a violation through unwrapped under load.
         ensure_command_hook(arr, enforce_matcher, &enforce);
+        // A native write must not reconfigure LeanCTX or the host's hooks.
+        ensure_command_hook(
+            arr,
+            super::governor_hosts::CLAUDE_WRITE_MATCHER,
+            &format!("{binary} hook write-guard"),
+        );
     }
     if let Some(arr) = event_array(hooks, "PostToolUse") {
         timed_hook(arr, GOVERN_POST_MATCHER, &govern, timeout);
@@ -481,6 +487,7 @@ mod tests {
             ("PostToolUse", "hook observe", t),
             ("PreCompact", "hook govern", t),
             ("PreToolUse", "hook rewrite-enforce", None),
+            ("PreToolUse", "hook write-guard", None),
             ("SessionEnd", "hook observe", t),
             ("SessionStart", "hook govern", t),
         ]

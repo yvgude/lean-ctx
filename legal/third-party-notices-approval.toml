@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "c7ab236b6d058ed5b2c598e6ba1e749faa2087221c2b3a514b4937e7f231e5ac"
+approved_content_sha256 = "d3d27f494df715682fd7306fbf9a60f49fc99b87f1e95c929c25c09867bd9074"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.3 after the library crate bumps in 96a0cb6e59: pending variant 25c453a33cfb3bb5fae530d3cad59539a150d71ebce97cbb6ba2befdaf5ee927, approved variant c7ab236b6d058ed5b2c598e6ba1e749faa2087221c2b3a514b4937e7f231e5ac; inventory unchanged from df9af755, only the Cargo.lock and SBOM input digests changed. Owner approval in the 3.12.3 release session on 2026-11-10 (answer \"Approve c7ab236b...\")."
-approved_at = "2026-11-10"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.4 after the version and library crate bumps: pending variant 087ae054303d9af4b9f849e01b76bffb6c515f74378fb9ed4efd12b1105b3c43, approved variant d3d27f494df715682fd7306fbf9a60f49fc99b87f1e95c929c25c09867bd9074; inventory unchanged from 3.12.3 (cargo metadata inventory 7034b4be), only the Cargo.lock, SBOM, asset manifest and npm lock input digests changed. Owner approval in the 3.12.4 release session on 2026-11-12 (answer \"Approve d3d27f49...\")."
+approved_at = "2026-11-12"

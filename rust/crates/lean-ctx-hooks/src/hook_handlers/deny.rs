@@ -47,6 +47,13 @@ pub fn handle_deny() {
     // #805: deny Write/Edit payloads that contain compression markers.
     // These indicate the agent is writing compressed ctx_read output to disk.
     if is_write_tool(&tool_name) {
+        // A native write must not reconfigure LeanCTX or the host's hooks
+        // (same verdict as `hook write-guard`).
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&stdin_payload)
+            && let Some(refusal) = super::write_guard::guarded_write(&parsed)
+        {
+            emit_deny(&refusal, &stdin_payload);
+        }
         if !is_compression_guard_disabled()
             && let Some(content) = extract_write_content(&stdin_payload)
             && has_compression_markers(&content)
@@ -54,8 +61,7 @@ pub fn handle_deny() {
             print_deny_compression_markers(&tool_name, &stdin_payload);
             return;
         }
-        // Writes pass through — lean-ctx only handles reads (AGENTS.md).
-        // The compression marker check above is the only write-path gate.
+        // Other writes pass through — lean-ctx only handles reads (AGENTS.md).
         print_allow();
         return;
     }
@@ -528,7 +534,7 @@ fn print_deny_compression_markers(tool_name: &str, payload: &str) {
 ///   `permissionDecision`, and `hookSpecificOutput`.
 /// - stderr: the plain reason (Claude Code surfaces stderr on exit 2).
 /// - exit code: [`deny_exit_code`] — 0 only together with the Claude-only JSON.
-fn emit_deny(msg: &str, payload: &str) -> ! {
+pub(super) fn emit_deny(msg: &str, payload: &str) -> ! {
     let parsed = serde_json::from_str(payload).unwrap_or(serde_json::Value::Null);
     println!("{}", super::build_deny_output(msg, &parsed));
     eprintln!("{msg}");
@@ -717,7 +723,7 @@ fn print_allow() {
     println!("{{}}");
 }
 
-fn read_stdin_with_timeout() -> String {
+pub(super) fn read_stdin_with_timeout() -> String {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let mut buf = String::new();

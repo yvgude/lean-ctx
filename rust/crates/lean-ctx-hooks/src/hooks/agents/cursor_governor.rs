@@ -43,7 +43,14 @@ pub(crate) const SPEC: GovernorHostSpec = GovernorHostSpec {
 const SHELL_MATCHER: &str = "Shell";
 const FILE_MATCHER: &str = "Read|Grep|Glob";
 /// Every action a standard or governor install may have written.
-const LEAN_CTX_ACTIONS: &[&str] = &["rewrite", "redirect", "deny", "observe", "rewrite-enforce"];
+const LEAN_CTX_ACTIONS: &[&str] = &[
+    "rewrite",
+    "redirect",
+    "deny",
+    "observe",
+    "rewrite-enforce",
+    "write-guard",
+];
 
 // Detection is shared with the engine's MCP writer and rules injection.
 use lean_ctx::core::governor_hosts::cursor::{
@@ -106,6 +113,11 @@ fn apply_hooks(home: &Path) {
     for matcher in [SHELL_MATCHER, FILE_MATCHER] {
         pre.push(serde_json::json!({ "matcher": matcher, "command": enforce }));
     }
+    // A native write must not reconfigure LeanCTX or the host's hooks.
+    pre.push(serde_json::json!({
+        "matcher": super::governor_hosts::CURSOR_WRITE_MATCHER,
+        "command": super::governor_hosts::write_guard_command(),
+    }));
     save_if_changed(&path, &before, &root);
 }
 
@@ -203,6 +215,10 @@ mod tests {
                 ("Shell", "my-audit"),
                 ("Shell", "lean-ctx hook rewrite-enforce"),
                 ("Read|Grep|Glob", "lean-ctx hook rewrite-enforce"),
+                (
+                    "Write|Delete|Edit|StrReplace|MultiEdit|EditNotebook",
+                    "lean-ctx hook write-guard"
+                ),
             ],
             "idempotent, foreign hook kept"
         );

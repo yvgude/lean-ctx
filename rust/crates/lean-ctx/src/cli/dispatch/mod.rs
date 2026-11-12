@@ -899,6 +899,7 @@ pub fn run() {
                     "rewrite" => hook_handlers::handle_rewrite(),
                     "redirect" => hook_handlers::handle_redirect(),
                     "deny" => hook_handlers::handle_deny(),
+                    "write-guard" => hook_handlers::handle_write_guard(),
                     "read-dedup" => hook_handlers::handle_read_dedup(),
                     "govern" => hook_handlers::handle_govern(),
                     "rewrite-enforce" => hook_handlers::handle_rewrite_enforce(),
@@ -942,7 +943,7 @@ pub fn run() {
                     "rights" => hook_handlers::handle_rights(),
                     _ => {
                         eprintln!(
-                            "Usage: lean-ctx hook <rewrite|redirect|deny|rights|read-dedup|govern|rewrite-enforce|observe|post-commit|copilot|codex-pretooluse|codex-enforce|kiro-enforce|cline-enforce|codex-session-start|rewrite-inline|vibe-pre-tool>"
+                            "Usage: lean-ctx hook <rewrite|redirect|deny|write-guard|rights|read-dedup|govern|rewrite-enforce|observe|post-commit|copilot|codex-pretooluse|codex-enforce|kiro-enforce|cline-enforce|codex-session-start|rewrite-inline|vibe-pre-tool>"
                         );
                         eprintln!(
                             "  Internal commands used by agent hooks (Claude, Cursor, Copilot, etc.)"
@@ -993,6 +994,10 @@ pub fn run() {
             }
             "hive" => {
                 super::hive_cmd::cmd_hive(&rest);
+                return;
+            }
+            "models" => {
+                super::models_cmd::cmd_models(&rest);
                 return;
             }
             "upgrade" => {

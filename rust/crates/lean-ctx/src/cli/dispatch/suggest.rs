@@ -31,6 +31,7 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "plugin",
     "plugins",
     "model",
+    "models",
     "addon",
     "addons",
     "rules",

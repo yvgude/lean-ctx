@@ -482,19 +482,32 @@ const GIT_READ_SUBCOMMANDS: &[&str] = &[
 enum LineCwd {
     /// This process's working directory (no `cd` yet).
     Process,
-    /// Moved by a literal `cd`.
-    At(std::path::PathBuf),
+    /// Moved by literal `cd`s: every directory the shell may be in. A `cd`
+    /// may fail (`cd ~; cd /missing; rm …` stays in `~`), so a directory
+    /// change adds its target and keeps the earlier ones (GHSA-cfmv).
+    At(Vec<std::path::PathBuf>),
     /// Moved somewhere this check cannot tell (`cd "$d"`, `cd -`, `popd`);
     /// holds that directory change as written, for the refusal.
     Unknown(String),
 }
 
+/// Most directories [`LineCwd::At`] follows before it gives up (unknown).
+const MAX_LINE_CWDS: usize = 64;
+
 thread_local! {
     static LINE_CWD: std::cell::RefCell<LineCwd> = const { std::cell::RefCell::new(LineCwd::Process) };
-    /// Loop variables the line binds (`for d in ~ /tmp`), with the words
-    /// each may stand for, and variables assigned from them (`x=$d`).
+    /// Variables the line binds, with the words each may stand for: loop
+    /// variables (`for d in ~ /tmp`), assignments (`d=~/x`, `x=$d`), the
+    /// arguments a local function is called with (`$1`, `$@`), and every
+    /// variable set in a way this check cannot follow (`read`, `mapfile`,
+    /// `printf -v`, arrays), which stands for lean-ctx's own state.
     static LINE_VARS: std::cell::RefCell<Vec<(String, Vec<String>)>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// Why no `cd` of the line can be followed, when one cannot: a `cd` run
+    /// again and again (in a loop, a function, a trap), or a line that sets
+    /// `CDPATH`, `HOME` or `OLDPWD`.
+    static LINE_CD_HAZARD: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Restores the enclosing line's working directory and loop variables when
@@ -584,25 +597,347 @@ fn expands(word: &str, name: &str) -> bool {
 /// until the returned guard drops.
 #[must_use]
 pub(super) fn bind_loop_variables(command: &str) -> LoopVars {
-    let guard = LoopVars(Some(LINE_VARS.with(|v| v.borrow().clone())));
+    let guard = LoopVars(Some((
+        LINE_VARS.with(|v| v.borrow().clone()),
+        LINE_CD_HAZARD.with(|h| h.borrow().clone()),
+    )));
     bind_into_line(command);
     guard
 }
 
+/// The bound variables and the pending directory-change hazard, as saved.
+type SavedLoopState = (Vec<(String, Vec<String>)>, Option<String>);
+
 /// Restores the enclosing check's loop variables when dropped.
-pub(super) struct LoopVars(Option<Vec<(String, Vec<String>)>>);
+pub(super) struct LoopVars(Option<SavedLoopState>);
 
 impl Drop for LoopVars {
     fn drop(&mut self) {
-        if let Some(vars) = self.0.take() {
+        if let Some((vars, hazard)) = self.0.take() {
             LINE_VARS.with(|v| *v.borrow_mut() = vars);
+            LINE_CD_HAZARD.with(|h| *h.borrow_mut() = hazard);
         }
     }
 }
 
+/// What a variable set in a way this check cannot follow stands for: every
+/// directory of lean-ctx's own state, so a command that would change the
+/// state through it is refused (fail closed).
+fn opaque_values() -> Vec<String> {
+    protected_dirs()
+        .iter()
+        .map(|d| format!("{OPAQUE_MARK}{}", d.display()))
+        .collect()
+}
+
+/// Marks a word that stands for a value this check could not follow, so
+/// only a command that writes through it is refused: a read-only or
+/// unknown-effect program (`gh issue view "$line"`) given a run-time value
+/// is not assumed to name lean-ctx's state. Never in a real command.
+const OPAQUE_MARK: char = '\u{1}';
+
+/// A word that separates commands, as the tokenizer leaves it.
+fn ends_command(word: &str) -> bool {
+    matches!(
+        word,
+        ";" | "&&" | "||" | "|" | "&" | "}" | ")" | "do" | "done" | "then"
+    ) || word.ends_with(';')
+        || word.contains('\n')
+}
+
+/// The function names `tokens` defines (`f() { …; }`, `function f { …; }`).
+fn defined_functions(tokens: &[String]) -> Vec<String> {
+    let mut names = Vec::new();
+    for (i, token) in tokens.iter().enumerate() {
+        let name = if let Some(name) = token.strip_suffix("()") {
+            name.trim_start_matches(['(', '{', ';'])
+        } else if token == "function" {
+            tokens.get(i + 1).map_or("", |n| n.trim_end_matches("()"))
+        } else if tokens.get(i + 1).is_some_and(|n| n == "()") {
+            token.as_str()
+        } else {
+            continue;
+        };
+        if is_identifier(name) && !names.iter().any(|n| n == name) {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
+/// Variables the words after `tokens[i]` (a `read`, `mapfile`, `readarray`,
+/// `getopts` or `printf -v`) fill from input this check never sees.
+fn opaque_targets(tokens: &[String], i: usize) -> Vec<String> {
+    let program = tokens[i].trim_start_matches(['(', '{']);
+    let rest = tokens[i + 1..]
+        .iter()
+        .take_while(|w| !ends_command(w) && !w.starts_with(['<', '>']))
+        .chain(tokens[i + 1..].iter().find(|w| w.ends_with(';')))
+        .map(|w| w.trim_end_matches(';').to_string());
+    let mut names: Vec<String> = match program {
+        "printf" => {
+            let words: Vec<String> = rest.collect();
+            words
+                .iter()
+                .enumerate()
+                .find_map(|(k, w)| {
+                    if w == "-v" {
+                        words.get(k + 1).cloned()
+                    } else {
+                        w.strip_prefix("-v").map(str::to_string)
+                    }
+                })
+                .into_iter()
+                .collect()
+        }
+        "mapfile" | "readarray" => {
+            let mut names: Vec<String> = rest.filter(|w| is_identifier(w)).collect();
+            names.push("MAPFILE".to_string());
+            names
+        }
+        _ => {
+            let mut names: Vec<String> = rest.filter(|w| is_identifier(w)).collect();
+            names.push("REPLY".to_string());
+            names
+        }
+    };
+    names.retain(|n| is_identifier(n));
+    names
+}
+
+/// Records [`LINE_CD_HAZARD`] for `tokens`: a `cd`, `pushd` or `popd` in a
+/// loop or function body or a trap (it runs an unknown number of times), or
+/// a line that sets `CDPATH`, `HOME` or `OLDPWD` (which move `cd`'s target).
+fn record_cd_hazard(tokens: &[String]) {
+    let is_cd = |w: &str| {
+        let w = w.trim_start_matches(['(', '{', ';']);
+        matches!(w, "cd" | "pushd" | "popd")
+            || ["cd ", "pushd ", "popd "].iter().any(|p| w.starts_with(p))
+            || w.contains(";cd ")
+            || w.contains("; cd ")
+    };
+    let mut hazard = None;
+    let mut stack: Vec<u8> = Vec::new();
+    let mut function_pending = false;
+    for (i, token) in tokens.iter().enumerate() {
+        let word = token.trim_start_matches(['(', ';']).trim_end_matches(';');
+        if let Some((name, _)) = token.split_once('=')
+            && matches!(
+                name.trim_start_matches(['(', '{', ';']),
+                "CDPATH" | "HOME" | "OLDPWD"
+            )
+        {
+            hazard = Some(format!("the `{token}` the line sets"));
+            break;
+        }
+        if word == "trap" && tokens[i + 1..].iter().take(1).any(|a| is_cd(a)) {
+            hazard = Some("the `cd` in a trap".to_string());
+            break;
+        }
+        if token.ends_with("()") || token == "()" || word == "function" {
+            function_pending = true;
+        }
+        if word == "do" {
+            stack.push(b'd');
+        } else if word == "done" || word == "}" {
+            stack.pop();
+        } else if word.starts_with('{') {
+            stack.push(if function_pending { b'f' } else { b'b' });
+            function_pending = false;
+        }
+        if stack.iter().any(|&k| k != b'b') && is_cd(token) {
+            hazard = Some("the `cd` in a loop or function body".to_string());
+            break;
+        }
+    }
+    if hazard.is_none()
+        && tokens
+            .iter()
+            .any(|t| t.contains("(){") && is_cd(t.split_once("(){").map_or("", |(_, b)| b)))
+    {
+        // A function body written as one word (`f(){ cd ..;}`).
+        hazard = Some("the `cd` in a function body".to_string());
+    }
+    if hazard.is_some() {
+        LINE_CD_HAZARD.with(|h| *h.borrow_mut() = hazard);
+    }
+}
+
+/// The values a function's positional parameters may stand for: every word
+/// any call of a local function passes it (`f() { rm -rf "$1"; }; f ~/x`).
+fn positional_values(tokens: &[String], functions: &[String]) -> Vec<String> {
+    let mut values = Vec::new();
+    for (i, token) in tokens.iter().enumerate() {
+        let word = token.trim_start_matches(['(', '{', ';']);
+        let call = word.trim_end_matches(';');
+        if !functions.iter().any(|f| f == call) || word.ends_with("()") {
+            continue;
+        }
+        if tokens.get(i + 1).is_some_and(|n| n == "()") || word.ends_with(';') {
+            continue;
+        }
+        for arg in &tokens[i + 1..] {
+            if matches!(arg.as_str(), ";" | "&&" | "||" | "|" | "&" | "}" | ")") {
+                break;
+            }
+            let last = arg.ends_with(';');
+            let arg = arg.trim_end_matches(';');
+            if !arg.is_empty() {
+                values.push(arg.to_string());
+            }
+            if last {
+                break;
+            }
+        }
+    }
+    values
+}
+
+/// Brace expansion of one word (`lean-{ctx,x}` → `lean-ctx`, `lean-x`).
+/// A list this check does not expand (a sequence, too many words) is
+/// replaced from its `{` by `*`, which the path checks read as a glob.
+fn expand_braces(word: &str) -> Vec<String> {
+    const MAX_WORDS: usize = 64;
+    let bytes = word.as_bytes();
+    let mut open = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 1,
+            b'{' if i == 0 || bytes[i - 1] != b'$' => {
+                open = Some(i);
+                break;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let Some(open) = open else {
+        return vec![word.to_string()];
+    };
+    let mut depth = 0usize;
+    let mut close = None;
+    let mut commas = Vec::new();
+    for (k, &c) in bytes.iter().enumerate().skip(open) {
+        match c {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(k);
+                    break;
+                }
+            }
+            b',' if depth == 1 => commas.push(k),
+            _ => {}
+        }
+    }
+    let Some(close) = close else {
+        return vec![word.to_string()];
+    };
+    let (head, tail) = (&word[..open], &word[close + 1..]);
+    let inner = &word[open + 1..close];
+    if commas.is_empty() {
+        if inner.contains("..") {
+            return vec![format!("{head}*")];
+        }
+        // `{x}` is no list: keep it and expand what follows.
+        return expand_braces(tail)
+            .into_iter()
+            .map(|t| format!("{head}{{{inner}}}{t}"))
+            .collect();
+    }
+    let mut parts = Vec::new();
+    let mut start = open + 1;
+    for &c in commas.iter().chain(std::iter::once(&close)) {
+        parts.push(&word[start..c]);
+        start = c + 1;
+    }
+    let mut out = Vec::new();
+    for part in parts {
+        for expanded in expand_braces(&format!("{head}{part}{tail}")) {
+            if out.len() >= MAX_WORDS {
+                return vec![format!("{head}*")];
+            }
+            out.push(expanded);
+        }
+    }
+    out
+}
+
 fn bind_into_line(command: &str) {
     let tokens = crate::shell_tokenize(command);
+    record_cd_hazard(&tokens);
     let mut bound: Vec<(String, Vec<String>)> = Vec::new();
+    let functions = defined_functions(&tokens);
+    let positional = positional_values(&tokens, &functions);
+    if !positional.is_empty() {
+        for name in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "@", "*"] {
+            bound.push((name.to_string(), positional.clone()));
+        }
+    }
+    let opaque = opaque_values();
+    let bind_opaque = |bound: &mut Vec<(String, Vec<String>)>, name: &str| {
+        if let Some((_, values)) = bound.iter_mut().find(|(n, _)| n == name) {
+            for v in &opaque {
+                if !values.contains(v) {
+                    values.push(v.clone());
+                }
+            }
+        } else {
+            bound.push((name.to_string(), opaque.clone()));
+        }
+    };
+    for (i, token) in tokens.iter().enumerate() {
+        let program = token.trim_start_matches(['(', '{', ';']);
+        if matches!(
+            program,
+            "read" | "mapfile" | "readarray" | "getopts" | "printf"
+        ) {
+            for name in opaque_targets(&tokens, i) {
+                bind_opaque(&mut bound, &name);
+            }
+        }
+        // `set -- a b` / `set a b`: new positional parameters.
+        if program == "set"
+            && tokens
+                .get(i + 1)
+                .is_some_and(|w| w == "--" || !w.starts_with(['-', '+']))
+        {
+            for name in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "@", "*"] {
+                bind_opaque(&mut bound, name);
+            }
+        }
+        // An array or a value built at run time (`a=(x ~/s)`, `d=$(…)`,
+        // `d+=x`): this check does not follow it.
+        if let Some((name, value)) = token.split_once('=') {
+            let name = name.trim_start_matches(['(', '{', ';']);
+            let appended = name.strip_suffix('+');
+            let name = appended.unwrap_or(name);
+            if is_identifier(name)
+                && (appended.is_some()
+                    || value.starts_with('(')
+                    || value.contains("$(")
+                    || value.contains('`')
+                    || value.contains("${!"))
+            {
+                bind_opaque(&mut bound, name);
+            }
+        }
+        // `${d:=value}` / `${d=value}` assigns `d` where it expands.
+        let mut rest = token.as_str();
+        while let Some(at) = rest.find("${") {
+            let body = &rest[at + 2..];
+            let name_len = body
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(body.len());
+            let (name, op) = body.split_at(name_len);
+            if is_identifier(name) && (op.starts_with(":=") || op.starts_with('=')) {
+                bind_opaque(&mut bound, name);
+            }
+            rest = body;
+        }
+    }
     for (i, token) in tokens.iter().enumerate() {
         if !matches!(token.trim_start_matches(['(', '{']), "for" | "select") {
             continue;
@@ -610,7 +945,14 @@ fn bind_into_line(command: &str) {
         let Some(name) = tokens.get(i + 1).map(|n| n.trim_end_matches(';')) else {
             continue;
         };
-        if !is_identifier(name) || tokens.get(i + 2).map(String::as_str) != Some("in") {
+        if !is_identifier(name) {
+            continue;
+        }
+        if tokens.get(i + 2).map(String::as_str) != Some("in") {
+            // `for x; do` / `for x do`: the positional parameters.
+            if tokens[i + 1].ends_with(';') || tokens.get(i + 2).is_some_and(|w| w == "do") {
+                bound.push((name.to_string(), positional.clone()));
+            }
             continue;
         }
         let mut words = Vec::new();
@@ -628,48 +970,319 @@ fn bind_into_line(command: &str) {
         }
         bound.push((name.to_string(), words));
     }
+    // GHSA-cfmv-qg29-3rvp: `NAME=value` anywhere on the line (a prefix,
+    // `export`, `local`, a group): NAME may stand for that value. A variable
+    // the environment gives a meaning to (`HOME`, `XDG_CONFIG_HOME`) may
+    // also still stand for it (the scan is flow-insensitive).
+    let homes = homes();
+    for token in &tokens {
+        let Some((name, value)) = token.split_once('=') else {
+            continue;
+        };
+        let name = name.trim_start_matches(['(', '{', ';']);
+        let value = value.trim_end_matches(';');
+        if !is_identifier(name) || value.starts_with('(') {
+            continue;
+        }
+        if let Some((_, values)) = bound.iter_mut().find(|(n, _)| n == name) {
+            if !values.iter().any(|v| v == value) {
+                values.push(value.to_string());
+            }
+        } else {
+            let mut values = vec![value.to_string()];
+            if homes.iter().any(|h| variable_base(name, h).is_some()) {
+                values.push(format!("${{{name}}}"));
+            }
+            bound.push((name.to_string(), values));
+        }
+    }
     if bound.is_empty() {
         return;
     }
-    // `x=$d`, `x="$d/sub"`: x stands for what `$d` does.
-    for _ in 0..3 {
-        let mut added = false;
-        for token in &tokens {
-            let Some((name, value)) = token.split_once('=') else {
-                continue;
-            };
-            let value = value.trim_end_matches(';');
-            if !is_identifier(name) || bound.iter().any(|(n, _)| n == name) {
-                continue;
-            }
-            let mut values = vec![value.to_string()];
-            for (var, words) in &bound {
-                if values.iter().any(|v| expands(v, var)) {
-                    values = values
+    // `e=$d/x`: e stands for what `$d/x` does, for every value of `d`.
+    for _ in 0..4 {
+        let snapshot = bound.clone();
+        let mut changed = false;
+        for (name, values) in &mut bound {
+            let mut next: Vec<String> = Vec::new();
+            for value in values.iter() {
+                let mut expanded = vec![value.clone()];
+                for (var, words) in &snapshot {
+                    if var == name || !expanded.iter().any(|e| expands(e, var)) {
+                        continue;
+                    }
+                    expanded = expanded
                         .iter()
-                        .flat_map(|v| words.iter().map(move |w| substitute(v, var, w)))
+                        .flat_map(|e| words.iter().map(move |w| substitute(e, var, w)))
                         .collect();
+                    if expanded.len() > MAX_BOUND_VALUES {
+                        break;
+                    }
+                }
+                for e in expanded {
+                    if !next.contains(&e) {
+                        next.push(e);
+                    }
                 }
             }
-            if values.len() == 1 && values[0] == value {
-                continue;
+            if next.len() > MAX_BOUND_VALUES {
+                // Too many to follow: it may stand for anything.
+                next.clone_from(&opaque);
             }
-            bound.push((name.to_string(), values));
-            added = true;
+            if next != *values {
+                *values = next;
+                changed = true;
+            }
         }
-        if !added {
+        if !changed {
             break;
         }
     }
     LINE_VARS.with(|v| v.borrow_mut().extend(bound));
 }
 
+/// `word` with a leading directory-stack tilde spelled as the variable it
+/// stands for: `~+` as `${PWD}`, `~-` as `${OLDPWD}`, and `~N`/`~+N`/`~-N`
+/// (a `pushd` stack entry, not tracked) as the opaque value.
+fn directory_stack_tilde(word: &str, opaque: &str) -> String {
+    let Some(rest) = word.strip_prefix('~') else {
+        return word.to_string();
+    };
+    let sign_len = usize::from(rest.starts_with(['+', '-']));
+    let digits = rest[sign_len..]
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len() - sign_len);
+    let end = sign_len + digits;
+    if end == 0 || !(rest.len() == end || rest[end..].starts_with('/')) {
+        return word.to_string();
+    }
+    let head = match (&rest[..sign_len], digits) {
+        ("+", 0) => "${PWD}",
+        ("-", 0) => "${OLDPWD}",
+        _ => opaque,
+    };
+    format!("{head}{}", &rest[end..])
+}
+
+/// `token` with every command substitution (`$(…)`, `` `…` ``) replaced by
+/// lean-ctx's state directory (fail closed): its output is a run-time value
+/// this check cannot know. Arithmetic (`$((…))`) is left as it is.
+fn opaque_substitutions(token: &str, opaque: &str) -> String {
+    if !token.contains("$(") && !token.contains('`') {
+        return token.to_string();
+    }
+    let bytes = token.as_bytes();
+    let mut out = String::with_capacity(token.len());
+    let (mut i, mut last) = (0, 0);
+    while i < bytes.len() {
+        let end = if bytes[i] == b'$' && bytes.get(i + 1) == Some(&b'(') {
+            let close = matching_paren(bytes, i + 1);
+            // `$((…))` is arithmetic only when the inner group closes right
+            // before the outer one; `$((cmd) )` is a subshell substitution.
+            if bytes.get(i + 2) == Some(&b'(')
+                && let (Some(inner), Some(outer)) = (matching_paren(bytes, i + 2), close)
+                && inner + 1 == outer
+            {
+                i = outer + 1;
+                continue;
+            }
+            close.map_or(bytes.len(), |c| c + 1)
+        } else if bytes[i] == b'`' {
+            token[i + 1..].find('`').map_or(bytes.len(), |k| i + k + 2)
+        } else {
+            i += 1;
+            continue;
+        };
+        out.push_str(&token[last..i]);
+        out.push_str(opaque);
+        i = end;
+        last = end;
+    }
+    out.push_str(&token[last..]);
+    out
+}
+
+/// The index of the `)` closing the `(` at `open`, if any.
+fn matching_paren(bytes: &[u8], open: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (j, b) in bytes.iter().enumerate().skip(open) {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(j);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The length of a `${…}` body starting right after `${`, nested braces
+/// included; `None` when it is not closed.
+fn expansion_body_len(inner: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    for (i, c) in inner.char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' if depth == 0 => return Some(i),
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The words `token` may stand for, with every expansion this check cannot
+/// evaluate replaced by lean-ctx's state directory (fail closed): an
+/// indirection (`${!r}`), an operator on a bound variable (`${d/x/y}`,
+/// `${d%/*}`, `${@:1}`) and a value-changing operator on any other variable
+/// (`${HOME%/}`). A default or alternative (`${d:-w}`, `${d=w}`,
+/// `${d:+w}`) is judged both ways: as the variable and as the word.
+fn opaque_expansions(token: &str, bound: &[(String, Vec<String>)], opaque: &str) -> Vec<String> {
+    if !token.contains("${") {
+        return vec![token.to_string()];
+    }
+    let mut outs = vec![String::with_capacity(token.len())];
+    let push = |outs: &mut Vec<String>, alternatives: &[String]| {
+        *outs = outs
+            .iter()
+            .flat_map(|o| alternatives.iter().map(move |a| format!("{o}{a}")))
+            .collect();
+    };
+    let mut rest = token;
+    while let Some(at) = rest.find("${") {
+        push(&mut outs, &[rest[..at].to_string()]);
+        let inner = &rest[at + 2..];
+        let Some(close) = expansion_body_len(inner) else {
+            push(&mut outs, &[rest[at..].to_string()]);
+            return outs;
+        };
+        let body = &inner[..close];
+        let name_len = body
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '@' || c == '*'))
+            .unwrap_or(body.len());
+        let (name, op) = body.split_at(name_len);
+        let plain = || format!("${{{name}}}");
+        let alternatives: Vec<String> = if body.starts_with('!') {
+            vec![opaque.to_string()]
+        } else if op.is_empty() || op.starts_with('[') {
+            vec![rest[at..=at + 2 + close].to_string()]
+        } else if bound.iter().any(|(n, _)| n == name) {
+            vec![opaque.to_string()]
+        } else if let Some(word) = [":-", ":=", "-", "="]
+            .iter()
+            .find_map(|p| op.strip_prefix(p))
+        {
+            let mut words = vec![plain()];
+            words.extend(opaque_expansions(word, bound, opaque));
+            words
+        } else if let Some(word) = [":+", "+"].iter().find_map(|p| op.strip_prefix(p)) {
+            let mut words = vec![String::new()];
+            words.extend(opaque_expansions(word, bound, opaque));
+            words
+        } else {
+            vec![opaque.to_string()]
+        };
+        push(&mut outs, &alternatives);
+        if outs.len() > MAX_VARIANTS {
+            return vec![opaque.to_string()];
+        }
+        rest = &inner[close + 1..];
+    }
+    push(&mut outs, &[rest.to_string()]);
+    outs
+}
+
 /// `tokens` once for every combination of the values of the bound loop
 /// variables they expand (just `tokens` when they expand none); `None`
 /// when there are too many to judge.
-fn bound_variants(tokens: &[String]) -> Option<Vec<Vec<String>>> {
-    let vars = LINE_VARS.with(|v| v.borrow().clone());
-    let mut variants = vec![tokens.to_vec()];
+fn bound_variants(tokens: &[String]) -> Option<Vec<(Vec<String>, bool)>> {
+    let variants = expanded_variants(tokens)?;
+    let marked = opaque_values();
+    let below: Vec<String> = marked.iter().map(|v| format!("{v}/")).collect();
+    Some(
+        variants
+            .into_iter()
+            .map(|variant| {
+                // A run-time value inside a word (`~/.config/"$d"`,
+                // `lean"$d"`) may complete it to any name there: read as a
+                // glob (`~/.config/*`). After an `=` it is the whole value.
+                let mut embedded = false;
+                let variant: Vec<String> = variant
+                    .into_iter()
+                    .map(|t| {
+                        let mut t = t;
+                        for v in &marked {
+                            while let Some(at) = t.find(v.as_str()) {
+                                if at == 0 || t[..at].ends_with('=') {
+                                    break;
+                                }
+                                t.replace_range(at..at + v.len(), "*");
+                                embedded = true;
+                            }
+                        }
+                        t
+                    })
+                    .collect();
+                // A run-time value used as a directory (`"$d/x.db"`) names a
+                // path under it, whatever the program: judged like a literal.
+                let opaque = !embedded
+                    && variant.iter().any(|t| t.contains(OPAQUE_MARK))
+                    && !variant.iter().any(|t| below.iter().any(|b| t.contains(b)));
+                let words = variant
+                    .into_iter()
+                    .map(|t| t.replace(OPAQUE_MARK, ""))
+                    .collect();
+                (words, opaque)
+            })
+            .collect(),
+    )
+}
+
+/// [`bound_variants`] before the opaque marks are taken out.
+fn expanded_variants(tokens: &[String]) -> Option<Vec<Vec<String>>> {
+    let mut vars = LINE_VARS.with(|v| v.borrow().clone());
+    let opaque = opaque_values().into_iter().next().unwrap_or_default();
+    // Variables the shell itself keeps: `$PWD` is where this segment runs,
+    // `$OLDPWD` and `$_` hold values this check does not track.
+    let pwd = line_cwds().map_or_else(
+        || vec![opaque.clone()],
+        |dirs| dirs.iter().map(|d| d.display().to_string()).collect(),
+    );
+    for (name, values) in [
+        ("PWD", pwd),
+        ("OLDPWD", vec![opaque.clone()]),
+        ("_", vec![opaque.clone()]),
+    ] {
+        match vars.iter_mut().find(|(n, _)| n == name) {
+            Some((_, bound)) => bound.extend(values),
+            None => vars.push((name.to_string(), values)),
+        }
+    }
+    let mut variants: Vec<Vec<String>> = vec![Vec::new()];
+    for token in tokens {
+        let token = opaque_substitutions(&directory_stack_tilde(token, &opaque), &opaque);
+        let alternatives: Vec<Vec<String>> = opaque_expansions(&token, &vars, &opaque)
+            .iter()
+            .map(|t| expand_braces(t))
+            .collect();
+        if variants.len() * alternatives.len() > MAX_VARIANTS {
+            return None;
+        }
+        variants = variants
+            .iter()
+            .flat_map(|variant| {
+                alternatives.iter().map(move |words| {
+                    let mut next = variant.clone();
+                    next.extend(words.iter().cloned());
+                    next
+                })
+            })
+            .collect();
+    }
     for (name, values) in &vars {
         if !variants.iter().any(|v| v.iter().any(|t| expands(t, name))) {
             continue;
@@ -712,43 +1325,76 @@ pub fn with_run_cwd<T>(cwd: Option<std::path::PathBuf>, f: impl FnOnce() -> T) -
     out
 }
 
-/// The directory relative words resolve against, `None` when unknown.
-fn line_cwd() -> Option<std::path::PathBuf> {
+/// The directory a line starts in.
+fn start_cwd() -> Option<std::path::PathBuf> {
+    RUN_CWD
+        .with(|c| c.borrow().clone())
+        .or_else(|| std::env::current_dir().ok())
+}
+
+/// Every directory relative words may resolve against, `None` when unknown.
+fn line_cwds() -> Option<Vec<std::path::PathBuf>> {
+    if LINE_CD_HAZARD.with(|h| h.borrow().is_some()) {
+        return None;
+    }
     match LINE_CWD.with(|c| c.borrow().clone()) {
-        LineCwd::Process => RUN_CWD
-            .with(|c| c.borrow().clone())
-            .or_else(|| std::env::current_dir().ok()),
-        LineCwd::At(dir) => Some(dir),
+        LineCwd::Process => start_cwd().map(|d| vec![d]),
+        LineCwd::At(dirs) => Some(dirs),
         LineCwd::Unknown(_) => None,
     }
 }
 
-/// Why relative words cannot be placed, when [`line_cwd`] is `None`: the
+/// Why relative words cannot be placed, when [`line_cwds`] is `None`: the
 /// directory change this check could not follow, as written.
 fn unknown_cwd_cause() -> String {
+    if let Some(hazard) = LINE_CD_HAZARD.with(|h| h.borrow().clone()) {
+        return hazard;
+    }
     match LINE_CWD.with(|c| c.borrow().clone()) {
         LineCwd::Unknown(change) => format!("the earlier `{change}`"),
         LineCwd::Process | LineCwd::At(_) => "the unreadable working directory".to_string(),
     }
 }
 
-/// Follows a `cd`/`pushd`/`popd` segment.
+/// Follows a `cd`/`pushd`/`popd` segment. The directory it names joins the
+/// ones the shell may already be in (the `cd` may fail); one this check
+/// cannot tell makes the working directory unknown for the rest of the line.
 fn follow_directory_change(tokens: &[String], homes: &[std::path::PathBuf]) {
     let target = tokens[1..]
         .iter()
         .find(|t| !t.starts_with('-') || t.as_str() == "-");
     let unknown = || LineCwd::Unknown(tokens.join(" "));
-    let next = match (tokens[0].as_str(), target) {
-        ("popd", _) => unknown(),
-        (_, None) => homes
-            .first()
-            .map_or_else(unknown, |h| LineCwd::At(h.clone())),
-        (_, Some(word)) if word == "-" || word.contains(['$', '`', '*', '?', '[', '{']) => {
-            unknown()
+    let Some(mut dirs) = line_cwds() else {
+        return;
+    };
+    let hazard = LINE_CD_HAZARD.with(|h| h.borrow().clone());
+    let cdpath_set = std::env::var_os("CDPATH").is_some_and(|v| !v.is_empty());
+    let targets: Option<Vec<std::path::PathBuf>> = match (tokens[0].as_str(), target) {
+        _ if hazard.is_some() => None,
+        ("popd", _) => None,
+        (_, None) => homes.first().map(|h| vec![h.clone()]),
+        (_, Some(word)) if word == "-" || word.contains(['$', '`', '*', '?', '[', '{']) => None,
+        // `CDPATH` may move a relative `cd` anywhere.
+        (_, Some(word)) if cdpath_set && !word.starts_with(['/', '~', '.']) => None,
+        (_, Some(word)) => Some(as_paths(word, homes)).filter(|p| !p.is_empty()),
+    };
+    let next = match targets {
+        Some(targets) => {
+            for t in targets {
+                if !dirs.contains(&t) {
+                    dirs.push(t);
+                }
+            }
+            if dirs.len() > MAX_LINE_CWDS {
+                unknown()
+            } else {
+                LineCwd::At(dirs)
+            }
         }
-        (_, Some(word)) => as_paths(word, homes)
-            .pop()
-            .map_or_else(unknown, LineCwd::At),
+        None => match hazard {
+            Some(cause) => LineCwd::Unknown(format!("{} ({cause})", tokens.join(" "))),
+            None => unknown(),
+        },
     };
     LINE_CWD.with(|c| *c.borrow_mut() = next);
 }
@@ -907,7 +1553,7 @@ fn as_paths(token: &str, homes: &[std::path::PathBuf]) -> Vec<std::path::PathBuf
         return out;
     }
     if !raw.is_empty() && !raw.starts_with(['~', '$', '-']) {
-        if let Some(cwd) = line_cwd() {
+        for cwd in line_cwds().unwrap_or_default() {
             push(cwd.join(relative(raw)));
         }
         return out;
@@ -1306,6 +1952,64 @@ fn has_flag(args: &[String], letter: char, long: &[&str], mode_word: bool) -> bo
     })
 }
 
+/// What program `base` with `args` writes in the working directory, as a
+/// word for the refusal; `None` when it writes nothing there. Read when the
+/// working directory is unknown (GHSA-cfmv-qg29-3rvp): an in-place editor
+/// (`sed -i`, `perl -i`), `sort -o`, a (de)compressor, `patch`, `split`, an
+/// extractor without an absolute destination.
+fn writes_into_cwd(base: &str, args: &[String]) -> Option<String> {
+    let relative = || args.iter().find(|a| is_relative_operand(a)).cloned();
+    let into_cwd = || Some("(the working directory)".to_string());
+    match base {
+        "sed" | "gsed" | "perl" => {
+            let mut tokens = vec![base.to_string()];
+            tokens.extend_from_slice(args);
+            if program_effect(&tokens) != Some(true) && !has_flag(args, 'i', &[], false) {
+                return None;
+            }
+            relative().or_else(into_cwd)
+        }
+        "sort" => {
+            let out = option_value(args, "-o", "--output")?;
+            is_relative_operand(out).then(|| out.to_string())
+        }
+        "gzip" | "gunzip" | "bzip2" | "bunzip2" | "xz" | "unxz" | "lzma" | "unlzma" | "zstd"
+        | "unzstd" | "lz4" | "compress" | "uncompress" | "zip" => {
+            let to_stdout = has_flag(args, 'c', &["--stdout", "--to-stdout"], false)
+                || has_flag(args, 'l', &["--list"], false)
+                || has_flag(args, 't', &["--test"], false);
+            if to_stdout && base != "zip" {
+                return None;
+            }
+            relative()
+        }
+        "patch" => {
+            if args.iter().any(|a| a == "--dry-run") {
+                return None;
+            }
+            relative().or_else(into_cwd)
+        }
+        "split" | "csplit" => relative().or_else(into_cwd),
+        "tar" | "bsdtar" | "gtar" => {
+            let extract = has_flag(args, 'x', &["--extract", "--get"], true);
+            let dest = option_value(args, "-C", "--directory");
+            (extract && dest.is_none_or(is_relative_operand))
+                .then(|| dest.map_or("(the working directory)".to_string(), str::to_string))
+        }
+        "unzip" => {
+            let listing = has_flag(args, 'l', &[], false)
+                || has_flag(args, 't', &[], false)
+                || has_flag(args, 'p', &[], false)
+                || has_flag(args, 'Z', &[], false);
+            let dest = option_value(args, "-d", "");
+            (!listing && dest.is_none_or(is_relative_operand))
+                .then(|| dest.map_or("(the working directory)".to_string(), str::to_string))
+        }
+        "7z" | "7za" | "cpio" | "pax" => into_cwd(),
+        _ => None,
+    }
+}
+
 /// The narrow cases where a writer naming a directory ABOVE lean-ctx's state
 /// is judged by the path it creates instead of refused: a non-recursive
 /// `cp`/`mv`/`install` of plain files (`cp f ..` creates `../f`). `None`:
@@ -1437,15 +2141,76 @@ fn viewer_writes(tokens: &[String]) -> bool {
     }
 }
 
+/// `git -c` keys a read may set: display only, none names a program or a
+/// file git runs or writes.
+fn git_config_key_is_display(setting: &str) -> bool {
+    let key = setting
+        .split_once('=')
+        .map_or(setting, |(k, _)| k)
+        .to_ascii_lowercase();
+    key.starts_with("color.")
+        || matches!(
+            key.as_str(),
+            "core.quotepath"
+                | "log.date"
+                | "log.decorate"
+                | "log.abbrevcommit"
+                | "log.showsignature"
+                | "diff.renames"
+                | "diff.algorithm"
+                | "diff.relative"
+                | "column.ui"
+        )
+}
+
+/// GHSA-fv44-pm58-9c8p: options with which a git "read" subcommand writes
+/// a file (`--output`, abbreviated as far as `--ou`) or runs a program (a
+/// pager, external diff, textconv or clean/smudge filter, `grep -O`).
+fn git_read_option_runs_or_writes(arg: &str) -> bool {
+    ["--ou", "--ext", "--textc", "--filt", "--open"]
+        .iter()
+        .any(|p| arg.starts_with(p))
+        || (arg.starts_with("-O") && !arg.starts_with("--"))
+}
+
+/// The files a git command writes through `--output` (`--output=f`,
+/// `--output f`, an abbreviation down to `--ou`).
+pub(super) fn git_output_targets(args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut k = 0;
+    while k < args.len() {
+        let a = args[k].as_str();
+        if let Some(rest) = a.strip_prefix("--ou")
+            && "tput".starts_with(rest.split('=').next().unwrap_or(""))
+        {
+            if let Some((_, v)) = rest.split_once('=') {
+                out.push(v.to_string());
+            } else {
+                if let Some(v) = args.get(k + 1) {
+                    out.push(v.clone());
+                }
+                k += 1;
+            }
+        }
+        k += 1;
+    }
+    out
+}
+
 /// `git` at or above lean-ctx's state — through `-C`/`--git-dir`/
 /// `--work-tree` or the directory it runs in — may only read: a dotfiles
-/// checkout there rewrites the config. The repository word when refused.
+/// checkout there rewrites the config. A read that pages (`-p`,
+/// `--paginate`), sets a `-c` key other than a display one, loads programs
+/// (`--exec-path`, `--config-env`) or carries a writing or program-running
+/// option is no read (GHSA-fv44-pm58-9c8p). The repository word when
+/// refused.
 fn git_effect(
     tokens: &[String],
     reaches: &dyn Fn(&str) -> bool,
     cwd_reaches: bool,
 ) -> Option<String> {
     let mut repo = Vec::new();
+    let mut runs = false;
     let mut i = 1;
     while let Some(t) = tokens.get(i) {
         match t.as_str() {
@@ -1453,9 +2218,26 @@ fn git_effect(
                 repo.extend(tokens.get(i + 1).cloned());
                 i += 2;
             }
-            "-c" => i += 2,
+            "-c" => {
+                runs |= !tokens
+                    .get(i + 1)
+                    .is_some_and(|kv| git_config_key_is_display(kv));
+                i += 2;
+            }
+            "-p" | "--paginate" | "--config-env" | "--exec-path" => {
+                runs = true;
+                i += if t == "--config-env" { 2 } else { 1 };
+            }
             t if t.starts_with("--git-dir=") || t.starts_with("--work-tree=") => {
                 repo.push(t.to_string());
+                i += 1;
+            }
+            t if t.starts_with("--config-env=") || t.starts_with("--exec-path=") => {
+                runs = true;
+                i += 1;
+            }
+            t if t.starts_with("-c") && t.len() > 2 => {
+                runs |= !git_config_key_is_display(&t[2..]);
                 i += 1;
             }
             t if t.starts_with('-') => i += 1,
@@ -1467,8 +2249,12 @@ fn git_effect(
         .find(|r| reaches(r))
         .or_else(|| cwd_reaches.then(|| "(run directory)".to_string()))?;
     let sub = tokens.get(i).map_or("", String::as_str);
-    let reads = GIT_READ_SUBCOMMANDS.contains(&sub)
-        || (matches!(sub, "branch" | "tag") && tokens.len() == i + 1);
+    let reads = !runs
+        && !tokens[i.min(tokens.len())..]
+            .iter()
+            .any(|a| git_read_option_runs_or_writes(a))
+        && (GIT_READ_SUBCOMMANDS.contains(&sub)
+            || (matches!(sub, "branch" | "tag") && tokens.len() == i + 1));
     (!reads).then_some(named)
 }
 
@@ -1487,8 +2273,17 @@ fn names_inside(
 ) -> bool {
     if let Some(glob) = token.find(['*', '?', '[']) {
         // A glob may match lean-ctx's directories: compare its literal
-        // prefix with them in both directions.
-        return word_paths(&token[..glob], homes).iter().any(|p| {
+        // prefix with them in both directions. A prefix without a directory
+        // (`*`, `lean-c*`) lies in the working directory.
+        let prefix = &token[..glob];
+        let placed;
+        let prefix = if prefix.starts_with(['~', '$']) || prefix.contains(['/', '\\']) {
+            prefix
+        } else {
+            placed = format!("./{prefix}");
+            placed.as_str()
+        };
+        return word_paths(prefix, homes).iter().any(|p| {
             let key = path_key(p);
             protected
                 .iter()
@@ -1850,7 +2645,7 @@ fn touches_program(
         if base != "cargo" {
             // After a `cd` this check cannot follow, a relative output
             // path may be anywhere.
-            if line_cwd().is_none()
+            if line_cwds().is_none()
                 && let Some(word) = args.iter().skip(1).find(|t| !t.starts_with('-'))
             {
                 return Some(Tampering {
@@ -1866,7 +2661,7 @@ fn touches_program(
     // program writes may be anywhere. For curl and wget only the files they
     // write count (`-o`, `-O`, wget's document directory) — never the URL or
     // another option's value (#2201).
-    if WRITE_PROGRAMS.contains(&base) && line_cwd().is_none() {
+    if WRITE_PROGRAMS.contains(&base) && line_cwds().is_none() {
         let relative = if matches!(base, "curl" | "wget") {
             download_targets(base, &tokens[1..])
                 .into_iter()
@@ -1888,8 +2683,37 @@ fn touches_program(
             });
         }
     }
+    // GHSA-cfmv-qg29-3rvp: programs that write into the working directory
+    // or a relative path given to them (`sed -i f`, `tar -x`, `sort -o f`,
+    // `gzip f`, `patch`, `split`) after a `cd` this check cannot follow.
+    if line_cwds().is_none()
+        && let Some(word) = writes_into_cwd(base, &tokens[1..])
+    {
+        return Some(Tampering {
+            unplaced: Some(unknown_cwd_cause()),
+            ..Tampering::new(format!("{base} {word}"), false)
+        });
+    }
     if base == "git" {
-        let cwd_reaches = line_cwd().is_some_and(|cwd| target_hits(&cwd));
+        // GHSA-fv44-pm58-9c8p: `--output` writes its file wherever the
+        // repository is (`git -C /tmp/r log --output=~/.config/lean-ctx/x`).
+        let dir = option_value(&tokens[1..], "-C", "");
+        for target in git_output_targets(&tokens[1..]) {
+            let placed = match dir {
+                Some(d) if is_relative_operand(&target) => format!("{d}/{target}"),
+                _ => target,
+            };
+            if inside(&placed) {
+                return writes(shown(&placed));
+            }
+            if is_relative_operand(&placed) && line_cwds().is_none() {
+                return Some(Tampering {
+                    unplaced: Some(unknown_cwd_cause()),
+                    ..Tampering::new(format!("{base} --output={placed}"), false)
+                });
+            }
+        }
+        let cwd_reaches = line_cwds().is_some_and(|cwds| cwds.iter().any(|cwd| target_hits(cwd)));
         return git_effect(tokens, &reaches, cwd_reaches).and_then(|repo| writes(shown(&repo)));
     }
     if let Some(word) = extraction_effect(tokens, &reaches) {
@@ -1932,6 +2756,64 @@ fn touches_program(
     Some(Tampering::new(shown(named), WRITE_PROGRAMS.contains(&base)))
 }
 
+/// Variables that move the repository `git` works on.
+const GIT_LOCATION_VARIABLES: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+];
+
+/// GHSA-cfmv-qg29-3rvp: a `git` run with `GIT_DIR`/`GIT_WORK_TREE` (a
+/// prefix, `env`, or set earlier on the line) naming lean-ctx's state or a
+/// directory above it works there like `--git-dir`/`--work-tree`. The
+/// assignment that does, if any.
+fn git_environment_reaching(
+    segment: &str,
+    protected: &[std::path::PathBuf],
+    homes: &[std::path::PathBuf],
+) -> Option<String> {
+    let tokens = crate::shell_tokenize(segment.trim());
+    if !tokens.iter().any(|t| basename(t) == "git") {
+        return None;
+    }
+    let reaches = |value: &str| {
+        expand_braces(value)
+            .iter()
+            .any(|v| names_reaching(&v.replace(OPAQUE_MARK, ""), protected, homes))
+    };
+    let mut assignments: Vec<(String, String)> = tokens
+        .iter()
+        .filter_map(|t| t.split_once('='))
+        .map(|(n, v)| (n.to_string(), v.to_string()))
+        .collect();
+    LINE_VARS.with(|vars| {
+        for (name, values) in vars.borrow().iter() {
+            for value in values {
+                assignments.push((name.clone(), value.clone()));
+            }
+        }
+    });
+    assignments
+        .into_iter()
+        .find(|(name, value)| GIT_LOCATION_VARIABLES.contains(&name.as_str()) && reaches(value))
+        .map(|(name, value)| format!("{name}={value}"))
+}
+
+/// Whether an absolute `path` lies in lean-ctx's own config or data
+/// directories (as this process resolves them and at the real user's home),
+/// also after resolving its existing ancestors through symlinks. The native
+/// write guard (`hook write-guard`) uses it to keep an agent's Write/Edit
+/// from reconfiguring lean-ctx, as `check_state_tampering` does for the
+/// shell.
+pub fn is_leanctx_state_path(path: &std::path::Path) -> bool {
+    let protected = protected_dirs();
+    [resolve_existing(path), path.to_path_buf()]
+        .iter()
+        .any(|p| protected.iter().any(|dir| within(p, dir)))
+}
+
 /// Rejects a command that would change lean-ctx's own state from an agent
 /// shell (deleting `worker.json` would lift the person's pause; editing the
 /// claims file would steal a fencing token). Reading stays allowed, judged by
@@ -1950,18 +2832,36 @@ pub(super) fn check_state_tampering(segment: &str, tokens: &[String]) -> Result<
     if raw.first().is_some_and(|t| t == "{") {
         raw.remove(0);
     }
+    // A segment of a line whose groups are not opened (`(cd /tmp`): the
+    // program is the word after the `(`. A `cd` there moves only the
+    // subshell, so it is not followed; the opened line is judged separately.
+    let subshell = raw.first().is_some_and(|t| t.starts_with('('));
+    if subshell {
+        let program = raw[0].trim_start_matches('(').to_string();
+        if program.is_empty() {
+            raw.remove(0);
+        } else {
+            raw[0] = program;
+        }
+    }
     let words: &[String] = if raw.is_empty() { tokens } else { &raw };
     let protected = protected_dirs();
-    let verdict = match bound_variants(words) {
-        Some(variants) => variants
-            .iter()
-            .find_map(|variant| touches_protected(variant, &protected, &homes)),
+    let mut verdict = match bound_variants(words) {
+        // A run-time value counts only where the program writes through it.
+        Some(variants) => variants.iter().find_map(|(variant, opaque)| {
+            touches_protected(variant, &protected, &homes)
+                .filter(|t| !opaque || t.writes || t.unplaced.is_some())
+        }),
         None => Some(Tampering::new(
             format!("{} (a loop over too many words)", words.join(" ")),
             false,
         )),
     };
-    if let Some(program) = directory_change(words) {
+    if verdict.is_none() {
+        verdict = git_environment_reaching(segment, &protected, &homes)
+            .map(|word| Tampering::new(format!("git {word}"), true));
+    }
+    if !subshell && let Some(program) = directory_change(words) {
         follow_directory_change(&program, &homes);
     }
     match verdict {

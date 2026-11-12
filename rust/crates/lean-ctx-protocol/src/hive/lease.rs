@@ -114,6 +114,11 @@ pub enum HiveRight {
     /// 1.9: propose tasks (a person approves them).
     #[serde(rename = "tasks.propose")]
     TasksPropose,
+    /// mz6: the subscription models (`leanctx/<model>`) may be served to
+    /// this instance through the Hive models gateway; plan and credit stay
+    /// the gateway's check on every request.
+    #[serde(rename = "models.subscription")]
+    ModelsSubscription,
     #[serde(other)]
     Unknown,
 }

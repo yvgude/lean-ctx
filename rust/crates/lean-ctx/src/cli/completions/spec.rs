@@ -156,6 +156,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     super::spec_team::INTERNAL_COMPLETE,
     super::spec_team::HIVE,
     super::spec_team::TELEMETRY,
+    super::spec_team::MODELS,
     super::spec_team::DAEMON,
 ];
 #[cfg(test)]

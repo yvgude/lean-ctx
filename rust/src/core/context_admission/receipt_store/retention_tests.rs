@@ -416,6 +416,116 @@ fn passes_cut_short_after_a_few_batches_converge_across_restarts() {
     assert_eq!(super::super::capacity::booked_bytes(dir).unwrap(), bytes);
 }
 
+/// Move a bookkeeping file's time `back` into the past.
+fn backdate(path: &Path, back: Duration) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(SystemTime::now() - back))
+        .unwrap();
+}
+
+const MINUTE: Duration = Duration::from_mins(1);
+
+/// A pass the process could not finish (killed mid-walk) is an attempt: the
+/// next process does not count the whole store again at once — not hourly,
+/// and an urgent pass backs off as for a fruitless one. Before, an
+/// unstamped store was due at every request.
+#[test]
+fn an_unfinished_pass_is_an_attempt_and_is_not_rerun_at_once() {
+    let store = tempfile::tempdir().unwrap();
+    let dir = store.path();
+    for n in 0..600 {
+        receipt(dir, n, "json.zst", 64, 45);
+    }
+    assert!(pass_due(dir, false), "a store never maintained is due");
+    ENDS_AFTER.with(|left| left.set(Some(1)));
+    let pass = std::panic::catch_unwind(|| maintain_in(dir, SystemTime::now(), policy(None)));
+    ENDS_AFTER.with(|left| left.set(None));
+    assert!(pass.is_err(), "the pass was not cut short");
+    assert!(own_stamp(dir).is_none() && dir.join(STARTED).exists());
+
+    assert!(!pass_due(dir, false), "an hourly pass reruns a crashed one");
+    assert!(
+        !pass_due(dir, true),
+        "an urgent pass reruns a crashed one at once"
+    );
+    // One aborted attempt: an urgent pass waits two minutes, not one.
+    backdate(&dir.join(STARTED), MINUTE + Duration::from_secs(30));
+    assert!(!pass_due(dir, true));
+    backdate(&dir.join(STARTED), 2 * MINUTE + Duration::from_secs(5));
+    assert!(pass_due(dir, true));
+    assert!(!pass_due(dir, false));
+
+    // A second crash in a row doubles it again.
+    ENDS_AFTER.with(|left| left.set(Some(1)));
+    let pass = std::panic::catch_unwind(|| maintain_in(dir, SystemTime::now(), policy(None)));
+    ENDS_AFTER.with(|left| left.set(None));
+    assert!(pass.is_err());
+    backdate(&dir.join(STARTED), 3 * MINUTE);
+    assert!(!pass_due(dir, true), "two aborted passes: four minutes");
+    backdate(&dir.join(STARTED), 4 * MINUTE + Duration::from_secs(5));
+    assert!(pass_due(dir, true));
+
+    // A pass that finishes clears the record and the count.
+    maintain_in(dir, SystemTime::now(), policy(None)).unwrap();
+    assert!(!dir.join(STARTED).exists());
+    let (stamp, _) = own_stamp(dir).unwrap();
+    assert_eq!(stamp.fruitless, 0, "{stamp:?}");
+    backdate(&dir.join(STAMP), MINUTE + Duration::from_secs(5));
+    assert!(pass_due(dir, true));
+}
+
+/// A store full of protected evidence: a pass frees nothing, so the urgent
+/// passes every write that does not fit asks for back off — one, two, four
+/// minutes, up to the hourly pass — instead of counting every file of the
+/// store every minute. A pass that frees something resets the backoff.
+#[test]
+fn a_full_store_that_frees_nothing_backs_off_urgent_passes() {
+    let store = tempfile::tempdir().unwrap();
+    let dir = store.path();
+    for n in 0..4 {
+        receipt(dir, n, "json.zst", 32 * 1024, 0);
+    }
+    let full = Policy {
+        ceiling_bytes: Some(64 * 1024),
+        ..policy(Some(1))
+    };
+    let done = maintain_in(dir, SystemTime::now(), full).unwrap();
+    assert!(done.full && done.freed_bytes == 0, "{done:?}");
+    assert_eq!(own_stamp(dir).unwrap().0.fruitless, 1);
+    // Before: due again after one minute, whatever the last pass found.
+    backdate(&dir.join(STAMP), MINUTE + Duration::from_secs(30));
+    assert!(
+        !pass_due(dir, true),
+        "a fruitless full pass reran after a minute"
+    );
+    backdate(&dir.join(STAMP), 2 * MINUTE + Duration::from_secs(5));
+    assert!(pass_due(dir, true));
+
+    maintain_in(dir, SystemTime::now(), full).unwrap();
+    assert_eq!(own_stamp(dir).unwrap().0.fruitless, 2);
+    backdate(&dir.join(STAMP), 3 * MINUTE);
+    assert!(!pass_due(dir, true));
+    backdate(&dir.join(STAMP), 4 * MINUTE + Duration::from_secs(5));
+    assert!(pass_due(dir, true));
+    assert!(!pass_due(dir, false), "the hourly pass keeps its hour");
+
+    // Never later than the hourly pass, however many in a row.
+    assert_eq!(interval(true, 0), MINUTE);
+    assert_eq!(interval(true, 3), 8 * MINUTE);
+    assert_eq!(interval(true, 40), MAINTAIN_EVERY);
+    assert_eq!(interval(false, 0), MAINTAIN_EVERY);
+
+    // Room made (old evidence that may go): the next pass frees it and the
+    // urgent interval is a minute again.
+    receipt(dir, 9, "json.zst", 32 * 1024, 5);
+    let done = maintain_in(dir, SystemTime::now(), full).unwrap();
+    assert!(done.removed > 0, "{done:?}");
+    assert_eq!(own_stamp(dir).unwrap().0.fruitless, 0);
+}
+
 /// A small JSON record at `sub/<name>.json`, `days_old` old.
 fn record(dir: &Path, sub: &str, name: &str, body: &serde_json::Value, days_old: u64) -> PathBuf {
     let path = dir.join(sub).join(format!("{name}.json"));
@@ -609,7 +719,7 @@ fn a_dry_run_lists_what_a_pass_removes_and_changes_nothing() {
     let before = snapshot(root.path());
     let plan = plan_in(&dir, SystemTime::now(), policy(None)).unwrap();
     assert_eq!(snapshot(root.path()), before, "a dry run changed the store");
-    for bookkeeping in [STAMP, LOCK, CURSOR, ".usage.json", ".usage.lock"] {
+    for bookkeeping in [STAMP, LOCK, CURSOR, STARTED, ".usage.json", ".usage.lock"] {
         assert!(!dir.join(bookkeeping).exists(), "{bookkeeping} written");
     }
 

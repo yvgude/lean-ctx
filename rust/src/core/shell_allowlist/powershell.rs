@@ -277,13 +277,33 @@ fn is_safe_exception(base: &str) -> bool {
         .any(|&exc| exc.eq_ignore_ascii_case(base))
 }
 
+/// Byte-wise, so a prefix length that ends inside a multi-byte character of
+/// `s` is a mismatch, not a panic. The prefixes are ASCII.
 fn starts_with_ignore_case(s: &str, prefix: &str) -> bool {
-    s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix)
+    s.as_bytes()
+        .get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A verb prefix ending inside a multi-byte character is no match and
+    /// never a panic (found by `proptest_tokenizer::gate_never_panics`).
+    #[test]
+    fn a_prefix_ending_inside_a_character_does_not_panic() {
+        for cmd in [
+            "A-b\u{1CB3}",
+            "Ab-\u{1F574}",
+            "Se-t\u{00A5}x",
+            "Re-m\u{10CA5}ove",
+        ] {
+            assert_eq!(check_powershell_cmdlet(cmd), None, "{cmd:?}");
+            assert!(!is_known_cmdlet(cmd), "{cmd:?}");
+        }
+        assert_eq!(check_powershell_cmdlet("Remove-It\u{00E9}m"), Some(false));
+    }
 
     #[test]
     fn safe_cmdlets_pass() {

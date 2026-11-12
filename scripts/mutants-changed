@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+"""Run cargo-mutants on the Rust items a change touches, and summarize as JSON.
+
+Usage:
+    scripts/mutants-changed [--base REF] [--head REF] [--workspace DIR]
+                            [--package NAME ...] [--jobs N] [--timeout SECS]
+                            [--output DIR] [--summary FILE] [--min-score PCT]
+                            [--list] [-- CARGO_TEST_ARGS...]
+
+The change is `git diff <base> <head>` restricted to `*.rs` files below the
+Cargo workspace directory (default `rust/`). Its paths are made relative to
+that directory and the diff is handed to `cargo mutants --in-diff`, which
+then only generates mutants inside the changed lines.
+
+--base defaults to $CI_MERGE_REQUEST_DIFF_BASE_SHA (the merge-request base
+GitLab sets); without either the script stops with exit code 2.
+
+Output: stdout carries exactly one JSON object (also written to --summary
+when given):
+
+    {"schema": "mutants-changed/v1", "status": "...", "base": ..., "head": ...,
+     "changed_files": [...], "mutants": N, "caught": N, "missed": N,
+     "timeout": N, "unviable": N, "score": PCT | null,
+     "missed_mutants": ["file:line: description", ...], "cargo_mutants_exit": N}
+
+`status` is one of:
+    no-changes   the diff touches no Rust file; cargo-mutants did not run
+    listed       --list: mutants were enumerated, not tested (score null)
+    ok           every viable mutant was caught (or none was generated)
+    missed       some mutants survived (score < 100)
+    failed       cargo-mutants could not test (baseline failed, usage error)
+    unavailable  cargo or cargo-mutants is not installed
+
+The mutation score is caught / (caught + missed + timeout) * 100; unviable
+mutants (that do not compile) are left out. It is null when no viable
+mutant was tested.
+
+Exit codes: 0 report produced (surviving mutants alone do not fail the run,
+so the job can start as advisory); 1 the score is below --min-score;
+2 usage or git error; 3 cargo-mutants is missing; 4 cargo-mutants failed
+(status `failed`).
+
+The `cargo` binary is taken from $CARGO when set, else from PATH.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+SCHEMA = "mutants-changed/v1"
+INSTALL_HINT = "install it with: cargo install --locked cargo-mutants"
+
+# cargo-mutants exit codes (https://mutants.rs/exit-codes.html).
+EXIT_MUTANTS_OK = 0
+EXIT_MUTANTS_USAGE = 1
+EXIT_MUTANTS_MISSED = 2
+EXIT_MUTANTS_TIMEOUT = 3
+EXIT_MUTANTS_BASELINE = 4
+
+
+class UsageError(Exception):
+    """Bad arguments or a git failure (exit 2)."""
+
+
+def git(repo: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise UsageError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
+    return proc.stdout
+
+
+def repo_root(start: Path) -> Path:
+    return Path(git(start, "rev-parse", "--show-toplevel").strip())
+
+
+def workspace_prefix(root: Path, workspace: Path) -> str:
+    """`workspace` relative to the repository root, as git spells it ('' = root)."""
+    try:
+        rel = workspace.resolve().relative_to(root.resolve())
+    except ValueError as err:
+        raise UsageError(f"workspace {workspace} is outside the repository {root}") from err
+    text = rel.as_posix()
+    return "" if text == "." else text
+
+
+def changed_rust_diff(root: Path, base: str, head: str, prefix: str) -> tuple[str, list[str]]:
+    """The unified diff of `*.rs` files below `prefix`, paths relative to it."""
+    pathspec = f"{prefix}/*.rs" if prefix else "*.rs"
+    relative = [f"--relative={prefix}"] if prefix else []
+    names = git(
+        root, "diff", "--name-only", "--diff-filter=AMR", *relative, base, head, "--", pathspec
+    ).split()
+    if not names:
+        return "", []
+    diff = git(
+        root,
+        "diff",
+        "--no-color",
+        "--no-ext-diff",
+        "--diff-filter=AMR",
+        "--unified=0",
+        *relative,
+        base,
+        head,
+        "--",
+        pathspec,
+    )
+    return diff, sorted(names)
+
+
+def cargo_binary() -> str | None:
+    cargo = os.environ.get("CARGO") or "cargo"
+    if os.sep in cargo:
+        return cargo if os.access(cargo, os.X_OK) else None
+    return shutil.which(cargo)
+
+
+def mutants_available(cargo: str) -> bool:
+    try:
+        proc = subprocess.run(
+            [cargo, "mutants", "--version"], capture_output=True, text=True, check=False
+        )
+    except OSError:
+        return False
+    return proc.returncode == 0 and "mutants" in proc.stdout
+
+
+def outcome_kind(outcome: dict) -> str | None:
+    """The summary of one outcome, or None for the baseline run."""
+    scenario = outcome.get("scenario")
+    if scenario == "Baseline" or (isinstance(scenario, dict) and "Baseline" in scenario):
+        return None
+    return outcome.get("summary")
+
+
+def mutant_label(outcome: dict) -> str:
+    scenario = outcome.get("scenario")
+    mutant = scenario.get("Mutant") if isinstance(scenario, dict) else None
+    if not isinstance(mutant, dict):
+        return str(scenario)
+    # cargo-mutants names a mutant `file:line:col: description` already.
+    if mutant.get("name"):
+        return str(mutant["name"])
+    file = mutant.get("file", "?")
+    line = ((mutant.get("span") or {}).get("start") or {}).get("line", "?")
+    return f"{file}:{line}: replace with {mutant.get('replacement', '?')}"
+
+
+def summarize_outcomes(outcomes_doc: dict) -> dict:
+    """Counts, score and surviving mutants from cargo-mutants' outcomes.json."""
+    counts = {"caught": 0, "missed": 0, "timeout": 0, "unviable": 0}
+    missed: list[str] = []
+    kinds = {
+        "CaughtMutant": "caught",
+        "MissedMutant": "missed",
+        "Timeout": "timeout",
+        "Unviable": "unviable",
+    }
+    for outcome in outcomes_doc.get("outcomes", []):
+        kind = outcome_kind(outcome)
+        if kind is None:
+            continue
+        key = kinds.get(kind)
+        if key is None:
+            continue
+        counts[key] += 1
+        if key == "missed":
+            missed.append(mutant_label(outcome))
+    tested = counts["caught"] + counts["missed"] + counts["timeout"]
+    score = round(100.0 * counts["caught"] / tested, 2) if tested else None
+    return {
+        "mutants": sum(counts.values()),
+        **counts,
+        "score": score,
+        "missed_mutants": sorted(missed),
+    }
+
+
+def base_summary(base: str, head: str, changed: list[str]) -> dict:
+    return {
+        "schema": SCHEMA,
+        "status": "",
+        "base": base,
+        "head": head,
+        "changed_files": changed,
+        "mutants": 0,
+        "caught": 0,
+        "missed": 0,
+        "timeout": 0,
+        "unviable": 0,
+        "score": None,
+        "missed_mutants": [],
+        "cargo_mutants_exit": None,
+    }
+
+
+def emit(summary: dict, summary_path: str | None) -> None:
+    text = json.dumps(summary, indent=2, sort_keys=True)
+    print(text)
+    if summary_path:
+        Path(summary_path).write_text(text + "\n", encoding="utf-8")
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="mutants-changed",
+        description="Run cargo-mutants only on the Rust lines changed since a base commit.",
+    )
+    parser.add_argument("--base", default=os.environ.get("CI_MERGE_REQUEST_DIFF_BASE_SHA"))
+    parser.add_argument("--head", default="HEAD")
+    parser.add_argument("--workspace", default=None, help="Cargo workspace dir (default: <repo>/rust)")
+    parser.add_argument("--package", "-p", action="append", default=[])
+    parser.add_argument("--jobs", "-j", type=int, default=None)
+    parser.add_argument("--timeout", type=float, default=None)
+    parser.add_argument("--output", default=None, help="cargo-mutants output dir (default: temp)")
+    parser.add_argument("--summary", default=None, help="also write the JSON summary here")
+    parser.add_argument("--min-score", type=float, default=None)
+    parser.add_argument("--list", action="store_true", help="only list the mutants")
+    parser.add_argument("cargo_test_args", nargs=argparse.REMAINDER)
+    args = parser.parse_args(argv)
+    if args.cargo_test_args and args.cargo_test_args[0] == "--":
+        args.cargo_test_args = args.cargo_test_args[1:]
+    return args
+
+
+def run(argv: list[str]) -> int:
+    args = parse_args(argv)
+    try:
+        root = repo_root(Path.cwd())
+        workspace = Path(args.workspace) if args.workspace else root / "rust"
+        if not (workspace / "Cargo.toml").is_file():
+            raise UsageError(f"no Cargo.toml in workspace {workspace}")
+        if not args.base:
+            raise UsageError("no base: pass --base or set CI_MERGE_REQUEST_DIFF_BASE_SHA")
+        base = git(root, "rev-parse", "--verify", f"{args.base}^{{commit}}").strip()
+        head = git(root, "rev-parse", "--verify", f"{args.head}^{{commit}}").strip()
+        prefix = workspace_prefix(root, workspace)
+        diff, changed = changed_rust_diff(root, base, head, prefix)
+    except UsageError as err:
+        print(f"mutants-changed: {err}", file=sys.stderr)
+        return 2
+
+    summary = base_summary(base, head, changed)
+    if not changed:
+        summary["status"] = "no-changes"
+        emit(summary, args.summary)
+        return 0
+
+    cargo = cargo_binary()
+    if cargo is None or not mutants_available(cargo):
+        summary["status"] = "unavailable"
+        print(f"mutants-changed: cargo-mutants is not installed; {INSTALL_HINT}", file=sys.stderr)
+        emit(summary, args.summary)
+        return 3
+
+    with tempfile.TemporaryDirectory(prefix="mutants-changed-") as tmp:
+        diff_file = Path(tmp) / "changed.diff"
+        diff_file.write_text(diff, encoding="utf-8")
+        output = Path(args.output) if args.output else Path(tmp)
+        cmd = [cargo, "mutants", "--in-diff", str(diff_file), "--dir", str(workspace)]
+        for package in args.package:
+            cmd += ["--package", package]
+        if args.list:
+            cmd += ["--list", "--json"]
+        else:
+            cmd += ["--output", str(output)]
+            if args.jobs:
+                cmd += ["--jobs", str(args.jobs)]
+            if args.timeout:
+                cmd += ["--timeout", str(args.timeout)]
+            if args.cargo_test_args:
+                cmd += ["--", *args.cargo_test_args]
+        print(f"mutants-changed: {' '.join(cmd)}", file=sys.stderr)
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE if args.list else sys.stderr,
+            text=True,
+            check=False,
+        )
+        summary["cargo_mutants_exit"] = proc.returncode
+
+        if args.list:
+            if proc.returncode != 0:
+                summary["status"] = "failed"
+                emit(summary, args.summary)
+                return 4
+            listed = json.loads(proc.stdout or "[]")
+            summary["status"] = "listed"
+            summary["mutants"] = len(listed)
+            emit(summary, args.summary)
+            return 0
+
+        outcomes_path = output / "mutants.out" / "outcomes.json"
+        known = {EXIT_MUTANTS_OK, EXIT_MUTANTS_MISSED, EXIT_MUTANTS_TIMEOUT}
+        if proc.returncode not in known or not outcomes_path.is_file():
+            summary["status"] = "failed"
+            print(
+                f"mutants-changed: cargo-mutants exited {proc.returncode}"
+                + (" (baseline tests failed)" if proc.returncode == EXIT_MUTANTS_BASELINE else ""),
+                file=sys.stderr,
+            )
+            emit(summary, args.summary)
+            return 4
+        summary.update(summarize_outcomes(json.loads(outcomes_path.read_text(encoding="utf-8"))))
+
+    survived = summary["missed"] + summary["timeout"]
+    summary["status"] = "missed" if survived else "ok"
+    emit(summary, args.summary)
+    if args.min_score is not None and summary["score"] is not None:
+        if summary["score"] < args.min_score:
+            print(
+                f"mutants-changed: mutation score {summary['score']} < --min-score {args.min_score}",
+                file=sys.stderr,
+            )
+            return 1
+    return 0
+
+
+def main() -> int:
+    return run(sys.argv[1:])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

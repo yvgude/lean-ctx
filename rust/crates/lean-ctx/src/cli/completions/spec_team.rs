@@ -283,6 +283,16 @@ pub(super) const TELEMETRY: CommandNode = CommandNode {
     hidden: false,
 };
 
+pub(super) const MODELS: CommandNode = CommandNode {
+    name: "models",
+    aliases: &[],
+    description: "List the models your Hive plan includes",
+    subcommands: &[],
+    flags: &[],
+    positional: None,
+    hidden: false,
+};
+
 pub(super) const DAEMON: CommandNode = CommandNode {
     name: "daemon",
     aliases: &[],

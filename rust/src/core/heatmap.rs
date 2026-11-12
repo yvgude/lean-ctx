@@ -1,11 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 const HEATMAP_FLUSH_EVERY: usize = 25;
 const HEATMAP_MAX_ENTRIES: usize = 10_000;
+/// The heat map is rewritten whole on every save; a long-lived process saves
+/// it at most this often (and once more when it exits, [`flush_now`]).
+const HEATMAP_SAVE_EVERY: Duration = Duration::from_secs(30);
 
 static HEATMAP_BUFFER: Mutex<Option<HeatMap>> = Mutex::new(None);
 static HEATMAP_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -30,6 +34,10 @@ pub struct HeatMap {
     pub entries: HashMap<String, HeatEntry>,
     #[serde(skip)]
     dirty: bool,
+    /// When and where this process last saved the map: a save to another
+    /// file (another data dir) is never put off.
+    #[serde(skip)]
+    last_save: Option<(Instant, PathBuf)>,
 }
 
 impl HeatMap {
@@ -92,10 +100,13 @@ impl HeatMap {
             return Ok(());
         }
         save_to_disk(self)?;
+        let mut saved = self.clone();
+        saved.dirty = false;
+        saved.last_save = Some((Instant::now(), Self::storage_path()));
         let mut guard = HEATMAP_BUFFER
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *guard = Some(self.clone());
+        *guard = Some(saved);
         Ok(())
     }
 
@@ -194,14 +205,41 @@ fn load_from_disk() -> HeatMap {
 }
 
 fn save_to_disk(hm: &HeatMap) -> std::io::Result<()> {
-    let path = HeatMap::storage_path();
+    save_to_path(hm, &HeatMap::storage_path())
+}
+
+/// Write the map to `path` atomically (temp file + rename), as compact JSON:
+/// the file is rewritten whole, so every byte of indentation is written
+/// again on every save.
+fn save_to_path(hm: &HeatMap, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(hm)?;
+    let json = serde_json::to_vec(hm)?;
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, &json)?;
-    std::fs::rename(&tmp, &path)
+    std::fs::rename(&tmp, path)
+}
+
+/// Save `hm` to `path` when it changed since its last save and, unless
+/// `force`, that save to the same file lies [`HEATMAP_SAVE_EVERY`] back.
+/// Returns whether it wrote. A failed write leaves the map dirty.
+fn persist(hm: &mut HeatMap, path: &Path, force: bool, now: Instant) -> bool {
+    if !hm.dirty {
+        return false;
+    }
+    let recent = hm.last_save.as_ref().is_some_and(|(at, saved_to)| {
+        saved_to == path && now.saturating_duration_since(*at) < HEATMAP_SAVE_EVERY
+    });
+    if recent && !force {
+        return false;
+    }
+    if save_to_path(hm, path).is_err() {
+        return false;
+    }
+    hm.dirty = false;
+    hm.last_save = Some((now, path.to_path_buf()));
+    true
 }
 
 pub fn record_file_access(file_path: &str, original_tokens: usize, saved_tokens: usize) {
@@ -253,19 +291,30 @@ pub fn record_file_access_with_agent(
     }
 
     let n = HEATMAP_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-    if n.is_multiple_of(HEATMAP_FLUSH_EVERY) && save_to_disk(hm).is_ok() {
-        hm.dirty = false;
+    if n.is_multiple_of(HEATMAP_FLUSH_EVERY) {
+        persist(hm, &HeatMap::storage_path(), false, Instant::now());
     }
 }
 
+/// Save the buffered map when it changed and its last save lies
+/// [`HEATMAP_SAVE_EVERY`] back. Runs after every tool call
+/// (`tool_lifecycle::flush_all`): before, it rewrote the whole file on every
+/// call once anything had changed, because it never cleared `dirty`.
 pub fn flush() {
-    let guard = HEATMAP_BUFFER
+    flush_with(false);
+}
+
+/// Save the buffered map now when it changed: for a process about to exit.
+pub fn flush_now() {
+    flush_with(true);
+}
+
+fn flush_with(force: bool) {
+    let mut guard = HEATMAP_BUFFER
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(ref hm) = *guard
-        && hm.dirty
-    {
-        let _ = save_to_disk(hm);
+    if let Some(hm) = guard.as_mut() {
+        persist(hm, &HeatMap::storage_path(), force, Instant::now());
     }
 }
 
@@ -273,10 +322,11 @@ pub fn reset() {
     let mut guard = HEATMAP_BUFFER
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    *guard = Some(HeatMap::default());
-    if let Some(hm) = guard.as_ref() {
-        let _ = save_to_disk(hm);
-    }
+    let hm = guard.insert(HeatMap {
+        dirty: true,
+        ..HeatMap::default()
+    });
+    persist(hm, &HeatMap::storage_path(), true, Instant::now());
 }
 
 pub fn format_heatmap_status(heatmap: &HeatMap, limit: usize) -> String {
@@ -449,5 +499,102 @@ pub mod tests {
         let b_credit = credit.iter().find(|(id, _)| id == "agent-b").unwrap().1;
         assert!(a_credit > 0.0);
         assert!((a_credit - b_credit).abs() < 1e-9);
+    }
+
+    /// The identity of the file at `path`: an atomic rewrite (temp file +
+    /// rename) gives it a new inode.
+    fn file_identity(path: &Path) -> (u64, std::time::SystemTime) {
+        let meta = std::fs::metadata(path).expect("heatmap.json written");
+        #[cfg(unix)]
+        let ino = {
+            use std::os::unix::fs::MetadataExt;
+            meta.ino()
+        };
+        #[cfg(not(unix))]
+        let ino = 0;
+        (ino, meta.modified().unwrap())
+    }
+
+    /// Write amplification (Mac, 11.11.): `flush` runs after every tool call
+    /// and never cleared `dirty`, so after the first access each flush
+    /// rewrote the whole (pretty-printed, ~2 MB) file. A flush with nothing
+    /// new must not write.
+    #[test]
+    fn a_second_flush_without_changes_does_not_rewrite_the_heatmap() {
+        let dir = crate::core::data_dir::isolated_data_dir();
+        let file = dir.path().join("hot.rs");
+        std::fs::write(&file, "fn hot() {}\n").unwrap();
+        record_file_access_with_agent(&file.to_string_lossy(), 100, 40, None);
+        flush();
+        let heatmap = crate::core::paths::state_dir()
+            .unwrap()
+            .join("heatmap.json");
+        let first = file_identity(&heatmap);
+        std::thread::sleep(Duration::from_millis(20));
+        flush();
+        flush();
+        assert_eq!(
+            file_identity(&heatmap),
+            first,
+            "a flush without changes rewrote heatmap.json"
+        );
+        let text = std::fs::read_to_string(&heatmap).unwrap();
+        assert!(!text.contains('\n'), "heatmap.json is not compact");
+    }
+
+    #[test]
+    fn persist_writes_only_changes_at_most_every_interval_unless_forced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("heatmap.json");
+        let mut hm = HeatMap::default();
+        let t0 = Instant::now();
+        assert!(!persist(&mut hm, &path, false, t0), "nothing to save");
+
+        hm.record_access("a.rs", 100, 50);
+        assert!(persist(&mut hm, &path, false, t0), "first save");
+        assert!(!persist(&mut hm, &path, false, t0), "unchanged: no write");
+        assert!(
+            !persist(&mut hm, &path, true, t0),
+            "unchanged: not even forced"
+        );
+
+        hm.record_access("a.rs", 100, 50);
+        let soon = t0 + Duration::from_secs(5);
+        assert!(!persist(&mut hm, &path, false, soon), "within the interval");
+        assert!(hm.dirty, "a put-off save stays pending");
+        assert!(persist(&mut hm, &path, false, t0 + HEATMAP_SAVE_EVERY));
+
+        hm.record_access("b.rs", 100, 50);
+        let later = t0 + HEATMAP_SAVE_EVERY + Duration::from_secs(1);
+        assert!(persist(&mut hm, &path, true, later), "forced at exit");
+
+        // Another file (data dir switched) is never put off.
+        hm.record_access("c.rs", 100, 50);
+        let other = dir.path().join("other").join("heatmap.json");
+        assert!(persist(&mut hm, &other, false, later));
+
+        let loaded: HeatMap =
+            serde_json::from_str(&std::fs::read_to_string(&other).unwrap()).unwrap();
+        assert_eq!(loaded.entries.len(), 3);
+        assert!(!dir.path().join("heatmap.json.tmp").exists());
+    }
+
+    /// Writes for a burst of tool calls: one per [`HEATMAP_SAVE_EVERY`],
+    /// not one per call.
+    #[test]
+    fn a_burst_of_tool_calls_writes_once_per_interval() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("heatmap.json");
+        let mut hm = HeatMap::default();
+        let t0 = Instant::now();
+        let mut writes = 0;
+        // 100 tool calls, one read each, over 50 seconds.
+        for call in 0..100u64 {
+            hm.record_access(&format!("f{}.rs", call % 7), 100, 50);
+            let at = t0 + Duration::from_millis(call * 500);
+            writes += usize::from(persist(&mut hm, &path, false, at));
+        }
+        assert_eq!(writes, 2, "{writes} writes for 100 calls in 50 s");
+        assert!(persist(&mut hm, &path, true, t0 + Duration::from_secs(50)));
     }
 }

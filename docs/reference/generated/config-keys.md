@@ -275,6 +275,8 @@ LeanCTX | Hive: workspace knowledge, policies and the shared agent bus.
 - `bus` (string: auto | off, default `auto`) — Relay the agent bus through Hive (auto) or keep it local (off).
 - `enabled` (bool, default `null`) — Pause all Hive traffic with false; unset means on while this machine is connected.
 - `metrics_upload` (bool, default `true`) — Send hourly instance metrics to Hive (counts only, including full re-fetches and unregulated program names; never content).
+- `models_anthropic_agents` (bool, default `false`) — Let Anthropic-shaped agents reach the subscription models through shape-xlat routing aliases; false means OpenAI-shaped agents only. Owner question Q3 is open: true takes effect only once it is decided.
+- `models_url` (string, default `null`) — Origin of the Hive models gateway for the leanctx provider; unset means https://models.<hive host>. Only the Hive host or a direct subdomain of it is honoured.
 - `pull_interval_minutes` (integer, default `5`) — Minutes between Hive sync passes (1-60; values outside are clamped).
 - `queen_identity` (string: warn | enforce, default `warn` — env `LEAN_CTX_HIVE_QUEEN_IDENTITY`) — A bus sender presenting as the Queen that is no registered Queen session: warn (pass, log in bus/queen-warnings.json, mark for the receiver) or enforce (refuse); any other value counts as enforce. Enforce only once queen-sessions.json lists every Queen session.
 - `receipts_upload` (bool, default `true`) — Upload context receipts to Hive.

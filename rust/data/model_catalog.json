@@ -1,0 +1,71 @@
+{
+  "catalog_version": "2026-11-09.1",
+  "direct": [
+    {
+      "host_country": "CN",
+      "hosts": [
+        "api.deepseek.com"
+      ],
+      "vendor": "DeepSeek"
+    },
+    {
+      "host_country": "CN",
+      "hosts": [
+        "open.bigmodel.cn",
+        "api.z.ai"
+      ],
+      "vendor": "Z.ai (Zhipu)"
+    },
+    {
+      "host_country": "CN",
+      "hosts": [
+        "api.minimax.chat",
+        "api.minimaxi.com",
+        "api.minimax.io"
+      ],
+      "vendor": "MiniMax"
+    }
+  ],
+  "models": [
+    {
+      "display_name": "DeepSeek V4.1 Flash",
+      "hosts": [
+        {
+          "host_country": "US",
+          "provider": "nebius"
+        }
+      ],
+      "id": "leanctx/deepseek-v4.1-flash",
+      "license": "open-weights",
+      "origin_country": "CN",
+      "plans": [
+        "personal",
+        "team",
+        "enterprise"
+      ],
+      "status": "unpriced",
+      "vendor": "DeepSeek"
+    },
+    {
+      "display_name": "GLM-5.3 Flash",
+      "hosts": [
+        {
+          "host_country": "US",
+          "provider": "nebius"
+        }
+      ],
+      "id": "leanctx/glm-5.3-flash",
+      "license": "open-weights",
+      "origin_country": "CN",
+      "plans": [
+        "personal",
+        "team",
+        "enterprise"
+      ],
+      "status": "unpriced",
+      "vendor": "Z.ai (Zhipu)"
+    }
+  ],
+  "price_version": "unpriced",
+  "schema": "leanctx.hive.model-catalog/v1"
+}

@@ -1,0 +1,60 @@
+# vendored from leanctx/leanctx-hive@d22a1ece72225ea50e57f42f87f5153127a368b4:crates/hive-server/data/model_catalog.toml sha256=1599cc9c0255effafded35d16ac517d250214da21820309c873e34ebfce29168; regenerate with scripts/sync-model-catalog.py
+# Subscription model catalog (mz6/mz14, docs/model-access-subscription.md in lean-ctx §5.1, §7).
+# Compiled into hive-server and served signed at GET /v1/models/catalog
+# (schema and rules: crates/hive-wire/src/models.rs).
+#
+# Every model names the origin of its weights and each host (provider, country, region).
+# `status = "unpriced"` means listed for display only, never served. A model becomes
+# `available` only after the owner confirms the provider account data: the exact upstream id,
+# the region, zero-retention terms and every price in micro-USD per million tokens (credit
+# price, owner Q1). Until then the price and upstream fields stay absent; they are never
+# guessed. A price of zero is refused, and so is a host without host_country.
+# Bump catalog_version on every model or host change, and price_version on every price change.
+
+schema = "leanctx.hive.model-catalog/v1"
+catalog_version = "2026-11-09.1"
+price_version = "unpriced"
+
+[[models]]
+id = "leanctx/deepseek-v4.1-flash"
+display_name = "DeepSeek V4.1 Flash"
+vendor = "DeepSeek"
+origin_country = "CN"
+license = "open-weights"
+status = "unpriced"
+plans = ["personal", "team", "enterprise"]
+
+  [[models.hosts]]
+  provider = "nebius"
+  host_country = "US"
+
+[[models]]
+id = "leanctx/glm-5.3-flash"
+display_name = "GLM-5.3 Flash"
+vendor = "Z.ai (Zhipu)"
+origin_country = "CN"
+license = "open-weights"
+status = "unpriced"
+plans = ["personal", "team", "enterprise"]
+
+  [[models.hosts]]
+  provider = "nebius"
+  host_country = "US"
+
+# Vendors' own APIs: never part of the subscription, opt-in only on the engine
+# (`[proxy] allow_vendor_direct_cn`), void when the org policy sets vendor_direct_cn = false.
+# host_country is where the vendor processes the requests.
+[[direct]]
+vendor = "DeepSeek"
+hosts = ["api.deepseek.com"]
+host_country = "CN"
+
+[[direct]]
+vendor = "Z.ai (Zhipu)"
+hosts = ["open.bigmodel.cn", "api.z.ai"]
+host_country = "CN"
+
+[[direct]]
+vendor = "MiniMax"
+hosts = ["api.minimax.chat", "api.minimaxi.com", "api.minimax.io"]
+host_country = "CN"

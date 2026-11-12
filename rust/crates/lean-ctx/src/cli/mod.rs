@@ -64,6 +64,7 @@ pub(crate) mod local_read;
 pub(crate) mod migrate_cmd;
 pub(crate) mod migrate_legacy;
 mod model_cmd;
+mod models_cmd;
 pub mod ocla_cmd;
 mod output_savings_cmd;
 mod overview_cmd;

@@ -168,12 +168,14 @@ pub(crate) fn install_gemini_hook_config(home: &std::path::Path) {
         || (settings_content.contains("hook rewrite") && !settings_content.contains("\"matcher\""));
     let missing_observe = !settings_content.contains("hook observe")
         || crate::hooks::content_has_split_hook_command(&settings_content);
+    let missing_write_guard = !settings_content.contains("hook write-guard");
 
-    if has_new_format && !has_old_hooks && !missing_observe {
+    if has_new_format && !has_old_hooks && !missing_observe && !missing_write_guard {
         return;
     }
 
     let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
+    let write_guard_cmd = crate::hooks::hook_shell_command(&binary, "write-guard");
     let hook_config = serde_json::json!({
         "hooks": {
             "BeforeTool": [
@@ -189,6 +191,13 @@ pub(crate) fn install_gemini_hook_config(home: &std::path::Path) {
                     "hooks": [{
                         "type": "command",
                         "command": redirect_cmd
+                    }]
+                },
+                {
+                    "matcher": super::governor_hosts::GEMINI_WRITE_MATCHER,
+                    "hooks": [{
+                        "type": "command",
+                        "command": write_guard_cmd
                     }]
                 }
             ],
@@ -233,6 +242,7 @@ pub(crate) fn install_gemini_deny_hook(home: &std::path::Path) {
     let rewrite_cmd = crate::hooks::hook_shell_command(&binary, "rewrite");
     let deny_cmd = crate::hooks::hook_shell_command(&binary, "deny");
     let observe_cmd = crate::hooks::hook_shell_command(&binary, "observe");
+    let write_guard_cmd = crate::hooks::hook_shell_command(&binary, "write-guard");
 
     let settings_path = home.join(".gemini").join("settings.json");
 
@@ -251,6 +261,13 @@ pub(crate) fn install_gemini_deny_hook(home: &std::path::Path) {
                     "hooks": [{
                         "type": "command",
                         "command": deny_cmd
+                    }]
+                },
+                {
+                    "matcher": super::governor_hosts::GEMINI_WRITE_MATCHER,
+                    "hooks": [{
+                        "type": "command",
+                        "command": write_guard_cmd
                     }]
                 }
             ],
