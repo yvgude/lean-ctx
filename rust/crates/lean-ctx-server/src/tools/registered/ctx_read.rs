@@ -1286,7 +1286,9 @@ impl CtxReadTool {
             warnings.push(w.as_str());
         }
         let file_summary = extract_file_summary(&output, path);
-        let graph_suffix = graph_hint.map(|h| format!("\n{h}")).unwrap_or_default();
+        // Decisions in scope (`.leanctx/decisions`): foreign content like graph hints.
+        let graph_suffix = graph_hint.map(|h| format!("\n{h}")).unwrap_or_default()
+            + &lean_ctx::core::decisions::suffix_for_read(path);
         // #977: notices (mode override, budget, delta) go BEFORE the
         // payload so client-side truncation of large outputs cannot hide them.
         let final_output = if !warnings.is_empty() {

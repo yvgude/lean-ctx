@@ -19,9 +19,11 @@ mod approval;
 mod config;
 mod dataflow;
 mod enforcement;
+mod groups;
 mod operand_eval;
 mod partial;
 mod redaction_marker;
+mod redirections;
 mod self_config;
 mod side_doors;
 mod substitution;
@@ -50,7 +52,9 @@ pub use redaction_marker::{
     marker_literal_allowed_in, refuse_redaction_marker, refuse_redaction_marker_in_command,
     refuse_redaction_marker_in_file,
 };
-pub use self_config::{UNKNOWN_DOWNLOAD_TARGET, download_targets, with_run_cwd};
+pub use self_config::{
+    UNKNOWN_DOWNLOAD_TARGET, download_targets, is_leanctx_state_path, with_run_cwd,
+};
 pub use side_doors::{LEAN_CTX_RUN_CONTROL_ENV, env_override_refused};
 pub use substitution::check_substitution_in_args;
 #[cfg(test)]
@@ -86,6 +90,8 @@ pub fn install() {
 mod tests;
 #[cfg(test)]
 mod tests_conditionals;
+#[cfg(test)]
+mod tests_ghsa_3124;
 #[cfg(test)]
 mod tests_heredoc_quotes;
 #[cfg(test)]

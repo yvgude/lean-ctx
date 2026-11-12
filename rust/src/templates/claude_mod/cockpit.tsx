@@ -16,10 +16,12 @@ const DOCK_COLUMNS = 62
 // lean-ctx writes a session's snapshot at most once a second.
 const REFRESH_AFTER_TOOL_MS = 1_300
 const REFRESH_MS = 15_000
-// `lean-ctx value` re-verifies both hash chains end to end (~8 s): rarely, in the background.
+// `lean-ctx value` re-verifies both hash chains end to end: rarely, in the background.
 const PROVE_FIRST_MS = 4_000
 const PROVE_MS = 5 * 60_000
 const PROVE_TIMEOUT_MS = 120_000
+// After a failed or timed-out proof the clock waits twice as long each time, up to an hour (#2240).
+const PROVE_BACKOFF_MAX_MS = 60 * 60_000
 const FRAME_MS = 70
 const COUNT_EASE = 0.16
 const TURN_OVERLAY_MS = 6_500
@@ -506,6 +508,10 @@ let isWorking = false
 let overlayUntil = 0
 let packetsUntil = 0
 let proving = false
+// Whether this session drew the sidebar at least once: only then does the clock prove.
+let paneDrawn = false
+// The wait after failed proofs, and until when the clock skips proving.
+const proveBackoff = { delay: 0, until: 0 }
 // The token figure counts toward the session total.
 let shown = -1
 let target = 0
@@ -667,8 +673,14 @@ async function refresh($: EngineInterface) {
 }
 
 // Prove: re-derive the evidence from both hash chains, the way `lean-ctx value` does.
-async function prove($: EngineInterface) {
+// The clock proves only for a sidebar that was drawn (a background spare session
+// never draws one) and backs off after a failure; `/cockpit` proves at once (#2240).
+async function prove($: EngineInterface, opts: { isAsked?: boolean } = {}) {
+  // The clock is read before the `proving` check, so no await separates the
+  // check from claiming the run (a `/cockpit` proof cannot start in between).
+  const now = opts.isAsked ? 0 : await $.clock.now()
   if (proving) return
+  if (!opts.isAsked && (!paneDrawn || now < proveBackoff.until)) return
   proving = true
   const before = (await readBoard($)).proof
   await update($, board, x => ({ ...x, proof: { ...(x.proof ?? {}), isRunning: true } }))
@@ -691,8 +703,12 @@ async function prove($: EngineInterface) {
       sessionEntries: num(evidence, 'entries'),
     }
     await update($, board, x => ({ ...x, proof }))
+    proveBackoff.delay = 0
+    proveBackoff.until = 0
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    proveBackoff.delay = Math.min(PROVE_BACKOFF_MAX_MS, Math.max(PROVE_MS, proveBackoff.delay * 2))
+    proveBackoff.until = (await $.clock.now()) + proveBackoff.delay
     await update($, board, x => ({ ...x, proof: { ...(before ?? {}), isRunning: false, error: message } }))
   } finally {
     proving = false
@@ -836,12 +852,12 @@ let panelEnabled = true
 // on|off`. The sidebar keeps the same turns and milestones; the spinner stays.
 let pulseEnabled = true
 let cardsEnabled = true
-// The proof clock re-verifies receipts only the sidebar shows (~8 s of work).
+// The proof clock re-verifies receipts only the sidebar shows (a full pass over both chains).
 let proofClock: { cancel: () => void } | undefined
 
 function startProofClock($: EngineInterface) {
   if (proofClock) return
-  $.clock.after(PROVE_FIRST_MS, () => void prove($).catch(() => {}))
+  // The first proof follows the first drawing of the sidebar (see the Pane render).
   proofClock = $.clock.every(PROVE_MS, () => void prove($).catch(() => {}))
 }
 
@@ -930,7 +946,7 @@ async function runCockpitCommand($: EngineInterface, args: string): Promise<stri
   if (choice === 'on') panelEnabled = true
   const { isPlaced } = await $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS })
   $.clock.after(0, () => void refresh($).catch(() => {}))
-  $.clock.after(0, () => void prove($).catch(() => {}))
+  $.clock.after(0, () => void prove($, { isAsked: true }).catch(() => {}))
   if (panelEnabled) startProofClock($)
   const opened = isPlaced ? 'LeanCTX cockpit opened.' : 'LeanCTX cockpit is waiting for room (fullscreen, ~110+ columns).'
   if (choice !== 'on') return opened
@@ -1218,6 +1234,10 @@ export function registerCockpit(
 
   // ── the docked sidebar: what Claude saw, tokens, the two checks, receipts
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    if (!paneDrawn) {
+      paneDrawn = true
+      $.clock.after(PROVE_FIRST_MS, () => void prove($).catch(() => {}))
+    }
     const b = await readBoard($)
     const f = await read($, frame)
     const tick = f?.tick ?? 0

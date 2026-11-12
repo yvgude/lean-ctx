@@ -742,6 +742,23 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         },
     );
 
+    let mut decisions = BTreeMap::new();
+    decisions.insert(
+        "enforce".into(),
+        key(
+            "string",
+            serde_json::json!(cfg.decisions.enforce),
+            "Pre-edit check of .leanctx/decisions: hint (report), refuse (strict: edit not written), off",
+        ),
+    );
+    sections.insert(
+        "decisions".into(),
+        SectionSchema {
+            description: "Decision layer (.leanctx/decisions/*.toml): pre-edit check mode".into(),
+            keys: decisions,
+        },
+    );
+
     let mut protection = BTreeMap::new();
     protection.insert(
         "file_patterns".into(),

@@ -224,6 +224,11 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
             lean_ctx::core::code_health::gate::GateOutcome::Allow(notice) => notice,
         };
 
+    // Pre-edit checks (unit claims, decisions): hint, or refuse when strict.
+    if let Err(e) = crate::tools::claims_gate::before_write(path, Some(&pre.text), &new_content) {
+        return (e, CacheEffect::None);
+    }
+
     // TOCTOU guard: confirm the file did not change between read and write.
     // #960: a point-in-time check, not a held lock — see
     // ensure_preimage_still_matches' doc for the residual window between
@@ -311,6 +316,10 @@ fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, C
     // read-only root (mirrors ctx_edit's create guard, #475).
     if let Err(e) = lean_ctx::core::pathjail::enforce_writable(path) {
         return (format!("ERROR: {e}"), CacheEffect::None);
+    }
+
+    if let Err(e) = crate::tools::claims_gate::before_write(path, None, content) {
+        return (e, CacheEffect::None);
     }
 
     if let Some(parent) = path.parent()

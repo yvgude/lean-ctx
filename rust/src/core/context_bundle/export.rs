@@ -28,3 +28,48 @@ pub fn destination(tool: &str, root: &Path, candidate: &Path) -> Result<PathBuf,
     crate::core::pathjail::enforce_writable(&output)?;
     Ok(output)
 }
+
+/// Write `bytes` to a bundle destination below `root`, refusing a symlinked
+/// final component. `destination` leaves a dangling symlink unresolved (the
+/// jail resolves only the existing ancestor), so a cloned repository can ship
+/// `bundle.xml -> ../../outside`; the confined write rebuilds the path below
+/// the project and fails closed on any symlinked component.
+pub fn write(tool: &str, root: &Path, candidate: &Path, bytes: &[u8]) -> Result<PathBuf, String> {
+    let output = destination(tool, root, candidate)?;
+    crate::core::pathjail_write::write_requested_below(root, candidate, &output, bytes)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    /// A cloned repository can ship the bundle file as a dangling symlink; the
+    /// write must be refused, not carried out of the project.
+    #[test]
+    fn write_refuses_a_symlinked_bundle_file() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("proj");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[package]\nname=\"p\"\n").unwrap();
+        let outside = tmp.path().join("outside.xml");
+
+        // dangling link (target absent): destination's parent check passes.
+        symlink(&outside, root.join("bundle.xml")).unwrap();
+        let err = write("ctx_pack", &root, &root.join("bundle.xml"), b"<x/>").unwrap_err();
+        assert!(err.contains("symlink"), "{err}");
+        assert!(!outside.exists());
+
+        // existing-file link is refused too.
+        let victim = tmp.path().join("victim.xml");
+        std::fs::write(&victim, "keep").unwrap();
+        symlink(&victim, root.join("bundle2.xml")).unwrap();
+        assert!(write("ctx_pack", &root, &root.join("bundle2.xml"), b"<x/>").is_err());
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+
+        // a plain destination inside the project still writes.
+        let path = write("ctx_pack", &root, &root.join("ok.xml"), b"<x/>").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"<x/>");
+    }
+}

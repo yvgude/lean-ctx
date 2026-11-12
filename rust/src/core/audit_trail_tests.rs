@@ -884,6 +884,54 @@ fn hashes(entries: &[AuditEntry]) -> Vec<String> {
     entries.iter().map(|e| e.entry_hash.clone()).collect()
 }
 
+/// The streaming reader behind the session proof (#2240): without filters
+/// it visits exactly what `load_all_at` returns; `since` leaves out the
+/// segments sealed before it, `needle` every line without it.
+#[test]
+fn for_each_entry_at_streams_the_trail_and_skips_what_cannot_match() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let path = checkpointable_trail(10);
+    assert!(verify_chain().valid);
+    append_on_day(&path, 1);
+    assert_eq!(segments::sealed(&path).len(), 1, "the new day sealed");
+    let wanted = try_record_at_time(
+        &path,
+        Record {
+            data: AuditEntryData {
+                action: Some("secret_redacted:1|session=wanted-session".into()),
+                ..drift_data_unsigned()
+            },
+            facts: None,
+        },
+        chrono::Utc::now() + chrono::Duration::days(1),
+    )
+    .expect("append");
+
+    let collect = |since, needle| {
+        let mut seen = Vec::new();
+        let visited = for_each_entry_at(&path, since, needle, |entry| {
+            seen.push(entry.entry_hash.clone());
+        });
+        assert_eq!(visited, seen.len());
+        seen
+    };
+    let all = load_all_at(&path);
+    assert_eq!(collect(None, None), hashes(&all));
+
+    let later = chrono::Utc::now() + chrono::Duration::hours(1);
+    let active = load_all_at(&path)
+        .into_iter()
+        .skip(load_all_at(&segments::sealed(&path)[0].1).len())
+        .collect::<Vec<_>>();
+    assert_eq!(active.len(), 2);
+    assert_eq!(collect(Some(later), None), hashes(&active));
+
+    assert_eq!(
+        collect(None, Some("wanted-session")),
+        vec![wanted.entry_hash]
+    );
+}
+
 /// One plain entry, appended as if at `days` days from now.
 fn append_on_day(path: &Path, days: i64) -> AuditEntry {
     let now = chrono::Utc::now() + chrono::Duration::days(days);

@@ -24,13 +24,14 @@ impl McpTool for CtxKnowledgeTool {
              action=recall query='X' retrieves it (bare recall lists recent facts). action=status shows all categories.\n\
 action=consolidate imports latest session if present, runs lifecycle, then frees 25% history/patterns capacity.\n\
              action=gotcha trigger='X' resolution='Y' for known pitfalls.\n\
+             action=decisions [path=P|symbol=S] lists project decisions (.leanctx/decisions) in scope.\n\
              mode=semantic|exact for recall. category groups related facts.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "remember|recall|search|pattern|gotcha|relate|relations|consolidate|restore|status|timeline|rooms|wakeup|remove|export|import (also: feedback, unrelate, relations_diagram, health, lifecycle_report, policy, embeddings_*; changes query=<lsn>|session, repin, coverage)"
+                        "description": "remember|recall|search|pattern|gotcha|decisions|relate|relations|consolidate|restore|status|timeline|rooms|wakeup|remove|export|import (also: feedback, unrelate, relations_diagram, health, lifecycle_report, policy, embeddings_*; changes query=<lsn>|session, repin, coverage)"
                     },
                     "trigger": { "type": "string", "description": "gotcha trigger pattern" },
                     "resolution": { "type": "string", "description": "gotcha resolution/fix" },
@@ -57,7 +58,8 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     "limit": { "type": "number", "description": "restore: max items to recover (default 50)" },
                     "dry_run": { "type": "boolean", "description": "consolidate: preview imports/reclaim without writing" },
                     "format": { "type": "string", "description": "export: json|okf (okf = portable Markdown bundle)" },
-                    "path": { "type": "string", "description": "export/import: bundle directory (OKF) or file path" },
+                    "path": { "type": "string", "description": "export/import: bundle directory (OKF) or file path; decisions: file whose in-scope decisions to list" },
+                    "symbol": { "type": "string", "description": "decisions: symbol (name or path::name) whose decisions to list" },
                     "merge": { "type": "string", "description": "import: replace|append|skip-existing (default skip-existing)" }
                 },
                 "allOf": [
@@ -129,6 +131,16 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                 ("unknown".to_string(), ctx.project_root.clone())
             }
         };
+
+        // Project decisions (`.leanctx/decisions/*.toml`): read-only query.
+        if action == "decisions" {
+            let text = lean_ctx::core::decisions::query_text(
+                std::path::Path::new(&project_root),
+                get_str(args, "path").as_deref(),
+                get_str(args, "symbol").as_deref(),
+            );
+            return Ok(text_output(&action, text));
+        }
 
         if action == "gotcha" {
             let trigger = get_str(args, "trigger").unwrap_or_default();

@@ -17,8 +17,8 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::core::audit_trail::{self, AuditEntry};
-use crate::core::savings_ledger::{self, SavingsEvent};
+use crate::core::audit_trail;
+use crate::core::savings_ledger;
 use crate::core::security_events::{SecurityCounts, parse_action};
 use crate::core::wrapped::format_tokens;
 
@@ -118,21 +118,14 @@ pub fn build_scoped(
     live: Option<ValueSnapshot>,
     scope: Option<&savings_ledger::ProjectScope>,
 ) -> Proof {
-    let ledger_verify = ledger_path.map_or_else(savings_ledger::VerifyResult::empty, |p| {
-        savings_ledger::store::verify(p)
-    });
-    let events: Vec<SavingsEvent> = ledger_path
-        .map(savings_ledger::store::load)
-        .unwrap_or_default();
-
     let mut proof = Proof {
         session_id: session.map(str::to_string),
         ledger: ChainCheck {
             name: "savings ledger",
             path: ledger_path.map(|p| p.display().to_string()),
-            entries: ledger_verify.total.max(events.len()),
-            intact: ledger_verify.valid,
-            first_invalid_at: ledger_verify.first_invalid_at,
+            entries: 0,
+            intact: true,
+            first_invalid_at: None,
         },
         audit: ChainCheck {
             name: "audit trail",
@@ -151,33 +144,38 @@ pub fn build_scoped(
         active_days: BTreeSet::new(),
     };
 
-    for ev in &events {
-        if !in_session(ev.session_id.as_deref(), session)
-            || scope.is_some_and(|scope| !scope.holds_event(ev))
-        {
-            continue;
-        }
-        if ev.saved_tokens == 0 && ev.bounce_adjustment == 0 {
-            continue;
-        }
-        proof.tokens_baseline = proof.tokens_baseline.saturating_add(ev.baseline_tokens);
-        proof.tokens_saved = proof.tokens_saved.saturating_add(ev.saved_tokens);
-        proof.tokens_bounced = proof.tokens_bounced.saturating_add(ev.bounce_adjustment);
-        proof.ledger_evidence.push(&ev.entry_hash);
-        if let Some(day) = ev.ts.get(..10) {
-            proof.active_days.insert(day.to_string());
-        }
+    // One streaming pass checks the chain and sums the events (#2240): the
+    // ledger is never held in memory.
+    if let Some(path) = ledger_path {
+        let (verify, visited) = savings_ledger::store::verify_each(path, |ev| {
+            if !in_session(ev.session_id.as_deref(), session)
+                || scope.is_some_and(|scope| !scope.holds_event(ev))
+                || (ev.saved_tokens == 0 && ev.bounce_adjustment == 0)
+            {
+                return;
+            }
+            proof.tokens_baseline = proof.tokens_baseline.saturating_add(ev.baseline_tokens);
+            proof.tokens_saved = proof.tokens_saved.saturating_add(ev.saved_tokens);
+            proof.tokens_bounced = proof.tokens_bounced.saturating_add(ev.bounce_adjustment);
+            proof.ledger_evidence.push(&ev.entry_hash);
+            if let Some(day) = ev.ts.get(..10) {
+                proof.active_days.insert(day.to_string());
+            }
+        });
+        proof.ledger.entries = verify.total.max(visited);
+        proof.ledger.intact = verify.valid;
+        proof.ledger.first_invalid_at = verify.first_invalid_at;
     }
 
     if let Some(path) = trail_path {
         // The lifetime proof over an intact chain comes from the verifier's
         // (incremental) state; only a session view or a broken chain reads
-        // every entry again.
+        // the entries again.
         let (verify, evidence) = audit_trail::verified_security_at(path);
+        proof.audit.entries = verify.total_entries;
+        proof.audit.intact = verify.valid;
+        proof.audit.first_invalid_at = verify.first_invalid_at;
         if let (None, None, Some(evidence)) = (session, scope, evidence) {
-            proof.audit.entries = verify.total_entries;
-            proof.audit.intact = verify.valid;
-            proof.audit.first_invalid_at = verify.first_invalid_at;
             proof.security = evidence.counts;
             proof.audit_evidence = Evidence {
                 entries: evidence.entries,
@@ -186,25 +184,56 @@ pub fn build_scoped(
             };
             return proof;
         }
-        let entries: Vec<AuditEntry> = audit_trail::load_all_at(path);
-        proof.audit.entries = verify.total_entries.max(entries.len());
-        proof.audit.intact = verify.valid;
-        proof.audit.first_invalid_at = verify.first_invalid_at;
-        for entry in &entries {
+        // A session's entries are not older than the session and carry its
+        // id in the hashed action: segments sealed before it started and
+        // lines without its id cannot hold one of them (#2240).
+        let since = session.and_then(session_started_at);
+        let needle = session.filter(|id| appears_verbatim_in_json(id));
+        let visited = audit_trail::for_each_entry_at(path, since, needle, |entry| {
             let Some((kind, n, entry_session)) = entry.action.as_deref().and_then(parse_action)
             else {
-                continue;
+                return;
             };
             if !in_session(entry_session, session)
                 || scope.is_some_and(|scope| !scope.holds_session(entry_session))
             {
-                continue;
+                return;
             }
             proof.security.add(kind, n);
             proof.audit_evidence.push(&entry.entry_hash);
+        });
+        if since.is_none() && needle.is_none() {
+            proof.audit.entries = proof.audit.entries.max(visited);
+        } else if !verify.valid {
+            // A broken or unreadable chain reports every entry still on disk,
+            // as the full read did: rare, so it may read the trail once more.
+            let all = audit_trail::for_each_entry_at(path, None, None, |_| {});
+            proof.audit.entries = proof.audit.entries.max(all);
         }
     }
     proof
+}
+
+/// Slack before an engine session's start time (UTC, from its id) within
+/// which the audit trail is still read for it, against clock steps.
+const SESSION_START_SLACK_HOURS: i64 = 24;
+
+/// When the engine session `id` (`YYYYMMDD-HHMMSS…`, UTC; see
+/// `generate_session_id`) started, less [`SESSION_START_SLACK_HOURS`].
+/// `None` for an id in another format: then every segment is read.
+fn session_started_at(id: &str) -> Option<DateTime<Utc>> {
+    let stamp = id.get(..15)?;
+    let started = chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%d-%H%M%S").ok()?;
+    Some(started.and_utc() - chrono::Duration::hours(SESSION_START_SLACK_HOURS))
+}
+
+/// Whether `text` is written as-is inside a JSON string, so a line holding
+/// it in a field must contain it byte for byte.
+fn appears_verbatim_in_json(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .chars()
+            .all(|c| c.is_ascii_graphic() && c != '"' && c != '\\' && c != '/')
 }
 
 /// The proof over the local chains. `session = None` and `lifetime = false`
@@ -429,6 +458,7 @@ pub fn render(proof: &Proof, style: Style) -> String {
 mod tests {
     use super::*;
     use crate::core::audit_trail::{AuditEntryData, AuditEventType};
+    use crate::core::savings_ledger::SavingsEvent;
 
     fn ledger_event(saved: u64, session: Option<&str>) -> SavingsEvent {
         let mut json = serde_json::json!({
@@ -502,6 +532,78 @@ mod tests {
         assert_eq!(proof.audit_evidence.entries, 1);
         assert_eq!(proof.ledger.entries, 3);
         assert_eq!(proof.audit.entries, 3);
+    }
+
+    /// An engine session id carries its UTC start: the session view reads
+    /// only what was sealed after it (less a day of slack) and still counts
+    /// every entry of the session (#2240).
+    #[test]
+    fn engine_session_view_counts_the_same_as_a_full_read() {
+        let (_dir, ledger, trail) = fixture();
+        let id = crate::core::session::SessionState::new().id;
+        savings_ledger::store::append(&ledger, ledger_event(70, Some(&id))).unwrap();
+        security(&trail, &format!("secret_redacted:3|session={id}"));
+        security(&trail, &format!("shell_blocked:1|session={id}x"));
+
+        let proof = build_from(Some(&ledger), Some(&trail), Some(&id), None);
+        assert!(!proof.tampered());
+        assert_eq!(proof.tokens_saved, 70);
+        assert_eq!(proof.ledger_evidence.entries, 1);
+        assert_eq!(proof.ledger.entries, 4);
+        assert_eq!(proof.security.secrets_redacted, 3);
+        assert_eq!(
+            proof.security.shell_blocked, 0,
+            "a longer id is another session"
+        );
+        assert_eq!(proof.audit_evidence.entries, 1);
+        assert_eq!(proof.audit.entries, 5);
+    }
+
+    #[test]
+    fn session_start_comes_from_an_engine_id_less_the_slack() {
+        let started = session_started_at("20261111-195640u478865p2526s0").unwrap();
+        assert_eq!(
+            started,
+            "2026-11-10T19:56:40Z".parse::<DateTime<Utc>>().unwrap()
+        );
+        assert_eq!(
+            session_started_at("20261111-195640-478865-2526").map(|t| t.to_rfc3339()),
+            Some("2026-11-10T19:56:40+00:00".into()),
+            "the legacy id format"
+        );
+        assert_eq!(session_started_at("s1"), None);
+        assert_eq!(session_started_at("claude-7f3e-…"), None);
+    }
+
+    #[test]
+    fn only_ids_json_leaves_unescaped_filter_lines() {
+        assert!(appears_verbatim_in_json("20261111-195640u478865p2526s0"));
+        assert!(!appears_verbatim_in_json(""));
+        for escaped in ["a\"b", "a\\b", "a/b", "a b", "naïve"] {
+            assert!(!appears_verbatim_in_json(escaped), "{escaped}");
+        }
+    }
+
+    /// The streaming pass reports the same chain check as `verify` and still
+    /// sums the events past a break, like the numbers `load` returned.
+    #[test]
+    fn a_broken_ledger_is_flagged_and_still_summed() {
+        let (_dir, ledger, trail) = fixture();
+        let text = std::fs::read_to_string(&ledger).unwrap();
+        std::fs::write(
+            &ledger,
+            text.replacen("\"saved_tokens\":500", "\"saved_tokens\":900", 1),
+        )
+        .unwrap();
+        let expected = savings_ledger::store::verify(&ledger);
+        assert!(!expected.valid);
+
+        let proof = build_from(Some(&ledger), Some(&trail), None, None);
+        assert!(proof.tampered());
+        assert!(!proof.ledger.intact);
+        assert_eq!(proof.ledger.first_invalid_at, expected.first_invalid_at);
+        assert_eq!(proof.ledger.entries, 3);
+        assert_eq!(proof.tokens_saved, 1_000 + 900 + 250);
     }
 
     /// A project's proof counts the events recorded in its folders or its
@@ -583,6 +685,28 @@ mod tests {
         let proof = build_from(Some(&ledger), Some(&trail), None, None);
         assert!(proof.tampered());
         assert!(!proof.audit.intact);
+    }
+
+    /// A session view of a broken trail reports every entry on disk, as the
+    /// lifetime view and the full read before #2240 did, not the break index.
+    #[test]
+    fn a_session_view_of_a_tampered_trail_counts_every_entry() {
+        let (_dir, ledger, trail) = fixture();
+        let raw = std::fs::read_to_string(&trail).unwrap();
+        std::fs::write(
+            &trail,
+            raw.replacen("secret_redacted:2", "secret_redacted:9", 1),
+        )
+        .unwrap();
+        let lifetime = build_from(Some(&ledger), Some(&trail), None, None);
+        let session = build_from(Some(&ledger), Some(&trail), Some("s2"), None);
+        assert!(!session.audit.intact);
+        assert_eq!(
+            session.audit.first_invalid_at,
+            lifetime.audit.first_invalid_at
+        );
+        assert_eq!(session.audit.entries, lifetime.audit.entries);
+        assert_eq!(session.audit.entries, 3);
     }
 
     #[test]

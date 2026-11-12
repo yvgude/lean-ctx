@@ -53,8 +53,17 @@ impl McpTool for CtxEditTool {
 }
 
 /// `ctx_edit`'s write path; `ctx_patch replace_unique` delegates here with
-/// `diff_artifact` set for a host that draws the diff.
+/// `diff_artifact` set for a host that draws the diff. Writes check unit
+/// claims ([`crate::tools::claims_gate`]).
 pub(crate) fn handle_edit(
+    args: &Map<String, Value>,
+    ctx: &ToolContext,
+    diff_artifact: bool,
+) -> Result<ToolOutput, ErrorData> {
+    crate::tools::claims_gate::scoped(ctx, || handle_edit_scoped(args, ctx, diff_artifact))
+}
+
+fn handle_edit_scoped(
     args: &Map<String, Value>,
     ctx: &ToolContext,
     diff_artifact: bool,

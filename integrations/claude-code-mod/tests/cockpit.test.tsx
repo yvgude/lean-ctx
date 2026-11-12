@@ -114,3 +114,51 @@ test("a turn line without lean-ctx work stays the engine’s", async ($, on) => 
   expect(await ui.find({ type: "Text", text: "engine turn line" })).toBeDefined();
   await ui.unmount();
 });
+
+// GitHub #2240: every session (daemon spares included) re-verified both hash
+// chains every five minutes, on a large trail one pinned core per session.
+const RUN_OK = { exitCode: 0, stderr: "", isStdoutTruncated: false, isStderrTruncated: false };
+
+// Starts an interactive session whose `lean-ctx value` answers `answer()`;
+// resolves the argv of every such run, in order.
+async function startSession($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], answer: () => string): Promise<string[][]> {
+  const runs: string[][] = [];
+  on("session.start", () => ({ cwd: "/work" }));
+  on("command.register", ($, e) => ({ value: { command: e.name } }));
+  on("ui.status", () => ({ value: undefined }));
+  on("ui.open", () => ({ value: { isPlaced: true as const } }));
+  on("process.run", ($, e) => {
+    if (e.argv[1] !== "value") return { value: { ...RUN_OK, exitCode: 1, stdout: "" } };
+    runs.push([...e.argv]);
+    return { value: { ...RUN_OK, stdout: answer() } };
+  });
+  await $.session.start({ surface: "terminal", isInteractive: true, cwd: "/work" });
+  return runs;
+}
+
+test("a session whose sidebar is never drawn never re-verifies the chains", async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 });
+  const runs = await startSession($, on, () => "{}");
+  await clock.advance(30 * 60_000);
+  expect(runs).toEqual([]);
+});
+
+test("a drawn sidebar proves shortly after its first drawing and on the clock", async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 });
+  const runs = await startSession($, on, () => JSON.stringify({ ledger: { entries: 1, intact: true }, audit: { entries: 1, intact: true } }));
+  await (await $.ui.mount({ ...PANE, surface: "terminal" })).unmount();
+  await clock.advance(5_000);
+  expect(runs.length).toBe(1);
+  for (let minute = 0; minute < 10; minute++) await clock.advance(60_000);
+  expect(runs.length).toBe(3);
+});
+
+test("a failing proof backs off instead of running every five minutes", async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 });
+  const runs = await startSession($, on, () => "not json");
+  await (await $.ui.mount({ ...PANE, surface: "terminal" })).unmount();
+  // Runs at 0:04, 10:00 and 20:00 (backoff 5, 10, 20 min) instead of five times;
+  // a minute at a time, as the animation frames tick while a proof is shown.
+  for (let minute = 0; minute <= 20; minute++) await clock.advance(60_000);
+  expect(runs.length).toBe(3);
+});

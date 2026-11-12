@@ -104,47 +104,53 @@ impl McpTool for CtxPatchTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        let inferred = infer_replace_unique(args);
-        let args = inferred.as_ref().unwrap_or(args);
-
-        // replace_symbol is a whole-symbol rewrite — delegate to the LSP/IDE-aware
-        // ctx_refactor so there is one symbol-edit implementation (epic #1008).
-        if crate::tools::ctx_patch::is_replace_symbol(args) {
-            return delegate_replace_symbol(args, ctx);
-        }
-
-        if get_str(args, "op").as_deref() == Some("replace_unique") {
-            return delegate_replace_unique(args, ctx);
-        }
-
-        // #825: replace_all short-circuits before anchor parsing.
-        if get_str(args, "op").as_deref() == Some("replace_all") {
-            return handle_replace_all(args, ctx);
-        }
-
-        // #1088: replace_unique/replace_symbol are allowed inside ops[]. Split
-        // the batch into runs: each delegated op reuses its single-op write
-        // path; consecutive anchored ops keep shared-preimage batch semantics.
-        if let Some(arr) = args.get("ops").and_then(Value::as_array) {
-            // GH #1433: pre-validate before any ops are applied.
-            for (i, v) in arr.iter().enumerate() {
-                if let Some(kind) = is_unbatchable_op(v) {
-                    return Err(ErrorData::invalid_params(
-                        format!(
-                            "ops[{i}]: {kind} cannot be batched in ops[] \
-                             — send it as a separate top-level ctx_patch call"
-                        ),
-                        None,
-                    ));
-                }
-            }
-            if arr.iter().any(|v| delegated_op_kind(v).is_some()) {
-                return handle_mixed_batch(args, arr, ctx);
-            }
-        }
-
-        handle_anchored(args, ctx)
+        // Unit claims (A-claims): every write below checks other agents'
+        // claims on the units it touches and claims them for this agent.
+        crate::tools::claims_gate::scoped(ctx, || handle_patch(args, ctx))
     }
+}
+
+fn handle_patch(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
+    let inferred = infer_replace_unique(args);
+    let args = inferred.as_ref().unwrap_or(args);
+
+    // replace_symbol is a whole-symbol rewrite — delegate to the LSP/IDE-aware
+    // ctx_refactor so there is one symbol-edit implementation (epic #1008).
+    if crate::tools::ctx_patch::is_replace_symbol(args) {
+        return delegate_replace_symbol(args, ctx);
+    }
+
+    if get_str(args, "op").as_deref() == Some("replace_unique") {
+        return delegate_replace_unique(args, ctx);
+    }
+
+    // #825: replace_all short-circuits before anchor parsing.
+    if get_str(args, "op").as_deref() == Some("replace_all") {
+        return handle_replace_all(args, ctx);
+    }
+
+    // #1088: replace_unique/replace_symbol are allowed inside ops[]. Split
+    // the batch into runs: each delegated op reuses its single-op write
+    // path; consecutive anchored ops keep shared-preimage batch semantics.
+    if let Some(arr) = args.get("ops").and_then(Value::as_array) {
+        // GH #1433: pre-validate before any ops are applied.
+        for (i, v) in arr.iter().enumerate() {
+            if let Some(kind) = is_unbatchable_op(v) {
+                return Err(ErrorData::invalid_params(
+                    format!(
+                        "ops[{i}]: {kind} cannot be batched in ops[] \
+                             — send it as a separate top-level ctx_patch call"
+                    ),
+                    None,
+                ));
+            }
+        }
+        if arr.iter().any(|v| delegated_op_kind(v).is_some()) {
+            return handle_mixed_batch(args, arr, ctx);
+        }
+    }
+
+    handle_anchored(args, ctx)
 }
 
 /// Anchored pipeline: a single anchored op or an ops[] batch of anchored edits
@@ -925,6 +931,7 @@ fn replace_all_write(
     new_content: &str,
 ) -> Result<(), String> {
     let path = std::path::Path::new(path);
+    crate::tools::claims_gate::before_write(path, Some(&pre.text), new_content)?;
     crate::tools::edit_io::ensure_preimage_still_matches(
         path,
         &pre.fp,

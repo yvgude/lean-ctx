@@ -20,6 +20,7 @@ mod admission;
 mod driver;
 pub(crate) mod enterprise_headers;
 mod headers;
+mod origin_gate;
 mod prepare;
 pub mod trace_id;
 mod transport;
@@ -487,6 +488,36 @@ async fn prepare_upstream_request(
         upstream_base,
         route: expected_route.as_ref(),
     };
+    // mz14: model origin / host country / vendor-direct CN, on the expected
+    // destination before admission does any work (rechecked on the final
+    // destination below).
+    let registry_id = parts
+        .extensions
+        .get::<super::providers::RegistryProviderId>()
+        .map(|r| r.id.clone());
+    if let Some(refused) = origin_gate::admit(
+        origin_gate::Destination {
+            base: expected_route
+                .as_ref()
+                .and_then(|r| r.upstream_base.as_deref())
+                .unwrap_or(upstream_base),
+            model: expected_route
+                .as_ref()
+                .map(|r| r.model.as_str())
+                .or_else(|| {
+                    original_parsed
+                        .as_ref()
+                        .and_then(|doc| doc.get("model"))
+                        .and_then(serde_json::Value::as_str)
+                }),
+            registry_id: registry_id.as_deref(),
+        },
+        provider_label,
+        caller_bytes,
+        &trace_id,
+    ) {
+        return Ok(refused);
+    }
     // The caller's path, query and relayed headers leave with the body:
     // admitted first (AP10-C2).
     if let Err(refusal) = admission::admit_target(&parts, original_parsed.as_ref(), leaving).await {
@@ -664,6 +695,26 @@ async fn prepare_upstream_request(
             caller_bytes,
             &trace_id,
         ));
+    }
+    if let Some(refused) = origin_gate::admit(
+        origin_gate::Destination {
+            base: prepared
+                .route
+                .as_ref()
+                .and_then(|r| r.upstream_base.as_deref())
+                .unwrap_or(upstream_base),
+            model: prepared
+                .parsed
+                .as_ref()
+                .and_then(|doc| doc.get("model"))
+                .and_then(serde_json::Value::as_str),
+            registry_id: registry_id.as_deref(),
+        },
+        provider_label,
+        caller_bytes,
+        &trace_id,
+    ) {
+        return Ok(refused);
     }
     apply_ocla_budget_admission(&parts, prepared.body.len())?;
     let original_size = prepared.original_size;

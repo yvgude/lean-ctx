@@ -220,6 +220,37 @@ pub(super) fn event_array<'a>(
     }
 }
 
+/// Native write tools routed to `hook write-guard`, per host dialect: a
+/// native write must not reconfigure LeanCTX or the host's hooks. Standard
+/// and governor setups register the same entry.
+pub(crate) const CLAUDE_WRITE_MATCHER: &str = "Write|Edit|MultiEdit|NotebookEdit";
+pub(crate) const CODEX_WRITE_MATCHER: &str = "apply_patch|Edit|Write";
+pub(crate) const CURSOR_WRITE_MATCHER: &str = "Write|Delete|Edit|StrReplace|MultiEdit|EditNotebook";
+pub(crate) const GEMINI_WRITE_MATCHER: &str = "write_file|replace|edit";
+
+pub(super) fn write_guard_command() -> String {
+    format!(
+        "{} hook write-guard",
+        super::super::resolve_hook_command_binary()
+    )
+}
+
+/// Claude-dialect: exactly one `hook write-guard` entry under `matcher` in
+/// `hooks[event]`.
+pub(super) fn ensure_write_guard(
+    hooks: &mut serde_json::Map<String, serde_json::Value>,
+    event: &str,
+    matcher: &str,
+    timeout: Option<u64>,
+) {
+    ensure_group_hook(
+        event_array(hooks, event),
+        matcher,
+        &write_guard_command(),
+        timeout,
+    );
+}
+
 /// Drop empty event arrays.
 pub(super) fn prune_empty_events(hooks: &mut serde_json::Map<String, serde_json::Value>) {
     hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));

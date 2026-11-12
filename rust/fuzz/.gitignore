@@ -1,0 +1,6 @@
+target/
+corpus/
+artifacts/
+coverage/
+# Resolved locally (seed it from ../Cargo.lock to match the workspace pins).
+Cargo.lock

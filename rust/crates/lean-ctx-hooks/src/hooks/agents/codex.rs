@@ -600,7 +600,7 @@ mod tests {
         let pre_tool_use = input["hooks"]["PreToolUse"]
             .as_array()
             .expect("PreToolUse array should remain");
-        assert_eq!(pre_tool_use.len(), 2, "custom hook should be preserved");
+        assert_eq!(pre_tool_use.len(), 3, "custom hook should be preserved");
         assert_eq!(
             pre_tool_use[0]["hooks"][0]["command"].as_str(),
             Some("echo keep-me")
@@ -613,6 +613,15 @@ mod tests {
             pre_tool_use[1]["matcher"].as_str(),
             Some("Bash|Read|Grep|Glob"),
             "the Codex installer must register native file tool coverage"
+        );
+        assert_eq!(
+            pre_tool_use[2]["matcher"].as_str(),
+            Some("apply_patch|Edit|Write"),
+            "the Codex installer must guard native writes"
+        );
+        assert_eq!(
+            pre_tool_use[2]["hooks"][0]["command"].as_str(),
+            Some("lean-ctx hook write-guard")
         );
         assert_eq!(
             input["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str(),
@@ -708,7 +717,11 @@ mod tests {
             } else {
                 "/custom/guard hook codex-session-start"
             };
-            assert_eq!(commands, vec![custom, guard, current]);
+            let mut expected = vec![custom, guard, current];
+            if event == "PreToolUse" {
+                expected.push("/current/lean-ctx hook write-guard");
+            }
+            assert_eq!(commands, expected);
         }
         assert!(!upsert_lean_ctx_codex_hook_entries(
             &mut input, session, pretool

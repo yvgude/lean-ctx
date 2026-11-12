@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# cargo-fuzz targets (W3-08). Deliberately its own workspace: not a member of
+# rust/Cargo.toml, so ordinary builds, tests and Cargo.lock are unaffected.
+# Run from rust/: `cargo +nightly fuzz run shell_tokenizer` (see README.md).
+[package]
+name = "lean-ctx-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+lean-ctx-engine = { path = "..", default-features = false }
+lean-ctx-shell-policy = { path = "../crates/lean-ctx-shell-policy" }
+
+[[bin]]
+name = "shell_tokenizer"
+path = "fuzz_targets/shell_tokenizer.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

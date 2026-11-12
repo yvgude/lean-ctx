@@ -496,13 +496,11 @@ fn deliver(args: &Args, root: &Path, released: String, again: &Again<'_>, headli
         } else {
             std::env::current_dir().unwrap_or_default().join(candidate)
         };
-        let path = match context_bundle::export::destination("ctx_pack", root, &candidate) {
-            Ok(path) => path,
-            Err(err) => cannot_write(output, &err),
-        };
         let document = text_for(Destination::File);
-        if let Err(err) = std::fs::write(path, &document) {
-            cannot_write(output, &err.to_string());
+        if let Err(err) =
+            context_bundle::export::write("ctx_pack", root, &candidate, document.as_bytes())
+        {
+            cannot_write(output, &err);
         }
         crate::cli::common::confirm_written_to_file(document.as_bytes());
         eprint_human(root_text, &format!("{headline} → {output}"));

@@ -93,6 +93,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     super::spec_account::AGENT,
     super::spec_account::SESSION,
     super::spec_account::KNOWLEDGE,
+    super::spec_account::DECISIONS,
     super::spec_account::TASKS,
     super::spec_account::DOCS,
     super::spec_account::STATS,
@@ -156,6 +157,7 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     super::spec_team::INTERNAL_COMPLETE,
     super::spec_team::HIVE,
     super::spec_team::TELEMETRY,
+    super::spec_team::MODELS,
     super::spec_team::DAEMON,
 ];
 #[cfg(test)]

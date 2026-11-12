@@ -225,7 +225,8 @@ fn write_plan_need(f: &mut fmt::Formatter<'_>, need: &PlanNeed) -> fmt::Result {
 }
 
 /// Monthly quotas reset at the start of the next calendar month (UTC).
-pub const MONTHLY_RESOURCES: &[&str] = &["transfer_bytes", "bus_messages"];
+pub const MONTHLY_RESOURCES: &[&str] =
+    &["transfer_bytes", "bus_messages", "model_credit_usd_micros"];
 
 impl Quota {
     /// Whether waiting frees it (a monthly quota, or any 429).

@@ -22,6 +22,11 @@
 //!   installed ([`policy_changed`]); a sync refusal holds only its draft
 //!   (outbox, same wait, also ended by a newer policy) or its vault sync,
 //!   never the other vaults;
+//! - the subscription models gateway (mz6, [`Scope::Models`]): `429
+//!   quota_exceeded` for `model_credit_usd_micros` holds like a monthly
+//!   quota; `402 plan_required` (key `plan:models`, ended by a plan change)
+//!   and `403 policy_denied` hold [`POLICY_HOLD_S`]; the proxy's `leanctx`
+//!   provider answers locally meanwhile ([`models_hold_kind`]);
 //! - other counted quotas (409 `private_vaults`, a slot without
 //!   cool-down): no throttle; the refusal is shown and nothing retries it
 //!   by itself.
@@ -59,6 +64,8 @@ pub enum Scope {
     Tasks,
     /// A new engine registration (`hive connect`).
     Connect,
+    /// The `leanctx` provider's requests to the Hive models gateway (mz6).
+    Models,
 }
 
 impl Scope {
@@ -68,6 +75,7 @@ impl Scope {
             Self::Bus => "bus",
             Self::Tasks => "tasks",
             Self::Connect => "connect",
+            Self::Models => "models",
         }
     }
 }
@@ -80,6 +88,8 @@ fn resource_scopes(resource: &str) -> &'static [Scope] {
         "transfer_bytes" => &[Scope::Sync],
         "bus_messages" => &[Scope::Bus],
         "registered_instances" => &[Scope::Connect],
+        // mz6: the month's model credit, counted by the models gateway.
+        "model_credit_usd_micros" => &[Scope::Models],
         _ => &[],
     }
 }
@@ -197,6 +207,14 @@ pub fn of_error(
                 d.member.as_deref().unwrap_or("unknown"),
                 scope?.as_str()
             ),
+            &[][..],
+            now + chrono::Duration::seconds(POLICY_HOLD_S),
+        ),
+        // A gateway `402 plan_required` (the plan lost the subscription
+        // models): the models path waits like a policy hold; a newer lease
+        // ends it at once ([`plan_changed`]). Elsewhere a 402 sets nothing.
+        HiveError::PlanRequired(_) if scope == Some(Scope::Models) => (
+            "plan:models".to_string(),
             &[][..],
             now + chrono::Duration::seconds(POLICY_HOLD_S),
         ),
@@ -323,6 +341,34 @@ pub fn quota_holds(store: &HiveStore, scope: Scope, now: DateTime<Utc>) -> bool 
         .any(|(k, t)| k.starts_with("quota:") && t.holds(scope) && t.active_at(now))
 }
 
+/// What holds the models path (mz6), for the local answer's status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HoldKind {
+    Quota,
+    Plan,
+    Policy,
+}
+
+/// The kind of the throttle ending last among those holding
+/// [`Scope::Models`] at `now` (a policy hold when none is a quota or plan).
+#[must_use]
+pub fn models_hold_kind(store: &HiveStore, now: DateTime<Utc>) -> HoldKind {
+    read(store)
+        .items
+        .iter()
+        .filter(|(_, t)| t.holds(Scope::Models) && t.active_at(now))
+        .max_by(|a, b| a.1.until.cmp(&b.1.until))
+        .map_or(HoldKind::Policy, |(k, _)| {
+            if k.starts_with("quota:") {
+                HoldKind::Quota
+            } else if k.starts_with("plan:") {
+                HoldKind::Plan
+            } else {
+                HoldKind::Policy
+            }
+        })
+}
+
 /// The quota is back (a successful call, or an answer that shows it):
 /// every quota throttle holding `scope` ends.
 pub fn quota_lifted(store: &HiveStore, scope: Scope) {
@@ -356,10 +402,12 @@ pub fn passed(store: &HiveStore, scope: Scope) {
 }
 
 /// The workspace's plan changed (a newer lease): every quota throttle was
-/// the old plan's answer and ends; policy holds stay.
+/// the old plan's answer and ends, and so does a plan hold of the models
+/// path; policy holds stay.
 pub fn plan_changed(store: &HiveStore) {
-    if read(store).items.keys().any(|k| k.starts_with("quota:")) {
-        let _ = change(store, |t| t.items.retain(|k, _| !k.starts_with("quota:")));
+    let old_plan = |k: &str| k.starts_with("quota:") || k.starts_with("plan:");
+    if read(store).items.keys().any(|k| old_plan(k)) {
+        let _ = change(store, |t| t.items.retain(|k, _| !old_plan(k)));
     }
 }
 

@@ -34,7 +34,7 @@ default-members = [".", "crates/lean-ctx", "crates/lean-ctx-hooks", "crates/lean
 # split upward out of the Engine can sit between the two.
 [package]
 name = "lean-ctx-engine"
-version = "3.12.3"
+version = "3.12.4"
 edition = "2024"
 autobins = false
 # Integration tests are listed below: one binary for the shared ones instead
@@ -47,7 +47,7 @@ homepage = "https://leanctx.com"
 readme = "README.md"
 keywords = ["context-gateway", "mcp", "llm", "ai-agents", "context"]
 categories = ["development-tools"]
-exclude = ["examples/", "tests/", "crates/"]
+exclude = ["examples/", "tests/", "crates/", "fuzz/"]
 
 [lib]
 name = "lean_ctx"
@@ -172,9 +172,9 @@ grammar-julia = ["tree-sitter", "lean-ctx-syntax/grammar-julia"]
 wasm = ["dep:wasmi"]
 
 [dependencies]
-lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "6.0.0" }
-lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.6.0" }
-lean-ctx-workgraph = { path = "crates/lean-ctx-workgraph", version = "0.2.0" }
+lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "7.0.0" }
+lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.7.0" }
+lean-ctx-workgraph = { path = "crates/lean-ctx-workgraph", version = "0.3.0" }
 lean-ctx-patterns = { path = "crates/lean-ctx-patterns", version = "0.1.0" }
 lean-ctx-compress = { path = "crates/lean-ctx-compress", version = "0.1.0" }
 lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.2.0" }

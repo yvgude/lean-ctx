@@ -74,6 +74,9 @@ RUST_INPUTS = (
 )
 
 
+CLIPPY_LIB = r'cargo +stable clippy --locked --all-features --config profile.clippy-lib.inherits=\"dev\" --profile clippy-lib -- -D warnings'
+
+
 class GitLabRuntimeGateTests(unittest.TestCase):
     def setUp(self):
         self.config = (ROOT / "ci/gitlab-ci.yml").read_text(encoding="utf-8")
@@ -152,6 +155,8 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertIn("cargo-nextest", self.job)
         nextest_toml = (ROOT / "rust/.config/nextest.toml").read_text(encoding="utf-8")
         ci = nextest_toml[nextest_toml.index("[profile.ci]"):]
+        # v4-runtime keeps one test thread per granted CPU (owner 08.11.);
+        # owner 12.11. lets mr-quick alone pass --test-threads 8.
         for setting in ('test-threads = "num-cpus"', "retries = 0", "fail-fast = false",
                         'slow-timeout = { period = "60s", terminate-after = 5 }',
                         '[profile.ci.junit]\npath = "junit.xml"'):
@@ -160,7 +165,7 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertNotRegex(nextest_toml, r"(?m)^retries = [1-9]")
         self.assertIn("runtime-evidence/tests.log", self.job)
         self.assertIn("runtime-evidence/test-features.txt", self.job)
-        self.assertIn("cargo +stable clippy --locked --all-features -- -D warnings", self.job)
+        self.assertIn(CLIPPY_LIB, self.job)
         self.assertIn('CARGO_BUILD_JOBS: "12"', self.job)
 
     def test_no_gate_runs_twice(self):
@@ -460,7 +465,7 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         # Format is rust-fmt's, which mr-lint needs (W1-08: no gate twice).
         self.assertNotIn("cargo +stable fmt", self.lint)
         # Same clippy invocation as the full suite, so the cache applies.
-        self.assertIn("cargo +stable clippy --locked --all-features -- -D warnings", self.lint)
+        self.assertIn(CLIPPY_LIB, self.lint)
         self.assertNotIn("mr_quick.py", self.lint)
         self.assertNotIn("nextest", self.lint)
         self.assertIn('GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --', self.lint)
@@ -487,7 +492,11 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertIn('"cargo", "+stable", "nextest", *args, "--locked", "--workspace",\n'
                       '            "--features", features]', script)
         self.assertIn('nextest_cmd(features, "list", "--message-format", "json")', script)
-        self.assertIn('nextest_cmd(features, "run", "--profile", NEXTEST_PROFILE, "--no-fail-fast")', script)
+        self.assertIn('nextest_cmd(features, "run", "--profile", NEXTEST_PROFILE, "--no-fail-fast",\n'
+                      '                      "--test-threads", str(MR_QUICK_TEST_THREADS))', script)
+        # Owner 12.11.: mr-quick alone runs 8 test threads on the 6-CPU job
+        # cgroup (replaces the num-cpus rule of 08.11. for mr-quick only).
+        self.assertIn("MR_QUICK_TEST_THREADS = 8\n", script)
         self.assertIn('NEXTEST_PROFILE = "ci"', script)
         self.assertIn('"nextest" / NEXTEST_PROFILE / "junit.xml"', script)
         self.assertNotIn('"--all-features"', script)
@@ -528,8 +537,10 @@ class GitLabRuntimeGateTests(unittest.TestCase):
     def test_persistent_target_stays_outside_the_checkout_and_the_trust_boundary(self):
         # Compiled output persists per runner slot outside the checkout; the
         # last component stays `target` (tests match /target/debug/deps).
-        self.assertIn('    CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/target"\n', self.job)
-        self.assertIn('    CI_TARGET_CAP_GB: "40"\n', self.job)
+        # One target per concurrent build directory (11.11., p5 job 32345:
+        # two concurrent jobs in one target lost each other's test binaries).
+        self.assertIn('    CI_TARGET_DIR: "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/slot-$CI_RUNNER_SHORT_TOKEN-$CI_CONCURRENT_PROJECT_ID/target"\n', self.job)
+        self.assertIn('    CI_TARGET_CAP_GB: "30"\n', self.job)
         self.assertNotIn("CI_TARGET_DIR:", self.quick)
         self.assertNotIn("CI_TARGET_DIR:", self.lint)
         for job in (self.job, self.quick, self.lint):
@@ -543,12 +554,14 @@ class GitLabRuntimeGateTests(unittest.TestCase):
             'test "${CI_BUILDS_DIR:-}" = /builds || {',
             "case \"${CI_PROJECT_PATH_SLUG:-}\" in ''|*[!a-z0-9-]*)",
             "case \"${CI_TARGET_CAP_GB:-}\" in ''|*[!0-9]*)",
-            'ci_target_parent="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG"',
+            "case \"${CI_RUNNER_SHORT_TOKEN:-}\" in ''|*[!A-Za-z0-9_-]*)",
+            "case \"${CI_CONCURRENT_PROJECT_ID:-}\" in ''|*[!0-9]*)",
+            'ci_target_parent="/builds/.ci-cache/$CI_PROJECT_PATH_SLUG/slot-$CI_RUNNER_SHORT_TOKEN-$CI_CONCURRENT_PROJECT_ID"',
             'ci_target="$ci_target_parent/target"',
             'test "${CI_TARGET_DIR:-}" = "$ci_target" || {',
             'case "$ci_target/" in "$CI_PROJECT_DIR"/*) echo "target: inside the checkout" >&2; exit 1;; esac',
             'if test -L /builds; then',
-            'for ci_dir in /builds/.ci-cache "$ci_target_parent"; do',
+            'for ci_dir in /builds/.ci-cache "/builds/.ci-cache/$CI_PROJECT_PATH_SLUG" "$ci_target_parent"; do',
             'if test -L "$ci_dir"; then echo "target: $ci_dir is a symlink" >&2; exit 1; fi',
             'if test "$(stat -c %u -- "$ci_dir")" != 0; then',
             'chown -h root:root -- "$ci_dir"',
@@ -560,8 +573,9 @@ class GitLabRuntimeGateTests(unittest.TestCase):
             self.assertIn(check, self.job)
         # Size cap and toolchain stamp (written by root beside the target,
         # where job code cannot write) wipe without following links.
-        self.assertIn('du -sx --block-size=1G -- "$ci_target"', self.job)
-        self.assertIn('if test "$ci_target_gb" -gt "$CI_TARGET_CAP_GB"; then', self.job)
+        self.assertIn('du -sx --block-size=1G -- "$ci_target" 2>/dev/null || test "$?" = 1;', self.job)
+        self.assertIn('elif test "$ci_target_gb" -gt "$CI_TARGET_CAP_GB"; then', self.job)
+        self.assertIn('ci_target_state="wiped (size unknown)"', self.job)
         self.assertIn('ci_target_state="wiped ($ci_target_gb GB > cap)"', self.job)
         self.assertIn('"$(rustc +stable -vV)" | sha256sum', self.job)
         self.assertIn('printf \'%s\\n\' "$ci_stamp" > "$ci_target_parent/target.stamp"', self.job)
@@ -577,6 +591,46 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         # pruned, and the persistent target is not inside the scanned tree.
         self.assertNotIn('-path "/builds/.ci-cache', self.job)
 
+
+    def test_concurrent_jobs_of_a_slot_never_wipe_a_target_in_use(self):
+        # 11.11. (p5 jobs 32317/32318/32321): jobs of one slot share the
+        # target. Each holds a shared lock for the whole job; only a job that
+        # gets the lock exclusively without waiting wipes or cleans up.
+        lock = 'ci_target_lock="$ci_target_parent/target.lock"'
+        self.assertIn(lock, self.job)
+        self.assertIn('if test -L "$ci_target_lock"; then echo "target: $ci_target_lock is a symlink" >&2; exit 1; fi', self.job)
+        self.assertIn('test "$(stat -c %u -- "$ci_target_lock")" != 0', self.job)
+        self.assertIn('chmod 0600 -- "$ci_target_lock"', self.job)
+        exclusive = self.job.index("if flock -xn 8; then")
+        busy = self.job.index('ci_target_state="reused (slot busy: no wipe)"')
+        shared = self.job.index('flock -s -w 1800 9 || {')
+        self.assertLess(self.job.index('exec 8>>"$ci_target_lock"'), exclusive)
+        # Every removal in the slot happens under the exclusive lock.
+        for removal in (
+            'wiped*) rm -rf --one-file-system -- "$ci_target";;',
+            'rm -rf --one-file-system -- "$ci_target/nextest"',
+            'du -sx --block-size=1G',
+            'rm -f -- "$ci_target_parent/target.stamp"',
+            'for ci_old in "$ci_target_parent/overlay" "$ci_target_parent/overlay.base" "$ci_target_parent"/overlay.[0-9]*; do',
+        ):
+            self.assertEqual(self.job.count(removal), 1, removal)
+            self.assertLess(exclusive, self.job.index(removal))
+            self.assertLess(self.job.index(removal), busy)
+        # The exclusive fd is closed before the shared lock is taken, and the
+        # target is (re)validated only after that.
+        self.assertLess(busy, self.job.index("exec 8>&-"))
+        self.assertLess(self.job.index("exec 8>&-"), self.job.index('exec 9>>"$ci_target_lock"'))
+        self.assertLess(self.job.index('exec 9>>"$ci_target_lock"'), shared)
+        self.assertLess(shared, self.job.index('install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_target"'))
+        self.assertLess(shared, self.job.index('mount -t overlay ci-warm-target'))
+        self.assertIn(" flock ", self.job)  # the image must carry it
+        # The lock stays held in script: each Rust job checks fd 9 first.
+        fd_check = '{ : >&9; } 2>/dev/null || { echo "target: the slot lock is not held in script" >&2; exit 1; }'
+        for job in (self.job, self.quick, self.lint):
+            self.assertIn(fd_check, job)
+            self.assertLess(job.index(fd_check), job.index("runuser --user ci-runner --preserve-environment"))
+        self.assertNotIn("exec 9>&-", self.config)
+        self.assertNotIn("flock -u 9", self.config)
 
     def test_warm_farm_is_written_by_protected_pushes_and_read_only_elsewhere(self):
         # W4-04: one host farm, root-owned; the stamp opt-out for every job.
@@ -597,8 +651,24 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertIn('if ! mount -o remount,bind,ro "$ci_farm"; then', self.job)
         self.assertIn('touch "$ci_farm/.ci-write-probe" 2>/dev/null; then echo "warm-farm: $ci_farm is still writable" >&2; exit 1; fi', self.job)
         self.assertLess(self.job.index('mount -o remount,bind,ro "$ci_farm"'), mount)
-        self.assertIn('rm -rf --one-file-system -- "$ci_target_parent/overlay"', self.job)
-        self.assertIn('install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_target_parent/overlay/upper"', self.job)
+        # Each job its own upper layer (a concurrent job of the slot has its own).
+        self.assertIn('ci_overlay="$ci_target_parent/overlay.$CI_JOB_ID"', self.job)
+        self.assertIn('rm -rf --one-file-system -- "$ci_overlay"', self.job)
+        self.assertIn('install -d -m 0755 -o ci-runner -g ci-runner -- "$ci_overlay/upper"', self.job)
+        self.assertIn('upperdir=$ci_overlay/upper,workdir=$ci_overlay/work', self.job)
+        # Publish reads this job's own stamp and base, never the slot's shared ones.
+        self.assertIn('--stamp "$(cat -- /run/ci-target/stamp)"', self.job)
+        self.assertIn('--started-file /run/ci-target/stamp', self.job)
+        self.assertIn('printf \'%s\\n\' "${ci_golden##* }" > /run/ci-target/overlay.base', self.job)
+        self.assertNotIn('"$ci_target_parent/overlay.base")"', self.job)
+        # A missed cargo-home cache is seeded from the picked generation's
+        # crates (owner 12.11.), by ci-runner, never over a restored cache.
+        seed = self.job.index('ci_seed="${ci_golden%% *}/.warm-farm-cargo-home"')
+        self.assertLess(self.job.index('> /run/ci-target/overlay.base'), seed)
+        self.assertIn('! test -d "$CI_PROJECT_DIR/rust/target/ci-cargo-home/registry/index"; then', self.job)
+        self.assertIn("runuser --user ci-runner -- /bin/sh -ec 'mkdir -p -- \"$2\" && cp -R --preserve=mode,timestamps"
+                      " -- \"$1/.\" \"$2/\"' sh \"$ci_seed\" \"$CI_PROJECT_DIR/rust/target/ci-cargo-home\"", self.job)
+        self.assertLess(seed, self.job.index('mount --bind "$CI_PROJECT_DIR" "$ci_view/src"'))
         self.assertIn('test "$(stat -c %u -- "$ci_farm")" = 0', self.job)
         self.assertIn('|| { echo "warm-farm: normalize failed" >&2; exit 1; }', self.job)
         # Set up as root, before the target evidence and any job code.
@@ -620,6 +690,39 @@ class GitLabRuntimeGateTests(unittest.TestCase):
         self.assertLess(self.job.index('rc=1; fi; exit "$rc"; }'), self.job.index('mount -o remount,bind,rw "$ci_farm"'))
         self.assertEqual(self.job.count("remount,bind,rw"), 1)
         self.assertEqual(self.job.count('warm_farm.py" publish'), 1)
+
+    def test_a_red_post_merge_run_names_its_suspects(self):
+        # Tiered CI (owner 11.11.): MRs run only affected tests, so a red
+        # post-merge run must point at the merges since the last green one.
+        call = 'postmerge_bisect.py" --repo "$CI_PROJECT_DIR" --farm "${CI_WARM_FARM:-}"'
+        self.assertEqual(self.job.count(call), 1)
+        guard = self.job.index('rc=1; fi; if test "${CI_PIPELINE_SOURCE:-}" = push')
+        self.assertLess(guard, self.job.index(call))
+        self.assertLess(self.job.index(call), self.job.index('exit "$rc"; }'))
+        self.assertIn("runtime-evidence/bisect.txt", self.job)
+
+    def test_every_rust_job_builds_at_fixed_paths(self):
+        # CI-v2 (11.11.): the checkout and slot target paths differ per runner
+        # and slot, so merge-request jobs never matched a warm-farm generation
+        # of the post-merge runner. Every job binds both to fixed paths.
+        self.assertIn("      ci_view=/ci-build\n", self.job)
+        self.assertIn('--project-dir "$ci_view/src" --cargo-home "$ci_view/src/rust/target/ci-cargo-home" --target-dir "$ci_view/target")"', self.job)
+        self.assertNotIn('--project-dir "$CI_PROJECT_DIR" --cargo-home "$CI_PROJECT_DIR/rust/target/ci-cargo-home" --target-dir "$ci_target"', self.job)
+        bind_src = self.job.index('mount --bind "$CI_PROJECT_DIR" "$ci_view/src"')
+        bind_target = self.job.index('mount --bind "$ci_target" "$ci_view/target"')
+        export = self.job.index('export CI_PROJECT_DIR="$ci_view/src" CI_TARGET_DIR="$ci_view/target"')
+        # The overlay is mounted first, so the bind shows the warm target.
+        self.assertLess(self.job.index('mount -t overlay ci-warm-target'), bind_target)
+        self.assertLess(bind_src, export)
+        self.assertLess(bind_target, export)
+        self.assertLess(export, self.job.index("runuser --user ci-runner --preserve-environment"))
+        # Publish records the fixed paths (it reads the exported variables).
+        self.assertLess(export, self.job.index('warm_farm.py" publish'))
+        self.assertIn('--project-dir "$CI_PROJECT_DIR" --cargo-home "$CI_PROJECT_DIR/rust/target/ci-cargo-home" --target-dir "$CI_TARGET_DIR"', self.job)
+        self.assertIn('if test -e "$ci_view" || test -L "$ci_view"; then', self.job)
+        for job in (self.job, self.quick, self.lint):
+            self.assertIn('/ci-build/target/) ;;', job)
+            self.assertNotIn('/builds/.ci-cache/*/target/) ;;', job)
 
     def test_build_scripts_honour_the_git_stamp_opt_out(self):
         for rel in ("rust/build.rs", "rust/crates/lean-ctx/build.rs"):

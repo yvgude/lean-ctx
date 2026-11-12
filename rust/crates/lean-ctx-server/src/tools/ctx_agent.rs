@@ -10,6 +10,8 @@ use lean_ctx::core::ocla::types::{
     AGENT_ENVELOPE_SCHEMA_VERSION, AgentEnvelope, AgentMessageRequest, OclaRequestContext,
 };
 
+#[path = "ctx_agent_claims.rs"]
+mod claims;
 #[path = "ctx_agent_control.rs"]
 mod control;
 #[path = "ctx_agent_lease.rs"]
@@ -57,6 +59,8 @@ pub(crate) const ACTIONS: &[&str] = &[
     "lease_acquire",
     "lease_renew",
     "lease_release",
+    "claims",
+    "plan_claims",
     "send",
     "reply",
     "inbox",
@@ -770,14 +774,36 @@ fn handle_action(
             })
             .and_then(|(_, result)| result)
             {
-                Ok(()) => format!(
-                    "Status updated: {} → {}{}",
-                    agent_id,
-                    new_status,
-                    status_msg.map(|m| format!(" ({m})")).unwrap_or_default()
-                ),
+                Ok(()) => {
+                    // A finished agent edits no more: its unit claims go.
+                    let released = if matches!(new_status, AgentStatus::Finished) {
+                        lean_ctx::core::unit_claims::release_agent(agent_id)
+                    } else {
+                        0
+                    };
+                    format!(
+                        "Status updated: {} → {}{}{}",
+                        agent_id,
+                        new_status,
+                        status_msg.map(|m| format!(" ({m})")).unwrap_or_default(),
+                        if released > 0 {
+                            format!("; released {released} unit claim(s)")
+                        } else {
+                            String::new()
+                        }
+                    )
+                }
                 Err(e) => format!("Status update rejected: {e}"),
             }
+        }
+
+        "claims" => claims::list(project_root),
+
+        "plan_claims" => {
+            let holder = current_agent_id
+                .map(str::to_string)
+                .unwrap_or_else(crate::tools::claims_gate::process_agent);
+            claims::plan(project_root, &holder, message)
         }
 
         "info" => {

@@ -672,6 +672,9 @@ impl McpTool for CtxComposeTool {
                         text
                     }
                 };
+                // Decisions in scope of the files this answer names (#498: stable).
+                let decisions = lean_ctx::core::decisions::suffix_for_compose(Path::new(&path), &text);
+                let text = text + &decisions;
                 let sent = lean_ctx::core::tokens::count_tokens(&text);
 
                 let raw_tokens = estimate_raw_input_tokens(&text, &path);

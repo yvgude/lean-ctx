@@ -91,13 +91,6 @@ fn stripe_key_re() -> &'static Regex {
     static_regex!(r"[sr]k_live_[0-9a-zA-Z]{10,}")
 }
 
-/// A password in the userinfo of any other URL (`https://user:pw@host`).
-fn url_credentials_re() -> &'static Regex {
-    static_regex!(
-        r"(?i)(?:https?|ftps?|sftp|ssh|amqps?|smtps?|ldaps?|wss?|git)://[^\s:/@]+:[^\s@/]+@"
-    )
-}
-
 fn npm_token_re() -> &'static Regex {
     static_regex!(r"npm_[A-Za-z0-9]{10,}")
 }
@@ -118,7 +111,6 @@ const BUILTIN_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
     ("jwt", jwt_re),
     ("slack_token", slack_token_re),
     ("stripe_key", stripe_key_re),
-    ("url_credentials", url_credentials_re),
     ("npm_token", npm_token_re),
 ];
 
@@ -226,20 +218,30 @@ fn collect_matches(
 
     // Same rule as the redactor: a placeholder password or an already
     // redacted URL is no credential, so redacted output never re-matches.
-    for caps in crate::core::redaction::database_url_re().captures_iter(&normalized) {
-        let Some(whole) = caps.get(0) else {
-            continue;
-        };
-        if !crate::core::redaction::database_url_has_credential(&caps)
-            || excluded(excludes, whole.as_str())
-        {
-            continue;
+    // Database URLs and every other URL with userinfo share that test
+    // (GHSA-xmx8-69qv-7f86: `https://user:****@host` stays deliverable).
+    for (name, re) in [
+        ("db_url", crate::core::redaction::database_url_re()),
+        (
+            "url_credentials",
+            crate::core::redaction::url_credentials_re(),
+        ),
+    ] {
+        for caps in re.captures_iter(&normalized) {
+            let Some(whole) = caps.get(0) else {
+                continue;
+            };
+            if !crate::core::redaction::database_url_has_credential(&caps)
+                || excluded(excludes, whole.as_str())
+            {
+                continue;
+            }
+            matches.push(SecretMatch {
+                pattern_name: name,
+                line_number: offset_to_line(whole.start()),
+                redacted_preview: make_redacted_preview(whole.as_str()),
+            });
         }
-        matches.push(SecretMatch {
-            pattern_name: "db_url",
-            line_number: offset_to_line(whole.start()),
-            redacted_preview: make_redacted_preview(whole.as_str()),
-        });
     }
 
     for &(name, regex_fn) in GUARDED_PATTERNS {
@@ -252,6 +254,13 @@ fn collect_matches(
                         caps.get(1).is_some_and(|prefix| {
                             crate::core::redaction::is_fact_key_slug(
                                 prefix.as_str(),
+                                value.as_str(),
+                            )
+                        }) || caps.get(0).is_some_and(|found| {
+                            // The redactor's "Generic long secret" rule keeps
+                            // a verified package signer key (GHSA-xmx8).
+                            crate::core::redaction::is_verified_signer_key(
+                                &normalized[..found.start()],
                                 value.as_str(),
                             )
                         })

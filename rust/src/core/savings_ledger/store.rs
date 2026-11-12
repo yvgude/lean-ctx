@@ -161,6 +161,47 @@ pub fn verify(path: &Path) -> VerifyResult {
     }
 }
 
+/// [`verify`] and [`load`] in one streaming pass: `visit` sees every event
+/// `load` would return, in file order (also past a break in the chain),
+/// without the ledger being held in memory. Returns the chain check, equal
+/// to [`verify`]'s, and the number of events visited.
+pub fn verify_each(path: &Path, mut visit: impl FnMut(&SavingsEvent)) -> (VerifyResult, usize) {
+    let Ok(file) = fs::File::open(path) else {
+        return (VerifyResult::empty(), 0);
+    };
+    let mut prev = GENESIS.to_string();
+    let mut total = 0usize;
+    let mut broken = false;
+    let mut visited = 0usize;
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(ev) = serde_json::from_str::<SavingsEvent>(&line) else {
+            broken = true;
+            continue;
+        };
+        if !broken {
+            // The same check as `verify`, which stops at the first break.
+            if ev.prev_hash == prev && ev.hash_matches(&prev) {
+                prev.clone_from(&ev.entry_hash);
+                total += 1;
+            } else {
+                broken = true;
+            }
+        }
+        visited += 1;
+        visit(&ev);
+    }
+    let result = if broken {
+        VerifyResult::invalid_at(total)
+    } else {
+        VerifyResult {
+            total,
+            valid: true,
+            first_invalid_at: None,
+        }
+    };
+    (result, visited)
+}
+
 /// Re-hashes the whole ledger under the current (v2) canonical scheme, rewriting the file in
 /// place. Repairs a chain that broke purely from the legacy `{:.6}` float round-trip bug (not
 /// tampering): the stored event *content* is preserved verbatim, only `prev_hash`/`entry_hash`
