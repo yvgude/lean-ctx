@@ -174,10 +174,9 @@ pub(super) fn is_plausible_command_name(base: &str) -> bool {
 /// case lean-ctx is on defaults, which is the usual reason an allowlist edit "did
 /// nothing"). That last signal is otherwise invisible over an MCP/stdio transport.
 pub(super) fn allowlist_block_message(base: &str, tokens: &[String], entries: &[String]) -> String {
-    let cfg_path = lean_ctx::core::config::shell_policy::config_path().map_or_else(
-        || "~/.lean-ctx/config.toml".to_string(),
-        |p| p.display().to_string(),
-    );
+    // #2236: an account the OS cannot resolve has no config location; the
+    // message says so instead of naming a file the gate never reads.
+    let cfg_path = lean_ctx::core::config::shell_policy::config_path_display();
 
     // #1814: a `$var` command word is a *correct* split, not a mis-split — the
     // variable genuinely is the command, and the allowlist cannot see what it
@@ -496,6 +495,27 @@ mod tests {
         let msg = allowlist_block_message("ncat", &[], &[]);
         assert!(msg.contains("lean-ctx allow ncat"), "got: {msg}");
         assert!(!msg.contains("expands to the command name"));
+    }
+
+    /// #2236: with an account the OS cannot resolve, the block message must not
+    /// point at a `~/.lean-ctx/config.toml` the gate never reads; it says that
+    /// no config location exists and the built-in defaults apply.
+    #[test]
+    fn gh2236_unresolvable_account_message_names_no_phantom_config() {
+        let _lock = lean_ctx::core::data_dir::test_env_lock();
+        let _pin = lean_ctx::core::config::shell_policy::pin_unresolvable_for_test();
+        assert_eq!(lean_ctx::core::config::shell_policy::config_path(), None);
+        for base in ["glab", "$X", "bash"] {
+            let msg = allowlist_block_message(base, &[], &[]);
+            assert!(
+                !msg.contains("~/.lean-ctx/config.toml"),
+                "{base}: names a config the gate never reads: {msg}"
+            );
+            assert!(
+                msg.contains("no account-database entry"),
+                "{base}: must explain the unresolvable account: {msg}"
+            );
+        }
     }
 
     /// A nested shell is redundant, and allowing it would admit every script:

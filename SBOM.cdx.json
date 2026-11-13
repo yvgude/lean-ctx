@@ -16977,7 +16977,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5",
         "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
       ],
-      "ref": "path+file://./rust#lean-ctx-engine@3.12.4"
+      "ref": "path+file://./rust#lean-ctx-engine@3.12.5"
     },
     {
       "dependsOn": [
@@ -20872,14 +20872,14 @@
   ],
   "metadata": {
     "component": {
-      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.4",
+      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.5",
       "components": [
         {
-          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.4 bin-target-0",
+          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.5 bin-target-0",
           "name": "lean_ctx",
-          "purl": "pkg:cargo/lean-ctx-engine@3.12.4?download_url=file://.#src/lib.rs",
+          "purl": "pkg:cargo/lean-ctx-engine@3.12.5?download_url=file://.#src/lib.rs",
           "type": "library",
-          "version": "3.12.4"
+          "version": "3.12.5"
         }
       ],
       "description": "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI agents behind the lean-ctx CLI, MCP server and proxy integrations.",
@@ -20899,10 +20899,10 @@
         }
       ],
       "name": "lean-ctx-engine",
-      "purl": "pkg:cargo/lean-ctx-engine@3.12.4?download_url=file://.",
+      "purl": "pkg:cargo/lean-ctx-engine@3.12.5?download_url=file://.",
       "scope": "required",
       "type": "library",
-      "version": "3.12.4"
+      "version": "3.12.5"
     },
     "properties": [
       {
@@ -20911,7 +20911,7 @@
       },
       {
         "name": "leanctx:cargo-lock-sha256",
-        "value": "ee5d9e5ba2cedd3e2345074b40f0e29ceaf6b2f5c77663b53057ad148fb44475"
+        "value": "840206d44d6003949656795cd04b1ed262b02f994d5e20cc61acedf97859b22f"
       }
     ],
     "tools": [

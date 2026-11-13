@@ -8,8 +8,30 @@ use crate::core::bm25_index::{BM25Index, SearchResult};
 /// Default RRF parameter (controls how quickly rank decay affects fusion scores).
 const DEFAULT_RRF_K: f64 = 60.0;
 
-/// Maximum number of repo roots that can be served simultaneously.
-const MAX_ROOTS: usize = 16;
+/// Default maximum number of repo roots served simultaneously (#2237).
+pub const DEFAULT_MAX_ROOTS: usize = 16;
+
+/// Hard ceiling for a configured maximum: every root holds its own BM25 index
+/// in memory, so no configuration may make the set unbounded.
+pub const MAX_ROOTS_CEILING: usize = 256;
+
+/// Environment override for the maximum (#2237), e.g. in an MCP client's
+/// `env` block; it wins over `max_roots` in `multi-repo.toml`.
+pub const MAX_ROOTS_ENV: &str = "LEAN_CTX_MAX_ROOTS";
+
+/// The effective maximum: `LEAN_CTX_MAX_ROOTS`, else `max_roots` from the
+/// config, else [`DEFAULT_MAX_ROOTS`]; clamped to `1..=MAX_ROOTS_CEILING`.
+/// An unparsable environment value is ignored, not treated as 0.
+fn effective_max_roots(env: Option<&str>, configured: Option<usize>) -> usize {
+    env.and_then(|v| v.trim().parse::<usize>().ok())
+        .or(configured)
+        .unwrap_or(DEFAULT_MAX_ROOTS)
+        .clamp(1, MAX_ROOTS_CEILING)
+}
+
+fn max_roots_from_env(configured: Option<usize>) -> usize {
+    effective_max_roots(std::env::var(MAX_ROOTS_ENV).ok().as_deref(), configured)
+}
 
 /// A single search result from one repo root.
 #[derive(Debug, Clone)]
@@ -64,6 +86,9 @@ pub struct MultiRepoConfig {
     pub repos: Vec<RepoRootConfig>,
     #[serde(default)]
     pub rrf_k: Option<f64>,
+    /// Maximum number of roots (#2237); `LEAN_CTX_MAX_ROOTS` overrides it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_roots: Option<usize>,
 }
 
 impl MultiRepoConfig {
@@ -172,6 +197,7 @@ impl ActiveRepoRoot {
 pub struct MultiRepoManager {
     roots: Vec<ActiveRepoRoot>,
     rrf_k: f64,
+    max_roots: usize,
 }
 
 impl MultiRepoManager {
@@ -179,6 +205,7 @@ impl MultiRepoManager {
         Self {
             roots: Vec::new(),
             rrf_k: DEFAULT_RRF_K,
+            max_roots: max_roots_from_env(None),
         }
     }
 
@@ -192,6 +219,13 @@ impl MultiRepoManager {
         if let Some(k) = config.rrf_k {
             manager.rrf_k = k;
         }
+        // Roots the file itself lists are admitted (up to the ceiling) even
+        // when this process lacks the env that let them be added: refusing
+        // them would load an empty manager, and its next `save_config`
+        // would erase the user's roots (#2237).
+        manager.max_roots = max_roots_from_env(config.max_roots)
+            .max(config.repos.len())
+            .min(MAX_ROOTS_CEILING);
         for repo_config in &config.repos {
             manager.add_root_config(repo_config.clone())?;
         }
@@ -199,8 +233,8 @@ impl MultiRepoManager {
     }
 
     pub fn add_root(&mut self, path: &str, alias: Option<&str>) -> Result<(), String> {
-        if self.roots.len() >= MAX_ROOTS {
-            return Err(format!("Maximum number of roots ({MAX_ROOTS}) reached"));
+        if self.roots.len() >= self.max_roots {
+            return Err(self.max_roots_error());
         }
         let config = RepoRootConfig {
             path: path.to_string(),
@@ -220,8 +254,8 @@ impl MultiRepoManager {
     }
 
     fn add_root_config(&mut self, config: RepoRootConfig) -> Result<(), String> {
-        if self.roots.len() >= MAX_ROOTS {
-            return Err(format!("Maximum number of roots ({MAX_ROOTS}) reached"));
+        if self.roots.len() >= self.max_roots {
+            return Err(self.max_roots_error());
         }
         let root = ActiveRepoRoot::new(config)?;
         if self.roots.iter().any(|r| r.path == root.path) {
@@ -232,6 +266,31 @@ impl MultiRepoManager {
         }
         self.roots.push(root);
         Ok(())
+    }
+
+    /// Set the maximum number of roots (clamped to `1..=MAX_ROOTS_CEILING`).
+    #[must_use]
+    pub fn with_max_roots(mut self, max_roots: usize) -> Self {
+        self.max_roots = max_roots.clamp(1, MAX_ROOTS_CEILING);
+        self
+    }
+
+    /// The effective maximum number of roots.
+    pub fn max_roots(&self) -> usize {
+        self.max_roots
+    }
+
+    fn max_roots_error(&self) -> String {
+        let max = self.max_roots;
+        if max >= MAX_ROOTS_CEILING {
+            format!("Maximum number of roots ({max}) reached; this is the hard ceiling")
+        } else {
+            format!(
+                "Maximum number of roots ({max}) reached. Raise it with {MAX_ROOTS_ENV}=<n> \
+                 or max_roots = <n> in {} (at most {MAX_ROOTS_CEILING})",
+                config_file_path().display()
+            )
+        }
     }
 
     pub fn remove_root(&mut self, path: &str) -> Result<(), String> {
@@ -287,6 +346,25 @@ impl MultiRepoManager {
         max_results: usize,
         filter_roots: Option<&[String]>,
     ) -> Vec<FusedSearchResult> {
+        self.search_with(query, max_results, filter_roots, |_, _, search| search())
+    }
+
+    /// [`Self::search`] with each root's ranking produced through `per_root`:
+    /// it receives the root's alias and path and the search of that root, and
+    /// decides whether and under what scope the search runs (an empty list
+    /// leaves the root out). The MCP tool runs every root under that root's
+    /// own source view (#2244); fusion is unchanged.
+    pub fn search_with(
+        &mut self,
+        query: &str,
+        max_results: usize,
+        filter_roots: Option<&[String]>,
+        mut per_root: impl FnMut(
+            &str,
+            &Path,
+            &mut dyn FnMut() -> Vec<RepoSearchResult>,
+        ) -> Vec<RepoSearchResult>,
+    ) -> Vec<FusedSearchResult> {
         let per_root_max = (max_results * 2).max(20);
 
         let mut all_results: HashMap<String, FusedSearchResult> = HashMap::new();
@@ -303,7 +381,9 @@ impl MultiRepoManager {
                 }
             }
 
-            let results = root.search(query, per_root_max);
+            let alias = root.alias();
+            let path = root.path.clone();
+            let results = per_root(&alias, &path, &mut || root.search(query, per_root_max));
 
             for (rank, result) in results.iter().enumerate() {
                 let rrf_contribution = 1.0 / (self.rrf_k + rank as f64 + 1.0);
@@ -404,6 +484,12 @@ pub fn init_with_roots(
     if let Some(k) = rrf_k {
         manager.rrf_k = k;
     }
+    // The same limit as a loaded config: env, else `max_roots` in the file;
+    // roots named explicitly on the command line are admitted up to the
+    // ceiling.
+    manager.max_roots = max_roots_from_env(MultiRepoConfig::load().max_roots)
+        .max(roots.len())
+        .min(MAX_ROOTS_CEILING);
     for (path, alias) in roots {
         manager.add_root(path, alias.as_deref())?;
     }
@@ -545,8 +631,8 @@ path = "/home/user/frontend"
 
     #[test]
     fn manager_max_roots_enforced() {
-        let mut manager = MultiRepoManager::new();
-        for i in 0..MAX_ROOTS {
+        let mut manager = MultiRepoManager::new().with_max_roots(DEFAULT_MAX_ROOTS);
+        for i in 0..DEFAULT_MAX_ROOTS {
             let dir = std::env::temp_dir().join(format!("multi_repo_test_{i}"));
             let _ = std::fs::create_dir_all(&dir);
             let _ = manager.add_root(&dir.to_string_lossy(), Some(&format!("repo{i}")));
@@ -556,11 +642,75 @@ path = "/home/user/frontend"
         let result = manager.add_root(&extra.to_string_lossy(), None);
         assert!(result.is_err());
 
-        for i in 0..=MAX_ROOTS {
+        for i in 0..=DEFAULT_MAX_ROOTS {
             let dir = std::env::temp_dir().join(format!("multi_repo_test_{i}"));
             let _ = std::fs::remove_dir_all(&dir);
         }
         let _ = std::fs::remove_dir_all(&extra);
+    }
+
+    /// #2237: more than 16 roots once the maximum is raised; the error names
+    /// the limit and how to raise it.
+    #[test]
+    fn configured_max_roots_admits_more_than_the_default_gh2237() {
+        let base = tempfile::tempdir().unwrap();
+        let mut manager = MultiRepoManager::new().with_max_roots(20);
+        for i in 0..20 {
+            let dir = base.path().join(format!("r{i}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            manager
+                .add_root(&dir.to_string_lossy(), Some(&format!("repo{i}")))
+                .unwrap();
+        }
+        assert_eq!(manager.root_count(), 20);
+        let extra = base.path().join("extra");
+        std::fs::create_dir_all(&extra).unwrap();
+        let err = manager
+            .add_root(&extra.to_string_lossy(), None)
+            .unwrap_err();
+        assert!(err.contains("(20)") && err.contains(MAX_ROOTS_ENV), "{err}");
+    }
+
+    /// #2237: roots a saved file lists all load in a process without the
+    /// env that raised the limit; failing would load an empty manager whose
+    /// next `save_config` erases them.
+    #[test]
+    fn saved_roots_load_beyond_the_default_without_the_env_gh2237() {
+        let base = tempfile::tempdir().unwrap();
+        let repos = (0..DEFAULT_MAX_ROOTS + 4)
+            .map(|i| {
+                let dir = base.path().join(format!("r{i}"));
+                std::fs::create_dir_all(&dir).unwrap();
+                RepoRootConfig {
+                    path: dir.to_string_lossy().into_owned(),
+                    alias: Some(format!("repo{i}")),
+                }
+            })
+            .collect();
+        let config = MultiRepoConfig {
+            repos,
+            ..MultiRepoConfig::default()
+        };
+        let manager = MultiRepoManager::from_config(&config).unwrap();
+        assert_eq!(manager.root_count(), DEFAULT_MAX_ROOTS + 4);
+        assert!(manager.max_roots() >= DEFAULT_MAX_ROOTS + 4);
+    }
+
+    #[test]
+    fn max_roots_from_config_env_and_ceiling_gh2237() {
+        assert_eq!(effective_max_roots(None, None), DEFAULT_MAX_ROOTS);
+        assert_eq!(effective_max_roots(None, Some(32)), 32);
+        assert_eq!(effective_max_roots(Some("40"), Some(32)), 40);
+        assert_eq!(effective_max_roots(Some(" 24 "), None), 24);
+        assert_eq!(effective_max_roots(Some("lots"), Some(32)), 32);
+        assert_eq!(effective_max_roots(Some("0"), None), 1);
+        assert_eq!(effective_max_roots(Some("100000"), None), MAX_ROOTS_CEILING);
+        let cfg: MultiRepoConfig = toml::from_str("max_roots = 32\n").unwrap();
+        assert_eq!(cfg.max_roots, Some(32));
+        assert_eq!(
+            MultiRepoManager::from_config(&cfg).unwrap().max_roots(),
+            max_roots_from_env(Some(32))
+        );
     }
 
     #[test]

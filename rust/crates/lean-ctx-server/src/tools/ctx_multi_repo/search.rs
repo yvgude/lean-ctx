@@ -31,36 +31,83 @@ pub(super) fn handle_search(
     let Some(query) = query else {
         return ("ERROR: query is required for search".to_string(), 0);
     };
-    lean_ctx::core::policy::runtime::with_source_view(|| {
-        if lean_ctx::core::policy::runtime::is_active() {
-            return (
-                "ERROR: cross-project search withheld under content policy until each source has verified provenance; use local ctx_search mode=bm25".into(),
-                0,
-            );
-        }
-        handle_search_in_view(query, max_results, roots_filter, mode)
-    })
-    .unwrap_or_else(|_| ("ERROR: search source authority changed or is unavailable".into(), 0))
+    let mode = mode.unwrap_or("hybrid").trim().to_ascii_lowercase();
+    if mode != "bm25" && mode != "hybrid" {
+        return (
+            format!("ERROR: unknown search mode '{mode}' (expected 'bm25' or 'hybrid')"),
+            0,
+        );
+    }
+    if let Err(refused) = request_admits_other_projects() {
+        return (refused, 0);
+    }
+    let answer = match mode.as_str() {
+        "bm25" => bm25_search(query, max_results, roots_filter),
+        _ => hybrid_search(query, max_results, roots_filter),
+    };
+    // Checked again once the roots were read: a policy that came into force
+    // on the requesting project meanwhile withholds what was found.
+    if let Err(refused) = request_admits_other_projects() {
+        return (refused, 0);
+    }
+    answer
 }
 
-fn handle_search_in_view(
-    query: &str,
-    max_results: usize,
-    roots_filter: Option<&[String]>,
-    mode: Option<&str>,
-) -> (String, usize) {
-    let mode = mode.unwrap_or("hybrid").trim().to_ascii_lowercase();
-    match mode.as_str() {
-        "bm25" => bm25_search(query, max_results, roots_filter),
-        "hybrid" => hybrid_search(query, max_results, roots_filter),
-        other => (
-            format!("ERROR: unknown search mode '{other}' (expected 'bm25' or 'hybrid')"),
-            0,
+/// The requesting project's own policy decides whether results of other
+/// projects may enter it at all. A request bound to no project (an MCP
+/// client started in a workspace folder that is no project) has no such
+/// policy: every root is still judged under its own view (#2244).
+fn request_admits_other_projects() -> Result<(), String> {
+    use lean_ctx::core::policy::runtime;
+    match runtime::with_source_view(runtime::is_active) {
+        Ok(false) => Ok(()),
+        Err(e) if e == "project_unresolved" => Ok(()),
+        Ok(true) => Err(
+            "ERROR: cross-project search withheld under content policy until each source has verified provenance; use local ctx_search mode=bm25".into(),
         ),
+        Err(e) => Err(format!(
+            "ERROR: search source authority changed or is unavailable ({e})"
+        )),
     }
 }
 
-/// Legacy lexical path — byte-identical output to the pre-hybrid tool.
+/// Run one root's search under that root's own source view (#2244): a root
+/// whose policy is active, or whose authority cannot be established, is left
+/// out with a warning naming why — never searched under another project's
+/// view, never failing the roots that are admissible.
+fn in_root_view<T: Default>(
+    alias: &str,
+    root: &std::path::Path,
+    warnings: &mut Vec<String>,
+    search: impl FnOnce() -> T,
+) -> T {
+    use lean_ctx::core::policy::runtime;
+    match runtime::with_root_source_view(root, || (!runtime::is_active()).then(search)) {
+        Ok(Some(found)) => found,
+        Ok(None) => {
+            warnings.push(format!(
+                "[{alias}] withheld under its content policy until its sources have verified provenance"
+            ));
+            T::default()
+        }
+        Err(e) => {
+            warnings.push(format!("[{alias}] source authority unavailable: {e}"));
+            T::default()
+        }
+    }
+}
+
+fn push_warnings(output: &mut String, warnings: &[String]) {
+    if !warnings.is_empty() {
+        output.push_str(&format!("\nWarnings ({}):\n", warnings.len()));
+        for w in warnings.iter().take(8) {
+            output.push_str(&format!("- {w}\n"));
+        }
+    }
+}
+
+/// Legacy lexical path — byte-identical output to the pre-hybrid tool when
+/// every root is admissible.
 fn bm25_search(
     query: &str,
     max_results: usize,
@@ -78,8 +125,13 @@ fn bm25_search(
         );
     }
 
-    let results = mgr.search(query, max_results, roots_filter);
-    let output = format_fused_results(&results);
+    let mut warnings = Vec::new();
+    let results = mgr.search_with(query, max_results, roots_filter, |alias, root, search| {
+        in_root_view(alias, root, &mut warnings, search)
+    });
+    drop(mgr);
+    let mut output = format_fused_results(&results);
+    push_warnings(&mut output, &warnings);
     let tokens = lean_ctx::core::tokens::count_tokens(&output);
     (output, tokens)
 }
@@ -120,18 +172,14 @@ fn hybrid_search(
         "Cross-repo hybrid search (BM25+dense+SPLADE, RRF over {searched_roots} roots):\n{}",
         format_fused_results(&fused)
     );
-    if !warnings.is_empty() {
-        output.push_str(&format!("\nWarnings ({}):\n", warnings.len()));
-        for w in warnings.iter().take(8) {
-            output.push_str(&format!("- {w}\n"));
-        }
-    }
+    push_warnings(&mut output, &warnings);
     let tokens = lean_ctx::core::tokens::count_tokens(&output);
     (output, tokens)
 }
 
 /// Hybrid retrieval per root + RRF fusion across roots. Pure with respect to
 /// the manager (roots are an explicit snapshot) so tests can drive it directly.
+/// Every root is ranked under its own source view ([`in_root_view`]).
 fn search_roots_hybrid(
     query: &str,
     roots: &[(String, PathBuf)],
@@ -147,11 +195,16 @@ fn search_roots_hybrid(
     )> = Vec::new();
 
     for (alias, path) in roots {
-        let index = lean_ctx::core::bm25_index::BM25Index::load_or_build(path);
-        if index.doc_count == 0 {
+        let ranked = in_root_view(alias, path, &mut warnings, || {
+            let index = lean_ctx::core::bm25_index::BM25Index::load_or_build(path);
+            if index.doc_count == 0 {
+                return None;
+            }
+            Some(per_root_hybrid(query, path, &index, k))
+        });
+        let Some((results, warning)) = ranked else {
             continue;
-        }
-        let (results, warning) = per_root_hybrid(query, path, &index, k);
+        };
         if let Some(w) = warning {
             warnings.push(format!("[{alias}] {w}"));
         }
@@ -377,6 +430,113 @@ mod tests {
             || handle_search(Some("q"), 10, None, Some("vector")),
         );
         assert!(out.contains("unknown search mode"), "{out}");
+    }
+
+    /// #2244: a search over two registered roots answered every call with
+    /// "search source authority changed or is unavailable" — the request
+    /// project's source view was held over the other root, whose index gate
+    /// rebinds the request project and so ends that view. Both modes, with the
+    /// request bound to one of the roots and to a workspace folder that is
+    /// neither, must return hits of both roots.
+    #[test]
+    fn search_spans_every_registered_root_gh2244() {
+        let _env = lean_ctx::core::data_dir::test_env_lock();
+        let _community = lean_ctx::core::policy::runtime::TestPolicyOverride::set(None);
+        let ws = tempfile::tempdir().unwrap();
+        let mut roots = Vec::new();
+        for name in ["gh2244-web", "gh2244-api"] {
+            let root = ws.path().join(name);
+            std::fs::create_dir_all(root.join("src")).unwrap();
+            std::fs::write(
+                root.join("src/hub.ts"),
+                format!("export function startHub() {{ return \"signalrneedle {name}\"; }}\n"),
+            )
+            .unwrap();
+            roots.push(root.canonicalize().unwrap());
+        }
+        {
+            let mut mgr = global_manager().lock().unwrap();
+            for root in &roots {
+                mgr.add_root(&root.to_string_lossy(), None).unwrap();
+            }
+        }
+        let mut failures = Vec::new();
+        for bound in [
+            Some(roots[0].clone()),
+            Some(ws.path().canonicalize().unwrap()),
+            None,
+        ] {
+            for mode in ["bm25", "hybrid"] {
+                let (out, _) = lean_ctx::core::policy::runtime::REQUEST_PROJECT
+                    .sync_scope(std::cell::RefCell::new(bound.clone()), || {
+                        handle_search(Some("signalrneedle"), 10, None, Some(mode))
+                    });
+                if !(out.contains("[gh2244-web]") && out.contains("[gh2244-api]")) {
+                    failures.push(format!("bound={bound:?} mode={mode}:\n{out}"));
+                }
+            }
+        }
+        {
+            let mut mgr = global_manager().lock().unwrap();
+            for root in &roots {
+                let _ = mgr.remove_root(&root.to_string_lossy());
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n---\n"));
+    }
+
+    /// #2244: the per-root views never weaken the policy gate. A request
+    /// bound to a protected project is refused as a whole; a request bound to
+    /// no project reads no protected root and names each one in a warning.
+    #[test]
+    fn protected_roots_stay_withheld_gh2244() {
+        let _env = lean_ctx::core::data_dir::test_env_lock();
+        let _protected = lean_ctx::core::policy::content::protected_for_test("");
+        let ws = tempfile::tempdir().unwrap();
+        let mut roots = Vec::new();
+        for name in ["gh2244-locked-a", "gh2244-locked-b"] {
+            let root = ws.path().join(name);
+            std::fs::create_dir_all(root.join("src")).unwrap();
+            std::fs::write(
+                root.join("src/vault.ts"),
+                "export const secret = \"lockedneedle\";\n",
+            )
+            .unwrap();
+            roots.push(root.canonicalize().unwrap());
+        }
+        {
+            let mut mgr = global_manager().lock().unwrap();
+            for root in &roots {
+                mgr.add_root(&root.to_string_lossy(), None).unwrap();
+            }
+        }
+        let mut failures = Vec::new();
+        for mode in ["bm25", "hybrid"] {
+            let (bound, _) = lean_ctx::core::policy::runtime::REQUEST_PROJECT
+                .sync_scope(std::cell::RefCell::new(Some(roots[0].clone())), || {
+                    handle_search(Some("lockedneedle"), 10, None, Some(mode))
+                });
+            if !bound.contains("withheld under content policy") || bound.contains("vault.ts") {
+                failures.push(format!("bound mode={mode}:\n{bound}"));
+            }
+            let (unbound, _) = lean_ctx::core::policy::runtime::REQUEST_PROJECT
+                .sync_scope(std::cell::RefCell::new(None), || {
+                    handle_search(Some("lockedneedle"), 10, None, Some(mode))
+                });
+            if unbound.contains("vault.ts")
+                || !unbound.contains("[gh2244-locked-a] withheld")
+                || !unbound.contains("[gh2244-locked-b] withheld")
+            {
+                failures.push(format!("unbound mode={mode}:\n{unbound}"));
+            }
+        }
+        {
+            let mut mgr = global_manager().lock().unwrap();
+            for root in &roots {
+                let _ = mgr.remove_root(&root.to_string_lossy());
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n---\n"));
     }
 
     #[test]
