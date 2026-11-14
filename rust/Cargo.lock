@@ -2170,7 +2170,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lean-ctx"
-version = "3.12.4"
+version = "3.12.5"
 dependencies = [
  "anyhow",
  "axum",
@@ -2283,7 +2283,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-engine"
-version = "3.12.4"
+version = "3.12.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2402,7 +2402,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hive"
-version = "3.12.4"
+version = "3.12.5"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2449,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hooks"
-version = "3.12.4"
+version = "3.12.5"
 dependencies = [
  "blake3",
  "chrono",
@@ -2513,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-proxy"
-version = "3.12.4"
+version = "3.12.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2553,7 +2553,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-server"
-version = "3.12.4"
+version = "3.12.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2602,7 +2602,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-shell-policy"
-version = "3.12.4"
+version = "3.12.5"
 dependencies = [
  "dirs",
  "lean-ctx-engine",
@@ -3614,9 +3614,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
-version = "0.5.15"
+version = "0.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35a133f956daabe89a61a685c2649f13d82d5aa4bd5d12d1277e1072a21c0694"
+checksum = "af66907df18639dcf4db56ca65490cabc4b27a97dbadd96f2926cca73298f016"
 dependencies = [
  "cfg_aliases",
  "libc",

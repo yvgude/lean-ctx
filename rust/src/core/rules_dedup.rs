@@ -380,7 +380,8 @@ pub fn apply(action: &Action) -> String {
                 return format!("unchanged {}", path.display());
             }
             let bak = path.with_extension("bak");
-            if let Err(e) = std::fs::write(&bak, &content) {
+            if let Err(e) = crate::config_io::write_backup_nofollow(path, &bak, content.as_bytes())
+            {
                 return format!("FAILED    {} (backup: {e})", path.display());
             }
             if stripped.is_empty() {
@@ -408,7 +409,8 @@ pub fn apply(action: &Action) -> String {
                 return format!("unchanged {}", path.display());
             }
             let bak = path.with_extension("bak");
-            if let Err(e) = std::fs::write(&bak, &content) {
+            if let Err(e) = crate::config_io::write_backup_nofollow(path, &bak, content.as_bytes())
+            {
                 return format!("FAILED    {} (backup: {e})", path.display());
             }
             match std::fs::write(path, &stripped) {
@@ -457,6 +459,32 @@ mod tests {
             "# my header\n{}\n<!-- version: 1 -->\n",
             crate::core::rules_canonical::START_MARK
         )));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retire_does_not_follow_a_planted_backup_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let rules = dir.path().join("project/.claude/rules");
+        std::fs::create_dir_all(&rules).unwrap();
+        let file = rules.join("lean-ctx.md");
+        std::fs::write(
+            &file,
+            format!("user line\n{BLOCK_START}\nour rules\n{BLOCK_END}\n"),
+        )
+        .unwrap();
+        let outside = dir.path().join("outside.txt");
+        std::os::unix::fs::symlink(&outside, rules.join("lean-ctx.bak")).unwrap();
+
+        let line = retire_rules_file(&file).unwrap();
+
+        assert!(line.starts_with("FAILED"), "{line}");
+        assert!(!outside.exists());
+        assert!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains("our rules")
+        );
     }
 
     #[test]

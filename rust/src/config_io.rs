@@ -235,7 +235,7 @@ fn write_atomic_with_backup_locked(
             }
         }
         if let Some(bak) = backup_path_for(path) {
-            std::fs::copy(path, &bak).map_err(|error| {
+            copy_backup_nofollow(path, &bak).map_err(|error| {
                 format!(
                     "cannot create config backup {} before updating {}: {error}",
                     bak.display(),
@@ -246,6 +246,39 @@ fn write_atomic_with_backup_locked(
     }
 
     write_atomic(path, content)
+}
+
+/// Write `bytes` as the backup `bak` of `source` without following a link at
+/// `bak`. The same writer updates project files
+/// (`AGENTS.md`, `.cursorrules`, rule files), and a cloned repository can ship
+/// `<file>.bak` as a dangling symlink: a plain copy would create the link's
+/// target outside the project and fill it with the repository's own file.
+/// The backup keeps the source's permission bits.
+pub fn write_backup_nofollow(source: &Path, bak: &Path, bytes: &[u8]) -> Result<(), String> {
+    let Some(name) = bak.file_name() else {
+        return Err(format!("invalid backup path: {}", bak.display()));
+    };
+    let dir = match bak.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    #[cfg(unix)]
+    let mode = {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(source).map_or(0o600, |m| m.permissions().mode() & 0o777)
+    };
+    #[cfg(not(unix))]
+    let mode = {
+        // Windows has no permission bits to carry over.
+        let _ = source;
+        0o600
+    };
+    crate::core::pathjail_write::write_below(dir, Path::new(name), bytes, mode).map(|_| ())
+}
+
+fn copy_backup_nofollow(path: &Path, bak: &Path) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    write_backup_nofollow(path, bak, &bytes)
 }
 
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {

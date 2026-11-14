@@ -18,6 +18,19 @@ pub(crate) fn shell_allowlist_outcome() -> Outcome {
         };
     }
 
+    // #2236: a release build pins the gate's policy to the account's home as
+    // the OS records it. With no such entry, no config.toml is ever read and
+    // the gate runs on the built-in defaults — say so instead of reporting
+    // the default allowlist as if it were the user's.
+    if shell_policy_home_unresolvable() {
+        return Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}Shell allowlist{RST}  {RED}no account-database entry for this user → config.toml never read, running on DEFAULTS{RST}  {DIM}(`getent passwd $(id -u)` must return a line with an absolute home; on a directory-service host make the account resolvable to this binary){RST}"
+            ),
+        };
+    }
+
     // GL #788: the security mode overrides the allowlist view, so surface a
     // relaxed posture loudly — an unexpected `off`/`warn` must never hide behind
     // a populated allowlist.
@@ -69,6 +82,13 @@ pub(crate) fn shell_allowlist_outcome() -> Outcome {
             effective.len()
         ),
     }
+}
+
+/// True when the gate's policy is pinned to the real home but the account
+/// database has no home for this user (#2236).
+fn shell_policy_home_unresolvable() -> bool {
+    use lean_ctx::core::config::shell_policy;
+    shell_policy::pinned() && shell_policy::config_path().is_none()
 }
 
 /// GH #1419 follow-up: upgrade advisory — multi-word entries with no

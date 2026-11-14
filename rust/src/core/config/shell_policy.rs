@@ -38,7 +38,7 @@
 //! unit test pins the release resolution with `pin_for_test`.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use super::{Config, ShellApproval};
 
@@ -53,18 +53,30 @@ enum Source {
     Pinned(Option<PathBuf>),
 }
 
+/// A test's stand-in for the release resolution.
 #[cfg(any(test, feature = "test-support"))]
-static TEST_PIN: Mutex<Option<PathBuf>> = Mutex::new(None);
+#[derive(Clone)]
+enum TestPin {
+    /// The account database names this home.
+    Home(PathBuf),
+    /// The account database has no home for this user (#2236).
+    Unresolvable,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+static TEST_PIN: Mutex<Option<TestPin>> = Mutex::new(None);
 
 fn source() -> Source {
     #[cfg(any(test, feature = "test-support"))]
     {
-        if let Some(home) = TEST_PIN
+        let pin = TEST_PIN
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-        {
-            return Source::Pinned(Some(home));
+            .clone();
+        match pin {
+            Some(TestPin::Home(home)) => return Source::Pinned(Some(home)),
+            Some(TestPin::Unresolvable) => return Source::Pinned(None),
+            None => {}
         }
     }
     #[cfg(any(test, debug_assertions))]
@@ -89,7 +101,24 @@ pub fn pin_for_test(home: &Path) -> PinGuard {
     );
     *TEST_PIN
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(home.to_path_buf());
+        .unwrap_or_else(std::sync::PoisonError::into_inner) =
+        Some(TestPin::Home(home.to_path_buf()));
+    PinGuard(())
+}
+
+/// Test-only: resolve the policy as a release build does for an account the
+/// operating system cannot resolve to a home (#2236). Hold the test env lock
+/// while the guard lives.
+#[cfg(any(test, feature = "test-support"))]
+#[must_use]
+pub fn pin_unresolvable_for_test() -> PinGuard {
+    assert!(
+        crate::core::data_dir::holds_test_env_lock(),
+        "pin_unresolvable_for_test requires test_env_lock()"
+    );
+    *TEST_PIN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(TestPin::Unresolvable);
     PinGuard(())
 }
 
@@ -113,15 +142,39 @@ pub fn pinned() -> bool {
 }
 
 /// The home directory of the user this process runs as, from the operating
-/// system's account database — not from `$HOME`.
-#[cfg(unix)]
+/// system's account database — never from `$HOME`. Resolved once per process:
+/// the effective uid does not change during a run, and the Linux fallback
+/// below starts a process.
 #[must_use]
 pub fn real_user_home() -> Option<PathBuf> {
+    static HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
+    HOME.get_or_init(lookup_real_user_home).clone()
+}
+
+#[cfg(unix)]
+fn lookup_real_user_home() -> Option<PathBuf> {
+    // SAFETY: geteuid has no arguments or failure state.
+    let uid = unsafe { libc::geteuid() };
+    // #2236: the static musl build reads only `/etc/passwd` and has no NSS,
+    // so an account served by SSSD, LDAP, NIS or winbind is not found there.
+    // `getent` is the system's dynamically linked NSS client and sees it.
+    // `$HOME` is never a fallback: that is the bypass the pin exists to close.
+    #[cfg(target_os = "linux")]
+    {
+        passwd_home(uid).or_else(|| getent_home(uid))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        passwd_home(uid)
+    }
+}
+
+/// `getpwuid_r(uid)`'s home directory, when it is absolute.
+#[cfg(unix)]
+fn passwd_home(uid: libc::uid_t) -> Option<PathBuf> {
     use std::ffi::{CStr, OsStr};
     use std::os::unix::ffi::OsStrExt;
 
-    // SAFETY: geteuid has no arguments or failure state.
-    let uid = unsafe { libc::geteuid() };
     let mut buf = vec![0_u8; 4096];
     loop {
         // SAFETY: `passwd` is a plain C struct; all-zero is a valid value
@@ -154,13 +207,100 @@ pub fn real_user_home() -> Option<PathBuf> {
     }
 }
 
+/// The account database as NSS sees it, through `getent passwd <uid>` (#2236).
+///
+/// Nothing here comes from the caller's environment: `getent` is taken only
+/// from fixed absolute paths, must be a root-owned file no group or other
+/// user can write, and runs with an empty environment, so `PATH`,
+/// `LD_PRELOAD` and friends cannot pick the program or the answer. The answer
+/// counts only when it names this uid and an absolute home.
+#[cfg(target_os = "linux")]
+fn getent_home(uid: libc::uid_t) -> Option<PathBuf> {
+    use std::io::Read;
+    use std::os::unix::fs::MetadataExt;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    const CANDIDATES: [&str; 2] = ["/usr/bin/getent", "/bin/getent"];
+    const TIMEOUT: Duration = Duration::from_secs(3);
+
+    let getent = CANDIDATES.iter().map(Path::new).find(|path| {
+        std::fs::metadata(path)
+            .is_ok_and(|meta| meta.is_file() && meta.uid() == 0 && meta.mode() & 0o022 == 0)
+    })?;
+    let mut child = Command::new(getent)
+        .arg("passwd")
+        .arg(uid.to_string())
+        .env_clear()
+        .current_dir("/")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // A directory service that hangs must not hang the gate: give up and
+    // fall back to the built-in defaults, which enforce.
+    let deadline = Instant::now() + TIMEOUT;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    };
+    if !status.success() {
+        return None;
+    }
+    let mut out = Vec::new();
+    child
+        .stdout
+        .take()?
+        .take(64 * 1024)
+        .read_to_end(&mut out)
+        .ok()?;
+    parse_passwd_home(&out, uid)
+}
+
+/// The home field of a `passwd` line (`name:pw:uid:gid:gecos:dir:shell`) when
+/// the line names `uid` and an absolute directory. Only the first line counts.
+#[cfg(any(all(test, unix), target_os = "linux"))]
+fn parse_passwd_home(out: &[u8], uid: u32) -> Option<PathBuf> {
+    let line = std::str::from_utf8(out).ok()?.lines().next()?;
+    let fields: Vec<&str> = line.split(':').collect();
+    if fields.len() < 7 || fields[2].parse::<u32>().ok()? != uid {
+        return None;
+    }
+    let dir = PathBuf::from(fields[5]);
+    dir.is_absolute().then_some(dir)
+}
+
 /// The home directory of the user this process runs as. `dirs` asks
 /// `SHGetKnownFolderPath(FOLDERID_Profile)` on Windows and never reads
 /// `%USERPROFILE%` or `%HOME%`.
 #[cfg(not(unix))]
-#[must_use]
-pub fn real_user_home() -> Option<PathBuf> {
+fn lookup_real_user_home() -> Option<PathBuf> {
     dirs::home_dir().filter(|p| p.is_absolute())
+}
+
+/// The config location for messages: the pinned or ambient `config.toml`,
+/// or — for an account the OS cannot resolve (#2236) — a statement that no
+/// location exists, instead of a path the gate never reads.
+#[must_use]
+pub fn config_path_display() -> String {
+    match config_path() {
+        Some(path) => path.display().to_string(),
+        None if pinned() => "none — this user has no account-database entry with a home \
+                             directory, so no config.toml location can be derived; the \
+                             built-in defaults apply"
+            .to_string(),
+        None => "~/.lean-ctx/config.toml".to_string(),
+    }
 }
 
 /// lean-ctx's config directory inside `home`, laid out as an install without
@@ -362,6 +502,58 @@ mod tests {
             config_path(),
             Some(real.path().join(".config/lean-ctx/config.toml"))
         );
+    }
+
+    /// `passwd` homes are Unix paths; on Windows `/home/jdoe` is not absolute
+    /// (and the parser only runs on Linux).
+    #[cfg(unix)]
+    #[test]
+    fn gh2236_passwd_line_yields_the_home_of_this_uid_only() {
+        let line = b"jdoe:*:123456:100:J Doe:/home/jdoe:/bin/bash\n";
+        assert_eq!(
+            parse_passwd_home(line, 123_456),
+            Some(PathBuf::from("/home/jdoe"))
+        );
+        // A line for another uid, a relative home, a short line, a
+        // non-numeric uid and empty output are all refused.
+        assert_eq!(parse_passwd_home(line, 1000), None);
+        assert_eq!(parse_passwd_home(b"jdoe:*:7:7::home/jdoe:/bin/sh", 7), None);
+        assert_eq!(parse_passwd_home(b"jdoe:*:7:7::", 7), None);
+        assert_eq!(
+            parse_passwd_home(b"jdoe:*:x7:7::/home/jdoe:/bin/sh", 7),
+            None
+        );
+        assert_eq!(parse_passwd_home(b"", 7), None);
+        // Only the first line counts.
+        assert_eq!(
+            parse_passwd_home(b"a:*:8:8::/home/a:/bin/sh\nb:*:7:7::/home/b:/bin/sh", 7),
+            None
+        );
+    }
+
+    /// The real `getent` path (fixed program, owner check, spawn, wait)
+    /// agrees with the account database wherever both answer.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn gh2236_getent_agrees_with_the_account_database() {
+        // SAFETY: geteuid only reads this process identity.
+        let uid = unsafe { libc::geteuid() };
+        if let (Some(getent), Some(passwd)) = (getent_home(uid), passwd_home(uid)) {
+            assert_eq!(getent, passwd);
+        }
+    }
+
+    #[test]
+    fn gh2236_unresolvable_pin_reads_defaults_and_names_no_config() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let _pin = pin_unresolvable_for_test();
+        assert!(pinned());
+        assert_eq!(config_path(), None);
+        assert_eq!(settings_home(), None);
+        assert_eq!(config().shell_security, None);
+        let shown = config_path_display();
+        assert!(shown.contains("no account-database entry"), "{shown}");
+        assert!(!shown.contains("~/.lean-ctx"), "{shown}");
     }
 
     #[test]

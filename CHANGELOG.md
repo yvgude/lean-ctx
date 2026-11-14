@@ -6,6 +6,64 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+## [3.12.5] — 2026-11-13
+
+### Added
+
+- **Configurable multi-repo root limit (#2237).** `ctx_multi_repo` still admits 16 roots by
+  default; `max_roots` in `multi-repo.toml` or `LEAN_CTX_MAX_ROOTS` (which wins) raises it,
+  up to a hard ceiling of 256. An invalid value is ignored. Roots a saved `multi-repo.toml`
+  or `--root` lists always load (up to the ceiling), so a process without the env cannot
+  drop them and then overwrite the file. The `add_root` error names both
+  settings, `list_roots` shows the limit, and `save_config` keeps `max_roots` and `rrf_k`
+  that are already in the file.
+
+### Fixed
+
+- **`ctx_multi_repo search` across several roots (#2244).** With two or more roots every
+  search failed with "search source authority changed or is unavailable": one source view
+  was held for the whole search while each root's index re-bound the request to its own
+  project. Each root is now searched under its own project's view and content policy; a root
+  withheld by its policy, or whose authority cannot be resolved, is named in a warning and
+  the others still answer. A requesting project under an active policy still refuses the
+  whole search, checked before and again after the roots are read. `list_roots` says "index loads on first search" instead of
+  "pending".
+
+- **Cockpit starts on Windows with a shared `%TEMP%` (#2203).** The Cockpit's private copy
+  was staged under `%TEMP%\leanctx-runtime-private`; when `%TEMP%` or a folder above it grants
+  other users write access (`C:\Temp`, managed profiles) the private-directory check refused
+  it ("DACL grants an untrusted principal write or ownership access") and `lean-ctx cockpit`
+  answered 503. The copy is now staged beside the installed runtime, whose private ACL the
+  install already established; `%TEMP%` is no longer used.
+
+- **Shell gate reads `config.toml` for directory-service accounts on musl (#2236).** The
+  static `x86_64-unknown-linux-musl` build has no NSS, so an account served by SSSD, LDAP,
+  NIS or winbind had no home in the account database: the release gate never read the
+  user's `config.toml` and ran on the built-in defaults. When `getpwuid_r` finds nothing,
+  Linux builds now ask `getent passwd <uid>` (only `/usr/bin/getent` or `/bin/getent`,
+  root-owned and not group/world-writable, empty environment, 3 s timeout) and accept the
+  home only when the line names this uid and an absolute directory. `$HOME` is still never
+  consulted. The lookup is resolved once per process, a failed or timed-out one included: a
+  restart retries it. When no home can be found, the block
+  message says that no config location exists instead of naming `~/.lean-ctx/config.toml`,
+  and `lean-ctx doctor` reports the shell allowlist as running on defaults.
+
+### Security
+
+- **Rule-file backups and the `replace_symbol` temp file no longer follow a planted symlink
+  (GHSA-x992-2945-crwx).** `lean-ctx init --agent` and `doctor --fix` wrote the backups
+  `AGENTS.md.bak`, `.cursorrules.bak` and `.claude/rules/lean-ctx.bak` with a plain copy, so a
+  cloned repository that shipped such a name as a symlink had the repository's own rule file
+  written outside the project (for example to `~/.bash_aliases`). The backups now go through
+  the confined write, which refuses a symlinked component, and keep the source's permission
+  bits. `lean-ctx uninstall` now writes its `<file>.lean-ctx.bak` backups of the project's
+  `AGENTS.md` and `.hermes.md` the same way. The headless `ctx_patch replace_symbol` path
+  staged its edit in a fixed-name temp file and now uses the shared atomic writer with a
+  fresh, unpredictable temp file. Reported and fixed by @kasparovabi.
+
+- **quinn-udp 0.5.16 (RUSTSEC-2026-0538).** The indirect dependency `quinn-udp` moves from
+  0.5.15 to the patched 0.5.16; its receive loop could spin after a truncated datagram.
+
 ## [3.12.4] — 2026-11-12
 
 ### Added

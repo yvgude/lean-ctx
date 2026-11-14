@@ -414,6 +414,20 @@ pub fn with_source_view<T>(operation: impl FnOnce() -> T) -> Result<T, String> {
         .ok_or_else(|| "source policy view is no longer active".into())
 }
 
+/// [`with_source_view`] for the project `root` itself, whatever project the
+/// request is bound to. An operation over several roots (`ctx_multi_repo
+/// search`) judges each root under that root's own policy, one view per root:
+/// one request view stretched over another root rebinds the request project
+/// inside it, which ends the view (the operation fails closed) — every
+/// cross-repo search failed that way (#2244). Called inside an open view of
+/// another project, this still ends that view and fails closed.
+pub fn with_root_source_view<T>(root: &Path, operation: impl FnOnce() -> T) -> Result<T, String> {
+    let root = canonical_project_root(root)?;
+    REQUEST_PROJECT.sync_scope(std::cell::RefCell::new(Some(root)), || {
+        with_source_view(operation)
+    })
+}
+
 /// [`with_source_view`], entered only when the verification the view is
 /// pinned to established something to act under: a policy, or an observed
 /// organization decision (a signed unpin leaves no policy and is one all the
