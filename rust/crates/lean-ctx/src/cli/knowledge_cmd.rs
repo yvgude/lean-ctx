@@ -333,6 +333,9 @@ fn cmd_recall(args: &[String], project_root: &str) {
     let category = value_arg(args, "--category").or_else(|| value_arg(args, "-c"));
     let mode = value_arg(args, "--mode").or_else(|| value_arg(args, "-m"));
     let as_of = value_arg(args, "--as-of");
+    // #2248: the window of a category listing (bounded in the handler).
+    let limit = value_arg(args, "--limit").and_then(|v| v.parse::<usize>().ok());
+    let offset = value_arg(args, "--offset").and_then(|v| v.parse::<usize>().ok());
     let query = positional_after(args, "recall");
 
     // Machine-readable path (editor extensions): a bare `recall --json` lists the
@@ -345,9 +348,10 @@ fn cmd_recall(args: &[String], project_root: &str) {
 
     if category.is_none() && query.is_none() {
         eprintln!(
-            "Usage: lean-ctx knowledge recall [query] [--category <cat>] [--mode auto|semantic|hybrid] [--as-of <YYYY-MM-DD|RFC3339>]"
+            "Usage: lean-ctx knowledge recall [query] [--category <cat> [--limit <n>] [--offset <n>]] [--mode auto|semantic|hybrid] [--as-of <YYYY-MM-DD|RFC3339>]"
         );
         eprintln!("Example: lean-ctx knowledge recall \"auth\" --category security");
+        eprintln!("Example: lean-ctx knowledge recall --category workflow --limit 20 --offset 20");
         eprintln!("Example: lean-ctx knowledge recall \"auth\" --as-of 2026-05-01   (time travel)");
         std::process::exit(1);
     }
@@ -359,9 +363,11 @@ fn cmd_recall(args: &[String], project_root: &str) {
         "query": query,
         "mode": mode,
         "as_of": as_of,
+        "limit": limit,
+        "offset": offset,
     });
     let out = knowledge_outcome_call(project_root, &arguments, || {
-        ctx_knowledge::handle_outcome(
+        ctx_knowledge::handle_outcome_windowed(
             project_root,
             "recall",
             category.as_deref(),
@@ -374,6 +380,7 @@ fn cmd_recall(args: &[String], project_root: &str) {
             None,
             mode.as_deref(),
             as_of.as_deref(),
+            ctx_knowledge::RecallWindow::new(limit, offset),
         )
     });
     print_outcome(out);
@@ -1078,7 +1085,7 @@ lean-ctx knowledge — Project knowledge base
 
 Usage:
   lean-ctx knowledge remember <value> --category <cat> --key <key> [--confidence <0-1>]
-  lean-ctx knowledge recall [query] [--category <cat>] [--mode auto|semantic|hybrid] [--as-of <date>]
+  lean-ctx knowledge recall [query] [--category <cat> [--limit <n>] [--offset <n>]] [--mode auto|semantic|hybrid] [--as-of <date>]
   lean-ctx knowledge search <query>
   lean-ctx knowledge list --json [--category <cat>]… [--query <q>] [--limit N] [--include-noise]
     local facts, gotchas and the linked vault's knowledge as JSON (local-read/1);

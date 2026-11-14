@@ -10,6 +10,11 @@ use lean_ctx::core::tokens::count_tokens;
 /// independent of the caller-supplied `max_results`.
 const MAX_RESULTS: usize = 500;
 
+/// Default ceiling on directory entries one glob walk may visit (#2250). A
+/// walk that reaches it stops and says `complete=false` instead of crawling
+/// millions of unrelated descendants.
+const WALK_ENTRY_BUDGET: usize = 200_000;
+
 /// `*` and `?` stay inside one path component (#2182); `**` still recurses.
 const STRICT_SEPARATORS: glob::MatchOptions = glob::MatchOptions {
     case_sensitive: true,
@@ -31,6 +36,12 @@ const STRICT_SEPARATORS: glob::MatchOptions = glob::MatchOptions {
 /// result set is truncated to `max_results` — the *set* of returned files, not
 /// just their printed order, is deterministic across runs.
 ///
+/// The walk follows the pattern (#2250): a pattern with a `/` and no `**`
+/// (`src/*.rs`, `./prefix*`) only descends through its literal leading
+/// directories and never deeper than its component count. Recursive patterns
+/// (`**`, or a slash-free name matched at any depth) stop after
+/// `WALK_ENTRY_BUDGET` visited entries and report `complete=false`.
+///
 /// Returns `(output, original_tokens)`. On error the output starts with
 /// `"ERROR:"` and `original_tokens` is `0`.
 pub fn handle(
@@ -40,20 +51,101 @@ pub fn handle(
     allow_secret_paths: bool,
     max_results: usize,
 ) -> (String, usize) {
+    let walk = walk(
+        pattern,
+        dir,
+        respect_gitignore,
+        allow_secret_paths,
+        max_results,
+        WALK_ENTRY_BUDGET,
+    );
+    (walk.output, walk.original_tokens)
+}
+
+/// One glob walk's result; `visited` counts every entry the walker yielded.
+pub(crate) struct GlobWalk {
+    pub output: String,
+    pub original_tokens: usize,
+    /// Read by the #2250 regression tests to bound the walk without a clock.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub visited: usize,
+}
+
+impl GlobWalk {
+    fn error(output: String) -> Self {
+        Self {
+            output,
+            original_tokens: 0,
+            visited: 0,
+        }
+    }
+}
+
+/// How far a walk for a pattern must reach: the literal leading directories
+/// to follow and, unless the pattern recurses, the deepest level to visit.
+#[derive(Debug, PartialEq, Eq)]
+struct WalkPlan {
+    prefix: Vec<String>,
+    max_depth: Option<usize>,
+}
+
+/// Derives the walk extent from an (already repaired, `./`-stripped)
+/// pattern. `anchored` is false for slash-free patterns, which match a file
+/// name at any depth and therefore recurse.
+fn walk_plan(pattern: &str, anchored: bool) -> WalkPlan {
+    if !anchored {
+        return WalkPlan {
+            prefix: Vec::new(),
+            max_depth: None,
+        };
+    }
+    let components: Vec<&str> = pattern.split('/').collect();
+    let (dirs, _file) = components.split_at(components.len() - 1);
+    // Only plain names become a prefix: `.`, `..`, empty (absolute or `//`)
+    // and wildcard components end it, so confinement stays with the walk.
+    let prefix: Vec<String> = dirs
+        .iter()
+        .take_while(|c| {
+            !c.is_empty() && **c != "." && **c != ".." && !c.contains(['*', '?', '[', ']'])
+        })
+        .map(|c| (*c).to_string())
+        .collect();
+    let max_depth = if components.contains(&"**") {
+        None
+    } else {
+        Some(components.len())
+    };
+    WalkPlan { prefix, max_depth }
+}
+
+/// Why a walk ended before visiting everything the pattern could reach.
+enum Incomplete {
+    WalkBudget(usize),
+    ResultCap(usize),
+}
+
+pub(crate) fn walk(
+    pattern: &str,
+    dir: &str,
+    respect_gitignore: bool,
+    allow_secret_paths: bool,
+    max_results: usize,
+    entry_budget: usize,
+) -> GlobWalk {
     let requested_root = Path::new(dir);
     let walk_root = lean_ctx::core::walk_filter::explicit_walk_root(requested_root);
     let root = walk_root.as_path();
     if !root.exists() {
         let hint = lean_ctx::core::path_suggest::hint(root);
-        return (format!("ERROR: {dir} does not exist{hint}"), 0);
+        return GlobWalk::error(format!("ERROR: {dir} does not exist{hint}"));
     }
     if !root.is_dir() {
-        return (format!("ERROR: {dir} is not a directory"), 0);
+        return GlobWalk::error(format!("ERROR: {dir} is not a directory"));
     }
     // Broad-root guard (#356 class): with cwd == $HOME a defaulted `path`
     // would walk the whole home dir and trip macOS TCC privacy prompts.
     if let Some(err) = crate::tools::walk_guard::deny_unsafe_walk_root(dir) {
-        return (err, 0);
+        return GlobWalk::error(err);
     }
 
     let max = max_results.min(MAX_RESULTS);
@@ -61,18 +153,30 @@ pub fn handle(
     // Support both simple (`*.rs`) and recursive (`**/*.ts`) patterns.
     // `**.rs` / `src**/x` mean "recursively"; the glob crate only accepts `**`
     // as a whole path component, so repair that one shape before compiling.
+    // A leading `./` anchors the pattern at `dir` (`./prefix*` = only `dir`'s
+    // own entries) and is not part of the relative paths matched below.
     let repaired = repair_recursive_wildcards(pattern);
-    let glob_matcher = match glob::Pattern::new(&repaired) {
+    let anchored = repaired.contains('/');
+    let mut repaired = repaired.as_str();
+    while let Some(rest) = repaired.strip_prefix("./") {
+        repaired = rest;
+    }
+    let glob_matcher = match glob::Pattern::new(repaired) {
         Ok(m) => m,
-        Err(e) => return (format!("ERROR: invalid glob pattern '{pattern}': {e}"), 0),
+        Err(e) => {
+            return GlobWalk::error(format!("ERROR: invalid glob pattern '{pattern}': {e}"));
+        }
     };
     // #2182: `*` and `?` never cross `/`; only a whole `**` component spans
     // directories. A pattern with no `/` (`*.rs`, `Cargo.toml`) names a file
     // at any depth, so it is matched against the file name alone.
-    let match_file_name = !repaired.contains('/');
+    let match_file_name = !anchored;
+    let plan = walk_plan(repaired, anchored);
 
     let mut matches = Vec::new();
     let mut files_walked = 0u32;
+    let mut visited = 0usize;
+    let mut incomplete = None;
     let protected = lean_ctx::core::policy::runtime::active().is_some();
 
     // Vendor dirs (node_modules, …) follow the gitignore toggle: explicitly
@@ -80,13 +184,25 @@ pub fn handle(
     // GH #1431: hidden(false) — dot-directories like .agents/, .github/,
     // .cursor/ must be walkable; the user's glob pattern is the intent
     // filter, gitignore handles exclusion, is_secret_like guards secrets.
+    // #2250: the walk keeps its root (so ignore rules apply exactly as
+    // before) but only descends through the pattern's literal prefix and,
+    // for non-recursive patterns, no deeper than the pattern reaches.
+    let prefix = plan.prefix;
     let walker = WalkBuilder::new(root)
         .hidden(false)
         .git_ignore(respect_gitignore)
         .git_global(respect_gitignore)
         .git_exclude(respect_gitignore)
         .require_git(false)
+        .max_depth(plan.max_depth)
         .filter_entry(move |e| {
+            let depth = e.depth();
+            if depth >= 1
+                && depth <= prefix.len()
+                && e.file_name().to_str() != Some(prefix[depth - 1].as_str())
+            {
+                return false;
+            }
             if respect_gitignore {
                 lean_ctx::core::walk_filter::keep_entry(e)
             } else {
@@ -96,13 +212,19 @@ pub fn handle(
         .sort_by_file_path(std::path::Path::cmp)
         .build();
 
-    for (visited, entry) in walker.filter_map(std::result::Result::ok).enumerate() {
+    for entry in walker.filter_map(std::result::Result::ok) {
         if protected && visited >= 20_000 {
-            return ("ERROR: protected directory walk limit exceeded".into(), 0);
+            return GlobWalk::error("ERROR: protected directory walk limit exceeded".into());
         }
         if matches.len() >= max {
+            incomplete = Some(Incomplete::ResultCap(max));
             break;
         }
+        if visited >= entry_budget {
+            incomplete = Some(Incomplete::WalkBudget(entry_budget));
+            break;
+        }
+        visited += 1;
 
         // Skip directories; only files are matchable results.
         if entry.file_type().is_none_or(|ft| ft.is_dir()) {
@@ -145,11 +267,22 @@ pub fn handle(
         }
     }
 
+    let incomplete_note = match incomplete {
+        Some(Incomplete::WalkBudget(n)) => {
+            format!(" complete=false (walk budget {n} entries reached)")
+        }
+        Some(Incomplete::ResultCap(n)) => format!(" complete=false (result cap {n} reached)"),
+        None => String::new(),
+    };
+
     if matches.is_empty() {
-        return (
-            format!("0 files matched '{pattern}' in {files_walked} files walked"),
-            0,
-        );
+        return GlobWalk {
+            output: format!(
+                "0 files matched '{pattern}' in {files_walked} files walked{incomplete_note}"
+            ),
+            original_tokens: 0,
+            visited,
+        };
     }
 
     matches.sort_by(|a, b| a.0.cmp(&b.0));
@@ -164,10 +297,13 @@ pub fn handle(
     let output = group_paths_by_directory(&matches);
     let match_count = matches.len();
 
-    let footer = format!("\n\n{match_count} files matched (walked {files_walked})");
-    let full_output = format!("{output}{footer}");
-
-    (full_output, raw_tokens)
+    let footer =
+        format!("\n\n{match_count} files matched (walked {files_walked}){incomplete_note}");
+    GlobWalk {
+        output: format!("{output}{footer}"),
+        original_tokens: raw_tokens,
+        visited,
+    }
 }
 
 fn group_paths_by_directory(matches: &[(String, String)]) -> String {
@@ -439,6 +575,122 @@ mod tests {
         assert!(
             out.contains("visible.rs"),
             "junction root must be traversed: {out}"
+        );
+    }
+
+    /// #2250 fixture: three immediate `sess-*` matches above a few hundred
+    /// irrelevant nested entries (including deeper `sess-*` look-alikes).
+    fn wide_tree_fixture() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join(".tmp");
+        for name in ["sess-a.log", "sess-b.log", "sess-c.log", "other.log"] {
+            std::fs::create_dir_all(&tmp).unwrap();
+            std::fs::write(tmp.join(name), "x").unwrap();
+        }
+        for d in 0..20 {
+            let nested = tmp.join(format!("run-{d:02}/inner"));
+            std::fs::create_dir_all(&nested).unwrap();
+            for f in 0..15 {
+                std::fs::write(nested.join(format!("artifact-{f:02}.bin")), "x").unwrap();
+            }
+            std::fs::write(nested.join("sess-deep.log"), "x").unwrap();
+        }
+        for d in 0..10 {
+            let sibling = dir.path().join(format!("sibling-{d}/deep"));
+            std::fs::create_dir_all(&sibling).unwrap();
+            for f in 0..10 {
+                std::fs::write(sibling.join(format!("f{f}.txt")), "x").unwrap();
+            }
+        }
+        dir
+    }
+
+    #[test]
+    fn anchored_pattern_walks_only_immediate_entries() {
+        let dir = wide_tree_fixture();
+        let tmp = dir.path().join(".tmp");
+        let walk = walk(
+            "./sess-*",
+            &tmp.to_string_lossy(),
+            true,
+            true,
+            200,
+            1_000_000,
+        );
+        assert!(walk.output.contains("3 files matched"), "{}", walk.output);
+        assert!(!walk.output.contains("sess-deep"), "{}", walk.output);
+        assert!(!walk.output.contains("complete=false"), "{}", walk.output);
+        // root + 4 files + 20 run dirs; never the 340 nested entries.
+        assert!(walk.visited <= 25, "visited {} entries", walk.visited);
+    }
+
+    #[test]
+    fn static_prefix_prunes_sibling_trees() {
+        let dir = wide_tree_fixture();
+        let walk = walk(
+            ".tmp/sess-*",
+            &dir.path().to_string_lossy(),
+            true,
+            true,
+            200,
+            1_000_000,
+        );
+        assert!(walk.output.contains("3 files matched"), "{}", walk.output);
+        assert!(!walk.output.contains("sess-deep"), "{}", walk.output);
+        // root + .tmp + its 24 immediate entries; no sibling or nested walk.
+        assert!(walk.visited <= 30, "visited {} entries", walk.visited);
+    }
+
+    #[test]
+    fn bounded_depth_pattern_still_matches_its_level() {
+        let dir = wide_tree_fixture();
+        let walk = walk(
+            ".tmp/*/inner/sess-*.log",
+            &dir.path().to_string_lossy(),
+            true,
+            true,
+            200,
+            1_000_000,
+        );
+        assert!(walk.output.contains("20 files matched"), "{}", walk.output);
+        assert!(!walk.output.contains("complete=false"), "{}", walk.output);
+    }
+
+    #[test]
+    fn recursive_walk_reports_budget_exhaustion() {
+        let dir = wide_tree_fixture();
+        let path = dir.path().to_string_lossy();
+        for pattern in ["**/sess-*.log", "sess-*.log"] {
+            let walk = walk(pattern, &path, true, true, 200, 50);
+            assert!(
+                walk.output
+                    .contains("complete=false (walk budget 50 entries reached)"),
+                "{pattern}: {}",
+                walk.output
+            );
+            assert!(walk.visited <= 50, "visited {} entries", walk.visited);
+        }
+        let full = walk("**/sess-*.log", &path, true, true, 200, 1_000_000);
+        assert!(full.output.contains("23 files matched"), "{}", full.output);
+        assert!(!full.output.contains("complete=false"), "{}", full.output);
+    }
+
+    #[test]
+    fn result_cap_does_not_imply_completeness() {
+        let dir = wide_tree_fixture();
+        let walk = walk(
+            "**/sess-*.log",
+            &dir.path().to_string_lossy(),
+            true,
+            true,
+            2,
+            1_000_000,
+        );
+        assert!(
+            walk.output
+                .contains("complete=false (result cap 2 reached)"),
+            "{}",
+            walk.output
         );
     }
 

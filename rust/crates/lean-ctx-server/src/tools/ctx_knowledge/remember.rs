@@ -571,6 +571,33 @@ pub(crate) fn derive_key_from_value(value: &str) -> String {
     }
 }
 
+/// The window of a category listing (`recall` with `category`, #2248): at
+/// most `limit` facts (default: `memory.knowledge.recall_facts_limit`, bounded
+/// by [`KNOWLEDGE_RECALL_FACTS_MAX`](lean_ctx::core::budgets::KNOWLEDGE_RECALL_FACTS_MAX))
+/// after skipping `offset`. Query and bare recall ignore it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RecallWindow {
+    pub limit: Option<usize>,
+    pub offset: usize,
+}
+
+impl RecallWindow {
+    pub fn new(limit: Option<usize>, offset: Option<usize>) -> Self {
+        Self {
+            limit,
+            offset: offset.unwrap_or(0),
+        }
+    }
+
+    /// The per-call limit within `1..=KNOWLEDGE_RECALL_FACTS_MAX`, or
+    /// `policy_limit` when the call set none.
+    pub(crate) fn limit_or(self, policy_limit: usize) -> usize {
+        self.limit.map_or(policy_limit, |limit| {
+            limit.clamp(1, lean_ctx::core::budgets::KNOWLEDGE_RECALL_FACTS_MAX)
+        })
+    }
+}
+
 /// Recall in this checkout's store, followed — for a checkout linked to a
 /// project (D01) — by the facts of the project's other checkouts that their
 /// validity class lets this checkout see (`linked`, AP01 §4). A recall
@@ -582,8 +609,17 @@ pub(crate) fn handle_recall(
     session_id: &str,
     mode: Option<&str>,
     as_of: Option<&str>,
+    window: RecallWindow,
 ) -> Result<String, String> {
-    let local = recall_local(project_root, category, query, session_id, mode, as_of)?;
+    let local = recall_local(
+        project_root,
+        category,
+        query,
+        session_id,
+        mode,
+        as_of,
+        window,
+    )?;
     if as_of.is_some() {
         return Ok(local);
     }
@@ -628,6 +664,7 @@ fn recall_local(
     session_id: &str,
     mode: Option<&str>,
     as_of: Option<&str>,
+    window: RecallWindow,
 ) -> Result<String, String> {
     let Some(mut knowledge) = ProjectKnowledge::load(project_root) else {
         return Ok("No knowledge stored for this project yet.".to_string());
@@ -640,20 +677,27 @@ fn recall_local(
     }
 
     if let Some(cat) = category {
-        let limit = policy.knowledge.recall_facts_limit;
-        let (facts, total) = knowledge.recall_by_category_for_output(cat, limit);
+        let limit = window.limit_or(policy.knowledge.recall_facts_limit);
+        let offset = window.offset;
+        let (facts, total) = knowledge.recall_by_category_window(cat, offset, limit);
+        if total > 0 && facts.is_empty() {
+            return Ok(format!(
+                "No facts in category '{cat}' at offset {offset} ({total} in total)."
+            ));
+        }
         if facts.is_empty() || total == 0 {
             // System 2: archive rehydrate (category-only)
             let rehydrated =
                 rehydrate_from_archives(&mut knowledge, Some(cat), None, session_id, &policy);
             if rehydrated {
-                let (facts2, total2) = knowledge.recall_by_category_for_output(cat, limit);
+                let (facts2, total2) = knowledge.recall_by_category_window(cat, offset, limit);
                 if !facts2.is_empty() && total2 > 0 {
-                    let out2 = format_facts_with_annotations(
+                    let out2 = format_category_window(
                         project_root,
                         &facts2,
                         total2,
-                        Some(cat),
+                        cat,
+                        offset,
                         &knowledge.judged_pairs,
                     );
                     save_knowledge_deferred(knowledge, project_root);
@@ -662,11 +706,12 @@ fn recall_local(
             }
             return Ok(format!("No facts in category '{cat}'."));
         }
-        let out = format_facts_with_annotations(
+        let out = format_category_window(
             project_root,
             &facts,
             total,
-            Some(cat),
+            cat,
+            offset,
             &knowledge.judged_pairs,
         );
         save_knowledge_deferred(knowledge, project_root);

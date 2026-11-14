@@ -363,6 +363,39 @@ pub(crate) fn format_facts_with_annotations(
     category: Option<&str>,
     judged_pairs: &[lean_ctx::core::knowledge::JudgedPair],
 ) -> String {
+    format_facts_window(project_root, facts, total, category, 0, judged_pairs)
+}
+
+/// A category listing's window (#2248): the header names the window
+/// (`showing 11-20/41`) and, while facts remain, the offset of the next one.
+pub(crate) fn format_category_window(
+    project_root: &str,
+    facts: &[lean_ctx::core::knowledge::KnowledgeFact],
+    total: usize,
+    category: &str,
+    offset: usize,
+    judged_pairs: &[lean_ctx::core::knowledge::JudgedPair],
+) -> String {
+    format_facts_window(
+        project_root,
+        facts,
+        total,
+        Some(category),
+        offset,
+        judged_pairs,
+    )
+}
+
+fn format_facts_window(
+    project_root: &str,
+    facts: &[lean_ctx::core::knowledge::KnowledgeFact],
+    total: usize,
+    category: Option<&str>,
+    offset: usize,
+    judged_pairs: &[lean_ctx::core::knowledge::JudgedPair],
+) -> String {
+    // The next window starts after every fact this one selected, served or not.
+    let next = offset + facts.len();
     // Preserve the caller's order: recall_for_output / recall_by_category_for_output
     // already rank facts (balanced observation tier #802, exact-match precedence,
     // relevance). Re-sorting here by salience would discard that ranking and bury a
@@ -379,11 +412,12 @@ pub(crate) fn format_facts_with_annotations(
 
     let mut out = String::new();
     if let Some(cat) = category {
-        out.push_str(&format!(
-            "Facts [{cat}] (showing {}/{}):\n",
-            facts.len(),
-            total
-        ));
+        let shown = if offset == 0 || facts.is_empty() {
+            facts.len().to_string()
+        } else {
+            format!("{}-{}", offset + 1, offset + facts.len())
+        };
+        out.push_str(&format!("Facts [{cat}] (showing {shown}/{total}):\n"));
     } else {
         out.push_str(&format!(
             "Matching facts (showing {}/{}):\n",
@@ -430,6 +464,14 @@ pub(crate) fn format_facts_with_annotations(
                 lean_ctx::core::archive::authority::mark_unbound();
             }
         }
+    }
+    if let Some(cat) = category
+        && next < total
+    {
+        out.push_str(&format!(
+            "→ more: recall category={cat} offset={next} ({} remaining)\n",
+            total - next
+        ));
     }
     super::with_not_truth_note(out)
 }

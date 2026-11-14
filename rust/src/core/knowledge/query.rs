@@ -391,6 +391,18 @@ impl ProjectKnowledge {
         category: &str,
         limit: usize,
     ) -> (Vec<KnowledgeFact>, usize) {
+        self.recall_by_category_window(category, 0, limit)
+    }
+
+    /// The current facts of `category` in output order, `offset` skipped and
+    /// at most `limit` returned, with the category's total (#2248). Every
+    /// returned fact counts as recalled (refreshed against decay).
+    pub fn recall_by_category_window(
+        &mut self,
+        category: &str,
+        offset: usize,
+        limit: usize,
+    ) -> (Vec<KnowledgeFact>, usize) {
         let mut idxs: Vec<usize> = self
             .index
             .category_positions
@@ -411,7 +423,7 @@ impl ProjectKnowledge {
         });
 
         let total = idxs.len();
-        idxs.truncate(limit);
+        let idxs: Vec<usize> = idxs.into_iter().skip(offset).take(limit).collect();
 
         let now = Utc::now();
         let mut out = Vec::new();

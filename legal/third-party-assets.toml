@@ -8,7 +8,7 @@ cargo_lock_sha256 = "4bbcd5c7a3cbd2692264f508ddf6eaa0e41000296e04cbdc0d16680cd5e
 sbom = "SBOM.cdx.json"
 sbom_sha256 = "8dc3dd14b662c89777a5edd4abb9f56e9fb60708765f90836dded1d9f6fa109e"
 npm_lock = "packages/pi-lean-ctx/package-lock.json"
-npm_lock_sha256 = "136c552c5f949642bd2f51394b3bec5fa098984b15d005eafabc341cd77d628b"
+npm_lock_sha256 = "80be0b272b759c509fee6c44185755ceae9d23e4331b78867c5e4722475fb1d8"
 
 [license_texts]
 mit = """
