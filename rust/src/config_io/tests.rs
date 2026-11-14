@@ -664,3 +664,22 @@ fn writes_leave_no_lock_file_beside_the_target() {
     );
     assert!(lock.exists(), "the lock still exists, in the state dir");
 }
+
+#[cfg(unix)]
+#[test]
+fn backup_does_not_follow_a_planted_bak_symlink() {
+    let tmp = unique_tmp("cfg_bak_link");
+    let project = tmp.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let outside = tmp.join("outside.txt");
+    let path = project.join("AGENTS.md");
+    std::fs::write(&path, "repo text\n").unwrap();
+    std::os::unix::fs::symlink(&outside, project.join("AGENTS.md.bak")).unwrap();
+
+    let err = write_atomic_with_backup(&path, "repo text\nlean-ctx block\n").unwrap_err();
+
+    assert!(err.contains("symlink"), "{err}");
+    assert!(!outside.exists());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "repo text\n");
+    let _ = std::fs::remove_dir_all(&tmp);
+}

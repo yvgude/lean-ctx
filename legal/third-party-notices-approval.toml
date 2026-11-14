@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "d3d27f494df715682fd7306fbf9a60f49fc99b87f1e95c929c25c09867bd9074"
+approved_content_sha256 = "ae7d444e137ec6f37d567d10eb95e7ce49e3f8fd6d371791090cf94fcbd73f39"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.4 after the version and library crate bumps: pending variant 087ae054303d9af4b9f849e01b76bffb6c515f74378fb9ed4efd12b1105b3c43, approved variant d3d27f494df715682fd7306fbf9a60f49fc99b87f1e95c929c25c09867bd9074; inventory unchanged from 3.12.3 (cargo metadata inventory 7034b4be), only the Cargo.lock, SBOM, asset manifest and npm lock input digests changed. Owner approval in the 3.12.4 release session on 2026-11-12 (answer \"Approve d3d27f49...\")."
-approved_at = "2026-11-12"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.5 after the quinn-udp 0.5.15 -> 0.5.16 lockfile fix (RUSTSEC-2026-0538): pending variant dae299c510ba52d8ec27188d0c38a39c092542715bce02b844b990478869d9b5, approved variant ae7d444e137ec6f37d567d10eb95e7ce49e3f8fd6d371791090cf94fcbd73f39; inventory unchanged apart from the quinn-udp version, only the Cargo.lock, SBOM and asset manifest input digests changed. Owner approval in the 3.12.5 release session on 2026-11-13 (answer \"Approve ae7d444e...\")."
+approved_at = "2026-11-13"

@@ -16,8 +16,12 @@ pub(super) fn backup_before_modify(path: &Path, dry_run: bool) {
         return;
     }
     if path.exists() {
+        // GHSA-x992-2945-crwx: a cloned repository can ship
+        // `<file>.lean-ctx.bak` as a symlink; never write the backup through it.
         let bak = bak_path_for(path);
-        let _ = fs::copy(path, &bak);
+        if let Ok(bytes) = fs::read(path) {
+            let _ = lean_ctx::config_io::write_backup_nofollow(path, &bak, &bytes);
+        }
     }
 }
 

@@ -228,6 +228,22 @@ fn pinned_data_dir_trims_trailing_separator() {
     );
 }
 
+/// #2236: an account the OS cannot resolve leaves the pinned gate on its
+/// built-in defaults; doctor must flag that instead of reporting the default
+/// allowlist as enforced.
+#[test]
+fn gh2236_doctor_flags_an_unresolvable_account() {
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _pin = lean_ctx::core::config::shell_policy::pin_unresolvable_for_test();
+    let out = shell_allowlist_outcome();
+    assert!(!out.ok, "{}", out.line);
+    assert!(
+        out.line.contains("no account-database entry"),
+        "{}",
+        out.line
+    );
+}
+
 #[test]
 fn standard_data_pin_is_not_flagged_as_divergent() {
     // #594 regression: an editor that bakes the *standard* XDG data dir keeps

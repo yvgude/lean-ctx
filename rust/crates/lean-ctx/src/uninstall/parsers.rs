@@ -1241,6 +1241,29 @@ command = \"other\"
         );
     }
 
+    /// GHSA-x992-2945-crwx: a cloned repository can ship `AGENTS.md.lean-ctx.bak`
+    /// as a symlink. The uninstall backup must not write through it.
+    #[cfg(unix)]
+    #[test]
+    fn backup_before_modify_does_not_follow_a_planted_bak_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let victim = outside.path().join("victim.txt");
+        std::fs::write(&victim, "untouched").unwrap();
+
+        let path = dir.path().join("AGENTS.md");
+        std::fs::write(&path, "repository rules").unwrap();
+        std::os::unix::fs::symlink(&victim, bak_path_for(&path)).unwrap();
+
+        backup_before_modify(&path, false);
+
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "untouched",
+            "backup must not write through a planted symlink"
+        );
+    }
+
     #[test]
     fn removes_login_block_preserving_user_content() {
         let input = "export PATH=\"$HOME/bin:$PATH\"\n\n\

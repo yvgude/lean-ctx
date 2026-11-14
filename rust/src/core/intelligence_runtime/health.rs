@@ -133,7 +133,7 @@ pub(super) struct Prepared {
 
 impl Prepared {
     // The Unix peer socket lives in the workspace; Windows uses a named pipe.
-    #[cfg(unix)]
+    #[cfg(any(unix, test))]
     pub(super) fn path(&self) -> &Path {
         self.workspace.path()
     }
@@ -209,19 +209,19 @@ pub(super) fn prepare_binary(
             builder.tempdir()?
         }
     };
+    // #2203: stage beside the admitted installation, whose private ACL the
+    // install already established. %TEMP% (or a folder above it) commonly
+    // grants other principals write access — `C:\Temp`, managed profiles —
+    // and the private-directory check rightly refused it, so the Cockpit
+    // never started. The peer channel is a named pipe: no path length limit.
     #[cfg(windows)]
-    let temporary = {
-        let parent = crate::core::windows_private::Directory::create(
-            &std::env::temp_dir().join("leanctx-runtime-private"),
-        )?;
-        install::temporary_directory(parent.path(), "health-")?
-    };
+    let temporary = install::temporary_directory(root, ".run-")?;
     let directory = temporary.path().canonicalize()?;
     #[cfg(target_os = "linux")]
     let executable_directory = install::execution_directory(root)?;
     #[cfg(target_os = "linux")]
     let executable = executable_directory.path().join(name);
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", windows)))]
     let _ = root;
     #[cfg(not(target_os = "linux"))]
     let executable = directory.join(name);
@@ -542,8 +542,8 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_windows_runtime_gets_the_system_root_and_nothing_inherited() {
-        // The environment alone: the private workspace beside %TEMP% has its
-        // own owner checks, which a CI runner's TEMP does not satisfy.
+        // The environment alone: the private copy beside the installation
+        // has its own owner checks (see the #2203 test below).
         let directory = tempfile::tempdir().unwrap();
         let command = runtime_command(
             &directory.path().join("leanctx-cockpit.exe"),
@@ -568,6 +568,56 @@ mod tests {
         assert!(std::path::Path::new(&system_root).join("System32").is_dir());
         let names: Vec<&str> = envs.keys().map(String::as_str).collect();
         assert_eq!(names, ["HOME", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR"]);
+    }
+
+    /// #2203: the private copy lives beside the admitted installation. A
+    /// `%TEMP%` that grants other principals write access (`C:\Temp`,
+    /// managed profiles) refused the old `%TEMP%` staging with "DACL grants
+    /// an untrusted principal write or ownership access", and the Cockpit
+    /// never started.
+    #[cfg(windows)]
+    #[test]
+    fn a_windows_private_copy_ignores_a_shared_temp_gh2203() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("runtime");
+        // The installation's own root, created as the install creates it. A
+        // host whose temporary folder is not the user's cannot hold it.
+        if let Err(error) = crate::core::windows_private::Directory::create(&root) {
+            eprintln!("skipped: no private root on this host ({error})");
+            return;
+        }
+        let shared = base.path().join("shared-temp");
+        std::fs::create_dir(&shared).unwrap();
+        // Authenticated Users may modify it, as on a shared `C:\Temp`.
+        let granted = std::process::Command::new("icacls")
+            .arg(&shared)
+            .args(["/grant", "*S-1-5-11:(OI)(CI)M"])
+            .output()
+            .unwrap();
+        assert!(granted.status.success(), "{granted:?}");
+        let previous = std::env::var_os("TEMP");
+        // SAFETY: serialized by the environment lock held above.
+        unsafe { std::env::set_var("TEMP", &shared) };
+        let prepared = prepare_binary(b"MZ", &root, "leanctx-cockpit.exe");
+        // SAFETY: as above.
+        unsafe {
+            match previous {
+                Some(value) => std::env::set_var("TEMP", value),
+                None => std::env::remove_var("TEMP"),
+            }
+        }
+        let (prepared, _command) = prepared.expect("a shared %TEMP% must not block the copy");
+        // Compare canonical forms: Windows canonicalization adds the `\\?\` prefix.
+        let copy = prepared.path().canonicalize().unwrap();
+        let root = root.canonicalize().unwrap();
+        assert!(
+            copy.starts_with(&root),
+            "{} is not beside {}",
+            copy.display(),
+            root.display()
+        );
+        prepared.close().unwrap();
     }
 
     fn described(capabilities: &serde_json::Value) -> VerifiedPackage {

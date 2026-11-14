@@ -159,21 +159,11 @@ fn write_file_atomic(path: &str, content: &str) -> Result<(), String> {
     // Read-only-roots choke point (#475): headless ctx_refactor symbol edits
     // funnel through here — default-deny inside a read-only root.
     crate::core::pathjail::enforce_writable(p)?;
-    let parent = p
-        .parent()
-        .ok_or_else(|| "invalid path (no parent directory)".to_string())?;
-    let filename = p
-        .file_name()
-        .ok_or_else(|| "invalid path (no filename)".to_string())?
-        .to_string_lossy();
-    let pid = std::process::id();
-    let tmp = parent.join(format!(".{filename}.lean-ctx.v2a.tmp.{pid}"));
-    std::fs::write(&tmp, content.as_bytes())
-        .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, p).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("atomic write failed: {e}")
-    })
+    // The shared atomic writer stages into a fresh `create_new` temp with an
+    // unpredictable name: a fixed `.<name>.lean-ctx.v2a.tmp.<pid>` name was
+    // followed when a cloned repository shipped it as a symlink.
+    crate::core::atomic_fs::try_atomic_write(p, content.as_bytes(), None)
+        .map_err(|e| format!("atomic write failed: {e}"))
 }
 
 /// Zero-dependency backend that carries only the Trait default-apply for the
@@ -277,6 +267,31 @@ mod tests {
         assert!(res.applied);
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "aaa\nNEW\nccc\n");
         assert_eq!(res.edited_text, "NEW");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_range_write_ignores_a_planted_temp_symlink() {
+        let (d, p) = tmp_file("aaa\nBODY\nccc\n");
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("out.txt");
+        let planted = d
+            .path()
+            .join(format!(".Foo.txt.lean-ctx.v2a.tmp.{}", std::process::id()));
+        std::os::unix::fs::symlink(&target, &planted).unwrap();
+        let r = TextRange0Based {
+            start_line: 1,
+            start_char: 0,
+            end_line: 1,
+            end_char: 4,
+        };
+
+        local_range_write(&edit(&p, r, "NEW", None)).unwrap();
+
+        assert!(!target.exists());
+        let meta = std::fs::symlink_metadata(&p).unwrap();
+        assert!(!meta.file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "aaa\nNEW\nccc\n");
     }
 
     /// #475: the headless symbol-edit write path (`write_file_atomic`) must

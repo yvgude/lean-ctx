@@ -88,9 +88,19 @@ fn handle_list_roots() -> (String, usize) {
     }
 
     let mut out = String::with_capacity(roots.len() * 80);
-    out.push_str(&format!("Configured roots ({}):\n", roots.len()));
+    out.push_str(&format!(
+        "Configured roots ({} of at most {}):\n",
+        roots.len(),
+        mgr.max_roots()
+    ));
     for root in &roots {
-        let idx_status = if root.has_index { "indexed" } else { "pending" };
+        // A root's index is loaded on its first search; "pending" said
+        // nothing about that and read like a failure (#2244).
+        let idx_status = if root.has_index {
+            "index loaded"
+        } else {
+            "index loads on first search"
+        };
         out.push_str(&format!(
             "  [{alias}] {path} ({idx_status})\n",
             alias = root.alias,
@@ -146,6 +156,8 @@ fn handle_save_config() -> (String, usize) {
     };
 
     let roots = mgr.list_roots();
+    // Settings already in the file (rrf_k, max_roots) are kept; only the
+    // root list is replaced.
     let config = MultiRepoConfig {
         repos: roots
             .iter()
@@ -154,7 +166,7 @@ fn handle_save_config() -> (String, usize) {
                 alias: Some(r.alias.clone()),
             })
             .collect(),
-        rrf_k: None,
+        ..MultiRepoConfig::load()
     };
 
     match config.save() {

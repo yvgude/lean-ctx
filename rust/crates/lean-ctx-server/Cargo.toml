@@ -4,7 +4,7 @@
 # Published in lockstep with the Engine.
 [package]
 name = "lean-ctx-server"
-version = "3.12.4"
+version = "3.12.5"
 edition = "2024"
 license = "Apache-2.0"
 description = "The LeanCTX MCP server and its tools on top of LeanCTX | OSS."
@@ -82,10 +82,10 @@ wasm = ["lean-ctx-engine/wasm"]
 test-support = ["lean-ctx-engine/test-support", "lean-ctx-hive/test-support"]
 
 [dependencies]
-lean-ctx-engine = { path = "../..", version = "=3.12.4", default-features = false }
-lean-ctx-shell-policy = { path = "../lean-ctx-shell-policy", version = "=3.12.4", default-features = false }
-lean-ctx-hooks = { path = "../lean-ctx-hooks", version = "=3.12.4", default-features = false }
-lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.4", default-features = false }
+lean-ctx-engine = { path = "../..", version = "=3.12.5", default-features = false }
+lean-ctx-shell-policy = { path = "../lean-ctx-shell-policy", version = "=3.12.5", default-features = false }
+lean-ctx-hooks = { path = "../lean-ctx-hooks", version = "=3.12.5", default-features = false }
+lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.5", default-features = false }
 lean-ctx-ocla = { path = "../lean-ctx-ocla", version = "7.0.0" }
 lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.7.0" }
 lean-ctx-doc = { path = "../lean-ctx-doc", version = "0.2.0" }
@@ -167,8 +167,8 @@ windows-sys = { version = "0.61", features = [
 
 [dev-dependencies]
 # The Engine's test helpers for this crate's unit tests (see core::test_mode).
-lean-ctx-engine = { path = "../..", version = "=3.12.4", default-features = false, features = ["test-support"] }
-lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.4", default-features = false, features = ["test-support"] }
+lean-ctx-engine = { path = "../..", version = "=3.12.5", default-features = false, features = ["test-support"] }
+lean-ctx-hive = { path = "../lean-ctx-hive", version = "=3.12.5", default-features = false, features = ["test-support"] }
 jsonschema = { version = "0.46", default-features = false }
 serial_test = "3.5"
 axum = { version = "0.8", features = ["ws"] }
