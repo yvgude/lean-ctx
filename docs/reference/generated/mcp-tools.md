@@ -237,7 +237,7 @@ action=gotcha trigger='X' resolution='Y' for known pitfalls.
 action=decisions [path=P|symbol=S] lists project decisions (.leanctx/decisions) in scope.
 mode=semantic|exact for recall. category groups related facts.
 
-Parameters: `action`*, `anchors`, `as_of`, `category`, `commands`, `confidence`, `content`, `dry_run`, `evidence`, `examples`, `format`, `key`, `limit`, `merge`, `mode`, `path`, `pattern_type`, `query`, `refs`, `resolution`, `severity`, `sources`, `steps`, `store`, `symbol`, `trigger`, `type`, `validity`, `value`
+Parameters: `action`*, `anchors`, `as_of`, `category`, `commands`, `confidence`, `content`, `dry_run`, `evidence`, `examples`, `format`, `key`, `limit`, `merge`, `mode`, `offset`, `path`, `pattern_type`, `query`, `refs`, `resolution`, `severity`, `sources`, `steps`, `store`, `symbol`, `trigger`, `type`, `validity`, `value`
 
 ## `ctx_load_tools`
 

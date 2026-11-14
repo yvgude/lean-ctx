@@ -29,6 +29,8 @@ mod engine_tests;
 #[cfg(test)]
 mod hive_guard_tests;
 #[cfg(test)]
+mod recall_window_tests;
+#[cfg(test)]
 mod tests;
 
 /// Dispatches knowledge base actions (remember, recall, pattern, timeline, etc.).
@@ -90,6 +92,41 @@ pub fn handle_outcome(
     mode: Option<&str>,
     as_of: Option<&str>,
 ) -> Result<String, String> {
+    handle_outcome_windowed(
+        project_root,
+        action,
+        category,
+        key,
+        value,
+        query,
+        session_id,
+        pattern_type,
+        examples,
+        confidence,
+        mode,
+        as_of,
+        RecallWindow::default(),
+    )
+}
+
+/// [`handle_outcome`] with the window of a category listing (`recall` with
+/// `category`: per-call `limit`/`offset`, #2248). Other actions ignore it.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_outcome_windowed(
+    project_root: &str,
+    action: &str,
+    category: Option<&str>,
+    key: Option<&str>,
+    value: Option<&str>,
+    query: Option<&str>,
+    session_id: &str,
+    pattern_type: Option<&str>,
+    examples: Option<Vec<String>>,
+    confidence: Option<f32>,
+    mode: Option<&str>,
+    as_of: Option<&str>,
+    window: RecallWindow,
+) -> Result<String, String> {
     if let Err(error) = lean_ctx::core::knowledge::protection::current(project_root) {
         return Err(format!("Error: {error}"));
     }
@@ -97,7 +134,7 @@ pub fn handle_outcome(
         std::cell::RefCell::new(Some(std::path::PathBuf::from(project_root))),
         || {
     let declared = match action {
-        "recall" => Some(handle_recall(project_root, category, query, session_id, mode, as_of)),
+        "recall" => Some(handle_recall(project_root, category, query, session_id, mode, as_of, window)),
         "timeline" => Some(handle_timeline(project_root, category)),
         "search" => Some(handle_search(query, session_id)),
         _ => None,

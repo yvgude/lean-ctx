@@ -55,7 +55,8 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     "examples": { "type": "array", "items": { "type": "string" } },
                     "confidence": { "type": "number", "description": "0.0-1.0" },
                     "store": { "type": "string", "description": "restore: facts|history|patterns (default: all)" },
-                    "limit": { "type": "number", "description": "restore: max items to recover (default 50)" },
+                    "limit": { "type": "number", "description": "restore: max items to recover (default 50). recall with category: facts per window (default memory.knowledge.recall_facts_limit, max 200)" },
+                    "offset": { "type": "number", "description": "recall with category: facts to skip, to page past the limit (default 0)" },
                     "dry_run": { "type": "boolean", "description": "consolidate: preview imports/reclaim without writing" },
                     "format": { "type": "string", "description": "export: json|okf (okf = portable Markdown bundle)" },
                     "path": { "type": "string", "description": "export/import: bundle directory (OKF) or file path; decisions: file whose in-scope decisions to list" },
@@ -283,7 +284,12 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
         // `timeline`, `search`, and the refusals all actions share) is a tool
         // error with the same text — never a reply that could be recorded as
         // a delivery of the sources captured before it failed.
-        let outcome = crate::tools::ctx_knowledge::handle_outcome(
+        // #2248: a category listing's window (`limit` bounded in the handler).
+        let window = crate::tools::ctx_knowledge::RecallWindow::new(
+            get_f64(args, "limit").map(|v| v as usize),
+            get_f64(args, "offset").map(|v| v as usize),
+        );
+        let outcome = crate::tools::ctx_knowledge::handle_outcome_windowed(
             &project_root,
             &action,
             category.as_deref(),
@@ -296,6 +302,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             confidence,
             mode.as_deref(),
             as_of.as_deref(),
+            window,
         );
         let failed = outcome.is_err();
         let (Ok(result) | Err(result)) = outcome;

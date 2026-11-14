@@ -20,6 +20,16 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Fixed
 
+- **A knowledge category can be listed whole through `recall` (#2248).** `ctx_knowledge
+  action=recall category=<c>` showed at most `recall_facts_limit` facts (`showing 10/41`) with
+  no way to reach the rest, and only listed facts are refreshed against decay. The call now
+  takes `limit` (up to a hard ceiling of 200) and `offset`; the header names the window
+  (`showing 11-20/41`) and, while facts remain, the next offset. `lean-ctx knowledge recall
+  --category <c>` takes `--limit` and `--offset`. Every fact a window returns counts as
+  recalled, as before. `memory.knowledge.recall_facts_limit` in a project's `.lean-ctx.toml`
+  sets that project's default window; a regression test now covers it. Query and bare recall
+  are unchanged. Reported by @antojk.
+
 - **`ctx_multi_repo search` across several roots (#2244).** With two or more roots every
   search failed with "search source authority changed or is unavailable": one source view
   was held for the whole search while each root's index re-bound the request to its own
@@ -48,6 +58,15 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   message says that no config location exists instead of naming `~/.lean-ctx/config.toml`,
   and `lean-ctx doctor` reports the shell allowlist as running on defaults.
 
+- **`ctx_glob` walks only as far as the pattern reaches (#2250, thanks @dkiaulakis).** A
+  pattern with a `/` and no `**` (`src/*.rs`, `.tmp/prefix*`) now descends only through its
+  literal leading directories and no deeper than its own component count; a leading `./`
+  anchors a name to the directory's own entries (`./prefix*`). Recursive walks (`**`, or a
+  slash-free name, which still matches at any depth) stop after 200,000 visited entries and
+  say `complete=false (walk budget 200000 entries reached)`; a walk cut short by
+  `max_results` says `complete=false (result cap N reached)`. Ignore rules, confinement and
+  secret-path redaction are unchanged.
+
 ### Security
 
 - **Rule-file backups and the `replace_symbol` temp file no longer follow a planted symlink
@@ -63,6 +82,8 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 - **quinn-udp 0.5.16 (RUSTSEC-2026-0538).** The indirect dependency `quinn-udp` moves from
   0.5.15 to the patched 0.5.16; its receive loop could spin after a truncated datagram.
+- **hono 4.13.18 and @hono/node-server 2.1.8** in the `pi-lean-ctx` package lockfile
+  (from 4.13.13 and 2.1.5; Dependabot #2246, #2243).
 
 ## [3.12.4] — 2026-11-12
 

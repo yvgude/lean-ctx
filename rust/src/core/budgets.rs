@@ -3,6 +3,9 @@
 pub const READ_MODE_COUNT: f64 = 10.0;
 
 pub const KNOWLEDGE_RECALL_FACTS_LIMIT: usize = 10;
+/// Hard ceiling of a per-call `limit` on `ctx_knowledge action=recall` (#2248):
+/// a larger category is listed window by window with `offset`.
+pub const KNOWLEDGE_RECALL_FACTS_MAX: usize = 200;
 pub const KNOWLEDGE_TIMELINE_LIMIT: usize = 25;
 pub const KNOWLEDGE_ROOMS_LIMIT: usize = 25;
 pub const KNOWLEDGE_CROSS_PROJECT_SEARCH_LIMIT: usize = 20;

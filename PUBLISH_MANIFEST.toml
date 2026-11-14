@@ -2378,6 +2378,7 @@ new_paths = [
   "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/hive_guard_tests.rs",
   "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/linked.rs",
   "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/mod.rs",
+  "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/recall_window_tests.rs",
   "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/remember.rs",
   "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/restore.rs",
   "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/search.rs",

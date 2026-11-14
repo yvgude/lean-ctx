@@ -331,11 +331,11 @@
    "size": 1033
   },
   {
-   "blob": "8d25db932c8beaaa11d2a66e0aafae6906443c5d",
+   "blob": "967aed0e3121be747a277739beebd7bec18c6077",
    "mode": "100644",
    "path": "CHANGELOG.md",
-   "sha256": "b73accf35f55efb09b16637783ad8e4ccefe4dab079aeea0283af627c55c13c5",
-   "size": 1284480
+   "sha256": "bdf05b987261bd789401a12917323d9db56a6c6270097977fdf1d11eb9678ae7",
+   "size": 1286052
   },
   {
    "blob": "77a7c7a520af8fc8b4df372eb5bd5fddcefbfecf",
@@ -436,11 +436,11 @@
    "size": 525
   },
   {
-   "blob": "3cd05e74c413de624925a3fc8c5f0a27e0c76b86",
+   "blob": "ab4480118f0abbd4e85c3996c981a11b6753224e",
    "mode": "100644",
    "path": "PUBLISH_MANIFEST.toml",
-   "sha256": "7392d39258c40018285ae618f4ed3a14f7c5358109fb89ec6adb34c52311935a",
-   "size": 312964
+   "sha256": "cb51978380c5fc9cbc5e9ac54ef56cb07f420a6e4e283b936241c28e834e3535",
+   "size": 313044
   },
   {
    "blob": "b50ec9ee68e230777b65ff932e22735417a8e540",
@@ -464,10 +464,10 @@
    "size": 32425
   },
   {
-   "blob": "9477dcf8bf645d0790c8b7e19d3479dc69fc6734",
+   "blob": "67f2bf8c0bb2957f9bc07294c494e79a1a10eddb",
    "mode": "100644",
    "path": "THIRD_PARTY_NOTICES",
-   "sha256": "ae7d444e137ec6f37d567d10eb95e7ce49e3f8fd6d371791090cf94fcbd73f39",
+   "sha256": "58d3cb2c06ae4ab8c72371aa04e5ccc8f643989b2f25c4298b636b1be04d0e45",
    "size": 331754
   },
   {
@@ -3278,11 +3278,11 @@
    "size": 5512
   },
   {
-   "blob": "dd0dd6f74c89aa1f5c3818dc22e92138afce860c",
+   "blob": "43948ed7e337f1fb2909ebc56bcae5b109cd3a0c",
    "mode": "100644",
    "path": "docs/reference/generated/mcp-tools.md",
-   "sha256": "08f517964b066fe064d85e75eb2dbac701a88be19c4f2763607c5c37035f65bd",
-   "size": 23520
+   "sha256": "965b0798e932be8455f35af716cef58c6bf155c5348d64c9c6c17e090b5a4c18",
+   "size": 23530
   },
   {
    "blob": "392dce35ae93180bf5953b4e7e77f2d56a3102be",
@@ -4006,18 +4006,18 @@
    "size": 193663
   },
   {
-   "blob": "01bdca9a7b00440cefb3df8375fb4d8fccee99c5",
+   "blob": "9db68450c504924f4caeedd2a88e1713f004a060",
    "mode": "100644",
    "path": "legal/third-party-assets.toml",
-   "sha256": "c61a039cc93e72487106649238845cddef873f466891519de5eabef044e32e01",
+   "sha256": "425dd8b96788160bf4fc3a3a512dd05816fb4edb078c822cefeb92dfc5dc542d",
    "size": 4279
   },
   {
-   "blob": "a4eff1b6450de4f6a53093fb0a269d65bcbb9128",
+   "blob": "9457fa56d74f1d4090d8983715d6dc1344a872c6",
    "mode": "100644",
    "path": "legal/third-party-notices-approval.toml",
-   "sha256": "7c3b354e52fb18211f6b105587c22670b3428a37aca32ce08c6d0319c984d600",
-   "size": 825
+   "sha256": "6b3ebca2d0584bd4e9dc8aa64e9e1c5b45d8a905c2c4d702190a869e9630c9c8",
+   "size": 900
   },
   {
    "blob": "670fbcf808b965b53ce1309fc8d0c6d3b347c142",
@@ -4419,10 +4419,10 @@
    "size": 443
   },
   {
-   "blob": "a2cae5521497f7f49838860811bab5fbbffd4ff6",
+   "blob": "bdc8301f3631a7d27136b542fefb54323e3ff9ac",
    "mode": "100644",
    "path": "packages/pi-lean-ctx/package-lock.json",
-   "sha256": "136c552c5f949642bd2f51394b3bec5fa098984b15d005eafabc341cd77d628b",
+   "sha256": "80be0b272b759c509fee6c44185755ceae9d23e4331b78867c5e4722475fb1d8",
    "size": 147229
   },
   {
@@ -14352,11 +14352,11 @@
    "size": 36600
   },
   {
-   "blob": "b19ceb414ddedb23efc5e4dd6e899635b25595b5",
+   "blob": "fa7bca02893d3abd697c278bec784e5c52070050",
    "mode": "100644",
    "path": "rust/crates/lean-ctx-server/src/tools/ctx_glob.rs",
-   "sha256": "aceeef2a41b332b26e79ac3674e6a38ada73c7eb122fe7de5123244793bb4c68",
-   "size": 17820
+   "sha256": "aa25871f9dfcf3c85cacecbf2dee23ff71af94e8ebd170127d0aa2fd256ccf07",
+   "size": 26573
   },
   {
    "blob": "89b3fa9e684be8d26a172e56332a3ff74c63810b",
@@ -14506,18 +14506,25 @@
    "size": 4682
   },
   {
-   "blob": "3ac2f54139478f84bf848d513a18831e6aa684fa",
+   "blob": "0324d0d8489c6ae7c5affce2a8688077696a9cd5",
    "mode": "100644",
    "path": "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/mod.rs",
-   "sha256": "3f701262efff07be628f2c2ed0875a7b50ec249aa919916e135f782967136cde",
-   "size": 49499
+   "sha256": "562ee74217722380fad9a67ffd3306581cf18ed58732f19f1027c095008821e6",
+   "size": 50411
   },
   {
-   "blob": "a50110e018e3c123c1602397c33017f82e990c8e",
+   "blob": "8524a7d2525b38961e85f179794134bc868adf76",
+   "mode": "100644",
+   "path": "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/recall_window_tests.rs",
+   "sha256": "a4381f33906830f841bb953cc5f14a61bd551f1a1e97dd23055df92fcc8f9448",
+   "size": 5440
+  },
+  {
+   "blob": "4e276e90c03dd3316459e260a78a9d2c84dfd9dd",
    "mode": "100644",
    "path": "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/remember.rs",
-   "sha256": "925e1003bd10340ee4633533ba13b453d85e429e2d9c338930fb4f13b964e429",
-   "size": 58222
+   "sha256": "3963e2de5262c16324e8a9ea01b093b8c3c37f0acdc43537ff516059daa74f99",
+   "size": 59578
   },
   {
    "blob": "45caae2531dc6ddcbbcf21bc221d00be574de5c4",
@@ -14527,11 +14534,11 @@
    "size": 19952
   },
   {
-   "blob": "ba8f3a1bb37b49d5b9d9031f720724f83a1e23f8",
+   "blob": "06aaadbe151899aac6f8e8e9c15130663749352e",
    "mode": "100644",
    "path": "rust/crates/lean-ctx-server/src/tools/ctx_knowledge/search.rs",
-   "sha256": "9a14c11f07e916e18056c0a827680ffebfe5f7bf3402d72fbef5dc2371d80785",
-   "size": 30159
+   "sha256": "908457de9049cd73c0255142d87250728d38a7dcaca030ef52433545cfc1dafb",
+   "size": 31488
   },
   {
    "blob": "6219d9193034d5469ea46d534ed510805ad8bdcf",
@@ -15304,11 +15311,11 @@
    "size": 3882
   },
   {
-   "blob": "fdd9b8674da426cd36e3f0a5d483f48360ea632b",
+   "blob": "21dd801e589ac61efbf2ad179a372a856b7fd32e",
    "mode": "100644",
    "path": "rust/crates/lean-ctx-server/src/tools/registered/ctx_knowledge.rs",
-   "sha256": "0d868f6d159656417e18c1aaaf024871a53b983f91dff7445bb0e6037569bd30",
-   "size": 41541
+   "sha256": "c858fca50ecaece154f454199ab7763848fe04f85cc7d09f2948bed07873c47e",
+   "size": 42080
   },
   {
    "blob": "54ff74209a4e921e6bf1f8a475b2aa25224b8746",
@@ -19532,11 +19539,11 @@
    "size": 3235
   },
   {
-   "blob": "43cf583395871b36a9a915d3d8f8bbce239c6ce5",
+   "blob": "935c0f77b64cefea37d90805ec69f0b880d79092",
    "mode": "100644",
    "path": "rust/crates/lean-ctx/src/cli/knowledge_cmd.rs",
-   "sha256": "16a03f53b66bcc4ea2685c10679c81c15c0d58b5b6a0d409bdea2a48c6cce508",
-   "size": 62541
+   "sha256": "b3cacbd87e7b0376380715e58d3d54253a49a56b5b17531906fbfade3f814dac",
+   "size": 63058
   },
   {
    "blob": "d165a44720d4b1c09b5c71f51919892c1b545c3b",
@@ -23711,11 +23718,11 @@
    "size": 23488
   },
   {
-   "blob": "e0672568a9910ddd49f1e6ca232cc3e0cabc6502",
+   "blob": "caeeaf3b44822300ac8dad4d201a62ae4000a988",
    "mode": "100644",
    "path": "rust/src/core/budgets.rs",
-   "sha256": "77812aad2372d944b29a324c442b536671aaa83e800155ab9f43776bd0170059",
-   "size": 2014
+   "sha256": "8789ca0606f4282b1ab68031beed49e2d852a2f3626f37321f8e833942b0fbb8",
+   "size": 2210
   },
   {
    "blob": "f0be9656f518708a0cbe9483c43c9780a5bfdd68",
@@ -28324,11 +28331,11 @@
    "size": 5154
   },
   {
-   "blob": "36f8b7ad82951f0aad746b2e90d46844e1225a7e",
+   "blob": "8e69f610165fd6880fb3fa97830388aeb0262564",
    "mode": "100644",
    "path": "rust/src/core/knowledge/query.rs",
-   "sha256": "5a99b42e6d5f7b9d71209b8608bb727221a06a3ebbd2eb11ffc4d05a724fb468",
-   "size": 13498
+   "sha256": "de5e9dec3318e3e96a381756042caaf4c4e36ef62345431f20d078960aea9d3e",
+   "size": 14004
   },
   {
    "blob": "4aee1e7a3db0676a7e105e756c7240e35b2961d3",
@@ -36965,9 +36972,9 @@
    "sha256": "d8ece87e85f847ba6ef03ac36623f3fa5675f01c3cd01ee22a4c8362eec48dda"
   }
  ],
- "manifest_sha256": "7392d39258c40018285ae618f4ed3a14f7c5358109fb89ec6adb34c52311935a",
+ "manifest_sha256": "cb51978380c5fc9cbc5e9ac54ef56cb07f420a6e4e283b936241c28e834e3535",
  "schema": 1,
- "source_commit": "5957f01fb64bc23b8dc84e86f5e8097baf7c2888",
+ "source_commit": "750142148464423de24b8c0b6efd1f293d5a021c",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "b0e11d61918f3eaf0137f04e085d61b22d84ba660ab424596d400426b6963f51"
+ "tree_sha256": "ea8de86d965bdff66430eb1115f5b6e3df4ce51bcadca95e30b5d660a6a894d3"
 }

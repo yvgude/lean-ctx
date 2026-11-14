@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "ae7d444e137ec6f37d567d10eb95e7ce49e3f8fd6d371791090cf94fcbd73f39"
+approved_content_sha256 = "58d3cb2c06ae4ab8c72371aa04e5ccc8f643989b2f25c4298b636b1be04d0e45"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.5 after the quinn-udp 0.5.15 -> 0.5.16 lockfile fix (RUSTSEC-2026-0538): pending variant dae299c510ba52d8ec27188d0c38a39c092542715bce02b844b990478869d9b5, approved variant ae7d444e137ec6f37d567d10eb95e7ce49e3f8fd6d371791090cf94fcbd73f39; inventory unchanged apart from the quinn-udp version, only the Cargo.lock, SBOM and asset manifest input digests changed. Owner approval in the 3.12.5 release session on 2026-11-13 (answer \"Approve ae7d444e...\")."
-approved_at = "2026-11-13"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.5 after the Dependabot bumps hono 4.13.13 -> 4.13.18 and @hono/node-server 2.1.5 -> 2.1.8 in packages/pi-lean-ctx/package-lock.json (GitHub PRs #2246, #2243): pending variant 8dd23dcbb2e3fa04d61455b7731219d0d3acf5a7780ccf88ecf6825e538d334c, approved variant 58d3cb2c06ae4ab8c72371aa04e5ccc8f643989b2f25c4298b636b1be04d0e45; license texts and package inventory unchanged, only the npm lockfile and asset manifest input digests changed. Owner approval in the 3.12.5 release session on 2026-11-14 (answer \"Approve 58d3cb2c...\")."
+approved_at = "2026-11-14"
