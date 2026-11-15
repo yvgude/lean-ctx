@@ -6,6 +6,52 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+## [3.12.6] — 2026-11-15
+
+### Added
+
+- **Nine more Local Read kinds.** The local read surface now serves `overlays.list`,
+  `overlays.removed`, `checkpoints.list`, `session.context`, `session.handoff`,
+  `session.value`, `update.status`, `security.status` and `telemetry.status` as JSON documents
+  (`GET /v1/local/...` and the matching `--json` CLI commands, e.g. `lean-ctx overlays list
+  --json`, `lean-ctx session context --json --session <id>`). A local client reads them
+  instead of parsing `ctx_control`, `ctx_checkpoint` or `update --status` text. Every body is a
+  function of the stored data, with no generated timestamps or counters, and is released
+  through the tool run of its tool. Project kinds need a project root; overlay removal only
+  accepts files inside the project. The status documents carry versions, switches and counts
+  only: no paths, digests, secrets or installation id.
+
+- **Shared parse cache across worktrees (#2247), opt-in.** With `[cache] derivations_enabled =
+  true` or `LEAN_CTX_DERIVATION_CACHE=1`, index builds reuse BM25 chunks, the deep analysis
+  behind graph and call-graph edges, and graph-scan signatures by exact content hash plus
+  language, path selector and build identity. A fresh worktree then parses only the files it
+  changed. Only pure parse results are shared: no project index, root, absolute path, retrieval
+  result or permission decision. The store (`derivations_dir` /
+  `LEAN_CTX_DERIVATION_CACHE_DIR`, default `<cache dir>/derivations`) must be a private
+  directory of the current user. It refuses links and FIFOs, writes atomically, treats
+  corruption as a miss, and evicts the oldest entries beyond `derivations_max_bytes`
+  (default 512 MiB). Output after a parser panic is never stored. The setting is read once per
+  process, so a running daemon picks up a change after a restart. Requested by @dkiaulakis.
+
+### Fixed
+
+- **A Windows Cockpit can no longer exhaust system memory (#2252).** On Windows, the Engine now
+  starts `leanctx-cockpit.exe` in a job that caps its committed memory at 4 GiB and ends it
+  when the Engine goes away. A Cockpit that reaches the cap fails its allocation and is
+  restarted after the usual backoff, instead of committing tens of GiB until Windows runs out
+  of virtual memory. `LEAN_CTX_COCKPIT_MEMORY_MB` sets another cap (at least 256; `0` turns it
+  off); if the job cannot be set up, the Cockpit runs without a cap and the log says so. When
+  a Cockpit exits, the log names its exit status, on Windows its peak memory against the cap,
+  and the last whole lines of its stderr (at most 4 KiB), with the session tokens and
+  credential-shaped text redacted. Before, stderr was discarded and a restart was logged only
+  as "cockpit exited". Reported by @vik-borisov.
+
+- **`ctx_read` task mode no longer runs for hours on large files.** The MMR line ranking rebuilt
+  both token sets for every candidate and selected pair, so one read on a large file could run
+  for hours and a long-lived MCP server kept 150–550 % CPU. Token sets are now built once per
+  line and each round costs linear time. Selection order, ties and scores are unchanged; a test
+  checks the result against the previous implementation.
+
 ## [3.12.5] — 2026-11-13
 
 ### Added

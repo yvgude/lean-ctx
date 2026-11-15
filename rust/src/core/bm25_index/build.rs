@@ -182,7 +182,7 @@ fn prepare_file(
         return None;
     }
 
-    let mut chunks = extract_chunks(rel, &content);
+    let mut chunks = crate::core::derivation_cache::chunks(rel, &content);
     chunks.sort_by(|a, b| {
         a.start_line
             .cmp(&b.start_line)
@@ -442,7 +442,7 @@ impl BM25Index {
                 continue;
             }
 
-            let mut chunks = extract_chunks(rel, &content);
+            let mut chunks = crate::core::derivation_cache::chunks(rel, &content);
             chunks.sort_by(|a, b| {
                 a.start_line
                     .cmp(&b.start_line)

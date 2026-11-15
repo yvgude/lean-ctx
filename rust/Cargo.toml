@@ -34,7 +34,7 @@ default-members = [".", "crates/lean-ctx", "crates/lean-ctx-hooks", "crates/lean
 # split upward out of the Engine can sit between the two.
 [package]
 name = "lean-ctx-engine"
-version = "3.12.5"
+version = "3.12.6"
 edition = "2024"
 autobins = false
 # Integration tests are listed below: one binary for the shared ones instead
@@ -178,7 +178,7 @@ lean-ctx-workgraph = { path = "crates/lean-ctx-workgraph", version = "0.3.0" }
 lean-ctx-patterns = { path = "crates/lean-ctx-patterns", version = "0.1.0" }
 lean-ctx-compress = { path = "crates/lean-ctx-compress", version = "0.1.0" }
 lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.2.0" }
-lean-ctx-syntax = { path = "crates/lean-ctx-syntax", version = "0.1.0" }
+lean-ctx-syntax = { path = "crates/lean-ctx-syntax", version = "0.1.1" }
 lean-ctx-doc = { path = "crates/lean-ctx-doc", version = "0.2.0" }
 lean-ctx-activity = { path = "crates/lean-ctx-activity", version = "0.1.0" }
 rmcp = { version = "3", features = [

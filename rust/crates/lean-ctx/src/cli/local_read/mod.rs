@@ -17,6 +17,7 @@ pub(crate) mod agents;
 pub(crate) mod bus;
 pub(crate) mod bus_presence;
 pub(crate) mod capabilities;
+pub(crate) mod context_part;
 pub(crate) mod daemon;
 pub(crate) mod docs;
 pub(crate) mod evidence;
@@ -70,6 +71,12 @@ pub(crate) const PARTS: &[Part] = &[
         kinds: sync::KINDS,
         commands: sync::COMMANDS,
         answer: sync::answer,
+    },
+    Part {
+        routes: context_part::ROUTES,
+        kinds: context_part::KINDS,
+        commands: context_part::COMMANDS,
+        answer: context_part::answer,
     },
 ];
 
@@ -584,6 +591,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--verdict",
     "--tokens",
     "--project-root",
+    "--path",
     "--root",
     "--state",
     "--role",

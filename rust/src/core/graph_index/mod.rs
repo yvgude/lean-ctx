@@ -1162,7 +1162,7 @@ fn process_scan_file(
         return None;
     }
 
-    let sigs = signatures::extract_signatures(&content, ext);
+    let sigs = crate::core::derivation_cache::signatures(&content, ext);
     let line_count = content.lines().count();
     let token_count = crate::core::tokens::count_tokens(&content);
     // The summary is source text that enters a derived store (E3): it is

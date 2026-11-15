@@ -742,6 +742,37 @@ fn load_update_receipt() -> Result<Option<UpdateReceipt>, String> {
     load_update_receipt_for(&current)
 }
 
+/// What the retained update receipt says, for status readers: versions only
+/// (no paths, digests or error text).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReceiptStatus {
+    /// No receipt is retained (never updated through `lean-ctx update`).
+    Missing,
+    /// A valid receipt: the active version and the one kept for a roll back.
+    Valid { active: String, previous: String },
+    /// A receipt exists but did not validate.
+    Invalid,
+}
+
+/// The [`ReceiptStatus`] of this binary's update receipt.
+#[must_use]
+pub fn receipt_status() -> ReceiptStatus {
+    match load_update_receipt() {
+        Ok(None) => ReceiptStatus::Missing,
+        Ok(Some(receipt)) => ReceiptStatus::Valid {
+            active: receipt.active.version,
+            previous: receipt.previous.version,
+        },
+        Err(_) => ReceiptStatus::Invalid,
+    }
+}
+
+/// The version of this binary.
+#[must_use]
+pub fn current_version() -> &'static str {
+    CURRENT_VERSION
+}
+
 fn load_update_receipt_for(current_exe: &Path) -> Result<Option<UpdateReceipt>, String> {
     let (state, path, _) = canonical_update_paths(current_exe)?;
     let raw = match std::fs::read_to_string(&path) {

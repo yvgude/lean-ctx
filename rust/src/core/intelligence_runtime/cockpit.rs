@@ -616,14 +616,268 @@ pub(super) fn run_cli(
     }
 }
 
+/// The commit budget of a Windows Cockpit in MiB when
+/// `LEAN_CTX_COCKPIT_MEMORY_MB` does not set one (#2252).
+#[cfg(any(windows, test))]
+const MEMORY_BUDGET_DEFAULT_MIB: u64 = 4096;
+/// The smallest budget a setting may choose.
+#[cfg(any(windows, test))]
+const MEMORY_BUDGET_MIN_MIB: u64 = 256;
+/// How many bytes of the Cockpit's stderr are kept for an exit report.
+const STDERR_TAIL: usize = 4096;
+/// How long an exit report waits for the rest of the Cockpit's stderr.
+const STDERR_SETTLE: Duration = Duration::from_millis(500);
+
+/// The Cockpit's memory budget in bytes: `LEAN_CTX_COCKPIT_MEMORY_MB`, at
+/// least `MEMORY_BUDGET_MIN_MIB`; `0` turns it off, and anything that is not
+/// a number keeps the default.
+#[cfg(any(windows, test))]
+fn memory_budget(setting: Option<&str>) -> Option<u64> {
+    let mib = match setting.map(str::trim) {
+        Some("0") => return None,
+        Some(value) => value
+            .parse::<u64>()
+            .map_or(MEMORY_BUDGET_DEFAULT_MIB, |mib| {
+                mib.max(MEMORY_BUDGET_MIN_MIB)
+            }),
+        None => MEMORY_BUDGET_DEFAULT_MIB,
+    };
+    Some(mib.saturating_mul(1024 * 1024))
+}
+
+/// The end of what the Cockpit wrote to stderr.
+#[derive(Default)]
+struct StderrTail {
+    bytes: Vec<u8>,
+    /// Bytes were dropped from the front: the first line is partial.
+    cut: bool,
+}
+
+/// Append `chunk` to `tail` and keep only its last `cap` bytes.
+fn keep_tail(tail: &mut StderrTail, chunk: &[u8], cap: usize) {
+    tail.bytes.extend_from_slice(chunk);
+    if tail.bytes.len() > cap {
+        tail.bytes.drain(..tail.bytes.len() - cap);
+        tail.cut = true;
+    }
+}
+
+/// The shortest piece of a token that is redacted at an edge of the report.
+const MIN_SECRET_FRAGMENT: usize = 4;
+
+/// The kept stderr as loggable text. Only whole lines are shown: a first
+/// line cut by the bound (`cut`) and a last line still being written
+/// (`open_end`) are dropped, so no token is shown in part. The session's own
+/// tokens, any piece of them left at an edge, and anything credential-shaped
+/// are redacted; control characters other than line breaks and tabs are
+/// dropped.
+fn stderr_report(tail: &[u8], cut: bool, open_end: bool, secrets: &[String]) -> String {
+    let mut text = String::from_utf8_lossy(tail).into_owned();
+    if cut {
+        text = text
+            .split_once('\n')
+            .map_or_else(String::new, |(_, rest)| rest.to_owned());
+    }
+    if open_end {
+        text.truncate(text.rfind('\n').map_or(0, |end| end + 1));
+    }
+    for secret in secrets.iter().filter(|secret| !secret.is_empty()) {
+        text = text.replace(secret.as_str(), "[REDACTED:token]");
+        for len in (MIN_SECRET_FRAGMENT..secret.len()).rev() {
+            let (Some(head), Some(rest)) = (secret.get(..len), secret.get(secret.len() - len..))
+            else {
+                continue;
+            };
+            if let Some(kept) = text.strip_prefix(rest) {
+                text = format!("[REDACTED:token]{kept}");
+            }
+            if let Some(kept) = text.strip_suffix(head) {
+                text = format!("{kept}[REDACTED:token]");
+            }
+        }
+    }
+    crate::core::redaction::redact_text(&text)
+        .chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
+/// A Windows job that holds the Cockpit: its committed memory is capped, and
+/// closing the job ends whatever still runs in it (#2252).
+#[cfg(windows)]
+struct MemoryJob {
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    limit: u64,
+}
+
+#[cfg(windows)]
+impl MemoryJob {
+    fn assign(child: &Child, limit: Option<u64>) -> std::io::Result<Self> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            JOB_OBJECT_LIMIT_PROCESS_MEMORY, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JobObjectExtendedLimitInformation, SetInformationJobObject,
+        };
+        // SAFETY: null attributes and name create a private job owned by Self.
+        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if handle.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        let job = Self {
+            handle,
+            limit: limit.unwrap_or(0),
+        };
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if let Some(limit) = limit {
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+            limits.ProcessMemoryLimit = usize::try_from(limit).unwrap_or(usize::MAX);
+        }
+        // SAFETY: limits has the exact structure and size this class requires.
+        let configured = unsafe {
+            SetInformationJobObject(
+                job.handle,
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_ref(&limits).cast(),
+                std::mem::size_of_val(&limits) as u32,
+            )
+        };
+        if configured == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: Child owns a live handle to the process it started.
+        let assigned =
+            unsafe { AssignProcessToJobObject(job.handle, child.as_raw_handle().cast()) };
+        if assigned == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(job)
+    }
+
+    /// The most memory the Cockpit has committed so far, in bytes.
+    fn peak(&self) -> Option<u64> {
+        use windows_sys::Win32::System::JobObjects::{
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+            QueryInformationJobObject,
+        };
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        // SAFETY: limits is writable for the exact size this class requires.
+        let queried = unsafe {
+            QueryInformationJobObject(
+                self.handle,
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_mut(&mut limits).cast(),
+                std::mem::size_of_val(&limits) as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        (queried != 0).then_some(limits.PeakProcessMemoryUsed as u64)
+    }
+}
+
+// SAFETY: a job handle is a kernel object handle, valid from any thread; the
+// supervisor's static state moves the running Cockpit between threads.
+#[cfg(windows)]
+unsafe impl Send for MemoryJob {}
+
+#[cfg(windows)]
+impl Drop for MemoryJob {
+    fn drop(&mut self) {
+        // SAFETY: this instance exclusively owns the CreateJobObjectW handle.
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.handle);
+        }
+    }
+}
+
 /// One started Cockpit process: its stdin stays open while it runs.
 pub(super) struct Process {
     child: Child,
     stdin: Option<ChildStdin>,
     port: u16,
+    /// The last `STDERR_TAIL` bytes the Cockpit wrote to stderr; only ever
+    /// logged redacted, in an exit report.
+    stderr: std::sync::Arc<Mutex<StderrTail>>,
+    stderr_reader: Option<std::thread::JoinHandle<()>>,
+    /// The tokens of this start, redacted from every exit report.
+    secrets: Vec<String>,
+    /// True once `stop` had to kill the Cockpit: its failed exit status is
+    /// then the supervisor's doing, not a crash or a failed allocation.
+    killed: bool,
+    /// Declared after `child`: dropped once the Cockpit was stopped, and then
+    /// ends anything left in its job.
+    #[cfg(windows)]
+    job: Option<MemoryJob>,
 }
 
 impl Process {
+    /// Why the exited Cockpit ended, for the log: its exit status, on Windows
+    /// its peak memory against the budget, and the redacted end of its
+    /// stderr.
+    fn exit_report(&mut self) -> String {
+        let (status, failed) = match self.child.try_wait() {
+            Ok(Some(status)) => (status.to_string(), !status.success()),
+            _ => ("still running".to_owned(), false),
+        };
+        let mut report = format!("status {status}");
+        if self.killed {
+            report.push_str(" (stopped by the supervisor)");
+        }
+        #[cfg(windows)]
+        if let Some(job) = &self.job {
+            if let Some(peak) = job.peak() {
+                let mib = |bytes: u64| bytes / (1024 * 1024);
+                if job.limit > 0 {
+                    report.push_str(&format!(
+                        ", peak memory {} MiB of its {} MiB budget",
+                        mib(peak),
+                        mib(job.limit)
+                    ));
+                    if peak.saturating_add(16 * 1024 * 1024) >= job.limit {
+                        report.push_str(
+                            " (it reached the budget; raise it with LEAN_CTX_COCKPIT_MEMORY_MB)",
+                        );
+                    } else if failed && !self.killed {
+                        // One allocation beyond the budget fails without
+                        // raising the peak.
+                        report.push_str(
+                            " (an allocation beyond the budget may have failed; raise it with LEAN_CTX_COCKPIT_MEMORY_MB)",
+                        );
+                    }
+                } else {
+                    report.push_str(&format!(", peak memory {} MiB", mib(peak)));
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = failed;
+        let mut open_end = false;
+        if let Some(reader) = self.stderr_reader.take() {
+            let settle = Instant::now() + STDERR_SETTLE;
+            while !reader.is_finished() && Instant::now() < settle {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            if reader.is_finished() {
+                let _ = reader.join();
+            } else {
+                // Still read, e.g. while a descendant holds the pipe: the last
+                // line may be incomplete.
+                open_end = true;
+            }
+        }
+        let tail = self.stderr.lock().unwrap_or_else(PoisonError::into_inner);
+        let stderr = stderr_report(&tail.bytes, tail.cut, open_end, &self.secrets);
+        if !stderr.is_empty() {
+            report.push_str(&format!(
+                "; last stderr (redacted, at most {STDERR_TAIL} bytes):\n{stderr}"
+            ));
+        }
+        report
+    }
+
     /// Close stdin, give the Cockpit `grace` to end, then kill and collect
     /// it. True when it ended by itself. Repeated calls do nothing.
     pub(super) fn stop(&mut self, grace: Duration) -> bool {
@@ -638,6 +892,7 @@ impl Process {
                 _ => {
                     let _ = self.child.kill();
                     let _ = self.child.wait();
+                    self.killed = true;
                     return false;
                 }
             }
@@ -660,22 +915,56 @@ impl Drop for Process {
 pub(super) fn handshake(
     mut command: Command,
     start: &[u8],
+    secrets: Vec<String>,
     deadline: Duration,
 ) -> std::result::Result<Process, CockpitUnavailable> {
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        // Nothing the Cockpit writes there is shown; it could repeat a token.
-        .stderr(Stdio::null());
+        // Kept as a bounded tail and only logged redacted: it could repeat a
+        // token (#2252).
+        .stderr(Stdio::piped());
     let child = command.spawn().map_err(|error| {
         tracing::warn!("cockpit not started: the process could not be spawned: {error}");
         CockpitUnavailable::StartFailed
     })?;
+    #[cfg(windows)]
+    let job = {
+        let budget = memory_budget(std::env::var("LEAN_CTX_COCKPIT_MEMORY_MB").ok().as_deref());
+        match MemoryJob::assign(&child, budget) {
+            Ok(job) => Some(job),
+            Err(error) => {
+                tracing::warn!(
+                    "cockpit runs without its memory budget, the job could not be set up: {error}"
+                );
+                None
+            }
+        }
+    };
     let mut process = Process {
         child,
         stdin: None,
         port: 0,
+        stderr: std::sync::Arc::default(),
+        stderr_reader: None,
+        secrets,
+        killed: false,
+        #[cfg(windows)]
+        job,
     };
+    if let Some(mut stderr) = process.child.stderr.take() {
+        let tail = std::sync::Arc::clone(&process.stderr);
+        process.stderr_reader = std::thread::Builder::new()
+            .name("cockpit-stderr".to_owned())
+            .spawn(move || {
+                let mut chunk = [0_u8; 1024];
+                while let Ok(read @ 1..) = stderr.read(&mut chunk) {
+                    let mut tail = tail.lock().unwrap_or_else(PoisonError::into_inner);
+                    keep_tail(&mut tail, &chunk[..read], STDERR_TAIL);
+                }
+            })
+            .ok();
+    }
     let (Some(mut stdin), Some(stdout)) = (process.child.stdin.take(), process.child.stdout.take())
     else {
         process.stop(Duration::ZERO);
@@ -707,15 +996,16 @@ pub(super) fn handshake(
         process.port = port;
         Ok(process)
     } else {
-        let exited = process.child.try_wait().ok().flatten();
+        let exited = process.child.try_wait().ok().flatten().is_some();
         process.stop(Duration::ZERO);
-        if let Some(status) = exited {
+        let report = process.exit_report();
+        if exited {
             tracing::warn!(
-                "cockpit not started: it exited ({status}) before naming its loopback port"
+                "cockpit not started: it exited before naming its loopback port: {report}"
             );
         } else {
             tracing::warn!(
-                "cockpit not started: it did not name its loopback port within {} s",
+                "cockpit not started: it did not name its loopback port within {} s: {report}",
                 deadline.as_secs()
             );
         }
@@ -801,11 +1091,12 @@ pub fn cockpit_endpoint(
             state.running = None;
         } else {
             let stable = running.started.elapsed() >= STABLE;
+            let report = running.process.exit_report();
             state.running = None;
             if stable {
                 state.failures = 0;
             }
-            tracing::warn!("cockpit exited; restarting after backoff");
+            tracing::warn!("cockpit exited ({report}); restarting after backoff");
             fail(&mut state, CockpitUnavailable::StartFailed, now);
         }
     }
@@ -874,7 +1165,12 @@ fn start(
             tracing::warn!("cockpit not started: its private copy was not prepared ({error:?})");
             CockpitUnavailable::StartFailed
         })?;
-    match handshake(command, &start_line, HANDSHAKE) {
+    match handshake(
+        command,
+        &start_line,
+        vec![cockpit_token.clone(), launch.engine_token.clone()],
+        HANDSHAKE,
+    ) {
         Ok(process) => Ok(Running {
             process,
             prepared: Some(prepared),
@@ -935,152 +1231,29 @@ fn start_line(launch: &CockpitLaunch, cockpit_token: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(all(test, unix))]
-mod tests {
+#[path = "cockpit_tests.rs"]
+mod tests;
+
+#[cfg(all(test, windows))]
+mod windows_tests {
     use super::*;
 
-    fn script(body: &str) -> Command {
-        let mut command = Command::new("/bin/sh");
-        command.arg("-c").arg(body);
-        command
-    }
-
     #[test]
-    fn handshake_reads_the_port_keeps_stdin_open_and_the_cockpit_ends_at_eof() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().display();
-        let mut process = handshake(
-            script(&format!(
-                "IFS= read -r line; printf '%s' \"$line\" > '{path}/start'; \
-                 echo '{{\"listening\":4242}}'; cat > /dev/null; touch '{path}/eof'"
-            )),
-            b"{\"cockpit_token\":\"t\"}\n",
-            Duration::from_secs(10),
-        )
-        .unwrap();
-        assert_eq!(process.port, 4242);
-        assert_eq!(
-            std::fs::read_to_string(directory.path().join("start")).unwrap(),
-            "{\"cockpit_token\":\"t\"}"
-        );
-        // Alive while the supervisor holds stdin, not merely not yet ended.
-        std::thread::sleep(Duration::from_millis(300));
-        assert!(process.running());
-        assert!(!directory.path().join("eof").exists());
-        assert!(
-            process.stop(Duration::from_secs(5)),
-            "ended by itself at EOF"
-        );
-        assert!(directory.path().join("eof").exists());
-    }
-
-    fn tar_gz(entries: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
-            Vec::new(),
-            flate2::Compression::fast(),
-        ));
-        for (path, bytes) in entries {
-            let mut header = tar::Header::new_gnu();
-            header.set_size(bytes.len() as u64);
-            header.set_mode(0o644);
-            header.set_cksum();
-            builder.append_data(&mut header, path, *bytes).unwrap();
+    fn the_memory_job_reports_its_peak_and_ends_the_cockpit_when_closed() {
+        let mut child = Command::new("cmd")
+            .args(["/C", "ping -n 30 127.0.0.1 >NUL"])
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let job = MemoryJob::assign(&child, memory_budget(Some("256"))).unwrap();
+        assert_eq!(job.limit, 256 * 1024 * 1024);
+        assert!(job.peak().is_some_and(|peak| peak > 0));
+        assert!(child.try_wait().unwrap().is_none());
+        drop(job);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while child.try_wait().unwrap().is_none() {
+            assert!(Instant::now() < deadline, "closing the job ends the child");
+            std::thread::sleep(Duration::from_millis(20));
         }
-        builder.into_inner().unwrap().finish().unwrap()
-    }
-
-    #[test]
-    fn a_bundle_is_read_from_its_directory_or_tarball_and_nothing_else() {
-        let directory = tempfile::tempdir().unwrap();
-        let files: Vec<(&str, Vec<u8>)> = BUNDLE_FILES
-            .iter()
-            .map(|(name, _)| (*name, name.as_bytes().to_vec()))
-            .collect();
-        let bundle = directory.path().join("lean-ctx-cockpit");
-        std::fs::create_dir(&bundle).unwrap();
-        for (name, bytes) in &files {
-            std::fs::write(bundle.join(name), bytes).unwrap();
-        }
-        let from_dir = read_bundle(&bundle).unwrap();
-        assert_eq!(
-            (from_dir.catalog.as_slice(), from_dir.archive.as_slice()),
-            (b"channel.json".as_slice(), b"archive.tar.gz".as_slice())
-        );
-
-        let tarball = directory.path().join("bundle.tar.gz");
-        let nested: Vec<(String, &[u8])> = files
-            .iter()
-            .map(|(name, bytes)| (format!("lean-ctx-cockpit/{name}"), bytes.as_slice()))
-            .collect();
-        let entries: Vec<(&str, &[u8])> = nested.iter().map(|(p, b)| (p.as_str(), *b)).collect();
-        std::fs::write(&tarball, tar_gz(&entries)).unwrap();
-        let from_tar = read_bundle(&tarball).unwrap();
-        assert_eq!(from_tar.manifest, b"manifest.json");
-
-        // A missing, unknown, duplicated, oversized or deeper member is refused.
-        let refused: [Vec<(&str, &[u8])>; 5] = [
-            entries[..4].to_vec(),
-            [
-                entries.clone(),
-                vec![("lean-ctx-cockpit/extra", b"x".as_slice())],
-            ]
-            .concat(),
-            [
-                entries.clone(),
-                vec![("other/channel.json", b"y".as_slice())],
-            ]
-            .concat(),
-            [
-                vec![entries[0]],
-                entries[2..].to_vec(),
-                vec![("lean-ctx-cockpit/channel.sig", [0_u8; 65].as_slice())],
-            ]
-            .concat(),
-            [
-                entries[1..].to_vec(),
-                vec![("a/b/channel.json", b"z".as_slice())],
-            ]
-            .concat(),
-        ];
-        for members in refused {
-            std::fs::write(&tarball, tar_gz(&members)).unwrap();
-            assert!(read_bundle(&tarball).is_err());
-        }
-    }
-
-    #[test]
-    fn a_start_that_never_names_its_port_fails_within_the_deadline() {
-        for body in ["exec sleep 30", "echo 'listening on 4242'; exec sleep 30"] {
-            let begun = Instant::now();
-            let refused = handshake(script(body), b"{}\n", Duration::from_millis(300));
-            assert_eq!(refused.err(), Some(CockpitUnavailable::StartFailed));
-            assert!(begun.elapsed() < Duration::from_secs(5), "{body}");
-        }
-    }
-
-    #[test]
-    fn a_failed_automatic_install_is_retried_after_a_day() {
-        let now = std::time::SystemTime::now();
-        assert!(!retry_blocked(None, now));
-        assert!(retry_blocked(Some(now - Duration::from_secs(60)), now));
-        assert!(retry_blocked(
-            Some(now - AUTO_RETRY + Duration::from_secs(1)),
-            now
-        ));
-        assert!(!retry_blocked(Some(now - AUTO_RETRY), now));
-        // A clock that went backwards never blocks.
-        assert!(!retry_blocked(Some(now + Duration::from_secs(60)), now));
-    }
-
-    #[test]
-    fn no_cockpit_opt_out_and_a_source_build_install_nothing() {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let _off = crate::test_env::VarGuard::set("LEAN_CTX_NO_COCKPIT", "1");
-        assert!(installs_opted_out());
-        assert!(!install_if_missing(true));
-        drop(_off);
-        let _on = crate::test_env::VarGuard::set("LEAN_CTX_NO_COCKPIT", "0");
-        assert!(!installs_opted_out());
-        // A test build carries no Cockpit channel: nothing to install from.
-        assert!(!install_if_missing(true));
     }
 }

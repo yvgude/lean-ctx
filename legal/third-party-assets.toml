@@ -4,11 +4,11 @@ authority = "THIRD_PARTY_NOTICES"
 
 [inputs]
 cargo_lock = "rust/Cargo.lock"
-cargo_lock_sha256 = "4bbcd5c7a3cbd2692264f508ddf6eaa0e41000296e04cbdc0d16680cd5e197a7"
+cargo_lock_sha256 = "3f36e6edaf70dd16aaa140a76fe27726f6308a93bd31614fe66382db70931a5b"
 sbom = "SBOM.cdx.json"
-sbom_sha256 = "8dc3dd14b662c89777a5edd4abb9f56e9fb60708765f90836dded1d9f6fa109e"
+sbom_sha256 = "265e4ef4cfbc8e0d834c240ca4ce667957f5a1b898ba41ba97dd11a9f60a677d"
 npm_lock = "packages/pi-lean-ctx/package-lock.json"
-npm_lock_sha256 = "80be0b272b759c509fee6c44185755ceae9d23e4331b78867c5e4722475fb1d8"
+npm_lock_sha256 = "2f3d2808b17c364e7c3acbf09582f687328f46f427678be8c66d2755d0d3e03a"
 
 [license_texts]
 mit = """
