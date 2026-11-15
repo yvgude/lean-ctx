@@ -19616,11 +19616,11 @@
    "size": 9964
   },
   {
-   "blob": "4d027e2bb4b88140e4aef8987a2c0e6342ee5073",
+   "blob": "20859875b867862e81a0e7316e7d79eb29ee379b",
    "mode": "100644",
    "path": "rust/crates/lean-ctx/src/cli/local_read/context_part.rs",
-   "sha256": "171f6f1ef380e97e5fd5c16c78fbbe621db3840d6a90e06cff18ff514dc69fc2",
-   "size": 49150
+   "sha256": "f05e8818019b168b8d37490eb5fb8c2aa0e6873efb96edc48f5ec91c0cb0f0a3",
+   "size": 49501
   },
   {
    "blob": "b962fc1c953dcc809335e0c4013fe489aef03b40",
@@ -37009,7 +37009,7 @@
  ],
  "manifest_sha256": "933596972f528fbae7a0eb120df0957ab5cc544bd44b0f8708495a6ea8f238d6",
  "schema": 1,
- "source_commit": "1254ce8209c7a27ae23c09d0287323e4e43118e2",
+ "source_commit": "7ef4dd67f4655d2b5bf39f06c2e6a239ae6767a8",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "5d52c22e4b0dddb1ab9e74b5e454e0756666779c0a5bbf59d0246cb3199b72e5"
+ "tree_sha256": "edb890fc4b87c9cbeaa5757460210e0387283d38b5a6816129a0c64451a5403b"
 }

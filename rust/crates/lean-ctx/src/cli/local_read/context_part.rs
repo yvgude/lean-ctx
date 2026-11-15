@@ -1063,7 +1063,8 @@ mod tests {
     fn overlays_list_the_effective_control_per_file() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let abs = root.join("src/a.rs").to_string_lossy().into_owned();
+        // Joined part by part: the listed path uses the platform separator.
+        let abs = root.join("src").join("a.rs").to_string_lossy().into_owned();
         let mut store = OverlayStore::new();
         store.add(overlay(
             &abs,
@@ -1183,8 +1184,14 @@ mod tests {
             file_of(root, "a.rs").unwrap_err().code,
             Code::InvalidArgument
         );
+        // An absolute path outside the project (on Windows, `/elsewhere`
+        // has no drive and is not absolute).
+        let other = tempfile::tempdir().unwrap();
+        let elsewhere = other.path().join("a.rs");
         assert_eq!(
-            file_of(root, "/elsewhere/a.rs").unwrap_err().code,
+            file_of(root, &elsewhere.to_string_lossy())
+                .unwrap_err()
+                .code,
             Code::Forbidden
         );
         let up = format!("{}/../a.rs", root.display());
