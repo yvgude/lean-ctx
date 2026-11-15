@@ -120,6 +120,12 @@ pub fn run() {
             eprintln!("{notice}");
             std::process::exit(2);
         }
+        // Local Read documents of the context / status verbs (`session
+        // context --json`, `update status --json`, …); the text forms stay
+        // with their commands below.
+        if super::local_read::context_part::try_run(&args[1], &rest) {
+            return;
+        }
 
         match args[1].as_str() {
             "-c" | "exec" => handle_exec(&args, &rest),

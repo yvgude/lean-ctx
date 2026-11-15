@@ -158,7 +158,7 @@
       "version": "0.7.0"
     },
     {
-      "bom-ref": "path+file://./rust/crates/lean-ctx-syntax#0.1.0",
+      "bom-ref": "path+file://./rust/crates/lean-ctx-syntax#0.1.1",
       "description": "Tree-sitter based code structure for LeanCTX | OSS: signatures, deep AST queries, import resolution and the post-edit syntax gate.",
       "externalReferences": [
         {
@@ -176,10 +176,10 @@
         }
       ],
       "name": "lean-ctx-syntax",
-      "purl": "pkg:cargo/lean-ctx-syntax@0.1.0?download_url=file://crates/lean-ctx-syntax",
+      "purl": "pkg:cargo/lean-ctx-syntax@0.1.1?download_url=file://crates/lean-ctx-syntax",
       "scope": "required",
       "type": "library",
-      "version": "0.1.0"
+      "version": "0.1.1"
     },
     {
       "bom-ref": "path+file://./rust/crates/lean-ctx-workgraph#0.3.0",
@@ -16919,7 +16919,7 @@
         "path+file://./rust/crates/lean-ctx-ocla#7.0.0",
         "path+file://./rust/crates/lean-ctx-patterns#0.1.0",
         "path+file://./rust/crates/lean-ctx-protocol#0.7.0",
-        "path+file://./rust/crates/lean-ctx-syntax#0.1.0",
+        "path+file://./rust/crates/lean-ctx-syntax#0.1.1",
         "path+file://./rust/crates/lean-ctx-workgraph#0.3.0",
         "path+file://./rust/crates/leanctx-native-storage#0.1.1",
         "registry+https://github.com/rust-lang/crates.io-index#libc@0.2.189",
@@ -16977,7 +16977,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5",
         "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
       ],
-      "ref": "path+file://./rust#lean-ctx-engine@3.12.5"
+      "ref": "path+file://./rust#lean-ctx-engine@3.12.6"
     },
     {
       "dependsOn": [
@@ -17089,7 +17089,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-typescript@0.23.2",
         "registry+https://github.com/rust-lang/crates.io-index#tree-sitter-zig@1.1.2"
       ],
-      "ref": "path+file://./rust/crates/lean-ctx-syntax#0.1.0"
+      "ref": "path+file://./rust/crates/lean-ctx-syntax#0.1.1"
     },
     {
       "dependsOn": [
@@ -20872,14 +20872,14 @@
   ],
   "metadata": {
     "component": {
-      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.5",
+      "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.6",
       "components": [
         {
-          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.5 bin-target-0",
+          "bom-ref": "path+file://./rust#lean-ctx-engine@3.12.6 bin-target-0",
           "name": "lean_ctx",
-          "purl": "pkg:cargo/lean-ctx-engine@3.12.5?download_url=file://.#src/lib.rs",
+          "purl": "pkg:cargo/lean-ctx-engine@3.12.6?download_url=file://.#src/lib.rs",
           "type": "library",
-          "version": "3.12.5"
+          "version": "3.12.6"
         }
       ],
       "description": "LeanCTX | OSS library: the open-source runtime for the Context Gateway for AI agents behind the lean-ctx CLI, MCP server and proxy integrations.",
@@ -20899,10 +20899,10 @@
         }
       ],
       "name": "lean-ctx-engine",
-      "purl": "pkg:cargo/lean-ctx-engine@3.12.5?download_url=file://.",
+      "purl": "pkg:cargo/lean-ctx-engine@3.12.6?download_url=file://.",
       "scope": "required",
       "type": "library",
-      "version": "3.12.5"
+      "version": "3.12.6"
     },
     "properties": [
       {
@@ -20911,7 +20911,7 @@
       },
       {
         "name": "leanctx:cargo-lock-sha256",
-        "value": "4bbcd5c7a3cbd2692264f508ddf6eaa0e41000296e04cbdc0d16680cd5e197a7"
+        "value": "3f36e6edaf70dd16aaa140a76fe27726f6308a93bd31614fe66382db70931a5b"
       }
     ],
     "tools": [

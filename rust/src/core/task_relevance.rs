@@ -728,51 +728,55 @@ fn mmr_select<'a>(
         return Vec::new();
     }
 
-    let mut selected: Vec<(usize, &'a str, f64)> = Vec::with_capacity(budget);
-    let mut remaining: Vec<(usize, &'a str, f64)> = candidates.to_vec();
+    // Each line's token set is built once, and each candidate keeps its running
+    // max similarity to the selected set: a new pick can only raise that max, so
+    // one comparison with the newest pick per round gives the same value as the
+    // full max over all picks. O(budget * n) instead of O(budget^2 * n) set builds;
+    // order, ties and scores are unchanged (see `mmr_select_matches_reference`).
+    let tokens: Vec<HashSet<&'a str>> = candidates
+        .iter()
+        .map(|&(_, line, _)| line.split_whitespace().collect())
+        .collect();
+    let mut remaining: Vec<usize> = (0..candidates.len()).collect();
+    let mut max_sim: Vec<f64> = vec![0.0; candidates.len()];
+    let mut selected: Vec<(usize, &'a str, f64)> = Vec::with_capacity(budget.min(candidates.len()));
 
     // Always take the top-scored line first
-    selected.push(remaining.remove(0));
+    let mut pick = remaining.remove(0);
+    selected.push(candidates[pick]);
 
     while selected.len() < budget && !remaining.is_empty() {
-        let mut best_idx = 0;
+        let pick_tokens = &tokens[pick];
+        let mut best_pos = 0;
         let mut best_mmr = f64::NEG_INFINITY;
 
-        for (i, &(_, cand_line, cand_score)) in remaining.iter().enumerate() {
-            let cand_tokens: HashSet<&str> = cand_line.split_whitespace().collect();
-            if cand_tokens.is_empty() {
-                if cand_score > best_mmr {
-                    best_mmr = cand_score;
-                    best_idx = i;
-                }
-                continue;
+        for (pos, &c) in remaining.iter().enumerate() {
+            let cand_tokens = &tokens[c];
+            if !cand_tokens.is_empty() && !pick_tokens.is_empty() {
+                let (small, large) = if cand_tokens.len() <= pick_tokens.len() {
+                    (cand_tokens, pick_tokens)
+                } else {
+                    (pick_tokens, cand_tokens)
+                };
+                let inter = small.iter().filter(|t| large.contains(*t)).count();
+                let union = cand_tokens.len() + pick_tokens.len() - inter;
+                let sim = inter as f64 / union as f64;
+                max_sim[c] = max_sim[c].max(sim);
             }
-
-            let max_sim = selected
-                .iter()
-                .map(|&(_, sel_line, _)| {
-                    let sel_tokens: HashSet<&str> = sel_line.split_whitespace().collect();
-                    if sel_tokens.is_empty() {
-                        return 0.0;
-                    }
-                    let inter = cand_tokens.intersection(&sel_tokens).count();
-                    let union = cand_tokens.union(&sel_tokens).count();
-                    if union == 0 {
-                        0.0
-                    } else {
-                        inter as f64 / union as f64
-                    }
-                })
-                .fold(0.0_f64, f64::max);
-
-            let mmr = cand_score - lambda * max_sim;
+            let cand_score = candidates[c].2;
+            let mmr = if cand_tokens.is_empty() {
+                cand_score
+            } else {
+                cand_score - lambda * max_sim[c]
+            };
             if mmr > best_mmr {
                 best_mmr = mmr;
-                best_idx = i;
+                best_pos = pos;
             }
         }
 
-        selected.push(remaining.remove(best_idx));
+        pick = remaining.remove(best_pos);
+        selected.push(candidates[pick]);
     }
 
     selected
@@ -882,6 +886,122 @@ fn is_closing_brace(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The previous per-pair implementation, kept as the oracle for `mmr_select`.
+    fn mmr_select_reference<'a>(
+        candidates: &[(usize, &'a str, f64)],
+        budget: usize,
+        lambda: f64,
+    ) -> Vec<(usize, &'a str, f64)> {
+        if candidates.is_empty() || budget == 0 {
+            return Vec::new();
+        }
+        let mut selected: Vec<(usize, &'a str, f64)> = Vec::with_capacity(budget);
+        let mut remaining: Vec<(usize, &'a str, f64)> = candidates.to_vec();
+        selected.push(remaining.remove(0));
+        while selected.len() < budget && !remaining.is_empty() {
+            let mut best_idx = 0;
+            let mut best_mmr = f64::NEG_INFINITY;
+            for (i, &(_, cand_line, cand_score)) in remaining.iter().enumerate() {
+                let cand_tokens: HashSet<&str> = cand_line.split_whitespace().collect();
+                if cand_tokens.is_empty() {
+                    if cand_score > best_mmr {
+                        best_mmr = cand_score;
+                        best_idx = i;
+                    }
+                    continue;
+                }
+                let max_sim = selected
+                    .iter()
+                    .map(|&(_, sel_line, _)| {
+                        let sel_tokens: HashSet<&str> = sel_line.split_whitespace().collect();
+                        if sel_tokens.is_empty() {
+                            return 0.0;
+                        }
+                        let inter = cand_tokens.intersection(&sel_tokens).count();
+                        let union = cand_tokens.union(&sel_tokens).count();
+                        if union == 0 {
+                            0.0
+                        } else {
+                            inter as f64 / union as f64
+                        }
+                    })
+                    .fold(0.0_f64, f64::max);
+                let mmr = cand_score - lambda * max_sim;
+                if mmr > best_mmr {
+                    best_mmr = mmr;
+                    best_idx = i;
+                }
+            }
+            selected.push(remaining.remove(best_idx));
+        }
+        selected
+    }
+
+    #[test]
+    fn mmr_select_matches_reference() {
+        // Deterministic pseudo-random lines over a small vocabulary: many overlaps,
+        // repeated lines, empty lines, equal scores (ties) and protected INF scores.
+        let vocab = [
+            "fn", "let", "mut", "self", "x", "y", "return", "if", "else", "Ok", "Err", "{", "}",
+        ];
+        let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let mut lines: Vec<String> = Vec::new();
+        for _ in 0..120 {
+            let len = (next() % 7) as usize;
+            let words: Vec<&str> = (0..len)
+                .map(|_| vocab[(next() % vocab.len() as u64) as usize])
+                .collect();
+            lines.push(words.join(" "));
+        }
+        for budget in [0usize, 1, 2, 17, 60, 119, 120, 500] {
+            for lambda in [0.0, 0.3, 1.0] {
+                let mut cands: Vec<(usize, &str, f64)> = lines
+                    .iter()
+                    .enumerate()
+                    .map(|(i, l)| {
+                        let score = match next() % 10 {
+                            0 => f64::INFINITY,
+                            1 | 2 => 0.5,
+                            _ => (next() % 1000) as f64 / 1000.0,
+                        };
+                        (i, l.as_str(), score)
+                    })
+                    .collect();
+                cands.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+                let got = mmr_select(&cands, budget, lambda);
+                let want = mmr_select_reference(&cands, budget, lambda);
+                assert_eq!(got, want, "budget {budget} lambda {lambda}");
+            }
+        }
+    }
+
+    #[test]
+    fn mmr_select_large_file_is_fast() {
+        // A 5k-line file at a 50% budget took minutes with per-pair set rebuilds.
+        let lines: Vec<String> = (0..5_000)
+            .map(|i| format!("let v{} = call_{}(x, y);", i % 997, i % 31))
+            .collect();
+        let cands: Vec<(usize, &str, f64)> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| (i, l.as_str(), 1.0 / (1.0 + i as f64)))
+            .collect();
+        let t = std::time::Instant::now();
+        let got = mmr_select(&cands, 2_500, 0.3);
+        assert_eq!(got.len(), 2_500);
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(60),
+            "{:?}",
+            t.elapsed()
+        );
+    }
 
     #[test]
     fn parse_task_finds_files_and_keywords() {

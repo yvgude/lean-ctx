@@ -365,7 +365,7 @@ impl CallGraph {
                     .and_then(|e| e.to_str())
                     .unwrap_or("");
 
-                let analysis = deep_queries::analyze(&content, ext);
+                let analysis = crate::core::derivation_cache::deep_analysis(&content, ext);
                 let file_symbols = symbols_by_file.get(rel_path.as_str());
 
                 let edges = edges_for_file(rel_path, &analysis.calls, file_symbols);
@@ -442,7 +442,7 @@ impl CallGraph {
                         .and_then(|e| e.to_str())
                         .unwrap_or("");
 
-                    let analysis = deep_queries::analyze(&content, ext);
+                    let analysis = crate::core::derivation_cache::deep_analysis(&content, ext);
                     let file_symbols = symbols_by_file.get(rel_path.as_str());
 
                     edges_for_file(rel_path, &analysis.calls, file_symbols)

@@ -317,16 +317,49 @@ mod ts_blocklist {
 #[cfg(feature = "tree-sitter")]
 use ts_blocklist::{block as block_ts_language, is_blocked as is_ts_language_blocked};
 
+/// Whether tree-sitter is blocklisted for `file_ext` in this process after a
+/// parser panic. Signatures for such a language come from the regex fallback,
+/// so a cache of parser output must neither store nor serve them.
+#[must_use]
+pub fn tree_sitter_language_blocked(file_ext: &str) -> bool {
+    #[cfg(feature = "tree-sitter")]
+    {
+        is_ts_language_blocked(file_ext)
+    }
+    #[cfg(not(feature = "tree-sitter"))]
+    {
+        let _ = file_ext;
+        false
+    }
+}
+
+/// Blocklist `file_ext` as if its parser had panicked (tests of callers that
+/// must not persist fallback output).
+#[doc(hidden)]
+pub fn block_tree_sitter_language_for_tests(file_ext: &str) {
+    #[cfg(feature = "tree-sitter")]
+    block_ts_language(file_ext);
+    #[cfg(not(feature = "tree-sitter"))]
+    let _ = file_ext;
+}
+
 /// Extract signatures and count the producing backend in the process-lifetime
 /// [`signature_backend_stats`]. Returns the backend as well, so the engine's
 /// `extract_signatures` can add its persistent per-extension telemetry.
 pub fn extract_signatures_counted(content: &str, file_ext: &str) -> (Vec<Signature>, SigBackend) {
     let (sigs, backend) = extract_signatures_with_backend(content, file_ext);
+    count_signature_backend(backend);
+    (sigs, backend)
+}
+
+/// Count one extraction by `backend` in [`signature_backend_stats`] — for
+/// callers that serve a previously counted extraction from a cache, so the
+/// stats keep counting every file whose signatures were delivered.
+pub fn count_signature_backend(backend: SigBackend) {
     match backend {
         SigBackend::TreeSitter => TREE_SITTER_HITS.fetch_add(1, Ordering::Relaxed),
         SigBackend::Regex => REGEX_FALLBACK_HITS.fetch_add(1, Ordering::Relaxed),
     };
-    (sigs, backend)
 }
 
 /// Like [`extract_signatures_counted`] but does **not** touch the global

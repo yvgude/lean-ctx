@@ -226,7 +226,7 @@ fn resolve_file_edges(
         #[cfg(not(feature = "tree-sitter"))]
         let analysis_content = content;
 
-        let analysis = crate::core::deep_queries::analyze(&analysis_content, resolve_ext);
+        let analysis = crate::core::derivation_cache::deep_analysis(&analysis_content, resolve_ext);
         // C#/Java/Go/Kotlin need the full analysis for type_ref edges (GH #398);
         // every other language uses only the resolved import list. Go/Kotlin still
         // get their import edges from `imports` too.

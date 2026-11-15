@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "58d3cb2c06ae4ab8c72371aa04e5ccc8f643989b2f25c4298b636b1be04d0e45"
+approved_content_sha256 = "dbfcb518430bb1236ce66b4bfaee3a12a5e77531175c19d8247f1026d2f65e08"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.5 after the Dependabot bumps hono 4.13.13 -> 4.13.18 and @hono/node-server 2.1.5 -> 2.1.8 in packages/pi-lean-ctx/package-lock.json (GitHub PRs #2246, #2243): pending variant 8dd23dcbb2e3fa04d61455b7731219d0d3acf5a7780ccf88ecf6825e538d334c, approved variant 58d3cb2c06ae4ab8c72371aa04e5ccc8f643989b2f25c4298b636b1be04d0e45; license texts and package inventory unchanged, only the npm lockfile and asset manifest input digests changed. Owner approval in the 3.12.5 release session on 2026-11-14 (answer \"Approve 58d3cb2c...\")."
-approved_at = "2026-11-14"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for 3.12.6 after the version bump (engine 3.12.6, lean-ctx-syntax 0.1.1) and the offline workspace lockfile update: pending variant edadbf8f534dbbf0fbf4ce3fae080975115abf49bf2a0438f2bf3e4c35f88921, approved variant dbfcb518430bb1236ce66b4bfaee3a12a5e77531175c19d8247f1026d2f65e08; license texts and package inventory unchanged from 3.12.5, only the Cargo.lock, SBOM, asset manifest and npm lock input digests changed. Owner approval in the 3.12.6 release session on 2026-11-15 (answer \"Approve dbfcb518...\")."
+approved_at = "2026-11-15"

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "lean-ctx-syntax"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "Apache-2.0"
 description = "Tree-sitter based code structure for LeanCTX | OSS: signatures, deep AST queries, import resolution and the post-edit syntax gate."

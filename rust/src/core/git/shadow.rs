@@ -132,6 +132,41 @@ pub fn log(project: &Path, limit: usize) -> Result<Vec<Checkpoint>, String> {
         .collect())
 }
 
+/// The files checkpoint `sha` changed (against its parent; every file of the
+/// root checkpoint), sorted. Empty when there is no shadow history.
+pub fn files_of(project: &Path, sha: &str) -> Result<Vec<String>, String> {
+    if sha.is_empty() || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("not a checkpoint id".to_string());
+    }
+    let git_dir = shadow_git_dir(project)?;
+    if !git_dir.join("HEAD").exists() {
+        return Ok(Vec::new());
+    }
+    let env = base_env(&git_dir, project);
+    let out = git(
+        &[
+            "show",
+            "--name-only",
+            "--no-renames",
+            "--pretty=format:",
+            sha,
+        ],
+        project,
+        Duration::from_secs(15),
+        &env,
+    )?
+    .ok_stdout()?;
+    let mut files: Vec<String> = out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect();
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
 /// Unified diff. Defaults to "working tree vs last checkpoint" when `from`/`to`
 /// are omitted.
 pub fn diff(project: &Path, from: Option<&str>, to: Option<&str>) -> Result<String, String> {
@@ -350,6 +385,36 @@ mod tests {
             !project.join(".git").exists(),
             "shadow history must not touch the user's project .git"
         );
+
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn files_of_lists_what_each_checkpoint_changed() {
+        if !git_ready() {
+            return;
+        }
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = temp_project("files_data");
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", &data);
+        let project = temp_project("files_proj");
+        assert_eq!(files_of(&project, "abc123").unwrap(), Vec::<String>::new());
+
+        std::fs::write(project.join("b.txt"), "1\n").unwrap();
+        std::fs::write(project.join("a.txt"), "1\n").unwrap();
+        let c1 = snapshot(&project, "first").expect("snapshot 1");
+        std::fs::write(project.join("b.txt"), "2\n").unwrap();
+        let c2 = snapshot(&project, "second").expect("snapshot 2");
+
+        assert_eq!(files_of(&project, &c1.sha).unwrap(), vec!["a.txt", "b.txt"]);
+        assert_eq!(files_of(&project, &c2.sha).unwrap(), vec!["b.txt"]);
+        assert!(
+            files_of(&project, "HEAD; rm").is_err(),
+            "only checkpoint ids"
+        );
+        assert!(files_of(&project, "").is_err());
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&data);

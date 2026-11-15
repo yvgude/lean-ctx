@@ -718,7 +718,7 @@ impl BM25Index {
                 tracing::debug!("[bm25: skipping minified payload {rel}]");
                 continue;
             }
-            let mut chunks = extract_chunks(rel, &content);
+            let mut chunks = crate::core::derivation_cache::chunks(rel, &content);
             chunks.sort_by(|a, b| {
                 a.start_line
                     .cmp(&b.start_line)

@@ -2170,7 +2170,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lean-ctx"
-version = "3.12.5"
+version = "3.12.6"
 dependencies = [
  "anyhow",
  "axum",
@@ -2283,7 +2283,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-engine"
-version = "3.12.5"
+version = "3.12.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2402,7 +2402,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hive"
-version = "3.12.5"
+version = "3.12.6"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -2449,7 +2449,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-hooks"
-version = "3.12.5"
+version = "3.12.6"
 dependencies = [
  "blake3",
  "chrono",
@@ -2513,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-proxy"
-version = "3.12.5"
+version = "3.12.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2553,7 +2553,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-server"
-version = "3.12.5"
+version = "3.12.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2602,7 +2602,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-shell-policy"
-version = "3.12.5"
+version = "3.12.6"
 dependencies = [
  "dirs",
  "lean-ctx-engine",
@@ -2616,7 +2616,7 @@ dependencies = [
 
 [[package]]
 name = "lean-ctx-syntax"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "lean-ctx-patterns",
  "regex",

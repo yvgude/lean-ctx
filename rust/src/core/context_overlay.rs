@@ -161,6 +161,15 @@ impl OverlayStore {
         self.overlays.retain(|o| o.id != *id);
     }
 
+    /// Keeps only the overlays `keep` accepts; returns how many were removed.
+    /// (Ids are target + millisecond, so overlays set together can share one:
+    /// select by content, not by [`Self::remove`].)
+    pub fn retain(&mut self, mut keep: impl FnMut(&ContextOverlay) -> bool) -> usize {
+        let before = self.overlays.len();
+        self.overlays.retain(|o| keep(o));
+        before - self.overlays.len()
+    }
+
     pub fn for_item(&self, target: &ContextItemId) -> Vec<&ContextOverlay> {
         self.overlays
             .iter()

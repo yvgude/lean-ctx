@@ -163,6 +163,7 @@ pub mod content_cache;
 pub mod content_chunk;
 pub mod context_packing;
 pub mod dense_backend;
+pub mod derivation_cache;
 pub mod embedding_access;
 pub mod embedding_index;
 pub(crate) mod embedding_quant;
