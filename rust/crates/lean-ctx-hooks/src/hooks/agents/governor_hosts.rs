@@ -228,11 +228,10 @@ pub(crate) const CODEX_WRITE_MATCHER: &str = "apply_patch|Edit|Write";
 pub(crate) const CURSOR_WRITE_MATCHER: &str = "Write|Delete|Edit|StrReplace|MultiEdit|EditNotebook";
 pub(crate) const GEMINI_WRITE_MATCHER: &str = "write_file|replace|edit";
 
+/// `hook write-guard` with the binary quoted when its path holds a space, as
+/// every other hook command: PowerShell splits `…/Author Software/…` otherwise.
 pub(super) fn write_guard_command() -> String {
-    format!(
-        "{} hook write-guard",
-        super::super::resolve_hook_command_binary()
-    )
+    crate::hooks::hook_shell_command(&super::super::resolve_hook_command_binary(), "write-guard")
 }
 
 /// Claude-dialect: exactly one `hook write-guard` entry under `matcher` in
@@ -281,12 +280,17 @@ pub(super) fn ensure_group_hook(
     let Some(timeout) = timeout else {
         return;
     };
+    // Matched as written: on Windows a quoted binary becomes exec form
+    // (`command` the program, `args` the rest), so compare command and args.
+    let desired = crate::hooks::claude_command_hook(command);
     let hook = arr
         .iter_mut()
         .filter(|g| g.get("matcher").and_then(|m| m.as_str()) == Some(matcher))
         .filter_map(|g| g.get_mut("hooks").and_then(|h| h.as_array_mut()))
         .flatten()
-        .find(|h| h.get("command").and_then(|c| c.as_str()) == Some(command));
+        .find(|h| {
+            h.get("command") == desired.get("command") && h.get("args") == desired.get("args")
+        });
     if let Some(obj) = hook.and_then(|h| h.as_object_mut()) {
         obj.insert("timeout".to_string(), serde_json::json!(timeout));
     }

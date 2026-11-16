@@ -413,6 +413,8 @@ fn deny_output_is_claude_valid_for_claude_payloads_only() {
         serde_json::from_str(&build_deny_output("x", &cursor)).expect("valid JSON");
     assert_eq!(p["permission"], "deny");
     assert_eq!(p["permissionDecision"], "deny");
+    // #2254: Copilot CLI reads the reason beside the decision.
+    assert_eq!(p["permissionDecisionReason"], "x");
 }
 
 #[test]

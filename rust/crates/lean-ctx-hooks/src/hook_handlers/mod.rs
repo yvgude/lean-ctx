@@ -384,8 +384,10 @@ fn build_dual_deny_output(msg: &str) -> String {
         "reason": msg,
         "permission": "deny",
         "user_message": msg,
-        // GitHub Copilot CLI dialect (top-level permissionDecision).
+        // GitHub Copilot CLI dialect: it reads the reason beside the decision
+        // and shows "No reason provided" without it (#2254).
         "permissionDecision": "deny",
+        "permissionDecisionReason": msg,
         // Claude Code / CodeBuddy dialect.
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

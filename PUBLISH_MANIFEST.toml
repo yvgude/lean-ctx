@@ -2780,6 +2780,9 @@ new_paths = [
   # #2208 download targets.
   "packages/pi-lean-ctx/extensions/lens-read-bridge.ts",
   "packages/pi-lean-ctx/test/lens-read-bridge.test.ts",
+  # #2256 pi ctx_read bridge fallback without console output: own code, Apache-2.0.
+  "packages/pi-lean-ctx/extensions/bridge-read.ts",
+  "packages/pi-lean-ctx/test/bridge-read.test.ts",
   "rust/src/core/editor_registry/writers/install/muse.rs",
   "rust/src/core/request_ledger.rs",
   "rust/crates/lean-ctx-shell-policy/src/download_targets.rs",
