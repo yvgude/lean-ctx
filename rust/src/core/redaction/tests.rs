@@ -135,8 +135,24 @@ fn keeps_type_annotations() {
         "secret: () => void",
         "password: string | undefined",
         "credential: { value: string }",
+        // #2255: nullable types (Kotlin, Swift, C#) name a type, not a value.
+        "    private var token: ProbeCorrelation? = null",
+        "var token: Session?",
     ] {
         assert_eq!(redact_text(s), s, "must not redact type annotation: {s}");
+    }
+    // Outside a declaration a `?` value is a password, not a type (#2255).
+    for s in [
+        "password: Sunshine?",
+        "DB_PASSWORD=Sunshine?",
+        "https://h/cb?token=Letmein?&x=1",
+        "The static password: Summer2024?",
+        "have fun (password: Hunter22?, x)",
+    ] {
+        assert!(
+            redact_text(s).contains("[REDACTED"),
+            "must stay masked: {s}"
+        );
     }
 }
 

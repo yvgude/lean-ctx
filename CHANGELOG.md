@@ -6,6 +6,19 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+### Fixed
+
+- **The write-guard hook runs from an install path with a space.** `lean-ctx init` wrote
+  `hook write-guard` with an unquoted binary, so PowerShell split paths such as
+  `…/Author Software/…/lean-ctx.exe` and every Write failed its PreToolUse hook. It is now
+  quoted like every other hook; `lean-ctx init` or `update` repairs existing settings.
+- **GitHub Copilot CLI shows why lean-ctx denied a tool call (#2254).** The deny output now
+  carries `permissionDecisionReason` beside the decision instead of "No reason provided".
+- **Nullable type annotations are no longer redacted (#2255).** `private var token: Session? =
+  null` (Kotlin, Swift) kept the type masked. A `Name?` value now stays visible only on a
+  line that starts by declaring it (`val`/`var`/`let`, or a `fun`/`func`/`init`/`constructor`
+  parameter list); `password: Welcome?` in `.env`, YAML, URLs or prose stays masked.
+
 ## [3.12.6] — 2026-11-15
 
 ### Added

@@ -318,7 +318,7 @@ fn apply_hooks(root: &mut serde_json::Value, binary: &str) {
         ensure_command_hook(
             arr,
             super::governor_hosts::CLAUDE_WRITE_MATCHER,
-            &format!("{binary} hook write-guard"),
+            &crate::hooks::hook_shell_command(binary, "write-guard"),
         );
     }
     if let Some(arr) = event_array(hooks, "PostToolUse") {
@@ -440,6 +440,31 @@ mod tests {
     impl Drop for TestEnv {
         fn drop(&mut self) {
             lean_ctx::test_env::remove_var("LEAN_CTX_HOOK_BINARY");
+        }
+    }
+
+    /// Discord report (3.12.5, Windows without Git Bash): write-guard was the
+    /// one governor hook written with an unquoted binary, so PowerShell split
+    /// `…/Author Software/…/lean-ctx.exe` at the space.
+    #[test]
+    fn every_pre_tool_hook_quotes_a_spaced_binary() {
+        let binary = "C:/Users/u/AppData/Local/Author Software/bin/lean-ctx.exe";
+        let mut root = serde_json::json!({});
+        apply_hooks(&mut root, binary);
+        let commands: Vec<String> = root["hooks"]["PreToolUse"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|g| g["hooks"].as_array().unwrap().clone())
+            .map(|h| h["command"].as_str().unwrap().to_string())
+            .collect();
+        assert!(!commands.is_empty());
+        for command in commands {
+            // Exec form on Windows names the program alone; shell form quotes it.
+            assert!(
+                command == binary || command.starts_with(&format!("\"{binary}\" hook ")),
+                "unquoted spaced binary: {command}"
+            );
         }
     }
 

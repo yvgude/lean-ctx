@@ -871,6 +871,23 @@ fn redact_found(input: &str, excludes: &[regex::Regex]) -> (String, Vec<&'static
                 && let Some(value) = caps.get(2)
             {
                 let quoted = is_quoted_at(&normalized, value.start());
+                // #2255: `private var token: Session? = null` declares a type.
+                // The line scan runs only for unquoted, type-shaped `?` values.
+                if !quoted
+                    && lean_ctx_protocol::credential_redaction::is_nullable_type_name(
+                        value.as_str(),
+                    )
+                {
+                    let line_start = normalized[..value.start()]
+                        .rfind('\n')
+                        .map_or(0, |at| at + 1);
+                    if lean_ctx_protocol::credential_redaction::is_nullable_type_annotation(
+                        &normalized[line_start..value.start()],
+                        value.as_str(),
+                    ) {
+                        continue;
+                    }
+                }
                 match secret_value_span(value.as_str(), quoted) {
                     None => continue,
                     Some(span) if span.len() < value.len() => {

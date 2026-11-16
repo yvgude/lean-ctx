@@ -64,6 +64,10 @@ fn is_identifier_reference(value: &str) -> bool {
     if value.contains(|character: char| character.is_ascii_digit()) {
         return false;
     }
+    is_dotted_identifier(value)
+}
+
+fn is_dotted_identifier(value: &str) -> bool {
     value.split('.').all(|segment| {
         let mut characters = segment.chars();
         matches!(
@@ -73,6 +77,45 @@ fn is_identifier_reference(value: &str) -> bool {
             character.is_ascii_alphanumeric() || character == '_' || character == '$'
         })
     })
+}
+
+/// #2255: whether `value` reads as a nullable type name (`Session?`,
+/// `java.time.Instant?`): an identifier chain ending in `?` whose last segment
+/// starts upper-case. Cheap; callers test it before scanning back for the line.
+#[must_use]
+pub fn is_nullable_type_name(value: &str) -> bool {
+    value.trim().strip_suffix('?').is_some_and(|name| {
+        !name.is_empty()
+            && is_dotted_identifier(name)
+            && name.rsplit('.').next().is_some_and(|last| {
+                last.starts_with(|character: char| character.is_ascii_uppercase())
+            })
+    })
+}
+
+/// #2255: whether `value` is a nullable type in a declaration
+/// (`private var token: ProbeCorrelation? = null`, `fun f(token: Session?)`).
+///
+/// `line_before_value` is the text from the line start up to the value. The
+/// value must be a type name ending in `?` (last segment starts upper-case),
+/// and the line must start by declaring it: `val`/`var`/`let` (after optional
+/// annotations and modifiers), or a `fun name(`/`func name(`/`init(`/
+/// `constructor(` parameter list. A `.env`, YAML, URL or prose line does not,
+/// so `password: Welcome?` stays a secret.
+#[must_use]
+pub fn is_nullable_type_annotation(line_before_value: &str, value: &str) -> bool {
+    if !is_nullable_type_name(value) {
+        return false;
+    }
+    // Anchored at the line start: modifier words like `static` or `open` are
+    // English too, so a modifier elsewhere in a line declares nothing.
+    let property = static_regex!(
+        r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|public|internal|protected|override|open|final|static|weak|unowned|lateinit)\s+)*(?:val|var|let)\s+[A-Za-z_]\w*\s*:\s*$"
+    );
+    let parameter = static_regex!(
+        r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|public|internal|protected|override|open|final|static|suspend|inline|operator|infix|mutating|convenience|required)\s+)*(?:func?\s+[\w.<>]+\s*|init\s*|constructor\s*)\((?:[^=()]*,)?\s*[A-Za-z_]\w*\s*:\s*$"
+    );
+    property.is_match(line_before_value) || parameter.is_match(line_before_value)
 }
 
 fn is_placeholder_value(value: &str) -> bool {
@@ -211,15 +254,27 @@ fn rules() -> Vec<Rule> {
 pub fn redact_text(input: &str) -> String {
     let mut output = input.to_owned();
     for rule in rules() {
+        let text = output.as_str();
         output = rule
             .regex
-            .replace_all(&output, |captures: &regex::Captures| {
+            .replace_all(text, |captures: &regex::Captures| {
                 let whole = captures.get(0).map_or("", |value| value.as_str());
                 if rule.guard_value
                     && let Some(value) = captures.get(2)
-                    && is_benign_secret_value(value.as_str())
                 {
-                    return whole.to_owned();
+                    if is_benign_secret_value(value.as_str()) {
+                        return whole.to_owned();
+                    }
+                    // The line scan runs only for type-shaped `?` values.
+                    if is_nullable_type_name(value.as_str()) {
+                        let line_start = text[..value.start()].rfind('\n').map_or(0, |at| at + 1);
+                        if is_nullable_type_annotation(
+                            &text[line_start..value.start()],
+                            value.as_str(),
+                        ) {
+                            return whole.to_owned();
+                        }
+                    }
                 }
                 match captures.get(1) {
                     Some(prefix) => format!("{}[REDACTED:{}]", prefix.as_str(), rule.label),
@@ -259,9 +314,26 @@ mod tests {
             "api_key=${OPENAI_API_KEY}",
             "token: process.env.API_TOKEN",
             "password: undefined",
+            "private var token: ProbeCorrelation? = null",
             "safe source text",
         ] {
             assert!(!contains_credential(value), "{value}");
         }
+        // A `?` value outside a declaration is a password, not a type (#2255).
+        for value in [
+            "password: Sunshine?",
+            "DB_PASSWORD=Sunshine?",
+            "https://h/cb?token=Letmein?&x=1",
+            "  password: Welcome?",
+            "The static password: Summer2024?",
+            "- final password: Winter2025?",
+            "have fun (password: Hunter22?, x)",
+            "Calling init(admin, password: Summer2024?, x)",
+        ] {
+            assert!(contains_credential(value), "{value}");
+        }
+        assert!(!contains_credential(
+            "fun open(token: Session?, password: Secret?)"
+        ));
     }
 }
