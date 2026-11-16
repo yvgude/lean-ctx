@@ -41,6 +41,7 @@ import { posixSafeEnv } from "./env.js";
 import { classifySearchExit, innerTimeoutEnv, sanitizeExtraEnv } from "./exec-result.js";
 import { withFooter } from "./footer.js";
 import { notifyLensRead } from "./lens-read-bridge.js";
+import { lastReadFallback, readViaBridge } from "./bridge-read.js";
 import { boundReadOutput, READ_OUTPUT_MAX_BYTES, READ_OUTPUT_MAX_LINES } from "./read-output.js";
 
 const BRIDGE_STARTUP_TIMEOUT_MS = 10_000;
@@ -604,17 +605,14 @@ export default async function (pi: ExtensionAPI) {
         const mode = `lines:${startLine}-${endLine}`;
         // Route line-range reads through the bridge too, so re-reading the same
         // slice hits the session cache instead of re-spawning a CLI per call (#361).
-        if (mcpBridge) {
-          try {
-            const bridged = await mcpBridge.callTool("ctx_read", { path: absolutePath, mode, ...(forceFresh ? { fresh: true } : {}) }, signal);
-            const bridgedText = bridged.content.map((block) => block.text).join("");
-            const originalSlice = await readSlice(absolutePath, startOffset, params.limit);
-            const decorated = withFooter(bridgedText, { originalText: originalSlice.text, always: true, preferEstimate: true, suppressIfNoSaving: true });
-            notifyLensRead(absolutePath, startOffset, params.limit);
-            return boundedReadResult(decorated.text, { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx-bridge", mode, compression: decorated.stats });
-          } catch (err) {
-            console.error(`[pi-lean-ctx] ctx_read(${mode}) bridge call failed, falling back to CLI: ${err}`);
-          }
+        // The file is read outside the bridge call: a missing path is the
+        // tool's error for the transcript, not a bridge failure (#2256).
+        const bridgedText = await readViaBridge(mcpBridge, { path: absolutePath, mode, ...(forceFresh ? { fresh: true } : {}) }, signal);
+        if (bridgedText !== undefined) {
+          const originalSlice = await readSlice(absolutePath, startOffset, params.limit);
+          const decorated = withFooter(bridgedText, { originalText: originalSlice.text, always: true, preferEstimate: true, suppressIfNoSaving: true });
+          notifyLensRead(absolutePath, startOffset, params.limit);
+          return boundedReadResult(decorated.text, { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx-bridge", mode, compression: decorated.stats });
         }
         const args = ["read", absolutePath, "-m", mode, ...(forceFresh ? ["--fresh"] : [])];
         try {
@@ -650,25 +648,20 @@ export default async function (pi: ExtensionAPI) {
       // CEP session (counted by `lean-ctx gain`). The one-shot CLI path below
       // spawns a fresh `lean-ctx read` per call and therefore cannot cache
       // across calls — it is used when the bridge is unavailable or errors.
-      if (mcpBridge) {
-        try {
-          const bridged = await mcpBridge.callTool(
-            "ctx_read",
-            { path: absolutePath, mode, ...(wantsFresh ? { fresh: true } : {}) },
-            signal,
-          );
-          const bridgedText = bridged.content.map((block) => block.text).join("");
-          const originalText = await readFile(absolutePath, "utf8");
-          const decorated = withFooter(bridgedText, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
-          notifyLensRead(absolutePath);
-          return boundedReadResult(
-            decorated.text,
-            { path: absolutePath, source: "lean-ctx-bridge", mode, compression: decorated.stats },
-            verbatimSource ? originalText : undefined,
-          );
-        } catch (err) {
-          console.error(`[pi-lean-ctx] ctx_read bridge call failed, falling back to CLI: ${err}`);
-        }
+      const bridgedText = await readViaBridge(
+        mcpBridge,
+        { path: absolutePath, mode, ...(wantsFresh ? { fresh: true } : {}) },
+        signal,
+      );
+      if (bridgedText !== undefined) {
+        const originalText = await readFile(absolutePath, "utf8");
+        const decorated = withFooter(bridgedText, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
+        notifyLensRead(absolutePath);
+        return boundedReadResult(
+          decorated.text,
+          { path: absolutePath, source: "lean-ctx-bridge", mode, compression: decorated.stats },
+          verbatimSource ? originalText : undefined,
+        );
       }
 
       const args = ["read", absolutePath, "-m", mode, ...(wantsFresh ? ["--fresh"] : [])];
@@ -918,11 +911,13 @@ export default async function (pi: ExtensionAPI) {
         localTools: localToolNames,
       }, {
         onSchemasDiscovered: (tools) => {
+          // Discovery can run during a tool call, so no console output here
+          // (#2256). The cache only speeds up the next start; a failed write
+          // means that start discovers the schemas again.
           try {
             writeMcpSchemaCache(cachePath, cacheKey, tools);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(`[pi-lean-ctx] MCP schema cache refresh failed: ${msg}`);
+          } catch {
+            // ignored, see above
           }
         },
       })
@@ -1048,6 +1043,10 @@ export default async function (pi: ExtensionAPI) {
         }
         if (status.lastError) {
           lines.push(`Last bridge error: ${status.lastError}`);
+        }
+        const readFallback = lastReadFallback();
+        if (readFallback) {
+          lines.push(`Last read fallback: ${readFallback}`);
         }
       }
 

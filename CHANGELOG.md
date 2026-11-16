@@ -18,6 +18,10 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   null` (Kotlin, Swift) kept the type masked. A `Name?` value now stays visible only on a
   line that starts by declaring it (`val`/`var`/`let`, or a `fun`/`func`/`init`/`constructor`
   parameter list); `password: Welcome?` in `.env`, YAML, URLs or prose stays masked.
+- **Pi: a failed read no longer prints into the prompt editor (#2256).** `ctx_read` on a missing
+  file printed "bridge call failed, falling back to CLI: ENOENT" into Pi's editor. The file
+  error now reaches the transcript as the tool's error, and bridge fallbacks, transport
+  errors and reconnects are no longer written to the console; `/lean-ctx` shows the last one.
 
 ## [3.12.6] — 2026-11-15
 

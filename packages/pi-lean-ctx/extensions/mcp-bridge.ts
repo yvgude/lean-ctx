@@ -423,8 +423,9 @@ export class McpBridge {
 
     transport.onerror = (err) => {
       if (this.transport !== transport) return;
+      // Kept for `/lean-ctx`; console output would land in Pi's prompt
+      // editor while a session runs (#2256).
       this.lastError = err.message;
-      console.error(`[lean-ctx MCP bridge] Transport error: ${err.message}`);
     };
 
     this.transport = transport;
@@ -445,10 +446,7 @@ export class McpBridge {
     if (this.shuttingDown) return;
     if (this.reconnectTimer) return;
     if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      this.lastError = `Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached.`;
-      console.error(
-        `[lean-ctx MCP bridge] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. MCP tools unavailable.`,
-      );
+      this.lastError = `Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. MCP tools unavailable.`;
       return;
     }
 
@@ -473,7 +471,6 @@ export class McpBridge {
         if (!this.isConnected()) {
           throw new Error("lean-ctx MCP bridge failed to connect.");
         }
-        if (!this.shuttingDown) console.error("[lean-ctx MCP bridge] Reconnected successfully");
       } catch (error) {
         this.lastError = error instanceof Error ? error.message : String(error);
         this.scheduleReconnect();
