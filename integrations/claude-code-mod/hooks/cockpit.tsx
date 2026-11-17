@@ -912,17 +912,17 @@ type CockpitOption = 'cockpit_panel' | 'cockpit_pulse_line' | 'cockpit_turn_card
 // Stores a choice in one of the mod's own options so new sessions keep it;
 // `false` when the setting could not be written. Each key is written as a
 // literal so the settings this mod can change are visible in the source.
-async function persistChoice($: EngineInterface, option: CockpitOption, on: boolean): Promise<boolean> {
+async function persistChoice($: EngineInterface, option: CockpitOption, enabled: boolean): Promise<boolean> {
   try {
     if (option === 'cockpit_panel') {
-      const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_panel', value: on })
+      const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_panel', value: enabled })
       return deny === undefined
     }
     if (option === 'cockpit_pulse_line') {
-      const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_pulse_line', value: on })
+      const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_pulse_line', value: enabled })
       return deny === undefined
     }
-    const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_turn_cards', value: on })
+    const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_turn_cards', value: enabled })
     return deny === undefined
   } catch {
     return false
@@ -935,16 +935,16 @@ const COCKPIT_USAGE =
 
 // `/cockpit pulse|cards on|off`: shows or hides one of the lines above the
 // prompt, now and in new sessions.
-async function runSurfaceCommand($: EngineInterface, surface: 'pulse' | 'cards', on: boolean): Promise<string> {
+async function runSurfaceCommand($: EngineInterface, surface: 'pulse' | 'cards', enabled: boolean): Promise<string> {
   const [option, name]: [CockpitOption, string] =
     surface === 'pulse' ? ['cockpit_pulse_line', 'pulse line'] : ['cockpit_turn_cards', 'turn and milestone cards']
-  if (surface === 'pulse') pulseEnabled = on
-  else cardsEnabled = on
+  if (surface === 'pulse') pulseEnabled = enabled
+  else cardsEnabled = enabled
   // Redraw now, so a card or band on show goes away (or a hidden one returns).
   startFrames($)
-  const kept = await persistChoice($, option, on)
-  const state = on ? 'on' : 'off'
-  const back = on ? '' : ` /cockpit ${surface} on brings it back.`
+  const kept = await persistChoice($, option, enabled)
+  const state = enabled ? 'on' : 'off'
+  const back = enabled ? '' : ` /cockpit ${surface} on brings it back.`
   return kept
     ? `LeanCTX ${name} ${state}, now and in new sessions.${back}`
     : `LeanCTX ${name} ${state} for this session (the setting could not be saved; /config → lean-ctx).`
