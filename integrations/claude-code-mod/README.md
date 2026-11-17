@@ -182,9 +182,23 @@ mods API methods the validator lists below. Everything it does:
   lean-ctx's state to the compaction instructions and the first prompt after
   one; answers `sleep` waits for watched jobs; and submits a short wake prompt
   when a watched background job finishes (`wake_on_job_finish`).
-- **Settings:** only its own plugin options, and only when you run
-  `/cockpit on|off|pulse|cards`. It changes no other Claude Code settings or
-  permissions.
+- **Settings** (`$.config.set`, fixed keys): only `lean-ctx.cockpit_panel`
+  (`/cockpit on|off`), `lean-ctx.cockpit_pulse_line` (`/cockpit pulse on|off`)
+  and `lean-ctx.cockpit_turn_cards` (`/cockpit cards on|off`), each a boolean,
+  and only when you run that command. It changes no other Claude Code
+  settings or permissions.
+- **Hooks that answer or change something:**
+  `tool.describe` marks lean-ctx tools outside `front_loaded_tools` as
+  deferred (descriptions unchanged); `tool.call` answers a bare `Bash`
+  `sleep N` itself while a watched job runs, and passes native `Bash` output
+  over 2,000 characters through `ctx_shape` (everything else runs unchanged
+  via `next`); `prompt.submit` removes lean-ctx's own hook attachments and,
+  once after a compaction, adds the lean-ctx session state (≤ ~500 tokens);
+  `session.compact` saves lean-ctx's session and appends its keep-list to the
+  summarizer instructions (your own instructions stay); `command.run` answers
+  only its own `/leanctx` and `/cockpit` commands. It never grants or denies
+  a permission; the only call it answers without running it is such a bare
+  `sleep`, which then neither runs nor asks for permission.
 - **State:** the cockpit's display state in Claude Code's plugin state
   (`lean-ctx.gateway`, `lean-ctx.clock`).
 - **Commands:** `/leanctx` (request usage) and `/cockpit`.
