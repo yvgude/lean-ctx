@@ -717,6 +717,14 @@ fn build_claude_mod_step(opts: &SetupOptions, targets: &[EditorTarget]) -> Optio
             step.items.push(item("skipped", status.describe()));
         }
         ModStatus::Current(v) => step.items.push(item("already", v)),
+        status @ ModStatus::External { .. } => {
+            if matches!(status, ModStatus::External { local: Some(_), .. }) {
+                step.warnings
+                    .push(format!("claude mod: {}", status.describe()));
+            } else {
+                step.items.push(item("already", status.describe()));
+            }
+        }
         ModStatus::Stale(_) => match claude_mod::install() {
             Ok(msg) => step.items.push(item("updated", msg)),
             Err(e) => {

@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, mock, test } from "claude-code/testing";
 
+// The engine and `on` a test body receives (`test` also takes options).
+type TestBody = Extract<Parameters<typeof test>[1], (...args: any) => any>;
+type Engine = Parameters<TestBody>[0];
+type On = Parameters<TestBody>[1];
+
 const PANE = {
   plugin: "lean-ctx",
   component: "Pane",
@@ -20,6 +25,7 @@ const BAND = {
   component: "AbovePrompt",
   props: {
     hasSurvey: false,
+    isCollapsed: false,
     isWorking: false,
     maxRows: 6,
     bodyColumns: 100,
@@ -121,7 +127,7 @@ const RUN_OK = { exitCode: 0, stderr: "", isStdoutTruncated: false, isStderrTrun
 
 // Starts an interactive session whose `lean-ctx value` answers `answer()`;
 // resolves the argv of every such run, in order.
-async function startSession($: Parameters<Parameters<typeof test>[1]>[0], on: Parameters<Parameters<typeof test>[1]>[1], answer: () => string): Promise<string[][]> {
+async function startSession($: Engine, on: On, answer: () => string): Promise<string[][]> {
   const runs: string[][] = [];
   on("session.start", () => ({ cwd: "/work" }));
   on("command.register", ($, e) => ({ value: { command: e.name } }));

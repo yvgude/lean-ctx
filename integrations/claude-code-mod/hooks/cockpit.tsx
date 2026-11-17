@@ -536,12 +536,30 @@ async function readBoard($: EngineInterface): Promise<Board> {
 // runs it: the agent is among them, whether hooks run in it or in a worker.
 // lean-ctx walks the tree natively; `ps` and `sh` are missing on Windows (#2077).
 let chain: number[] | undefined
+// Set when the lean-ctx binary cannot be started (not on PATH, e.g. a
+// directory install without lean-ctx): the sidebar closes and the cockpit
+// stops calling lean-ctx until `/cockpit` finds it.
+let binaryMissing = false
+const MISSING_BINARY_REPLY =
+  'The LeanCTX cockpit needs the lean-ctx binary on PATH: install it (https://leanctx.com), ' +
+  'run `lean-ctx setup`, then restart Claude Code.'
 
 // The data directory lean-ctx reports itself, so XDG and custom homes hold,
 // and the ancestors whose sessions serve this conversation.
 async function locate($: EngineInterface): Promise<{ dir: string; cwd: string; hosts: number[] }> {
   if (!valueDir || !chain) {
-    const { exitCode, stdout } = await $.process.run(['lean-ctx', 'prompt-segment', '--json'], { timeoutMs: 15_000 })
+    let ran: { exitCode: number; stdout: string }
+    try {
+      ran = await $.process.run(['lean-ctx', 'prompt-segment', '--json'], { timeoutMs: 15_000 })
+    } catch (err) {
+      if (!binaryMissing) {
+        binaryMissing = true
+        stopProofClock()
+        await $.ui.close({ id: PANE }).catch(() => {})
+      }
+      throw err
+    }
+    const { exitCode, stdout } = ran
     if (exitCode !== 0) throw new Error('lean-ctx prompt-segment failed')
     const parsed: unknown = JSON.parse(stdout)
     const watch = isRec(parsed) ? str(parsed, 'watch') : undefined
@@ -598,6 +616,7 @@ async function refresh($: EngineInterface) {
   try {
     // Claude's side (window, cost) rides along: refresh only runs from timers.
     await refreshUsage($)
+    if (binaryMissing) return
     const where = await locate($)
     const sessions = `${where.dir}/sessions`
     const now = Date.now()
@@ -680,7 +699,7 @@ async function prove($: EngineInterface, opts: { isAsked?: boolean } = {}) {
   // check from claiming the run (a `/cockpit` proof cannot start in between).
   const now = opts.isAsked ? 0 : await $.clock.now()
   if (proving) return
-  if (!opts.isAsked && (!paneDrawn || now < proveBackoff.until)) return
+  if (!opts.isAsked && (binaryMissing || !paneDrawn || now < proveBackoff.until)) return
   proving = true
   const before = (await readBoard($)).proof
   await update($, board, x => ({ ...x, proof: { ...(x.proof ?? {}), isRunning: true } }))
@@ -942,6 +961,11 @@ async function runCockpitCommand($: EngineInterface, args: string): Promise<stri
       : 'LeanCTX cockpit sidebar closed for this session (the setting could not be saved; /config → lean-ctx).'
   }
   if (choice !== '' && choice !== 'on') return COCKPIT_USAGE
+  if (binaryMissing) {
+    binaryMissing = false
+    await locate($).catch(() => {})
+    if (binaryMissing) return MISSING_BINARY_REPLY
+  }
   const kept = choice === 'on' ? await persistChoice($, 'cockpit_panel', true) : true
   if (choice === 'on') panelEnabled = true
   const { isPlaced } = await $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS })

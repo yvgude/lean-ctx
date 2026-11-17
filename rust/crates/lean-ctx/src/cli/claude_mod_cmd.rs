@@ -27,6 +27,9 @@ pub fn cmd_claude_mod(args: &[String]) {
             match status {
                 ModStatus::NotInstalled => println!("  install: lean-ctx claude-mod install"),
                 ModStatus::Stale(_) => println!("  refresh: lean-ctx claude-mod install"),
+                ModStatus::External { local: Some(_), .. } => {
+                    println!("  remove the duplicate: lean-ctx claude-mod uninstall");
+                }
                 _ => {}
             }
         }

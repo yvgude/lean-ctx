@@ -12,7 +12,8 @@ use lean_ctx::tool_defs::tool_def;
 pub struct CtxPatchTool;
 
 /// Whether this host draws edit diffs from the archive: Claude Code with the
-/// lean-ctx mod in its plugin cache (file-only probe, once per process). Any
+/// lean-ctx mod in its plugin cache, from our marketplace or the Claude
+/// directory (file-only probe, once per process). Any
 /// other host gets the bare one-line receipt.
 pub(crate) fn host_draws_diffs(ctx: &ToolContext) -> bool {
     static MOD_PRESENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -30,9 +31,7 @@ pub(crate) fn host_draws_diffs(ctx: &ToolContext) -> bool {
             std::env::var_os("CLAUDE_CONFIG_DIR")
                 .map(std::path::PathBuf::from)
                 .or_else(|| dirs::home_dir().map(|home| home.join(".claude")))
-                .is_some_and(|dir| {
-                    !lean_ctx_hooks::hooks::agents::claude_mod::cached_versions(&dir).is_empty()
-                })
+                .is_some_and(|dir| lean_ctx_hooks::hooks::agents::claude_mod::cached_anywhere(&dir))
         })
 }
 

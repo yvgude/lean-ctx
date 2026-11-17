@@ -11,6 +11,10 @@ from pathlib import Path
 COUPLED_PACKAGES = (
     "packages/pi-lean-ctx/package.json",
     "packages/lean-ctx-bin/package.json",
+    # The Claude Code mod manifest: the Claude directory needs a new version
+    # per release, and the binary materializes the same file.
+    "rust/src/templates/claude_mod/plugin.json",
+    "integrations/claude-code-mod/.claude-plugin/plugin.json",
 )
 SEMVER_RE = re.compile(
     r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"

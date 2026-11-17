@@ -1,14 +1,15 @@
 {
   "name": "lean-ctx-local",
-  "description": "Development marketplace for the lean-ctx Claude Code mod (end users install it with `lean-ctx claude-mod install`).",
+  "description": "Development marketplace for the lean-ctx Claude Code mod. End users install it from the Claude directory or with `lean-ctx claude-mod install`.",
   "owner": {
-    "name": "Thinkery / Yves Gugger"
+    "name": "Thinkery AG",
+    "url": "https://leanctx.com"
   },
   "plugins": [
     {
       "name": "lean-ctx",
       "source": ".",
-      "description": "Wake on background job completion, shape native Bash output, keep lean-ctx's core tools in front, and show per-session request usage."
+      "description": "The LeanCTX cockpit, wake on background job completion, native Bash output shaping, a focused lean-ctx tool surface, and per-session request usage. Requires the lean-ctx binary."
     }
   ]
 }

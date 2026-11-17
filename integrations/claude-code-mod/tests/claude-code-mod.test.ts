@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { expect, mock, test } from "claude-code/testing";
 
+// The engine and `on` a test body receives (`test` also takes options).
+type TestBody = Extract<Parameters<typeof test>[1], (...args: any) => any>;
+type Engine = Parameters<TestBody>[0];
+type On = Parameters<TestBody>[1];
+
 const SHELL = "mcp__lean-ctx__ctx_shell";
 const WATCH_CONTEXT =
   "This background job is being watched; you will be woken automatically on completion, so do not poll or sleep.";
@@ -209,7 +214,7 @@ test("/leanctx exists right after session start when lean-ctx is connected", asy
 
 // #2057: the cockpit sidebar can be turned off and on, and the choice holds
 // for new sessions through the mod's `cockpit_panel` option.
-function cockpitEngine(on: Parameters<Parameters<typeof test>[1]>[1]) {
+function cockpitEngine(on: On) {
   const opened: string[] = [];
   const closed: string[] = [];
   const written: { key: string; value: unknown }[] = [];
@@ -228,9 +233,9 @@ function cockpitEngine(on: Parameters<Parameters<typeof test>[1]>[1]) {
   const toggle = (option: string, label: string) => ({
     key: `lean-ctx.${option}`,
     label,
-    kind: "toggle" as const,
+    kind: "boolean" as const,
     value: true,
-    provider: { kind: "plugin" as const, name: "lean-ctx" },
+    provider: { plugin: "lean-ctx", tier: "append" as const },
     isLocked: false,
   });
   on("config.list", () => ({
@@ -247,7 +252,7 @@ function cockpitEngine(on: Parameters<Parameters<typeof test>[1]>[1]) {
   return { opened, closed, written };
 }
 
-const runCockpit = ($: Parameters<Parameters<typeof test>[1]>[0], args: string) =>
+const runCockpit = ($: Engine, args: string) =>
   $.command.run({
     command: "cockpit",
     args,
@@ -610,7 +615,7 @@ test("a job finished mid-turn wakes only if the model has not read it by turn en
 // idle each submitted their own wake, a row of "Prompt from the lean-ctx
 // plugin" entries and a turn each. A wake still waiting for its turn now holds
 // later finishes; the model usually reads them in that turn.
-function stagedJobs(on: Parameters<Parameters<typeof test>[1]>[1]) {
+function stagedJobs(on: On) {
   const clock = mock.clock(on);
   const wakes: string[] = [];
   const finished = new Set<string>();
@@ -645,7 +650,7 @@ function stagedJobs(on: Parameters<Parameters<typeof test>[1]>[1]) {
   return { wakes, finished, tick };
 }
 
-const endTurn = ($: Parameters<Parameters<typeof test>[1]>[0], turnId: string) =>
+const endTurn = ($: Engine, turnId: string) =>
   $.turn.complete({ answer: "ok", durationMs: 1, isAborted: false, turnId, reason: "answer" });
 
 test("a job finishing before the last wake's turn starts joins no extra wake when the model reads it", async ($, on) => {
@@ -664,7 +669,7 @@ test("a job finishing before the last wake's turn starts joins no extra wake whe
   expect(jobs.wakes.length).toBe(1);
 
   // The wake's turn reads shell_b itself; nothing is left to announce.
-  await $.turn.start({ text: jobs.wakes[0], turnId: "wake-1" });
+  await $.turn.start({ text: jobs.wakes[0] ?? "", turnId: "wake-1" });
   await $.tool.call({ tool: SHELL, background_action: "status", job_id: "shell_b" });
   await endTurn($, "wake-1");
   await jobs.tick();
@@ -682,7 +687,7 @@ test("a held job the model did not read wakes once after the turn", async ($, on
   await jobs.tick();
   expect(jobs.wakes.length).toBe(1);
 
-  await $.turn.start({ text: jobs.wakes[0], turnId: "wake-1" });
+  await $.turn.start({ text: jobs.wakes[0] ?? "", turnId: "wake-1" });
   await endTurn($, "wake-1");
   await jobs.tick();
   expect(jobs.wakes.length).toBe(2);
@@ -857,4 +862,107 @@ test("/leanctx reports per-session request, token, tool, sleep, and wake counts"
   expect(answer.text).toBe(
     `Requests 1 · input 12 · output 3 · cache read 4 · cache creation 2 · ToolSearch-only 1 · lean-ctx calls 1 · sleeps answered 1 · wakes delivered 1 · Bash outputs shaped 0 (−0 chars) · hook attachments dropped 1 (−${SHARED_HOOK_CONTEXT.length} chars) · compactions 0`,
   );
+});
+
+// Directory installs: the mod requires lean-ctx. When no lean-ctx MCP server
+// connects within the grace period, an interactive session says once what is
+// missing; the cockpit closes its sidebar and stops calling lean-ctx.
+const RUN_DONE = { stderr: "", isStdoutTruncated: false, isStderrTruncated: false };
+const GRACE_MS = 20_000;
+const INTERACTIVE = { surface: "terminal" as const, isInteractive: true, cwd: "/work" };
+
+function setupEngine(on: On, opts: { installed: boolean; tools?: () => string[] }) {
+  const clock = mock.clock(on);
+  const toasts: string[] = [];
+  const runs: string[][] = [];
+  const closed: string[] = [];
+  on("session.start", () => ({ cwd: "/work" }));
+  on("tool.list", () => ({
+    value: [
+      { name: "Bash", description: "shell", mcp: false },
+      ...(opts.tools?.() ?? []).map((name) => ({ name, description: "lean-ctx", mcp: true })),
+    ],
+  }));
+  on("command.register", ($, event) => ({ value: { command: event.name } }));
+  on("ui.status", () => ({ value: undefined }));
+  on("ui.open", () => ({ value: { isPlaced: true as const } }));
+  on("ui.close", ($, event) => {
+    closed.push(event.id);
+    return { value: undefined };
+  });
+  on("ui.toast", ($, event) => {
+    toasts.push(event.text);
+    return { value: undefined };
+  });
+  on("process.run", ($, event) => {
+    runs.push([...event.argv]);
+    if (!opts.installed) throw new Error("spawn lean-ctx ENOENT");
+    return { value: { ...RUN_DONE, exitCode: 0, stdout: "lean-ctx 3.12.6" } };
+  });
+  const wait = async (ms: number) => {
+    await clock.advance(ms);
+    await flushMicrotasks();
+  };
+  const versionChecks = () => runs.filter((argv) => argv[1] === "--version").length;
+  return { toasts, runs, closed, wait, versionChecks };
+}
+
+test("without the lean-ctx binary an interactive session shows one install notice after the grace period", async ($, on) => {
+  const engine = setupEngine(on, { installed: false });
+  await $.session.start(INTERACTIVE);
+  await engine.wait(GRACE_MS - 1_000);
+  expect(engine.toasts).toEqual([]);
+  await engine.wait(1_000);
+  await $.session.start(INTERACTIVE);
+  await engine.wait(GRACE_MS);
+  expect(engine.versionChecks()).toBe(1);
+  expect(engine.toasts.length).toBe(1);
+  expect(engine.toasts[0]).toContain("lean-ctx binary was not found");
+  expect(engine.toasts[0]).toContain("https://leanctx.com/install.sh");
+  expect(engine.toasts[0]).toContain("lean-ctx setup");
+});
+
+test("without the lean-ctx binary the cockpit closes its sidebar and stops calling lean-ctx", async ($, on) => {
+  const engine = setupEngine(on, { installed: false });
+  await $.session.start(INTERACTIVE);
+  await engine.wait(1_000);
+  expect(engine.closed).toEqual(["leanctx-cockpit"]);
+  const calls = engine.runs.length;
+  await engine.wait(60_000);
+  expect(engine.runs.length - calls).toBe(engine.versionChecks());
+  const answer = await $.command.run({
+    command: "cockpit",
+    args: "",
+    origin: { kind: "composer" },
+    presentation: { isFullscreen: true, columns: 160 },
+  });
+  expect(answer.text).toContain("needs the lean-ctx binary");
+});
+
+test("a lean-ctx MCP server that connects within the grace period means no notice", async ($, on) => {
+  let tools: string[] = [];
+  const engine = setupEngine(on, { installed: false, tools: () => tools });
+  await $.session.start(INTERACTIVE);
+  tools = [SHELL];
+  await engine.wait(GRACE_MS);
+  expect(engine.versionChecks()).toBe(0);
+  expect(engine.toasts).toEqual([]);
+});
+
+test("lean-ctx installed but not connected asks for lean-ctx setup", async ($, on) => {
+  const engine = setupEngine(on, { installed: true });
+  await $.session.start(INTERACTIVE);
+  await engine.wait(GRACE_MS);
+  expect(engine.versionChecks()).toBe(1);
+  expect(engine.toasts.length).toBe(1);
+  expect(engine.toasts[0]).toContain("not connected");
+  expect(engine.toasts[0]).toContain("lean-ctx setup");
+});
+
+test("headless sessions get no setup notice", async ($, on) => {
+  const engine = setupEngine(on, { installed: false });
+  await $.session.start({ ...INTERACTIVE, isInteractive: false });
+  await engine.wait(GRACE_MS);
+  expect(engine.versionChecks()).toBe(0);
+  expect(engine.toasts).toEqual([]);
 });

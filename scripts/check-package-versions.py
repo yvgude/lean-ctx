@@ -17,6 +17,8 @@ Source of truth:
 Coupled packages (must equal the engine version):
   * packages/pi-lean-ctx/package.json   — Pi Coding Agent extension
   * packages/lean-ctx-bin/package.json  — npx/npm binary wrapper
+  * templates/claude_mod + integrations/claude-code-mod plugin.json — the
+    Claude Code mod listed in the Claude directory
 
 Coupled *source constants* (must equal the engine version):
   * packages/pi-lean-ctx PI_EXTENSION_VERSION — part of the MCP schema-cache
@@ -49,6 +51,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 COUPLED_PACKAGES = [
     "packages/pi-lean-ctx/package.json",
     "packages/lean-ctx-bin/package.json",
+    # The Claude Code mod as the Claude directory serves it: the directory
+    # needs a new manifest version for every release it should pick up.
+    "rust/src/templates/claude_mod/plugin.json",
+    "integrations/claude-code-mod/.claude-plugin/plugin.json",
 ]
 
 # Shipped source constants whose literal must equal the engine version, as

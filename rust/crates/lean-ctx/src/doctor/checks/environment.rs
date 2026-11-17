@@ -740,7 +740,16 @@ pub(crate) fn claude_mod_outcome() -> Option<Outcome> {
     }
     let versions = claude_mod::cached_versions(&claude_dir);
     let want = claude_mod::mod_version();
-    let line = if versions.contains(&claude_mod::cache_dir_name(&want)) {
+    // Another marketplace's copy (the Claude directory) sits beside ours only
+    // when a local one is left over; `install` would not touch it.
+    let from_directory = claude_mod::cached_anywhere_else(&claude_dir);
+    let line = if from_directory && !versions.is_empty() {
+        format!(
+            "{BOLD}Claude Code mod{RST}  {YELLOW}installed from the Claude directory and locally{RST}  {DIM}(remove the local copy: lean-ctx claude-mod uninstall){RST}"
+        )
+    } else if from_directory {
+        format!("{BOLD}Claude Code mod{RST}  {GREEN}installed from the Claude directory{RST}")
+    } else if versions.contains(&claude_mod::cache_dir_name(&want)) {
         format!("{BOLD}Claude Code mod{RST}  {GREEN}installed ({want}){RST}")
     } else if let Some(old) = versions.last() {
         format!(
