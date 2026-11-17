@@ -914,19 +914,16 @@ type CockpitOption = 'cockpit_panel' | 'cockpit_pulse_line' | 'cockpit_turn_card
 // literal so the settings this mod can change are visible in the source.
 async function persistChoice($: EngineInterface, option: CockpitOption, on: boolean): Promise<boolean> {
   try {
-    let result: { deny?: unknown }
-    switch (option) {
-      case 'cockpit_panel':
-        result = await $.config.set({ key: 'lean-ctx.cockpit_panel', value: on })
-        break
-      case 'cockpit_pulse_line':
-        result = await $.config.set({ key: 'lean-ctx.cockpit_pulse_line', value: on })
-        break
-      case 'cockpit_turn_cards':
-        result = await $.config.set({ key: 'lean-ctx.cockpit_turn_cards', value: on })
-        break
+    if (option === 'cockpit_panel') {
+      const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_panel', value: on })
+      return deny === undefined
     }
-    return result.deny === undefined
+    if (option === 'cockpit_pulse_line') {
+      const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_pulse_line', value: on })
+      return deny === undefined
+    }
+    const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_turn_cards', value: on })
+    return deny === undefined
   } catch {
     return false
   }
