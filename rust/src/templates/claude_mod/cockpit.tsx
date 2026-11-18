@@ -705,8 +705,9 @@ async function prove($: EngineInterface, opts: { isAsked?: boolean } = {}) {
   await update($, board, x => ({ ...x, proof: { ...(x.proof ?? {}), isRunning: true } }))
   try {
     const b = await readBoard($)
-    const argv = ['lean-ctx', 'value', '--json', ...(b.snap ? ['--session', b.snap.sessionId] : [])]
-    const { stdout } = await $.process.run(argv, { timeoutMs: PROVE_TIMEOUT_MS })
+    const { stdout } = b.snap
+      ? await $.process.run(['lean-ctx', 'value', '--json', '--session', b.snap.sessionId], { timeoutMs: PROVE_TIMEOUT_MS })
+      : await $.process.run(['lean-ctx', 'value', '--json'], { timeoutMs: PROVE_TIMEOUT_MS })
     const r: unknown = JSON.parse(stdout)
     if (!isRec(r)) throw new Error('lean-ctx value returned no report')
     const ledger = isRec(r['ledger']) ? r['ledger'] : {}
