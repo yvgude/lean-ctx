@@ -4,7 +4,36 @@ A Claude Code mod (Community tier) that makes lean-ctx part of Claude Code itsel
 instead of something the model has to be talked into using. Requires Claude Code
 **2.1.287+**; tested with **2.1.287**.
 
-## Install
+## Requirements
+
+The mod drives LeanCTX; it does not replace it. It needs the **lean-ctx
+binary on your PATH** and its MCP server set up for Claude Code — like
+Anthropic's language-server plugins, which need the language server itself.
+If no lean-ctx MCP server has connected 20 seconds into an interactive
+session, the mod shows one notice (once per Claude Code process) saying what
+is missing, and the cockpit closes its sidebar and stops calling lean-ctx
+until `/cockpit` finds it. The steps:
+
+```sh
+curl -fsSL https://leanctx.com/install.sh | sh      # macOS / Linux, no Rust needed
+brew tap yvgude/lean-ctx && brew install lean-ctx    # macOS / Linux
+npm install -g lean-ctx-bin                          # any OS with Node.js, incl. Windows
+cargo install lean-ctx                               # any OS with Rust
+lean-ctx setup                                       # connect it to Claude Code
+```
+
+Then restart Claude Code. LeanCTX is open source (Apache-2.0):
+<https://github.com/yvgude/lean-ctx>.
+
+## Install from the Claude directory
+
+Install **lean-ctx** from the plugin directory: run `/plugin` in Claude Code
+and pick it under Discover. `lean-ctx setup` and `lean-ctx claude-mod status`
+recognise a lean-ctx plugin from any other marketplace and do not add the local copy described below, so hooks never run
+twice. If both are present, `lean-ctx claude-mod uninstall` removes the local
+one.
+
+## Install with lean-ctx
 
 `lean-ctx setup` and `lean-ctx update` set the mod up wherever Claude Code
 2.1.287+ is installed, and say so in their report. By hand:
@@ -117,16 +146,69 @@ were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
   Bash outputs, and dropped hook attachments/characters — from Claude Code's
   own `turn.step` usage and hook text, not estimates.
 
-It keeps nothing after the session, sends no telemetry, sets no gateway policy
-and stays inert when no lean-ctx MCP server is connected.
+It sets no gateway policy. Without a connected lean-ctx MCP server its tool,
+wake and shaping features do nothing; only the setup notice above remains.
 
-## Security model
+## Security model and disclosure
 
 A mod runs inside Claude Code with your permissions. This one only calls the
-mods API methods the validator lists below; it reaches lean-ctx through Claude
-Code's own MCP connection (`$.mcp.call`), never through a shell or the network.
-`ctx_shape` is an internal host hook: never advertised to agents; the mod reaches
-it through the listed `ctx_call`, because `$.mcp.call` only calls listed tools.
+mods API methods the validator lists below. Everything it does:
+
+- **Network:** none. The mod makes no network requests and sends no
+  telemetry. It reaches lean-ctx through Claude Code's own MCP connection
+  (`$.mcp.call`) and the local `lean-ctx` binary.
+- **Local commands** (`$.process.run`, fixed argument lists, no shell):
+  `lean-ctx --version` at most once per process, when no lean-ctx MCP server
+  has connected 20 seconds into an interactive session (to choose the setup
+  notice); `lean-ctx prompt-segment --json` to find lean-ctx's data directory
+  (the cockpit retries it on its 15-second refresh until it succeeds, and
+  stops when the binary cannot be started); `lean-ctx value --json [--session <id>]`
+  while the cockpit sidebar is drawn (every 5 minutes and on `/cockpit`), which
+  re-verifies lean-ctx's local hash chains.
+- **Files read** (`$.fs`, read-only): lean-ctx's own session value snapshots
+  and archived `ctx_patch` diffs in lean-ctx's data directory. It writes no
+  files.
+- **lean-ctx MCP calls:** `ctx_shell` status checks for background jobs it
+  watches; `ctx_session` save before and status after a compaction;
+  `ctx_call` → `ctx_shape` for native Bash output over 2,000 characters
+  (`shape_native_output`; on failure the original output is kept).
+  `ctx_shape` is an internal host hook: never advertised to agents; the mod
+  reaches it through the listed `ctx_call`, because `$.mcp.call` only calls
+  listed tools.
+- **What Claude sees:** it marks lean-ctx tools outside `front_loaded_tools`
+  as deferred; prefixes the lean-ctx skill with this session's settings;
+  drops lean-ctx's own SessionStart/UserPromptSubmit hook text (the MCP
+  instructions carry the same rules; `keep_hook_context` keeps it); adds
+  lean-ctx's state to the compaction instructions and the first prompt after
+  one; answers `sleep` waits for watched jobs; and submits a short wake prompt
+  when a watched background job finishes (`wake_on_job_finish`).
+- **Settings** (`$.config.set`, fixed keys): only `lean-ctx.cockpit_panel`
+  (`/cockpit on|off`), `lean-ctx.cockpit_pulse_line` (`/cockpit pulse on|off`)
+  and `lean-ctx.cockpit_turn_cards` (`/cockpit cards on|off`), each a boolean,
+  and only when you run that command. It changes no other Claude Code
+  settings or permissions.
+- **Hooks that answer or change something:**
+  `tool.describe` marks lean-ctx tools outside `front_loaded_tools` as
+  deferred (descriptions unchanged); `tool.call` answers a bare `Bash`
+  `sleep N` itself while a watched job runs, and passes native `Bash` output
+  over 2,000 characters through `ctx_shape` (everything else runs unchanged
+  via `next`); `prompt.submit` removes lean-ctx's own hook attachments and,
+  once after a compaction, adds the lean-ctx session state (≤ ~500 tokens);
+  `session.compact` saves lean-ctx's session and appends its keep-list to the
+  summarizer instructions (your own instructions stay); `command.run` answers
+  only its own `/leanctx` and `/cockpit` commands. It never grants or denies
+  a permission; the only call it answers without running it is such a bare
+  `sleep`, which then neither runs nor asks for permission.
+- **State:** the cockpit's display state in Claude Code's plugin state
+  (`lean-ctx.gateway`, `lean-ctx.clock`).
+- **Commands:** `/leanctx` (request usage) and `/cockpit`.
+
+**The lean-ctx engine is separate software with its own data paths.** It
+processes context locally. Its anonymous usage telemetry is on by default:
+`lean-ctx telemetry status` shows the setting, `lean-ctx telemetry show` the
+payload, `lean-ctx telemetry disable` turns it off. Configured providers,
+proxy/model requests, updates and feedback have their own network paths,
+described in the [main README](https://github.com/yvgude/lean-ctx#privacy--security).
 
 ## Develop
 
@@ -145,9 +227,8 @@ tsc -p integrations/claude-code-mod/tsconfig.json
 
 `tsc` needs the version-matched declarations in `.claude-plugin/types/`
 (git-ignored), which Claude Code writes the first time it loads the mod with
-`--plugin-dir`. The validator reports:
-
-```text
-  ❯ ./register.ts hooks: tool.describe{tool=/"^mcp__lean[-_]ctx__[A-Za-z0-9_-]+$"/}, skill.prompt{skill=lean-ctx}, prompt.attachment, session.start, tool.call, session.compact, prompt.submit, turn.step, command.run{command=leanctx}
-  ❯ ./register.ts calls: $.clock.every (via startWatcher), $.command.register (via ensureMeterCommand), $.mcp.call (via pollWatchedJobs, shapeBash), $.prompt.submit (via submitWake)
-```
+`--plugin-dir`. The validator lists every hook and mods API call
+(`$.process.run`, `$.fs.*`, `$.mcp.call`, …); the disclosure above must cover
+each one. The manifest `version` follows the engine version
+(`scripts/check-package-versions.py` enforces it), so each release is a new
+version for the Claude directory.

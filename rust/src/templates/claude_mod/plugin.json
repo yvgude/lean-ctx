@@ -1,12 +1,16 @@
 {
   "name": "lean-ctx",
-  "version": "0.2.0",
-  "description": "LeanCTX Context Gateway cockpit: inspect recorded context activity and evidence, explore local knowledge, view colored ctx_patch diffs and highlighted reads/searches, and follow background jobs and per-session usage.",
+  "version": "3.12.6",
+  "description": "LeanCTX Context Gateway cockpit: inspect recorded context activity and evidence, explore local knowledge, view colored ctx_patch diffs and highlighted reads/searches, and follow background jobs and per-session usage. Requires the lean-ctx binary (leanctx.com).",
   "types": "./types/index.d.ts",
   "author": {
-    "name": "Thinkery / Yves Gugger"
+    "name": "Thinkery AG",
+    "url": "https://leanctx.com"
   },
+  "homepage": "https://leanctx.com",
+  "repository": "https://github.com/yvgude/lean-ctx",
   "license": "Apache-2.0",
+  "keywords": ["context", "mcp", "cockpit", "token-usage", "lean-ctx"],
   "userConfig": {
     "front_loaded_tools": {
       "type": "string",

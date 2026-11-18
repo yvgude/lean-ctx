@@ -22,8 +22,8 @@ test("the curve is true to time: a saving halfway through fills only the second 
     { at: start + 20 * MIN, saved: 1_000, raw: 2_000 },
   ];
   const [, , bottom] = glyphRows(curveCells(40, 3, points, now, 0), 40, 3);
-  expect(bottom.slice(0, 19)).toBe("▁".repeat(19));
-  expect(bottom.slice(20)).not.toContain("▁");
+  expect(bottom?.slice(0, 19)).toBe("▁".repeat(19));
+  expect(bottom?.slice(20)).not.toContain("▁");
 });
 
 test("heights start at zero: a small saving under a large raw total stays low", () => {

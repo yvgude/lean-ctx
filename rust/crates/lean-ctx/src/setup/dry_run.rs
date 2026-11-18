@@ -200,7 +200,10 @@ pub(super) fn plan_steps(input: &PlanInput<'_>) -> Vec<SetupStepReport> {
             lean_ctx_hooks::hooks::agents::claude_mod::PLUGIN_ID,
             "would_install_or_refresh",
             None,
-            Some("skipped if you removed it (lean-ctx claude-mod uninstall)".to_string()),
+            Some(
+                "skipped if you removed it (lean-ctx claude-mod uninstall) or installed it from the Claude directory"
+                    .to_string(),
+            ),
         ));
         steps.push(claude_mod);
     }

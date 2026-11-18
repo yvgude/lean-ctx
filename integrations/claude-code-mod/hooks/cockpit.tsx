@@ -207,8 +207,8 @@ function sparkleCells(cols: number, tick: number, seed: number): string {
   const g = new Grid(cols, 1)
   const glyphs = ['·', '✧', '✦', '✧', '·']
   for (let x = 0; x < cols; x++) {
-    const h = Math.sin((x + 1) * 12.9898 + seed * 78.233) * 43758.5453
-    const r = h - Math.floor(h)
+    const hash = Math.sin((x + 1) * 12.9898 + seed * 78.233) * 43758.5453
+    const r = hash - Math.floor(hash)
     if (r < 0.55) continue
     const phase = (Math.sin(tick * 0.35 + r * 40) + 1) / 2
     g.set(x, 0, glyphs[Math.floor(phase * (glyphs.length - 1) + 0.5)] ?? '·', mix(BLUE_FIELD, r > 0.8 ? ICE : SIGNATURE, phase))
@@ -536,19 +536,37 @@ async function readBoard($: EngineInterface): Promise<Board> {
 // runs it: the agent is among them, whether hooks run in it or in a worker.
 // lean-ctx walks the tree natively; `ps` and `sh` are missing on Windows (#2077).
 let chain: number[] | undefined
+// Set when the lean-ctx binary cannot be started (not on PATH, e.g. a
+// directory install without lean-ctx): the sidebar closes and the cockpit
+// stops calling lean-ctx until `/cockpit` finds it.
+let binaryMissing = false
+const MISSING_BINARY_REPLY =
+  'The LeanCTX cockpit needs the lean-ctx binary on PATH: install it (https://leanctx.com), ' +
+  'run `lean-ctx setup`, then restart Claude Code.'
 
 // The data directory lean-ctx reports itself, so XDG and custom homes hold,
 // and the ancestors whose sessions serve this conversation.
 async function locate($: EngineInterface): Promise<{ dir: string; cwd: string; hosts: number[] }> {
   if (!valueDir || !chain) {
-    const { exitCode, stdout } = await $.process.run(['lean-ctx', 'prompt-segment', '--json'], { timeoutMs: 15_000 })
+    let ran: { exitCode: number; stdout: string }
+    try {
+      ran = await $.process.run(['lean-ctx', 'prompt-segment', '--json'], { timeoutMs: 15_000 })
+    } catch (err) {
+      if (!binaryMissing) {
+        binaryMissing = true
+        stopProofClock()
+        await $.ui.close({ id: PANE }).catch(() => {})
+      }
+      throw err
+    }
+    const { exitCode, stdout } = ran
     if (exitCode !== 0) throw new Error('lean-ctx prompt-segment failed')
     const parsed: unknown = JSON.parse(stdout)
     const watch = isRec(parsed) ? str(parsed, 'watch') : undefined
     if (!watch) throw new Error('lean-ctx reports no value directory')
     const hosts = isRec(parsed) && Array.isArray(parsed['hosts']) ? parsed['hosts'] : []
     valueDir = watch.replace(/[\\/]projects[\\/]?$/, '')
-    chain = hosts.filter((h): h is number => typeof h === 'number')
+    chain = hosts.filter((n): n is number => typeof n === 'number')
   }
   cwd ??= await $.session.cwd()
   return { dir: valueDir, cwd, hosts: chain }
@@ -598,6 +616,7 @@ async function refresh($: EngineInterface) {
   try {
     // Claude's side (window, cost) rides along: refresh only runs from timers.
     await refreshUsage($)
+    if (binaryMissing) return
     const where = await locate($)
     const sessions = `${where.dir}/sessions`
     const now = Date.now()
@@ -680,14 +699,15 @@ async function prove($: EngineInterface, opts: { isAsked?: boolean } = {}) {
   // check from claiming the run (a `/cockpit` proof cannot start in between).
   const now = opts.isAsked ? 0 : await $.clock.now()
   if (proving) return
-  if (!opts.isAsked && (!paneDrawn || now < proveBackoff.until)) return
+  if (!opts.isAsked && (binaryMissing || !paneDrawn || now < proveBackoff.until)) return
   proving = true
   const before = (await readBoard($)).proof
   await update($, board, x => ({ ...x, proof: { ...(x.proof ?? {}), isRunning: true } }))
   try {
     const b = await readBoard($)
-    const argv = ['lean-ctx', 'value', '--json', ...(b.snap ? ['--session', b.snap.sessionId] : [])]
-    const { stdout } = await $.process.run(argv, { timeoutMs: PROVE_TIMEOUT_MS })
+    const { stdout } = b.snap
+      ? await $.process.run(['lean-ctx', 'value', '--json', '--session', b.snap.sessionId], { timeoutMs: PROVE_TIMEOUT_MS })
+      : await $.process.run(['lean-ctx', 'value', '--json'], { timeoutMs: PROVE_TIMEOUT_MS })
     const r: unknown = JSON.parse(stdout)
     if (!isRec(r)) throw new Error('lean-ctx value returned no report')
     const ledger = isRec(r['ledger']) ? r['ledger'] : {}
@@ -888,13 +908,22 @@ async function cockpitStart($: EngineInterface): Promise<void> {
   startProofClock($)
 }
 
-// Stores a choice in the mod's option `option` (`cockpit_panel`, …) so new
-// sessions keep it; `false` when the setting could not be written.
-async function persistChoice($: EngineInterface, option: string, on: boolean): Promise<boolean> {
+type CockpitOption = 'cockpit_panel' | 'cockpit_pulse_line' | 'cockpit_turn_cards'
+
+// Stores a choice in one of the mod's own options so new sessions keep it;
+// `false` when the setting could not be written. Each key is written as a
+// literal so the settings this mod can change are visible in the source.
+async function persistChoice($: EngineInterface, option: CockpitOption, enabled: boolean): Promise<boolean> {
   try {
-    const row = (await $.config.list()).find(r => r.key.endsWith(`.${option}`))
-    if (!row) return false
-    const { deny } = await $.config.set({ key: row.key, value: on })
+    if (option === 'cockpit_panel') {
+      const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_panel', value: enabled })
+      return deny === undefined
+    }
+    if (option === 'cockpit_pulse_line') {
+      const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_pulse_line', value: enabled })
+      return deny === undefined
+    }
+    const { deny } = await $.config.set({ key: 'lean-ctx.cockpit_turn_cards', value: enabled })
     return deny === undefined
   } catch {
     return false
@@ -907,16 +936,16 @@ const COCKPIT_USAGE =
 
 // `/cockpit pulse|cards on|off`: shows or hides one of the lines above the
 // prompt, now and in new sessions.
-async function runSurfaceCommand($: EngineInterface, surface: 'pulse' | 'cards', on: boolean): Promise<string> {
-  const [option, name] =
+async function runSurfaceCommand($: EngineInterface, surface: 'pulse' | 'cards', enabled: boolean): Promise<string> {
+  const [option, name]: [CockpitOption, string] =
     surface === 'pulse' ? ['cockpit_pulse_line', 'pulse line'] : ['cockpit_turn_cards', 'turn and milestone cards']
-  if (surface === 'pulse') pulseEnabled = on
-  else cardsEnabled = on
+  if (surface === 'pulse') pulseEnabled = enabled
+  else cardsEnabled = enabled
   // Redraw now, so a card or band on show goes away (or a hidden one returns).
   startFrames($)
-  const kept = await persistChoice($, option, on)
-  const state = on ? 'on' : 'off'
-  const back = on ? '' : ` /cockpit ${surface} on brings it back.`
+  const kept = await persistChoice($, option, enabled)
+  const state = enabled ? 'on' : 'off'
+  const back = enabled ? '' : ` /cockpit ${surface} on brings it back.`
   return kept
     ? `LeanCTX ${name} ${state}, now and in new sessions.${back}`
     : `LeanCTX ${name} ${state} for this session (the setting could not be saved; /config → lean-ctx).`
@@ -942,6 +971,11 @@ async function runCockpitCommand($: EngineInterface, args: string): Promise<stri
       : 'LeanCTX cockpit sidebar closed for this session (the setting could not be saved; /config → lean-ctx).'
   }
   if (choice !== '' && choice !== 'on') return COCKPIT_USAGE
+  if (binaryMissing) {
+    binaryMissing = false
+    await locate($).catch(() => {})
+    if (binaryMissing) return MISSING_BINARY_REPLY
+  }
   const kept = choice === 'on' ? await persistChoice($, 'cockpit_panel', true) : true
   if (choice === 'on') panelEnabled = true
   const { isPlaced } = await $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS })

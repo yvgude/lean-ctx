@@ -256,6 +256,51 @@ let leanCtxSeen = false;
 let leanServer: string | undefined;
 let commandAttempted = false;
 let commandRegistered = false;
+// The mod drives lean-ctx; installed from the directory without it, it says
+// so once per process instead of failing silently.
+let setupChecked = false;
+// How long a lean-ctx MCP server may take to connect before the notice: a
+// server that connects in time (whatever PATH it was started from) means
+// lean-ctx works, and no notice is shown.
+export const SETUP_NOTICE_GRACE_MS = 20_000;
+
+export const MISSING_BINARY_NOTICE =
+  "LeanCTX mod: the lean-ctx binary was not found on PATH. " +
+  "Install it with `curl -fsSL https://leanctx.com/install.sh | sh`, " +
+  "`brew tap yvgude/lean-ctx && brew install lean-ctx`, `npm install -g lean-ctx-bin` " +
+  "or `cargo install lean-ctx`, then run `lean-ctx setup` and restart Claude Code.";
+
+export const NOT_CONNECTED_NOTICE =
+  "LeanCTX mod: lean-ctx is installed, but its MCP server is not connected to Claude Code. " +
+  "Run `lean-ctx setup`, then restart Claude Code.";
+
+async function hasLeanCtxTools($: EngineInterface): Promise<boolean> {
+  if (leanCtxSeen) return true;
+  try {
+    return (await $.tool.list()).some((tool) => getLeanCtxTool(tool.name) !== undefined);
+  } catch {
+    return true; // cannot tell: say nothing
+  }
+}
+
+// Interactive sessions only, from a timer so the session never waits on it.
+function scheduleSetupNotice($: EngineInterface): void {
+  if (setupChecked) return;
+  setupChecked = true;
+  $.clock.after(SETUP_NOTICE_GRACE_MS, () => void noticeSetup($).catch(() => undefined));
+}
+
+async function noticeSetup($: EngineInterface): Promise<void> {
+  if (await hasLeanCtxTools($)) return;
+  let installed = false;
+  try {
+    const { exitCode } = await $.process.run(["lean-ctx", "--version"], { timeoutMs: 10_000 });
+    installed = exitCode === 0;
+  } catch {
+    installed = false;
+  }
+  await $.ui.toast(installed ? NOT_CONNECTED_NOTICE : MISSING_BINARY_NOTICE, { timeoutMs: 30_000 });
+}
 // Set by a main-loop compaction; the next prompt carries the lean-ctx session state once.
 let resumePending = false;
 
@@ -349,6 +394,7 @@ export const register: Register = (on, options) => {
       }
     }
     if (leanCtxSeen) await ensureMeterCommand($);
+    else if (event.isInteractive) scheduleSetupNotice($);
     return next(event);
   });
 

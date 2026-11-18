@@ -49,6 +49,15 @@ pub enum ModStatus {
     Current(String),
     /// Installed from an older (or newer) engine; `install` refreshes it.
     Stale(String),
+    /// Installed from another marketplace, such as the Claude directory
+    /// (`lean-ctx@claude-plugins-official`). That copy serves the mod, so the
+    /// local one is never added; `local` names a local copy still installed
+    /// beside it, which would run every hook twice.
+    External {
+        id: String,
+        version: String,
+        local: Option<String>,
+    },
 }
 
 impl ModStatus {
@@ -66,6 +75,13 @@ impl ModStatus {
             Self::Stale(v) => {
                 format!("installed ({v}), this instance ships {want} — refresh pending")
             }
+            Self::External { id, version, local } => match local {
+                None => format!("installed as {id} ({version}); no local copy needed"),
+                Some(v) => format!(
+                    "installed as {id} ({version}) and locally as {PLUGIN_ID} ({v}) — \
+                     remove the duplicate with: lean-ctx claude-mod uninstall"
+                ),
+            },
         }
     }
 }
@@ -126,7 +142,7 @@ fn marketplace_manifest() -> String {
     let manifest = serde_json::json!({
         "name": MARKETPLACE,
         "description": "lean-ctx's Claude Code mod, installed by the lean-ctx binary that serves it.",
-        "owner": { "name": "Thinkery / Yves Gugger" },
+        "owner": { "name": "Thinkery AG" },
         "plugins": [{
             "name": "lean-ctx",
             "source": "./plugins/lean-ctx",
@@ -186,6 +202,44 @@ pub fn installed_version(list_json: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// An enabled `lean-ctx@<marketplace>` from any marketplace but ours, as
+/// `(id, version)` — the Claude directory serves it as
+/// `lean-ctx@claude-plugins-official`.
+#[must_use]
+pub fn external_install(list_json: &str) -> Option<(String, String)> {
+    let entries: Vec<serde_json::Value> = serde_json::from_str(list_json).ok()?;
+    entries.iter().find_map(|e| {
+        let id = e.get("id").and_then(serde_json::Value::as_str)?;
+        let marketplace = id.strip_prefix("lean-ctx@")?;
+        if marketplace.is_empty() || id == PLUGIN_ID {
+            return None;
+        }
+        if e.get("enabled").and_then(serde_json::Value::as_bool) == Some(false) {
+            return None;
+        }
+        let version = e
+            .get("version")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unknown");
+        Some((id.to_string(), version.to_string()))
+    })
+}
+
+/// Lifecycle state from `claude plugin list --json`: another marketplace's
+/// copy wins over ours, so setup never installs a second one.
+#[must_use]
+pub fn status_from_list(list_json: Option<&str>) -> ModStatus {
+    let local = list_json.and_then(installed_version);
+    if let Some((id, version)) = list_json.and_then(external_install) {
+        return ModStatus::External { id, version, local };
+    }
+    match local {
+        None => ModStatus::NotInstalled,
+        Some(v) if v == mod_version() => ModStatus::Current(v),
+        Some(v) => ModStatus::Stale(v),
+    }
+}
+
 /// Current lifecycle state. Runs `claude --version` and `claude plugin list`.
 pub fn status() -> ModStatus {
     let version_out = match run_claude(&["--version"]) {
@@ -201,14 +255,8 @@ pub fn status() -> ModStatus {
         Some(v) if v >= MIN_CLAUDE_VERSION => {}
         _ => return ModStatus::ClaudeTooOld(version),
     }
-    match run_claude(&["plugin", "list", "--json"])
-        .ok()
-        .and_then(|out| installed_version(&out))
-    {
-        None => ModStatus::NotInstalled,
-        Some(v) if v == mod_version() => ModStatus::Current(v),
-        Some(v) => ModStatus::Stale(v),
-    }
+    let list = run_claude(&["plugin", "list", "--json"]).ok();
+    status_from_list(list.as_deref())
 }
 
 /// Install, or refresh an existing install to this engine's version.
@@ -219,6 +267,8 @@ pub fn install() -> Result<String, String> {
         ModStatus::ClaudeMissing(_) | ModStatus::ClaudeTooOld(_) => {
             return Err(before.describe());
         }
+        // The directory (or another marketplace) already serves the mod.
+        ModStatus::External { .. } => return Ok(format!("{PLUGIN_ID} {}", before.describe())),
         ModStatus::Current(_) | ModStatus::NotInstalled | ModStatus::Stale(_) => {}
     }
     let root = marketplace_dir()?;
@@ -274,6 +324,34 @@ pub fn cached_versions(claude_dir: &Path) -> Vec<String> {
     .unwrap_or_default();
     versions.sort();
     versions
+}
+
+/// Whether any marketplace's `lean-ctx` plugin sits in Claude Code's plugin
+/// cache (`<claude dir>/plugins/cache/<marketplace>/lean-ctx/<version>/`):
+/// ours or the Claude directory's. File-only, like [`cached_versions`].
+#[must_use]
+pub fn cached_anywhere(claude_dir: &Path) -> bool {
+    cached_in_markets(claude_dir, None)
+}
+
+/// Like [`cached_anywhere`], but only another marketplace's copy (such as the
+/// Claude directory's), never ours.
+#[must_use]
+pub fn cached_anywhere_else(claude_dir: &Path) -> bool {
+    cached_in_markets(claude_dir, Some(MARKETPLACE))
+}
+
+fn cached_in_markets(claude_dir: &Path, skip: Option<&str>) -> bool {
+    std::fs::read_dir(claude_dir.join("plugins/cache")).is_ok_and(|markets| {
+        markets
+            .filter_map(Result::ok)
+            .filter(|market| skip.is_none_or(|name| market.file_name() != name))
+            .any(|market| {
+                std::fs::read_dir(market.path().join("lean-ctx")).is_ok_and(|versions| {
+                    versions.filter_map(Result::ok).any(|v| v.path().is_dir())
+                })
+            })
+    })
 }
 
 /// The cache directory Claude Code (2.1.287) creates for a plugin version:
@@ -437,6 +515,72 @@ mod tests {
         assert!(marketplace_listed(markets));
         assert!(!marketplace_listed(r#"[{"name":"other"}]"#));
         assert!(!marketplace_listed("garbage"));
+    }
+
+    /// A directory install (`lean-ctx@claude-plugins-official`) serves the mod:
+    /// setup must not add the local copy beside it, and a local copy already
+    /// there is reported as a duplicate.
+    #[test]
+    fn a_directory_install_wins_over_the_local_marketplace() {
+        let directory = r#"[{"id":"lean-ctx-jobs@lean-ctx","version":"1"},
+            {"id":"lean-ctx@claude-plugins-official","version":"3.12.6","enabled":true}]"#;
+        assert_eq!(
+            external_install(directory),
+            Some(("lean-ctx@claude-plugins-official".into(), "3.12.6".into()))
+        );
+        assert_eq!(
+            status_from_list(Some(directory)),
+            ModStatus::External {
+                id: "lean-ctx@claude-plugins-official".into(),
+                version: "3.12.6".into(),
+                local: None,
+            }
+        );
+        let both = r#"[{"id":"lean-ctx@lean-ctx","version":"3.12.5+00000000"},
+            {"id":"lean-ctx@claude-plugins-official","version":"3.12.6"}]"#;
+        let status = status_from_list(Some(both));
+        assert!(
+            matches!(&status, ModStatus::External { local: Some(v), .. } if v == "3.12.5+00000000")
+        );
+        assert!(status.describe().contains("lean-ctx claude-mod uninstall"));
+
+        // Ours, a disabled directory copy and look-alike ids never count.
+        let ours = r#"[{"id":"lean-ctx@lean-ctx","version":"3.12.5+00000000"},
+            {"id":"lean-ctx@claude-plugins-official","version":"3.12.6","enabled":false},
+            {"id":"lean-ctx-jobs@claude-plugins-official","version":"1"},
+            {"id":"lean-ctx@","version":"1"}]"#;
+        assert_eq!(external_install(ours), None);
+        assert_eq!(
+            status_from_list(Some(ours)),
+            ModStatus::Stale("3.12.5+00000000".into())
+        );
+        assert_eq!(status_from_list(None), ModStatus::NotInstalled);
+        assert_eq!(status_from_list(Some("garbage")), ModStatus::NotInstalled);
+    }
+
+    #[test]
+    fn cached_anywhere_sees_a_directory_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("plugins/cache/claude-plugins-official");
+        assert!(!cached_anywhere(dir.path()));
+        std::fs::create_dir_all(cache.join("gopls-lsp/1.0.0")).unwrap();
+        assert!(!cached_anywhere(dir.path()));
+        std::fs::create_dir_all(cache.join("lean-ctx/3.12.6")).unwrap();
+        assert!(cached_anywhere(dir.path()));
+        assert!(cached_anywhere_else(dir.path()));
+        assert!(cached_versions(dir.path()).is_empty());
+
+        // Our own marketplace's copy counts for `cached_anywhere` only.
+        let ours = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(
+            ours.path()
+                .join("plugins/cache")
+                .join(MARKETPLACE)
+                .join("lean-ctx/3.12.6"),
+        )
+        .unwrap();
+        assert!(cached_anywhere(ours.path()));
+        assert!(!cached_anywhere_else(ours.path()));
     }
 
     /// A removal is a standing decision; an explicit install lifts it. Checked
