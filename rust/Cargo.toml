@@ -181,6 +181,7 @@ lean-ctx-fs = { path = "crates/lean-ctx-fs", version = "0.2.0" }
 lean-ctx-syntax = { path = "crates/lean-ctx-syntax", version = "0.1.1" }
 lean-ctx-doc = { path = "crates/lean-ctx-doc", version = "0.2.0" }
 lean-ctx-activity = { path = "crates/lean-ctx-activity", version = "0.1.0" }
+llm-prices = "1.8.0"
 rmcp = { version = "3", features = [
   "server",
   "client",
