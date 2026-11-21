@@ -300,6 +300,23 @@ impl ModelPricing {
             };
         }
 
+        // Published list price for any id the llm-prices table knows
+        // (claude-opus-4-1, gpt-4o, gpt-4.1, o3, ...), before family guesses.
+        if let Some(p) = llm_prices::lookup(raw)
+            && let (Some(input), Some(output)) = (p.input, p.output)
+        {
+            return ModelQuote {
+                model_key: p.model.to_string(),
+                cost: ModelCost {
+                    input_per_m: input,
+                    output_per_m: output,
+                    cache_write_per_m: p.cache_write("5m").unwrap_or(input),
+                    cache_read_per_m: p.cache_read.unwrap_or(input),
+                },
+                match_kind: PricingMatchKind::Exact,
+            };
+        }
+
         if let Some((k, kind)) = Self::heuristic_key(raw)
             && let Some(cost) = self.models.get(&k).copied()
         {
@@ -757,6 +774,22 @@ pub mod tests {
             assert_eq!(q.model_key, "claude-opus-4.5", "for {name}");
             assert!((q.cost.input_per_m - 5.00).abs() < f64::EPSILON);
             assert!((q.cost.output_per_m - 25.00).abs() < f64::EPSILON);
+        }
+    }
+
+    #[test]
+    fn listed_models_outside_the_table_get_their_list_price() {
+        let p = ModelPricing::embedded();
+        for (name, input, output) in [
+            ("claude-opus-4-1", 15.00, 75.00),
+            ("gpt-4o-mini", 0.15, 0.60),
+            ("gpt-4.1", 2.00, 8.00),
+            ("o3", 2.00, 8.00),
+        ] {
+            let q = p.quote(Some(name));
+            assert_eq!(q.match_kind, PricingMatchKind::Exact, "for {name}");
+            assert!((q.cost.input_per_m - input).abs() < 1e-9, "for {name}");
+            assert!((q.cost.output_per_m - output).abs() < 1e-9, "for {name}");
         }
     }
 
