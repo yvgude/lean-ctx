@@ -984,20 +984,48 @@ impl Duration {
         Self::ZERO
     }
 
-    ctor!(/// `n` weeks.
-        weeks, try_weeks, 7 * 86_400 * NANOS_PER_SEC);
-    ctor!(/// `n` days of 24 hours.
-        days, try_days, 86_400 * NANOS_PER_SEC);
-    ctor!(/// `n` hours.
-        hours, try_hours, 3_600 * NANOS_PER_SEC);
-    ctor!(/// `n` minutes.
-        minutes, try_minutes, 60 * NANOS_PER_SEC);
-    ctor!(/// `n` seconds.
-        seconds, try_seconds, NANOS_PER_SEC);
-    ctor!(/// `n` milliseconds.
-        milliseconds, try_milliseconds, 1_000_000);
-    ctor!(/// `n` microseconds.
-        microseconds, try_microseconds, 1_000);
+    ctor!(
+        /// `n` weeks.
+        weeks,
+        try_weeks,
+        7 * 86_400 * NANOS_PER_SEC
+    );
+    ctor!(
+        /// `n` days of 24 hours.
+        days,
+        try_days,
+        86_400 * NANOS_PER_SEC
+    );
+    ctor!(
+        /// `n` hours.
+        hours,
+        try_hours,
+        3_600 * NANOS_PER_SEC
+    );
+    ctor!(
+        /// `n` minutes.
+        minutes,
+        try_minutes,
+        60 * NANOS_PER_SEC
+    );
+    ctor!(
+        /// `n` seconds.
+        seconds,
+        try_seconds,
+        NANOS_PER_SEC
+    );
+    ctor!(
+        /// `n` milliseconds.
+        milliseconds,
+        try_milliseconds,
+        1_000_000
+    );
+    ctor!(
+        /// `n` microseconds.
+        microseconds,
+        try_microseconds,
+        1_000
+    );
 
     /// `n` nanoseconds.
     #[must_use]

@@ -15,7 +15,7 @@ fn release_identity_and_msrv_are_locked() {
     assert!(MANIFEST.contains("rust-version = \"1.74\""));
     for exact in [
         "\"=2.12.1\"",
-        "\"=2.5.8\"",
+        "\"=2.5.9\"",
         "\"=1.8.2\"",
         "\"=1.5.0\"",
         "\"=1.0.220\"",

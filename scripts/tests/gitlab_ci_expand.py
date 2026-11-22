@@ -157,7 +157,6 @@ def pipeline(cfg, env):
     wf = match_rules(cfg['workflow']['rules'], env)
     if wf is None or wf.get('when') == 'never':
         return None
-    genv = dict(env)
     wvars = wf.get('variables', {})
     jobs = {}
     for name, job in cfg.items():

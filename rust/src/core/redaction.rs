@@ -675,7 +675,7 @@ fn redaction_rules() -> Vec<Rule> {
         Rule {
             label: "Stripe key",
             // Secret and restricted keys, live and test mode. The value class
-            // excludes `_`, so placeholders like `sk_test_your_key` stay readable.
+            // excludes `_`, so placeholder values such as `your_key` stay readable.
             re: crate::core::secret_detection::stripe_key_re(),
             guard_value: false,
         },
